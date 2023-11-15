@@ -24,6 +24,6 @@ build: prep
 audit: export TMPDIR=build/tmp
 audit: prep
 	@pip install --upgrade --quiet bandit pip-tools pip-audit
-	@pip-compile --generate-hashes setup.cfg
-	@bandit -r sep
+	@pip-compile --no-strip-extras --generate-hashes pyproject.toml
+	@bandit -r src
 	@pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt

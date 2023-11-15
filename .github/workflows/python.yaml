@@ -28,3 +28,8 @@ jobs:
       with:
         python-versions: ${{ matrix.python }}
         cache: 'pip'
+
+    - name: Perform audit
+      run: |
+        make audit
+        git diff --exit-code --quiet requirements.txt
