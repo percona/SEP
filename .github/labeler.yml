@@ -1,0 +1,14 @@
+python:
+  - '**/**.py'
+  - 'requirements.txt'
+  - 'pyproject.toml'
+
+#docs:
+#  - 'docs/**'
+#  - 'etc/mkdocs.yaml'
+
+skip-test:
+  - 'CODEOWNERS'
+  - 'README.md'
+  - '.gitignore'
+  - 'build/**'
