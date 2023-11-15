@@ -1,0 +1,30 @@
+# Main CI workflow
+
+name: Python
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ['3.11']
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Checkout codebase
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        path: workspace
+
+    - name: Setup Python
+      uses: actions/setup-python@65d7f2d534ac1bc67fcd62888c5f4f3d2cb2b236 # v4.7.1
+      with:
+        python-versions: ${{ matrix.python }}
+        cache: 'pip'
