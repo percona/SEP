@@ -21,6 +21,9 @@ build: prep
 	@python3 -m build --wheel --outdir build
 	@rm -rf sep.egg-info
 
+format:
+	@ruff format .
+
 lint:
 	@pip install --upgrade ruff
 	@ruff check .
