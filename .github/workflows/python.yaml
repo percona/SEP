@@ -30,6 +30,7 @@ jobs:
         cache: 'pip'
 
     - name: Perform audit
+      working-directory: ./workspace
       run: |
         make audit
         git diff --exit-code --quiet requirements.txt
