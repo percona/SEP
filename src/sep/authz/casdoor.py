@@ -30,11 +30,12 @@ AuthzConfig = namedtuple(
 class CasdoorOAuth2Mixin(OAuth2Mixin):
     """Casdoor authentication using OAuth2"""
 
-    _OAUTH_AUTHORIZE_URL = ""
-    _OAUTH_ACCESS_TOKEN_URL = ""
-    _OAUTH_USERINFO_URL = ""
-    _OAUTH_NO_CALLBACKS = False
-    _OAUTH_SETTINGS_KEY = ""
+    # The following are not used, unlike other OAuth2Mixin classes:
+    # _OAUTH_AUTHORIZE_URL
+    # _OAUTH_ACCESS_TOKEN_URL
+    # _OAUTH_USERINFO_URL
+    # _OAUTH_NO_CALLBACKS
+    # _OAUTH_SETTINGS_KEY
 
     cfg: namedtuple
 
