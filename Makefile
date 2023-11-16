@@ -29,8 +29,13 @@ lint:
 	@ruff check .
 
 audit: export TMPDIR=build/tmp
-audit: prep lint
-	@pip install --upgrade --quiet bandit pip-tools pip-audit
+audit: prep lint bandit pip-audit
+
+pip-audit:
+	@pip install --upgrade --quiet pip-tools pip-audit
 	@pip-compile --no-strip-extras --generate-hashes pyproject.toml
-	@bandit -r src
 	@pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
+
+bandit:
+	@pip install --upgrade --quiet bandit
+	@bandit -c pyproject.toml -r src
