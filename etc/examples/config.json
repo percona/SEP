@@ -1,0 +1,29 @@
+{
+    "authz": {
+        "backend": {
+            "application_name": "my-app",
+            "certificate": "/path/to/cert.pem",
+            "client_id": "your_client_id",
+            "client_secret": "your_client_secret",
+            "endpoint": "http://casdoor",
+            "org_name": "my-org"
+        },
+        "config": {
+            "backend_cookie": "casdoorUser",
+            "redirect_uri": "http://127.0.0.1:8181/api/signin",
+            "secret_type": "filesystem",
+            "session_cookie": "sep"
+        }
+    },
+    "handlers": [
+        ["/myapp/", "myapp.DefaultHandler", {}, "myapp"],
+        ["/remote-app/", "sep.RemoteCallHandler", {"uri": "http://127.0.0.1:8282"}, ""],
+        ["/report/", "report.DefaultHandler", {}, "report"],
+        ["/nomad/(?P<route>agents|jobs|nodes|allocations|deployments|evaluations)?$", "sep.nomad.NomadHandler",
+            {"host": "127.0.0.1", "secure": false, "timeout": 10, "verify": false, "cert": []}, "sep.nomad"],
+        ["/nomad/(?P<route>agents|jobs|nodes|allocations|deployments|evaluations)/(?P<action>[A-Za-z0-9_-]+)$",
+            "sep.nomad.NomadHandler",
+            {"host": "127.0.0.1", "secure": false, "timeout": 10, "verify": false, "cert": []}, "sep.nomad"]
+    ],
+    "port": 8181
+}
