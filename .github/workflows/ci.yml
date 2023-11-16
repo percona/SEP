@@ -8,6 +8,7 @@ on:
     - main
     types:
     - labeled
+    - ready_for_review
     - synchronize
     - unlabeled
   workflow_call:
