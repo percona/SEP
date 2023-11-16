@@ -1,0 +1,82 @@
+[project]
+name = "sep"
+description = "SEP: Services Enablement Platform"
+version = "0.0.1"
+license = {file = "LICENSE"}
+readme = "README.md"
+
+authors = [
+    {name = "Ceri Williams", email = "ceri.williams@percona.com"},
+    {name = "Max Bubenick", email = "max.bubenick@percona.com"},
+]
+maintainers = [
+    {name = "Ceri Williams", email = "ceri.williams@percona.com"},
+    {name = "Max Bubenick", email = "max.bubenick@percona.com"},
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Framework :: FastAPI",
+    "Framework :: MkDocs",
+    "Framework :: Pydantic :: 2",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Natural Language :: English",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Database",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed"
+]
+
+dependencies = [
+    "casdoor==1.17.1",
+    "databases==0.7.0",
+    "databases[aiosqlite]",
+    "fastapi==0.102.0",
+    "itsdangerous==2.1.2",
+    "pydantic==2.3.0",
+    "PyYAML==6.0.1",
+    "python-nomad==2.0.0",
+    "SQLAlchemy==1.4.49",
+    "tornado==6.3.3",
+    "urllib3==2.0.7",
+    "uvloop==0.18.0"
+]
+requires-python = ">=3.11"
+
+[tool.ruff]
+exclude = [
+    ".git",
+    ".github",
+    "build",
+    "data",
+    "docs",
+    "etc",
+    "scripts",
+    "tmp",
+    "venv",
+    "Makefile",
+    "Containerfile",
+    "README.md",
+    "LICENSE"
+]
+
+line-length = 120
+indent-width = 4
+output-format = "github"
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "N", "C90", "I", "FLY", "S"]
+ignore = []
+fixable = ["ALL"]
+unfixable = []
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

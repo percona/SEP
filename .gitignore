@@ -4,6 +4,7 @@
 *.patch
 *.pem
 .env
+.idea
 build/tmp
 venv
 

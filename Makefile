@@ -21,9 +21,13 @@ build: prep
 	@python3 -m build --wheel --outdir build
 	@rm -rf sep.egg-info
 
+lint:
+	@pip install --upgrade ruff
+	@ruff check .
+
 audit: export TMPDIR=build/tmp
-audit: prep
+audit: prep lint
 	@pip install --upgrade --quiet bandit pip-tools pip-audit
-	@pip-compile --generate-hashes setup.cfg
-	@bandit -r sep
+	@pip-compile --no-strip-extras --generate-hashes pyproject.toml
+	@bandit -r src
 	@pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
