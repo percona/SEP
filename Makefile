@@ -37,5 +37,5 @@ pip-audit:
 	@pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
 
 bandit:
-	@pip install --upgrade --quiet bandit toml
+	@pip install --upgrade --quiet bandit toml 'bandit[toml]'
 	@bandit -c pyproject.toml -r src
