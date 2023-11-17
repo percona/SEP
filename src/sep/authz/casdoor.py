@@ -20,7 +20,12 @@ from tornado.web import (
     RequestHandler,
 )
 
-__all__ = ["CasdoorOAuth2Mixin"]
+__all__ = ["AuthzConfig", "CasdoorOAuth2Mixin"]
+
+SESSION_EXPIRE_DAYS = None  # Session-only cookie
+SESSION_HTTP_ONLY = True
+SESSION_SAMESITE = "lax"
+SESSION_TOKEN_LENGTH = 43
 
 AuthzConfig = namedtuple(
     "AuthzConfig", ["CASDOOR_COOKIE", "CASDOOR_SDK", "CASDOOR_SDK_SYNC", "REDIRECT_URI", "SECRET_KEY", "SESSION_COOKIE"]
@@ -30,12 +35,12 @@ AuthzConfig = namedtuple(
 class CasdoorOAuth2Mixin(OAuth2Mixin):
     """Casdoor authentication using OAuth2"""
 
-    # The following are not used, unlike other OAuth2Mixin classes:
-    # _OAUTH_AUTHORIZE_URL
-    # _OAUTH_ACCESS_TOKEN_URL
-    # _OAUTH_USERINFO_URL
-    # _OAUTH_NO_CALLBACKS
-    # _OAUTH_SETTINGS_KEY
+    # The _OAUTH* attributes are not used, but are here for reference
+    _OAUTH_AUTHORIZE_URL: str | bytes
+    _OAUTH_ACCESS_TOKEN_URL: str | bytes
+    _OAUTH_USERINFO_URL: str | bytes
+    _OAUTH_NO_CALLBACKS: str | bytes
+    _OAUTH_SETTINGS_KEY: str | bytes
 
     cfg: namedtuple
 
@@ -70,28 +75,31 @@ class CasdoorOAuth2Mixin(OAuth2Mixin):
             user = self.cfg.authz.CASDOOR_SDK.parse_jwt_token(token.get("access_token"))
         except DecodeError as err:
             raise HTTPError(status_code=HTTPStatus.UNAUTHORIZED) from err
-        # TODO: limit duration
         handler.set_signed_cookie(
             name=self.cfg.authz.CASDOOR_COOKIE,
-            httponly=True,
-            expires_days=None,
-            samesite="strict",
+            httponly=SESSION_HTTP_ONLY,
+            expires_days=SESSION_EXPIRE_DAYS,
+            samesite=SESSION_SAMESITE,
             secure=self.cfg.authz.REDIRECT_URI.startswith("https://"),
             value=json.dumps(user),
         )
         return user
 
     def generate_session(self, data: Optional[Dict] = None):
-        """Generate a session, with optional data"""
+        """Generate a session, with optional data
+
+        :param data: optional data to set for the session
+        :type data: dict, or dict-like object
+        """
         handler = cast(RequestHandler, self)
-        cookie_data = {"id": token_hex(41), "next": handler.request.uri}
+        cookie_data = {"id": token_hex(SESSION_TOKEN_LENGTH), "next": handler.request.uri}
         if isinstance(data, dict):
             cookie_data.update({k: v for k, v in data.items() if k not in ["id"]})
         handler.set_signed_cookie(
             name=self.cfg.authz.SESSION_COOKIE,
-            httponly=True,
-            expires_days=None,
-            samesite="strict",
+            httponly=SESSION_HTTP_ONLY,
+            expires_days=SESSION_EXPIRE_DAYS,
+            samesite=SESSION_SAMESITE,
             secure=self.cfg.authz.REDIRECT_URI.startswith("https://"),
             value=json.dumps(cookie_data),
         )
