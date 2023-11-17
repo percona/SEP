@@ -20,7 +20,7 @@ from tornado.web import (
     RequestHandler,
 )
 
-__all__ = ["CasdoorOAuth2Mixin"]
+__all__ = ["AuthzConfig", "CasdoorOAuth2Mixin"]
 
 AuthzConfig = namedtuple(
     "AuthzConfig", ["CASDOOR_COOKIE", "CASDOOR_SDK", "CASDOOR_SDK_SYNC", "REDIRECT_URI", "SECRET_KEY", "SESSION_COOKIE"]
@@ -75,7 +75,7 @@ class CasdoorOAuth2Mixin(OAuth2Mixin):
             name=self.cfg.authz.CASDOOR_COOKIE,
             httponly=True,
             expires_days=None,
-            samesite="strict",
+            samesite="lax",
             secure=self.cfg.authz.REDIRECT_URI.startswith("https://"),
             value=json.dumps(user),
         )
@@ -91,7 +91,7 @@ class CasdoorOAuth2Mixin(OAuth2Mixin):
             name=self.cfg.authz.SESSION_COOKIE,
             httponly=True,
             expires_days=None,
-            samesite="strict",
+            samesite="lax",
             secure=self.cfg.authz.REDIRECT_URI.startswith("https://"),
             value=json.dumps(cookie_data),
         )
