@@ -66,22 +66,34 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         if self.__class__.__name__ != "AuthZHandler":
             _prepare(self)
 
-    def get_current_user(self):
-        """Retrieve the current user"""
+    def get_current_user(self) -> Union[Dict[str, Any], None]:
+        """Retrieve the current user
+
+        :return: the current user information
+        :rtype: dict | None
+        """
         user_cookie = self.get_signed_cookie(self.cfg.authz.CASDOOR_COOKIE)
         if user_cookie:
             return json.loads(user_cookie)
         return None
 
     def get_current_session(self) -> Union[Dict[str, Any], None]:
-        """Retrieve the current session"""
+        """Retrieve the current session
+
+        :return: the current session data
+        :rtype: dict | None
+        """
         session_cookie = self.get_signed_cookie(self.cfg.authz.SESSION_COOKIE)
         if session_cookie:
             return json.loads(session_cookie)
         return None
 
     def get_login_url(self) -> str:
-        """Retrieve the login url"""
+        """Retrieve the login url
+
+        :return: the login url for Casdoor
+        :rtype: str
+        """
         return self.cfg.authz.CASDOOR_SDK_SYNC.get_auth_link(redirect_uri=self.cfg.authz.REDIRECT_URI)
 
 

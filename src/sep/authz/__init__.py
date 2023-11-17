@@ -21,7 +21,11 @@ class AuthZHandler(BaseHandler):
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
 
-    async def _signin(self):
+    async def _signin(self) -> None:
+        """Process signin requests
+
+        :raises HTTPError: when the code does not meet expectations
+        """
         if self.get_argument(name="code", default="") in [None, "", False]:
             raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
         user = await self.get_authenticated_user(code=self.get_argument("code"))
@@ -33,11 +37,19 @@ class AuthZHandler(BaseHandler):
             self.redirect(session.get("next", "/"))
             return
 
-    async def _signout(self):
+    async def _signout(self) -> None:
+        """Process signout requests
+
+        Clear the Casdoor and session cookies
+        """
         self.clear_cookie(self.cfg.authz.CASDOOR_COOKIE)
         self.clear_cookie(self.cfg.authz.SESSION_COOKIE)
         self.redirect("/")
 
-    async def get(self, route):
-        """Handle GET authz requests"""
+    async def get(self, route: str | bytes) -> None:
+        """Handle GET authz requests
+
+        :param route: the route fragment from the handler
+        :type route: str, bytes
+        """
         await getattr(self, f"_{route}")()

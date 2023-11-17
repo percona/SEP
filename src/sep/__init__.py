@@ -6,7 +6,7 @@ Example config (JSON):
     "authz": {
         "backend": {
             "application_name": "<app-name>",
-            "certificate": "<single-line-cert-as-string> | <env-var> | <file-path>",
+            "certificate": "<single-line-cert-as-base64-encoded-string> | <env-var> | <file-path>",
             "client_id": "<client-id>",
             "client_secret": "<client-secret>",
             "endpoint": "<authz-endpoint>",
@@ -39,7 +39,7 @@ from os import environ
 import pathlib
 from secrets import token_bytes
 from typing import (
-    AnyStr,
+    Optional,
     Union,
 )
 
@@ -71,7 +71,11 @@ class Config(ObjectDict):
     """
 
     def get_handler_config(self) -> list:
-        """Generate the config to set the app handlers"""
+        """Generate the config to set the app handlers
+
+        :return: handlers for use with tornado.web.Application
+        :rtype: list
+        """
         if not hasattr(self, "handlers") or not isinstance(self.handlers, list):
             return []
         for i, handler in enumerate(self.handlers):
@@ -97,8 +101,16 @@ class Config(ObjectDict):
         return self.handlers
 
     @staticmethod
-    def load(config: Union[BytesIO, FileType], mimetype: Union[None, AnyStr] = None) -> "Config":
-        """Generate a Config instance"""
+    def load(config: Union[BytesIO, FileType], mimetype: Optional[str | bytes] = None) -> "Config":
+        """Generate a Config instance
+
+        :param config: the configuration file in JSON, or YAML format
+        :type config: io.BytesIO or argparse.FileType
+        :param mimetype: optionally set the mimetype to avoid guessing from the filename
+        :type mimetype: str, bytes
+        :return: the configuration object
+        :rtype: Config (ObjectDict)
+        """
         app_log.info("Loading config from %s", config)
         if not mimetype:
             path = pathlib.Path(config.name)
@@ -136,19 +148,32 @@ class Config(ObjectDict):
 
     @staticmethod
     def _load_json(config: Union[BytesIO, FileType]) -> dict:
-        """Load a JSON config"""
+        """Load a JSON config
+
+        :param config: the configuration file in JSON format
+        :type config: io.BytesIO or argparse.FileType
+        :return: the application config
+        :rtype: dict
+        """
         return json.load(config)
 
     @staticmethod
     def _load_yaml(config: Union[BytesIO, FileType]) -> dict:
-        """Load a YAML config"""
+        """Load a YAML config
+
+        :param config: the configuration file in YAML format
+        :type config: io.BytesIO or argparse.FileType
+        :return: the application config
+        :rtype: dict
+        """
         return yaml.safe_load(config)
 
     @staticmethod
-    def _validate(config_data: dict):
-        """
+    def _validate(config_data: dict) -> None:
+        """Validate the configuration meets expectations
 
-        :param config_data:
+        :param config_data: the loaded configuration
+        :type config_data: dict
         :raises LookupError: when a required field is missing
         """
         if "authz" not in config_data:
@@ -162,10 +187,20 @@ class Config(ObjectDict):
         for key in ["application_name", "certificate", "client_id", "client_secret", "endpoint", "org_name"]:
             if key not in config_data["authz"]["backend"]:
                 raise LookupError(f"{key} is missing from authz.backend")
+        if "server_name" in config_data and config_data["server_name"] in [r".*", ".*"]:
+            raise ValueError(
+                f"rejecting server_name wildcard, please restrict host-matching e.g. {DEFAULT_SERVER_MATCH}"
+            )
 
 
-async def main(**kwargs):
-    """Async entrypoint"""
+async def main(**kwargs) -> None:
+    """Async entrypoint
+
+    See sep.__main__ for the available kwargs
+    The ones currently used are:
+      config :   the path to the config file
+      log_level: the level to set the log handler to
+    """
     logging.basicConfig(
         level=kwargs["log_level"],
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
@@ -173,7 +208,7 @@ async def main(**kwargs):
     app = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
     app.config = Config.load(config=kwargs.get("config"))
     app.settings["cookie_secret"] = app.config.authz.SECRET_KEY
-    # Use default_host to prevent DNS rebinding attacks
+    # Limit the host pattern to prevent DNS rebinding attacks
     # https://www.tornadoweb.org/en/stable/web.html#application-configuration
     app.add_handlers(app.config.get("server_name", DEFAULT_SERVER_MATCH), app.config.get_handler_config())
     app.listen(app.config.port)
