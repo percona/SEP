@@ -22,6 +22,9 @@ DEFAULT_DATABASE_DSN = 'sqlite+aiosqlite://'
 DEFAULT_DATABASE_CONNECT_ARGS = {
     "check_same_thread": False
 }
+DEFAULT_PREPARATION_QUERIES = {
+    "sqlite": ["PRAGMA foreign_keys=OFF", "PRAGMA encoding='UTF-8'"],
+}
 
 DATABASE_EXTRA_COLUMNS = [
     Column("created_at", DateTime),
@@ -31,7 +34,7 @@ DATABASE_EXTRA_COLUMNS = [
 
 
 async def startup(database: Database, metadata: Union[MetaData, None] = None):
-    """
+    """Initialisation process
 
     :param database: the database instance
     :type database: databases.Database
@@ -53,6 +56,31 @@ async def startup(database: Database, metadata: Union[MetaData, None] = None):
     database.metadata.bind = database.engine
     async with database.engine.begin() as dbc:
         await dbc.run_sync(database.metadata.create_all)
+
+
+async def prepare_connection(connection, record, **kwargs):
+    """Prepare the database connection
+
+    :param connection:
+    :param record:
+    :param kwargs:
+    :return:
+    """
+    cursor = connection.cursor()
+    queries = []
+    user_queries = kwargs.get('queries', [])
+
+    if hasattr(record.dbapi_connection.dbapi, "sqlite_version"):
+        queries = DEFAULT_PREPARATION_QUERIES["sqlite"]
+
+    for query in queries + user_queries:
+        if isinstance(query, str):
+            cursor.execute(query)
+        elif len(query) == 1:
+            cursor.execute(query[0])
+        elif isinstance(query, tuple) and len(query) > 1:
+            cursor.execute(query[0], query[1:])
+    cursor.close()
 
 
 def get_database(dsn: str | bytes) -> Database:
