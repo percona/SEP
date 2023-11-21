@@ -35,15 +35,13 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
 
     cfg: namedtuple
 
-    def _initialize(self) -> None:
+    def initialize(self) -> None:
         self.cfg = self.application.config
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
 
     def prepare(self):
-        self._initialize()
-
         super().prepare()
         session = self.get_current_session()
         if not session:
@@ -119,8 +117,9 @@ class RemoteCallHandler(BaseHandler):
 
     uri = None
 
-    async def initialize(self, **kwargs) -> None:
+    def initialize(self, **kwargs) -> None:
         """Hook for local config loading"""
+        super().initialize()
         self.uri = kwargs.get("uri")
 
     async def get(self) -> None:
