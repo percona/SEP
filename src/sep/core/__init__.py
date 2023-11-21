@@ -16,6 +16,10 @@ from typing import (
     Union,
 )
 
+from tornado.httpclient import (
+    AsyncHTTPClient,
+    HTTPRequest,
+)
 from tornado.log import app_log
 from tornado.web import (
     authenticated,
@@ -122,10 +126,18 @@ class RemoteCallHandler(BaseHandler):
         super().initialize()
         self.uri = kwargs.get("uri")
 
-    async def get(self) -> None:
-        """Server GET requests"""
-        msg = f"Requests would go to {self.uri}"
-        if "json" in self.request.headers.get("content-type", ""):
-            self.set_header("Content-type", "application/json; charset=UTF-8")
-            msg = json.dumps({"message": msg})
-        self.write(msg)
+    async def get(self, **kwargs) -> None:
+        """Server GET requests
+
+        :param kwargs: parameters taken from routing
+        """
+        client = AsyncHTTPClient()
+        response = await client.fetch(
+            HTTPRequest(
+                url=f"{self.uri}/{kwargs.get('route', '')}",
+                method='GET',
+                headers=self._headers,
+                connect_timeout=60,
+            )
+        )
+        self.write(response.body)
