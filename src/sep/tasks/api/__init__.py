@@ -29,6 +29,7 @@ from sqlalchemy.engine import Engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from .models import (
+    history,
     Task,
     TaskBaseModel,
     tasks,
@@ -68,6 +69,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     """Prepare the database and application"""
+    history.to_metadata(database.metadata)
     tasks.to_metadata(database.metadata)
     await sep.core.db.startup(database)
 
@@ -142,3 +144,25 @@ async def create_task(task: TaskBaseModel):
     query = tasks.insert().values(**vars(task))
     last_record_id = await database.execute(query)
     return {**task.model_dump(), "id": last_record_id}
+
+
+#@app.post(path="/execute/{task}", response_class=JSONResponse)
+#async def execute_task(task: Task):
+#    """
+#
+#    :param task:
+#    :return:
+#    """
+#    app.log.debug("Executing task %s", task.name)
+#    query = tasks.select().where(tasks.c.id == task.id)
+#    config = await database.fetch_one(query)
+#    if config is None:
+#        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+#    history_recorded = await database.execute(
+#        history.insert().values(data=task.model_dump_json())
+#    )
+#    if not history_recorded:
+#        database.force_rollback()
+#        raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
+#    # TODO: execute the task
+#    return {"status": "success"}
