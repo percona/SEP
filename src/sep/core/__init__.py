@@ -121,10 +121,18 @@ class RemoteCallHandler(BaseHandler):
 
     uri = None
 
+    connect_timeout: int
+    follow_redirects: bool
+    request_timeout: int
+
     def initialize(self, **kwargs) -> None:
         """Hook for local config loading"""
         super().initialize()
-        self.uri = kwargs.get("uri")
+        self.uri = kwargs["uri"]
+
+        self.connect_timeout = kwargs.get("connect_timeout", 10)
+        self.follow_redirects = kwargs.get("follow_redirects", True)
+        self.request_timeout = kwargs.get("request_timeout", 60)
 
     async def get(self, **kwargs) -> None:
         """Server GET requests
@@ -137,7 +145,29 @@ class RemoteCallHandler(BaseHandler):
                 url=f"{self.uri}/{kwargs.get('route', '')}",
                 method='GET',
                 headers=self._headers,
-                connect_timeout=60,
+                connect_timeout=self.connect_timeout,
+                follow_redirects=self.follow_redirects,
+                request_timeout=self.request_timeout,
             )
         )
+        self.set_header('content-type', response.headers.get('content-type'))
+        self.write(response.body)
+
+    async def post(self, **kwargs) -> None:
+        """Server POST requests
+
+        :param kwargs: parameters taken from routing
+        """
+        client = AsyncHTTPClient()
+        response = await client.fetch(
+            HTTPRequest(
+                url=f"{self.uri}/{kwargs.get('route', '')}",
+                method='POST',
+                headers=self._headers,
+                connect_timeout=self.connect_timeout,
+                follow_redirects=self.follow_redirects,
+                request_timeout=self.request_timeout,
+            )
+        )
+        self.set_header('content-type', response.headers.get('content-type'))
         self.write(response.body)
