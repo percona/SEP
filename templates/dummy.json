@@ -1,0 +1,3 @@
+{% extends "base.json" %}
+
+{% block message %}"message": "Nothing to see here, move along"{% end %}

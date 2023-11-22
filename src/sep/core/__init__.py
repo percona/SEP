@@ -29,6 +29,10 @@ from tornado.web import (
 )
 
 from ..authz.casdoor import CasdoorOAuth2Mixin
+from .utils import (
+    get_template,
+    render_template,
+)
 
 __all__ = ["DummyHandler", "RemoteCallHandler"]
 
@@ -111,11 +115,13 @@ class DummyHandler(BaseHandler):
     async def get(self) -> None:
         """Server GET requests"""
         app_log.debug("Received request to dummy handler: %r", self.request)
-        msg = "Nothing to see here, move along"
+        suffix = 'html'
         if "json" in self.request.headers.get("content-type", "") or "json" in self.request.headers.get("accept", ""):
             self.set_header("content-type", "application/json; charset=UTF-8")
-            msg = json.dumps({"message": msg})
-        self.write(msg)
+            suffix = 'json'
+        self.write(
+            render_template(get_template(f"dummy.{suffix}", self.cfg.templates.get("dirs", [])))
+        )
 
 
 class RemoteCallHandler(BaseHandler):
