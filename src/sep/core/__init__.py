@@ -8,6 +8,7 @@ such as a base request handler, dummy handler, etc
 from collections import namedtuple
 from http import HTTPStatus
 import json
+from os import getenv
 from typing import (
     Any,
     Awaitable,
@@ -53,6 +54,9 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
             self.redirect(self.request.uri)
             return
         app_log.debug("Session: %r", session)
+
+        if getenv("SEP_FORCE_NO_AUTH", "0") == "1":
+            return
 
         @authenticated
         def _prepare(obj):
