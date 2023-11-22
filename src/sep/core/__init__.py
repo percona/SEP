@@ -115,13 +115,11 @@ class DummyHandler(BaseHandler):
     async def get(self) -> None:
         """Server GET requests"""
         app_log.debug("Received request to dummy handler: %r", self.request)
-        suffix = 'html'
+        suffix = "html"
         if "json" in self.request.headers.get("content-type", "") or "json" in self.request.headers.get("accept", ""):
             self.set_header("content-type", "application/json; charset=UTF-8")
-            suffix = 'json'
-        self.write(
-            render_template(get_template(f"dummy.{suffix}", self.cfg.templates.get("dirs", [])))
-        )
+            suffix = "json"
+        self.write(render_template(get_template(f"dummy.{suffix}", self.cfg.templates.get("dirs", []))))
 
 
 class RemoteCallHandler(BaseHandler):
