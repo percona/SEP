@@ -45,7 +45,7 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     cfg: namedtuple
 
     def initialize(self) -> None:
-        self.cfg = self.application.config
+        self.cfg = getattr(self.application, "config")
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
