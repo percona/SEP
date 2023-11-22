@@ -46,8 +46,7 @@ ORIGINS = getenv("REPORTS_ORIGINS", DEFAULT_ORIGINS).split(",")
 
 database = sep.core.db.get_database(DATABASE_URL)
 database.metadata = sep.core.db.get_metadata()
-database.engine = sep.core.db.get_engine(DATABASE_URL,
-                                         connect_args=sep.core.db.DEFAULT_DATABASE_CONNECT_ARGS)
+database.engine = sep.core.db.get_engine(DATABASE_URL, connect_args=sep.core.db.DEFAULT_DATABASE_CONNECT_ARGS)
 
 app = FastAPI()
 app.log = get_logger("tasks-api", level=logging.DEBUG)
@@ -112,9 +111,7 @@ async def delete_task(task: str):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
     deleted_at = datetime.now(tz=timezone.utc)
     affected_rows = await database.execute(
-        tasks.update().where(tasks.c.id == current_task[0]).values(
-            deleted_at=deleted_at
-        )
+        tasks.update().where(tasks.c.id == current_task[0]).values(deleted_at=deleted_at)
     )
     if affected_rows != 1:
         return {"error": f"failed to delete task {current_task[0]}"}
@@ -146,8 +143,8 @@ async def create_task(task: TaskBaseModel):
     return {**task.model_dump(), "id": last_record_id}
 
 
-#@app.post(path="/execute/{task}", response_class=JSONResponse)
-#async def execute_task(task: Task):
+# @app.post(path="/execute/{task}", response_class=JSONResponse)
+# async def execute_task(task: Task):
 #    """
 #
 #    :param task:

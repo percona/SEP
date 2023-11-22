@@ -28,6 +28,7 @@ class TaskBackendEnum(IntEnum):
     """
     Control the choice of backends
     """
+
     nomad = 1
 
 
@@ -35,6 +36,7 @@ class TaskBaseModel(BaseModel):
     """
     Model for tasks
     """
+
     name: str
     data: bytes
 
@@ -49,14 +51,20 @@ class Task(TaskBaseModel):
     """
     Model for existing tasks
     """
+
     id: int
 
 
 tasks = Table(
     "tasks",
     get_metadata(),
-    Column("id", BigInteger().with_variant(Integer, dialect_name="sqlite"),
-           autoincrement=True, nullable=False, primary_key=True),
+    Column(
+        "id",
+        BigInteger().with_variant(Integer, dialect_name="sqlite"),
+        autoincrement=True,
+        nullable=False,
+        primary_key=True,
+    ),
     Column("name", String(100), nullable=False),
     Column("data", LargeBinary, nullable=False),
     UniqueConstraint("name"),
@@ -65,9 +73,13 @@ tasks = Table(
 history = Table(
     "tasks_history",
     get_metadata(),
-
-    Column("id", BigInteger().with_variant(Integer, dialect_name="sqlite"),
-           autoincrement=True, nullable=False, primary_key=True),
+    Column(
+        "id",
+        BigInteger().with_variant(Integer, dialect_name="sqlite"),
+        autoincrement=True,
+        nullable=False,
+        primary_key=True,
+    ),
     Column("data", LargeBinary, nullable=False),
 )
 

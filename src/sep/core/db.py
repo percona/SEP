@@ -18,10 +18,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-DEFAULT_DATABASE_DSN = 'sqlite+aiosqlite://'
-DEFAULT_DATABASE_CONNECT_ARGS = {
-    "check_same_thread": False
-}
+DEFAULT_DATABASE_DSN = "sqlite+aiosqlite://"
+DEFAULT_DATABASE_CONNECT_ARGS = {"check_same_thread": False}
 DEFAULT_PREPARATION_QUERIES = {
     "sqlite": ["PRAGMA foreign_keys=OFF", "PRAGMA encoding='UTF-8'"],
 }
@@ -45,7 +43,7 @@ async def startup(database: Database, metadata: Union[MetaData, None] = None):
     if not database.is_connected:
         await database.connect()
 
-    if not hasattr(database, 'metadata') and metadata is None:
+    if not hasattr(database, "metadata") and metadata is None:
         raise ValueError("metadata is not defined")
     elif isinstance(metadata, MetaData):
         database.metadata = metadata
@@ -68,7 +66,7 @@ async def prepare_connection(connection, record, **kwargs):
     """
     cursor = connection.cursor()
     queries = []
-    user_queries = kwargs.get('queries', [])
+    user_queries = kwargs.get("queries", [])
 
     if hasattr(record.dbapi_connection.dbapi, "sqlite_version"):
         queries = DEFAULT_PREPARATION_QUERIES["sqlite"]
@@ -94,7 +92,7 @@ def get_database(dsn: str | bytes) -> Database:
     """
     if dsn in [b"", "", None]:
         raise ValueError("The DSN is empty")
-    if '://' not in dsn:
+    if "://" not in dsn:
         raise ValueError("The DSN is invalid")
     return Database(dsn)
 

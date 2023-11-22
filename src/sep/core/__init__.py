@@ -147,14 +147,14 @@ class RemoteCallHandler(BaseHandler):
         response = await client.fetch(
             HTTPRequest(
                 url=f"{self.uri}/{kwargs.get('route', '')}",
-                method='GET',
+                method="GET",
                 headers=self._headers,
                 connect_timeout=self.connect_timeout,
                 follow_redirects=self.follow_redirects,
                 request_timeout=self.request_timeout,
             )
         )
-        self.set_header('content-type', response.headers.get('content-type'))
+        self.set_header("content-type", response.headers.get("content-type"))
         self.write(response.body)
 
     async def post(self, **kwargs) -> None:
@@ -166,12 +166,12 @@ class RemoteCallHandler(BaseHandler):
         response = await client.fetch(
             HTTPRequest(
                 url=f"{self.uri}/{kwargs.get('route', '')}",
-                method='POST',
+                method="POST",
                 headers=self._headers,
                 connect_timeout=self.connect_timeout,
                 follow_redirects=self.follow_redirects,
                 request_timeout=self.request_timeout,
             )
         )
-        self.set_header('content-type', response.headers.get('content-type'))
+        self.set_header("content-type", response.headers.get("content-type"))
         self.write(response.body)
