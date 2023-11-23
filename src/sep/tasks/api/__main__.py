@@ -24,7 +24,7 @@ if __name__ == "__main__":
     try:
         run_args = parser.parse_args()
         uvicorn.run(
-            "report.api:app",
+            "sep.tasks.api:app",
             log_level=run_args.log_level.lower(),
             reload_dirs=[os.path.dirname(__file__)],
             **{k: v for k, v in vars(run_args).items() if k != "log_level"},

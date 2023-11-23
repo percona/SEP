@@ -34,7 +34,7 @@ from .utils import (
     render_template,
 )
 
-__all__ = ["DummyHandler", "RemoteCallHandler"]
+__all__ = ["ApiBackendHandler", "DummyHandler", "RemoteCallHandler"]
 
 
 class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
@@ -105,6 +105,14 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         :rtype: str
         """
         return self.cfg.authz.CASDOOR_SDK_SYNC.get_auth_link(redirect_uri=self.cfg.authz.REDIRECT_URI)
+
+
+class ApiBackendHandler(BaseHandler):
+    """Default handler for UIs talking to an API"""
+
+    connect_timeout: int = 10
+    follow_redirects: bool = False
+    request_timeout: int = 6
 
 
 class DummyHandler(BaseHandler):
