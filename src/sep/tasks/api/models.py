@@ -25,6 +25,7 @@ from sep.core.db import (
     get_metadata,
 )
 
+TASK_ALIAS_LENGTH = 100
 TASK_BACKEND_MAP = {  # CAUTION: changing existing values should be done with the utmost care
     "nomad": 1,
 }
@@ -71,10 +72,11 @@ tasks = Table(
         nullable=False,
         primary_key=True,
     ),
-    Column("name", String(100), nullable=False),
+    Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
     Column("data", LargeBinary, nullable=False),
-    Column("backend", Enum(TaskBackendEnum).with_variant(Integer, dialect_name="sqlite"),
-           default=null(), nullable=True),
+    Column(
+        "backend", Enum(TaskBackendEnum).with_variant(Integer, dialect_name="sqlite"), default=null(), nullable=True
+    ),
     UniqueConstraint("name"),
 )
 

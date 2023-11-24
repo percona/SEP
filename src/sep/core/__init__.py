@@ -179,6 +179,7 @@ class RemoteCallHandler(BaseHandler):
             HTTPRequest(
                 url=f"{self.uri}/{kwargs.get('route', '')}",
                 method="POST",
+                body=self.request.body,
                 headers=self.request.headers,
                 connect_timeout=self.connect_timeout,
                 follow_redirects=self.follow_redirects,
