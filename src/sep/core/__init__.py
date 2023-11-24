@@ -54,6 +54,7 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         super().prepare()
         session = self.get_current_session()
         if not session:
+            app_log.debug("Redirecting, user without session")
             self.generate_session()
             self.redirect(self.request.uri)
             return
@@ -66,6 +67,7 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         def _prepare(obj):
             user = obj.get_current_user()
             if "user" not in session:
+                app_log.debug("Redirecting, user absent from session")
                 session["user"] = user["id"]
                 obj.generate_session(data=session)
                 obj.redirect(obj.request.uri)
