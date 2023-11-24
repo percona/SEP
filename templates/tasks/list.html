@@ -5,12 +5,29 @@
 {% block main %}
 <p>Manage the configuration, execution and reporting with the task manager.</p>
   {% if data %}
-<h2>Existing tasks</h2>
-<ul>
+<h2>Available tasks</h2>
+<table>
+  <caption>Tasks available for reuse</caption>
+  <thead>
+    <tr>
+        <th>Task</th>
+        <th>Engine</th>
+        <th>Created</th>
+    </tr>
+  </thead>
+  <tfoot>
+    <tr><td colspan="3"></td></tr>
+  </tfoot>
+  <tbody>
   {% for task in data %}
-<li>{{ task }}</li>
+  <tr>
+    <th>{{ task["name"] }}</th>
+    <td>{{ backends[task["backend"]].capitalize() }}</td>
+    <td>{{ task["created_at"] }}</td>
+  </tr>
   {% end %}
-</ul>
+  </tbody>
+</table>
     {% include "partials/create-form.html" %}
   {% else %}
     {% include "partials/create-form.html" %}
