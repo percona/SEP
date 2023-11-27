@@ -6,8 +6,10 @@ from collections import namedtuple
 from http import HTTPStatus
 import json
 from os.path import join
+from typing import Any, Optional
 from urllib.parse import parse_qs
 
+from tornado import httputil
 from tornado.httpclient import (
     AsyncHTTPClient,
     HTTPRequest,
@@ -20,7 +22,6 @@ from .api.models import TASK_BACKEND_MAP
 from ..core import ApiBackendHandler
 from ..core.utils import (
     get_template,
-    JSONEncoder,
     render_template,
 )
 
@@ -36,7 +37,7 @@ TRANSLATION_MAPPING = {
 }
 
 
-class DefaultHandler(ApiBackendHandler):
+class TaskHandler(ApiBackendHandler):
     """Default handler for Tasks UI"""
 
     uri: str
@@ -50,8 +51,8 @@ class DefaultHandler(ApiBackendHandler):
         super().initialize()
         self.uri = f"{self.request.server_connection.context.protocol}://{self.request.host}{self.request.uri}api/"
 
-    async def _create(self) -> list:
-        """
+    async def _create(self) -> dict:
+        """Create a new task
 
         :return:
         """
@@ -95,7 +96,7 @@ class DefaultHandler(ApiBackendHandler):
         return json.loads(response.body.decode())
 
     async def _list(self) -> list:
-        """
+        """Lookup all tasks
 
         :return:
         """

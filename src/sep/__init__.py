@@ -24,6 +24,7 @@ Example config (JSON):
         ["/some-app-with-config/(?P<route>jobs|deployments)?$", "someapp.Handler",
             {"host": "127.0.0.1", "secure": false, "timeout": 10, "verify": false, "cert": []}, "someapp"],
     ],
+    "modules": [],
     "port": <port>
 }
 """
@@ -39,6 +40,7 @@ from os import environ
 import pathlib
 from secrets import token_bytes
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -54,12 +56,27 @@ import yaml
 
 from .authz import AuthZHandler
 from .authz.casdoor import AuthzConfig
-from .core import DummyHandler
+from .core import (
+    DummyHandler,
+    RemoteCallHandler,
+)
+from .tasks import TaskHandler
 
 __all__ = []
 __version__ = "0.0.1"
 
-DEFAULT_SERVER_MATCH = r"^((127\.([0-9]{1,3}\.){2}[0-9]{1,3})|localhost)$"
+DEFAULTS = {
+    "handlers": [],
+    "modules": {},
+    "port": 8181,
+    "server_name": r"^((127\.([0-9]{1,3}\.){2}[0-9]{1,3})|localhost)$",
+    "templates": {
+        "dirs": [
+            "#resolve#../../../templates",
+            "#appdir....templates",
+        ]
+    }
+}
 HANDLER_DEFINITION_LENGTH = 4
 HANDLER_DEFINITION_OPERATOR = "="
 HANDLER_DEFINITION_REMOVE_AFTER = 3
@@ -69,6 +86,17 @@ class Config(ObjectDict):
     """
     Service Configuration
     """
+
+    def __init__(self, data: dict):
+        super().__init__(data)
+        for k, v in data.copy().items():
+            if isinstance(v, dict):
+                setattr(self, k, Config(v))
+        for k, v in DEFAULTS.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+            elif k == "templates":
+                self.templates.update(dirs=data["templates"].get("dirs", []) + v["dirs"])
 
     def get_handler_config(self) -> list:
         """Generate the config to set the app handlers
@@ -97,7 +125,16 @@ class Config(ObjectDict):
             if HANDLER_DEFINITION_REMOVE_AFTER:
                 self.handlers[i] = self.handlers[i][0:HANDLER_DEFINITION_REMOVE_AFTER]
             app_log.debug("Handler %s loaded", handler[1])
-        self.handlers.append(["/api/(?P<route>signin|signout)", AuthZHandler, {}])
+
+        # Built-in rules
+        self.handlers.append([r"/api/(?P<route>signin|signout)", AuthZHandler, {}])
+        self.handlers.append([r"^/tasks/(?P<route>(?!api).*)?$", TaskHandler, {}])
+
+        if hasattr(self, "modules") and "tasks" in self.modules and "api" in self.modules.tasks:
+            self.handlers.append([r"^/tasks/api/(?P<route>.*)?$", RemoteCallHandler, self.modules.tasks.api])
+        else:
+            self.handlers.append([r"^/tasks/api/(?P<route>.*)?$", RemoteCallHandler, {"uri": "http://127.0.0.1:8182"}])
+
         return self.handlers
 
     @staticmethod
@@ -189,7 +226,7 @@ class Config(ObjectDict):
                 raise LookupError(f"{key} is missing from authz.backend")
         if "server_name" in config_data and config_data["server_name"] in [r".*", ".*"]:
             raise ValueError(
-                f"rejecting server_name wildcard, please restrict host-matching e.g. {DEFAULT_SERVER_MATCH}"
+                f"rejecting server_name wildcard, please restrict host-matching e.g. {DEFAULTS['server_name']}"
             )
 
 
@@ -210,6 +247,6 @@ async def main(**kwargs) -> None:
     app.settings["cookie_secret"] = app.config.authz.SECRET_KEY
     # Limit the host pattern to prevent DNS rebinding attacks
     # https://www.tornadoweb.org/en/stable/web.html#application-configuration
-    app.add_handlers(app.config.get("server_name", DEFAULT_SERVER_MATCH), app.config.get_handler_config())
+    app.add_handlers(app.config.server_name, app.config.get_handler_config())
     app.listen(app.config.port)
     await asyncio.Event().wait()
