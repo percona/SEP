@@ -61,6 +61,7 @@ from .core import (
     RemoteCallHandler,
 )
 from .tasks import TaskHandler
+from .tasks.nomad import NomadRemoteCallHandler
 
 __all__ = []
 __version__ = "0.0.1"
@@ -87,11 +88,13 @@ class Config(ObjectDict):
     Service Configuration
     """
 
-    def __init__(self, data: dict):
+    def __init__(self, data: dict, populate_defaults: bool = True):
         super().__init__(data)
         for k, v in data.copy().items():
             if isinstance(v, dict):
-                setattr(self, k, Config(v))
+                setattr(self, k, Config(v, populate_defaults=False))
+        if not populate_defaults:
+            return
         for k, v in DEFAULTS.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -130,6 +133,7 @@ class Config(ObjectDict):
         self.handlers.append([r"/api/(?P<route>signin|signout)", AuthZHandler, {}])
         self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api).*)?$", TaskHandler, {}])
 
+        # Tasks
         if hasattr(self, "modules") and "tasks" in self.modules and "api" in self.modules.tasks:
             self.handlers.append(
                 [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, self.modules.tasks.api]
@@ -137,6 +141,23 @@ class Config(ObjectDict):
         else:
             self.handlers.append(
                 [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, {"uri": "http://127.0.0.1:8182"}]
+            )
+        # Nomad
+        if hasattr(self, "modules") and "nomad" in self.modules and "api" in self.modules.nomad:
+            self.handlers.append(
+                [
+                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.*)?$",
+                    NomadRemoteCallHandler,
+                    self.modules.nomad.api,
+                ]
+            )
+        else:
+            self.handlers.append(
+                [
+                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.*)?$",
+                    NomadRemoteCallHandler,
+                    {"uri": "http://127.0.0.1:4646"},
+                ]
             )
 
         return self.handlers

@@ -137,7 +137,8 @@ class RemoteCallHandler(BaseHandler):
     Handler to proxy requests to remote services
     """
 
-    uri = None
+    request_options: dict = {}
+    uri: str | None = None
 
     connect_timeout: int
     follow_redirects: bool
@@ -166,6 +167,7 @@ class RemoteCallHandler(BaseHandler):
                 connect_timeout=self.connect_timeout,
                 follow_redirects=self.follow_redirects,
                 request_timeout=self.request_timeout,
+                **self.request_options,
             )
         )
         self.set_header("content-type", response.headers.get("content-type"))
@@ -186,6 +188,7 @@ class RemoteCallHandler(BaseHandler):
                 connect_timeout=self.connect_timeout,
                 follow_redirects=self.follow_redirects,
                 request_timeout=self.request_timeout,
+                **self.request_options,
             )
         )
         self.set_header("content-type", response.headers.get("content-type"))
