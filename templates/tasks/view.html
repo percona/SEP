@@ -1,0 +1,15 @@
+{% extends "../base.html" %}
+{% block title %}Task: {{ data["name"] }}{% end %}
+
+{% block main %}
+<dl>
+  <dt>Engine</dt> <dd>{{ backends[data["backend"]].capitalize() }}</dd>
+  <dt>Created</dt> <dd>{{ data["created_at"] }}</dd>
+  <dt>Specification</dt> <dd>
+  <code>
+    {{ data["data"] }}
+  </code>
+  </dd>
+</dl>
+<p><a href="{{ base_uri }}">Back to tasks</a></p>
+{% end %}

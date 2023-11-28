@@ -75,7 +75,7 @@ DEFAULTS = {
             "#resolve#../../../templates",
             "#appdir....templates",
         ]
-    }
+    },
 }
 HANDLER_DEFINITION_LENGTH = 4
 HANDLER_DEFINITION_OPERATOR = "="
@@ -128,12 +128,16 @@ class Config(ObjectDict):
 
         # Built-in rules
         self.handlers.append([r"/api/(?P<route>signin|signout)", AuthZHandler, {}])
-        self.handlers.append([r"^/tasks/(?P<route>(?!api).*)?$", TaskHandler, {}])
+        self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api).*)?$", TaskHandler, {}])
 
         if hasattr(self, "modules") and "tasks" in self.modules and "api" in self.modules.tasks:
-            self.handlers.append([r"^/tasks/api/(?P<route>.*)?$", RemoteCallHandler, self.modules.tasks.api])
+            self.handlers.append(
+                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, self.modules.tasks.api]
+            )
         else:
-            self.handlers.append([r"^/tasks/api/(?P<route>.*)?$", RemoteCallHandler, {"uri": "http://127.0.0.1:8182"}])
+            self.handlers.append(
+                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, {"uri": "http://127.0.0.1:8182"}]
+            )
 
         return self.handlers
 

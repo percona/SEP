@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 from tornado import httputil
 from tornado.httpclient import (
     AsyncHTTPClient,
+    HTTPClientError,
     HTTPRequest,
 )
 from tornado.log import app_log
@@ -40,6 +41,11 @@ TRANSLATION_MAPPING = {
 class TaskHandler(ApiBackendHandler):
     """Default handler for Tasks UI"""
 
+    PATHS = {
+        "api": "/tasks/api/",
+        "ui": "/tasks/",
+    }
+
     uri: str
 
     def initialize(self) -> None:
@@ -49,7 +55,7 @@ class TaskHandler(ApiBackendHandler):
         :return:
         """
         super().initialize()
-        self.uri = f"{self.request.server_connection.context.protocol}://{self.request.host}{self.request.uri}api/"
+        self.uri = f"{self.request.server_connection.context.protocol}://{self.request.host}{TaskHandler.PATHS['api']}"
 
     async def _create(self) -> dict:
         """Create a new task
@@ -113,6 +119,25 @@ class TaskHandler(ApiBackendHandler):
         )
         return json.loads(response.body.decode())
 
+    async def _view(self, task: str) -> dict:
+        """View a specific task
+
+        :param task:
+        :return:
+        """
+        client = AsyncHTTPClient()
+        response = await client.fetch(
+            HTTPRequest(
+                url=f"{self.uri}{task}",
+                method="GET",
+                headers=self.request.headers,
+                connect_timeout=self.connect_timeout,
+                follow_redirects=self.follow_redirects,
+                request_timeout=self.request_timeout,
+            )
+        )
+        return json.loads(response.body.decode())
+
     async def get(self, route: str):
         """Task UI requests
 
@@ -121,14 +146,21 @@ class TaskHandler(ApiBackendHandler):
         :return:
         """
         app_log.debug("Received GET request to tasks handler: %r", self.request)
+        render_args = {
+            "backends": dict(map(reversed, TASK_BACKEND_MAP.items())),
+            "base_uri": self.PATHS["ui"],
+            "xsrf_form_html": self.xsrf_form_html,
+        }
         match route:
-            case _:
-                render_args = {
-                    "data": await self._list(),
-                    "backends": dict(map(reversed, TASK_BACKEND_MAP.items())),
-                    "xsrf_form_html": self.xsrf_form_html,
-                }
+            case "":
+                render_args.update(data=await self._list())
                 template_name = join(TEMPLATE_PREFIX, "list.html")
+            case _:
+                try:
+                    render_args.update(data=await self._view(route))
+                except HTTPClientError as err:
+                    raise HTTPError(status_code=HTTPStatus.NOT_FOUND) from err
+                template_name = join(TEMPLATE_PREFIX, "view.html")
         self.write(render_template(get_template(template_name, self.cfg.templates.get("dirs", [])), **render_args))
 
     async def post(self, route: str):

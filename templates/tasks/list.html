@@ -21,7 +21,7 @@
   <tbody>
   {% for task in data %}
   <tr>
-    <th>{{ task["name"] }}</th>
+    <th><a href="{{ base_uri }}{{ task['name'] }}">{{ task["name"] }}</a></th>
     <td>{{ backends[task["backend"]].capitalize() }}</td>
     <td>{{ task["created_at"] }}</td>
   </tr>
