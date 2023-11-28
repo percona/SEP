@@ -23,17 +23,17 @@ class NomadRemoteCallHandler(RemoteCallHandler):
         if hasattr(self.cfg, "modules") and "nomad" in self.cfg.modules and "request_options" in self.cfg.modules.nomad:
             self.request_options.update(self.cfg.modules.nomad.request_options)
 
-    def write(self, chunk: Union[str, bytes, dict]) -> None:
-        """Special handling for writing out content
+    #def write(self, chunk: Union[str, bytes, dict]) -> None:
+    #    """Special handling for writing out content
 
-        :param chunk:
-        :return:
-        """
-        output = ""
-        if isinstance(chunk, dict):
-            output = chunk
-        elif isinstance(chunk, bytes):
-            output = chunk.replace(b"<head>", f'<head><base href="{self.request.uri}">'.encode("utf-8"))
-        else:
-            output = chunk.replace("<head>", f'<head><base href="{self.request.uri}">')
-        super().write(output)
+    #    :param chunk:
+    #    :return:
+    #    """
+    #    output = ""
+    #    if isinstance(chunk, dict):
+    #        output = chunk
+    #    elif isinstance(chunk, bytes):
+    #        output = chunk.replace(b"<head>", f'<head><base href="{self.request.uri}">'.encode("utf-8"))
+    #    else:
+    #        output = chunk.replace("<head>", f'<head><base href="{self.request.uri}">')
+    #    super().write(output)

@@ -131,7 +131,7 @@ class Config(ObjectDict):
 
         # Built-in rules
         self.handlers.append([r"/api/(?P<route>signin|signout)", AuthZHandler, {}])
-        self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api).*)?$", TaskHandler, {}])
+        self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api|nomad).*)?$", TaskHandler, {}])
 
         # Tasks
         if hasattr(self, "modules") and "tasks" in self.modules and "api" in self.modules.tasks:
@@ -146,7 +146,7 @@ class Config(ObjectDict):
         if hasattr(self, "modules") and "nomad" in self.modules and "api" in self.modules.nomad:
             self.handlers.append(
                 [
-                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.*)?$",
+                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
                     NomadRemoteCallHandler,
                     self.modules.nomad.api,
                 ]
@@ -154,7 +154,7 @@ class Config(ObjectDict):
         else:
             self.handlers.append(
                 [
-                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.*)?$",
+                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
                     NomadRemoteCallHandler,
                     {"uri": "http://127.0.0.1:4646"},
                 ]
