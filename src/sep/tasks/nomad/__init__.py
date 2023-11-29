@@ -1,8 +1,6 @@
 """
 Nomad
 """
-from typing import Union
-
 from .. import TaskHandler
 from sep.core import RemoteCallHandler
 
@@ -23,9 +21,10 @@ class NomadRemoteCallHandler(RemoteCallHandler):
         if hasattr(self.cfg, "modules") and "nomad" in self.cfg.modules and "request_options" in self.cfg.modules.nomad:
             self.request_options.update(self.cfg.modules.nomad.request_options)
 
+    # Note: the Nomad UI does not seem to be configurable to set the path,
+    #       so we can't act like a proxy to the UI and provide authentication via Casdoor
     #def write(self, chunk: Union[str, bytes, dict]) -> None:
     #    """Special handling for writing out content
-
     #    :param chunk:
     #    :return:
     #    """
