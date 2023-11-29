@@ -19,7 +19,7 @@ from tornado.log import app_log
 from tornado.web import HTTPError
 import yaml
 
-from .api.models import TASK_BACKEND_MAP
+from .api.models import TASK_BACKEND_LOOKUP
 from ..core import ApiBackendHandler
 from ..core.utils import (
     get_template,
@@ -147,7 +147,7 @@ class TaskHandler(ApiBackendHandler):
         """
         app_log.debug("Received GET request to tasks handler: %r", self.request)
         render_args = {
-            "backends": dict(map(reversed, TASK_BACKEND_MAP.items())),
+            "backends": TASK_BACKEND_LOOKUP,
             "base_uri": self.PATHS["ui"],
             "xsrf_form_html": self.xsrf_form_html,
         }

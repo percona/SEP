@@ -29,6 +29,7 @@ TASK_ALIAS_LENGTH = 100
 TASK_BACKEND_MAP = {  # CAUTION: changing existing values should be done with the utmost care
     "nomad": 1,
 }
+TASK_BACKEND_LOOKUP = {v: k for k, v in TASK_BACKEND_MAP.items()}
 
 
 class TaskBackendEnum(IntEnum):
