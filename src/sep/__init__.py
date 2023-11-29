@@ -58,6 +58,7 @@ from .authz import AuthZHandler
 from .authz.casdoor import AuthzConfig
 from .core import (
     DummyHandler,
+    HomepageHandler,
     RemoteCallHandler,
 )
 from .tasks import TaskHandler
@@ -129,8 +130,13 @@ class Config(ObjectDict):
                 self.handlers[i] = self.handlers[i][0:HANDLER_DEFINITION_REMOVE_AFTER]
             app_log.debug("Handler %s loaded", handler[1])
 
-        # Built-in rules
-        self.handlers.append([r"/api/(?P<route>signin|signout)", AuthZHandler, {}])
+        # TODO: Built-in rules, here temporarily
+        # With a registry, which in its simplest form could just be "modules" in the JSON config,
+        # we could look up what should be enabled and go off to each to retrieve its handlers. This would
+        # allow the app/handler/registry to be the source of the configuration. Perhaps this could even remove
+        # the need to populate the handlers and instead get used to configure an intelligent router
+        self.handlers.append([r"^/$", HomepageHandler, {}])
+        self.handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
         self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api|nomad).*)?$", TaskHandler, {}])
 
         # Tasks
@@ -159,6 +165,7 @@ class Config(ObjectDict):
                     {"uri": "http://127.0.0.1:4646"},
                 ]
             )
+        # End
 
         return self.handlers
 

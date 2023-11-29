@@ -34,7 +34,7 @@ from .utils import (
     render_template,
 )
 
-__all__ = ["ApiBackendHandler", "DummyHandler", "RemoteCallHandler"]
+__all__ = ["ApiBackendHandler", "DummyHandler", "HomepageHandler", "RemoteCallHandler"]
 
 
 class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
@@ -129,7 +129,17 @@ class DummyHandler(BaseHandler):
         if "json" in self.request.headers.get("content-type", "") or "json" in self.request.headers.get("accept", ""):
             self.set_header("content-type", "application/json; charset=UTF-8")
             suffix = "json"
+        self.set_status(status_code=HTTPStatus.NOT_FOUND)
         self.write(render_template(get_template(f"dummy.{suffix}", self.cfg.templates.get("dirs", []))))
+
+
+class HomepageHandler(BaseHandler):
+    """Landing page for the main application"""
+
+    async def get(self) -> None:
+        """Serve the homepage"""
+        app_log.debug("Received request to homepage handler: %r", self.request)
+        self.write(render_template(get_template("homepage.html", self.cfg.templates.get("dirs", []))))
 
 
 class RemoteCallHandler(BaseHandler):
