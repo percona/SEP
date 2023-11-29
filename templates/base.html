@@ -9,6 +9,15 @@
       <!-- Default meta block -->
       <!-- End meta block -->
       {% end %}
+      {% block style %}
+      <style>
+          @media screen {
+              label>input,label>textarea{display:block}
+              label>input[type=radio]{display:inline-table}
+          }
+      </style>
+      {% end %}
+      {% block behaviours %}{% end %}
   </head>
 
   <body>
