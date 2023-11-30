@@ -23,7 +23,7 @@ class NomadRemoteCallHandler(RemoteCallHandler):
 
     # Note: the Nomad UI does not seem to be configurable to set the path,
     #       so we can't act like a proxy to the UI and provide authentication via Casdoor
-    #def write(self, chunk: Union[str, bytes, dict]) -> None:
+    # def write(self, chunk: Union[str, bytes, dict]) -> None:
     #    """Special handling for writing out content
     #    :param chunk:
     #    :return:

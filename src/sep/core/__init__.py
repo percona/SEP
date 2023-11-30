@@ -16,6 +16,7 @@ from typing import (
     Optional,
     Union,
 )
+from urllib.parse import urlparse
 
 from tornado.httpclient import (
     AsyncHTTPClient,
@@ -139,7 +140,11 @@ class HomepageHandler(BaseHandler):
     async def get(self) -> None:
         """Serve the homepage"""
         app_log.debug("Received request to homepage handler: %r", self.request)
-        self.write(render_template(get_template("homepage.html", self.cfg.templates.get("dirs", []))))
+        data = {
+            "user": self.get_current_user(),
+            "casdoor_login_url": urlparse(self.get_login_url()),
+        }
+        self.write(render_template(get_template("homepage.html", self.cfg.templates.get("dirs", [])), data=data))
 
 
 class RemoteCallHandler(BaseHandler):
