@@ -210,7 +210,7 @@ class Config(ObjectDict):
             CASDOOR_SDK=AsyncCasdoorSDK(**sdk_config),
             CASDOOR_SDK_SYNC=CasdoorSDK(**sdk_config),
             REDIRECT_URI=config_data["authz"]["config"]["redirect_uri"],
-            SECRET_KEY=token_bytes(24),
+            SECRET_KEY=token_bytes(24),  # TODO: read the key from a store to allow for multiple processes
             SESSION_COOKIE=config_data["authz"]["config"]["session_cookie"],
         )
         return Config(config_data)
