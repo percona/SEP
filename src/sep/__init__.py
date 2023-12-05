@@ -385,27 +385,27 @@ async def main(**kwargs) -> None:
     else:
         loop = asyncio.get_running_loop()
         with ProcessPoolExecutor(max_workers=config.processes) as pool:
-            tasks = []
+            processes = []
             port = config.port
 
             for x in range(0, config.processes):
                 match x:
                     case 0:
-                        tasks.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
+                        processes.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
                     case 1:
-                        tasks.append(loop.run_in_executor(pool, launch, launch_tasks_app, config, port))
+                        processes.append(loop.run_in_executor(pool, launch, launch_tasks_app, config, port))
                     case 2:
-                        tasks.append(loop.run_in_executor(pool, launch, launch_auditor_app, config, port))
+                        processes.append(loop.run_in_executor(pool, launch, launch_auditor_app, config, port))
                     case _:
-                        tasks.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
+                        processes.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
                 port += 1
 
             try:
-                await asyncio.gather(*tasks)
+                await asyncio.gather(*processes)
             except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
-                for task in tasks:
-                    if not task.cancelled():
-                        task.cancel()
+                for process in processes:
+                    if not process.cancelled():
+                        process.cancel()
                 loop.stop()
                 loop.close()
                 pool.shutdown()
