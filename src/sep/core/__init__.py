@@ -97,7 +97,7 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
                     url=f"http://127.0.0.1:{options.port + 2}/",
                     method="POST",
                     headers=headers,
-                    body=json.dumps({"data": kwargs}),
+                    body=json.dumps(kwargs),
                     connect_timeout=5,
                     follow_redirects=False,
                     request_timeout=60,

@@ -2,6 +2,7 @@
 Auditing
 """
 from typing import Annotated
+
 from fastapi import (
     BackgroundTasks,
     Body,
@@ -19,12 +20,24 @@ __all__ = ["auditor_app"]
 auditor_app = FastAPI()
 
 
+class SessionItem(BaseModel):
+    """AuditItem session data"""
+
+    model_config = ConfigDict(strict=True)
+
+    id: str
+    next: str
+
+
 class AuditItem(BaseModel):
     """AuditItem model"""
 
     model_config = ConfigDict(strict=True)
 
-    data: dict
+    admin: bool = False
+    session: SessionItem | None = None
+    status: int | None = None
+    uri: str
 
 
 def record_item(item: AuditItem):
