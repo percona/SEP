@@ -81,6 +81,7 @@ from tornado.util import ObjectDict
 import uvicorn
 import yaml
 
+from .audit import auditor_app
 from .authz import AuthZHandler
 from .authz.casdoor import AuthzConfig
 from .core import (
@@ -351,25 +352,6 @@ async def launch_auditor_app(config: Config, port: int):
     :return:
     """
     app_log.debug("Launching auditor")
-    auditor_app = FastAPI()
-
-    class AuditItem(BaseModel):
-        """AuditItem model"""
-
-        model_config = ConfigDict(strict=True)
-
-        data: dict
-
-    def record_item(item: AuditItem):
-        """Record an item"""
-        # TODO: decide where to store the audit information
-        app_log.debug("recording item: %r", item)
-
-    @auditor_app.post(path="/", response_class=JSONResponse)
-    async def record(item: Annotated[AuditItem, Body()], background_tasks: BackgroundTasks):
-        """Record an audit event"""
-        background_tasks.add_task(record_item, item)
-        return {"message": "item in queue"}
 
     await uvicorn.Server(
         uvicorn.Config(auditor_app, host="127.0.0.1", port=port, log_level="debug", reload=False)
