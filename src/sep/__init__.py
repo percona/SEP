@@ -370,8 +370,8 @@ async def main(**kwargs) -> None:
 
     See sep.__main__ for the available kwargs
     The ones currently used are:
-      config :   the path to the config file
-      log_level: the level to set the log handler to
+      config : the path to the config file
+      logging: the level to set the log handler to
     """
     logging.basicConfig(
         level=kwargs["logging"],
