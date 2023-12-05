@@ -362,6 +362,7 @@ async def launch_auditor_app(config: Config, port: int):
 
     def record_item(item: AuditItem):
         """Record an item"""
+        # TODO: decide where to store the audit information
         app_log.debug("recording item: %r", item)
 
     @auditor_app.post(path="/", response_class=JSONResponse)
