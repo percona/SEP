@@ -122,7 +122,7 @@ define(
     "processes", default=3, help="Total number of processes; minimum of 3 required to run internal services", type=int
 )
 
-Model = TypeVar('Model', bound='BaseModel')
+Model = TypeVar("Model", bound="BaseModel")
 
 
 class Config(ObjectDict):
@@ -355,6 +355,7 @@ async def launch_auditor_app(config: Config, port: int):
 
     class AuditItem(BaseModel):
         """AuditItem model"""
+
         model_config = ConfigDict(strict=True)
 
         data: dict
