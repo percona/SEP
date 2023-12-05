@@ -44,8 +44,6 @@ from os import (
 import pathlib
 from secrets import token_bytes
 from typing import (
-    Annotated,
-    Any,
     Callable,
     Optional,
     TypeVar,
@@ -56,18 +54,6 @@ from casdoor import (
     AsyncCasdoorSDK,
     CasdoorSDK,
 )
-from fastapi import (
-    BackgroundTasks,
-    Body,
-    FastAPI,
-    Request,
-)
-from fastapi.responses import JSONResponse
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-)
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.log import app_log
 from tornado.options import (
     define,
