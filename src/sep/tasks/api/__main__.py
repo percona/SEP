@@ -1,33 +1,27 @@
 """
 Entrypoint for module
 """
-
-from argparse import (
-    ArgumentDefaultsHelpFormatter,
-    ArgumentParser,
-)
 import asyncio
-from logging import getLevelNamesMapping
-import os.path
 
+from tornado.options import (
+    define,
+    options,
+    parse_command_line,
+)
 import uvicorn
+
+define("tasks-address", default="127.0.0.1", help="Tasks API address", type=str)
+define("tasks-port", default=8182, help="Tasks API port", type=int)
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--ip", dest="host", default="127.0.0.1", help="API address")
-    parser.add_argument("--port", type=int, default="8182", help="API port")
-    parser.add_argument(
-        "--log-level", default="WARNING", choices=tuple(getLevelNamesMapping().keys()), help="Set the log verbosity"
-    )
-    parser.add_argument("--reload", action="store_true", help="Reload on changes")
     try:
-        run_args = parser.parse_args()
+        parse_command_line()
         uvicorn.run(
             "sep.tasks.api:app",
-            log_level=run_args.log_level.lower(),
-            reload_dirs=[os.path.dirname(__file__)],
-            **{k: v for k, v in vars(run_args).items() if k != "log_level"},
+            log_level=options.logging,
+            reload=False,
+            **{"host": options.tasks_address, "port": options.tasks_port},
         )
     except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
         print("Exiting application")

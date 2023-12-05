@@ -31,17 +31,24 @@ Example config (JSON):
 
 from argparse import FileType
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 import importlib
 from io import BytesIO
 import json
 import logging
 import mimetypes
-from os import environ
+from os import (
+    environ,
+    getpid,
+)
 import pathlib
 from secrets import token_bytes
 from typing import (
+    Annotated,
     Any,
+    Callable,
     Optional,
+    TypeVar,
     Union,
 )
 
@@ -49,9 +56,29 @@ from casdoor import (
     AsyncCasdoorSDK,
     CasdoorSDK,
 )
+from fastapi import (
+    BackgroundTasks,
+    Body,
+    FastAPI,
+    Request,
+)
+from fastapi.responses import JSONResponse
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+)
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.log import app_log
+from tornado.options import (
+    define,
+    _Option,
+    options,
+    parse_command_line,
+    parse_config_file,
+)
 from tornado.web import Application
 from tornado.util import ObjectDict
+import uvicorn
 import yaml
 
 from .authz import AuthZHandler
@@ -61,7 +88,11 @@ from .core import (
     HomepageHandler,
     RemoteCallHandler,
 )
-from .tasks import TaskHandler
+from .tasks import (
+    DEFAULT_BACKEND_ADDRESS as TASKS_BACKEND,
+    TaskHandler,
+)
+from .tasks.api import app as tasks_app
 from .tasks.nomad import NomadRemoteCallHandler
 
 __all__ = []
@@ -83,6 +114,16 @@ HANDLER_DEFINITION_LENGTH = 4
 HANDLER_DEFINITION_OPERATOR = "="
 HANDLER_DEFINITION_REMOVE_AFTER = 3
 
+define("authz", default={}, help="AuthZ configuration", type=dict)
+define("handlers", default=[], help="Handler configuration", type=list)
+define("modules", default={}, help="Module configuration", type=dict)
+define("port", default=8181, help="Start of port range", type=int)
+define(
+    "processes", default=3, help="Total number of processes; minimum of 3 required to run internal services", type=int
+)
+
+Model = TypeVar('Model', bound='BaseModel')
+
 
 class Config(ObjectDict):
     """
@@ -92,6 +133,11 @@ class Config(ObjectDict):
     def __init__(self, data: dict, populate_defaults: bool = True):
         super().__init__(data)
         for k, v in data.copy().items():
+            if isinstance(v, _Option):
+                v = v.value()
+            if callable(v):
+                app_log.warning("%s is callable, ignoring", k)
+                continue
             if isinstance(v, dict):
                 setattr(self, k, Config(v, populate_defaults=False))
         if not populate_defaults:
@@ -146,7 +192,7 @@ class Config(ObjectDict):
             )
         else:
             self.handlers.append(
-                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, {"uri": "http://127.0.0.1:8182"}]
+                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, {"uri": TASKS_BACKEND}]
             )
         # Nomad
         if hasattr(self, "modules") and "nomad" in self.modules and "api" in self.modules.nomad:
@@ -170,21 +216,39 @@ class Config(ObjectDict):
         return self.handlers
 
     @staticmethod
-    def load(config: Union[BytesIO, FileType], mimetype: Optional[str | bytes] = None) -> "Config":
+    def load(config: Union[str, BytesIO, FileType, _Option], mimetype: Optional[str | bytes] = None) -> "Config":
         """Generate a Config instance
 
         :param config: the configuration file in JSON, or YAML format
-        :type config: io.BytesIO or argparse.FileType
+        :type config: str, io.BytesIO, argparse.FileType, or tornado.options._Option
         :param mimetype: optionally set the mimetype to avoid guessing from the filename
         :type mimetype: str, bytes
         :return: the configuration object
         :rtype: Config (ObjectDict)
         """
         app_log.info("Loading config from %s", config)
+
+        if isinstance(config, _Option):
+            config = config.value()
+        if isinstance(config, str):
+            config = FileType(mode="rb")(config)
         if not mimetype:
             path = pathlib.Path(config.name)
+            mimetypes.init(mimetypes.knownfiles + ["data/mime.types"])  # TODO: check path resolution
             mimetype = mimetypes.guess_type(path.absolute())
-        config_data = Config._load_json(config) if "application/json" in mimetype else Config._load_yaml(config)
+
+        match mimetype[0]:
+            case "text/x-python":
+                parse_config_file(config.name)
+                config_data = {k.replace("-", "_"): v.value() for k, v in options.__dict__["_options"].items()}
+            case "application/json":
+                parse_command_line()
+                config_data = Config._load_json(config)
+            case "text/yaml":
+                parse_command_line()
+                config_data = Config._load_yaml(config)
+            case _:
+                raise ValueError(f"unknown mimetype {mimetype[0]} for config file {config.name}")
 
         # Validate
         Config._validate(config_data)
@@ -262,6 +326,75 @@ class Config(ObjectDict):
             )
 
 
+async def launch_main_app(config: Config, port: int):
+    """Launch the main application
+
+    :param config:
+    :param port:
+    :return:
+    """
+    app = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
+    app.config = config
+    app.settings["cookie_secret"] = app.config.authz.SECRET_KEY
+    # Limit the host pattern to prevent DNS rebinding attacks
+    # https://www.tornadoweb.org/en/stable/web.html#application-configuration
+    app.add_handlers(app.config.server_name, app.config.get_handler_config())
+    app.listen(port)
+    await asyncio.Event().wait()
+
+
+async def launch_auditor_app(config: Config, port: int):
+    """Launch the auditor application
+
+    :param config:
+    :param port:
+    :return:
+    """
+    app_log.debug("Launching auditor")
+    auditor_app = FastAPI()
+
+    class AuditItem(BaseModel):
+        """AuditItem model"""
+        model_config = ConfigDict(strict=True)
+
+        data: dict
+
+    def record_item(item: AuditItem):
+        """Record an item"""
+        app_log.debug("recording item: %r", item)
+
+    @auditor_app.post(path="/", response_class=JSONResponse)
+    async def record(item: Annotated[AuditItem, Body()], background_tasks: BackgroundTasks):
+        """Record an audit event"""
+        background_tasks.add_task(record_item, item)
+        return {"message": "item in queue"}
+
+    await uvicorn.Server(
+        uvicorn.Config(auditor_app, host="127.0.0.1", port=port, log_level="debug", reload=False)
+    ).serve()
+
+
+async def launch_tasks_app(config: Config, port: int):
+    """
+
+    :param config:
+    :param port:
+    :return:
+    """
+    await uvicorn.Server(
+        uvicorn.Config(tasks_app, host="127.0.0.1", port=port, log_level="debug", reload=False)
+    ).serve()
+
+
+def launch(app: Callable, config: Config, port: int):
+    app_log.debug("Launching %s in process %d", app, getpid())
+
+    async def _async_launch():
+        await app(config, port)
+
+    asyncio.run(_async_launch())
+
+
 async def main(**kwargs) -> None:
     """Async entrypoint
 
@@ -271,14 +404,38 @@ async def main(**kwargs) -> None:
       log_level: the level to set the log handler to
     """
     logging.basicConfig(
-        level=kwargs["log_level"],
+        level=kwargs["logging"],
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
     )
-    app = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
-    app.config = Config.load(config=kwargs.get("config"))
-    app.settings["cookie_secret"] = app.config.authz.SECRET_KEY
-    # Limit the host pattern to prevent DNS rebinding attacks
-    # https://www.tornadoweb.org/en/stable/web.html#application-configuration
-    app.add_handlers(app.config.server_name, app.config.get_handler_config())
-    app.listen(app.config.port)
-    await asyncio.Event().wait()
+
+    config = Config.load(config=kwargs.get("config"))
+
+    if config.processes == 1:
+        await launch_main_app(config, config.port)
+    else:
+        loop = asyncio.get_running_loop()
+        with ProcessPoolExecutor(max_workers=config.processes) as pool:
+            tasks = []
+            port = config.port
+
+            for x in range(0, config.processes):
+                match x:
+                    case 0:
+                        tasks.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
+                    case 1:
+                        tasks.append(loop.run_in_executor(pool, launch, launch_tasks_app, config, port))
+                    case 2:
+                        tasks.append(loop.run_in_executor(pool, launch, launch_auditor_app, config, port))
+                    case _:
+                        tasks.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
+                port += 1
+
+            try:
+                await asyncio.gather(*tasks)
+            except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
+                for task in tasks:
+                    if not task.cancelled():
+                        task.cancel()
+                loop.stop()
+                loop.close()
+                pool.shutdown()

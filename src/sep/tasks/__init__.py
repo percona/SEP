@@ -28,6 +28,8 @@ from ..core.utils import (
 
 TranslateConfig = namedtuple("TranslateConfig", ["old", "new", "action"])
 
+DEFAULT_BACKEND_ADDRESS = "http://127.0.0.1:8182"
+
 TEMPLATE_PREFIX = "tasks"
 TRANSLATION_MAPPING = {
     "create": (

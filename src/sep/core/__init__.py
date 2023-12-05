@@ -18,11 +18,14 @@ from typing import (
 )
 from urllib.parse import urlparse
 
+from tornado.gen import coroutine
 from tornado.httpclient import (
     AsyncHTTPClient,
+    HTTPClientError,
     HTTPRequest,
 )
 from tornado.log import app_log
+from tornado.options import options
 from tornado.web import (
     authenticated,
     HTTPError,
@@ -51,14 +54,17 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
 
+    @coroutine
     def prepare(self):
-        super().prepare()
         session = self.get_current_session()
+        self.audit(uri=self.request.uri, session=session)
+        super().prepare()
         if not session:
             app_log.debug("Redirecting, user without session")
             self.generate_session()
             self.redirect(self.request.uri)
             return
+        self.audit(uri=self.request.uri, session=session)
         app_log.debug("Session: %r", session)
 
         if getenv("SEP_FORCE_NO_AUTH", "0") == "1":
@@ -78,6 +84,36 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
 
         if self.__class__.__name__ != "AuthZHandler":
             _prepare(self)
+
+    @coroutine
+    def audit(self, **kwargs):
+        """Audit"""
+        client = AsyncHTTPClient()
+        try:
+            headers = dict(self.request.headers.copy())
+            headers["Content-Type"] = "application/json"
+            response = client.fetch(
+                HTTPRequest(
+                    url=f"http://127.0.0.1:{options.port + 2}/",
+                    method="POST",
+                    headers=headers,
+                    body=json.dumps({"data": kwargs}),
+                    connect_timeout=5,
+                    follow_redirects=False,
+                    request_timeout=60,
+                )
+            )
+            yield response
+        except HTTPClientError:
+            app_log.critical("Failed to send audit message: %r", kwargs, exc_info=True)
+
+    @coroutine
+    def on_finish(self) -> None:
+        """
+
+        :return:
+        """
+        self.audit(uri=self.request.uri, session=self.get_current_session(), status=self.get_status())
 
     def get_current_user(self) -> Union[Dict[str, Any], None]:
         """Retrieve the current user
