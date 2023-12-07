@@ -58,9 +58,9 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     @coroutine
     def prepare(self):
         session = self.get_current_session()
-        self.audit(timestamp=time_ns(), uri=self.request.uri, session=session)
         super().prepare()
         if not session:
+            self.audit(timestamp=time_ns(), uri=self.request.uri, session=session)
             app_log.debug("Redirecting, user without session")
             self.generate_session()
             self.redirect(self.request.uri)
