@@ -28,6 +28,7 @@ class SessionItem(BaseModel):
 
     id: str
     next: str
+    user: str
 
 
 class AuditItem(BaseModel):
