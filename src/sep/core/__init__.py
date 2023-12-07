@@ -9,6 +9,7 @@ from collections import namedtuple
 from http import HTTPStatus
 import json
 from os import getenv
+from time import time_ns
 from typing import (
     Any,
     Awaitable,
@@ -57,14 +58,14 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     @coroutine
     def prepare(self):
         session = self.get_current_session()
-        self.audit(uri=self.request.uri, session=session)
+        self.audit(timestamp=time_ns(), uri=self.request.uri, session=session)
         super().prepare()
         if not session:
             app_log.debug("Redirecting, user without session")
             self.generate_session()
             self.redirect(self.request.uri)
             return
-        self.audit(uri=self.request.uri, session=session)
+        self.audit(timestamp=time_ns(), uri=self.request.uri, session=session)
         app_log.debug("Session: %r", session)
 
         if getenv("SEP_FORCE_NO_AUTH", "0") == "1":
@@ -113,7 +114,9 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
 
         :return:
         """
-        self.audit(uri=self.request.uri, session=self.get_current_session(), status=self.get_status())
+        self.audit(
+            timestamp=time_ns(), uri=self.request.uri, session=self.get_current_session(), status=self.get_status()
+        )
 
     def get_current_user(self) -> Union[Dict[str, Any], None]:
         """Retrieve the current user

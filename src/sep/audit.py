@@ -1,6 +1,7 @@
 """
 Auditing
 """
+from time import time_ns
 from typing import Annotated
 
 from fastapi import (
@@ -38,6 +39,7 @@ class AuditItem(BaseModel):
     session: SessionItem | None = None
     status: int | None = None
     uri: str
+    timestamp: int = time_ns()
 
 
 def record_item(item: AuditItem):
