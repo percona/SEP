@@ -39,8 +39,8 @@ class AuditItem(BaseModel):
     admin: bool = False
     session: SessionItem | None = None
     status: int | None = None
-    uri: str
     timestamp: int = time_ns()
+    uri: str
 
 
 def record_item(item: AuditItem):
