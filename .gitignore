@@ -5,6 +5,7 @@
 *.pem
 .env
 .idea
-build/tmp
+tmp
 venv
+__pycache__
 

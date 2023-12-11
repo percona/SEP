@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+      <title>{% block title %}The page with no name{% end %}</title>
+      <meta charset="utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      {% block meta %}
+      <!-- Default meta block -->
+      <!-- End meta block -->
+      {% end %}
+      {% block style %}
+      <style>
+          @media screen {
+              label>input,label>textarea{display:block}
+              label>input[type=radio]{display:inline-table}
+          }
+      </style>
+      {% end %}
+      {% block behaviours %}{% end %}
+  </head>
+
+  <body>
+      <header>
+      {% block home %}<a href="/">Home</a>{% end %}
+      {% block header %}
+      <h1>{% block title %}The page with no name{% end %}</h1>
+      {% end %}
+      </header>
+
+      <main>
+      {% block main %}
+      <p>Nothing to see here, move along</p>
+      {% end %}
+
+      </main>
+
+      <footer>
+      {% block footer %}
+      {% end %}
+      <p><em>Copyright &copy; Percona LLC</p>
+      </footer>
+  </body>
+</html>

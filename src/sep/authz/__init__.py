@@ -31,7 +31,7 @@ class AuthZHandler(BaseHandler):
         user = await self.get_authenticated_user(code=self.get_argument("code"))
         if user.get("isForbidden", True) is False:
             session = self.get_current_session()
-            session.update(user=user["id"])
+            session.update(user=user["id"], admin=user.get("isAdmin", False))
             self.generate_session(data=session)
             app_log.debug("Target: %s", session.get("next"))
             self.redirect(session.get("next", "/"))

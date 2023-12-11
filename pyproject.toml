@@ -30,7 +30,9 @@ classifiers = [
 ]
 
 dependencies = [
+    "aiohttp==3.9.0",
     "casdoor==1.17.1",
+    "cryptography==41.0.6",
     "databases==0.7.0",
     "databases[aiosqlite]",
     "fastapi==0.102.0",

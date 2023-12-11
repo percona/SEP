@@ -24,22 +24,29 @@ Example config (JSON):
         ["/some-app-with-config/(?P<route>jobs|deployments)?$", "someapp.Handler",
             {"host": "127.0.0.1", "secure": false, "timeout": 10, "verify": false, "cert": []}, "someapp"],
     ],
+    "modules": [],
     "port": <port>
 }
 """
 
 from argparse import FileType
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 import importlib
 from io import BytesIO
 import json
 import logging
 import mimetypes
-from os import environ
+from os import (
+    environ,
+    getpid,
+)
 import pathlib
 from secrets import token_bytes
 from typing import (
+    Callable,
     Optional,
+    TypeVar,
     Union,
 )
 
@@ -48,27 +55,85 @@ from casdoor import (
     CasdoorSDK,
 )
 from tornado.log import app_log
+from tornado.options import (
+    define,
+    _Option,
+    options,
+    parse_command_line,
+    parse_config_file,
+)
 from tornado.web import Application
 from tornado.util import ObjectDict
+import uvicorn
 import yaml
 
+from .audit import auditor_app
 from .authz import AuthZHandler
 from .authz.casdoor import AuthzConfig
-from .core import DummyHandler
+from .core import (
+    DummyHandler,
+    HomepageHandler,
+    RemoteCallHandler,
+)
+from .tasks import (
+    DEFAULT_BACKEND_ADDRESS as TASKS_BACKEND,
+    TaskHandler,
+)
+from .tasks.api import app as tasks_app
+from .tasks.nomad import NomadRemoteCallHandler
 
 __all__ = []
 __version__ = "0.0.1"
 
-DEFAULT_SERVER_MATCH = r"^((127\.([0-9]{1,3}\.){2}[0-9]{1,3})|localhost)$"
+DEFAULTS = {
+    "handlers": [],
+    "modules": {},
+    "port": 8181,
+    "server_name": r"^((127\.([0-9]{1,3}\.){2}[0-9]{1,3})|localhost)$",
+    "templates": {
+        "dirs": [
+            "#resolve#../../../templates",
+            "#appdir....templates",
+        ]
+    },
+}
 HANDLER_DEFINITION_LENGTH = 4
 HANDLER_DEFINITION_OPERATOR = "="
 HANDLER_DEFINITION_REMOVE_AFTER = 3
+
+define("authz", default={}, help="AuthZ configuration", type=dict)
+define("handlers", default=[], help="Handler configuration", type=list)
+define("modules", default={}, help="Module configuration", type=dict)
+define("port", default=8181, help="Start of port range", type=int)
+define(
+    "processes", default=3, help="Total number of processes; minimum of 3 required to run internal services", type=int
+)
+
+Model = TypeVar("Model", bound="BaseModel")
 
 
 class Config(ObjectDict):
     """
     Service Configuration
     """
+
+    def __init__(self, data: dict, populate_defaults: bool = True):
+        super().__init__(data)
+        for k, v in data.copy().items():
+            if isinstance(v, _Option):
+                v = v.value()
+            if callable(v):
+                app_log.warning("%s is callable, ignoring", k)
+                continue
+            if isinstance(v, dict):
+                setattr(self, k, Config(v, populate_defaults=False))
+        if not populate_defaults:
+            return
+        for k, v in DEFAULTS.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+            elif k == "templates":
+                self.templates.update(dirs=data["templates"].get("dirs", []) + v["dirs"])
 
     def get_handler_config(self) -> list:
         """Generate the config to set the app handlers
@@ -97,25 +162,80 @@ class Config(ObjectDict):
             if HANDLER_DEFINITION_REMOVE_AFTER:
                 self.handlers[i] = self.handlers[i][0:HANDLER_DEFINITION_REMOVE_AFTER]
             app_log.debug("Handler %s loaded", handler[1])
-        self.handlers.append(["/api/(?P<route>signin|signout)", AuthZHandler, {}])
+
+        # TODO: Built-in rules, here temporarily
+        # With a registry, which in its simplest form could just be "modules" in the JSON config,
+        # we could look up what should be enabled and go off to each to retrieve its handlers. This would
+        # allow the app/handler/registry to be the source of the configuration. Perhaps this could even remove
+        # the need to populate the handlers and instead get used to configure an intelligent router
+        self.handlers.append([r"^/$", HomepageHandler, {}])
+        self.handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
+        self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api|nomad).*)?$", TaskHandler, {}])
+
+        # Tasks
+        if hasattr(self, "modules") and "tasks" in self.modules and "api" in self.modules.tasks:
+            self.handlers.append(
+                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, self.modules.tasks.api]
+            )
+        else:
+            self.handlers.append(
+                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, {"uri": TASKS_BACKEND}]
+            )
+        # Nomad
+        if hasattr(self, "modules") and "nomad" in self.modules and "api" in self.modules.nomad:
+            self.handlers.append(
+                [
+                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
+                    NomadRemoteCallHandler,
+                    self.modules.nomad.api,
+                ]
+            )
+        else:
+            self.handlers.append(
+                [
+                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
+                    NomadRemoteCallHandler,
+                    {"uri": "http://127.0.0.1:4646"},
+                ]
+            )
+        # End
+
         return self.handlers
 
     @staticmethod
-    def load(config: Union[BytesIO, FileType], mimetype: Optional[str | bytes] = None) -> "Config":
+    def load(config: Union[str, BytesIO, FileType, _Option], mimetype: Optional[str | bytes] = None) -> "Config":
         """Generate a Config instance
 
         :param config: the configuration file in JSON, or YAML format
-        :type config: io.BytesIO or argparse.FileType
+        :type config: str, io.BytesIO, argparse.FileType, or tornado.options._Option
         :param mimetype: optionally set the mimetype to avoid guessing from the filename
         :type mimetype: str, bytes
         :return: the configuration object
         :rtype: Config (ObjectDict)
         """
         app_log.info("Loading config from %s", config)
+
+        if isinstance(config, _Option):
+            config = config.value()
+        if isinstance(config, str):
+            config = FileType(mode="rb")(config)
         if not mimetype:
             path = pathlib.Path(config.name)
+            mimetypes.init(mimetypes.knownfiles + ["data/mime.types"])  # TODO: check path resolution
             mimetype = mimetypes.guess_type(path.absolute())
-        config_data = Config._load_json(config) if "application/json" in mimetype else Config._load_yaml(config)
+
+        match mimetype[0]:
+            case "text/x-python":
+                parse_config_file(config.name)
+                config_data = {k.replace("-", "_"): v.value() for k, v in options.__dict__["_options"].items()}
+            case "application/json":
+                parse_command_line()
+                config_data = Config._load_json(config)
+            case "text/yaml":
+                parse_command_line()
+                config_data = Config._load_yaml(config)
+            case _:
+                raise ValueError(f"unknown mimetype {mimetype[0]} for config file {config.name}")
 
         # Validate
         Config._validate(config_data)
@@ -141,7 +261,7 @@ class Config(ObjectDict):
             CASDOOR_SDK=AsyncCasdoorSDK(**sdk_config),
             CASDOOR_SDK_SYNC=CasdoorSDK(**sdk_config),
             REDIRECT_URI=config_data["authz"]["config"]["redirect_uri"],
-            SECRET_KEY=token_bytes(24),
+            SECRET_KEY=token_bytes(24),  # TODO: read the key from a store to allow for multiple processes
             SESSION_COOKIE=config_data["authz"]["config"]["session_cookie"],
         )
         return Config(config_data)
@@ -189,8 +309,60 @@ class Config(ObjectDict):
                 raise LookupError(f"{key} is missing from authz.backend")
         if "server_name" in config_data and config_data["server_name"] in [r".*", ".*"]:
             raise ValueError(
-                f"rejecting server_name wildcard, please restrict host-matching e.g. {DEFAULT_SERVER_MATCH}"
+                f"rejecting server_name wildcard, please restrict host-matching e.g. {DEFAULTS['server_name']}"
             )
+
+
+async def launch_main_app(config: Config, port: int):
+    """Launch the main application
+
+    :param config:
+    :param port:
+    :return:
+    """
+    app = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
+    app.config = config
+    app.settings["cookie_secret"] = app.config.authz.SECRET_KEY
+    # Limit the host pattern to prevent DNS rebinding attacks
+    # https://www.tornadoweb.org/en/stable/web.html#application-configuration
+    app.add_handlers(app.config.server_name, app.config.get_handler_config())
+    app.listen(port)
+    await asyncio.Event().wait()
+
+
+async def launch_auditor_app(config: Config, port: int):
+    """Launch the auditor application
+
+    :param config:
+    :param port:
+    :return:
+    """
+    app_log.debug("Launching auditor")
+
+    await uvicorn.Server(
+        uvicorn.Config(auditor_app, host="127.0.0.1", port=port, log_level="debug", reload=False)
+    ).serve()
+
+
+async def launch_tasks_app(config: Config, port: int):
+    """
+
+    :param config:
+    :param port:
+    :return:
+    """
+    await uvicorn.Server(
+        uvicorn.Config(tasks_app, host="127.0.0.1", port=port, log_level="debug", reload=False)
+    ).serve()
+
+
+def launch(app: Callable, config: Config, port: int):
+    app_log.debug("Launching %s in process %d", app, getpid())
+
+    async def _async_launch():
+        await app(config, port)
+
+    asyncio.run(_async_launch())
 
 
 async def main(**kwargs) -> None:
@@ -198,18 +370,42 @@ async def main(**kwargs) -> None:
 
     See sep.__main__ for the available kwargs
     The ones currently used are:
-      config :   the path to the config file
-      log_level: the level to set the log handler to
+      config : the path to the config file
+      logging: the level to set the log handler to
     """
     logging.basicConfig(
-        level=kwargs["log_level"],
+        level=kwargs["logging"],
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
     )
-    app = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
-    app.config = Config.load(config=kwargs.get("config"))
-    app.settings["cookie_secret"] = app.config.authz.SECRET_KEY
-    # Limit the host pattern to prevent DNS rebinding attacks
-    # https://www.tornadoweb.org/en/stable/web.html#application-configuration
-    app.add_handlers(app.config.get("server_name", DEFAULT_SERVER_MATCH), app.config.get_handler_config())
-    app.listen(app.config.port)
-    await asyncio.Event().wait()
+
+    config = Config.load(config=kwargs.get("config"))
+
+    if config.processes == 1:
+        await launch_main_app(config, config.port)
+    else:
+        loop = asyncio.get_running_loop()
+        with ProcessPoolExecutor(max_workers=config.processes) as pool:
+            processes = []
+            port = config.port
+
+            for x in range(0, config.processes):
+                match x:
+                    case 0:
+                        processes.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
+                    case 1:
+                        processes.append(loop.run_in_executor(pool, launch, launch_tasks_app, config, port))
+                    case 2:
+                        processes.append(loop.run_in_executor(pool, launch, launch_auditor_app, config, port))
+                    case _:
+                        processes.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
+                port += 1
+
+            try:
+                await asyncio.gather(*processes)
+            except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
+                for process in processes:
+                    if not process.cancelled():
+                        process.cancel()
+                loop.stop()
+                loop.close()
+                pool.shutdown()

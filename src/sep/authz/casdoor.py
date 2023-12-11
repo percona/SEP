@@ -20,7 +20,7 @@ from tornado.web import (
     RequestHandler,
 )
 
-__all__ = ["AuthzConfig", "CasdoorOAuth2Mixin"]
+__all__ = ["AuthzConfig", "CasdoorOAuth2Mixin", "SESSION_TOKEN_LENGTH"]
 
 SESSION_EXPIRE_DAYS = None  # Session-only cookie
 SESSION_HTTP_ONLY = True

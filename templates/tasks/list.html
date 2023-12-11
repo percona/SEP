@@ -1,0 +1,35 @@
+{% extends "../base.html" %}
+
+{% block title %}Tasks{% end %}
+
+{% block main %}
+<p>Manage the configuration, execution and reporting with the task manager.</p>
+  {% if data %}
+<h2>Available tasks</h2>
+<table>
+  <caption>Tasks available for reuse</caption>
+  <thead>
+    <tr>
+        <th>Task</th>
+        <th>Engine</th>
+        <th>Created</th>
+    </tr>
+  </thead>
+  <tfoot>
+    <tr><td colspan="3"></td></tr>
+  </tfoot>
+  <tbody>
+  {% for task in data %}
+  <tr>
+    <th><a href="{{ base_uri }}{{ task['name'] }}">{{ task["name"] }}</a></th>
+    <td>{{ backends[task["backend"]].capitalize() }}</td>
+    <td>{{ task["created_at"] }}</td>
+  </tr>
+  {% end %}
+  </tbody>
+</table>
+    {% include "partials/create-form.html" %}
+  {% else %}
+    {% include "partials/create-form.html" %}
+  {% end %}
+{% end %}
