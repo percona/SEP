@@ -310,6 +310,20 @@ class Config(ObjectDict):
                 f"rejecting server_name wildcard, please restrict host-matching e.g. {DEFAULTS['server_name']}"
             )
 
+        config_data.setdefault("sep", {})
+        config_data["sep"].setdefault(
+            "processes",
+            [
+                {"name": "main", "asgi": False, "port": 8181, "host": "127.0.0.1"},
+                {"name": "tasks", "asgi": True, "port": 8182, "host": "127.0.0.1"},
+                {"name": "audit", "asgi": True, "port": 8183, "host": "127.0.0.1"},
+            ],
+        )
+        if not config_data["sep"]:
+            raise ValueError("sep.processes requires configuration")
+        if not isinstance(config_data["sep"]["processes"], list) or not config_data["sep"]["processes"]:
+            raise TypeError("sep.processes needs to be a list")
+
 
 def launch(app: Union[Callable, str], config: Config, address: str, port: int):
     """Launch async process
@@ -357,18 +371,12 @@ async def main(**kwargs) -> None:
     config.logging = kwargs["logging"]
     config.lookups = ObjectDict()
 
-    # TODO: update config validation
-    #if not len(config.sep.processes):
-    #    raise ValueError("sep.processes requires configuration")
-    #if not isinstance(config.sep.processes, list):
-    #    raise TypeError("sep.processes needs to be a list")
-
     loop = asyncio.get_running_loop()
     with ProcessPoolExecutor(max_workers=len(config.sep.processes)) as pool:
         processes = []
 
         for i, process in enumerate(config.sep.processes):
-            host, port = process["host"], process["port"]
+            host, port, asgi = process["host"], process["port"], process["asgi"]
 
             match process["name"]:
                 case "main":
@@ -376,7 +384,10 @@ async def main(**kwargs) -> None:
                     processes.append(loop.run_in_executor(pool, launch, "main", config, host, port))
                 case "tasks" | "audit":
                     config.lookups[process["name"]] = i
-                    processes.append(loop.run_in_executor(pool, launch, f"{process['name']}_app", config, host, port))
+                    if asgi:
+                        processes.append(
+                            loop.run_in_executor(pool, launch, f"{process['name']}_app", config, host, port)
+                        )
                 case _:
                     # TODO: handle unexpected items, or configurable ASGI processes
                     pass
