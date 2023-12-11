@@ -92,7 +92,7 @@ class CasdoorOAuth2Mixin(OAuth2Mixin):
         :type data: dict, or dict-like object
         """
         handler = cast(RequestHandler, self)
-        cookie_data = {"id": token_hex(SESSION_TOKEN_LENGTH), "next": handler.request.uri}
+        cookie_data = {"id": token_hex(SESSION_TOKEN_LENGTH), "next": handler.request.uri, "user": None}
         if isinstance(data, dict):
             cookie_data.update({k: v for k, v in data.items() if k not in ["id"]})
         handler.set_signed_cookie(

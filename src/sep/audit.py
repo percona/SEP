@@ -28,7 +28,7 @@ class SessionItem(BaseModel):
 
     id: str
     next: str
-    user: str
+    user: str | None
 
 
 class AuditItem(BaseModel):

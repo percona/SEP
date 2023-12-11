@@ -93,9 +93,11 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         try:
             headers = dict(self.request.headers.copy())
             headers["Content-Type"] = "application/json"
+            # TODO: add support for TLS
+            address = self.cfg.sep.processes[self.cfg.lookups.audit]
             response = client.fetch(
                 HTTPRequest(
-                    url=f"http://127.0.0.1:{options.port + 2}/",
+                    url=f"http://{address['host']}:{address['port']}/",
                     method="POST",
                     headers=headers,
                     body=json.dumps(kwargs),

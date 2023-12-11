@@ -67,7 +67,7 @@ from tornado.util import ObjectDict
 import uvicorn
 import yaml
 
-from .audit import auditor_app
+from .audit import auditor_app as audit_app
 from .authz import AuthZHandler
 from .authz.casdoor import AuthzConfig
 from .core import (
@@ -105,9 +105,7 @@ define("authz", default={}, help="AuthZ configuration", type=dict)
 define("handlers", default=[], help="Handler configuration", type=list)
 define("modules", default={}, help="Module configuration", type=dict)
 define("port", default=8181, help="Start of port range", type=int)
-define(
-    "processes", default=3, help="Total number of processes; minimum of 3 required to run internal services", type=int
-)
+define("sep", default={}, help="SEP application configuration", type=dict)
 
 Model = TypeVar("Model", bound="BaseModel")
 
@@ -313,54 +311,31 @@ class Config(ObjectDict):
             )
 
 
-async def launch_main_app(config: Config, port: int):
-    """Launch the main application
+def launch(app: Union[Callable, str], config: Config, address: str, port: int):
+    """Launch async process
 
+    :param app:
     :param config:
+    :param address:
     :param port:
     :return:
     """
-    app = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
-    app.config = config
-    app.settings["cookie_secret"] = app.config.authz.SECRET_KEY
-    # Limit the host pattern to prevent DNS rebinding attacks
-    # https://www.tornadoweb.org/en/stable/web.html#application-configuration
-    app.add_handlers(app.config.server_name, app.config.get_handler_config())
-    app.listen(port)
-    await asyncio.Event().wait()
-
-
-async def launch_auditor_app(config: Config, port: int):
-    """Launch the auditor application
-
-    :param config:
-    :param port:
-    :return:
-    """
-    app_log.debug("Launching auditor")
-
-    await uvicorn.Server(
-        uvicorn.Config(auditor_app, host="127.0.0.1", port=port, log_level="debug", reload=False)
-    ).serve()
-
-
-async def launch_tasks_app(config: Config, port: int):
-    """
-
-    :param config:
-    :param port:
-    :return:
-    """
-    await uvicorn.Server(
-        uvicorn.Config(tasks_app, host="127.0.0.1", port=port, log_level="debug", reload=False)
-    ).serve()
-
-
-def launch(app: Callable, config: Config, port: int):
     app_log.debug("Launching %s in process %d", app, getpid())
 
     async def _async_launch():
-        await app(config, port)
+        if app == "main":
+            application = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
+            application.config = config
+            application.settings["cookie_secret"] = application.config.authz.SECRET_KEY
+            # Limit the host pattern to prevent DNS rebinding attacks
+            # https://www.tornadoweb.org/en/stable/web.html#application-configuration
+            application.add_handlers(application.config.server_name, application.config.get_handler_config())
+            application.listen(port, address)
+            await asyncio.Event().wait()
+        else:
+            await uvicorn.Server(
+                uvicorn.Config(globals()[app], host=address, port=port, log_level=config.logging.value(), reload=False)
+            ).serve()
 
     asyncio.run(_async_launch())
 
@@ -379,33 +354,39 @@ async def main(**kwargs) -> None:
     )
 
     config = Config.load(config=kwargs.get("config"))
+    config.logging = kwargs["logging"]
+    config.lookups = ObjectDict()
 
-    if config.processes == 1:
-        await launch_main_app(config, config.port)
-    else:
-        loop = asyncio.get_running_loop()
-        with ProcessPoolExecutor(max_workers=config.processes) as pool:
-            processes = []
-            port = config.port
+    # TODO: update config validation
+    #if not len(config.sep.processes):
+    #    raise ValueError("sep.processes requires configuration")
+    #if not isinstance(config.sep.processes, list):
+    #    raise TypeError("sep.processes needs to be a list")
 
-            for x in range(0, config.processes):
-                match x:
-                    case 0:
-                        processes.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
-                    case 1:
-                        processes.append(loop.run_in_executor(pool, launch, launch_tasks_app, config, port))
-                    case 2:
-                        processes.append(loop.run_in_executor(pool, launch, launch_auditor_app, config, port))
-                    case _:
-                        processes.append(loop.run_in_executor(pool, launch, launch_main_app, config, port))
-                port += 1
+    loop = asyncio.get_running_loop()
+    with ProcessPoolExecutor(max_workers=len(config.sep.processes)) as pool:
+        processes = []
 
-            try:
-                await asyncio.gather(*processes)
-            except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
-                for process in processes:
-                    if not process.cancelled():
-                        process.cancel()
-                loop.stop()
-                loop.close()
-                pool.shutdown()
+        for i, process in enumerate(config.sep.processes):
+            host, port = process["host"], process["port"]
+
+            match process["name"]:
+                case "main":
+                    config.lookups.main = i
+                    processes.append(loop.run_in_executor(pool, launch, "main", config, host, port))
+                case "tasks" | "audit":
+                    config.lookups[process["name"]] = i
+                    processes.append(loop.run_in_executor(pool, launch, f"{process['name']}_app", config, host, port))
+                case _:
+                    # TODO: handle unexpected items, or configurable ASGI processes
+                    pass
+
+        try:
+            await asyncio.gather(*processes)
+        except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
+            for process in processes:
+                if not process.cancelled():
+                    process.cancel()
+            loop.stop()
+            loop.close()
+            pool.shutdown()
