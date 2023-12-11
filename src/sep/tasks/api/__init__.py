@@ -80,9 +80,9 @@ async def shutdown():
 
 
 @event.listens_for(Engine, "connect")
-async def prepare_connection(connection, record):
+def prepare_connection(connection, record):
     """Prepare the connection"""
-    await sep.core.db.prepare_connection(connection, record)
+    sep.core.db.prepare_connection(connection, record)
 
 
 @app.get(path="/", response_model=List[Task])

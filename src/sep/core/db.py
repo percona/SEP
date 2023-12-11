@@ -56,7 +56,7 @@ async def startup(database: Database, metadata: Union[MetaData, None] = None):
         await dbc.run_sync(database.metadata.create_all)
 
 
-async def prepare_connection(connection, record, **kwargs):
+def prepare_connection(connection, record, **kwargs):
     """Prepare the database connection
 
     :param connection:
