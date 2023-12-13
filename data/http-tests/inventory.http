@@ -1,0 +1,44 @@
+###
+GET http://127.0.0.1:8184/
+
+###
+GET http://127.0.0.1:8184/refresh
+
+###
+POST http://127.0.0.1:8184/
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "test",
+  "node_id": "test_node_id",
+  "data": {
+    "name": "test",
+    "services": [
+      {"service_id":  "1", "service_name":  "test1", "database_name": "test1db",
+       "node_id":  "node1", "address": "test1addr", "port":  3306},
+      {"service_id":  "2", "service_name":  "test2", "database_name": "test2db",
+        "node_id":  "node1", "address": "test2addr", "port":  3307}
+    ],
+    "type": "generic"
+  },
+  "backend": 1,
+  "credential_source": 1
+}
+
+###
+PUT http://127.0.0.1:8184/1
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "test1",
+  "node_id": "test_node_id",
+  "data": {
+    "name": "test",
+    "services": [],
+    "type": "generic"
+  },
+  "backend": 1,
+  "credential_source": 1
+}
