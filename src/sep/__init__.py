@@ -75,6 +75,7 @@ from .core import (
     HomepageHandler,
     RemoteCallHandler,
 )
+from .inventory.api import app as inventory_app
 from .tasks import (
     DEFAULT_BACKEND_ADDRESS as TASKS_BACKEND,
     TaskHandler,
@@ -382,7 +383,7 @@ async def main(**kwargs) -> None:
                 case "main":
                     config.lookups.main = i
                     processes.append(loop.run_in_executor(pool, launch, "main", config, host, port))
-                case "tasks" | "audit":
+                case "audit" | "inventory" | "tasks":
                     config.lookups[process["name"]] = i
                     if asgi:
                         processes.append(
