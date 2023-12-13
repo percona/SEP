@@ -62,7 +62,7 @@ class InventorySource:
 
         if not verify_tls:
             # noinspection PyProtectedMember
-            tls_context = ssl._create_unverified_context()  # noqa: S323
+            tls_context = ssl._create_unverified_context()  # noqa: S323 # nosec B323
         else:
             tls_context = ssl.create_default_context()
         tls_handler = urllib.request.HTTPSHandler(context=tls_context)
@@ -98,7 +98,7 @@ class InventorySource:
         if not uri.startswith(("https:", "http:")):
             raise ValueError(f"the URI does not appear to be HTTP: {uri}")
         req = urllib.request.Request(uri, payload, self._headers, method="GET" if not payload else "POST")  # noqa: S310
-        with urllib.request.urlopen(req, **args) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, **args) as resp:  # noqa: S310 # nosec B310
             data = resp.read().decode("utf-8")
             return dict(raw=data, json=json.loads(data))
 
