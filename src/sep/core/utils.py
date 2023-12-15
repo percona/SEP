@@ -31,15 +31,14 @@ async def async_run(func: Callable, *args):
     """
     async def _run_in_process(executor: ProcessPoolExecutor):
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(executor, func, *args)
+        return await loop.run_in_executor(executor, func, *args)
 
     with ProcessPoolExecutor(max_workers=1) as pool:
         try:
-            return await asyncio.wait_for(asyncio.gather(
-                _run_in_process(pool)
-            ), timeout=5)
+            result = await asyncio.gather(_run_in_process(pool))
         except asyncio.TimeoutError:
-            return None
+            result = None
+    return result
 
 
 def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:

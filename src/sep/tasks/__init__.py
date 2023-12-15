@@ -25,6 +25,7 @@ import yaml
 from .api.models import TASK_BACKEND_LOOKUP
 from ..core import ApiBackendHandler
 from ..core.utils import (
+    async_run,
     get_template,
     render_template,
 )
@@ -79,20 +80,27 @@ class TaskHandler(ApiBackendHandler):
             if mapping.old not in payload:
                 continue
             match mapping.action:
-                #case "base64":
                 case "json":
                     # TODO: add validation for the format
                     if payload.get("format") == ["yaml"]:
-                        payload[mapping.old][0] = json.dumps(yaml.safe_load(payload[mapping.old][0]))
+                        payload[mapping.new] = json.dumps(yaml.safe_load(payload[mapping.old][0]))
                     elif payload.get("format") == ["hcl"]:
                         session = requests.Session()
-                        session.cookies = self.cookies
 
-                        payload[mapping.old][0] = Nomad(**self.cfg.modules.nomad.backend).jobs.parse(
+                        for c, v in self.cookies.items():
+                            if c not in ["_xsrf", "fastapi-session", "casdoorUser", "sep"]:
+                                continue
+                            if c == "_xsrf":
+                                session.headers.setdefault("X-Xsrftoken", v.value)
+                            session.cookies.set(c, v.value)
+
+                        parsed = await async_run(
+                            Nomad(**self.cfg.modules.nomad.backend, session=session).jobs.parse,
                             payload[mapping.old][0]
                         )
-                    #payload[mapping.new] = b64encode(payload[mapping.old][0].encode()).decode()
-                    payload[mapping.new] = payload[mapping.old][0]
+                        payload[mapping.new] = json.dumps(parsed)
+                    else:
+                        payload[mapping.new] = payload[mapping.old][0]
                 case "flatten":
                     if not isinstance(payload[mapping.old], list):
                         payload[mapping.new] = payload[mapping.old]

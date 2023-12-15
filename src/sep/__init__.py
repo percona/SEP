@@ -102,7 +102,7 @@ HANDLER_DEFINITION_LENGTH = 4
 HANDLER_DEFINITION_OPERATOR = "="
 HANDLER_DEFINITION_REMOVE_AFTER = 3
 
-#define("authz", default={}, help="AuthZ configuration", type=dict)
+define("authz", default={}, help="AuthZ configuration", type=dict)
 define("handlers", default=[], help="Handler configuration", type=list)
 define("modules", default={}, help="Module configuration", type=dict)
 define("port", default=8181, help="Start of port range", type=int)
