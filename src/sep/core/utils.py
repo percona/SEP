@@ -1,11 +1,16 @@
 """
 Utility library
 """
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
 import logging
 import os.path
 from sys import argv
-from typing import Union
+from typing import (
+    Callable,
+    Union,
+)
 
 from tornado.template import (
     Loader,
@@ -14,6 +19,27 @@ from tornado.template import (
 from tornado.web import HTTPError
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
+
+
+async def async_run(func: Callable, *args):
+    """Execute a non-async call
+
+    :param func:
+    :param args:
+    :param kwargs:
+    :return:
+    """
+    async def _run_in_process(executor: ProcessPoolExecutor):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(executor, func, *args)
+
+    with ProcessPoolExecutor(max_workers=1) as pool:
+        try:
+            return await asyncio.wait_for(asyncio.gather(
+                _run_in_process(pool)
+            ), timeout=5)
+        except asyncio.TimeoutError:
+            return None
 
 
 def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:

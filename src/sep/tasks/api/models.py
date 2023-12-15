@@ -13,7 +13,7 @@ from sqlalchemy import (
     Column,
     Enum,
     Integer,
-    LargeBinary,
+    JSON,
     null,
     String,
     Table,
@@ -46,7 +46,7 @@ class TaskBaseModel(BaseModel):
     """
 
     name: str
-    data: bytes
+    data: str
 
     backend: TaskBackendEnum = TaskBackendEnum.nomad
 
@@ -74,7 +74,7 @@ tasks = Table(
         primary_key=True,
     ),
     Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
-    Column("data", LargeBinary, nullable=False),
+    Column("data", JSON, nullable=False),
     Column(
         "backend", Enum(TaskBackendEnum).with_variant(Integer, dialect_name="sqlite"), default=null(), nullable=True
     ),
@@ -91,7 +91,7 @@ history = Table(
         nullable=False,
         primary_key=True,
     ),
-    Column("data", LargeBinary, nullable=False),
+    Column("data", JSON, nullable=False),
 )
 
 for col in DATABASE_EXTRA_COLUMNS:

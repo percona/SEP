@@ -9,6 +9,9 @@ from os.path import join
 from typing import Any, Optional
 from urllib.parse import parse_qs
 
+import requests
+import uvloop
+from nomad import Nomad
 from tornado import httputil
 from tornado.httpclient import (
     AsyncHTTPClient,
@@ -34,7 +37,7 @@ TEMPLATE_PREFIX = "tasks"
 TRANSLATION_MAPPING = {
     "create": (
         TranslateConfig("taskalias", "name", "flatten"),
-        TranslateConfig("taskdef", "data", "base64"),
+        TranslateConfig("taskdef", "data", "json"),
         TranslateConfig("taskeng", "engine", "flatten"),
     )
 }
@@ -76,11 +79,20 @@ class TaskHandler(ApiBackendHandler):
             if mapping.old not in payload:
                 continue
             match mapping.action:
-                case "base64":
+                #case "base64":
+                case "json":
                     # TODO: add validation for the format
                     if payload.get("format") == ["yaml"]:
                         payload[mapping.old][0] = json.dumps(yaml.safe_load(payload[mapping.old][0]))
-                    payload[mapping.new] = b64encode(payload[mapping.old][0].encode()).decode()
+                    elif payload.get("format") == ["hcl"]:
+                        session = requests.Session()
+                        session.cookies = self.cookies
+
+                        payload[mapping.old][0] = Nomad(**self.cfg.modules.nomad.backend).jobs.parse(
+                            payload[mapping.old][0]
+                        )
+                    #payload[mapping.new] = b64encode(payload[mapping.old][0].encode()).decode()
+                    payload[mapping.new] = payload[mapping.old][0]
                 case "flatten":
                     if not isinstance(payload[mapping.old], list):
                         payload[mapping.new] = payload[mapping.old]
