@@ -12,6 +12,8 @@ from typing import (
     Union,
 )
 
+import requests
+import tornado.web
 from tornado.template import (
     Loader,
     Template,
@@ -29,6 +31,7 @@ async def async_run(func: Callable, *args):
     :param kwargs:
     :return:
     """
+
     async def _run_in_process(executor: ProcessPoolExecutor):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(executor, func, *args)
@@ -53,6 +56,23 @@ def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:
     if not logging.root.hasHandlers():
         logging.basicConfig(level=level if level is not None else logging.WARNING, format=LOG_FORMAT)
     return logging.getLogger(name)
+
+
+def get_requests_session(request: tornado.web.RequestHandler) -> requests.Session:
+    """Get a requests.Session instance populated from a handler
+
+    :param request:
+    :return:
+    """
+    session = requests.Session()
+    for c, v in request.cookies.items():
+        # TODO: use settings to determine cookie names
+        if c not in ["_xsrf", "fastapi-session", "casdoorUser", "sep"]:
+            continue
+        if c == "_xsrf":
+            session.headers.setdefault("X-Xsrftoken", v.value)
+        session.cookies.set(c, v.value)
+    return session
 
 
 def get_template(template_name: str, template_dirs: list) -> Union[Template, None]:

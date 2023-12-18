@@ -1,18 +1,12 @@
 """
 Tasks module
 """
-from base64 import b64encode
 from collections import namedtuple
 from http import HTTPStatus
 import json
 from os.path import join
-from typing import Any, Optional
 from urllib.parse import parse_qs
 
-import requests
-import uvloop
-from nomad import Nomad
-from tornado import httputil
 from tornado.httpclient import (
     AsyncHTTPClient,
     HTTPClientError,
@@ -20,15 +14,18 @@ from tornado.httpclient import (
 )
 from tornado.log import app_log
 from tornado.web import HTTPError
-import yaml
 
-from .api.models import TASK_BACKEND_LOOKUP
+from .api.models import (
+    TASK_BACKEND_LOOKUP,
+    TASK_BACKEND_MAP,
+)
 from ..core import ApiBackendHandler
 from ..core.utils import (
-    async_run,
+    get_requests_session,
     get_template,
     render_template,
 )
+from .nomad.utils import transform_payload as nomad_payload
 
 TranslateConfig = namedtuple("TranslateConfig", ["old", "new", "action"])
 
@@ -38,7 +35,7 @@ TEMPLATE_PREFIX = "tasks"
 TRANSLATION_MAPPING = {
     "create": (
         TranslateConfig("taskalias", "name", "flatten"),
-        TranslateConfig("taskdef", "data", "json"),
+        TranslateConfig("taskdef", "data", "backend"),
         TranslateConfig("taskeng", "engine", "flatten"),
     )
 }
@@ -72,6 +69,7 @@ class TaskHandler(ApiBackendHandler):
         headers = dict(self.request.headers.copy())
         headers["Content-Type"] = "application/json"
         payload = parse_qs(self.request.body.decode())
+        session = get_requests_session(self)
 
         if "_xsrf" in payload:
             headers["X-Xsrftoken"] = payload["_xsrf"][0]
@@ -80,27 +78,15 @@ class TaskHandler(ApiBackendHandler):
             if mapping.old not in payload:
                 continue
             match mapping.action:
-                case "json":
-                    # TODO: add validation for the format
-                    if payload.get("format") == ["yaml"]:
-                        payload[mapping.new] = json.dumps(yaml.safe_load(payload[mapping.old][0]))
-                    elif payload.get("format") == ["hcl"]:
-                        session = requests.Session()
-
-                        for c, v in self.cookies.items():
-                            if c not in ["_xsrf", "fastapi-session", "casdoorUser", "sep"]:
-                                continue
-                            if c == "_xsrf":
-                                session.headers.setdefault("X-Xsrftoken", v.value)
-                            session.cookies.set(c, v.value)
-
-                        parsed = await async_run(
-                            Nomad(**self.cfg.modules.nomad.backend, session=session).jobs.parse,
-                            payload[mapping.old][0]
-                        )
-                        payload[mapping.new] = json.dumps(parsed)
-                    else:
-                        payload[mapping.new] = payload[mapping.old][0]
+                case "backend":
+                    backend = TASK_BACKEND_LOOKUP[int(payload["taskeng"][0])]
+                    match backend:
+                        case "nomad":
+                            payload[mapping.new] = await nomad_payload(
+                                payload[mapping.old][0], payload["format"][0], session
+                            )
+                        case _:
+                            raise NotImplementedError(f"backend is unsupported")
                 case "flatten":
                     if not isinstance(payload[mapping.old], list):
                         payload[mapping.new] = payload[mapping.old]

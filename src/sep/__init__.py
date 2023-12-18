@@ -76,12 +76,9 @@ from .core import (
     RemoteCallHandler,
 )
 from .inventory.api import app as inventory_app
-from .tasks import (
-    DEFAULT_BACKEND_ADDRESS as TASKS_BACKEND,
-    TaskHandler,
-)
 from .tasks.api import app as tasks_app
 from .tasks.nomad import NomadRemoteCallHandler
+from .tasks.router import get_default_router as tasks_router
 
 __all__ = []
 __version__ = "0.0.1"
@@ -106,7 +103,7 @@ define("authz", default={}, help="AuthZ configuration", type=dict)
 define("handlers", default=[], help="Handler configuration", type=list)
 define("modules", default={}, help="Module configuration", type=dict)
 define("port", default=8181, help="Start of port range", type=int)
-#define("sep", default={}, help="SEP application configuration", type=dict)
+define("sep", default={}, help="SEP application configuration", type=dict)
 
 Model = TypeVar("Model", bound="BaseModel")
 
@@ -169,35 +166,9 @@ class Config(ObjectDict):
         # the need to populate the handlers and instead get used to configure an intelligent router
         self.handlers.append([r"^/$", HomepageHandler, {}])
         self.handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
-        self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api|nomad).*)?$", TaskHandler, {}])
 
-        # Tasks
-        if hasattr(self, "modules") and "tasks" in self.modules and "api" in self.modules.tasks:
-            self.handlers.append(
-                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, self.modules.tasks.api]
-            )
-        else:
-            self.handlers.append(
-                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, {"uri": TASKS_BACKEND}]
-            )
-        # Nomad
-        if hasattr(self, "modules") and "nomad" in self.modules and "api" in self.modules.nomad:
-            self.handlers.append(
-                [
-                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
-                    NomadRemoteCallHandler,
-                    self.modules.nomad.api,
-                ]
-            )
-        else:
-            self.handlers.append(
-                [
-                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
-                    NomadRemoteCallHandler,
-                    {"uri": "http://127.0.0.1:4646"},
-                ]
-            )
-        # End
+        for handler in tasks_router(cfg=self.modules, handlers_only=True):
+            self.handlers.append(handler)
 
         return self.handlers
 
