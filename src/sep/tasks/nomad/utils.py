@@ -27,10 +27,7 @@ async def transform_payload(payload: str | bytes, payload_format: str, session: 
 
     match payload_format:
         case "hcl":
-            result = await async_run(
-               backend.jobs.parse,
-               payload
-            )
+            result = await async_run(backend.jobs.parse, payload)
             parsed = result[0]
         case "json":
             parsed = json.loads(str(payload))

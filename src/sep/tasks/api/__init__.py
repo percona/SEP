@@ -86,7 +86,7 @@ def prepare_connection(connection, record):
 
 
 @app.get(path="/", response_model=List[Task])
-async def list_reports():
+async def list_tasks():
     """List all tasks
 
     :return:
