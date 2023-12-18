@@ -5,6 +5,7 @@ from tornado.web import Application
 from tornado.util import ObjectDict
 
 from sep.core import RemoteCallHandler
+from sep.core.utils import get_process_config
 
 from . import (
     DEFAULT_BACKEND_ADDRESS,
@@ -24,11 +25,7 @@ def get_default_router(cfg: ObjectDict, handlers_only: bool = False) -> Applicat
         nomad_uri = {"uri": "http://127.0.0.1:4646"}
 
     try:
-        api_uri = None
-        for p in cfg.sep.processes:
-            if p.get("name") == "tasks":
-                api_uri = {"uri": f"http://{p['host']}:{p['port']}"}
-                break
+        api_uri = get_process_config(cfg, "tasks")
         if api_uri is None:
             raise ValueError("Tasks API URI is not configured")
     except (AttributeError, KeyError, ValueError):

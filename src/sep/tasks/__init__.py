@@ -25,6 +25,7 @@ from ..core.utils import (
     get_template,
     render_template,
 )
+from ..inventory import InventoryHandler
 from .nomad.utils import transform_payload as nomad_payload
 
 TranslateConfig = namedtuple("TranslateConfig", ["old", "new", "action"])
@@ -49,6 +50,8 @@ class TaskHandler(ApiBackendHandler):
         "ui": "/tasks/",
     }
 
+    base_uri: str
+    inventory_uri: str
     uri: str
 
     def initialize(self) -> None:
@@ -58,7 +61,9 @@ class TaskHandler(ApiBackendHandler):
         :return:
         """
         super().initialize()
-        self.uri = f"{self.request.server_connection.context.protocol}://{self.request.host}{TaskHandler.PATHS['api']}"
+        self.base_uri = f"{self.request.server_connection.context.protocol}://{self.request.host}"
+        self.inventory_uri = f"{self.base_uri}{InventoryHandler.PATHS['api']}"
+        self.uri = f"{self.base_uri}{TaskHandler.PATHS['api']}"
 
     async def _create(self) -> dict:
         """Create a new task
@@ -144,7 +149,24 @@ class TaskHandler(ApiBackendHandler):
                 request_timeout=self.request_timeout,
             )
         )
-        return json.loads(response.body.decode())
+        task = json.loads(response.body.decode())
+
+        try:
+            response = await client.fetch(
+                HTTPRequest(
+                    url=self.inventory_uri,
+                    method="GET",
+                    headers=self.request.headers,
+                    connect_timeout=self.connect_timeout,
+                    follow_redirects=self.follow_redirects,
+                    request_timeout=self.request_timeout,
+                )
+            )
+            hosts = json.loads(response.body.decode())
+        except HTTPClientError:
+            hosts = []
+        task["hosts"] = hosts
+        return task
 
     async def get(self, route: str):
         """Task UI requests

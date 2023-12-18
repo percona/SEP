@@ -76,6 +76,7 @@ from .core import (
     RemoteCallHandler,
 )
 from .inventory.api import app as inventory_app
+from .inventory.router import get_default_router as inventory_router
 from .tasks.api import app as tasks_app
 from .tasks.nomad import NomadRemoteCallHandler
 from .tasks.router import get_default_router as tasks_router
@@ -166,6 +167,9 @@ class Config(ObjectDict):
         # the need to populate the handlers and instead get used to configure an intelligent router
         self.handlers.append([r"^/$", HomepageHandler, {}])
         self.handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
+
+        for handler in inventory_router(cfg=self.modules, handlers_only=True):
+            self.handlers.append(handler)
 
         for handler in tasks_router(cfg=self.modules, handlers_only=True):
             self.handlers.append(handler)

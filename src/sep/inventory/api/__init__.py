@@ -98,6 +98,11 @@ async def lookup_inventory(source: str = "pmm"):
             await update_item(item_id, model)
 
 
+async def select_active_inventory():
+    query = inventory.select().where(inventory.c.deleted_at == null())
+    return await database.fetch_all(query)
+
+
 @app.on_event("startup")
 async def startup():
     """Prepare the database and application"""
@@ -124,8 +129,7 @@ async def list_inventory(background_tasks: BackgroundTasks):
     :return:
     """
     app.log.debug("Listing inventory")
-    query = inventory.select().where(inventory.c.deleted_at == null())
-    results = await database.fetch_all(query)
+    results = await select_active_inventory()
     if not results:
         background_tasks.add_task(lookup_inventory, "pmm")
     return results

@@ -13,12 +13,15 @@ from typing import (
 )
 
 import requests
-import tornado.web
 from tornado.template import (
     Loader,
     Template,
 )
-from tornado.web import HTTPError
+from tornado.util import ObjectDict
+from tornado.web import (
+    HTTPError,
+    RequestHandler,
+)
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
 
@@ -58,7 +61,28 @@ def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def get_requests_session(request: tornado.web.RequestHandler) -> requests.Session:
+def get_process_config(cfg: dict | ObjectDict, name: str) -> ObjectDict | None:
+    """Extract the configuration for a built-in process
+
+    :param cfg:
+    :param name:
+    :return:
+    """
+    try:
+        api_uri = None
+        for p in cfg.sep.processes:
+            if p.get("name") == name:
+                scheme = "https" if p.get("secure") else "http"
+                api_uri = ObjectDict({"uri": f"{scheme}://{p['host']}:{p['port']}"})
+                break
+        if api_uri is None:
+            raise ValueError("Tasks API URI is not configured")
+    except (AttributeError, KeyError, ValueError):
+        api_uri = None
+    return api_uri
+
+
+def get_requests_session(request: RequestHandler) -> requests.Session:
     """Get a requests.Session instance populated from a handler
 
     :param request:

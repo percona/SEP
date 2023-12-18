@@ -11,5 +11,16 @@
   </code>
   </dd>
 </dl>
+{% if data.get("hosts") %}
+<form method="post" action="{{ base_uri }}/execute/{{ data['name'] }}">
+  <input name="task" type="hidden" value="{{ data['name'] }}" />
+  <select name="host">
+    {% for host in data["hosts"] %}
+    <option>{{ host["name"] }} ({{ host["node_id"] }})</option>
+    {% end %}
+  </select>
+  <button type="submit">Execute</button>
+</form>
+{% end %}
 <p><a href="{{ base_uri }}">Back to tasks</a></p>
 {% end %}
