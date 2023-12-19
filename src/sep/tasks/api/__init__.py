@@ -9,9 +9,11 @@ from http import HTTPStatus
 import logging
 from os import getenv
 from secrets import token_hex
+from typing import Annotated
 
 from fastapi import (
     FastAPI,
+    Form,
     HTTPException,
     Request,
 )
@@ -31,6 +33,7 @@ from .models import (
     history,
     Task,
     TaskBaseModel,
+    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryBaseModel,
     TaskHistoryDataType,
@@ -172,9 +175,11 @@ async def create_task_history(task: TaskHistoryBaseModel):
 
 
 @app.post(path="/execute/{task_name}", response_class=JSONResponse)
-async def execute_task(task_name: str, request: Request):
+async def execute_task(task: Annotated[str, Form()], host: Annotated[str, Form()], task_name: str, request: Request):
     """Send a task for execution
 
+    :param task:
+    :param host:
     :param task_name:
     :param request:
     :return:
@@ -184,10 +189,12 @@ async def execute_task(task_name: str, request: Request):
     config = await database.fetch_one(query)
     if config is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+    execution_request = TaskExecutionRequest(task=task, host=host)
     task = Task(**dict(config))
     task_history = TaskHistoryBaseModel(
         data=TaskHistoryDataType(task.model_dump_json()).__str__(),
-        name=task_name,
+        execution_request=execution_request.model_dump(),
+        name=task.name,
         status=TASK_HISTORY_STATUS_MAP["pending"],
     )
     history_recorded = await database.execute(history.insert().values(**task_history.model_dump()))

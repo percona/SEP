@@ -39,10 +39,12 @@ dependencies = [
     "itsdangerous==2.1.2",
     "pydantic==2.3.0",
     "PyYAML==6.0.1",
+    "python-multipart==0.0.6",
     "python-nomad==2.0.0",
     "SQLAlchemy==1.4.49",
     "tornado==6.3.3",
     "urllib3==2.0.7",
+    "uvicorn==0.24.0.post1",
     "uvloop==0.18.0"
 ]
 

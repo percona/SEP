@@ -62,6 +62,13 @@ class TaskHistoryStatusEnum(IntEnum):
     success = TASK_HISTORY_STATUS_MAP["success"]
 
 
+class TaskExecutionRequest(BaseModel):
+    """Model for execution requests"""
+
+    task: str
+    host: str
+
+
 class TaskBaseModel(BaseModel):
     """
     Model for tasks
@@ -105,6 +112,7 @@ class TaskHistoryBaseModel(BaseModel):
     """Model for task history"""
 
     name: str
+    execution_request: TaskExecutionRequest
     data: str
     status: int = TASK_HISTORY_STATUS_MAP["pending"]
 
@@ -147,8 +155,9 @@ history = Table(
         nullable=False,
         primary_key=True,
     ),
-    Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
+    Column("execution_request", JSON, nullable=False),
     Column("data", TaskHistoryDataType, nullable=False),
+    Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
     Column("status", Enum(TaskHistoryStatusEnum).with_variant(Integer, dialect_name="sqlite"), nullable=False),
 )
 
