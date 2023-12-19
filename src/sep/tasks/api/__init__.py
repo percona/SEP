@@ -9,18 +9,17 @@ from http import HTTPStatus
 import logging
 from os import getenv
 from secrets import token_hex
-from typing import (
-    cast,
-    List,
-)
 
 from fastapi import (
-    Depends,
     FastAPI,
     HTTPException,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import (
+    JSONResponse,
+    RedirectResponse,
+)
 from sqlalchemy import (
     event,
     null,
@@ -32,6 +31,10 @@ from .models import (
     history,
     Task,
     TaskBaseModel,
+    TaskHistory,
+    TaskHistoryBaseModel,
+    TaskHistoryDataType,
+    TASK_HISTORY_STATUS_MAP,
     tasks,
 )
 from sep.authz.casdoor import SESSION_TOKEN_LENGTH
@@ -85,7 +88,7 @@ def prepare_connection(connection, record):
     sep.core.db.prepare_connection(connection, record)
 
 
-@app.get(path="/", response_model=List[Task])
+@app.get(path="/", response_model=list[Task])
 async def list_tasks():
     """List all tasks
 
@@ -130,6 +133,18 @@ async def get_task(task: str):
     return await database.fetch_one(query)
 
 
+@app.get(path="/history/{task}", response_model=list[TaskHistory])
+async def get_task_history(task: str):
+    """Retrieve a task
+
+    :param task:
+    :return:
+    """
+    app.log.debug("Requesting task history for %s", task)
+    query = history.select().where(history.c.name == task)
+    return await database.fetch_all(query)
+
+
 @app.post(path="/", response_model=Task)
 async def create_task(task: TaskBaseModel):
     """Create a new task
@@ -143,23 +158,42 @@ async def create_task(task: TaskBaseModel):
     return {**task.model_dump(), "id": last_record_id}
 
 
-# @app.post(path="/execute/{task}", response_class=JSONResponse)
-# async def execute_task(task: Task):
-#    """
-#
-#    :param task:
-#    :return:
-#    """
-#    app.log.debug("Executing task %s", task.name)
-#    query = tasks.select().where(tasks.c.id == task.id)
-#    config = await database.fetch_one(query)
-#    if config is None:
-#        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
-#    history_recorded = await database.execute(
-#        history.insert().values(data=task.model_dump_json())
-#    )
-#    if not history_recorded:
-#        database.force_rollback()
-#        raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-#    # TODO: execute the task
-#    return {"status": "success"}
+@app.post(path="/history", response_model=TaskHistory)
+async def create_task_history(task: TaskHistoryBaseModel):
+    """Create a new task
+
+    :param task:
+    :return:
+    """
+    app.log.debug("Creating task %s", task.name)
+    query = history.insert().values(**vars(task))
+    last_record_id = await database.execute(query)
+    return {**task.model_dump(), "id": last_record_id}
+
+
+@app.post(path="/execute/{task_name}", response_class=JSONResponse)
+async def execute_task(task_name: str, request: Request):
+    """Send a task for execution
+
+    :param task_name:
+    :param request:
+    :return:
+    """
+    app.log.debug("Executing task %s", task_name)
+    query = tasks.select().where(tasks.c.name == task_name)
+    config = await database.fetch_one(query)
+    if config is None:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+    task = Task(**dict(config))
+    task_history = TaskHistoryBaseModel(
+        data=TaskHistoryDataType(task.model_dump_json()).__str__(),
+        name=task_name,
+        status=TASK_HISTORY_STATUS_MAP["pending"],
+    )
+    history_recorded = await database.execute(history.insert().values(**task_history.model_dump()))
+    if not history_recorded:
+        database.force_rollback()
+        raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
+    if "referer" in request.headers:
+        return RedirectResponse(url=request.headers.get("referer"), status_code=HTTPStatus.SEE_OTHER)
+    return {"task_history_id": history_recorded}

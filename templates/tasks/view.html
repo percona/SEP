@@ -12,15 +12,47 @@
   </dd>
 </dl>
 {% if data.get("hosts") %}
-<form method="post" action="{{ base_uri }}/execute/{{ data['name'] }}">
+<form method="post" action="{{ base_uri }}api/execute/{{ data['name'] }}">
   <input name="task" type="hidden" value="{{ data['name'] }}" />
   <select name="host">
+    <option value="all">All matching nodes</option>
     {% for host in data["hosts"] %}
-    <option>{{ host["name"] }} ({{ host["node_id"] }})</option>
+    <option value="{{ host['node_id'] }}">{{ host["name"] }} ({{ host["node_id"] }})</option>
     {% end %}
   </select>
   <button type="submit">Execute</button>
+  {% from tornado.escape import xhtml_unescape %}
+  {% apply xhtml_unescape %}
+  {{ xsrf_form_html() }}
+  {% end %}
 </form>
+{% end %}
+{% if data.get("history") %}
+    {% from json import loads %}
+    <table>
+      <caption>History</caption>
+      <thead>
+        <tr>
+          <th>Submitted</th>
+          <th>Last updated</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tfoot>
+        <tr><td colspan="3">&nbsp;</td></tr>
+      </tfoot>
+      <tbody>
+      {% for task in data["history"] %}
+      {% apply xhtml_unescape %}
+          <tr>
+            <th scope="row">{{ task["created_at"] }}</th>
+            <th scope="row">{{ task["updated_at"] }}</th>
+            <td>{{ task["status"].capitalize() }}</td>
+          </tr>
+      {% end %}
+      {% end %}
+      </tbody>
+    </table>
 {% end %}
 <p><a href="{{ base_uri }}">Back to tasks</a></p>
 {% end %}

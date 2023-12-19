@@ -18,6 +18,7 @@ from tornado.web import HTTPError
 from .api.models import (
     TASK_BACKEND_LOOKUP,
     TASK_BACKEND_MAP,
+    TASK_HISTORY_STATUS_LOOKUP,
 )
 from ..core import ApiBackendHandler
 from ..core.utils import (
@@ -135,7 +136,7 @@ class TaskHandler(ApiBackendHandler):
     async def _view(self, task: str) -> dict:
         """View a specific task
 
-        :param task:
+        :param task_data:
         :return:
         """
         client = AsyncHTTPClient()
@@ -149,7 +150,7 @@ class TaskHandler(ApiBackendHandler):
                 request_timeout=self.request_timeout,
             )
         )
-        task = json.loads(response.body.decode())
+        task_data = json.loads(response.body.decode())
 
         try:
             response = await client.fetch(
@@ -162,11 +163,35 @@ class TaskHandler(ApiBackendHandler):
                     request_timeout=self.request_timeout,
                 )
             )
-            hosts = json.loads(response.body.decode())
+            hosts = sorted(json.loads(response.body.decode()), key=lambda h: h["name"])
         except HTTPClientError:
             hosts = []
-        task["hosts"] = hosts
-        return task
+        task_data["hosts"] = hosts
+
+        try:
+            response = await client.fetch(
+                HTTPRequest(
+                    url=f"{self.uri}history/{task}",
+                    method="GET",
+                    headers=self.request.headers,
+                    connect_timeout=self.connect_timeout,
+                    follow_redirects=self.follow_redirects,
+                    request_timeout=self.request_timeout,
+                )
+            )
+            history = [
+                {
+                    "created_at": x["created_at"],
+                    "updated_at": x["updated_at"],
+                    "status": TASK_HISTORY_STATUS_LOOKUP[x["status"]],
+                }
+                for x in json.loads(response.body.decode())
+            ]
+        except HTTPClientError:
+            history = []
+        task_data["history"] = history
+
+        return task_data
 
     async def get(self, route: str):
         """Task UI requests

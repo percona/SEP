@@ -14,6 +14,7 @@ from sqlalchemy import (
     Column,
     Enum,
     Integer,
+    JSON,
     LargeBinary,
     null,
     String,
@@ -65,7 +66,7 @@ class InventoryItemService(BaseModel):
 class InventoryItemServiceType(TypeDecorator):
     """Data type to use for InventoryItemService"""
 
-    impl = Text(8192)
+    impl = JSON
 
     def process_bind_param(self, value, dialect):
         if value is not None:
