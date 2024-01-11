@@ -97,8 +97,23 @@ async def list_tasks():
 
     :return:
     """
-    app.log.debug("Listing reports")
+    app.log.debug("Listing tasks")
     query = tasks.select().where(tasks.c.deleted_at == null())
+    return await database.fetch_all(query)
+
+
+@app.get(path="/history", response_model=list[TaskHistory])
+async def list_task_history(request: Request):
+    """Create a new task
+
+    :param task:
+    :return:
+    """
+    app.log.debug("Listing task history")
+    query = history.select().where(history.c.deleted_at == null())
+    if request.query_params.get('status'):
+        query = sep.core.db.get_filtered_query({'status': request.query_params.get('status')},
+                                               query=query, table=history, mapping=TASK_HISTORY_STATUS_MAP)
     return await database.fetch_all(query)
 
 
