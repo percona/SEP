@@ -1,6 +1,7 @@
 """
 Database abstraction and tooling
 """
+import copy
 from typing import (
     Any,
     Dict,
@@ -8,10 +9,12 @@ from typing import (
 )
 
 from databases import Database
+from fastapi import Query
 from sqlalchemy import (
     Column,
     DateTime,
     MetaData,
+    Table,
 )
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -29,6 +32,10 @@ DATABASE_EXTRA_COLUMNS = [
     Column("deleted_at", DateTime),
     Column("updated_at", DateTime),
 ]
+
+QUERY_FILTERS = {
+    'status': ['*']
+}
 
 
 async def startup(database: Database, metadata: Union[MetaData, None] = None):
@@ -118,3 +125,31 @@ def get_metadata() -> MetaData:
     :rtype: sqlalchemy.MetaData
     """
     return MetaData()
+
+
+def get_filtered_query(filters: dict, query: Query, table: Table, mapping: dict) -> Query:
+    """Apply a where clause to a query
+
+    :param filters:
+    :param query:
+    :param table:
+    :param mapping:
+    :return:
+    """
+    filtered_query = copy.copy(query)
+    for field, value in filters.items():
+        # TODO: decide how to handle the currently bypassed scenarios
+        #       options:
+        #          - return the original query
+        #          - raise an error
+        #          - bypass and notify
+        if field not in QUERY_FILTERS:
+            continue
+        if value not in QUERY_FILTERS[field] and '*' not in QUERY_FILTERS[field]:
+            continue
+        if field not in table.columns:
+            continue
+        if value not in mapping:
+            continue
+        filtered_query = filtered_query.where(table.columns[field] == mapping[value])
+    return filtered_query
