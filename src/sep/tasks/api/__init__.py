@@ -273,7 +273,26 @@ async def _process_queue_item(queue_id: int, task: Task, request: Request):
             backend_config["session"] = get_requests_session(request)
             backend = nomad.Nomad(**backend_config)
             # TODO: determine scenarios for execution, such as looking up an existing job
-            status = backend.jobs.register_job({"Job": json.loads(task.data)})
+            need_job = True
+            for job in backend.jobs.get_jobs():
+                if job["Name"] == task.name:
+                    need_job = False
+                    break
+            if need_job:
+                status = backend.jobs.register_job({"Job": json.loads(task.data)})
+            else:
+                #need_params = job["ParameterizedJob"]
+                raise NotImplementedError("TBD existing jobs")
+            #
+            #       Example response:
+            #       {"EvalID":"5d87d645-9e98-e9b2-f6e8-380256bb5cf5",
+            #       "EvalCreateIndex":8633,
+            #       "JobModifyIndex":8633,
+            #       "Warnings":"",
+            #       "Index":8633,
+            #       "LastContact":0,
+            #       "KnownLeader":false,
+            #       "NextToken":""}
             if status:
                 pass
         case _:
