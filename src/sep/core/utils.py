@@ -12,6 +12,7 @@ from typing import (
     Union,
 )
 
+from fastapi import Request
 import requests
 from tornado.template import (
     Loader,
@@ -82,7 +83,7 @@ def get_process_config(cfg: dict | ObjectDict, name: str) -> ObjectDict | None:
     return api_uri
 
 
-def get_requests_session(request: RequestHandler) -> requests.Session:
+def get_requests_session(request: Union[RequestHandler, Request]) -> requests.Session:
     """Get a requests.Session instance populated from a handler
 
     :param request:
@@ -93,9 +94,10 @@ def get_requests_session(request: RequestHandler) -> requests.Session:
         # TODO: use settings to determine cookie names
         if c not in ["_xsrf", "fastapi-session", "casdoorUser", "sep"]:
             continue
+        val = v.value if isinstance(request, RequestHandler) else v
         if c == "_xsrf":
-            session.headers.setdefault("X-Xsrftoken", v.value)
-        session.cookies.set(c, v.value)
+            session.headers.setdefault("X-Xsrftoken", val)
+        session.cookies.set(c, val)
     return session
 
 

@@ -6,12 +6,15 @@ from datetime import (
     timezone,
 )
 from http import HTTPStatus
+import json
 import logging
 from os import getenv
 from secrets import token_hex
 from typing import Annotated
 
+import nomad
 from fastapi import (
+    BackgroundTasks,
     FastAPI,
     Form,
     HTTPException,
@@ -28,10 +31,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 from starlette.middleware.sessions import SessionMiddleware
+from tornado.options import options
 
 from .models import (
     history,
     Task,
+    TASK_BACKEND_LOOKUP,
     TaskBaseModel,
     TaskExecutionRequest,
     TaskHistory,
@@ -42,9 +47,13 @@ from .models import (
 )
 from sep.authz.casdoor import SESSION_TOKEN_LENGTH
 import sep.core.db
-from sep.core.utils import get_logger
+from sep.core.utils import (
+    get_logger,
+    get_requests_session,
+)
 
 DEFAULT_DATABASE_DSN = f"{sep.core.db.DEFAULT_DATABASE_DSN}/tasks.db"
+DEFAULT_EXECUTION_MODE = "background"
 DEFAULT_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
 
 DATABASE_URL = getenv("REPORTS_DATABASE_URL", DEFAULT_DATABASE_DSN)
@@ -111,9 +120,10 @@ async def list_task_history(request: Request):
     """
     app.log.debug("Listing task history")
     query = history.select().where(history.c.deleted_at == null())
-    if request.query_params.get('status'):
-        query = sep.core.db.get_filtered_query({'status': request.query_params.get('status')},
-                                               query=query, table=history, mapping=TASK_HISTORY_STATUS_MAP)
+    if request.query_params.get("status"):
+        query = sep.core.db.get_filtered_query(
+            {"status": request.query_params.get("status")}, query=query, table=history, mapping=TASK_HISTORY_STATUS_MAP
+        )
     return await database.fetch_all(query)
 
 
@@ -190,13 +200,23 @@ async def create_task_history(task: TaskHistoryBaseModel):
 
 
 @app.post(path="/execute/{task_name}", response_class=JSONResponse)
-async def execute_task(task: Annotated[str, Form()], host: Annotated[str, Form()], task_name: str, request: Request):
+async def execute_task(
+    task: Annotated[str, Form()],
+    host: Annotated[str, Form()],
+    task_name: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Send a task for execution
+
+    TODO: optional arg (if possible), else a structured one
+          so that tasks can be executed with arbitrary parameters
 
     :param task:
     :param host:
     :param task_name:
     :param request:
+    :param background_tasks:
     :return:
     """
     app.log.debug("Executing task %s", task_name)
@@ -204,6 +224,7 @@ async def execute_task(task: Annotated[str, Form()], host: Annotated[str, Form()
     config = await database.fetch_one(query)
     if config is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+    # Record the task execution request
     execution_request = TaskExecutionRequest(task=task, host=host)
     task = Task(**dict(config))
     task_history = TaskHistoryBaseModel(
@@ -216,6 +237,44 @@ async def execute_task(task: Annotated[str, Form()], host: Annotated[str, Form()
     if not history_recorded:
         database.force_rollback()
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
+    # Check how to proceed with execution
+    try:
+        mode = options.sep.tasks.execute_mode
+    except AttributeError:
+        app.log.warning("Task execution mode is not configured, using %s", DEFAULT_EXECUTION_MODE)
+        mode = DEFAULT_EXECUTION_MODE
+    match mode:
+        case "background":
+            background_tasks.add_task(_process_queue_item, queue_id=history_recorded, task=task, request=request)
+        case _:
+            app.log.critical("Unknown execution mode '%s'", mode)
+            raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
+    # Redirect the user
     if "referer" in request.headers:
         return RedirectResponse(url=request.headers.get("referer"), status_code=HTTPStatus.SEE_OTHER)
     return {"task_history_id": history_recorded}
+
+
+async def _process_queue_item(queue_id: int, task: Task, request: Request):
+    """Process an item from the history table
+
+    :param queue_id:
+    :param task:
+    :param request:
+    :return:
+    """
+    queue_item = await database.fetch_one(history.select().where(history.c.id == queue_id))
+    if queue_item is None:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+
+    match TASK_BACKEND_LOOKUP[task.backend]:
+        case "nomad":
+            backend_config = options.modules["nomad"]["backend"]
+            backend_config["session"] = get_requests_session(request)
+            backend = nomad.Nomad(**backend_config)
+            # TODO: determine scenarios for execution, such as looking up an existing job
+            status = backend.jobs.register_job({"Job": json.loads(task.data)})
+            if status:
+                pass
+        case _:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)

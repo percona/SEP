@@ -33,9 +33,7 @@ DATABASE_EXTRA_COLUMNS = [
     Column("updated_at", DateTime),
 ]
 
-QUERY_FILTERS = {
-    'status': ['*']
-}
+QUERY_FILTERS = {"status": ["*"]}
 
 
 async def startup(database: Database, metadata: Union[MetaData, None] = None):
@@ -145,7 +143,7 @@ def get_filtered_query(filters: dict, query: Query, table: Table, mapping: dict)
         #          - bypass and notify
         if field not in QUERY_FILTERS:
             continue
-        if value not in QUERY_FILTERS[field] and '*' not in QUERY_FILTERS[field]:
+        if value not in QUERY_FILTERS[field] and "*" not in QUERY_FILTERS[field]:
             continue
         if field not in table.columns:
             continue

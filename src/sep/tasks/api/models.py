@@ -1,5 +1,11 @@
 """
 Task API data models
+
+TODO:
+  - ensure that we can handle arbitrary parameters for invocation
+  - owner of a task, allowing app-only, general use, etc (Casdoor potentially)
+  - scheduled task, which can run at a specific time, or require manual invocation
+
 """
 from datetime import (
     datetime,
