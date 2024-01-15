@@ -7,14 +7,14 @@ TODO:
   - scheduled task, which can run at a specific time, or require manual invocation
 
 """
-from datetime import (
-    datetime,
-    timezone,
-)
+from datetime import datetime
 from enum import IntEnum
 import json
 
-from pydantic import BaseModel
+from pydantic import (
+    BaseModel,
+    Field,
+)
 from sqlalchemy import (
     BigInteger,
     Column,
@@ -33,6 +33,7 @@ from sep.core.db import (
     DATABASE_EXTRA_COLUMNS,
     get_metadata,
 )
+from sep.core.utils import get_timestamp
 
 TASK_ALIAS_LENGTH = 100
 TASK_BACKEND_MAP = {  # CAUTION: changing existing values should be done with the utmost care
@@ -85,7 +86,7 @@ class TaskBaseModel(BaseModel):
 
     backend: TaskBackendEnum = TaskBackendEnum.nomad
 
-    created_at: datetime = datetime.now(tz=timezone.utc)
+    created_at: datetime = Field(default_factory=get_timestamp)
     deleted_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -122,7 +123,7 @@ class TaskHistoryBaseModel(BaseModel):
     data: str
     status: int = TASK_HISTORY_STATUS_MAP["pending"]
 
-    created_at: datetime = datetime.now(tz=timezone.utc)
+    created_at: datetime = Field(default_factory=get_timestamp)
     deleted_at: datetime | None = None
     updated_at: datetime | None = None
 

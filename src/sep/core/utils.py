@@ -3,6 +3,10 @@ Utility library
 """
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
+from datetime import (
+    datetime,
+    timezone,
+)
 from http import HTTPStatus
 import logging
 import os.path
@@ -99,6 +103,15 @@ def get_requests_session(request: Union[RequestHandler, Request]) -> requests.Se
             session.headers.setdefault("X-Xsrftoken", val)
         session.cookies.set(c, val)
     return session
+
+
+def get_timestamp() -> datetime:
+    """Get the current time in UTC
+
+    :return: the current time in UTC
+    :rtype: datetime
+    """
+    return datetime.now(tz=timezone.utc)
 
 
 def get_template(template_name: str, template_dirs: list) -> Union[Template, None]:
