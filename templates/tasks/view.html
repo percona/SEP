@@ -11,22 +11,25 @@
   </code>
   </dd>
 </dl>
-{% if data.get("hosts") %}
 <form method="post" action="{{ base_uri }}api/execute/{{ data['name'] }}">
   <input name="task" type="hidden" value="{{ data['name'] }}" />
   <select name="host">
     <option value="all">All matching nodes</option>
-    {% for host in data["hosts"] %}
+    {% if data.get("hosts") and (data["_data"]["Constraints"] or data["_data"]["ParameterizedJob"]) %}
+      {% for host in data["hosts"] %}
     <option value="{{ host['node_id'] }}">{{ host["name"] }} ({{ host["node_id"] }})</option>
+      {% end %}
     {% end %}
   </select>
+  {% if data["_data"]["ParameterizedJob"] %}
+  <!-- TODO: render fields for parameters -->
+  {% end %}
   <button type="submit">Execute</button>
   {% from tornado.escape import xhtml_unescape %}
   {% apply xhtml_unescape %}
   {{ xsrf_form_html() }}
   {% end %}
 </form>
-{% end %}
 {% if data.get("history") %}
     {% from json import loads %}
     <table>

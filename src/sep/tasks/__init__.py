@@ -151,6 +151,7 @@ class TaskHandler(ApiBackendHandler):
             )
         )
         task_data = json.loads(response.body.decode())
+        task_data["_data"] = json.loads(task_data["data"])
 
         try:
             response = await client.fetch(
