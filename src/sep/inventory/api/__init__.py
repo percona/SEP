@@ -33,7 +33,10 @@ from .models import (
 from .pmm import InventorySource
 from sep.authz.casdoor import SESSION_TOKEN_LENGTH
 import sep.core.db
-from sep.core.utils import get_logger
+from sep.core.utils import (
+    get_logger,
+    Timer,
+)
 
 DEFAULT_DATABASE_DSN = f"{sep.core.db.DEFAULT_DATABASE_DSN}/inventory.db"
 DEFAULT_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
@@ -60,6 +63,8 @@ app.add_middleware(
     secret_key=token_hex(SESSION_TOKEN_LENGTH),
     session_cookie="fastapi-session",
 )
+
+timer = Timer()
 
 
 async def lookup_inventory(source: str = "pmm"):
@@ -96,6 +101,7 @@ async def lookup_inventory(source: str = "pmm"):
         else:
             item_id = exists[0][0]
             await update_item(item_id, model)
+    timer.update()
 
 
 async def select_active_inventory():
@@ -130,7 +136,7 @@ async def list_inventory(background_tasks: BackgroundTasks):
     """
     app.log.debug("Listing inventory")
     results = await select_active_inventory()
-    if not results:
+    if not results or timer.needs_refresh():
         background_tasks.add_task(lookup_inventory, "pmm")
     return results
 

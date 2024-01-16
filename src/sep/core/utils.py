@@ -11,6 +11,7 @@ from http import HTTPStatus
 import logging
 import os.path
 from sys import argv
+from time import time
 from typing import (
     Callable,
     Union,
@@ -29,6 +30,7 @@ from tornado.web import (
 )
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
+REFRESH_INTERVAL = 3600
 
 
 async def async_run(func: Callable, *args):
@@ -156,3 +158,49 @@ def render_template(template: Template, **kwargs):
     if template is None:
         raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
     return template.generate(**kwargs)
+
+
+class Timer:
+    """Timer mechanism for refreshing the inventory"""
+    _last_refreshed: int = 0
+    _refresh_after: int = REFRESH_INTERVAL
+
+    @property
+    def last_refresh(self) -> int:
+        """Access the last refresh time
+
+        :return: the last refresh
+        """
+        return self._last_refreshed
+
+    @property
+    def refresh_after(self) -> int:
+        """Access the refresh interval
+
+        :return: the number of seconds to refresh the inventory
+        """
+        return self._refresh_after
+
+    @refresh_after.setter
+    def refresh_after(self, interval: int) -> None:
+        """Set the refresh interval
+
+        :param interval:
+        :return:
+        """
+        if isinstance(interval, int):
+            self._refresh_after = interval
+
+    def needs_refresh(self) -> bool:
+        """Check if a refresh is required
+
+        :return: True if refresh is required
+        """
+        return self._last_refreshed == 0 or self._last_refreshed + self._refresh_after < time()
+
+    def update(self) -> None:
+        """Update the last_refreshed value
+
+        :return:
+        """
+        self._last_refreshed = int(time())
