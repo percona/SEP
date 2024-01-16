@@ -1,0 +1,10 @@
+<div><select name="{{ item }}"{% if item in required %} required {% end %}>
+    <option value="all">All matching nodes</option>
+    {% if data.get("hosts") and (data["_data"]["Constraints"] or data["_data"]["ParameterizedJob"]) %}
+      {% for host in data["hosts"] %}
+        {% if host["name"] != "pmm-server" %}
+    <option value="{{ host['node_id'] }}">{{ host["name"] }} ({{ host["node_id"] }})</option>
+        {% end %}
+      {% end %}
+    {% end %}
+</select></div>

@@ -2,8 +2,10 @@
 Task API data models
 
 TODO:
-  - ensure that we can handle arbitrary parameters for invocation
+  - ensure that we can handle arbitrary parameters for invocation, which should allow mapping
+    to HTML form fields to allow for dynamic rendering when executing a task via the UI
   - owner of a task, allowing app-only, general use, etc (Casdoor potentially)
+    e.g. owner = tasks, owner = alters, owner = *
   - scheduled task, which can run at a specific time, or require manual invocation
 
 """
@@ -73,7 +75,7 @@ class TaskExecutionRequest(BaseModel):
     """Model for execution requests"""
 
     task: str
-    host: str
+    target: str
 
 
 class TaskBaseModel(BaseModel):

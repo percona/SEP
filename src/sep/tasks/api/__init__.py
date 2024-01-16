@@ -10,7 +10,10 @@ import json
 import logging
 from os import getenv
 from secrets import token_hex
-from typing import Annotated
+from typing import (
+    Annotated,
+    Optional,
+)
 
 import nomad
 from fastapi import (
@@ -202,10 +205,10 @@ async def create_task_history(task: TaskHistoryBaseModel):
 @app.post(path="/execute/{task_name}", response_class=JSONResponse)
 async def execute_task(
     task: Annotated[str, Form()],
-    host: Annotated[str, Form()],
     task_name: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    target: Optional[Annotated[str, Form()]] = Form("all"),
 ):
     """Send a task for execution
 
@@ -213,7 +216,7 @@ async def execute_task(
           so that tasks can be executed with arbitrary parameters
 
     :param task:
-    :param host:
+    :param target:
     :param task_name:
     :param request:
     :param background_tasks:
@@ -225,7 +228,7 @@ async def execute_task(
     if config is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
     # Record the task execution request
-    execution_request = TaskExecutionRequest(task=task, host=host)
+    execution_request = TaskExecutionRequest(task=task, target=target)
     task = Task(**dict(config))
     task_history = TaskHistoryBaseModel(
         data=TaskHistoryDataType(task.model_dump_json()).__str__(),
@@ -273,27 +276,41 @@ async def _process_queue_item(queue_id: int, task: Task, request: Request):
             backend_config["session"] = get_requests_session(request)
             backend = nomad.Nomad(**backend_config)
             # TODO: determine scenarios for execution, such as looking up an existing job
-            need_job = True
-            for job in backend.jobs.get_jobs():
-                if job["Name"] == task.name:
-                    need_job = False
-                    break
-            if need_job:
+            try:
+                job = backend.job.get_job(task.name)
+            except nomad.api.exceptions.BaseNomadException:
                 status = backend.jobs.register_job({"Job": json.loads(task.data)})
-            else:
-                #need_params = job["ParameterizedJob"]
-                raise NotImplementedError("TBD existing jobs")
-            #
-            #       Example response:
-            #       {"EvalID":"5d87d645-9e98-e9b2-f6e8-380256bb5cf5",
-            #       "EvalCreateIndex":8633,
-            #       "JobModifyIndex":8633,
-            #       "Warnings":"",
-            #       "Index":8633,
-            #       "LastContact":0,
-            #       "KnownLeader":false,
-            #       "NextToken":""}
-            if status:
-                pass
+                # TODO: check status
+                #
+                # Example response:
+                #       {"EvalID":"5d87d645-9e98-e9b2-f6e8-380256bb5cf5",
+                #       "EvalCreateIndex":8633,
+                #       "JobModifyIndex":8633,
+                #       "Warnings":"",
+                #       "Index":8633,
+                #       "LastContact":0,
+                #       "KnownLeader":false,
+                #       "NextToken":""}
+                #
+                job = backend.job.get_job(task.name)
+                allocations = backend.allocations.get_allocations(filter_=f'EvalID == "{status["EvalID"]}"')
+            need_params = job["ParameterizedJob"]
+            if need_params:
+                # Example content:
+                # "ParameterizedJob": {"MetaOptional": ["args", "image"], "MetaRequired": ["command"], "Payload": ""}
+                # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
+                raise NotImplementedError("Parameterized job support is TBD")
+
+            # TODO: add polling to check on the job and update the status in tasks_history
+            match job["Type"]:
+                case "batch":
+                    raise NotImplementedError("Batch job support is TBD")
+                case "service":
+                    raise NotImplementedError("Service job support is TBD")
+                case "system" | "sysbatch":
+                    raise NotImplementedError("System job support is TBD")
+                case _:
+                    raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
+
         case _:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
