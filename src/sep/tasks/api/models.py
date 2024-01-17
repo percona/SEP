@@ -12,9 +12,11 @@ TODO:
 from datetime import datetime
 from enum import IntEnum
 import json
+from typing import Optional
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
 )
 from sqlalchemy import (
@@ -73,9 +75,11 @@ class TaskHistoryStatusEnum(IntEnum):
 
 class TaskExecutionRequest(BaseModel):
     """Model for execution requests"""
+    model_config = ConfigDict(extra="allow")
 
     task: str
     target: str
+    meta: Optional[dict] = {}
 
 
 class TaskBaseModel(BaseModel):

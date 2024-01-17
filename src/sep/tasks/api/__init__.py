@@ -228,10 +228,16 @@ async def execute_task(
     if config is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
     # Record the task execution request
-    execution_request = TaskExecutionRequest(task=task, target=target)
+    meta = {
+        field.replace("meta_", ""): val
+        for field, val in dict(await request.form()).items()
+        if field.startswith("meta_")
+    }
+    execution_request = TaskExecutionRequest(task=task, target=target, meta=meta)
     task = Task(**dict(config))
     task_history = TaskHistoryBaseModel(
-        data=TaskHistoryDataType(task.model_dump_json()).__str__(),
+        #data=TaskHistoryDataType(task.model_dump_json()).__str__(),
+        data=task.model_dump_json(),
         execution_request=execution_request.model_dump(),
         name=task.name,
         status=TASK_HISTORY_STATUS_MAP["pending"],
@@ -279,6 +285,9 @@ async def _process_queue_item(queue_id: int, task: Task, request: Request):
             try:
                 job = backend.job.get_job(task.name)
             except nomad.api.exceptions.BaseNomadException:
+                if "meta" in queue_item["execution_request"]:
+                    # TODO: "Constraints": [{"LTarget": "${node.unique.name}", "Operand": "${NOMAD_META_operator}", "RTarget": "${NOMAD_META_target}"}]
+                    pass
                 status = backend.jobs.register_job({"Job": json.loads(task.data)})
                 # TODO: check status
                 #

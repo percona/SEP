@@ -14,21 +14,29 @@
 </dl>
 <form method="post" action="{{ base_uri }}api/execute/{{ data['name'] }}">
   <input name="task" type="hidden" value="{{ data['name'] }}" />
-  {% if data["_data"]["ParameterizedJob"] %}
+  {% if "ParameterizedJob" in data["_data"] %}
     <fieldset>
       <legend>Configuration</legend>
     {% set optional = data["_data"]["ParameterizedJob"].get("MetaOptional", []) %}
     {% set required = data["_data"]["ParameterizedJob"].get("MetaRequired", []) %}
     {% set meta_defaults = data["_data"]["Meta"] %}
-    {% for item in set(optional + required) %}
-      <label>{{ item.capitalize() }} {% if item in required %} (required){% end %}
+    {% for item in required %}
+      <label>{{ item.capitalize() }} (required)
       {% if item == "target" %}
         {% include "partials/select-host.html" %}
       {% else %}
-        <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}"
-        {% if item in required %} required {% end %} />
+        <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" required />
       {% end %}
       </label>
+    {% end %}
+    {% for item in optional %}
+    <label>{{ item.capitalize() }}
+      {% if item == "target" %}
+      {% include "partials/select-host.html" %}
+      {% else %}
+      <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" />
+      {% end %}
+    </label>
     {% end %}
     </fieldset>
   {% end %}
