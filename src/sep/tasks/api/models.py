@@ -11,7 +11,6 @@ TODO:
 """
 from datetime import datetime
 from enum import IntEnum
-import json
 from typing import Optional
 
 from pydantic import (
@@ -29,12 +28,12 @@ from sqlalchemy import (
     null,
     String,
     Table,
-    TypeDecorator,
     UniqueConstraint,
 )
 
 from sep.core.db import (
     DATABASE_EXTRA_COLUMNS,
+    DbBaseModel,
     get_metadata,
 )
 from sep.core.utils import get_timestamp
@@ -75,14 +74,16 @@ class TaskHistoryStatusEnum(IntEnum):
 
 class TaskExecutionRequest(BaseModel):
     """Model for execution requests"""
+
     model_config = ConfigDict(extra="allow")
 
     task: str
     target: str
     meta: Optional[dict] = {}
+    tracking: Optional[dict] = {"allocation_id": None, "evaluation_id": None}
 
 
-class TaskBaseModel(BaseModel):
+class Task(DbBaseModel):
     """
     Model for tasks
     """
@@ -92,52 +93,14 @@ class TaskBaseModel(BaseModel):
 
     backend: TaskBackendEnum = TaskBackendEnum.nomad
 
-    created_at: datetime = Field(default_factory=get_timestamp)
-    deleted_at: datetime | None = None
-    updated_at: datetime | None = None
 
-
-class Task(TaskBaseModel):
-    """
-    Model for existing tasks
-    """
-
-    id: int
-
-
-class TaskHistoryDataType(TypeDecorator):
-    """Data type for task history data"""
-
-    impl = JSON
-
-    def process_bind_param(self, value, dialect):
-        if value is not None:
-            value = json.dumps(value)
-        return value
-
-    def process_result_value(self, value, dialect):
-        if value is not None:
-            value = json.loads(value)
-        return value
-
-
-class TaskHistoryBaseModel(BaseModel):
+class TaskHistory(DbBaseModel):
     """Model for task history"""
 
     name: str
     execution_request: TaskExecutionRequest
-    data: str
+    data: Task
     status: int = TASK_HISTORY_STATUS_MAP["pending"]
-
-    created_at: datetime = Field(default_factory=get_timestamp)
-    deleted_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-class TaskHistory(TaskHistoryBaseModel):
-    """Model for existing task history"""
-
-    id: int
 
 
 tasks = Table(
@@ -168,9 +131,10 @@ history = Table(
         nullable=False,
         primary_key=True,
     ),
-    Column("execution_request", JSON, nullable=False),
-    Column("data", TaskHistoryDataType, nullable=False),
     Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
+    Column("execution_request", JSON, nullable=False),
+    Column("data", JSON, nullable=False),
+    Column("tracking", JSON, nullable=False, default="{}"),
     Column("status", Enum(TaskHistoryStatusEnum).with_variant(Integer, dialect_name="sqlite"), nullable=False),
 )
 

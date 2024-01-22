@@ -45,11 +45,10 @@ DATABASE_URL = getenv("INVENTORY_DATABASE_URL", DEFAULT_DATABASE_DSN)
 ORIGINS = getenv("INVENTORY_ORIGINS", DEFAULT_ORIGINS).split(",")
 
 database = sep.core.db.get_database(DATABASE_URL)
-database.metadata = sep.core.db.get_metadata()
-database.engine = sep.core.db.get_engine(DATABASE_URL, connect_args=sep.core.db.DEFAULT_DATABASE_CONNECT_ARGS)
 
 app = FastAPI()
 app.log = get_logger("inventory-api", level=logging.DEBUG)
+app.log.debug("dialect._json_serializer: %r", database.engine.dialect._json_serializer)
 
 app.add_middleware(
     CORSMiddleware,

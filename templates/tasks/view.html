@@ -17,9 +17,14 @@
   {% if "ParameterizedJob" in data["_data"] %}
     <fieldset>
       <legend>Configuration</legend>
-    {% set optional = data["_data"]["ParameterizedJob"].get("MetaOptional", []) %}
-    {% set required = data["_data"]["ParameterizedJob"].get("MetaRequired", []) %}
-    {% set meta_defaults = data["_data"]["Meta"] %}
+      {% if data["_data"]["ParameterizedJob"] %}
+        {% set optional = data["_data"]["ParameterizedJob"].get("MetaOptional", []) %}
+        {% set required = data["_data"]["ParameterizedJob"].get("MetaRequired", []) %}
+      {% else %}
+        {% set optional = [] %}
+        {% set required = [] %}
+      {% end %}
+      {% set meta_defaults = data["_data"]["Meta"] %}
     {% for item in required %}
       <label>{{ item.capitalize() }} (required)
       {% if item == "target" %}

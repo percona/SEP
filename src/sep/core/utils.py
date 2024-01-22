@@ -162,6 +162,7 @@ def render_template(template: Template, **kwargs):
 
 class Timer:
     """Timer mechanism for refreshing the inventory"""
+
     _last_refreshed: int = 0
     _refresh_after: int = REFRESH_INTERVAL
 

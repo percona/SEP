@@ -40,11 +40,8 @@ from .models import (
     history,
     Task,
     TASK_BACKEND_LOOKUP,
-    TaskBaseModel,
     TaskExecutionRequest,
     TaskHistory,
-    TaskHistoryBaseModel,
-    TaskHistoryDataType,
     TASK_HISTORY_STATUS_MAP,
     tasks,
 )
@@ -53,6 +50,7 @@ import sep.core.db
 from sep.core.utils import (
     get_logger,
     get_requests_session,
+    get_timestamp,
 )
 
 DEFAULT_DATABASE_DSN = f"{sep.core.db.DEFAULT_DATABASE_DSN}/tasks.db"
@@ -62,12 +60,11 @@ DEFAULT_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
 DATABASE_URL = getenv("REPORTS_DATABASE_URL", DEFAULT_DATABASE_DSN)
 ORIGINS = getenv("REPORTS_ORIGINS", DEFAULT_ORIGINS).split(",")
 
-database = sep.core.db.get_database(DATABASE_URL)
-database.metadata = sep.core.db.get_metadata()
-database.engine = sep.core.db.get_engine(DATABASE_URL, connect_args=sep.core.db.DEFAULT_DATABASE_CONNECT_ARGS)
+database = sep.core.db.get_database(DATABASE_URL, include_engine=True)
 
 app = FastAPI()
 app.log = get_logger("tasks-api", level=logging.DEBUG)
+app.log.debug("dialect._json_serializer: %r", database.engine.dialect._json_serializer)
 
 app.add_middleware(
     CORSMiddleware,
@@ -177,26 +174,26 @@ async def get_task_history(task: str):
 
 
 @app.post(path="/", response_model=Task)
-async def create_task(task: TaskBaseModel):
+async def create_task(task: Task):
     """Create a new task
 
     :param task:
     :return:
     """
     app.log.debug("Creating task %s", task.name)
-    query = tasks.insert().values(**vars(task))
+    query = tasks.insert().values(**task.model_dump())
     last_record_id = await database.execute(query)
     return {**task.model_dump(), "id": last_record_id}
 
 
 @app.post(path="/history", response_model=TaskHistory)
-async def create_task_history(task: TaskHistoryBaseModel):
+async def create_task_history(task: TaskHistory):
     """Create a new task
 
     :param task:
     :return:
     """
-    app.log.debug("Creating task %s", task.name)
+    app.log.debug("Creating task history %s", task.name)
     query = history.insert().values(**vars(task))
     last_record_id = await database.execute(query)
     return {**task.model_dump(), "id": last_record_id}
@@ -233,16 +230,13 @@ async def execute_task(
         for field, val in dict(await request.form()).items()
         if field.startswith("meta_")
     }
-    execution_request = TaskExecutionRequest(task=task, target=target, meta=meta)
-    task = Task(**dict(config))
-    task_history = TaskHistoryBaseModel(
-        #data=TaskHistoryDataType(task.model_dump_json()).__str__(),
-        data=task.model_dump_json(),
-        execution_request=execution_request.model_dump(),
-        name=task.name,
+    task_history = TaskHistory(
+        data=Task(**dict(config)),
+        execution_request=TaskExecutionRequest(task=task, target=target, meta=meta, tracking={}),
+        name=task,
         status=TASK_HISTORY_STATUS_MAP["pending"],
     )
-    history_recorded = await database.execute(history.insert().values(**task_history.model_dump()))
+    history_recorded = await create_task_history(task=task_history)
     if not history_recorded:
         database.force_rollback()
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
@@ -252,74 +246,120 @@ async def execute_task(
     except AttributeError:
         app.log.warning("Task execution mode is not configured, using %s", DEFAULT_EXECUTION_MODE)
         mode = DEFAULT_EXECUTION_MODE
+    async with database.engine.begin() as dbc:
+        task_history.execution_request.tracking.update(evaluation_id=history_recorded["id"])
+        await dbc.execute(
+            history.update()
+            .where(history.c.id == history_recorded["id"])
+            .values(execution_request=task_history.execution_request)
+        )
     match mode:
         case "background":
-            background_tasks.add_task(_process_queue_item, queue_id=history_recorded, task=task, request=request)
+            background_tasks.add_task(_process_queue_item, queue_id=history_recorded["id"], request=request)
         case _:
             app.log.critical("Unknown execution mode '%s'", mode)
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
     # Redirect the user
-    if "referer" in request.headers:
-        return RedirectResponse(url=request.headers.get("referer"), status_code=HTTPStatus.SEE_OTHER)
+    redirect = request.query_params.get("next")
+    if redirect is None and "referer" in request.headers:
+        redirect = request.headers.get("referer")
+    if redirect:
+        app.log.debug("Redirecting to %s", redirect)
+        return RedirectResponse(url=redirect, status_code=HTTPStatus.SEE_OTHER)
     return {"task_history_id": history_recorded}
 
 
-async def _process_queue_item(queue_id: int, task: Task, request: Request):
+async def _process_queue_item(queue_id: int, request: Request):
     """Process an item from the history table
 
     :param queue_id:
-    :param task:
     :param request:
     :return:
     """
     queue_item = await database.fetch_one(history.select().where(history.c.id == queue_id))
     if queue_item is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+    # TODO: add check to ensure that only pending jobs are processed here
+    task = Task(**dict(queue_item)["data"])
+    # execution_request = TaskExecutionRequest(**dict(queue_item))
+    # task = Task(**execution_request.data)
 
     match TASK_BACKEND_LOOKUP[task.backend]:
         case "nomad":
             backend_config = options.modules["nomad"]["backend"]
             backend_config["session"] = get_requests_session(request)
             backend = nomad.Nomad(**backend_config)
+
             # TODO: determine scenarios for execution, such as looking up an existing job
+            task_data = json.loads(task.data)
+            if queue_item["execution_request"].get("meta"):
+                # TODO: target is currently pushed in to meta
+                queue_item["execution_request"]["meta"]["target"] = queue_item["execution_request"]["target"]
+                # TODO: DC is currently forced
+                queue_item["execution_request"]["meta"]["dc"] = "dc1"
+                # TODO: allow templates in more fields, currently only for constraints
+                for meta_var, meta_val in queue_item["execution_request"]["meta"].items():
+                    for i, constraint in enumerate(task_data["Constraints"]):
+                        meta = "${NOMAD_META_" + meta_var + "}"
+                        task_data["Constraints"][i] = json.loads(json.dumps(constraint).replace(meta, meta_val))
+
+            # TODO: check status
+            #
+            # Example response:
+            #       {"EvalID":"5d87d645-9e98-e9b2-f6e8-380256bb5cf5",
+            #       "EvalCreateIndex":8633,
+            #       "JobModifyIndex":8633,
+            #       "Warnings":"",
+            #       "Index":8633,
+            #       "LastContact":0,
+            #       "KnownLeader":false,
+            #       "NextToken":""}
+            #
             try:
                 job = backend.job.get_job(task.name)
+                status = backend.job.evaluate_job(task.name)
             except nomad.api.exceptions.BaseNomadException:
-                if "meta" in queue_item["execution_request"]:
-                    # TODO: "Constraints": [{"LTarget": "${node.unique.name}", "Operand": "${NOMAD_META_operator}", "RTarget": "${NOMAD_META_target}"}]
-                    pass
-                status = backend.jobs.register_job({"Job": json.loads(task.data)})
-                # TODO: check status
-                #
-                # Example response:
-                #       {"EvalID":"5d87d645-9e98-e9b2-f6e8-380256bb5cf5",
-                #       "EvalCreateIndex":8633,
-                #       "JobModifyIndex":8633,
-                #       "Warnings":"",
-                #       "Index":8633,
-                #       "LastContact":0,
-                #       "KnownLeader":false,
-                #       "NextToken":""}
-                #
+                status = backend.jobs.register_job({"Job": task_data})
+                app.log.debug("Job status: %r", status)
                 job = backend.job.get_job(task.name)
-                allocations = backend.allocations.get_allocations(filter_=f'EvalID == "{status["EvalID"]}"')
-            need_params = job["ParameterizedJob"]
-            if need_params:
+            allocation_filters = [f'JobID == "{job["ID"]}"', f'EvalID == "{status["EvalID"]}"']
+            allocations = backend.allocations.get_allocations(filter_=" && ".join(allocation_filters))
+            app.log.debug("Job: %r", job)
+            app.log.debug("Allocations: %r", [x["JobID"] for x in allocations])
+
+            if job["ParameterizedJob"]:
                 # Example content:
                 # "ParameterizedJob": {"MetaOptional": ["args", "image"], "MetaRequired": ["command"], "Payload": ""}
                 # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
                 raise NotImplementedError("Parameterized job support is TBD")
 
+            async with database.engine.begin() as conn:
+                await conn.execute(
+                    history.update()
+                    .where(history.c.id == queue_id)
+                    .values(status=TASK_HISTORY_STATUS_MAP["running"], updated_at=get_timestamp())
+                )
+
             # TODO: add polling to check on the job and update the status in tasks_history
-            match job["Type"]:
-                case "batch":
-                    raise NotImplementedError("Batch job support is TBD")
-                case "service":
-                    raise NotImplementedError("Service job support is TBD")
-                case "system" | "sysbatch":
-                    raise NotImplementedError("System job support is TBD")
-                case _:
-                    raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
+            #       check if we can ever get more that one allocation here
+            alloc = allocations[0]
+            while True:
+                match job["Type"]:
+                    case "batch":
+                        raise NotImplementedError("Batch job support is TBD")
+                    case "service":
+                        raise NotImplementedError("Service job support is TBD")
+                    case "system" | "sysbatch":
+                        alloc = backend.allocations.get_allocations(filter_=f'EvalID == "{alloc["EvalID"]}"')[0]
+                    case _:
+                        raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
+                if alloc["ClientStatus"] in ["completed", "failed"]:
+                    break
+            async with database.engine.begin() as conn:
+                status = TASK_HISTORY_STATUS_MAP["failed" if alloc["ClientStatus"] == "failed" else "success"]
+                await conn.execute(
+                    history.update().where(history.c.id == queue_id).values(status=status, updated_at=get_timestamp())
+                )
 
         case _:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
