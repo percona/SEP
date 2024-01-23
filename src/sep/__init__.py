@@ -40,6 +40,7 @@ import mimetypes
 from os import (
     environ,
     getpid,
+    path,
 )
 import pathlib
 from secrets import token_bytes
@@ -62,7 +63,10 @@ from tornado.options import (
     parse_command_line,
     parse_config_file,
 )
-from tornado.web import Application
+from tornado.web import (
+    Application,
+    StaticFileHandler,
+)
 from tornado.util import ObjectDict
 import uvicorn
 import yaml
@@ -168,6 +172,17 @@ class Config(ObjectDict):
         loaded_handlers.append([r"^/$", HomepageHandler, {}])
         loaded_handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
 
+        # Static file handler
+        source_dir = path.abspath(path.join(__file__, "..", "..", ".."))
+        if 'static_path' in self.sep and self.sep.static_path is not None:
+            static_path = pathlib.Path(self.sep.static_path)
+            if not static_path.exists():
+                raise asyncio.exceptions.CancelledError(f"Cannot find static_path {static_path}")
+        else:
+            static_path = path.abspath(path.join(source_dir, "static"))
+        loaded_handlers.append([r"^/static/(.*)", StaticFileHandler, {"path": static_path}])
+
+        # Built-in routers
         for handler in inventory_router(cfg=self.modules, handlers_only=True):
             loaded_handlers.append(handler)
         for handler in tasks_router(cfg=self.modules, handlers_only=True):
