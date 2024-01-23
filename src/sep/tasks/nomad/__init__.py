@@ -134,5 +134,3 @@ class Executor:
                     execution_request=self.execution_request,
                 )
             )
-
-
