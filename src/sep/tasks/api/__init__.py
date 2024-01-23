@@ -46,6 +46,7 @@ from .models import (
     TASK_HISTORY_STATUS_MAP,
     tasks,
 )
+from ..nomad import Executor
 from sep.authz.casdoor import SESSION_TOKEN_LENGTH
 import sep.core.db
 from sep.core.utils import (
@@ -284,86 +285,100 @@ async def _process_queue_item(queue_id: int, request: Request):
         case "nomad":
             backend_config = options.modules["nomad"]["backend"]
             backend_config["session"] = get_requests_session(request)
-            backend = nomad.Nomad(**backend_config)
 
-            # TODO: determine scenarios for execution, such as looking up an existing job
-            task_data = json.loads(task.data)
-            if queue_item["execution_request"].get("meta"):
-                # TODO: target is currently pushed in to meta
-                queue_item["execution_request"]["meta"]["target"] = queue_item["execution_request"]["target"]
-                # TODO: DC is currently forced
-                queue_item["execution_request"]["meta"]["dc"] = "dc1"
-                # TODO: allow templates in more fields, currently only for constraints
-                for meta_var, meta_val in queue_item["execution_request"]["meta"].items():
-                    for i, constraint in enumerate(task_data["Constraints"]):
-                        meta = "${NOMAD_META_" + meta_var + "}"
-                        task_data["Constraints"][i] = json.loads(json.dumps(constraint).replace(meta, meta_val))
+            executor = Executor().setup(backend_config, database, execution_request, task)
+            await executor.run(dict(queue_item), BACKEND_POLL_INTERVAL_SECONDS)
 
-            # TODO: check status
-            #
-            # Example response:
-            #       {"EvalID":"5d87d645-9e98-e9b2-f6e8-380256bb5cf5",
-            #       "EvalCreateIndex":8633,
-            #       "JobModifyIndex":8633,
-            #       "Warnings":"",
-            #       "Index":8633,
-            #       "LastContact":0,
-            #       "KnownLeader":false,
-            #       "NextToken":""}
-            #
-            try:
-                job = backend.job.get_job(task.name)
-                status = backend.job.evaluate_job(task.name)
-            except nomad.api.exceptions.BaseNomadException:
-                status = backend.jobs.register_job({"Job": task_data})
-                app.log.debug("Job status: %r", status)
-                job = backend.job.get_job(task.name)
+            #backend = nomad.Nomad(**backend_config)
 
-            execution_request.tracking.update(evaluation_id=status["EvalID"])
-            async with database.engine.begin() as conn:
-                await conn.execute(
-                    history.update().where(history.c.id == queue_id).values(execution_request=execution_request)
-                )
+            ## TODO: determine scenarios for execution, such as looking up an existing job
+            #task_data = json.loads(task.data)
+            #if queue_item["execution_request"].get("meta"):
+            #    # TODO: target is currently pushed in to meta
+            #    queue_item["execution_request"]["meta"]["target"] = queue_item["execution_request"]["target"]
+            #    # TODO: DC is currently forced
+            #    queue_item["execution_request"]["meta"]["dc"] = "dc1"
+            #    # TODO: allow templates in more fields, currently only for constraints
+            #    for meta_var, meta_val in queue_item["execution_request"]["meta"].items():
+            #        for i, constraint in enumerate(task_data["Constraints"]):
+            #            meta = "${NOMAD_META_" + meta_var + "}"
+            #            task_data["Constraints"][i] = json.loads(json.dumps(constraint).replace(meta, meta_val))
 
-            allocation_filters = [f'JobID == "{job["ID"]}"', f'EvalID == "{status["EvalID"]}"']
-            allocations = backend.allocations.get_allocations(filter_=" && ".join(allocation_filters))
-            app.log.debug("Job: %r", job)
-            app.log.debug("Allocations: %r", [x["JobID"] for x in allocations])
+            ## TODO: check status
+            ##
+            ## Example response:
+            ##       {"EvalID":"5d87d645-9e98-e9b2-f6e8-380256bb5cf5",
+            ##       "EvalCreateIndex":8633,
+            ##       "JobModifyIndex":8633,
+            ##       "Warnings":"",
+            ##       "Index":8633,
+            ##       "LastContact":0,
+            ##       "KnownLeader":false,
+            ##       "NextToken":""}
+            ##
+            #try:
+            #    job = backend.job.get_job(task.name)
+            #    status = backend.job.evaluate_job(task.name)
+            #except nomad.api.exceptions.BaseNomadException:
+            #    status = backend.jobs.register_job({"Job": task_data})
+            #    app.log.debug("Job status: %r", status)
+            #    job = backend.job.get_job(task.name)
 
-            if job["ParameterizedJob"]:
-                # Example content:
-                # "ParameterizedJob": {"MetaOptional": ["args", "image"], "MetaRequired": ["command"], "Payload": ""}
-                # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
-                raise NotImplementedError("Parameterized job support is TBD")
+            #execution_request.tracking.update(evaluation_id=status["EvalID"])
+            #async with database.engine.begin() as conn:
+            #    await conn.execute(
+            #        history.update().where(history.c.id == queue_id).values(execution_request=execution_request)
+            #    )
 
-            async with database.engine.begin() as conn:
-                await conn.execute(
-                    history.update()
-                    .where(history.c.id == queue_id)
-                    .values(status=TASK_HISTORY_STATUS_MAP["running"], updated_at=get_timestamp())
-                )
+            #allocation_filters = [f'JobID == "{job["ID"]}"', f'EvalID == "{status["EvalID"]}"']
+            #allocations = backend.allocations.get_allocations(filter_=" && ".join(allocation_filters))
+            #app.log.debug("Job: %r", job)
+            #app.log.debug("Allocations: %r", [x["JobID"] for x in allocations])
 
-            # TODO: add polling to check on the job and update the status in tasks_history
-            #       check if we can ever get more that one allocation here
-            alloc = allocations[0]
-            while True:
-                match job["Type"]:
-                    case "batch":
-                        raise NotImplementedError("Batch job support is TBD")
-                    case "service":
-                        raise NotImplementedError("Service job support is TBD")
-                    case "system" | "sysbatch":
-                        alloc = backend.allocations.get_allocations(filter_=f'EvalID == "{alloc["EvalID"]}"')[0]
-                    case _:
-                        raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
-                if alloc["ClientStatus"] in ["completed", "failed"]:
-                    break
-                await sleep(BACKEND_POLL_INTERVAL_SECONDS)
-            async with database.engine.begin() as conn:
-                status = TASK_HISTORY_STATUS_MAP["failed" if alloc["ClientStatus"] == "failed" else "success"]
-                await conn.execute(
-                    history.update().where(history.c.id == queue_id).values(status=status, updated_at=get_timestamp())
-                )
+            #if job["ParameterizedJob"]:
+            #    # Example content:
+            #    # "ParameterizedJob": {"MetaOptional": ["args", "image"], "MetaRequired": ["command"], "Payload": ""}
+            #    # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
+            #    raise NotImplementedError("Parameterized job support is TBD")
+
+            #async with database.engine.begin() as conn:
+            #    await conn.execute(
+            #        history.update()
+            #        .where(history.c.id == queue_id)
+            #        .values(status=TASK_HISTORY_STATUS_MAP["running"], updated_at=get_timestamp())
+            #    )
+
+            #alloc = allocations[0]
+            #while True:
+            #    match job["Type"]:
+            #        case "batch":
+            #            raise NotImplementedError("Batch job support is TBD")
+            #        case "service":
+            #            raise NotImplementedError("Service job support is TBD")
+            #        case "system" | "sysbatch":
+            #            alloc = backend.allocations.get_allocations(filter_=f'EvalID == "{alloc["EvalID"]}"')[0]
+            #        case _:
+            #            raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
+            #    if alloc["ClientStatus"] in ["completed", "failed"]:
+            #        break
+            #    await sleep(BACKEND_POLL_INTERVAL_SECONDS)
+            ## Check status
+            #status = 0
+            #if alloc["ClientStatus"] == "failed":
+            #    for state in alloc["TaskStates"].values():
+            #        status += sum([x["ExitCode"] for x in state["Events"]])
+
+            #execution_request.tracking.update(task_states=alloc["TaskStates"])
+            #async with database.engine.begin() as conn:
+            #    await conn.execute(
+            #        history.update()
+            #        .where(history.c.id == queue_id)
+            #        .values(
+            #            status=TASK_HISTORY_STATUS_MAP["failed" if status > 0 else "success"],
+            #            updated_at=get_timestamp(),
+            #            execution_request=execution_request,
+            #        )
+            #    )
 
         case _:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
