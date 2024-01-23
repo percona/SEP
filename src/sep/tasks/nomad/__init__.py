@@ -19,7 +19,7 @@ from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_MAP,
 )
 
-__all__ = ["NomadRemoteCallHandler"]
+__all__ = ["Executor", "NomadRemoteCallHandler"]
 
 
 class NomadRemoteCallHandler(RemoteCallHandler):
