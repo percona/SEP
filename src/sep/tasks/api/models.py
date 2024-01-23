@@ -134,7 +134,6 @@ history = Table(
     Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
     Column("execution_request", JSON, nullable=False),
     Column("data", JSON, nullable=False),
-    Column("tracking", JSON, nullable=False, default="{}"),
     Column("status", Enum(TaskHistoryStatusEnum).with_variant(Integer, dialect_name="sqlite"), nullable=False),
 )
 

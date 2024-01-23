@@ -1,6 +1,7 @@
 """
 Tasks API
 """
+from asyncio import sleep
 from datetime import (
     datetime,
     timezone,
@@ -53,12 +54,14 @@ from sep.core.utils import (
     get_timestamp,
 )
 
+DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
 DEFAULT_DATABASE_DSN = f"{sep.core.db.DEFAULT_DATABASE_DSN}/tasks.db"
 DEFAULT_EXECUTION_MODE = "background"
 DEFAULT_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
 
-DATABASE_URL = getenv("REPORTS_DATABASE_URL", DEFAULT_DATABASE_DSN)
-ORIGINS = getenv("REPORTS_ORIGINS", DEFAULT_ORIGINS).split(",")
+BACKEND_POLL_INTERVAL_SECONDS = getenv("TASKS_BACKEND_POLL_INTERVAL_SECONDS", DEFAULT_BACKEND_POLL_INTERVAL_SECONDS)
+DATABASE_URL = getenv("TASKS_DATABASE_URL", DEFAULT_DATABASE_DSN)
+ORIGINS = getenv("TASKS_ORIGINS", DEFAULT_ORIGINS).split(",")
 
 database = sep.core.db.get_database(DATABASE_URL, include_engine=True)
 
@@ -232,7 +235,7 @@ async def execute_task(
     }
     task_history = TaskHistory(
         data=Task(**dict(config)),
-        execution_request=TaskExecutionRequest(task=task, target=target, meta=meta, tracking={}),
+        execution_request=TaskExecutionRequest(task=task, target=target, meta=meta, tracking={"evaluation_id": ""}),
         name=task,
         status=TASK_HISTORY_STATUS_MAP["pending"],
     )
@@ -246,13 +249,7 @@ async def execute_task(
     except AttributeError:
         app.log.warning("Task execution mode is not configured, using %s", DEFAULT_EXECUTION_MODE)
         mode = DEFAULT_EXECUTION_MODE
-    async with database.engine.begin() as dbc:
-        task_history.execution_request.tracking.update(evaluation_id=history_recorded["id"])
-        await dbc.execute(
-            history.update()
-            .where(history.c.id == history_recorded["id"])
-            .values(execution_request=task_history.execution_request)
-        )
+
     match mode:
         case "background":
             background_tasks.add_task(_process_queue_item, queue_id=history_recorded["id"], request=request)
@@ -280,9 +277,8 @@ async def _process_queue_item(queue_id: int, request: Request):
     if queue_item is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
     # TODO: add check to ensure that only pending jobs are processed here
+    execution_request = TaskExecutionRequest(**dict(queue_item)["execution_request"])
     task = Task(**dict(queue_item)["data"])
-    # execution_request = TaskExecutionRequest(**dict(queue_item))
-    # task = Task(**execution_request.data)
 
     match TASK_BACKEND_LOOKUP[task.backend]:
         case "nomad":
@@ -322,6 +318,13 @@ async def _process_queue_item(queue_id: int, request: Request):
                 status = backend.jobs.register_job({"Job": task_data})
                 app.log.debug("Job status: %r", status)
                 job = backend.job.get_job(task.name)
+
+            execution_request.tracking.update(evaluation_id=status["EvalID"])
+            async with database.engine.begin() as conn:
+                await conn.execute(
+                    history.update().where(history.c.id == queue_id).values(execution_request=execution_request)
+                )
+
             allocation_filters = [f'JobID == "{job["ID"]}"', f'EvalID == "{status["EvalID"]}"']
             allocations = backend.allocations.get_allocations(filter_=" && ".join(allocation_filters))
             app.log.debug("Job: %r", job)
@@ -355,6 +358,7 @@ async def _process_queue_item(queue_id: int, request: Request):
                         raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
                 if alloc["ClientStatus"] in ["completed", "failed"]:
                     break
+                await sleep(BACKEND_POLL_INTERVAL_SECONDS)
             async with database.engine.begin() as conn:
                 status = TASK_HISTORY_STATUS_MAP["failed" if alloc["ClientStatus"] == "failed" else "success"]
                 await conn.execute(
