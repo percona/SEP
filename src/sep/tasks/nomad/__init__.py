@@ -5,6 +5,7 @@ from asyncio import sleep
 import json
 
 import nomad
+from tornado.log import app_log
 
 from sep.core import RemoteCallHandler
 from sep.core.db import (
@@ -40,7 +41,7 @@ class Executor:
     execution_request: TaskExecutionRequest
     task: Task
 
-    def setup(self, cfg: dict, database: Database, execution_request: TaskExecutionRequest, task: Task) -> 'Executor':
+    def __init__(self, cfg: dict, database: Database, execution_request: TaskExecutionRequest, task: Task) -> None:
         """Configure the executor
 
         :param cfg:
@@ -53,8 +54,6 @@ class Executor:
         self.database = database
         self.execution_request = execution_request
         self.task = task
-
-        return self
 
     async def run(self, queue_item: dict, interval: int) -> None:
         queue_id = queue_item["id"]
@@ -77,7 +76,7 @@ class Executor:
             status = self.backend.job.evaluate_job(self.task.name)
         except nomad.api.exceptions.BaseNomadException:
             status = self.backend.jobs.register_job({"Job": task_data})
-            #app.log.debug("Job status: %r", status)
+            app_log.debug("Job status: %r", status)
             job = self.backend.job.get_job(self.task.name)
 
         self.execution_request.tracking.update(evaluation_id=status["EvalID"])
@@ -88,8 +87,8 @@ class Executor:
 
         allocation_filters = [f'JobID == "{job["ID"]}"', f'EvalID == "{status["EvalID"]}"']
         allocations = self.backend.allocations.get_allocations(filter_=" && ".join(allocation_filters))
-        #app.log.debug("Job: %r", job)
-        #app.log.debug("Allocations: %r", [x["JobID"] for x in allocations])
+        app_log.debug("Job: %r", job)
+        app_log.debug("Allocations: %r", [x["JobID"] for x in allocations])
 
         if job["ParameterizedJob"]:
             # Example content:
