@@ -273,9 +273,12 @@ async def _process_queue_item(queue_id: int, request: Request):
     queue_item = await database.fetch_one(history.select().where(history.c.id == queue_id))
     if queue_item is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
-    # TODO: add check to ensure that only pending jobs are processed here
-    execution_request = TaskExecutionRequest(**dict(queue_item)["execution_request"])
-    task = Task(**dict(queue_item)["data"])
+    queue_item = dict(queue_item)
+    execution_request = TaskExecutionRequest(**queue_item["execution_request"])
+    task = Task(**queue_item["data"])
+
+    if queue_item["status"] != TASK_HISTORY_STATUS_MAP["pending"]:
+        raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
 
     match TASK_BACKEND_LOOKUP[task.backend]:
         case "nomad":
@@ -283,6 +286,6 @@ async def _process_queue_item(queue_id: int, request: Request):
             backend_config["session"] = get_requests_session(request)
 
             executor = NomadExecutor(backend_config, database, execution_request, task)
-            await executor.run(dict(queue_item), BACKEND_POLL_INTERVAL_SECONDS)
         case _:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+    await executor.run(queue_item, BACKEND_POLL_INTERVAL_SECONDS)
