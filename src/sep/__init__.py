@@ -140,6 +140,7 @@ class Config(ObjectDict):
         """
         if not hasattr(self, "handlers") or not isinstance(self.handlers, list):
             return []
+        loaded_handlers = []
         for i, handler in enumerate(self.handlers):
             # TODO: We could allow variable length here, as the third item could be empty,
             #       this can be decided later on though as explicit could be better than
@@ -148,16 +149,15 @@ class Config(ObjectDict):
                 raise NotImplementedError("Handler definitions are currently fixed-length lists")
             if not isinstance(handler, list) or len(handler) != HANDLER_DEFINITION_LENGTH:
                 app_log.warning("Deleting handler due to incompatibility: %s", handler)
-                del self.handlers[i]
                 continue
             try:
                 if handler[1] not in ["RemoteCallHandler", "sep.RemoteCallHandler"]:
                     importlib.import_module(handler[1] if not handler[3] else handler[3])
             except ModuleNotFoundError:
-                del self.handlers[i]
                 continue
             if HANDLER_DEFINITION_REMOVE_AFTER:
                 self.handlers[i] = self.handlers[i][0:HANDLER_DEFINITION_REMOVE_AFTER]
+            loaded_handlers.append(self.handlers[i])
             app_log.debug("Handler %s loaded", handler[1])
 
         # TODO: Built-in rules, here temporarily
@@ -165,16 +165,14 @@ class Config(ObjectDict):
         # we could look up what should be enabled and go off to each to retrieve its handlers. This would
         # allow the app/handler/registry to be the source of the configuration. Perhaps this could even remove
         # the need to populate the handlers and instead get used to configure an intelligent router
-        self.handlers.append([r"^/$", HomepageHandler, {}])
-        self.handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
+        loaded_handlers.append([r"^/$", HomepageHandler, {}])
+        loaded_handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
 
         for handler in inventory_router(cfg=self.modules, handlers_only=True):
-            self.handlers.append(handler)
-
+            loaded_handlers.append(handler)
         for handler in tasks_router(cfg=self.modules, handlers_only=True):
-            self.handlers.append(handler)
-
-        return self.handlers
+            loaded_handlers.append(handler)
+        return loaded_handlers
 
     @staticmethod
     def load(config: Union[str, BytesIO, FileType, _Option], mimetype: Optional[str | bytes] = None) -> "Config":
