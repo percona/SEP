@@ -106,15 +106,13 @@ class Executor:
         alloc = allocations[0]
         while True:
             match job["Type"]:
-                case "batch":
-                    raise NotImplementedError("Batch job support is TBD")
                 case "service":
                     raise NotImplementedError("Service job support is TBD")
-                case "system" | "sysbatch":
+                case "batch" | "system" | "sysbatch":
                     alloc = self.backend.allocations.get_allocations(filter_=f'EvalID == "{alloc["EvalID"]}"')[0]
                 case _:
                     raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
-            if alloc["ClientStatus"] in ["completed", "failed"]:
+            if alloc["ClientStatus"] in ["complete", "completed", "failed"]:
                 break
             await sleep(interval)
         # Check status

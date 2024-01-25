@@ -174,7 +174,7 @@ class Config(ObjectDict):
 
         # Static file handler
         source_dir = path.abspath(path.join(__file__, "..", "..", ".."))
-        if 'static_path' in self.sep and self.sep.static_path is not None:
+        if "static_path" in self.sep and self.sep.static_path is not None:
             static_path = pathlib.Path(self.sep.static_path)
             if not static_path.exists():
                 raise asyncio.exceptions.CancelledError(f"Cannot find static_path {static_path}")
