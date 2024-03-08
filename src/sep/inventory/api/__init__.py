@@ -1,6 +1,7 @@
 """
 Inventory API
 """
+
 import logging
 from os import getenv
 from secrets import token_hex
@@ -76,6 +77,7 @@ async def lookup_inventory(source: str = "pmm"):
     inventory_source = None
     match source:
         case "pmm":
+            # TODO: set address from config
             inventory_source = InventorySource(uri="https://localhost:8443", verify_tls=False)
         case "_":
             raise NotImplementedError(f"{source} is not supported")

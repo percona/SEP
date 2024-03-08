@@ -1,6 +1,7 @@
 """
 Inventory API data models
 """
+
 import json
 from datetime import (
     datetime,

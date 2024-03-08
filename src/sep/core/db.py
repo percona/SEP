@@ -1,6 +1,7 @@
 """
 Database abstraction and tooling
 """
+
 import copy
 from datetime import datetime
 import json
@@ -21,6 +22,7 @@ from pydantic.json import pydantic_encoder
 from sqlalchemy import (
     Column,
     DateTime,
+    func,
     MetaData,
     Table,
 )
@@ -45,7 +47,7 @@ DATABASE_EXTRA_COLUMNS = [
     Column("updated_at", DateTime),
 ]
 
-QUERY_FILTERS = {"status": ["*"]}
+QUERY_FILTERS = {"status": ["*"], "owner": ["*"]}
 
 
 class Database(BaseDatabase):
@@ -202,6 +204,10 @@ def get_filtered_query(filters: dict, query: Query, table: Table, mapping: dict)
         if field not in QUERY_FILTERS:
             continue
         if value not in QUERY_FILTERS[field] and "*" not in QUERY_FILTERS[field]:
+            continue
+        # TODO: temporary solution for JSON querying of the tasks.meta.owner
+        if field == "owner" and table.name == "tasks":
+            filtered_query = filtered_query.where(func.json_extract(table.c.meta, "$.owners") == f'["{value}"]')
             continue
         if field not in table.columns:
             continue

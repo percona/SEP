@@ -1,11 +1,13 @@
 """
 Tasks API
 """
+
 from datetime import (
     datetime,
     timezone,
 )
 from http import HTTPStatus
+import json
 import logging
 from os import getenv
 from secrets import token_hex
@@ -33,22 +35,31 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine
 from starlette.middleware.sessions import SessionMiddleware
 from tornado.options import options
+from tornado.util import ObjectDict
 
 from .models import (
+    GeneratedTask,
     history,
     Task,
     TASK_BACKEND_LOOKUP,
+    TASK_BACKEND_MAP,
     TaskExecutionRequest,
+    TaskGroup,
+    TaskGroupTask,
+    TaskGroupTaskTemplate,
     TaskHistory,
     TASK_HISTORY_STATUS_MAP,
+    TaskStats,
     tasks,
 )
 from ..nomad import Executor as NomadExecutor
+from ..nomad.utils import transform_payload as nomad_payload
 from sep.authz.casdoor import SESSION_TOKEN_LENGTH
 import sep.core.db
 from sep.core.utils import (
     get_logger,
     get_requests_session,
+    get_timestamp,
 )
 
 DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
@@ -60,11 +71,65 @@ BACKEND_POLL_INTERVAL_SECONDS = getenv("TASKS_BACKEND_POLL_INTERVAL_SECONDS", DE
 DATABASE_URL = getenv("TASKS_DATABASE_URL", DEFAULT_DATABASE_DSN)
 ORIGINS = getenv("TASKS_ORIGINS", DEFAULT_ORIGINS).split(",")
 
+GENERIC_NOMAD_BATCH_TEMPLATE = {
+    "ID": "generic-nomad-batch",
+    "Name": "generic-nomad-batch",
+    "Type": "batch",
+    "Datacenters": ["dc1"],
+    "Constraints": [{"LTarget": "${node.unique.name}", "RTarget": "valid_node_required", "Operand": "="}],
+    "Periodic": None,
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "Tasks": [
+                {
+                    "Name": "generic-task",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "args": [],
+                        "command": "",
+                    },
+                    "Meta": {},
+                    "Restart": {"attempts": 0, "mode": "fail"},
+                    "Templates": [],
+                }
+            ],
+        }
+    ],
+}
+
+GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
+    "ID": "generic-nomad-sysbatch",
+    "Name": "generic-nomad-sysbatch",
+    "Type": "sysbatch",
+    "Datacenters": ["dc1"],
+    "Periodic": None,
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "Tasks": [
+                {
+                    "Name": "generic-task",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "args": [],
+                        "command": "",
+                    },
+                    "Meta": {},
+                    "Restart": {"attempts": 0, "mode": "fail"},
+                    "Templates": [],
+                }
+            ],
+        }
+    ],
+}
+
 database = sep.core.db.get_database(DATABASE_URL, include_engine=True)
 
 app = FastAPI()
 app.log = get_logger("tasks-api", level=logging.DEBUG)
-app.log.debug("dialect._json_serializer: %r", database.engine.dialect._json_serializer)
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +152,38 @@ async def startup():
     tasks.to_metadata(database.metadata)
     await sep.core.db.startup(database)
 
+    missing_templates = []
+
+    # Data initialisation
+    for table in [tasks, history]:
+        backend = "nomad"
+        match table.name:
+            case "tasks":
+                for job_type in ["batch", "sysbatch"]:
+                    query = tasks.select().where(tasks.c.name == f"generic-nomad-{job_type}")
+                    if not await database.fetch_all(query):
+                        app.log.debug("Generating %s template", f"generic-nomad-{job_type}")
+                        match job_type:
+                            case "batch":
+                                tpl = GENERIC_NOMAD_BATCH_TEMPLATE
+                            case "sysbatch":
+                                tpl = GENERIC_NOMAD_SYSBATCH_TEMPLATE
+                            case _:
+                                continue
+
+                        task = Task(
+                            name=tpl["Name"],
+                            data=json.dumps(tpl),
+                            backend=TASK_BACKEND_MAP[backend],
+                            meta={"owners": ["*"]},
+                        )
+                        missing_templates.append(tasks.insert().values(**task.model_dump()))
+            case _:
+                continue
+
+    for missing_template in missing_templates:
+        await database.execute(missing_template)
+
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -101,13 +198,18 @@ def prepare_connection(connection, record):
 
 
 @app.get(path="/", response_model=list[Task])
-async def list_tasks():
+async def list_tasks(request: Request):
     """List all tasks
 
+    :param request:
     :return:
     """
     app.log.debug("Listing tasks")
     query = tasks.select().where(tasks.c.deleted_at == null())
+    if request.query_params.get("owner"):
+        query = sep.core.db.get_filtered_query(
+            {"owner": request.query_params.get("owner")}, query=query, table=tasks, mapping=TASK_HISTORY_STATUS_MAP
+        )
     return await database.fetch_all(query)
 
 
@@ -115,7 +217,7 @@ async def list_tasks():
 async def list_task_history(request: Request):
     """Create a new task
 
-    :param task:
+    :param request:
     :return:
     """
     app.log.debug("Listing task history")
@@ -173,6 +275,17 @@ async def get_task_history(task: str):
     return await database.fetch_all(query)
 
 
+@app.get(path="/stats/{task}", response_model=TaskStats)
+async def get_task_stats(task: str):
+    """Calculate the statistics for the task
+
+    :param task:
+    :return:
+    """
+    app.log.debug("Requesting task stats for %s", task)
+    return TaskStats(tasks=[TaskHistory(**dict(item)) for item in await get_task_history(task)])
+
+
 @app.post(path="/", response_model=Task)
 async def create_task(task: Task):
     """Create a new task
@@ -184,6 +297,107 @@ async def create_task(task: Task):
     query = tasks.insert().values(**task.model_dump())
     last_record_id = await database.execute(query)
     return {**task.model_dump(), "id": last_record_id}
+
+
+@app.post(path="/generate", response_model=TaskHistory)
+async def generate_task(generated_task: GeneratedTask, request: Request, background_tasks: BackgroundTasks):
+    """Generate a new task execution using a template
+
+    :param generated_task:
+    :param request:
+    :param background_tasks:
+    :return:
+    """
+    app.log.debug("Generating task %s from %s", generated_task.name, generated_task.template)
+    try:
+        task = Task(
+            **dict(
+                await database.fetch_one(
+                    tasks.select().where(tasks.c.name == f"generic-nomad-{generated_task.template}")
+                )
+            )
+        )
+    except TypeError:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Missing template")
+
+    # TODO: enhance options for generating tasks
+    task.name = generated_task.name
+    task.meta.update(owners=[generated_task.app])
+    tpl = ObjectDict(json.loads(task.data))
+
+    # TODO: currently Nomad-only, with restricted customisation
+    tg = TaskGroup(
+        engine=TASK_BACKEND_LOOKUP[task.backend],
+        name="execution",
+        tasks=[],
+        parallel=generated_task.parallel and len(generated_task.commands) > 1,
+    )
+    for i, cmd in enumerate(generated_task.commands):
+        templates = []
+        configs = cmd.get("config", [])
+        if configs:
+            for config in configs:
+                templates.append(TaskGroupTaskTemplate(**config))
+        tg.tasks.append(
+            TaskGroupTask(
+                name=f"step{i+1}" if not cmd.get("name") else cmd["name"],
+                config={
+                    "args": cmd.get("args"),
+                    "command": cmd.get("command"),
+                },
+                meta=cmd.get("meta", {}),
+                templates=templates,
+            )
+        )
+    tpl.update(tg.to_payload())
+
+    # TODO: delete Periodic for now
+    if "Periodic" in tpl:
+        if generated_task.schedule and not generated_task.schedule.get("save_only"):
+            tpl.Periodic = generated_task.schedule
+        else:
+            del tpl["Periodic"]
+
+    match TASK_BACKEND_LOOKUP[task.backend]:
+        case "nomad":
+            match tpl.Type:
+                case "batch":
+                    # TODO: handle more than one constraint
+                    if generated_task.target in ["all", "*"]:
+                        tpl.Constraints[0]["RTarget"] = ".*"
+                        tpl.Constraints[0]["Operand"] = "regexp"
+                    else:
+                        tpl.Constraints[0]["RTarget"] = generated_task.target
+                        tpl.Constraints[0]["Operand"] = "="
+            task.data = await nomad_payload(
+                payload=json.dumps(tpl), payload_format="json", session=get_requests_session(request)
+            )
+        case _:
+            raise NotImplementedError(f"{TASK_BACKEND_LOOKUP[task.backend]} is currently unsupported")
+
+    if generated_task.persist:
+        task.id = None
+        await create_task(task)
+
+    task_history = TaskHistory(
+        data=task,
+        execution_request=TaskExecutionRequest(
+            task=generated_task.name, target=generated_task.target, meta={}, tracking={"evaluation_id": ""}
+        ),
+        name=task.name,
+        status=TASK_HISTORY_STATUS_MAP["pending"],
+    )
+
+    if "save_only" in generated_task.schedule and generated_task.schedule["save_only"]:
+        return task_history
+
+    history_record = await create_task_history(task_history)
+    # TODO: currently we trigger execution immediately as this is equivalent to /execute
+    #       Scheduling will require a periodic job for Nomad if using directly, else the
+    #       ability to schedule generically from with the app
+    if not generated_task.schedule:
+        await _schedule_queue_item(history_recorded=history_record, request=request, background_tasks=background_tasks)
+    return history_record
 
 
 @app.post(path="/history", response_model=TaskHistory)
@@ -199,8 +413,32 @@ async def create_task_history(task: TaskHistory):
     return {**task.model_dump(), "id": last_record_id}
 
 
+@app.post(path="/run/{history_id}", response_class=JSONResponse)
+async def execute_history_id(history_id: int, request: Request, background_tasks: BackgroundTasks):
+    """Trigger a history item for processing
+
+    :param history_id:
+    :param request:
+    :param background_tasks:
+    :return:
+    """
+    history_record = await database.fetch_one(history.select().where(history.c.id == history_id))
+    if not history_record:
+        app.log.error("No match found for tasks.history.id = %d", history_id)
+        return {}
+    if history_record["status"] != TASK_HISTORY_STATUS_MAP["pending"]:
+        app.log.error(
+            "Item status for tasks.history.id = %d is %s", history_id, TASK_BACKEND_LOOKUP[history_record["status"]]
+        )
+        return {}
+    record = await _schedule_queue_item(
+        history_recorded=dict(history_record), request=request, background_tasks=background_tasks
+    )
+    return record
+
+
 @app.post(path="/execute/{task_name}", response_class=JSONResponse)
-async def execute_task(
+async def execute_task_name(
     task: Annotated[str, Form()],
     task_name: str,
     request: Request,
@@ -240,6 +478,17 @@ async def execute_task(
     if not history_recorded:
         database.force_rollback()
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
+    return await _schedule_queue_item(history_recorded, background_tasks, request)
+
+
+async def _schedule_queue_item(history_recorded: dict, background_tasks: BackgroundTasks, request: Request):
+    """
+
+    :param history_recorded:
+    :param background_tasks:
+    :param request:
+    :return:
+    """
     # Check how to proceed with execution
     try:
         mode = options.sep.tasks.execute_mode
@@ -288,4 +537,15 @@ async def _process_queue_item(queue_id: int, request: Request):
             executor = NomadExecutor(backend_config, database, execution_request, task)
         case _:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
-    await executor.run(queue_item, BACKEND_POLL_INTERVAL_SECONDS)
+
+    processed_request, status = await executor.run(queue_item, BACKEND_POLL_INTERVAL_SECONDS)
+    async with database.engine.begin() as conn:
+        await conn.execute(
+            history.update()
+            .where(history.c.id == queue_id)
+            .values(
+                status=status,
+                updated_at=get_timestamp(),
+                execution_request=processed_request,
+            )
+        )

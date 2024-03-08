@@ -1,4 +1,5 @@
 {% from tornado.escape import xhtml_unescape %}
+{% from sep.tasks import TRANSLATION_MAPPING %}
 {% from sep.tasks.api.models import TASK_ALIAS_LENGTH, TASK_BACKEND_MAP %}
 <h2>Create a new task</h2>
 <form action="" method="post">
@@ -31,6 +32,17 @@
             {% for engine, val in TASK_BACKEND_MAP.items() %}
                 <option value="{{ val }}">{{ engine.capitalize() }}</option>
             {% end %}
+            </select>
+        </label>
+        <label>Owner
+            <select id="owners" name="owners">
+                {% if not TRANSLATION_MAPPING.get("owners") %}
+                <option value="*">Any</option>
+                {% else %}
+                    {% for owner in TRANSLATION_MAPPING["owners"] %}
+                <option value="{{ owner.value }}">{{ owner.label }}</option>
+                    {% end %}
+                {% end %}
             </select>
         </label>
     </fieldset>

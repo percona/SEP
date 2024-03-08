@@ -1,6 +1,7 @@
 """
 Inventory routing
 """
+
 from tornado.web import Application
 from tornado.util import ObjectDict
 

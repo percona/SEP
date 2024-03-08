@@ -26,7 +26,6 @@ from tornado.httpclient import (
     HTTPRequest,
 )
 from tornado.log import app_log
-from tornado.options import options
 from tornado.web import (
     authenticated,
     HTTPError,
@@ -48,6 +47,7 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     """
 
     cfg: namedtuple
+    data: dict = {"user": None, "casdoor_login_url": None, "template_data": [], "template_path": "dummy.html"}
 
     def initialize(self) -> None:
         self.cfg = getattr(self.application, "config")
@@ -67,6 +67,13 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
             return
         self.audit(timestamp=time_ns(), uri=self.request.uri, session=session)
         app_log.debug("Session: %r", session)
+
+        self.data.update(
+            {
+                "user": self.get_current_user(),
+                "casdoor_login_url": urlparse(self.get_login_url()),
+            }
+        )
 
         if getenv("SEP_FORCE_NO_AUTH", "0") == "1":
             return
@@ -120,6 +127,17 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
             timestamp=time_ns(), uri=self.request.uri, session=self.get_current_session(), status=self.get_status()
         )
 
+    def finish(self, chunk: Optional[Union[str, bytes, dict]] = None) -> "Future[None]":
+        """Automatically render the template and data
+
+        :param chunk:
+        :return:
+        """
+        if chunk is None:
+            template = get_template(self.data["template_path"], self.cfg.templates.get("dirs", []))
+            chunk = render_template(template, data=self.data)
+        super().finish(chunk=chunk)
+
     def get_current_user(self) -> Union[Dict[str, Any], None]:
         """Retrieve the current user
 
@@ -172,7 +190,7 @@ class DummyHandler(BaseHandler):
             self.set_header("content-type", "application/json; charset=UTF-8")
             suffix = "json"
         self.set_status(status_code=HTTPStatus.NOT_FOUND)
-        self.write(render_template(get_template(f"dummy.{suffix}", self.cfg.templates.get("dirs", []))))
+        self.data.update(template_path=f"dummy.{suffix}")
 
 
 class HomepageHandler(BaseHandler):
@@ -181,11 +199,7 @@ class HomepageHandler(BaseHandler):
     async def get(self) -> None:
         """Serve the homepage"""
         app_log.debug("Received request to homepage handler: %r", self.request)
-        data = {
-            "user": self.get_current_user(),
-            "casdoor_login_url": urlparse(self.get_login_url()),
-        }
-        self.write(render_template(get_template("homepage.html", self.cfg.templates.get("dirs", [])), data=data))
+        self.data.update(template_path="homepage.html")
 
 
 class RemoteCallHandler(BaseHandler):
@@ -227,7 +241,7 @@ class RemoteCallHandler(BaseHandler):
             )
         )
         self.set_header("content-type", response.headers.get("content-type"))
-        self.write(response.body)
+        self.finish(chunk=response.body)
 
     async def post(self, **kwargs) -> None:
         """Server POST requests
@@ -248,4 +262,4 @@ class RemoteCallHandler(BaseHandler):
             )
         )
         self.set_header("content-type", response.headers.get("content-type"))
-        self.write(response.body)
+        self.finish(chunk=response.body)

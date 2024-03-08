@@ -1,11 +1,19 @@
 """
 Nomad
 """
+
 from asyncio import sleep
+from datetime import (
+    datetime,
+    timezone,
+)
 import json
+import time
+from uuid import uuid1
 
 import nomad
 from tornado.log import app_log
+from tornado.util import ObjectDict
 
 from sep.core import RemoteCallHandler
 from sep.core.db import (
@@ -55,11 +63,13 @@ class Executor:
         self.execution_request = execution_request
         self.task = task
 
-    async def run(self, queue_item: dict, interval: int) -> None:
+    async def run(self, queue_item: dict, interval: int) -> (dict, int):  # noqa: C901
+        job = ObjectDict()
         queue_id = queue_item["id"]
+        status = ObjectDict()
 
         # TODO: determine scenarios for execution, such as looking up an existing job
-        task_data = json.loads(self.task.data)
+        task_data = ObjectDict(json.loads(self.task.data))
         if queue_item["execution_request"].get("meta"):
             # TODO: target is currently pushed in to meta
             queue_item["execution_request"]["meta"]["target"] = queue_item["execution_request"]["target"]
@@ -72,29 +82,59 @@ class Executor:
                     task_data["Constraints"][i] = json.loads(json.dumps(constraint).replace(meta, meta_val))
 
         try:
-            job = self.backend.job.get_job(self.task.name)
-            status = self.backend.job.evaluate_job(self.task.name)
-        except nomad.api.exceptions.BaseNomadException:
-            status = self.backend.jobs.register_job({"Job": task_data})
-            app_log.debug("Job status: %r", status)
-            job = self.backend.job.get_job(self.task.name)
+            new_job = False
 
-        self.execution_request.tracking.update(evaluation_id=status["EvalID"])
+            match task_data.get("ParameterizedJob"):
+                # TODO: temporary to avoid ParameterizedJobs
+                case True:
+                    # Example content:
+                    # "ParameterizedJob": {"MetaOptional": ["args", "image"],
+                    #                       "MetaRequired": ["command"], "Payload": ""}
+                    # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
+                    raise NotImplementedError("Parameterized job support is TBD")
+                    # if not self.backend.jobs.get_jobs(filter_=f'Name == "{task_data.Name}"'):
+                    #    raise nomad.api.exceptions.URLNotFoundNomadException(f"{task_data.Name} could not be found")
+                case _:
+                    match task_data.Type:
+                        case "batch" | "system" | "sysbatch":
+                            new_job = True
+                        case _:
+                            raise NotImplementedError(f"{task_data.Type} job support is TBD")
+        except nomad.api.exceptions.URLNotFoundNomadException:
+            app_log.debug("Unable to match job, creating a new one")
+            new_job = True
+        except nomad.api.exceptions.BaseNomadException:
+            app_log.error("Failed to process job for %s", self.task.name, exc_info=True)
+            raise
+
+        start_ts, stop_ts = time.time_ns(), None
+        if new_job:
+            match task_data.Type:
+                case "batch" | "system" | "sysbatch":
+                    task_data.ID += f"-{uuid1()}"
+                case _:
+                    raise NotImplementedError(f"{task_data.Type} job support is TBD")
+
+            status = ObjectDict(self.backend.job.register_job(id_=task_data.ID, job={"Job": task_data}))
+            app_log.debug("Job status: %r", status)
+            job = ObjectDict(self.backend.job.get_job(task_data.ID))
+        if not job:
+            app_log.error("Unable to determine job")
+            raise ValueError("The job could not be determined")
+        if not status:
+            app_log.error("Unable to determine status")
+            raise ValueError("The job status could not be determined")
+
+        self.execution_request.tracking.update(evaluation_id=status.EvalID)
         async with self.database.engine.begin() as conn:
             await conn.execute(
                 history.update().where(history.c.id == queue_id).values(execution_request=self.execution_request)
             )
 
-        allocation_filters = [f'JobID == "{job["ID"]}"', f'EvalID == "{status["EvalID"]}"']
-        allocations = self.backend.allocations.get_allocations(filter_=" && ".join(allocation_filters))
+        allocation_filters = [f'JobID == "{job.ID}"', f'EvalID == "{status.EvalID}"']
+        allocations = self.backend.allocations.get_allocations(filter_=" and ".join(allocation_filters))
         app_log.debug("Job: %r", job)
         app_log.debug("Allocations: %r", [x["JobID"] for x in allocations])
-
-        if job["ParameterizedJob"]:
-            # Example content:
-            # "ParameterizedJob": {"MetaOptional": ["args", "image"], "MetaRequired": ["command"], "Payload": ""}
-            # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
-            raise NotImplementedError("Parameterized job support is TBD")
 
         async with self.database.engine.begin() as conn:
             await conn.execute(
@@ -103,32 +143,67 @@ class Executor:
                 .values(status=TASK_HISTORY_STATUS_MAP["running"], updated_at=get_timestamp())
             )
 
-        alloc = allocations[0]
-        while True:
-            match job["Type"]:
+        alloc = ObjectDict()
+        task_logs = ObjectDict()
+        task_states = ObjectDict()
+        attempts = 0
+        while allocations:
+            match job.Type:
                 case "service":
                     raise NotImplementedError("Service job support is TBD")
                 case "batch" | "system" | "sysbatch":
-                    alloc = self.backend.allocations.get_allocations(filter_=f'EvalID == "{alloc["EvalID"]}"')[0]
+                    alloc = ObjectDict(allocations[0])
+                    task_states[alloc.EvalID] = alloc.TaskStates
+                    task_logs.setdefault(alloc.EvalID, {})
+                    if alloc.TaskStates:
+                        for step in alloc.TaskStates:
+                            try:
+                                task_logs[alloc.EvalID][step] = {
+                                    "allocation_id": alloc.ID,
+                                    "stdout": self.backend.client.stream_logs.stream(
+                                        alloc.ID, task=step, type_="stdout"
+                                    ),
+                                    "stderr": self.backend.client.stream_logs.stream(
+                                        alloc.ID, task=step, type_="stderr"
+                                    ),
+                                }
+                            except nomad.api.exceptions.BaseNomadException:
+                                task_logs[alloc.EvalID][step] = {
+                                    "allocation_id": alloc.ID,
+                                    "stdout": None,
+                                    "stderr": None,
+                                }
                 case _:
-                    raise NotImplementedError(f'Unrecognized job type \'{job["Type"]}\'')
-            if alloc["ClientStatus"] in ["complete", "completed", "failed"]:
-                break
+                    raise NotImplementedError(f'Unrecognized job type "{job.Type}"')
+            match alloc.ClientStatus:
+                case "complete" | "failed":
+                    if alloc.FollowupEvalID:
+                        allocations = self.backend.allocations.get_allocations(
+                            filter_=f'EvalID == "{alloc.FollowupEvalID}"'
+                        )
+                        continue
+                    stop_ts = time.time_ns()
+                    break
+                case _:
+                    allocations = self.backend.allocations.get_allocations(filter_=" and ".join(allocation_filters))
+            attempts += 1
+            app_log.debug("Attempt %d found status %s", attempts, alloc.ClientStatus)
             await sleep(interval)
-        # Check status
-        status = 0
-        if alloc["ClientStatus"] == "failed":
-            for state in alloc["TaskStates"].values():
-                status += sum([x["ExitCode"] for x in state["Events"]])
 
-        self.execution_request.tracking.update(task_states=alloc["TaskStates"])
-        async with self.database.engine.begin() as conn:
-            await conn.execute(
-                history.update()
-                .where(history.c.id == queue_id)
-                .values(
-                    status=TASK_HISTORY_STATUS_MAP["failed" if status > 0 else "success"],
-                    updated_at=get_timestamp(),
-                    execution_request=self.execution_request,
-                )
-            )
+        match alloc.ClientStatus:
+            case "complete":
+                status = TASK_HISTORY_STATUS_MAP["success"]
+            case _:
+                status = TASK_HISTORY_STATUS_MAP["failed"]
+
+        self.execution_request.tracking.update(
+            task_states=task_states,
+            task_logs=task_logs,
+            duration=((stop_ts - start_ts) / 1000**3) - (attempts * interval),
+            raw_duration=(stop_ts - start_ts) / 1000**3,
+            started_at_ns=start_ts,
+            finished_at_ns=stop_ts,
+            started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=timezone.utc),
+            finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=timezone.utc),
+        )
+        return self.execution_request, status

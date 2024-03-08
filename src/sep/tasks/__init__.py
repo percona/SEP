@@ -1,6 +1,7 @@
 """
 Tasks module
 """
+
 from collections import namedtuple
 from http import HTTPStatus
 import json
@@ -21,14 +22,11 @@ from .api.models import (
     TASK_HISTORY_STATUS_LOOKUP,
 )
 from ..core import ApiBackendHandler
-from ..core.utils import (
-    get_requests_session,
-    get_template,
-    render_template,
-)
+from ..core.utils import get_requests_session
 from ..inventory import InventoryHandler
 from .nomad.utils import transform_payload as nomad_payload
 
+TaskOwner = namedtuple("TaskOwner", ["value", "label"])
 TranslateConfig = namedtuple("TranslateConfig", ["old", "new", "action"])
 
 DEFAULT_BACKEND_ADDRESS = "http://127.0.0.1:8182"
@@ -36,10 +34,16 @@ DEFAULT_BACKEND_ADDRESS = "http://127.0.0.1:8182"
 TEMPLATE_PREFIX = "tasks"
 TRANSLATION_MAPPING = {
     "create": (
+        TranslateConfig("owners", "meta", "update"),
         TranslateConfig("taskalias", "name", "flatten"),
         TranslateConfig("taskdef", "data", "backend"),
         TranslateConfig("taskeng", "engine", "flatten"),
-    )
+    ),
+    "owners": (
+        TaskOwner("*", "Any"),
+        TaskOwner("archiver", "Data Archiver"),
+        TaskOwner("alter", "Schema Change"),
+    ),
 }
 
 
@@ -98,6 +102,9 @@ class TaskHandler(ApiBackendHandler):
                         payload[mapping.new] = payload[mapping.old]
                     else:
                         payload[mapping.new] = payload[mapping.old][0]
+                case "update":
+                    payload.setdefault(mapping.new, {})
+                    payload[mapping.new].update({mapping.old: payload[mapping.old]})
                 case _:
                     payload[mapping.new] = payload[mapping.old]
             del payload[mapping.old]
@@ -151,7 +158,7 @@ class TaskHandler(ApiBackendHandler):
             )
         )
         task_data = json.loads(response.body.decode())
-        task_data["_data"] = json.loads(task_data["data"])
+        task_data["task"] = json.loads(task_data["data"])
 
         try:
             response = await client.fetch(
@@ -209,15 +216,15 @@ class TaskHandler(ApiBackendHandler):
         }
         match route:
             case "":
-                render_args.update(data=await self._list())
-                template_name = join(TEMPLATE_PREFIX, "list.html")
+                render_args.update(template_path=join(TEMPLATE_PREFIX, "list.html"), template_data=await self._list())
             case _:
                 try:
-                    render_args.update(data=await self._view(route))
+                    render_args.update(
+                        template_path=join(TEMPLATE_PREFIX, "view.html"), template_data=await self._view(route)
+                    )
                 except HTTPClientError as err:
                     raise HTTPError(status_code=HTTPStatus.NOT_FOUND) from err
-                template_name = join(TEMPLATE_PREFIX, "view.html")
-        self.write(render_template(get_template(template_name, self.cfg.templates.get("dirs", [])), **render_args))
+        self.data.update(**render_args)
 
     async def post(self, route: str):
         """Task UI post requests

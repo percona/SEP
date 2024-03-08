@@ -1,0 +1,12 @@
+{% block sidebar %}
+{% set user = data.get("user") %}
+{% set casdoor_login_url = data.get("casdoor_login_url", "#") %}
+<nav id="sep">
+    <ul>
+        {% if isinstance(user, dict) and user["isAdmin"] %}
+        <li><a href="{{ casdoor_login_url.scheme }}://{{ casdoor_login_url.netloc }}">Casdoor</a></li>
+        {% end %}
+        <li><a href="/tasks/">Tasks</a></li>
+    </ul>
+</nav>
+{% end %}

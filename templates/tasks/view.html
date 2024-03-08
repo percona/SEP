@@ -1,30 +1,50 @@
 {% extends "../base.html" %}
-{% block title %}Task: {{ data["name"] }}{% end %}
+
+{% block title %}Task: {{ data.get("template_data", {}).get("name") }}{% end %}
 
 # TODO: the template is currently Nomad-specific
 {% block main %}
+
+{% from sep.tasks import TRANSLATION_MAPPING %}
+
+{% set backends = data.get("backends") %}
+{% set base_uri = data.get("base_uri") %}
+{% set template_data = data.get("template_data", {}) %}
+{% set xsrf_form_html = data.get("xsrf_form_html") %}
+{% set task = template_data.get("task") %}
+
 <dl>
-  <dt>Engine</dt> <dd>{{ backends[data["backend"]].capitalize() }}</dd>
-  <dt>Created</dt> <dd>{{ data["created_at"] }}</dd>
+  <dt>Engine</dt> <dd>{{ backends[template_data["backend"]].capitalize() }}</dd>
+  <dt>Created</dt> <dd>{{ template_data["created_at"] }}</dd>
   <dt>Specification</dt> <dd>
   <code>
-    {{ data["data"] }}
+    {{ task }}
   </code>
   </dd>
+  <dt>Available to</dt> <dd><ul>
+  {% for owner in template_data["meta"]["owners"] %}
+    {% for mapping in TRANSLATION_MAPPING.get("owners", []) %}
+      {% if mapping.value == owner %}
+    <li>{{ mapping.label }}</li>
+      {% end %}
+    {% end %}
+  {% end %}
+  </ul></dd>
 </dl>
-<form method="post" action="{{ base_uri }}api/execute/{{ data['name'] }}">
-  <input name="task" type="hidden" value="{{ data['name'] }}" />
-  {% if "ParameterizedJob" in data["_data"] %}
+
+<form method="post" action="{{ base_uri }}api/execute/{{ template_data['name'] }}">
+  <input name="task" type="hidden" value="{{ template_data['name'] }}" />
+  {% if task.get("ParameterizedJob") %}
     <fieldset>
       <legend>Configuration</legend>
-      {% if data["_data"]["ParameterizedJob"] %}
-        {% set optional = data["_data"]["ParameterizedJob"].get("MetaOptional", []) %}
-        {% set required = data["_data"]["ParameterizedJob"].get("MetaRequired", []) %}
+      {% if task["ParameterizedJob"] %}
+        {% set optional = task["ParameterizedJob"].get("MetaOptional", []) %}
+        {% set required = task["ParameterizedJob"].get("MetaRequired", []) %}
       {% else %}
         {% set optional = [] %}
         {% set required = [] %}
       {% end %}
-      {% set meta_defaults = data["_data"]["Meta"] %}
+      {% set meta_defaults = task["Meta"] %}
     {% for item in required %}
       <label>{{ item.capitalize() }} (required)
       {% if item == "target" %}
@@ -51,7 +71,8 @@
   {{ xsrf_form_html() }}
   {% end %}
 </form>
-{% if data.get("history") %}
+
+{% if template_data.get("history") %}
     {% from json import loads %}
     <table>
       <caption>History</caption>
@@ -66,17 +87,17 @@
         <tr><td colspan="3">&nbsp;</td></tr>
       </tfoot>
       <tbody>
-      {% for task in data["history"] %}
+      {% for item in template_data["history"] %}
       {% apply xhtml_unescape %}
           <tr>
-            <th scope="row">{{ task["created_at"] }}</th>
-            <th scope="row">{{ task["updated_at"] }}</th>
-            <td>{{ task["status"].capitalize() }}</td>
+            <th scope="row">{{ item["created_at"] }}</th>
+            <th scope="row">{{ item["updated_at"] }}</th>
+            <td>{{ item["status"].capitalize() }}</td>
           </tr>
       {% end %}
       {% end %}
       </tbody>
     </table>
 {% end %}
-<p><a href="{{ base_uri }}">Back to tasks</a></p>
+
 {% end %}

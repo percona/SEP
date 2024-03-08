@@ -1,6 +1,7 @@
 """
 Utility library
 """
+
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from datetime import (
@@ -8,6 +9,7 @@ from datetime import (
     timezone,
 )
 from http import HTTPStatus
+import json
 import logging
 import os.path
 from sys import argv
@@ -19,6 +21,11 @@ from typing import (
 
 from fastapi import Request
 import requests
+from tornado.httpclient import (
+    AsyncHTTPClient,
+    HTTPRequest,
+)
+from tornado.log import app_log
 from tornado.template import (
     Loader,
     Template,
@@ -31,6 +38,31 @@ from tornado.web import (
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
 REFRESH_INTERVAL = 3600
+
+
+async def async_request(
+    url: str, request: Union["Request", "HTTPServerRequest"], method: str = "GET", payload: dict | None = None, **kwargs
+) -> Union[dict, list]:
+    """Make an async HTTP request for JSON
+
+    :param url:
+    :param request:
+    :param method:
+    :param payload:
+    :param kwargs:
+    :return:
+    """
+    app_log.debug("Making %s request to %s", method, url)
+    client = AsyncHTTPClient()
+    headers = dict(request.headers)
+    headers["Content-Type"] = "application/json"
+    if method == "POST" and not payload:
+        raise HTTPError(status_code=HTTPStatus.BAD_REQUEST, log_message=f"POST request is missing payload")
+    if payload:
+        app_log.debug("Payload: %s", payload)
+        kwargs["body"] = json.dumps(payload)
+    response = await client.fetch(HTTPRequest(url=url, method=method, headers=headers, **kwargs))
+    return json.loads(response.body.decode())
 
 
 async def async_run(func: Callable, *args):
