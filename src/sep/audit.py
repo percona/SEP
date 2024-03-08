@@ -1,6 +1,7 @@
 """
 Auditing
 """
+
 from time import time_ns
 from typing import Annotated
 

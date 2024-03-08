@@ -1,6 +1,7 @@
 """
 Casdoor authentication and authorization
 """
+
 from collections import namedtuple
 from http import HTTPStatus
 import json

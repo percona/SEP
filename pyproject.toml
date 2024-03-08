@@ -33,7 +33,7 @@ dependencies = [
     "aiohttp==3.9.2",
     "casdoor==1.17.1",
     "cryptography==42.0.4",
-    "databases==0.7.0",
+    "databases==0.8.0",
     "databases[aiosqlite]",
     "fastapi==0.109.1",
     "itsdangerous==2.1.2",
@@ -41,9 +41,10 @@ dependencies = [
     "PyYAML==6.0.1",
     "python-multipart==0.0.7",
     "python-nomad==2.0.0",
-    "SQLAlchemy==1.4.49",
+    "SQLAlchemy==1.4.51",
     "tornado==6.3.3",
     "urllib3==2.0.7",
+    "uvicorn==0.24.0.post1",
     "uvloop==0.18.0"
 ]
 
@@ -102,7 +103,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.ruff.lint.mccabe]
-max-complexity = 12
+max-complexity = 13
 
 [tool.setuptools.dynamic]
 version = {attr = "sep.__version__"}

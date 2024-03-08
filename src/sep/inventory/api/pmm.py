@@ -1,6 +1,7 @@
 """
 PMM remote inventory
 """
+
 from collections import (
     namedtuple,
     OrderedDict,

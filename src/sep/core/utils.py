@@ -1,19 +1,89 @@
 """
 Utility library
 """
+
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
+from datetime import (
+    datetime,
+    timezone,
+)
 from http import HTTPStatus
+import json
 import logging
 import os.path
 from sys import argv
-from typing import Union
+from time import time
+from typing import (
+    Callable,
+    Union,
+)
 
+from fastapi import Request
+import requests
+from tornado.httpclient import (
+    AsyncHTTPClient,
+    HTTPRequest,
+)
+from tornado.log import app_log
 from tornado.template import (
     Loader,
     Template,
 )
-from tornado.web import HTTPError
+from tornado.util import ObjectDict
+from tornado.web import (
+    HTTPError,
+    RequestHandler,
+)
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
+REFRESH_INTERVAL = 3600
+
+
+async def async_request(
+    url: str, request: Union["Request", "HTTPServerRequest"], method: str = "GET", payload: dict | None = None, **kwargs
+) -> Union[dict, list]:
+    """Make an async HTTP request for JSON
+
+    :param url:
+    :param request:
+    :param method:
+    :param payload:
+    :param kwargs:
+    :return:
+    """
+    app_log.debug("Making %s request to %s", method, url)
+    client = AsyncHTTPClient()
+    headers = dict(request.headers)
+    headers["Content-Type"] = "application/json"
+    if method == "POST" and not payload:
+        raise HTTPError(status_code=HTTPStatus.BAD_REQUEST, log_message=f"POST request is missing payload")
+    if payload:
+        app_log.debug("Payload: %s", payload)
+        kwargs["body"] = json.dumps(payload)
+    response = await client.fetch(HTTPRequest(url=url, method=method, headers=headers, **kwargs))
+    return json.loads(response.body.decode())
+
+
+async def async_run(func: Callable, *args):
+    """Execute a non-async call
+
+    :param func:
+    :param args:
+    :param kwargs:
+    :return:
+    """
+
+    async def _run_in_process(executor: ProcessPoolExecutor):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(executor, func, *args)
+
+    with ProcessPoolExecutor(max_workers=1) as pool:
+        try:
+            result = await asyncio.gather(_run_in_process(pool))
+        except asyncio.TimeoutError:
+            result = None
+    return result
 
 
 def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:
@@ -28,6 +98,54 @@ def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:
     if not logging.root.hasHandlers():
         logging.basicConfig(level=level if level is not None else logging.WARNING, format=LOG_FORMAT)
     return logging.getLogger(name)
+
+
+def get_process_config(cfg: dict | ObjectDict, name: str) -> ObjectDict | None:
+    """Extract the configuration for a built-in process
+
+    :param cfg:
+    :param name:
+    :return:
+    """
+    try:
+        api_uri = None
+        for p in cfg.sep.processes:
+            if p.get("name") == name:
+                scheme = "https" if p.get("secure") else "http"
+                api_uri = ObjectDict({"uri": f"{scheme}://{p['host']}:{p['port']}"})
+                break
+        if api_uri is None:
+            raise ValueError("Tasks API URI is not configured")
+    except (AttributeError, KeyError, ValueError):
+        api_uri = None
+    return api_uri
+
+
+def get_requests_session(request: Union[RequestHandler, Request]) -> requests.Session:
+    """Get a requests.Session instance populated from a handler
+
+    :param request:
+    :return:
+    """
+    session = requests.Session()
+    for c, v in request.cookies.items():
+        # TODO: use settings to determine cookie names
+        if c not in ["_xsrf", "fastapi-session", "casdoorUser", "sep"]:
+            continue
+        val = v.value if isinstance(request, RequestHandler) else v
+        if c == "_xsrf":
+            session.headers.setdefault("X-Xsrftoken", val)
+        session.cookies.set(c, val)
+    return session
+
+
+def get_timestamp() -> datetime:
+    """Get the current time in UTC
+
+    :return: the current time in UTC
+    :rtype: datetime
+    """
+    return datetime.now(tz=timezone.utc)
 
 
 def get_template(template_name: str, template_dirs: list) -> Union[Template, None]:
@@ -72,3 +190,50 @@ def render_template(template: Template, **kwargs):
     if template is None:
         raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
     return template.generate(**kwargs)
+
+
+class Timer:
+    """Timer mechanism for refreshing the inventory"""
+
+    _last_refreshed: int = 0
+    _refresh_after: int = REFRESH_INTERVAL
+
+    @property
+    def last_refresh(self) -> int:
+        """Access the last refresh time
+
+        :return: the last refresh
+        """
+        return self._last_refreshed
+
+    @property
+    def refresh_after(self) -> int:
+        """Access the refresh interval
+
+        :return: the number of seconds to refresh the inventory
+        """
+        return self._refresh_after
+
+    @refresh_after.setter
+    def refresh_after(self, interval: int) -> None:
+        """Set the refresh interval
+
+        :param interval:
+        :return:
+        """
+        if isinstance(interval, int):
+            self._refresh_after = interval
+
+    def needs_refresh(self) -> bool:
+        """Check if a refresh is required
+
+        :return: True if refresh is required
+        """
+        return self._last_refreshed == 0 or self._last_refreshed + self._refresh_after < time()
+
+    def update(self) -> None:
+        """Update the last_refreshed value
+
+        :return:
+        """
+        self._last_refreshed = int(time())

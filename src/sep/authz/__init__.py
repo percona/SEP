@@ -1,6 +1,7 @@
 """
 SEP authentication and authorization library
 """
+
 from http import HTTPStatus
 from typing import (
     Awaitable,

@@ -3,16 +3,5 @@
 {% block title %}SEP{% end %}
 {% block home %}{% end %}
 
-# TODO: static for now
 {% block main %}
-{% set user = data["user"] %}
-{% set casdoor_login_url = data["casdoor_login_url"] %}
-<nav id="sep">
-    <ul>
-        {% if isinstance(user, dict) and user["isAdmin"] %}
-        <li><a href="{{ casdoor_login_url.scheme }}://{{ casdoor_login_url.netloc }}">Casdoor</a></li>
-        {% end %}
-        <li><a href="/tasks/">Tasks</a></li>
-    </ul>
-</nav>
 {% end %}

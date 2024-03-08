@@ -1,15 +1,13 @@
 """
 Tasks module
 """
-from base64 import b64encode
+
 from collections import namedtuple
 from http import HTTPStatus
 import json
 from os.path import join
-from typing import Any, Optional
 from urllib.parse import parse_qs
 
-from tornado import httputil
 from tornado.httpclient import (
     AsyncHTTPClient,
     HTTPClientError,
@@ -17,15 +15,18 @@ from tornado.httpclient import (
 )
 from tornado.log import app_log
 from tornado.web import HTTPError
-import yaml
 
-from .api.models import TASK_BACKEND_LOOKUP
-from ..core import ApiBackendHandler
-from ..core.utils import (
-    get_template,
-    render_template,
+from .api.models import (
+    TASK_BACKEND_LOOKUP,
+    TASK_BACKEND_MAP,
+    TASK_HISTORY_STATUS_LOOKUP,
 )
+from ..core import ApiBackendHandler
+from ..core.utils import get_requests_session
+from ..inventory import InventoryHandler
+from .nomad.utils import transform_payload as nomad_payload
 
+TaskOwner = namedtuple("TaskOwner", ["value", "label"])
 TranslateConfig = namedtuple("TranslateConfig", ["old", "new", "action"])
 
 DEFAULT_BACKEND_ADDRESS = "http://127.0.0.1:8182"
@@ -33,10 +34,16 @@ DEFAULT_BACKEND_ADDRESS = "http://127.0.0.1:8182"
 TEMPLATE_PREFIX = "tasks"
 TRANSLATION_MAPPING = {
     "create": (
+        TranslateConfig("owners", "meta", "update"),
         TranslateConfig("taskalias", "name", "flatten"),
-        TranslateConfig("taskdef", "data", "base64"),
+        TranslateConfig("taskdef", "data", "backend"),
         TranslateConfig("taskeng", "engine", "flatten"),
-    )
+    ),
+    "owners": (
+        TaskOwner("*", "Any"),
+        TaskOwner("archiver", "Data Archiver"),
+        TaskOwner("alter", "Schema Change"),
+    ),
 }
 
 
@@ -48,6 +55,8 @@ class TaskHandler(ApiBackendHandler):
         "ui": "/tasks/",
     }
 
+    base_uri: str
+    inventory_uri: str
     uri: str
 
     def initialize(self) -> None:
@@ -57,7 +66,9 @@ class TaskHandler(ApiBackendHandler):
         :return:
         """
         super().initialize()
-        self.uri = f"{self.request.server_connection.context.protocol}://{self.request.host}{TaskHandler.PATHS['api']}"
+        self.base_uri = f"{self.request.server_connection.context.protocol}://{self.request.host}"
+        self.inventory_uri = f"{self.base_uri}{InventoryHandler.PATHS['api']}"
+        self.uri = f"{self.base_uri}{TaskHandler.PATHS['api']}"
 
     async def _create(self) -> dict:
         """Create a new task
@@ -68,6 +79,7 @@ class TaskHandler(ApiBackendHandler):
         headers = dict(self.request.headers.copy())
         headers["Content-Type"] = "application/json"
         payload = parse_qs(self.request.body.decode())
+        session = get_requests_session(self)
 
         if "_xsrf" in payload:
             headers["X-Xsrftoken"] = payload["_xsrf"][0]
@@ -76,16 +88,23 @@ class TaskHandler(ApiBackendHandler):
             if mapping.old not in payload:
                 continue
             match mapping.action:
-                case "base64":
-                    # TODO: add validation for the format
-                    if payload.get("format") == ["yaml"]:
-                        payload[mapping.old][0] = json.dumps(yaml.safe_load(payload[mapping.old][0]))
-                    payload[mapping.new] = b64encode(payload[mapping.old][0].encode()).decode()
+                case "backend":
+                    backend = TASK_BACKEND_LOOKUP[int(payload["taskeng"][0])]
+                    match backend:
+                        case "nomad":
+                            payload[mapping.new] = await nomad_payload(
+                                payload[mapping.old][0], payload["format"][0], session
+                            )
+                        case _:
+                            raise NotImplementedError(f"backend is unsupported")
                 case "flatten":
                     if not isinstance(payload[mapping.old], list):
                         payload[mapping.new] = payload[mapping.old]
                     else:
                         payload[mapping.new] = payload[mapping.old][0]
+                case "update":
+                    payload.setdefault(mapping.new, {})
+                    payload[mapping.new].update({mapping.old: payload[mapping.old]})
                 case _:
                     payload[mapping.new] = payload[mapping.old]
             del payload[mapping.old]
@@ -124,7 +143,7 @@ class TaskHandler(ApiBackendHandler):
     async def _view(self, task: str) -> dict:
         """View a specific task
 
-        :param task:
+        :param task_data:
         :return:
         """
         client = AsyncHTTPClient()
@@ -138,7 +157,49 @@ class TaskHandler(ApiBackendHandler):
                 request_timeout=self.request_timeout,
             )
         )
-        return json.loads(response.body.decode())
+        task_data = json.loads(response.body.decode())
+        task_data["task"] = json.loads(task_data["data"])
+
+        try:
+            response = await client.fetch(
+                HTTPRequest(
+                    url=self.inventory_uri,
+                    method="GET",
+                    headers=self.request.headers,
+                    connect_timeout=self.connect_timeout,
+                    follow_redirects=self.follow_redirects,
+                    request_timeout=self.request_timeout,
+                )
+            )
+            hosts = sorted(json.loads(response.body.decode()), key=lambda h: h["name"])
+        except HTTPClientError:
+            hosts = []
+        task_data["hosts"] = hosts
+
+        try:
+            response = await client.fetch(
+                HTTPRequest(
+                    url=f"{self.uri}history/{task}",
+                    method="GET",
+                    headers=self.request.headers,
+                    connect_timeout=self.connect_timeout,
+                    follow_redirects=self.follow_redirects,
+                    request_timeout=self.request_timeout,
+                )
+            )
+            history = [
+                {
+                    "created_at": x["created_at"],
+                    "updated_at": x["updated_at"],
+                    "status": TASK_HISTORY_STATUS_LOOKUP[x["status"]],
+                }
+                for x in json.loads(response.body.decode())
+            ]
+        except HTTPClientError:
+            history = []
+        task_data["history"] = history
+
+        return task_data
 
     async def get(self, route: str):
         """Task UI requests
@@ -155,15 +216,15 @@ class TaskHandler(ApiBackendHandler):
         }
         match route:
             case "":
-                render_args.update(data=await self._list())
-                template_name = join(TEMPLATE_PREFIX, "list.html")
+                render_args.update(template_path=join(TEMPLATE_PREFIX, "list.html"), template_data=await self._list())
             case _:
                 try:
-                    render_args.update(data=await self._view(route))
+                    render_args.update(
+                        template_path=join(TEMPLATE_PREFIX, "view.html"), template_data=await self._view(route)
+                    )
                 except HTTPClientError as err:
                     raise HTTPError(status_code=HTTPStatus.NOT_FOUND) from err
-                template_name = join(TEMPLATE_PREFIX, "view.html")
-        self.write(render_template(get_template(template_name, self.cfg.templates.get("dirs", [])), **render_args))
+        self.data.update(**render_args)
 
     async def post(self, route: str):
         """Task UI post requests

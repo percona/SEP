@@ -40,6 +40,7 @@ import mimetypes
 from os import (
     environ,
     getpid,
+    path,
 )
 import pathlib
 from secrets import token_bytes
@@ -62,7 +63,10 @@ from tornado.options import (
     parse_command_line,
     parse_config_file,
 )
-from tornado.web import Application
+from tornado.web import (
+    Application,
+    StaticFileHandler,
+)
 from tornado.util import ObjectDict
 import uvicorn
 import yaml
@@ -76,12 +80,10 @@ from .core import (
     RemoteCallHandler,
 )
 from .inventory.api import app as inventory_app
-from .tasks import (
-    DEFAULT_BACKEND_ADDRESS as TASKS_BACKEND,
-    TaskHandler,
-)
+from .inventory.router import get_default_router as inventory_router
 from .tasks.api import app as tasks_app
 from .tasks.nomad import NomadRemoteCallHandler
+from .tasks.router import get_default_router as tasks_router
 
 __all__ = []
 __version__ = "0.0.1"
@@ -142,6 +144,7 @@ class Config(ObjectDict):
         """
         if not hasattr(self, "handlers") or not isinstance(self.handlers, list):
             return []
+        loaded_handlers = []
         for i, handler in enumerate(self.handlers):
             # TODO: We could allow variable length here, as the third item could be empty,
             #       this can be decided later on though as explicit could be better than
@@ -150,16 +153,15 @@ class Config(ObjectDict):
                 raise NotImplementedError("Handler definitions are currently fixed-length lists")
             if not isinstance(handler, list) or len(handler) != HANDLER_DEFINITION_LENGTH:
                 app_log.warning("Deleting handler due to incompatibility: %s", handler)
-                del self.handlers[i]
                 continue
             try:
                 if handler[1] not in ["RemoteCallHandler", "sep.RemoteCallHandler"]:
                     importlib.import_module(handler[1] if not handler[3] else handler[3])
             except ModuleNotFoundError:
-                del self.handlers[i]
                 continue
             if HANDLER_DEFINITION_REMOVE_AFTER:
                 self.handlers[i] = self.handlers[i][0:HANDLER_DEFINITION_REMOVE_AFTER]
+            loaded_handlers.append(self.handlers[i])
             app_log.debug("Handler %s loaded", handler[1])
 
         # TODO: Built-in rules, here temporarily
@@ -167,39 +169,25 @@ class Config(ObjectDict):
         # we could look up what should be enabled and go off to each to retrieve its handlers. This would
         # allow the app/handler/registry to be the source of the configuration. Perhaps this could even remove
         # the need to populate the handlers and instead get used to configure an intelligent router
-        self.handlers.append([r"^/$", HomepageHandler, {}])
-        self.handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
-        self.handlers.append([rf"^{TaskHandler.PATHS['ui']}(?P<route>(?!api|nomad).*)?$", TaskHandler, {}])
+        loaded_handlers.append([r"^/$", HomepageHandler, {}])
+        loaded_handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
 
-        # Tasks
-        if hasattr(self, "modules") and "tasks" in self.modules and "api" in self.modules.tasks:
-            self.handlers.append(
-                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, self.modules.tasks.api]
-            )
+        # Static file handler
+        source_dir = path.abspath(path.join(__file__, "..", "..", ".."))
+        if "static_path" in self.sep and self.sep.static_path is not None:
+            static_path = pathlib.Path(self.sep.static_path)
+            if not static_path.exists():
+                raise asyncio.exceptions.CancelledError(f"Cannot find static_path {static_path}")
         else:
-            self.handlers.append(
-                [rf"^{TaskHandler.PATHS['api']}(?P<route>.*)?$", RemoteCallHandler, {"uri": TASKS_BACKEND}]
-            )
-        # Nomad
-        if hasattr(self, "modules") and "nomad" in self.modules and "api" in self.modules.nomad:
-            self.handlers.append(
-                [
-                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
-                    NomadRemoteCallHandler,
-                    self.modules.nomad.api,
-                ]
-            )
-        else:
-            self.handlers.append(
-                [
-                    rf"^{NomadRemoteCallHandler.PATHS['base']}(?P<route>.+)$",
-                    NomadRemoteCallHandler,
-                    {"uri": "http://127.0.0.1:4646"},
-                ]
-            )
-        # End
+            static_path = path.abspath(path.join(source_dir, "static"))
+        loaded_handlers.append([r"^/static/(.*)", StaticFileHandler, {"path": static_path}])
 
-        return self.handlers
+        # Built-in routers
+        for handler in inventory_router(cfg=self.modules, handlers_only=True):
+            loaded_handlers.append(handler)
+        for handler in tasks_router(cfg=self.modules, handlers_only=True):
+            loaded_handlers.append(handler)
+        return loaded_handlers
 
     @staticmethod
     def load(config: Union[str, BytesIO, FileType, _Option], mimetype: Optional[str | bytes] = None) -> "Config":

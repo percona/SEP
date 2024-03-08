@@ -9,6 +9,9 @@
       <!-- Default meta block -->
       <!-- End meta block -->
       {% end %}
+      <!--<link rel="stylesheet" href="/static/fonts.css" media="screen,projection" />
+      <link rel="stylesheet" href="/static/themes/materialize/css/materialize.css" media="screen,projection" />
+      <link rel="stylesheet" href="/static/datatables/datatables.min.css" media="screen,projection" />-->
       {% block style %}
       <style>
           @media screen {
@@ -20,7 +23,7 @@
       {% block behaviours %}{% end %}
   </head>
 
-  <body>
+  <body class="has-fixed-sidenav">
       <header>
       {% block home %}<a href="/">Home</a>{% end %}
       {% block header %}
@@ -29,6 +32,9 @@
       </header>
 
       <main>
+      {% block sidebar %}
+           {% include "menus/partials/sidebar.html" %}
+      {% end %}
       {% block main %}
       <p>Nothing to see here, move along</p>
       {% end %}
@@ -38,7 +44,22 @@
       <footer>
       {% block footer %}
       {% end %}
-      <p><em>Copyright &copy; Percona LLC</p>
+      <p><em>Copyright &copy; Percona LLC</em></p>
       </footer>
+
+      {% block behaviours-optimized %}
+      <!--<script src="/static/jquery-3.1.1.min.js"></script>
+      <script src="/static/themes/materialize/js/materialize.js"></script>
+      <script>
+        $(document).ready(function(){
+          $('.sidenav').sidenav();
+          $(".modal").modal();
+          $("select").formSelect();
+          $('.collapsible').collapsible();
+          $('.tabs').tabs();
+          $('.dropdown-trigger').dropdown({ constrainWidth: false });
+        });
+      </script>-->
+      {% end %}
   </body>
 </html>

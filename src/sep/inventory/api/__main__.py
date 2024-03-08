@@ -1,6 +1,7 @@
 """
 Entrypoint for module
 """
+
 import asyncio
 
 from tornado.options import (

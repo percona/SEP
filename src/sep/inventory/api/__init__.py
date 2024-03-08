@@ -1,6 +1,7 @@
 """
 Inventory API
 """
+
 import logging
 from os import getenv
 from secrets import token_hex
@@ -33,7 +34,10 @@ from .models import (
 from .pmm import InventorySource
 from sep.authz.casdoor import SESSION_TOKEN_LENGTH
 import sep.core.db
-from sep.core.utils import get_logger
+from sep.core.utils import (
+    get_logger,
+    Timer,
+)
 
 DEFAULT_DATABASE_DSN = f"{sep.core.db.DEFAULT_DATABASE_DSN}/inventory.db"
 DEFAULT_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
@@ -42,11 +46,10 @@ DATABASE_URL = getenv("INVENTORY_DATABASE_URL", DEFAULT_DATABASE_DSN)
 ORIGINS = getenv("INVENTORY_ORIGINS", DEFAULT_ORIGINS).split(",")
 
 database = sep.core.db.get_database(DATABASE_URL)
-database.metadata = sep.core.db.get_metadata()
-database.engine = sep.core.db.get_engine(DATABASE_URL, connect_args=sep.core.db.DEFAULT_DATABASE_CONNECT_ARGS)
 
 app = FastAPI()
 app.log = get_logger("inventory-api", level=logging.DEBUG)
+app.log.debug("dialect._json_serializer: %r", database.engine.dialect._json_serializer)
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,6 +64,8 @@ app.add_middleware(
     session_cookie="fastapi-session",
 )
 
+timer = Timer()
+
 
 async def lookup_inventory(source: str = "pmm"):
     """Lookup the inventory from a remote source
@@ -72,6 +77,7 @@ async def lookup_inventory(source: str = "pmm"):
     inventory_source = None
     match source:
         case "pmm":
+            # TODO: set address from config
             inventory_source = InventorySource(uri="https://localhost:8443", verify_tls=False)
         case "_":
             raise NotImplementedError(f"{source} is not supported")
@@ -96,6 +102,12 @@ async def lookup_inventory(source: str = "pmm"):
         else:
             item_id = exists[0][0]
             await update_item(item_id, model)
+    timer.update()
+
+
+async def select_active_inventory():
+    query = inventory.select().where(inventory.c.deleted_at == null())
+    return await database.fetch_all(query)
 
 
 @app.on_event("startup")
@@ -124,9 +136,8 @@ async def list_inventory(background_tasks: BackgroundTasks):
     :return:
     """
     app.log.debug("Listing inventory")
-    query = inventory.select().where(inventory.c.deleted_at == null())
-    results = await database.fetch_all(query)
-    if not results:
+    results = await select_active_inventory()
+    if not results or timer.needs_refresh():
         background_tasks.add_task(lookup_inventory, "pmm")
     return results
 

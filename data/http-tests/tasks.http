@@ -1,2 +1,90 @@
 ###
 GET http://127.0.0.1:8182/
+
+###
+GET http://127.0.0.1:8182/?owner=archiver
+
+###
+GET http://127.0.0.1:8182/history?owner=archiver
+
+###
+GET http://127.0.0.1:8182/stats/purge_foo_bad_ids
+Accept: application/json
+
+###
+POST http://127.0.0.1:8182/
+Content-Type: application/json
+
+  {
+    "id": null,
+    "created_at": "2024-01-17T10:14:28.201542",
+    "deleted_at": null,
+    "updated_at": null,
+    "name": "python-runner-sysbatch-constraint-test",
+    "data": "{\"Affinities\": null, \"AllAtOnce\": null, \"Constraints\": [{\"LTarget\": \"${node.unique.name}\", \"Operand\": \"${NOMAD_META_operator}\", \"RTarget\": \"${NOMAD_META_target}\"}], \"ConsulNamespace\": null, \"ConsulToken\": null, \"CreateIndex\": null, \"Datacenters\": [\"${NOMAD_META_dc}\"], \"DispatchIdempotencyToken\": null, \"Dispatched\": false, \"ID\": \"python-runner-sysbatch-constraint\", \"JobModifyIndex\": null, \"Meta\": {\"target\": \"\", \"args\": \"-m\", \"command\": \"/usr/bin/free\", \"dc\": \"dc1\", \"operator\": \"=\"}, \"Migrate\": null, \"ModifyIndex\": null, \"Multiregion\": null, \"Name\": \"python-runner-sysbatch-constraint\", \"Namespace\": null, \"NodePool\": null, \"NomadTokenID\": null, \"ParameterizedJob\": {\"MetaOptional\": [\"args\", \"command\", \"dc\", \"operator\"], \"MetaRequired\": [\"target\"], \"Payload\": \"required\"}, \"ParentID\": null, \"Payload\": null, \"Periodic\": null, \"Priority\": null, \"Region\": null, \"Reschedule\": null, \"Spreads\": null, \"Stable\": null, \"Status\": null, \"StatusDescription\": null, \"Stop\": null, \"SubmitTime\": null, \"TaskGroups\": [{\"Affinities\": null, \"Constraints\": null, \"Consul\": null, \"Count\": null, \"EphemeralDisk\": null, \"MaxClientDisconnect\": null, \"Meta\": null, \"Migrate\": null, \"Name\": \"execution\", \"Networks\": null, \"PreventRescheduleOnLost\": null, \"ReschedulePolicy\": null, \"RestartPolicy\": null, \"Scaling\": null, \"Services\": null, \"ShutdownDelay\": null, \"Spreads\": null, \"StopAfterClientDisconnect\": null, \"Tasks\": [{\"Actions\": null, \"Affinities\": null, \"Artifacts\": null, \"Config\": {\"command\": \"${NOMAD_META_command}\", \"args\": [\"${NOMAD_META_args}\"]}, \"Constraints\": null, \"Consul\": null, \"DispatchPayload\": null, \"Driver\": \"raw_exec\", \"Env\": null, \"Identities\": null, \"Identity\": null, \"KillSignal\": \"\", \"KillTimeout\": null, \"Kind\": \"\", \"Leader\": false, \"Lifecycle\": null, \"LogConfig\": null, \"Meta\": null, \"Name\": \"check-memory\", \"Resources\": null, \"RestartPolicy\": {\"Attempts\": 0, \"Delay\": null, \"Interval\": null, \"Mode\": \"fail\", \"RenderTemplates\": null}, \"ScalingPolicies\": null, \"Services\": null, \"ShutdownDelay\": 0, \"Templates\": null, \"User\": \"\", \"Vault\": null, \"VolumeMounts\": null}], \"Update\": null, \"Volumes\": null}], \"Type\": \"sysbatch\", \"Update\": null, \"VaultNamespace\": null, \"VaultToken\": null, \"Version\": null}",
+    "backend": 1
+  }
+
+###
+POST http://127.0.0.1:8182/run/1
+Content-Type: application/json
+
+###
+POST http://127.0.0.1:8182/generate
+Content-Type: application/json
+
+  {
+    "app": "test",
+    "commands": [{"args":  ["-sm", "/home/percona/.zshrc"], "command":  "/bin/du"}],
+    "name": "test-batch-std",
+    "persist": true,
+    "target": "all"
+  }
+
+###
+POST http://127.0.0.1:8182/generate
+Content-Type: application/json
+
+{
+  "app": "test",
+  "commands": [
+    {"args":  ["-sm", "/home/percona/.zshrc"], "command":  "/bin/du"},
+    {"args":  ["-sm", "/home/percona/.zsh_history"], "command":  "/bin/du"}
+  ],
+  "name": "test-batch-parallel",
+  "parallel": true,
+  "target": "all"
+}
+
+###
+POST http://127.0.0.1:8182/generate
+Content-Type: application/json
+
+{
+  "app": "test",
+  "commands": [{"args":  ["-sm", "/home/percona/.zshrc"], "command":  "/bin/du"}],
+  "name": "test-batch-parallel-single",
+  "parallel": false,
+  "target": "all"
+}
+
+###
+POST http://127.0.0.1:8182/generate
+Content-Type: application/json
+
+{
+  "app": "test",
+  "commands": [
+    {
+      "args":  ["-sm", "/home/percona/.zshrc"],
+      "command":  "/bin/du",
+      "config": [{
+        "path": "foo.yaml",
+        "content": "---\nfoo: true\n..."
+      }]
+    }
+  ],
+  "name": "test-batch-parallel-single",
+  "parallel": false,
+  "target": "all"
+}
