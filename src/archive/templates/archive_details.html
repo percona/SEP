@@ -1,0 +1,211 @@
+{% from tornado.escape import xhtml_unescape %}
+{% from sep.tasks.api.models import TASK_HISTORY_STATUS_MAP %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link href="/static/fonts.css" rel="stylesheet" />
+  <!--Import materialize.css-->
+  <link
+    type="text/css"
+    rel="stylesheet"
+    href="/static/themes/materialize/css/materialize.css"
+    media="screen,projection"
+  />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEP - MySQL Archive</title>
+  <style>
+    caption{text-align: left}
+    caption>h1{font-size:200%}
+    td, th{vertical-align: top}
+    td>ul{margin:0 0 0 1em; padding:0}
+    tbody>tr.col{width:50%}
+    tr.col,tr.col>th{padding-left: 0!important;}
+    tbody>tr.col.full{width:100%}
+  </style>
+</head>
+<body>
+  <ul id="dropdown-apps" class="dropdown-content">
+    <li class="divider">MySQL</li>
+    <li><a href="/alters/" class="blue-text">MySQL Alters</a></li>
+    <li><a href="/archive/" class="blue-text">MySQL Archive</a></li>
+  </ul>
+  <nav>
+    <div class="nav-wrapper blue">
+      <a href="#!" class="brand-logo"><i class="material-icons">cloud</i>Services Enablement Platform</a>
+      <ul class="right hide-on-med-and-down">
+        <li><a href="#!"><i class="material-icons">search</i></a></li>
+        <li><a class="dropdown-trigger" href="#!" data-target="dropdown-apps"><i class="material-icons">view_module</i></a></li>
+        <li><a href="#!"><i class="material-icons">refresh</i></a></li>
+        <li><a href="#!"><i class="material-icons">more_vert</i></a></li>
+      </ul>
+    </div>
+  </nav>
+  <div class="container">
+    <div class="row section">
+      <table class="responsive-table">
+        <caption><h1>MySQL Archive: {{ task_name }}</h1></caption>
+        <tbody>
+          <tr class="col">
+              <th class="s2">Hostname</th>
+              <td class="s4">{{ task['hostname'] }}</td>
+          </tr>
+          <tr class="col">
+            <th class="s2">Table</th>
+            <td class="s4">{{ task['table'] }}</td>
+          </tr>
+          <tr class="col">
+            <th class="s2">Created at</th>
+            <td class="s4">{{ task['created_at'] }}</td>
+          </tr>
+          <tr class="col">
+            <th class="s2">Updated at</th>
+            <td class="s4">{{ task['updated_at'] if task['updated_at'] else " " }}</td>
+          </tr>
+          <tr class="col full">
+            <th class="s2">Command</th>
+            <td>{{ task['cmd'] }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="row section">
+      <table class="responsive-table">
+        <caption>Parameters</caption>
+        <tbody>
+        {% for k, v in task['meta'].items() %}
+          <tr>
+            <th>{{ k }}</th>
+            <td>
+              {% if isinstance(v, dict) %}
+                <ul>
+                {% for j, w in v.items() %}
+                  <li>{{ j }}: {{ w }}</li>
+                {% end %}
+                </ul>
+              {% elif isinstance(v, list) and v %}
+                <ul>
+                  {% for j, w in v[0].items() %}
+                  <li>{{ j }}: {{ w }}</li>
+                  {% end %}
+                </ul>
+              {% else %}
+                <code>{{ v }}</code>
+              {% end %}
+            </td>
+          </tr>
+        {% end %}
+        </tbody>
+      </table>
+    </div>
+    <div class="row section">
+      <h6>Stats</h6>
+      {% if stats and stats["total"] %}
+      <table class="responsive-table">
+        <thead>
+          <tr>
+            <th>Executions</th>
+            <th>Succeeded</th>
+            <th>Failed</th>
+            <th>Last Finished</th>
+            <th>Avg Duration (<abbr title="seconds">s</abbr>)</th>
+            <th>Last Duration (<abbr>s</abbr>)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{ stats["total"] }}</td>
+            <td>{{ stats["status"]["pass"] }}</td>
+            <td>{{ stats["status"]["fail"] }}</td>
+            <td>{{ stats["last_finished_at"] }}</td>
+            <td>{{ round(stats["duration"]["average_seconds"] or 0, 3) }}</td>
+            <td>{{ round(stats["duration"]["last_seconds"] or 0, 3) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      {% else %}
+      <p>No data</p>
+      {% end %}
+    </div>
+    <div class="row section">
+      <h6>History</h6>
+      {% if history %}
+      <table class="responsive-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Started at</th>
+            <th>Completed at</th>
+            <th>Duration (<abbr>s</abbr>)</th>
+            <th>Errors</th>
+          </tr>
+        </thead>
+        <tbody>
+      {% for h in history %}
+          {% if h['status'] in [v for k, v in TASK_HISTORY_STATUS_MAP.items() if k in ["failed", "success"]] %}
+          <tr>
+            <td>
+              {% if h['status'] == TASK_HISTORY_STATUS_MAP["success"] %}
+              <i class="material-icons">done</i>
+              {% else %}
+              <i class="material-icons">error_outline</i>
+              {% end %}
+            </td>
+            <td>{{ h['execution_request']['tracking']['started_at'] }}</td>
+            <td>{{ h['execution_request']['tracking']['finished_at'] }}</td>
+            <td>{{ round(h['execution_request']['tracking']['duration'], 3) }}</td>
+            <td>
+              {% if h['status'] != TASK_HISTORY_STATUS_MAP["success"] %}
+              <ul>
+                {% for message in h['errors'] %}
+                <li>{{ message }}</li>
+                {% end %}
+              </ul>
+              {% else %}
+              None
+              {% end %}
+            </td>
+            <!--<td><i class="material-icons">subject</i></td>-->
+          </tr>
+        {% end %}
+      {% end %}
+        </tbody>
+      </table>
+      {% else %}
+      <p>No data</p>
+      {% end %}
+
+    </div>
+  </div>
+
+  <!--JavaScript at end of body for optimized loading-->
+  <script src="/static/jquery-3.1.1.min.js"></script>
+  <script
+    type="text/javascript"
+    src="/static/themes/materialize/js/materialize.js"
+  ></script>
+  <script>
+    $(document).ready(function(){
+      $('.sidenav').sidenav();
+    });
+
+    $(document).ready(function () {
+      $(".modal").modal();
+    });
+
+    $(document).ready(function () {
+      $("select").formSelect();
+    });
+
+    $('.dropdown-trigger').dropdown({ constrainWidth: false });
+
+    $(document).ready(function(){
+      $('.collapsible').collapsible();
+    });
+
+    $(document).ready(function(){
+        $('.tabs').tabs();
+    });
+  </script>
+</body>
+</html>
