@@ -1,5 +1,11 @@
 <!doctype html>
 {% from tornado.escape import xhtml_unescape %}
+{% set template_data = data.get("template_data", {}) %}
+{% set running_tasks = template_data.get("running_tasks", []) %}
+{% set archives = template_data.get("archives", []) %}
+{% set scheduled_tasks = template_data.get("scheduled_tasks", []) %}
+{% set history_tasks = template_data.get("history_tasks", []) %}
+{% set xsrf_form_html = data.get("xsrf_form_html") %}
 <html lang="en">
 <head>
   <link href="/static/fonts.css" rel="stylesheet" />
@@ -91,16 +97,17 @@
           <tbody>
             {% for archive in archives %}
             {% set archive_name = archive["name"] %}
-            <form id="{{ archive['name'] }}" method="post" action="/tasks/api/execute/{{ archive['name'] }}?next=/archiver/">
-              <input type="hidden" name="task" value="{{ archive['name'] }}">
-              <input type="hidden" name="host" value="{{ archive['hostname'] }}">
-              {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
-            </form>
             <tr>
               <td>{{ archive_name }}</td>
               <td>{{ archive['hostname'] }}</td>
               <td>{{ archive['table'] }}</td>
               <td>
+                <form id="{{ archive['name'] }}" method="post" action="">
+                  <input type="hidden" value="/tasks/api/execute/{{ archive['name'] }}" />
+                  <input type="hidden" name="task" value="{{ archive['name'] }}">
+                  <input type="hidden" name="host" value="{{ archive['hostname'] }}">
+                  {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
+                </form>
                 <a href="javascript:{}" onclick="document.getElementById('{{ archive_name }}').submit();"><i class="material-icons">send</i></a>
                 <a href="details/{{ archive_name }}"><i class="material-icons">visibility</i></a>
                 <a href="delete/{{ archive['name'] }}"

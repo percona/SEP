@@ -109,6 +109,7 @@ define("handlers", default=[], help="Handler configuration", type=list)
 define("modules", default={}, help="Module configuration", type=dict)
 define("port", default=8181, help="Start of port range", type=int)
 define("sep", default={}, help="SEP application configuration", type=dict)
+define("templates", default=DEFAULTS["templates"], help="Template configuration", type=dict)
 
 Model = TypeVar("Model", bound="BaseModel")
 

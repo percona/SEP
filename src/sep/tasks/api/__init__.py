@@ -43,6 +43,7 @@ from .models import (
     Task,
     TASK_BACKEND_LOOKUP,
     TASK_BACKEND_MAP,
+    TaskExecution,
     TaskExecutionRequest,
     TaskGroup,
     TaskGroupTask,
@@ -439,7 +440,6 @@ async def execute_history_id(history_id: int, request: Request, background_tasks
 
 @app.post(path="/execute/{task_name}", response_class=JSONResponse)
 async def execute_task_name(
-    task: Annotated[str, Form()],
     task_name: str,
     request: Request,
     background_tasks: BackgroundTasks,
@@ -470,8 +470,10 @@ async def execute_task_name(
     }
     task_history = TaskHistory(
         data=Task(**dict(config)),
-        execution_request=TaskExecutionRequest(task=task, target=target, meta=meta, tracking={"evaluation_id": ""}),
-        name=task,
+        execution_request=TaskExecutionRequest(
+            task=task_name, target=target, meta=meta, tracking={"evaluation_id": ""}
+        ),
+        name=task_name,
         status=TASK_HISTORY_STATUS_MAP["pending"],
     )
     history_recorded = await create_task_history(task=task_history)
@@ -503,12 +505,12 @@ async def _schedule_queue_item(history_recorded: dict, background_tasks: Backgro
             app.log.critical("Unknown execution mode '%s'", mode)
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
     # Redirect the user
-    redirect = request.query_params.get("next")
-    if redirect is None and "referer" in request.headers:
-        redirect = request.headers.get("referer")
-    if redirect:
-        app.log.debug("Redirecting to %s", redirect)
-        return RedirectResponse(url=redirect, status_code=HTTPStatus.SEE_OTHER)
+    # redirect = request.query_params.get("next")
+    # if redirect is None and "referer" in request.headers:
+    #    redirect = request.headers.get("referer")
+    # if redirect:
+    #    app.log.debug("Redirecting to %s", redirect)
+    #    return RedirectResponse(url=redirect, status_code=HTTPStatus.SEE_OTHER)
     return {"task_history_id": history_recorded}
 
 

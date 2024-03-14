@@ -117,6 +117,12 @@ class TaskHistoryStatusEnum(IntEnum):
     success = TASK_HISTORY_STATUS_MAP["success"]
 
 
+class TaskExecution(BaseModel):
+    """Model for initiating task execution"""
+
+    task: str
+
+
 class TaskExecutionRequest(CustomSerializeBaseModel):
     """Model for execution requests"""
 

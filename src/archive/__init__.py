@@ -52,13 +52,14 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
                         scheduled_tasks.append(hist)
                     case "running":
                         running_tasks.append(hist)
-        await self.render(
-            "./templates/index.html",
-            hosts=hosts,
-            archives=archives,
-            scheduled_tasks=scheduled_tasks,
-            history_tasks=history_tasks,
-            running_tasks=running_tasks,
+        self.data.update(
+            template_data={
+                "hosts": hosts,
+                "archives": archives,
+                "scheduled_tasks": scheduled_tasks,
+                "history_tasks": history_tasks,
+                "running_tasks": running_tasks,
+            }
         )
 
     async def post(self, route) -> None:

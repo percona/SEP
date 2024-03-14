@@ -1,6 +1,5 @@
 """task related functions"""
 
-import json
 from typing import Union
 
 from typing import (
@@ -8,13 +7,9 @@ from typing import (
     Optional,
 )
 
-from tornado.httpclient import (
-    AsyncHTTPClient,
-    HTTPRequest,
-)
-import tornado.web
 import yaml
 
+from sep.core import ApiBackendHandler
 from sep.core.utils import async_request
 
 # FIXME: This is just plain wrong :)
@@ -28,7 +23,7 @@ PURGE_TABLES_CONFIG_WHERE = {
 
 
 # FIXME: this is bypassing authentication by not using the correct handler
-class AppWebHandler(tornado.web.RequestHandler):
+class AppWebHandler(ApiBackendHandler):
     """
     Handler with tasks related utils
     """
@@ -40,6 +35,15 @@ class AppWebHandler(tornado.web.RequestHandler):
         :return:
         """
         super().initialize()
+        self.data.update(template_path="index.html")
+        # self.data.update(template_path="index.html", template_data={
+        #   "hosts": [],
+        #   "archives": [],
+        #   "scheduled_tasks": [],
+        #   "history_tasks": [],
+        #   "running_tasks": [],
+        # })
+        self.cfg.templates.update(dirs=["#resolve#../templates/archiver"])
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass

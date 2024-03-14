@@ -17,7 +17,10 @@ from typing import (
     Optional,
     Union,
 )
-from urllib.parse import urlparse
+from urllib.parse import (
+    parse_qs,
+    urlparse,
+)
 
 from tornado.gen import coroutine
 from tornado.httpclient import (
@@ -33,6 +36,7 @@ from tornado.web import (
 )
 
 from ..authz.casdoor import CasdoorOAuth2Mixin
+from ..core.utils import async_request
 from .utils import (
     get_template,
     render_template,
@@ -174,7 +178,39 @@ class ApiBackendHandler(BaseHandler):
 
     connect_timeout: int = 10
     follow_redirects: bool = False
-    request_timeout: int = 6
+    request_timeout: int = 60
+
+    async def post(self, route: str):
+        """API Backend post requests
+
+        :param route: the parameters sent in from the router
+        :type route: str
+        :return:
+        """
+        app_log.debug("Received POST request to API handler: %r", self.request)
+
+        match self.request.arguments.get("location"):
+            case None:
+                raise HTTPError(status_code=HTTPStatus.METHOD_NOT_ALLOWED)
+            case _:
+                payload = parse_qs(self.request.body.decode())
+                url = payload["location"][0]
+                target_url = urlparse(url)
+                if not target_url.scheme:
+                    request_url = urlparse(self.uri)
+                    url = f"{request_url.scheme}://{request_url.netloc}{url}"
+                del payload["location"]
+                if "_xsrf" in payload:
+                    self.request.headers.add("X-XSRF-TOKEN", payload["_xsrf"][0])
+                    self.request.headers.add("X-Xsrftoken", payload["_xsrf"][0])
+                self.request.headers.update({"Content-type": "application/json"})
+                response = await async_request(
+                    url=url,
+                    request=self.request,
+                    method="POST",
+                    payload={k: v[0] for k, v in payload.items() if k not in ["_xsrf"]},
+                )
+                app_log.debug("Response: %r", response)
 
 
 class DummyHandler(BaseHandler):
