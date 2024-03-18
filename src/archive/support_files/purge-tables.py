@@ -25,8 +25,8 @@ try:
 
     mysql.install_as_MySQLdb()
 except ImportError:
-    import MySQLdb as mysql
-    from _mysql_exceptions import OperationalError, ProgrammingError
+    import MySQLdb as mysql  # noqa
+    from _mysql_exceptions import OperationalError, ProgrammingError  # noqa
 
 LOGGING_DIR = "/var/log/percona"
 LOGGING_FILE = "purge_tables.log"
@@ -46,7 +46,7 @@ PT_ARCHIVER_BIN = "/usr/bin/pt-archiver"
 CFG_FILE = "/etc/rdba/purge_tables.yml"
 
 
-def main():  # pylint: disable=too-many-locals, too-many-statements, too-many-branches
+def main():  # noqa pylint: disable=too-many-locals, too-many-statements, too-many-branches
     """Main Function"""
 
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
@@ -218,7 +218,7 @@ def drop_table(src_db, src_tbl, conf, options, prg_log_stream):
         print("NOTE: dry-run just shows the SQL for drop_table")
         ret = 0
     else:
-        purge_proc = subprocess.Popen(drp_cmd, stdout=prg_log_stream, stderr=prg_log_stream)
+        purge_proc = subprocess.Popen(drp_cmd, stdout=prg_log_stream, stderr=prg_log_stream)  # noqa
         purge_proc.communicate()
         ret = purge_proc.returncode
     return ret
@@ -238,7 +238,7 @@ def swap_create_table(src_db, src_tbl, src_tbl_swapped, conf, options, prg_log_s
         print("[NOTE: dry-run just shows the SQL for swap_create_table]")
         ret = 0
     else:
-        purge_proc = subprocess.Popen(drp_swp_cmd, stdout=prg_log_stream, stderr=prg_log_stream)
+        purge_proc = subprocess.Popen(drp_swp_cmd, stdout=prg_log_stream, stderr=prg_log_stream)  # noqa
         purge_proc.communicate()
         ret = purge_proc.returncode
     if ret == 0:
@@ -258,9 +258,9 @@ def swap_create_table(src_db, src_tbl, src_tbl_swapped, conf, options, prg_log_s
             print(" ".join(dump_cmd))
             print(" ".join(create_cmd))
         else:
-            dump_proc = subprocess.Popen(dump_cmd, stdout=subprocess.PIPE)
+            dump_proc = subprocess.Popen(dump_cmd, stdout=subprocess.PIPE)  # noqa
             create_proc = subprocess.Popen(
-                create_cmd, stdin=dump_proc.stdout, stdout=prg_log_stream, stderr=prg_log_stream
+                create_cmd, stdin=dump_proc.stdout, stdout=prg_log_stream, stderr=prg_log_stream  # noqa
             )
             create_proc.communicate()
             ret = create_proc.returncode
@@ -279,7 +279,7 @@ def swap_drop_runner(src_db, src_tbl, conf, options, prg_log_stream):
         print("[NOTE: dry-run just shows the SQL for swap-drop]")
         ret = 0
     else:
-        purge_proc = subprocess.Popen(drp_swp_cmd, stdout=prg_log_stream, stderr=prg_log_stream)
+        purge_proc = subprocess.Popen(drp_swp_cmd, stdout=prg_log_stream, stderr=prg_log_stream)  # noqa
         purge_proc.communicate()
         ret = purge_proc.returncode
     return ret
@@ -349,9 +349,9 @@ def pt_archive_runner(src_db, src_tbl, conf, options, prg_log_stream):
     #                 title='Purge Tables: {} ---> Starting'.format(conf['prg_alias']))
 
     if options.dry_run:
-        purge_proc = subprocess.Popen(pt_archiver_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        purge_proc = subprocess.Popen(pt_archiver_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # noqa
     else:
-        purge_proc = subprocess.Popen(pt_archiver_cmd, stdout=prg_log_stream, stderr=prg_log_stream)
+        purge_proc = subprocess.Popen(pt_archiver_cmd, stdout=prg_log_stream, stderr=prg_log_stream)  # noqa
     out, err = purge_proc.communicate()
     if options.dry_run:
         print(out)
