@@ -58,6 +58,7 @@ exclude_dirs = [
     ".git",
     ".github",
     "build",
+    "src/archive/support_files",
     "venv"
 ]
 
