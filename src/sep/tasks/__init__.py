@@ -212,7 +212,6 @@ class TaskHandler(ApiBackendHandler):
         render_args = {
             "backends": TASK_BACKEND_LOOKUP,
             "base_uri": self.PATHS["ui"],
-            "xsrf_form_html": self.xsrf_form_html,
         }
         match route:
             case "":

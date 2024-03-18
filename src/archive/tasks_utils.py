@@ -35,15 +35,7 @@ class AppWebHandler(ApiBackendHandler):
         :return:
         """
         super().initialize()
-        self.data.update(template_path="index.html")
-        # self.data.update(template_path="index.html", template_data={
-        #   "hosts": [],
-        #   "archives": [],
-        #   "scheduled_tasks": [],
-        #   "history_tasks": [],
-        #   "running_tasks": [],
-        # })
-        self.cfg.templates.update(dirs=["#resolve#../templates/archiver"])
+        self.data.update(template_path="archiver/index.html")
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
@@ -71,6 +63,19 @@ class AppWebHandler(ApiBackendHandler):
         :return:
         """
         return await async_request(url=f"{TASK_API_ENDPOINT}{task_name}", method="DELETE", request=self.request)
+
+    async def _execute_task(self, task_name: str) -> dict:
+        """Trigger an archive task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{TASK_API_ENDPOINT}execute/{task_name}",
+            method="POST",
+            request=self.request,
+            payload={"task": task_name},
+        )
 
     async def _get_task(self, task_name: str) -> dict:
         """Returns details for a single task
@@ -119,7 +124,7 @@ def build_archive_task_data(config):
         ALIAS=config["task_name"][0],
         SOURCE_DB=config["sourcedb"][0],
         SOURCE_TABLE=config["sourcetbl"][0],
-        DEST_TABLE=config["desttbl"][0],
+        DEST_TABLE=config["dest_name"][0],
         WHERE=config["where"][0],
     )
     purge_config.update(ALL=purge_config_all, PURGE_LIST=[purge_config_list])

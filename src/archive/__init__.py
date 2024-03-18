@@ -25,16 +25,14 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
     async def get(self, route) -> None:
         """Server GET requests"""
 
-        if route:
-            route_path = route.split("/")
-
-            match route_path[0]:
-                case "delete":
-                    app_log.debug("DELETE: %s", route_path[1])
-                    await self._delete_task(route_path[1])
-                case "details":
-                    await self._archive_view_details(route_path[1])
-                    return
+        route_path = route.split("/")
+        match route_path[0]:
+            # case "delete":
+            #    app_log.debug("DELETE: %s", route_path[1])
+            #    await self._delete_task(route_path[1])
+            case "details":
+                await self._archive_view_details(route_path[1])
+                return
 
         hosts = await self._hosts()
         archives = await self._formatted_archive_tasks()
@@ -66,14 +64,27 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
         """Serve POST requests"""
         payload = parse_qs(self.request.body.decode())
         app_log.debug("Received POST: %s", payload)
-        await self._create_task(tasks_utils.build_archive_task_data(payload))
-        self.redirect(self.request.uri)
+
+        redirect = self.request.uri
+        route_path = route.split("/")
+        match route_path[0]:
+            case "delete":
+                app_log.debug("DELETE: %s", route_path[1])
+                await self._delete_task(route_path[1])
+            case "details":
+                app_log.debug("Viewing: %s", route_path[1])
+            case "execute":
+                app_log.debug("Executing: %s", route_path[1])
+                await self._execute_task(route_path[1])
+                redirect = ""
+            case "":
+                await self._create_task(tasks_utils.build_archive_task_data(payload))
+        self.redirect(redirect)
 
     async def _archive_view_details(self, task_name):
         """Handles detailed archive view"""
         task = await self._get_task(task_name)
         data = json.loads(task["data"])
-
         try:
             meta = yaml.safe_load(data["TaskGroups"][0]["Tasks"][0]["Templates"][0]["EmbeddedTmpl"])
         except yaml.YAMLError:
@@ -82,18 +93,20 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
         app_log.debug("TASK DETAIL: %s", task)
 
         task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
-        await self.render(
-            "./templates/archive_details.html",
-            history=await self._task_history(task_name),
-            stats=await self._get_task_stats(task_name),
-            task_name=task_name,
-            task={
-                "created_at": task["created_at"],
-                "updated_at": task["updated_at"],
-                "cmd": f'{task_config["command"]} {" ".join(task_config["args"])}',
-                "meta": meta,
-                "table": f'{meta["PURGE_LIST"][0]["SOURCE_DB"]}.{meta["PURGE_LIST"][0]["SOURCE_TABLE"]}',
-                "hostname": meta["ALL"]["SOURCE_HOST"],
+        self.data.update(
+            template_path="archiver/details.html",
+            template_data={
+                "history": await self._task_history(task_name),
+                "stats": await self._get_task_stats(task_name),
+                "task_name": task_name,
+                "task": {
+                    "created_at": task["created_at"],
+                    "updated_at": task["updated_at"],
+                    "cmd": f'{task_config["command"]} {" ".join(task_config["args"])}',
+                    "meta": meta,
+                    "table": f'{meta["PURGE_LIST"][0]["SOURCE_DB"]}.{meta["PURGE_LIST"][0]["SOURCE_TABLE"]}',
+                    "hostname": meta["ALL"]["SOURCE_HOST"],
+                },
             },
         )
 

@@ -1,12 +1,14 @@
+# TODO: we will define the menu programmatically
 {% block sidebar %}
 {% set user = data.get("user") %}
 {% set casdoor_login_url = data.get("casdoor_login_url", "#") %}
-<nav id="sep">
+<nav class="sidebar" id="sep">
     <ul>
         {% if isinstance(user, dict) and user["isAdmin"] %}
         <li><a href="{{ casdoor_login_url.scheme }}://{{ casdoor_login_url.netloc }}">Casdoor</a></li>
         {% end %}
-        <li><a href="/tasks/">Tasks</a></li>
+        <li><a href="/archiver/">Data Archiver</a></li>
+        <li><a href="/tasks/">Task Manager</a></li>
     </ul>
 </nav>
 {% end %}

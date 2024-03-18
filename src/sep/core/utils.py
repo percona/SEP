@@ -62,6 +62,10 @@ async def async_request(
         app_log.debug("Payload: %s", payload)
         kwargs["body"] = json.dumps(payload)
 
+    if "Content-Length" in headers:
+        # TODO: check this, it seemed to cause an issue deleting from the archiver app
+        #       when the content length was left in place
+        del headers["Content-Length"]
     response = await client.fetch(HTTPRequest(url=url, method=method, headers=headers, **kwargs))
 
     try:

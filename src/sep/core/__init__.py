@@ -51,10 +51,17 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     """
 
     cfg: namedtuple
-    data: dict = {"user": None, "casdoor_login_url": None, "template_data": [], "template_path": "dummy.html"}
+    data: dict = {
+        "user": None,
+        "casdoor_login_url": None,
+        "template_data": {},
+        "template_path": "dummy.html",
+        "xsrf_form_html": "",
+    }
 
     def initialize(self) -> None:
         self.cfg = getattr(self.application, "config")
+        self.data.update(xsrf_form_html=self.xsrf_form_html)
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass

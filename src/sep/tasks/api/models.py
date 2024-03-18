@@ -420,7 +420,6 @@ tasks = Table(
         "backend", Enum(TaskBackendEnum).with_variant(Integer, dialect_name="sqlite"), default=null(), nullable=True
     ),
     Column("meta", JSON, nullable=False),
-    UniqueConstraint("name"),
 )
 # tasks = Tasks()
 
@@ -447,3 +446,5 @@ Index("task_name", history.name)
 for col in DATABASE_EXTRA_COLUMNS:
     tasks.append_column(col.copy())
     history.append_column(col.copy())
+
+(UniqueConstraint("name", "deleted_at"),)

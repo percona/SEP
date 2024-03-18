@@ -260,7 +260,7 @@ async def get_task(task: str):
     :return:
     """
     app.log.debug("Requesting task %s", task)
-    query = tasks.select().where(tasks.c.name == task)
+    query = tasks.select().where(tasks.c.name == task and tasks.c.deleted_at == null())
     return await database.fetch_one(query)
 
 
