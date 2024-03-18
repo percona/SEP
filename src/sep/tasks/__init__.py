@@ -212,7 +212,6 @@ class TaskHandler(ApiBackendHandler):
         render_args = {
             "backends": TASK_BACKEND_LOOKUP,
             "base_uri": self.PATHS["ui"],
-            "xsrf_form_html": self.xsrf_form_html,
         }
         match route:
             case "":
@@ -236,7 +235,7 @@ class TaskHandler(ApiBackendHandler):
         app_log.debug("Received POST request to tasks handler: %r", self.request)
         match route:
             case "":
-                _ = await self._create()
+                await self._create()
                 self.redirect(self.request.uri)
             case _:
-                raise HTTPError(status_code=HTTPStatus.METHOD_NOT_ALLOWED)
+                await super().post(route)

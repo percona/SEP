@@ -42,7 +42,7 @@ REFRESH_INTERVAL = 3600
 
 async def async_request(
     url: str, request: Union["Request", "HTTPServerRequest"], method: str = "GET", payload: dict | None = None, **kwargs
-) -> Union[dict, list]:
+) -> Union[dict, list, str]:
     """Make an async HTTP request for JSON
 
     :param url:
@@ -61,8 +61,17 @@ async def async_request(
     if payload:
         app_log.debug("Payload: %s", payload)
         kwargs["body"] = json.dumps(payload)
+
+    if "Content-Length" in headers:
+        # TODO: check this, it seemed to cause an issue deleting from the archiver app
+        #       when the content length was left in place
+        del headers["Content-Length"]
     response = await client.fetch(HTTPRequest(url=url, method=method, headers=headers, **kwargs))
-    return json.loads(response.body.decode())
+
+    try:
+        return json.loads(response.body.decode())
+    except json.decoder.JSONDecodeError:
+        return response.body.decode()
 
 
 async def async_run(func: Callable, *args):

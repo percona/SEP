@@ -32,7 +32,8 @@
   </ul></dd>
 </dl>
 
-<form method="post" action="{{ base_uri }}api/execute/{{ template_data['name'] }}">
+<form method="post" action="">
+  <input type="hidden" name="location" value="{{ base_uri }}api/execute/{{ template_data['name'] }}" />
   <input name="task" type="hidden" value="{{ template_data['name'] }}" />
   {% if task.get("ParameterizedJob") %}
     <fieldset>

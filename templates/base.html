@@ -9,16 +9,9 @@
       <!-- Default meta block -->
       <!-- End meta block -->
       {% end %}
-      <!--<link rel="stylesheet" href="/static/fonts.css" media="screen,projection" />
-      <link rel="stylesheet" href="/static/themes/materialize/css/materialize.css" media="screen,projection" />
-      <link rel="stylesheet" href="/static/datatables/datatables.min.css" media="screen,projection" />-->
+      <link rel="stylesheet" href="/static/fonts.css" media="screen,projection" />
+      <!--<link rel="stylesheet" href="/static/themes/materialize/css/base.css" media="screen,projection" />-->
       {% block style %}
-      <style>
-          @media screen {
-              label>input,label>textarea{display:block}
-              label>input[type=radio]{display:inline-table}
-          }
-      </style>
       {% end %}
       {% block behaviours %}{% end %}
   </head>
@@ -48,18 +41,24 @@
       </footer>
 
       {% block behaviours-optimized %}
-      <!--<script src="/static/jquery-3.1.1.min.js"></script>
+      <script src="/static/jquery-3.1.1.min.js"></script>
       <script src="/static/themes/materialize/js/materialize.js"></script>
       <script>
-        $(document).ready(function(){
-          $('.sidenav').sidenav();
-          $(".modal").modal();
-          $("select").formSelect();
-          $('.collapsible').collapsible();
-          $('.tabs').tabs();
-          $('.dropdown-trigger').dropdown({ constrainWidth: false });
-        });
-      </script>-->
+          $(document).ready(function(){
+              $('.sidenav').sidenav();
+              $(".modal").modal();
+              $('.collapsible').collapsible();
+              $('.tabs').tabs();
+              $('.dropdown-trigger').dropdown({ constrainWidth: false });
+          });
+      </script>
+          {% block behaviours-optimized-extra %}
+          <script>
+            $(document).ready(function(){
+              $("select").formSelect();
+            });
+          </script>
+          {% end %}
       {% end %}
   </body>
 </html>

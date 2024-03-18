@@ -88,3 +88,17 @@ Content-Type: application/json
   "parallel": false,
   "target": "all"
 }
+
+###
+POST http://127.0.0.1:8182/execute/check-memory-sysbatch
+Content-Type: application/json
+
+{
+  "task": "check-memory-sysbatch"
+}
+
+###
+POST http://127.0.0.1:8182/execute/check-memory-sysbatch
+Content-Type: application/x-www-form-urlencoded
+
+task=check-memory-sysbatch
