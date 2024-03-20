@@ -10,6 +10,7 @@ from http import HTTPStatus
 import json
 from os import getenv
 from time import time_ns
+import traceback
 from typing import (
     Any,
     Awaitable,
@@ -61,7 +62,10 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
 
     def initialize(self) -> None:
         self.cfg = getattr(self.application, "config")
-        self.data.update(xsrf_form_html=self.xsrf_form_html)
+        self.data.update(
+            xsrf_form_html=self.xsrf_form_html,
+            file_extension="json" if "json" in self.request.headers.get("Content-Type", "") else "html",
+        )
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
@@ -178,6 +182,26 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         :rtype: str
         """
         return self.cfg.authz.CASDOOR_SDK_SYNC.get_auth_link(redirect_uri=self.cfg.authz.REDIRECT_URI)
+
+    def write_error(self, status_code: int, **kwargs: Any) -> None:
+        """Custom error pages.
+
+        ``write_error`` may call `write`, `render`, `set_header`, etc
+        to produce output as usual.
+
+        If this error was caused by an uncaught exception (including
+        HTTPError), an ``exc_info`` triple will be available as
+        ``kwargs["exc_info"]``.  Note that this exception may not be
+        the "current" exception for purposes of methods like
+        ``sys.exc_info()`` or ``traceback.format_exc``.
+        """
+        trace_info = (
+            traceback.format_exception(*kwargs["exc_info"])
+            if self.settings.get("serve_traceback") and "exc_info" in kwargs
+            else []
+        )
+        self.data.update(template_path=f"error.{self.data['file_extension']}")
+        self.data["template_data"].update(status_code=status_code, error=kwargs, trace=trace_info)
 
 
 class ApiBackendHandler(BaseHandler):

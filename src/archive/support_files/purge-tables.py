@@ -260,7 +260,10 @@ def swap_create_table(src_db, src_tbl, src_tbl_swapped, conf, options, prg_log_s
         else:
             dump_proc = subprocess.Popen(dump_cmd, stdout=subprocess.PIPE)  # noqa
             create_proc = subprocess.Popen(
-                create_cmd, stdin=dump_proc.stdout, stdout=prg_log_stream, stderr=prg_log_stream  # noqa
+                create_cmd,  # noqa
+                stdin=dump_proc.stdout,
+                stdout=prg_log_stream,
+                stderr=prg_log_stream,  # noqa
             )
             create_proc.communicate()
             ret = create_proc.returncode
