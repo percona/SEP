@@ -108,7 +108,7 @@ define("authz", default={}, help="AuthZ configuration", type=dict)
 define("handlers", default=[], help="Handler configuration", type=list)
 define("modules", default={}, help="Module configuration", type=dict)
 define("port", default=8181, help="Start of port range", type=int)
-define("sep", default={}, help="SEP application configuration", type=dict)
+define("sep", default={"serve_traceback": True}, help="SEP application configuration", type=dict)
 define("templates", default=DEFAULTS["templates"], help="Template configuration", type=dict)
 
 Model = TypeVar("Model", bound="BaseModel")
@@ -228,6 +228,10 @@ class Config(ObjectDict):
         # Validate
         Config._validate(config_data)
 
+        # Process SEP
+        if "serve_traceback" not in config_data["sep"]:
+            config_data["sep"]["serve_traceback"] = True
+
         # Process authz
         sdk_config = config_data["authz"]["backend"].copy()
         match config_data["authz"]["config"]["secret_type"]:
@@ -331,6 +335,7 @@ def launch(app: Union[Callable, str], config: Config, address: str, port: int):
             application = Application(default_handler_class=DummyHandler, xsrf_cookies=True)
             application.config = config
             application.settings["cookie_secret"] = application.config.authz.SECRET_KEY
+            application.settings["serve_traceback"] = application.config.sep.serve_traceback
             # Limit the host pattern to prevent DNS rebinding attacks
             # https://www.tornadoweb.org/en/stable/web.html#application-configuration
             application.add_handlers(application.config.server_name, application.config.get_handler_config())
