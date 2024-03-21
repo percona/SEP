@@ -9,8 +9,8 @@
       <!-- Default meta block -->
       <!-- End meta block -->
       {% end %}
-      <link rel="stylesheet" href="/static/fonts.css" media="screen,projection" />
-      <!--<link rel="stylesheet" href="/static/themes/materialize/css/base.css" media="screen,projection" />-->
+      <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
+      <link rel="stylesheet" href="/static/themes/materialize/css/base.css" media="screen,projection" />
       {% block style %}
       {% end %}
       {% block behaviours %}{% end %}
@@ -45,19 +45,14 @@
       <script src="/static/themes/materialize/js/materialize.js"></script>
       <script>
           $(document).ready(function(){
-              $('.sidenav').sidenav();
-              $(".modal").modal();
-              $('.collapsible').collapsible();
-              $('.tabs').tabs();
+              //$('.sidenav').sidenav();
+              //$(".modal").modal();
+              //$('.collapsible').collapsible();
+              //$('.tabs').tabs();
               $('.dropdown-trigger').dropdown({ constrainWidth: false });
           });
       </script>
           {% block behaviours-optimized-extra %}
-          <script>
-            $(document).ready(function(){
-              $("select").formSelect();
-            });
-          </script>
           {% end %}
       {% end %}
   </body>
