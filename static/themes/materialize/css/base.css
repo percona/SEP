@@ -4,6 +4,11 @@
   font-weight: 400;
   src: url(/static/themes/materialize/icons.ttf) format("truetype"); }
 
+@font-face {
+  font-family: "Poppins", sans-serif;
+  font-style: normal;
+  src: url(/static/themes/materialize/Poppins.ttf) format("truetype"); }
+
 .icons {
   font-family: "Material Icons";
   font-weight: normal;
@@ -21,6 +26,7 @@ body {
   background-color: white;
   color: #303642;
   font: 100% "Poppins", sans-serif;
+  padding: 1em;
   text-align: left; }
 
 h1, h2, h3, h4, h5, h6 {
@@ -47,12 +53,14 @@ h6 {
 table {
   width: 100%; }
 
-@media not print and (max-device-width: 1023px) {
+@media screen and (max-device-width: 1023px) {
   body {
     line-height: 1.8em;
     max-width: 600px;
     min-width: 300px;
-    width: 90%; } }
+    width: 90%; }
+  h1 {
+    color: red; } }
 
 @media screen and (min-device-width: 1024px) {
   * {

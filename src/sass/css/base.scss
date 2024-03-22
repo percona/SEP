@@ -20,6 +20,12 @@ $primary-color: rgb(48,54,66);
   src: url(/static/themes/materialize/icons.ttf) format('truetype');
 }
 
+@font-face {
+  font-family: $font-stack;
+  font-style: $font-style;
+  src: url(/static/themes/materialize/Poppins.ttf) format('truetype');
+}
+
 .icons {
   font-family: $icon-stack;
   font-weight: normal;
@@ -38,6 +44,7 @@ body {
   background-color: $primary-background-color;
   color: $primary-color;
   font: 100% $font-stack;
+  padding: 1em;
   text-align: left;
 }
 
@@ -77,13 +84,15 @@ table {
 
 }
 
-@media not print and (max-device-width:1023px) {
+@media screen and (max-device-width:1023px) {
   body {
     line-height: 1.8em;
     max-width: 600px;
     min-width: 300px;
     width: 90%
   }
+
+  h1 {color: red}
 }
 
 @media screen and (min-device-width:1024px) {
