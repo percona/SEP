@@ -18,5 +18,54 @@
   direction: ltr; }
 
 body {
-  font: 100% Helvetica, sans-serif;
-  color: #333; }
+  background-color: white;
+  color: #303642;
+  font: 100% "Poppins", sans-serif;
+  text-align: left; }
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600; }
+
+h1 {
+  font-size: 2.5em; }
+
+h2 {
+  font-size: 1.6666666667em; }
+
+h3 {
+  font-size: 1.25em; }
+
+h4 {
+  font-size: 1em; }
+
+h5 {
+  font-size: 0.8333333333em; }
+
+h6 {
+  font-size: 0.7142857143em; }
+
+table {
+  width: 100%; }
+
+@media not print and (max-device-width: 1023px) {
+  body {
+    line-height: 1.8em;
+    max-width: 600px;
+    min-width: 300px;
+    width: 90%; } }
+
+@media screen and (min-device-width: 1024px) {
+  * {
+    margin: 0;
+    padding: 0; }
+  html {
+    background-color: #303642; }
+  html, body {
+    height: 100%; }
+  body, section {
+    width: 99.99%; }
+  body {
+    margin: 0 auto auto auto;
+    max-width: 100%;
+    min-width: 72em;
+    width: 130em; } }
