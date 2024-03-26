@@ -39,3 +39,6 @@ pip-audit:
 bandit:
 	@pip install --upgrade --quiet bandit toml 'bandit[toml]'
 	@bandit -c pyproject.toml -r src
+
+css:
+	@sassc src/sass/css/base.scss static/themes/materialize/css/base.css

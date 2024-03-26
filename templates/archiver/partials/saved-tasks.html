@@ -17,16 +17,16 @@
         <td>{{ archive['table'] }}</td>
         <td>
             <form id="{{ archive['name'] }}-send" method="post" action="execute/{{ archive['name'] }}">
-                <button name="location" class="material-icons">send</button>
+                <button name="location" class="icons">send</button>
                 <input type="hidden" name="task" value="{{ archive['name'] }}">
                 <input type="hidden" name="host" value="{{ archive['hostname'] }}">
                 {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
             </form>
             <form id="{{ archive['name'] }}-info" method="get" action="details/{{ archive['name'] }}">
-                <button class="material-icons">info</button>
+                <button class="icons">info</button>
             </form>
             <form id="{{ archive['name'] }}-delete" method="post" action="delete/{{ archive['name'] }}">
-                <button name="location" class="material-icons">delete forever</button>
+                <button name="location" class="icons">delete forever</button>
                 <input type="hidden" name="task" value="{{ archive['name'] }}">
                 {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
             </form>

@@ -1,0 +1,326 @@
+$font-stack: 'Poppins', sans-serif;
+$font-style: normal;
+
+$grid-cols-primary: 15em 1fr;
+$heading: 2.5em;
+
+$icon-stack: 'Material Icons';
+$icon-size: 24px;
+
+$padding-primary: 1em;
+
+$primary-background-color: rgb(255, 255, 255);
+$primary-color: rgb(48, 54, 66);
+
+$full: 100%;
+
+@mixin button-shared($sub: false, $hover: false) {
+  @if $sub {
+    @if $hover {
+      background-color: transparent;
+      color: #2c415b;
+    } @else {
+      background-color: #2c415b;
+      color: #93C7FF;
+    }
+  } @else {
+    border: 1em solid #93C7FF;
+    border-radius: 2em;
+    display: block;
+    margin-bottom: .5em;
+    padding: .5em .5em .5em .75em;
+    text-decoration: none;
+  }
+}
+
+@mixin heading($level: 1) {
+  font-size: $heading / $level;
+}
+
+@mixin page($padding: 0) {
+  header {
+    background-color: $primary-color;
+    border-radius: 4.5em 4.5em 0 0;
+    color: $primary-background-color;
+    grid-area: head;
+    padding: $padding;
+  }
+
+  nav {
+    background-color: #F0F1F4;
+    border-radius: 0 0 0 4.5em;
+    grid-area: nav;
+    padding: $padding;
+  }
+
+  main {
+    grid-area: main;
+    padding: $padding
+  }
+
+  footer {
+    background-color: $primary-color;
+    border-radius: 0 0 4.5em 0;
+    color: $primary-background-color;
+    grid-area: foot;
+    padding: $padding
+  }
+}
+
+@font-face {
+  font-family: $icon-stack;
+  font-style: $font-style;
+  font-weight: 400;
+  src: url(/static/themes/materialize/icons.ttf) format('truetype');
+}
+
+@font-face {
+  font-family: $font-stack;
+  font-style: $font-style;
+  src: url(/static/themes/materialize/Poppins.ttf) format('truetype');
+}
+
+.icons {
+  font-family: $icon-stack;
+  font-weight: normal;
+  font-style: $font-style;
+  font-size: $icon-size;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+}
+
+body {
+  background-color: $primary-background-color;
+  color: $primary-color;
+  font: 100% $font-stack;
+  padding: 1em;
+  text-align: left;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+}
+
+h1 {
+  @include heading(1);
+}
+
+h2 {
+  @include heading(1.5);
+}
+
+h3 {
+  @include heading(2);
+}
+
+h4 {
+  @include heading(2.5);
+}
+
+h5 {
+  @include heading(3);
+}
+
+h6 {
+  @include heading(3.5);
+}
+
+table {
+  width: $full;
+}
+
+.notice {
+  font-weight: bolder;
+  font-style: $font-style;
+}
+
+@media print {
+
+}
+
+@media screen and (max-device-width: 1023px) {
+  body {
+    line-height: 1.8em;
+    max-width: 600px;
+    min-width: 300px;
+    width: 90%
+  }
+
+  h1 {
+    color: red
+  }
+}
+
+@media screen and (min-device-width: 1024px) {
+  * {
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    background-color: $primary-color;
+  }
+
+  html, body {
+    height: $full * 0.98;
+    overflow-y: scroll;
+  }
+
+  body, section {
+    width: $full - 0.01;
+  }
+
+  body {
+    border-radius: 4.5em;
+    display: grid;
+    grid-template-areas: "head head" "nav main" "nav foot";
+    grid-template-rows: 10em 1fr 5em;
+    grid-template-columns: $grid-cols-primary;
+    margin: 0 auto auto auto;
+    max-width: $full * 0.98;
+    min-width: 72em;
+    width: 130em;
+
+    @include page($padding-primary);
+  }
+
+  header {
+    display: grid;
+    grid-template-areas: "icon title";
+    grid-template-columns: $grid-cols-primary;
+
+    h1 {
+      grid-area: title;
+      margin-top: 2em;
+    }
+
+    svg {
+      height: 90%;
+      width: 90%;
+
+      grid-area: icon;
+      margin-top: -1em;
+
+      path.cls-2 {
+        fill: $primary-background-color !important
+      }
+    }
+  }
+
+  /* Navigation menu */
+  nav {
+    ul {
+      display: block;
+      line-height: 2em;
+      list-style: none;
+      margin-left: -.5em;
+    }
+
+    li > a {
+      @include button-shared;
+    }
+
+    a:link, a:visited {
+      @include button-shared(true, false);
+    }
+
+    a:link:after {
+      content: "•";
+      margin-left: .5em;
+      color: #F0F1F4
+    }
+
+    a:visited:after {
+      content: "" !important
+    }
+
+    a:hover {
+      @include button-shared(true, true);
+    }
+  }
+
+  /* Forms */
+  form, fieldset {
+    padding: $padding-primary;
+  }
+
+  form > fieldset, input, select {
+    border: .2em solid #F0F1F4
+  }
+
+  form > fieldset > fieldset {
+    border: 0
+  }
+
+  input, select {
+    padding: $padding-primary * 0.5;
+  }
+
+  legend {
+    font-weight: 600
+  }
+
+  button {
+    border: 0;
+    display: inline-block;
+    line-height: 1;
+    font-size: 1.2em;
+    margin-top: 1em;
+    @include button-shared;
+  }
+
+  button:hover {
+    @include button-shared(true, true);
+  }
+
+  /* Tables */
+  table {
+    table-layout: fixed;
+    border-collapse: collapse;
+    width: $full;
+
+    button {
+      margin-top: inherit
+    }
+
+    form {
+      border-color: transparent;
+      display: inline
+    }
+  }
+
+  thead tr, tbody tr {
+    border-bottom: .2em solid #F0F1F4
+  }
+
+  td, th {
+    padding: $padding-primary * 0.5 0;
+    vertical-align: top
+  }
+
+  caption {
+    caption-side: bottom
+  }
+
+  /* Main content */
+  main {
+    h1, h2, h3, h4, h5, h6, p {
+      margin: 1em 0 0.5em 0;
+    }
+
+    section, table {
+      margin-bottom: 1em
+    }
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    vertical-align: middle
+  }
+}

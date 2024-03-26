@@ -3,17 +3,16 @@
 {% block title %}Data Archiver{% end %}
 
 {% block style %}
-<link rel="stylesheet" href="/static/datatables/datatables.min.css" media="screen,projection" />
-<style>
-    label + input[type=text]{display: block}
-    /*label:has(+ select){display: none}*/
-    table form{display:inline-block}
-    table button{width:2.2rem;height:2.2rem}
-</style>
+<link rel="stylesheet" href="/static/datatables/dataTables.min.css" media="screen,projection" />
 {% end %}
 
 {% block behaviours-optimized-extra %}{% end %}
-
+<script src="/static/datatables/dataTables.min.js"></script>
+<script>
+    $(document).ready(function(){
+        $("select").formSelect();
+    });
+</script>
 {% block main %}
 
 {% set template_data = data.get("template_data", {}) %}
