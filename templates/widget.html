@@ -42,7 +42,16 @@
         <dl class="grid">
             {% for dt, dd in widget["data"].items() %}
             <dt>{{ dt.replace("_", " ").capitalize() }}</dt>
-            <dd>{{ dd }}</dd>
+                {% if isinstance(dd, dict) %}
+                    <dd><dl>
+                    {% for ddt, ddd in dd.items() %}
+                       <dt>{{ ddt }}</dt>
+                       <dd>{{ ddd }}</dd>
+                    {% end %}
+                    </dl></dd>
+                {% else %}
+                    <dd>{{ dd }}</dd>
+                {% end %}
             {% end %}
         </dl>
         {% elif layout == "grid" and isinstance(widget["data"], list) %}
