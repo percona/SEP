@@ -1,0 +1,46 @@
+{% set user = data.get("user") %}
+{% set user_is_admin = isinstance(user, dict) and user["isAdmin"] %}
+{% if not widget %}
+    {% if user_is_admin %}
+    <p class="info">
+        No data for widget:
+        <code>
+            {{ widget }}
+        </code>
+    </p>
+    {% end %}
+{% elif not {"heading", "data"}.issubset(set(widget.keys())) %}
+    <p class="warning">
+        There is an issue with the widget definition.
+        {% if user_is_admin %}
+        <code>
+            {{ widget }}
+        </code>
+        {% end %}
+    </p>
+{% else %}
+    {% set layout = widget.get("layout") %}
+    {% if not widget.get("data") %}
+        <h2>{{ widget["heading"] }}</h2>
+        <p>No data</p>
+    {% else %}
+        {% if layout == "table" %}
+        <table>
+            <caption>{{ widget["heading"] }}</caption>
+            <thead>
+
+            </thead>
+            <tbody>
+
+            </tbody>
+            <tfoot>
+
+            </tfoot>
+        </table>
+        {% else %}
+        <div class="widget">
+            <h2>{{ widget["heading"] }}</h2>
+        </div>
+        {% end %}
+    {% end %}
+{% end %}

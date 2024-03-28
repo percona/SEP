@@ -100,7 +100,12 @@ format_error_heading, format_error_message = error_formatter.format_error_headin
 
 
 async def async_request(
-    url: str, request: Union["Request", "HTTPServerRequest"], method: str = "GET", payload: dict | None = None, **kwargs
+    url: str,
+    request: Union["Request", "HTTPServerRequest"],
+    method: str = "GET",
+    payload: dict | None = None,
+    raise_error: bool = True,
+    **kwargs,
 ) -> Union[dict, list, str]:
     """Make an async HTTP request for JSON
 
@@ -108,6 +113,7 @@ async def async_request(
     :param request:
     :param method:
     :param payload:
+    :param raise_error:
     :param kwargs:
     :return:
     """
@@ -125,7 +131,9 @@ async def async_request(
         # TODO: check this, it seemed to cause an issue deleting from the archiver app
         #       when the content length was left in place
         del headers["Content-Length"]
-    response = await client.fetch(HTTPRequest(url=url, method=method, headers=headers, **kwargs))
+    response = await client.fetch(
+        HTTPRequest(url=url, method=method, headers=headers, **kwargs), raise_error=raise_error
+    )
 
     try:
         return json.loads(response.body.decode())

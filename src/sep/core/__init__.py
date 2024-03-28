@@ -266,7 +266,29 @@ class HomepageHandler(BaseHandler):
     async def get(self) -> None:
         """Serve the homepage"""
         app_log.debug("Received request to homepage handler: %r", self.request)
-        self.data.update(template_path="homepage.html")
+        # TODO: create way to request data from apps, e.g. /widget
+
+        widgets = self.application.config.sep.get("widgets", [])
+        widget_data = []
+
+        for widget in widgets:
+            match widget:
+                case "archiver" | "inventory":
+                    # TODO: named routing would help here
+                    data = await async_request(
+                        url=f"{self.request.protocol}://{self.request.host}/{widget}/api/widget",
+                        request=self.request,
+                        raise_error=False,
+                    )
+                    if isinstance(data, dict):
+                        widget_data.append(data)
+                case _:
+                    app_log.warning("Widget for %s is not supported ", widget)
+
+        self.data.update(
+            template_path="homepage.html",
+            template_data={"dashboard": {"widgets": widget_data}},
+        )
 
 
 class RemoteCallHandler(BaseHandler):
