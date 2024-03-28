@@ -62,6 +62,7 @@ class InventoryItemService(BaseModel):
     node_id: str | None = None
     address: str | None = None
     port: int | None = None
+    type: str | None = None
 
 
 class InventoryItemServiceType(TypeDecorator):

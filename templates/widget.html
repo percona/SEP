@@ -37,6 +37,18 @@
 
             </tfoot>
         </table>
+        {% elif layout == "grid" and isinstance(widget["data"], dict) %}
+        <h2>{{ widget["heading"] }}</h2>
+        <dl class="grid">
+            {% for dt, dd in widget["data"].items() %}
+            <dt>{{ dt.replace("_", " ").capitalize() }}</dt>
+            <dd>{{ dd }}</dd>
+            {% end %}
+        </dl>
+        {% elif layout == "grid" and isinstance(widget["data"], list) %}
+        <ul class="grid">
+
+        </ul>
         {% else %}
         <div class="widget">
             <h2>{{ widget["heading"] }}</h2>

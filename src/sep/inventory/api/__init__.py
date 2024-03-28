@@ -12,6 +12,7 @@ from typing import (
 from fastapi import (
     BackgroundTasks,
     FastAPI,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,6 +35,7 @@ from .models import (
 from .pmm import InventorySource
 from sep.authz.casdoor import SESSION_TOKEN_LENGTH
 import sep.core.db
+from sep.core.models import Widget
 from sep.core.utils import (
     get_logger,
     Timer,
@@ -151,6 +153,36 @@ async def refresh_inventory(background_tasks: BackgroundTasks):
     app.log.debug("Refreshing the inventory")
     background_tasks.add_task(lookup_inventory, "pmm")
     return {"status": "success"}
+
+
+@app.get(path="/widget", response_model=Widget)
+async def get_widget(request: Request):
+    """Generate data used in widgets
+
+    :param request:
+    :return:
+    """
+    if request.query_params:
+        # TODO
+        pass
+    data = {}
+    for node in [x.data for x in await select_active_inventory()]:
+        data.setdefault("summary", {})
+        data.setdefault("total_nodes", 0)
+        data.setdefault("total_nodes_without_services", 0)
+        data.setdefault("total_services", 0)
+        data["total_nodes"] += 1
+        has_service = False
+        for service in node["services"]:
+            if not service["type"]:
+                continue
+            data["summary"].setdefault(f"{service['type']}", 0)
+            data["summary"][f"{service['type']}"] += 1
+            data["total_services"] += 1
+            has_service = True
+        if not has_service:
+            data["total_nodes_without_services"] += 1
+    return Widget(heading="Inventory", data=data, layout="grid").model_dump()
 
 
 @app.post(path="/", response_model=InventoryItem)

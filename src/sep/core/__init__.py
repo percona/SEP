@@ -276,6 +276,7 @@ class HomepageHandler(BaseHandler):
                 case "archiver" | "inventory":
                     # TODO: named routing would help here
                     data = await async_request(
+                        # Supporting only "internal" widgets
                         url=f"{self.request.protocol}://{self.request.host}/{widget}/api/widget",
                         request=self.request,
                         raise_error=False,

@@ -5,6 +5,9 @@ GET http://127.0.0.1:8184/
 GET http://127.0.0.1:8184/refresh
 
 ###
+GET http://127.0.0.1:8184/widget
+
+###
 POST http://127.0.0.1:8184/
 Accept: application/json
 Content-Type: application/json
