@@ -177,7 +177,7 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
                     "duration": round(item["execution_request"]["tracking"]["duration"], 3),
                     "started_at": item["execution_request"]["tracking"]["started_at"],
                     "finished_at": item["execution_request"]["tracking"]["finished_at"],
-                    "errors": item["errors"]
+                    "errors": item["errors"],
                 }
             )
         # TODO: chopping off from the last 5 failures for now
