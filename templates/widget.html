@@ -31,18 +31,22 @@
         {% end %}
         {% if layout == "table" %}
             {% for widget_item in widget_data %}
-            <table>
-                <caption>{{ widget_item["heading"] }}</caption>
-                <thead>
+                <table>
+                    <caption>{{ widget_item["heading"] }}</caption>
+                    {% if widget_item.get("data") %}
+                    <thead>
 
-                </thead>
-                <tbody>
+                    </thead>
+                    <tbody>
 
-                </tbody>
-                <tfoot>
+                    </tbody>
+                    <tfoot>
 
-                </tfoot>
-            </table>
+                    </tfoot>
+                    {% else %}
+                    <tr><td>No data</td></tr>
+                    {% end %}
+                </table>
             {% end %}
         {% elif layout == "grid" and isinstance(widget["data"], dict) %}
         <h2>{{ widget["heading"] }}</h2>
