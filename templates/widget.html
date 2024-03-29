@@ -35,10 +35,31 @@
                     <caption>{{ widget_item["heading"] }}</caption>
                     {% if widget_item.get("data") %}
                     <thead>
-
+                        <tr>
+                            {% comment "TODO: this is expecting a list of dicts" %}
+                            {% for k in widget_item["data"][0] %}
+                            <th>{{ k.replace("_", " ").capitalize() }}</th>
+                            {% end %}
+                        </tr>
                     </thead>
                     <tbody>
-
+                        {% for failure in widget_item["data"] %}
+                        <tr class="error">
+                            {% for k, col in failure.items() %}
+                            <td>
+                                {% if k == "errors" %}
+                                    <ul>
+                                        {% for error in col %}
+                                        <li>{{ error }}</li>
+                                        {% end %}
+                                    </ul>
+                                {% else %}
+                                {{ col }}
+                                {% end %}
+                            </td>
+                            {% end %}
+                        </tr>
+                        {% end %}
                     </tbody>
                     <tfoot>
 
