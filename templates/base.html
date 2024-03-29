@@ -86,13 +86,13 @@
               font-style: normal
           }
 
-          @media screen and (max-device-width: 1023px) {
+          @media screen and (max-device-width: 1279px) {
               h1 {
                   color: red;
               }
           }
 
-          @media screen and (min-device-width: 1024px) {
+          @media screen and (min-device-width: 1280px) {
               * {
                   margin: 0;
                   padding: 0;
@@ -222,7 +222,22 @@
               }
 
               form > fieldset > fieldset {
-                  border: 0
+                  border: 0;
+                  column-gap: 1em;
+                  display: flex;
+                  flex-flow: row wrap;
+                  flex-wrap: wrap;
+                  justify-content: left;
+                  row-gap: 1em;
+              }
+
+              form > fieldset > fieldset label {
+                  flex-basis: fit-content(100%);
+              }
+
+              form > fieldset > fieldset input, form > fieldset > fieldset select,
+                form > fieldset > fieldset textarea {
+                  margin-left: .5em;
               }
 
               input, select {
@@ -277,7 +292,6 @@
                   text-align: left;
                   font-weight: 600;
               }
-
 
               main h1, main h2, main h3, main h4, main h5, main h6, main p {
                   margin: 1em 0 0.5em 0
