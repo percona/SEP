@@ -9,6 +9,7 @@ from collections import namedtuple
 from http import HTTPStatus
 import json
 from os import getenv
+from re import sub
 from time import time_ns
 import traceback
 from typing import (
@@ -157,7 +158,9 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         """
         if chunk is None:
             template = get_template(self.data["template_path"], self.cfg.templates.get("dirs", []))
-            chunk = render_template(template, data=self.data)
+            chunk = sub(
+                rf'href="{self.request.uri}"', r'class="selected"', render_template(template, data=self.data).decode()
+            ).encode("utf-8")
         super().finish(chunk=chunk)
 
     def get_current_user(self) -> Union[Dict[str, Any], None]:

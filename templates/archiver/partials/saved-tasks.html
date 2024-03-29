@@ -15,7 +15,7 @@
         <td>{{ archive['name'] }}</td>
         <td>{{ archive['hostname'] }}</td>
         <td>{{ archive['table'] }}</td>
-        <td>
+        <td class="flex">
             <form id="{{ archive['name'] }}-send" method="post" action="execute/{{ archive['name'] }}">
                 <button name="location" class="icons">send</button>
                 <input type="hidden" name="task" value="{{ archive['name'] }}">
