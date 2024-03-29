@@ -12,18 +12,21 @@
     </fieldset>
     <fieldset>
         <legend>Source details</legend>
-        <label for="task_name">Task name</label>
-        <input type="text" id="task_name" name="task_name" class="validate"/>
-        <label for="hostname">Select host</label>
-        <select id="hostname" name="hostname">
-            {% for host in hosts %}
-            <option value="{{ host['name'] }}">{{ host['name'] }}</option>
-            {% end %}
-        </select>
+        <label for="task_name">Task name
+            <input type="text" id="task_name" name="task_name" class="validate"/>
+        </label>
+        <label for="hostname">Select host
+            <select id="hostname" name="hostname">
+                {% for host in hosts %}
+                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+                {% end %}
+            </select>
+        </label>
         <fieldset>
             <legend>Type</legend>
-            <label for="source_type_table">Table</label>
-            <input type="radio" id="source_type_table" name="source_type" value="table" checked/>
+            <label for="source_type_table">Table
+                <input type="radio" id="source_type_table" name="source_type" value="table" checked/>
+            </label>
             <!--
             <label for="source_type_query">Query</label>
             <input type="radio" id="source_type_query" name="source_type" value="query" readonly />
@@ -31,20 +34,24 @@
         </fieldset>
         <fieldset>
             <legend>Data</legend>
-            <label for="sourcedb">Schema</label>
-            <input type="text" id="sourcedb" name="sourcedb" class="validate"/>
-            <label for="sourcetbl">Table</label>
-            <input type="text" id="sourcetbl" name="sourcetbl" class="validate"/>
-            <label for="where">Where condition</label>
-            <input type="text" id="where" name="where" class="validate"/>
+            <label for="sourcedb">Schema
+                <input type="text" id="sourcedb" name="sourcedb" class="validate"/>
+            </label>
+            <label for="sourcetbl">Table
+                <input type="text" id="sourcetbl" name="sourcetbl" class="validate"/>
+            </label>
+            <label for="where">Where condition
+                <input type="text" id="where" name="where" class="validate"/>
+            </label>
         </fieldset>
     </fieldset>
     <fieldset>
         <legend>Destination details</legend>
         <fieldset>
             <legend>Type</legend>
-            <label for="dest_type_table">Table</label>
-            <input type="radio" id="dest_type_table" name="dest_type" value="table" checked/>
+            <label for="dest_type_table">Table
+                <input type="radio" id="dest_type_table" name="dest_type" value="table" checked/>
+            </label>
             <!--
             <label for="dest_type_file">File</label>
             <input type="radio" id="dest_type_file" name="dest_type" value="file" checked />

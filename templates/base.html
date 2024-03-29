@@ -86,13 +86,13 @@
               font-style: normal
           }
 
-          @media screen and (max-device-width: 1023px) {
+          @media screen and (max-device-width: 1279px) {
               h1 {
                   color: red;
               }
           }
 
-          @media screen and (min-device-width: 1024px) {
+          @media screen and (min-device-width: 1280px) {
               * {
                   margin: 0;
                   padding: 0;
@@ -157,34 +157,56 @@
                   margin-left: -.5em
               }
 
-              nav li > a, button {
+              nav li > a {
                   display: block;
                   margin-bottom: .5em;
                   text-decoration: none;
                   padding: .5em .5em .5em .75em;
-                  border-color: #93c7ff;
-                  border-width: 1em;
                   border-radius: 2em;
               }
 
-              nav a:link, nav a:visited, button {
-                  background-color: #2c415b;
-                  color: #93C7FF
+              nav a:link, nav a:visited {
+                  background-color: #4b5468;
+                  color: #fff;
               }
 
               nav a:link:after {
-                  content: "•";
                   margin-left: .5em;
                   color: #F0F1F4
               }
 
-              nav a:visited:after {
-                  content: "" !important;
+              nav a[href]:hover {
+                  background-color: #3a4151;
+                  color: #fff;
               }
 
-              nav a:hover, button:hover {
-                  background-color: transparent;
-                  color: #2c415b
+              nav a:active, nav a.selected {
+                  background-color: #2C323E;
+              }
+
+              nav a.selected {
+                  color: #fff;
+              }
+
+              nav a.selected:after {
+                  content: "arrow_right";
+                  font-family: "Material Icons";
+                  font-size: 2em;
+                  vertical-align: middle;
+              }
+
+              .archive a:before, .tasks a:before {
+                  font-family: "Material Icons";
+                  padding-right: .5em;
+                  vertical-align: middle;
+              }
+
+              .archive a:before {
+                  content: "archive";
+              }
+
+              .tasks a:before {
+                  content: "task";
               }
 
               header {
@@ -222,7 +244,22 @@
               }
 
               form > fieldset > fieldset {
-                  border: 0
+                  border: 0;
+                  column-gap: 1em;
+                  display: flex;
+                  flex-flow: row wrap;
+                  flex-wrap: wrap;
+                  justify-content: left;
+                  row-gap: 1em;
+              }
+
+              form > fieldset > fieldset label {
+                  flex-basis: fit-content(100%);
+              }
+
+              form > fieldset > fieldset input, form > fieldset > fieldset select,
+                form > fieldset > fieldset textarea {
+                  margin-left: .5em;
               }
 
               input, select {
@@ -238,11 +275,20 @@
               }
 
               button {
+                  background-color: #2C323E;
                   border: 0;
-                  display: inline-block;
+                  border-radius: 2em;
+                  color: #93C7FF;
                   line-height: 1;
-                  font-size: 1.2em;
-                  margin-top: 1em
+                  font-size: 1.1em;
+                  font-weight: bolder;
+                  margin-top: 1em;
+                  padding: .5em;
+              }
+
+              button:hover {
+                  background-color: #93C7FF;
+                  color: #2C323E;
               }
 
               table {
@@ -251,9 +297,22 @@
                   width: 100%
               }
 
-              table form {
+              td.flex {
                   border-color: transparent;
-                  display: inline
+                  column-gap: 1em;
+                  display: flex;
+                  flex-flow: row wrap;
+                  flex-wrap: wrap;
+                  justify-content: left;
+                  row-gap: 1em;
+              }
+
+              .flex form {
+                  overflow: hidden;
+              }
+
+              .flex button.icons {
+                  width: 2em;
               }
 
               table button {
@@ -267,9 +326,12 @@
               th {
                   font-weight: 500;
               }
+
               td, th {
                   padding: .5em 0;
-                  vertical-align: top
+                  overflow: scroll;
+                  text-overflow: ellipsis;
+                  vertical-align: top;
               }
 
               caption {
@@ -277,7 +339,6 @@
                   text-align: left;
                   font-weight: 600;
               }
-
 
               main h1, main h2, main h3, main h4, main h5, main h6, main p {
                   margin: 1em 0 0.5em 0
