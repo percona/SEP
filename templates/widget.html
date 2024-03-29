@@ -20,23 +20,30 @@
     </p>
 {% else %}
     {% set layout = widget.get("layout") %}
+    {% set multipart = widget.get("multipart") %}
+    {% set widget_data = [widget.get("data")] if not multipart else widget.get("data") %}
     {% if not widget.get("data") %}
         <h2>{{ widget["heading"] }}</h2>
         <p>No data</p>
     {% else %}
+        {% if multipart %}
+        <h2>{{ widget["heading"] }}</h2>
+        {% end %}
         {% if layout == "table" %}
-        <table>
-            <caption>{{ widget["heading"] }}</caption>
-            <thead>
+            {% for widget_item in widget_data %}
+            <table>
+                <caption>{{ widget_item["heading"] }}</caption>
+                <thead>
 
-            </thead>
-            <tbody>
+                </thead>
+                <tbody>
 
-            </tbody>
-            <tfoot>
+                </tbody>
+                <tfoot>
 
-            </tfoot>
-        </table>
+                </tfoot>
+            </table>
+            {% end %}
         {% elif layout == "grid" and isinstance(widget["data"], dict) %}
         <h2>{{ widget["heading"] }}</h2>
         <dl class="grid">

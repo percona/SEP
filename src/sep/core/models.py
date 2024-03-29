@@ -12,3 +12,4 @@ class Widget(BaseModel):
     heading: str
     data: dict | list = []
     layout: str = Field(default="box", pattern=r"^(box|grid|table)$")
+    multipart: bool = False
