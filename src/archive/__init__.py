@@ -12,7 +12,11 @@ from tornado.web import HTTPError
 from urllib.parse import parse_qs
 import yaml
 
-from sep.tasks.api.models import TASK_HISTORY_STATUS_LOOKUP
+from sep.core.models import Widget
+from sep.tasks.api.models import (
+    TASK_HISTORY_STATUS_LOOKUP,
+    TASK_HISTORY_STATUS_MAP,
+)
 
 from . import tasks_utils
 
@@ -26,10 +30,11 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
         """Server GET requests"""
 
         route_path = route.split("/")
+        api_request = False
+
         match route_path[0]:
-            # case "delete":
-            #    app_log.debug("DELETE: %s", route_path[1])
-            #    await self._delete_task(route_path[1])
+            case "api":
+                api_request = True
             case "details":
                 await self._archive_view_details(route_path[1])
                 return
@@ -59,6 +64,16 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
                 "running_tasks": running_tasks,
             }
         )
+        if api_request:
+            if len(route_path) == 1:
+                route_path.append("")
+            match route_path[1]:
+                case "widget":
+                    self.set_header("Content-Type", "application/json")
+                    self.data.update(template_path=f"archiver/api.json")
+                    self.data["template_data"] = await self._widget()
+                case _:
+                    raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
 
     async def post(self, route) -> None:
         """Serve POST requests"""
@@ -125,3 +140,67 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
             except (KeyError, IndexError):
                 continue
         return archives
+
+    async def _widget(self) -> dict | list:
+        """Generate widget data
+
+        {
+          "heading": "Data archiver",
+          "data": [
+            {"heading": "Running tasks", "data": []},
+            {"heading": "Scheduled tasks", "data": []},
+            {"heading": "Recent problems", "data": []},
+          ],
+          "layout": "table",
+          "multipart": true
+        }
+
+        :return:
+        """
+        widget = Widget(heading="Data archiver", data=[], layout="table", multipart=True)
+        data = self.data.get("template_data")
+        if not data or not {"history_tasks", "running_tasks", "scheduled_tasks"}.issubset(set(data.keys())):
+            return widget.model_dump()
+
+        failed_tasks_widget = Widget(heading="Recent issues", data=[], layout="table")
+        running_tasks_widget = Widget(heading="Running tasks", data=[], layout="table")
+        scheduled_tasks_widget = Widget(heading="Scheduled tasks", data=[], layout="table")
+
+        for item in data["history_tasks"]:
+            if item["status"] == TASK_HISTORY_STATUS_MAP["success"]:
+                continue
+            job_data = json.loads(item["data"]["data"])
+            failed_tasks_widget.data.append(
+                {
+                    "task": item["name"],
+                    "host": job_data["Constraints"][0]["RTarget"],
+                    "duration": round(item["execution_request"]["tracking"]["duration"], 3),
+                    "started_at": item["execution_request"]["tracking"]["started_at"],
+                    "finished_at": item["execution_request"]["tracking"]["finished_at"],
+                    "errors": item["errors"],
+                }
+            )
+        # TODO: chopping off from the last 5 failures for now
+        failed_tasks_widget.data = failed_tasks_widget.data[-5:]
+
+        for item in data["running_tasks"]:
+            job_data = json.loads(item["data"]["data"])
+            running_tasks_widget.data.append(
+                {
+                    "task": item["name"],
+                    "host": job_data["Constraints"][0]["RTarget"],
+                    "started_at": item["execution_request"]["tracking"]["started_at"],
+                }
+            )
+        for item in data["scheduled_tasks"]:
+            job_data = json.loads(item["data"]["data"])
+            scheduled_tasks_widget.data.append(
+                {
+                    "task": item["name"],
+                    "host": job_data["Constraints"][0]["RTarget"],
+                }
+            )
+
+        for subwidget in [failed_tasks_widget, running_tasks_widget, scheduled_tasks_widget]:
+            widget.data.append(subwidget.model_dump())
+        return widget.model_dump()
