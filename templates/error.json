@@ -10,8 +10,8 @@
         {% set trace = [] %}
     {% end %}
 {
-    "heading": {{ json_encode(format_error_heading(template_data)) }},
-    "message": {{ json_encode(format_error_message(template_data)) }},
-    "trace": {{ json_encode(trace) }}
+    "heading": {% raw json_encode(format_error_heading(template_data)) %},
+    "message": {% raw json_encode(format_error_message(template_data)) %},
+    "trace": {% raw json_encode(trace) %}
 }
 {% end %}

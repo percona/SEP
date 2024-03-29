@@ -62,9 +62,16 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
 
     def initialize(self) -> None:
         self.cfg = getattr(self.application, "config")
+
+        needs_json = False
+        for header in ["accept", "content-type"]:
+            if "json" in self.request.headers.get(header, ""):
+                self.set_header("Content-Type", "application/json")
+                needs_json = True
+                break
         self.data.update(
             xsrf_form_html=self.xsrf_form_html,
-            file_extension="json" if "json" in self.request.headers.get("Content-Type", "") else "html",
+            file_extension="json" if needs_json else "html",
         )
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
