@@ -9,9 +9,7 @@
     {% else %}
         {% set trace = [] %}
     {% end %}
-{
     "heading": {% raw json_encode(format_error_heading(template_data)) %},
     "message": {% raw json_encode(format_error_message(template_data)) %},
     "trace": {% raw json_encode(trace) %}
-}
 {% end %}
