@@ -1,0 +1,72 @@
+{% extends "../base.html" %}
+
+{% block title %}MySQL Alter Tables{% end %}
+
+{% block style %}
+<link rel="stylesheet" href="/static/datatables/datatables.min.css" media="screen,projection" />
+<style>
+    label + input[type=text]{display: block}
+    /*label:has(+ select){display: none}*/
+    table form{display:inline-block}
+    table button{width:2.2rem;height:2.2rem}
+</style>
+{% end %}
+
+{% block behaviours-optimized-extra %}{% end %}
+
+{% block main %}
+
+
+
+{% set template_data = data.get("template_data", {}) %}
+{% if isinstance(template_data, dict) %}
+    {% set hosts = template_data.get("hosts", []) %}
+    {% set running_tasks = template_data.get("running_tasks", []) %}
+    {% set saved_tasks = template_data.get("tasks", []) %}
+    {% set pending_tasks = template_data.get("scheduled_tasks", []) %}
+    {% set history_tasks = template_data.get("history_tasks", []) %}
+    {% set tasks = template_data.get("tasks", []) %}
+    {% set scheduled_tasks = template_data.get("scheduled_tasks", []) %}
+{% else %}
+    {% set hosts = [] %}
+    {% set running_tasks = [] %}
+    {% set saved_tasks = [] %}
+    {% set pending_tasks = [] %}
+    {% set history_tasks = [] %}
+    {% set tasks = [] %}
+    {% set scheduled_tasks = [] %}
+{% end %}
+{% set xsrf_form_html = data.get("xsrf_form_html") %}
+
+<p>Performs MySQL schema changes with pt-online-schema-change.</p>
+
+{% if not saved_tasks and not history_tasks %}
+    {% set modal_required = False %}
+<h3>Create a MySQL alter table process</h3>
+    {% include "partials/create-form.html" %}
+{% else %}
+    {% set modal_required = True %}
+<section id="saved-tasks">
+    <h2>Saved</h2>
+    {% include "partials/saved-tasks.html" %}
+    <h3>Create a MySQL alter table process</h3>
+    {% include "partials/create-form.html" %}
+</section>
+
+<section id="running-tasks">
+    <h2>Running</h2>
+    {% include "partials/running-tasks.html" %}
+</section>
+
+<section id="pending-tasks">
+    <h2>Pending</h2>
+    {% include "partials/pending-tasks.html" %}
+</section>
+
+<section id="completed-tasks">
+    <h2>History</h2>
+    {% include "partials/completed-tasks.html" %}
+</section>
+{% end %}
+
+{% end %}

@@ -1,0 +1,31 @@
+{% from tornado.escape import xhtml_unescape %}
+{% set form_class = "modal" if modal_required else "" %}
+<form action="" method="post" class="{{ form_class }}">
+    <fieldset>
+        <legend>Main options</legend>
+        <fieldset>
+            <legend>Change details</legend>
+            <label for="task_name">Task name</label>
+            <input type="text" id="task_name" name="task_name" class="validate" />
+            <label for="hostname">Select host</label>
+            <select id="hostname" name="hostname">
+            {% for host in hosts %}
+                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+            {% end %}
+            </select>
+        </fieldset>
+            <fieldset>
+                <legend>Data</legend>
+                <label for="schema_name">Schema</label>
+                <input type="text" id="schema_name" name="schema_name" class="validate" />
+                <label for="table_name">Table</label>
+                <input type="text" id="table_name" name="table_name" class="validate" />
+                <label for="alter">Alter</label>
+                <input type="text" id="alter" name="alter" class="validate" />
+            </fieldset>
+        </fieldset>
+
+    <button type="submit">Create</button>
+    <button type="reset">Reset</button>
+    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
+</form>
