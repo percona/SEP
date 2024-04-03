@@ -36,6 +36,15 @@ class AppWebHandler(ApiBackendHandler):
         """
         return await async_request(url=INVENTORY_API_ENDPOINT, request=self.request)
 
+    async def _hosts_with_service(self, service_type: str) -> list:
+        hosts = []
+        for host in await self._hosts():
+            for service in host["data"]["services"]:
+                if service["type"] == service_type:
+                    hosts.append(host)
+        return hosts
+
+
     async def _create_task(self, task_payload: dict) -> dict:
         """Create a task
         :param task_payload:

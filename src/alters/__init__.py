@@ -37,7 +37,8 @@ class AlterHandler(tasks_utils.AppWebHandler):
                     await self._alter_view_details(route_path[1])
                     return
 
-        hosts = await self._hosts()
+        #hosts = await self._hosts()
+        hosts = await self._hosts_with_service("mysql")
         tasks = await self._formated_alter_tasks()
 
         scheduled_tasks = []
@@ -119,10 +120,8 @@ class AlterHandler(tasks_utils.AppWebHandler):
     async def _formated_alter_tasks(self) -> list:
         alters = []
         for task in await self._list_tasks():
-            print(task)
             try:
                 data = json.loads(task["data"])
-                print(data)
                 try:
                     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
                     taskinfo = {
@@ -136,5 +135,4 @@ class AlterHandler(tasks_utils.AppWebHandler):
                 alters.append(taskinfo)
             except (KeyError, IndexError):
                 continue
-        print(alters)
         return alters
