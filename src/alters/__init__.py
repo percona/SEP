@@ -84,11 +84,6 @@ class AlterHandler(tasks_utils.AppWebHandler):
                 await self._create_task(tasks_utils.build_alter_task_data(payload))
         self.redirect(redirect)
 
-        #task = self._build_alter_task_data(payload)
-        #task_payload = self._build_task_payload(task)
-        #await self._create_task(task_payload)
-        #self.redirect("/alters/")
-
     async def _alter_view_details(self, task_name):
         """Handles detailed
         archive view
@@ -116,21 +111,6 @@ class AlterHandler(tasks_utils.AppWebHandler):
             }
         )
 
-        #details = {}
-        #details["created_at"] = task["created_at"]
-        #details["updated_at"] = task["updated_at"]
-        #details["hostname"] = data["Job"]["Constraints"][0]["RTarget"]
-        #details["table"] = f"{meta['sourcedb']}.{meta['sourcetable']}"
-        #details["cmd"] = (
-        #   data["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["command"]
-        #    + " "
-        #    + " ".join(data["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["args"])
-        #)
-        #details["meta"] = meta
-
-        #history = await self._task_history(task_name)
-        #self.render("../../templates/alters/details.html", task_name=task_name, task=details, history=history)
-
     # Used?
     async def _alter_tasks(self) -> list:
         tasks = await self._list_tasks()
@@ -156,11 +136,5 @@ class AlterHandler(tasks_utils.AppWebHandler):
                 alters.append(taskinfo)
             except (KeyError, IndexError):
                 continue
-            #data = json.loads(b64decode(task["data"]))
-            #meta = data["Job"]["TaskGroups"][0]["Tasks"][0]["Meta"]
-            #table = f"{meta['sourcedb']}.{meta['sourcetable']}"
-            #alters.append(
-            #    {"name": task["name"], "hostname": data["Job"]["Constraints"][0]["RTarget"], "table": table}
-            #)
         print(alters)
         return alters
