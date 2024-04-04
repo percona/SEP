@@ -283,7 +283,7 @@ class HomepageHandler(BaseHandler):
 
         for widget in widgets:
             match widget:
-                case "archiver" | "inventory":
+                case "archiver" | "inventory" | "alters":
                     # TODO: named routing would help here
                     data = await async_request(
                         # Supporting only "internal" widgets
