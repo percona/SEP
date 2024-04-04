@@ -30,16 +30,15 @@ class AlterHandler(tasks_utils.AppWebHandler):
     async def get(self, route) -> None:
         """Server GET requests"""
 
-        if route:
-            route_path = route.split("/")
-            api_request = False
+        route_path = route.split("/")
+        api_request = False
 
-            match route_path[0]:
-                case "api":
-                    api_request = True
-                case "details":
-                    await self._alter_view_details(route_path[1])
-                    return
+        match route_path[0]:
+            case "api":
+                api_request = True
+            case "details":
+                await self._alter_view_details(route_path[1])
+                return
 
         #hosts = await self._hosts()
         hosts = await self._hosts_with_service("mysql")
