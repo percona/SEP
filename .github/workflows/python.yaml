@@ -34,3 +34,9 @@ jobs:
       run: |
         make audit
         #git diff --exit-code --quiet requirements.txt
+
+    - name: Build package
+      working-directory: ./workspace
+      run: |
+        make build
+
