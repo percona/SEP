@@ -1,1 +1,2 @@
 graft src/sep
+global-exclude *.py[cod]
