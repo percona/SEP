@@ -16,9 +16,9 @@
     <tr>
       <td>
         {% if h['status'] == TASK_HISTORY_STATUS_MAP["success"] %}
-        <i class="material-icons">done</i>
+        <i class="icons">done</i>
         {% else %}
-        <i class="material-icons">error_outline</i>
+        <i class="icons">error</i>
         {% end %}
       </td>
       <td>{{ h['execution_request']['tracking']['started_at'] }}</td>
