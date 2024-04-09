@@ -41,7 +41,7 @@ Node = namedtuple("Node", ["id", "name", "type", "services"])
 Node.to_dict = to_dict
 Node.to_json = to_json
 
-Service = namedtuple("Service", ["cluster", "id", "name", "node_id", "type"])
+Service = namedtuple("Service", ["cluster", "id", "name", "node_id", "type", "environment"])
 Service.to_dict = to_dict
 
 
@@ -150,6 +150,7 @@ class InventorySource:
                         id=service["service_id"],
                         name=service["service_name"],
                         node_id=service["node_id"],
+                        environment=service.get("environment"),
                         type=service_type,
                     )
             self.__storage["services"] = services
