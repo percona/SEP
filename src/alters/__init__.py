@@ -112,7 +112,7 @@ class AlterHandler(tasks_utils.AppWebHandler):
         }
         :return:
         """
-        widget = Widget(heading="MySQL Alter Table", data=[], layout="table", multipart=True)
+        widget = Widget(heading="Schema Changes", data=[], layout="table", multipart=True)
         data = self.data.get("template_data")
         if not data or not {"history_tasks", "running_tasks", "scheduled_tasks"}.issubset(set(data.keys())):
             return widget.model_dump()
