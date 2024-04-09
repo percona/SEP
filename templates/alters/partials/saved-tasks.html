@@ -17,16 +17,16 @@
         <td>{{ mytask['table'] }}</td>
         <td class="flex">
             <form id="{{ mytask['name'] }}-send" method="post" action="execute/{{ mytask['name'] }}">
-                <button name="location" class="material-icons">send</button>
+                <button name="location" class="icons">send</button>
                 <input type="hidden" name="task" value="{{ mytask['name'] }}">
                 <input type="hidden" name="host" value="{{ mytask['hostname'] }}">
                 {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
             </form>
             <form id="{{ mytask['name'] }}-info" method="get" action="details/{{ mytask['name'] }}">
-                <button class="material-icons">info</button>
+                <button class="icons">info</button>
             </form>
             <form id="{{ mytask['name'] }}-delete" method="post" action="delete/{{ mytask['name'] }}">
-                <button name="location" class="material-icons">delete forever</button>
+                <button name="location" class="icons">delete forever</button>
                 <input type="hidden" name="task" value="{{ mytask['name'] }}">
                 {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
             </form>
