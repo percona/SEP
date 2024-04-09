@@ -38,7 +38,7 @@
 {% end %}
 {% set xsrf_form_html = data.get("xsrf_form_html") %}
 
-<p>Perform a schema change, currently only supporting MySQL with pt-online-schema-change.</p>
+<p>Perform a schema change, currently only supporting MySQL with <a href="https://docs.percona.com/percona-toolkit/pt-online-schema-change.html">pt-online-schema-change</a>.</p>
 
 {% if not saved_tasks and not history_tasks %}
     {% set modal_required = False %}
