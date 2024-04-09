@@ -42,8 +42,12 @@
 
 {% if not saved_tasks and not history_tasks %}
     {% set modal_required = False %}
-<h2>Create a MySQL alter table process</h2>
-    {% include "partials/create-form.html" %}
+<h2>Configure a schema change</h2>
+    {% if not len(hosts) %}
+    <p>Unable to find suitable database instances.</p>
+    {% else %}
+        {% include "partials/create-form.html" %}
+    {% end %}
 {% else %}
     {% set modal_required = True %}
 <section id="saved-tasks">
