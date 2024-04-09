@@ -1,6 +1,6 @@
 {% extends "../base.html" %}
 
-{% block title %}MySQL Alter Tables{% end %}
+{% block title %}Schema Change{% end %}
 
 {% block style %}
 <link rel="stylesheet" href="/static/datatables/datatables.min.css" media="screen,projection" />
@@ -38,7 +38,7 @@
 {% end %}
 {% set xsrf_form_html = data.get("xsrf_form_html") %}
 
-<p>Performs MySQL schema changes with pt-online-schema-change.</p>
+<p>Perform a schema change, currently only supporting MySQL with pt-online-schema-change.</p>
 
 {% if not saved_tasks and not history_tasks %}
     {% set modal_required = False %}
