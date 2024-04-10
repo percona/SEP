@@ -7,11 +7,9 @@ Add to config.py handlers
 import json
 from http import HTTPStatus
 
-
 from urllib.parse import parse_qs
 from tornado.log import app_log
 from tornado.web import HTTPError
-import yaml
 
 from sep.core import TaskApiBackendHandler
 from sep.core.models import Widget
@@ -75,7 +73,7 @@ class AlterHandler(TaskApiBackendHandler):
             match route_path[1]:
                 case "widget":
                     self.set_header("Content-Type", "application/json")
-                    self.data.update(template_path="alters/api.json")  # can it be shared
+                    self.data.update(template_path="widget.json")  # can it be shared
                     self.data["template_data"] = await self._widget()
                 case _:
                     raise HTTPError(status_code=HTTPStatus.NOT_FOUND)

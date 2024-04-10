@@ -74,7 +74,7 @@ class ArchiveHandler(TaskApiBackendHandler):
             match route_path[1]:
                 case "widget":
                     self.set_header("Content-Type", "application/json")
-                    self.data.update(template_path=f"archiver/api.json")
+                    self.data.update(template_path="widget.json")
                     self.data["template_data"] = await self._widget()
                 case _:
                     raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
