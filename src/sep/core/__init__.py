@@ -58,7 +58,7 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         "user": None,
         "casdoor_login_url": None,
         "template_data": {},
-        "template_path": "dummy.html",
+        "template_path": "dummy.{}",
         "xsrf_form_html": "",
     }
 
@@ -76,7 +76,10 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
             file_extension="json" if needs_json else "html",
         )
         if self.TEMPLATE_PATH is not None:
-            self.data["template_path"] = self.TEMPLATE_PATH
+            # Using {} instead of a file extension in the template path will result in content
+            # negotiation, this is however optional
+            self.data["template_path"] = self.TEMPLATE_PATH.format(self.data["file_extension"])
+            app_log.debug("Template updated to %s", self.data["template_path"])
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
