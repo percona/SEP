@@ -3,7 +3,7 @@
 
 from typing import (
     Awaitable,
-    Optional
+    Optional,
 )
 
 from sep.core import ApiBackendHandler

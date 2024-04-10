@@ -16,7 +16,7 @@ import yaml
 from sep.core.models import Widget
 from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_LOOKUP,
-    TASK_HISTORY_STATUS_MAP
+    TASK_HISTORY_STATUS_MAP,
 )
 
 from . import tasks_utils
