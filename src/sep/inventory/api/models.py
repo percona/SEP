@@ -63,6 +63,7 @@ class InventoryItemService(BaseModel):
     address: str | None = None
     port: int | None = None
     type: str | None = None
+    environment: str | None = None
 
 
 class InventoryItemServiceType(TypeDecorator):
