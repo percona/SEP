@@ -51,6 +51,7 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     """
     Base request handler
     """
+    TEMPLATE_PATH = None
 
     cfg: namedtuple
     data: dict = {
@@ -74,6 +75,8 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
             xsrf_form_html=self.xsrf_form_html,
             file_extension="json" if needs_json else "html",
         )
+        if self.TEMPLATE_PATH is not None:
+            self.data["template_path"] = self.TEMPLATE_PATH
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass

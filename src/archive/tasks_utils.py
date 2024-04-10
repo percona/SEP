@@ -28,14 +28,7 @@ class AppWebHandler(ApiBackendHandler):
     Handler with tasks related utils
     """
 
-    def initialize(self) -> None:
-        """
-        Perform setup tasks
-
-        :return:
-        """
-        super().initialize()
-        self.data.update(template_path="archiver/index.html")
+    TEMPLATE_PATH = "archiver/index.html"
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass

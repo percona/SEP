@@ -12,19 +12,13 @@ from sep.core.utils import async_request
 TASK_API_ENDPOINT = "http://127.0.0.1:8182/"
 INVENTORY_API_ENDPOINT = "http://127.0.0.1:8184/"
 
+
 class AppWebHandler(ApiBackendHandler):
     """
     Handler with tasks related utils
     """
 
-    def initialize(self) -> None:
-        """
-        Perform setup tasks
-
-        :return:
-        """
-        super().initialize()
-        self.data.update(template_path="alters/index.html")
+    TEMPLATE_PATH = "alters/index.html"
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
