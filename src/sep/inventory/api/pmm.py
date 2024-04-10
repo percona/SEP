@@ -41,7 +41,7 @@ Node = namedtuple("Node", ["id", "name", "type", "services"])
 Node.to_dict = to_dict
 Node.to_json = to_json
 
-Service = namedtuple("Service", ["cluster", "id", "name", "node_id", "type", "environment"])
+Service = namedtuple("Service", ["cluster", "environment", "id", "name", "node_id", "type"])
 Service.to_dict = to_dict
 
 

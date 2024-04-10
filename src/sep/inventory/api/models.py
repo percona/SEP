@@ -77,8 +77,6 @@ class InventoryItemServiceType(TypeDecorator):
         return value
 
     def process_result_value(self, value, dialect):
-        if isinstance(value, dict):
-            return value
         if value is not None:
             value = json.loads(value)
         return value
