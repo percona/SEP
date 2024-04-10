@@ -1,99 +1,13 @@
 """task related functions"""
 
-from typing import (
-    Awaitable,
-    Optional,
-    Union,
-)
+from typing import Union
 
 import yaml
-
-from sep.core import ApiBackendHandler
-from sep.core.utils import async_request
-
-# FIXME: This is just plain wrong :)
-TASK_API_ENDPOINT = "http://127.0.0.1:8182/"
-INVENTORY_API_ENDPOINT = "http://127.0.0.1:8184/"
 
 PURGE_TABLES_CONFIG_WHERE = {
     "ALL": {"SOURCE_HOST": None, "SOURCE_PORT": 0},
     "PURGE_LIST": [{"ALIAS": None, "SOURCE_DB": None, "SOURCE_TABLE": None, "DEST_TABLE": None, "WHERE": None}],
 }
-
-
-# FIXME: this is bypassing authentication by not using the correct handler
-class AppWebHandler(ApiBackendHandler):
-    """
-    Handler with tasks related utils
-    """
-
-    TEMPLATE_PATH = "archiver/index.html"
-
-    async def _hosts(self) -> list:
-        """List all hosts
-        :param task:
-        :return:
-        """
-        return await async_request(url=INVENTORY_API_ENDPOINT, request=self.request)
-
-    async def _create_task(self, task_payload: dict) -> dict:
-        """Create a task
-        :param task_payload:
-        :return:
-        """
-        return await async_request(
-            url=f"{TASK_API_ENDPOINT}generate", method="POST", request=self.request, payload=task_payload
-        )
-
-    async def _delete_task(self, task_name: str) -> dict:
-        """Delete a task
-
-        :param task_name:
-        :return:
-        """
-        return await async_request(url=f"{TASK_API_ENDPOINT}{task_name}", method="DELETE", request=self.request)
-
-    async def _execute_task(self, task_name: str) -> dict:
-        """Trigger an archive task
-
-        :param task_name:
-        :return:
-        """
-        return await async_request(
-            url=f"{TASK_API_ENDPOINT}execute/{task_name}",
-            method="POST",
-            request=self.request,
-            payload={"task": task_name},
-        )
-
-    async def _get_task(self, task_name: str) -> dict:
-        """Returns details for a single task
-
-        :param task_name:
-        :return:
-        """
-        return await async_request(url=f"{TASK_API_ENDPOINT}{task_name}", request=self.request)
-
-    async def _get_task_stats(self, task_name: str) -> dict:
-        """Get the stats for a task
-
-        :param task_name:
-        :return:
-        """
-        return await async_request(url=f"{TASK_API_ENDPOINT}stats/{task_name}", request=self.request)
-
-    async def _list_tasks(self) -> list:
-        """Returns a list of tasks"""
-        # TODO: consider how to filter automatically based upon app ID
-        return await async_request(url=f"{TASK_API_ENDPOINT}?owner=archiver", request=self.request)
-
-    async def _task_history(self, task_name: str) -> list:
-        """List the task history
-
-        :param task_name:
-        :return:
-        """
-        return await async_request(url=f"{TASK_API_ENDPOINT}history/{task_name}", request=self.request)
 
 
 def build_archive_task_data(config):

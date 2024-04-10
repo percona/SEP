@@ -12,6 +12,7 @@ from tornado.web import HTTPError
 from urllib.parse import parse_qs
 import yaml
 
+from sep.core import TaskApiBackendHandler
 from sep.core.models import Widget
 from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_LOOKUP,
@@ -21,10 +22,13 @@ from sep.tasks.api.models import (
 from . import tasks_utils
 
 
-class ArchiveHandler(tasks_utils.AppWebHandler):
+class ArchiveHandler(TaskApiBackendHandler):
     """
     Dummy handler use for all unrouted requests
     """
+
+    OWNER = "archiver"
+    TEMPLATE_PATH = "archiver/index.html"
 
     async def get(self, route) -> None:
         """Server GET requests"""

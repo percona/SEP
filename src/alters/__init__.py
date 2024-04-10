@@ -13,6 +13,7 @@ from tornado.log import app_log
 from tornado.web import HTTPError
 import yaml
 
+from sep.core import TaskApiBackendHandler
 from sep.core.models import Widget
 from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_LOOKUP,
@@ -22,10 +23,13 @@ from sep.tasks.api.models import (
 from . import tasks_utils
 
 
-class AlterHandler(tasks_utils.AppWebHandler):
+class AlterHandler(TaskApiBackendHandler):
     """
     Dummy handler use for all unrouted requests
     """
+
+    OWNER = "alters"
+    TEMPLATE_PATH = "alters/index.html"
 
     async def get(self, route) -> None:
         """Server GET requests"""
@@ -40,7 +44,6 @@ class AlterHandler(tasks_utils.AppWebHandler):
                 await self._alter_view_details(route_path[1])
                 return
 
-        #hosts = await self._hosts()
         hosts = await self._hosts_with_service("mysql")
         tasks = await self._formated_alter_tasks()
 
@@ -72,7 +75,7 @@ class AlterHandler(tasks_utils.AppWebHandler):
             match route_path[1]:
                 case "widget":
                     self.set_header("Content-Type", "application/json")
-                    self.data.update(template_path="alters/api.json") # can it be shared
+                    self.data.update(template_path="alters/api.json")  # can it be shared
                     self.data["template_data"] = await self._widget()
                 case _:
                     raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
@@ -182,9 +185,9 @@ class AlterHandler(tasks_utils.AppWebHandler):
                     "hostname": data["Constraints"][0]["RTarget"],
                     "table": f'{meta["schema_name"]}.{meta["table_name"]}',
                     "cmd": f'{task_config["command"]} {" ".join(task_config["args"])}',
-                    "meta": meta
-                }
-            }
+                    "meta": meta,
+                },
+            },
         )
 
     # Used?
@@ -202,7 +205,7 @@ class AlterHandler(tasks_utils.AppWebHandler):
                     taskinfo = {
                         "hostname": data["Constraints"][0]["RTarget"],
                         "name": task["name"],
-                        "table": f'{meta["schema_name"]}.{meta["table_name"]}'
+                        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
                     }
                 except (KeyError, IndexError):
                     taskinfo = {"hostname": "Unknown", "name": "Unknown", "table": "Unknown"}

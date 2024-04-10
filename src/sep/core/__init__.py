@@ -44,13 +44,14 @@ from .utils import (
     render_template,
 )
 
-__all__ = ["ApiBackendHandler", "DummyHandler", "HomepageHandler", "RemoteCallHandler"]
+__all__ = ["ApiBackendHandler", "DummyHandler", "HomepageHandler", "RemoteCallHandler", "TaskApiBackendHandler"]
 
 
 class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     """
     Base request handler
     """
+
     TEMPLATE_PATH = None
 
     cfg: namedtuple
@@ -227,6 +228,29 @@ class ApiBackendHandler(BaseHandler):
     follow_redirects: bool = False
     request_timeout: int = 60
 
+    async def _hosts(self) -> list:
+        """List all hosts
+
+        :return:
+        """
+        # TODO once reversible routing is done, lookup the path
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/inventory/api/", request=self.request
+        )
+
+    async def _hosts_with_service(self, service_type: str) -> list:
+        """List hosts for a given service_type
+
+        :param service_type:
+        :return:
+        """
+        hosts = []
+        for host in await self._hosts():
+            for service in host["data"]["services"]:
+                if service["type"] == service_type:
+                    hosts.append(host)
+        return hosts
+
     async def post(self, route: str):
         """API Backend post requests
 
@@ -258,6 +282,87 @@ class ApiBackendHandler(BaseHandler):
                     payload={k: v[0] for k, v in payload.items() if k not in ["_xsrf"]},
                 )
                 app_log.debug("Response: %r", response)
+
+
+class TaskApiBackendHandler(ApiBackendHandler):
+    """API Backend handler for task-based apps"""
+
+    OWNER: str = ""
+
+    async def _create_task(self, task_payload: dict) -> dict:
+        """Create a task
+        :param task_payload:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/generate",
+            method="POST",
+            request=self.request,
+            payload=task_payload,
+        )
+
+    async def _delete_task(self, task_name: str) -> dict:
+        """Delete a task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/{task_name}",
+            method="DELETE",
+            request=self.request,
+        )
+
+    async def _execute_task(self, task_name: str) -> dict:
+        """Trigger an archive task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/execute/{task_name}",
+            method="POST",
+            request=self.request,
+            payload={"task": task_name},
+        )
+
+    async def _get_task(self, task_name: str) -> dict:
+        """Returns details for a single task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/{task_name}", request=self.request
+        )
+
+    async def _get_task_stats(self, task_name: str) -> dict:
+        """Get the stats for a task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/stats/{task_name}", request=self.request
+        )
+
+    async def _list_tasks(self) -> list:
+        """Returns a list of tasks"""
+        # TODO: consider how to filter automatically based upon app ID
+        app_log.debug("Listing tasks for app: %s", self.OWNER)
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/?owner={self.OWNER}", request=self.request
+        )
+
+    async def _task_history(self, task_name: str) -> list:
+        """List the task history
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/history/{task_name}", request=self.request
+        )
 
 
 class DummyHandler(BaseHandler):
