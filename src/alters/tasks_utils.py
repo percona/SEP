@@ -20,9 +20,6 @@ class AppWebHandler(ApiBackendHandler):
 
     TEMPLATE_PATH = "alters/index.html"
 
-    def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
-        pass
-
     async def _hosts(self) -> list:
         """List all hosts
         :param task:

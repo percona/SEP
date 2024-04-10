@@ -1,10 +1,9 @@
 """task related functions"""
 
-from typing import Union
-
 from typing import (
     Awaitable,
     Optional,
+    Union,
 )
 
 import yaml
@@ -29,9 +28,6 @@ class AppWebHandler(ApiBackendHandler):
     """
 
     TEMPLATE_PATH = "archiver/index.html"
-
-    def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
-        pass
 
     async def _hosts(self) -> list:
         """List all hosts
