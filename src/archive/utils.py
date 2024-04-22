@@ -4,15 +4,19 @@ from typing import Union
 
 import yaml
 
+from sep.tasks.nomad.models import Payload
+
 PURGE_TABLES_CONFIG_WHERE = {
     "ALL": {"SOURCE_HOST": None, "SOURCE_PORT": 0},
     "PURGE_LIST": [{"ALIAS": None, "SOURCE_DB": None, "SOURCE_TABLE": None, "DEST_TABLE": None, "WHERE": None}],
 }
 
 
-def build_archive_task_data(config):
-    """
-    returns a Job dict
+def build_task_payload(config) -> Payload:
+    """Create a payload for the backend
+
+    :param config:
+    :return:
     """
     match config["archive_type"]:
         case ["where"]:
@@ -32,29 +36,22 @@ def build_archive_task_data(config):
     )
     purge_config.update(ALL=purge_config_all, PURGE_LIST=[purge_config_list])
 
-    payload = {
-        "name": config["task_name"][0],
-        "app": "archiver",
-        "commands": [
+    return Payload(
+        name=config["task_name"][0],
+        app="archiver",
+        args=[
+            f"--alias={config['task_name'][0]}",
+            "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
+        ],
+        command="/home/percona/bin/purge-tables.py",
+        config=[
             {
-                "args": [
-                    f"--alias={config['task_name'][0]}",
-                    "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
-                ],
-                "command": "/home/percona/bin/purge-tables.py",
-                "config": [
-                    {
-                        "content": yaml.dump(purge_config),
-                        "path": "purge_tables.yaml",
-                    }
-                ],
+                "content": yaml.dump(purge_config),
+                "path": "purge_tables.yaml",
             }
         ],
-        "persist": True,
-        "schedule": {"save_only": True},
-        "target": config["hostname"][0],
-    }
-    return payload
+        target=config["hostname"][0],
+    )
 
 
 def extract_task_values(config: Union[dict, str], items: list) -> dict:

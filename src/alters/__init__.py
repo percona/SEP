@@ -18,7 +18,7 @@ from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_MAP,
 )
 
-from . import tasks_utils
+from .utils import build_task_payload
 
 
 class AlterHandler(TaskApiBackendHandler):
@@ -96,7 +96,7 @@ class AlterHandler(TaskApiBackendHandler):
                 await self._execute_task(route_path[1])
                 redirect = ""
             case "":
-                await self._create_task(tasks_utils.build_alter_task_data(payload))
+                await self._create_task(dict(build_task_payload(payload)))
         self.redirect(redirect)
 
     async def _widget(self) -> dict | list:

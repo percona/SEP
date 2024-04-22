@@ -19,7 +19,10 @@ from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_MAP,
 )
 
-from . import tasks_utils
+from .utils import (
+    build_task_payload,
+    extract_task_values,
+)
 
 
 class ArchiveHandler(TaskApiBackendHandler):
@@ -97,7 +100,7 @@ class ArchiveHandler(TaskApiBackendHandler):
                 await self._execute_task(route_path[1])
                 redirect = ""
             case "":
-                await self._create_task(tasks_utils.build_archive_task_data(payload))
+                await self._create_task(dict(build_task_payload(payload)))
         self.redirect(redirect)
 
     async def _archive_view_details(self, task_name):
@@ -136,7 +139,7 @@ class ArchiveHandler(TaskApiBackendHandler):
                 # TODO: this is engine-specific
                 templates = json.loads(task["data"])["TaskGroups"][0]["Tasks"][0]["Templates"]
                 try:
-                    meta = tasks_utils.extract_task_values(templates[0]["EmbeddedTmpl"], ["hostname", "name", "table"])
+                    meta = extract_task_values(templates[0]["EmbeddedTmpl"], ["hostname", "name", "table"])
                 except (KeyError, IndexError):
                     meta = {"hostname": "Unknown", "name": "Unknown", "table": "Unknown"}
                 meta.update(id=task["id"])

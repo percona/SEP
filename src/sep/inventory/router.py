@@ -24,7 +24,7 @@ def get_default_router(cfg: ObjectDict, handlers_only: bool = False) -> Applicat
     try:
         api_uri = get_process_config(cfg, "inventory")
         if api_uri is None:
-            raise ValueError("Tasks API URI is not configured")
+            raise ValueError("Inventory API URI is not configured")
     except (AttributeError, KeyError, ValueError):
         api_uri = {"uri": DEFAULT_BACKEND_ADDRESS}
 
