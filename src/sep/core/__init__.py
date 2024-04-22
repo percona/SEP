@@ -163,6 +163,8 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         :param chunk:
         :return:
         """
+        if self.data["template_path"].endswith("{}"):
+            self.data["template_path"] = self.data["template_path"].format(self.data["file_extension"])
         if chunk is None:
             template = get_template(self.data["template_path"], self.cfg.templates.get("dirs", []))
             chunk = sub(
@@ -442,7 +444,7 @@ class RemoteCallHandler(BaseHandler):
         client = AsyncHTTPClient()
         response = await client.fetch(
             HTTPRequest(
-                url=f"{self.uri}/{kwargs.get('route', '')}",
+                url=f"{self.uri}/{kwargs.get('route', '')}?{self.request.query}",
                 method="GET",
                 headers=self.request.headers,
                 connect_timeout=self.connect_timeout,
@@ -462,7 +464,7 @@ class RemoteCallHandler(BaseHandler):
         client = AsyncHTTPClient()
         response = await client.fetch(
             HTTPRequest(
-                url=f"{self.uri}/{kwargs.get('route', '')}",
+                url=f"{self.uri}/{kwargs.get('route', '')}?{self.request.query}",
                 method="POST",
                 body=self.request.body,
                 headers=self.request.headers,
