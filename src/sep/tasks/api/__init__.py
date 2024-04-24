@@ -333,12 +333,25 @@ async def generate_task(generated_task: GeneratedTask, request: Request, backgro
         tasks=[],
         parallel=generated_task.parallel and len(generated_task.commands) > 1,
     )
+    """Example generated_task
+    engine='nomad' app='archiver' commands=['/home/percona/bin/purge-tables.py'] name='foo_bad_ids'
+    target='ceeemuu-work' artifacts=None
+    config=[{
+                'content': 'ALL:\n  SOURCE_HOST: ceeemuu-work\n  SOURCE_PORT: 3306\nPURGE_LIST:\n- ALIAS: ....',
+                'path': 'purge_tables.yaml'
+            }]
+    parallel=False persist=True schedule={'save_only': True} template='batch'
+    """
     for i, cmd in enumerate(generated_task.commands):
         templates = []
         configs = cmd.get("config", [])
         if configs:
             for config in configs:
                 templates.append(TaskGroupTaskTemplate(**config))
+        """
+        if generated_task.config and len(generated_task.config) >= i:
+            templates.append(TaskGroupTaskTemplate(**generated_task.config[i]))
+        """
         tg.tasks.append(
             TaskGroupTask(
                 name=f"step{i+1}" if not cmd.get("name") else cmd["name"],

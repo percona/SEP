@@ -163,7 +163,7 @@ class TaskGroupTask(CustomSerializeBaseModel):
     name: str
     driver: str = "raw_exec"
     user: str = ""
-    config: dict
+    config: dict | list | str | bytes
     meta: dict = {}  # TODO
     restart: dict = {"attempts": 0, "mode": "fail"}  # TODO
     templates: list[TaskGroupTaskTemplate] = []  # TODO
@@ -201,10 +201,10 @@ class GeneratedTask(CustomSerializeBaseModel):
     name: str
     target: str
     artifacts: list | None = None
-    config: str | None = None
+    #config: dict | list | str | bytes | None = None
     parallel: bool = False
     persist: bool = True
-    schedule: dict = {}  # TODO
+    schedule: dict = {"save_only": True}
     template: str = "batch"
 
 

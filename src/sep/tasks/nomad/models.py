@@ -14,7 +14,7 @@ class Payload(BaseModel):
 
     app: str
     args: list = []
-    command: str | list = ""
+    commands: list = ""
     config: list = []
     meta: dict = {}
     name: str

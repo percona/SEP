@@ -7,6 +7,10 @@ GET http://127.0.0.1:8182/history?status=pending
 Accept: application/json
 
 ###
+GET http://127.0.0.1:8182/history?owner=archiver
+Accept: application/json
+
+###
 POST http://127.0.0.1:8182/history
 Content-Type: application/json
 

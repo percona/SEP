@@ -86,6 +86,7 @@ class ArchiveHandler(TaskApiBackendHandler):
         """Serve POST requests"""
         payload = parse_qs(self.request.body.decode())
         app_log.debug("Received POST: %s", payload)
+        self._xsrf_to_headers(payload)
 
         redirect = self.request.uri
         route_path = route.split("/")

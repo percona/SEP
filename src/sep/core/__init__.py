@@ -253,6 +253,29 @@ class ApiBackendHandler(BaseHandler):
                     hosts.append(host)
         return hosts
 
+    def _xsrf_to_headers(self, payload: dict | None = None) -> bool:
+        """Update the request headers with a payload's XSRF token
+
+        :param payload:
+        :return:
+        """
+        if (payload and '_xsrf' not in payload) and '_xsrf' not in self.request.body_arguments:
+            return False
+        if payload and '_xsrf' in payload:
+            token = payload["_xsrf"]
+        else:
+            token = self.request.body_arguments["_xsrf"]
+        if isinstance(token, list):
+            token = token[0]
+        if self.request.headers.get("X-XSRF-TOKEN") != token:
+            if "X-XSRF-TOKEN" in self.request.headers:
+                del self.request.headers["X-XSRF-TOKEN"]
+            self.request.headers.add("X-XSRF-TOKEN", token)
+            if "X-Xsrftoken" in self.request.headers:
+                del self.request.headers["X-Xsrftoken"]
+            self.request.headers.add("X-Xsrftoken", token)
+        return True
+
     async def post(self, route: str):
         """API Backend post requests
 
@@ -273,9 +296,7 @@ class ApiBackendHandler(BaseHandler):
                     request_url = urlparse(self.uri)
                     url = f"{request_url.scheme}://{request_url.netloc}{url}"
                 del payload["location"]
-                if "_xsrf" in payload:
-                    self.request.headers.add("X-XSRF-TOKEN", payload["_xsrf"][0])
-                    self.request.headers.add("X-Xsrftoken", payload["_xsrf"][0])
+                self._xsrf_to_headers(payload)
                 self.request.headers.update({"Content-type": "application/json"})
                 response = await async_request(
                     url=url,
@@ -296,6 +317,7 @@ class TaskApiBackendHandler(ApiBackendHandler):
         :param task_payload:
         :return:
         """
+        self._xsrf_to_headers(task_payload)
         return await async_request(
             url=f"{self.request.protocol}://{self.request.host}/tasks/api/generate",
             method="POST",

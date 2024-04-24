@@ -4,7 +4,8 @@ from typing import Union
 
 import yaml
 
-from sep.tasks.nomad.models import Payload
+from sep.tasks.api.models import GeneratedTask
+#from sep.tasks.nomad.models import Payload
 
 PURGE_TABLES_CONFIG_WHERE = {
     "ALL": {"SOURCE_HOST": None, "SOURCE_PORT": 0},
@@ -12,7 +13,7 @@ PURGE_TABLES_CONFIG_WHERE = {
 }
 
 
-def build_task_payload(config) -> Payload:
+def build_task_payload(config) -> GeneratedTask:
     """Create a payload for the backend
 
     :param config:
@@ -32,24 +33,42 @@ def build_task_payload(config) -> Payload:
         SOURCE_DB=config["sourcedb"][0],
         SOURCE_TABLE=config["sourcetbl"][0],
         DEST_TABLE=config["dest_name"][0],
-        WHERE=config["where"][0],
+        WHERE=f'{config["where"][0]}',
     )
     purge_config.update(ALL=purge_config_all, PURGE_LIST=[purge_config_list])
 
-    return Payload(
-        name=config["task_name"][0],
+    #return Payload(
+    #    name=config["task_name"][0],
+    #    app="archiver",
+    #    args=[
+    #        f"--alias={config['task_name'][0]}",
+    #        "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
+    #    ],
+    #    command="/home/percona/bin/purge-tables.py",
+    #    config=[
+    #        {
+    #            "content": yaml.dump(purge_config),
+    #            "path": "purge_tables.yaml",
+    #        }
+    #    ],
+    #    target=config["hostname"][0],
+    #)
+    return GeneratedTask(
         app="archiver",
-        args=[
-            f"--alias={config['task_name'][0]}",
-            "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
-        ],
-        command="/home/percona/bin/purge-tables.py",
-        config=[
+        commands=[
             {
-                "content": yaml.dump(purge_config),
-                "path": "purge_tables.yaml",
+                "args": [
+                    f"--alias={config['task_name'][0]}",
+                    "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
+                ],
+                "command": "/home/percona/bin/purge-tables.py",
+                "config": [{
+                    "content": yaml.dump(purge_config),
+                    "path": "purge_tables.yaml",
+                }]
             }
         ],
+        name=config["task_name"][0],
         target=config["hostname"][0],
     )
 
