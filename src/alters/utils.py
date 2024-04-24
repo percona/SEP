@@ -9,20 +9,6 @@ def build_task_payload(config) -> GeneratedTask:
     :param config:
     :return:
     """
-    """
-    return Payload(
-        name=config["task_name"][0],
-        app="alters",
-        args=[
-            f"--alter={config['alter'][0]}",
-            f"D={config['schema_name'][0]},t={config['table_name'][0]}",
-            "--execute",
-        ],
-        command="pt-online-schema-change",
-        meta={"schema_name": config["schema_name"][0], "table_name": config["table_name"][0]},
-        target=config["hostname"][0],
-    )
-    """
     return GeneratedTask(
         app="alters",
         commands=[

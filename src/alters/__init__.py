@@ -43,7 +43,7 @@ class AlterHandler(TaskApiBackendHandler):
                 return
 
         hosts = await self._hosts_with_service("mysql")
-        tasks = await self._formated_alter_tasks()
+        tasks = await self._formatted_alter_tasks()
 
         scheduled_tasks = []
         history_tasks = []
@@ -193,7 +193,7 @@ class AlterHandler(TaskApiBackendHandler):
         tasks = await self._list_tasks()
         return [x for x in tasks if x["name"].startswith("alter")]
 
-    async def _formated_alter_tasks(self) -> list:
+    async def _formatted_alter_tasks(self) -> list:
         alters = []
         for task in await self._list_tasks():
             try:
