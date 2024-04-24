@@ -5,7 +5,6 @@ from typing import Union
 import yaml
 
 from sep.tasks.api.models import GeneratedTask
-#from sep.tasks.nomad.models import Payload
 
 PURGE_TABLES_CONFIG_WHERE = {
     "ALL": {"SOURCE_HOST": None, "SOURCE_PORT": 0},
@@ -37,22 +36,6 @@ def build_task_payload(config) -> GeneratedTask:
     )
     purge_config.update(ALL=purge_config_all, PURGE_LIST=[purge_config_list])
 
-    #return Payload(
-    #    name=config["task_name"][0],
-    #    app="archiver",
-    #    args=[
-    #        f"--alias={config['task_name'][0]}",
-    #        "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
-    #    ],
-    #    command="/home/percona/bin/purge-tables.py",
-    #    config=[
-    #        {
-    #            "content": yaml.dump(purge_config),
-    #            "path": "purge_tables.yaml",
-    #        }
-    #    ],
-    #    target=config["hostname"][0],
-    #)
     return GeneratedTask(
         app="archiver",
         commands=[
@@ -62,10 +45,12 @@ def build_task_payload(config) -> GeneratedTask:
                     "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
                 ],
                 "command": "/home/percona/bin/purge-tables.py",
-                "config": [{
-                    "content": yaml.dump(purge_config),
-                    "path": "purge_tables.yaml",
-                }]
+                "config": [
+                    {
+                        "content": yaml.dump(purge_config),
+                        "path": "purge_tables.yaml",
+                    }
+                ],
             }
         ],
         name=config["task_name"][0],

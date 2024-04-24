@@ -259,9 +259,9 @@ class ApiBackendHandler(BaseHandler):
         :param payload:
         :return:
         """
-        if (payload and '_xsrf' not in payload) and '_xsrf' not in self.request.body_arguments:
+        if (payload and "_xsrf" not in payload) and "_xsrf" not in self.request.body_arguments:
             return False
-        if payload and '_xsrf' in payload:
+        if payload and "_xsrf" in payload:
             token = payload["_xsrf"]
         else:
             token = self.request.body_arguments["_xsrf"]

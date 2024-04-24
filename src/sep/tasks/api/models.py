@@ -201,7 +201,7 @@ class GeneratedTask(CustomSerializeBaseModel):
     name: str
     target: str
     artifacts: list | None = None
-    #config: dict | list | str | bytes | None = None
+    # config: dict | list | str | bytes | None = None
     parallel: bool = False
     persist: bool = True
     schedule: dict = {"save_only": True}
