@@ -12,19 +12,26 @@ from tornado.web import HTTPError
 from urllib.parse import parse_qs
 import yaml
 
+from sep.core import TaskApiBackendHandler
 from sep.core.models import Widget
 from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_LOOKUP,
     TASK_HISTORY_STATUS_MAP,
 )
 
-from . import tasks_utils
+from .utils import (
+    build_task_payload,
+    extract_task_values,
+)
 
 
-class ArchiveHandler(tasks_utils.AppWebHandler):
+class ArchiveHandler(TaskApiBackendHandler):
     """
     Dummy handler use for all unrouted requests
     """
+
+    OWNER = "archiver"
+    TEMPLATE_PATH = "archiver/index.html"
 
     async def get(self, route) -> None:
         """Server GET requests"""
@@ -70,7 +77,7 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
             match route_path[1]:
                 case "widget":
                     self.set_header("Content-Type", "application/json")
-                    self.data.update(template_path=f"archiver/api.json")
+                    self.data.update(template_path="widget.json")
                     self.data["template_data"] = await self._widget()
                 case _:
                     raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
@@ -79,6 +86,7 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
         """Serve POST requests"""
         payload = parse_qs(self.request.body.decode())
         app_log.debug("Received POST: %s", payload)
+        self._xsrf_to_headers(payload)
 
         redirect = self.request.uri
         route_path = route.split("/")
@@ -93,7 +101,7 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
                 await self._execute_task(route_path[1])
                 redirect = ""
             case "":
-                await self._create_task(tasks_utils.build_archive_task_data(payload))
+                await self._create_task(dict(build_task_payload(payload)))
         self.redirect(redirect)
 
     async def _archive_view_details(self, task_name):
@@ -132,7 +140,7 @@ class ArchiveHandler(tasks_utils.AppWebHandler):
                 # TODO: this is engine-specific
                 templates = json.loads(task["data"])["TaskGroups"][0]["Tasks"][0]["Templates"]
                 try:
-                    meta = tasks_utils.extract_task_values(templates[0]["EmbeddedTmpl"], ["hostname", "name", "table"])
+                    meta = extract_task_values(templates[0]["EmbeddedTmpl"], ["hostname", "name", "table"])
                 except (KeyError, IndexError):
                     meta = {"hostname": "Unknown", "name": "Unknown", "table": "Unknown"}
                 meta.update(id=task["id"])

@@ -44,7 +44,7 @@ from .utils import (
     render_template,
 )
 
-__all__ = ["ApiBackendHandler", "DummyHandler", "HomepageHandler", "RemoteCallHandler"]
+__all__ = ["ApiBackendHandler", "DummyHandler", "HomepageHandler", "RemoteCallHandler", "TaskApiBackendHandler"]
 
 
 class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
@@ -52,12 +52,14 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
     Base request handler
     """
 
+    TEMPLATE_PATH = None
+
     cfg: namedtuple
     data: dict = {
         "user": None,
         "casdoor_login_url": None,
         "template_data": {},
-        "template_path": "dummy.html",
+        "template_path": "dummy.{}",
         "xsrf_form_html": "",
     }
 
@@ -74,6 +76,11 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
             xsrf_form_html=self.xsrf_form_html,
             file_extension="json" if needs_json else "html",
         )
+        if self.TEMPLATE_PATH is not None:
+            # Using {} instead of a file extension in the template path will result in content
+            # negotiation, this is however optional
+            self.data["template_path"] = self.TEMPLATE_PATH.format(self.data["file_extension"])
+            app_log.debug("Template updated to %s", self.data["template_path"])
 
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         pass
@@ -156,6 +163,8 @@ class BaseHandler(RequestHandler, CasdoorOAuth2Mixin):
         :param chunk:
         :return:
         """
+        if self.data["template_path"].endswith("{}"):
+            self.data["template_path"] = self.data["template_path"].format(self.data["file_extension"])
         if chunk is None:
             template = get_template(self.data["template_path"], self.cfg.templates.get("dirs", []))
             chunk = sub(
@@ -221,6 +230,52 @@ class ApiBackendHandler(BaseHandler):
     follow_redirects: bool = False
     request_timeout: int = 60
 
+    async def _hosts(self) -> list:
+        """List all hosts
+
+        :return:
+        """
+        # TODO once reversible routing is done, lookup the path
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/inventory/api/", request=self.request
+        )
+
+    async def _hosts_with_service(self, service_type: str) -> list:
+        """List hosts for a given service_type
+
+        :param service_type:
+        :return:
+        """
+        hosts = []
+        for host in await self._hosts():
+            for service in host["data"]["services"]:
+                if service["type"] == service_type:
+                    hosts.append(host)
+        return hosts
+
+    def _xsrf_to_headers(self, payload: dict | None = None) -> bool:
+        """Update the request headers with a payload's XSRF token
+
+        :param payload:
+        :return:
+        """
+        if (payload and "_xsrf" not in payload) and "_xsrf" not in self.request.body_arguments:
+            return False
+        if payload and "_xsrf" in payload:
+            token = payload["_xsrf"]
+        else:
+            token = self.request.body_arguments["_xsrf"]
+        if isinstance(token, list):
+            token = token[0]
+        if self.request.headers.get("X-XSRF-TOKEN") != token:
+            if "X-XSRF-TOKEN" in self.request.headers:
+                del self.request.headers["X-XSRF-TOKEN"]
+            self.request.headers.add("X-XSRF-TOKEN", token)
+            if "X-Xsrftoken" in self.request.headers:
+                del self.request.headers["X-Xsrftoken"]
+            self.request.headers.add("X-Xsrftoken", token)
+        return True
+
     async def post(self, route: str):
         """API Backend post requests
 
@@ -241,9 +296,7 @@ class ApiBackendHandler(BaseHandler):
                     request_url = urlparse(self.uri)
                     url = f"{request_url.scheme}://{request_url.netloc}{url}"
                 del payload["location"]
-                if "_xsrf" in payload:
-                    self.request.headers.add("X-XSRF-TOKEN", payload["_xsrf"][0])
-                    self.request.headers.add("X-Xsrftoken", payload["_xsrf"][0])
+                self._xsrf_to_headers(payload)
                 self.request.headers.update({"Content-type": "application/json"})
                 response = await async_request(
                     url=url,
@@ -252,6 +305,89 @@ class ApiBackendHandler(BaseHandler):
                     payload={k: v[0] for k, v in payload.items() if k not in ["_xsrf"]},
                 )
                 app_log.debug("Response: %r", response)
+
+
+class TaskApiBackendHandler(ApiBackendHandler):
+    """API Backend handler for task-based apps"""
+
+    OWNER: str = ""
+
+    async def _create_task(self, task_payload: dict) -> dict:
+        """Create a task
+        :param task_payload:
+        :return:
+        """
+        self._xsrf_to_headers(task_payload)
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/generate",
+            method="POST",
+            request=self.request,
+            payload=task_payload,
+        )
+
+    async def _delete_task(self, task_name: str) -> dict:
+        """Delete a task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/{task_name}",
+            method="DELETE",
+            request=self.request,
+        )
+
+    async def _execute_task(self, task_name: str) -> dict:
+        """Trigger an archive task
+
+        :param task_name:
+        :return:
+        """
+        self._xsrf_to_headers()
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/execute/{task_name}",
+            method="POST",
+            request=self.request,
+            payload={"task": task_name},
+        )
+
+    async def _get_task(self, task_name: str) -> dict:
+        """Returns details for a single task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/{task_name}", request=self.request
+        )
+
+    async def _get_task_stats(self, task_name: str) -> dict:
+        """Get the stats for a task
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/stats/{task_name}", request=self.request
+        )
+
+    async def _list_tasks(self) -> list:
+        """Returns a list of tasks"""
+        # TODO: consider how to filter automatically based upon app ID
+        app_log.debug("Listing tasks for app: %s", self.OWNER)
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/?owner={self.OWNER}", request=self.request
+        )
+
+    async def _task_history(self, task_name: str) -> list:
+        """List the task history
+
+        :param task_name:
+        :return:
+        """
+        return await async_request(
+            url=f"{self.request.protocol}://{self.request.host}/tasks/api/history/{task_name}", request=self.request
+        )
 
 
 class DummyHandler(BaseHandler):
@@ -331,7 +467,7 @@ class RemoteCallHandler(BaseHandler):
         client = AsyncHTTPClient()
         response = await client.fetch(
             HTTPRequest(
-                url=f"{self.uri}/{kwargs.get('route', '')}",
+                url=f"{self.uri}/{kwargs.get('route', '')}?{self.request.query}",
                 method="GET",
                 headers=self.request.headers,
                 connect_timeout=self.connect_timeout,
@@ -351,7 +487,7 @@ class RemoteCallHandler(BaseHandler):
         client = AsyncHTTPClient()
         response = await client.fetch(
             HTTPRequest(
-                url=f"{self.uri}/{kwargs.get('route', '')}",
+                url=f"{self.uri}/{kwargs.get('route', '')}?{self.request.query}",
                 method="POST",
                 body=self.request.body,
                 headers=self.request.headers,

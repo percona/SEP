@@ -7,25 +7,27 @@ Add to config.py handlers
 import json
 from http import HTTPStatus
 
-
 from urllib.parse import parse_qs
 from tornado.log import app_log
 from tornado.web import HTTPError
-import yaml
 
+from sep.core import TaskApiBackendHandler
 from sep.core.models import Widget
 from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_LOOKUP,
-    TASK_HISTORY_STATUS_MAP
+    TASK_HISTORY_STATUS_MAP,
 )
 
-from . import tasks_utils
+from .utils import build_task_payload
 
 
-class AlterHandler(tasks_utils.AppWebHandler):
+class AlterHandler(TaskApiBackendHandler):
     """
     Dummy handler use for all unrouted requests
     """
+
+    OWNER = "alters"
+    TEMPLATE_PATH = "alters/index.html"
 
     async def get(self, route) -> None:
         """Server GET requests"""
@@ -40,9 +42,8 @@ class AlterHandler(tasks_utils.AppWebHandler):
                 await self._alter_view_details(route_path[1])
                 return
 
-        #hosts = await self._hosts()
         hosts = await self._hosts_with_service("mysql")
-        tasks = await self._formated_alter_tasks()
+        tasks = await self._formatted_alter_tasks()
 
         scheduled_tasks = []
         history_tasks = []
@@ -72,7 +73,7 @@ class AlterHandler(tasks_utils.AppWebHandler):
             match route_path[1]:
                 case "widget":
                     self.set_header("Content-Type", "application/json")
-                    self.data.update(template_path="alters/api.json") # can it be shared
+                    self.data.update(template_path="widget.json")  # can it be shared
                     self.data["template_data"] = await self._widget()
                 case _:
                     raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
@@ -95,7 +96,7 @@ class AlterHandler(tasks_utils.AppWebHandler):
                 await self._execute_task(route_path[1])
                 redirect = ""
             case "":
-                await self._create_task(tasks_utils.build_alter_task_data(payload))
+                await self._create_task(dict(build_task_payload(payload)))
         self.redirect(redirect)
 
     async def _widget(self) -> dict | list:
@@ -182,9 +183,9 @@ class AlterHandler(tasks_utils.AppWebHandler):
                     "hostname": data["Constraints"][0]["RTarget"],
                     "table": f'{meta["schema_name"]}.{meta["table_name"]}',
                     "cmd": f'{task_config["command"]} {" ".join(task_config["args"])}',
-                    "meta": meta
-                }
-            }
+                    "meta": meta,
+                },
+            },
         )
 
     # Used?
@@ -192,7 +193,7 @@ class AlterHandler(tasks_utils.AppWebHandler):
         tasks = await self._list_tasks()
         return [x for x in tasks if x["name"].startswith("alter")]
 
-    async def _formated_alter_tasks(self) -> list:
+    async def _formatted_alter_tasks(self) -> list:
         alters = []
         for task in await self._list_tasks():
             try:
@@ -202,7 +203,7 @@ class AlterHandler(tasks_utils.AppWebHandler):
                     taskinfo = {
                         "hostname": data["Constraints"][0]["RTarget"],
                         "name": task["name"],
-                        "table": f'{meta["schema_name"]}.{meta["table_name"]}'
+                        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
                     }
                 except (KeyError, IndexError):
                     taskinfo = {"hostname": "Unknown", "name": "Unknown", "table": "Unknown"}

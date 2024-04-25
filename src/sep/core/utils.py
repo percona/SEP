@@ -105,8 +105,9 @@ async def async_request(
     method: str = "GET",
     payload: dict | None = None,
     raise_error: bool = True,
+    return_raw_body: bool = False,
     **kwargs,
-) -> Union[dict, list, str]:
+) -> Union[dict, list, str, bytes]:
     """Make an async HTTP request for JSON
 
     :param url:
@@ -114,6 +115,7 @@ async def async_request(
     :param method:
     :param payload:
     :param raise_error:
+    :param return_raw_body:
     :param kwargs:
     :return:
     """
@@ -135,6 +137,8 @@ async def async_request(
         HTTPRequest(url=url, method=method, headers=headers, **kwargs), raise_error=raise_error
     )
 
+    if return_raw_body:
+        return response.body
     try:
         return json.loads(response.body.decode())
     except json.decoder.JSONDecodeError:
