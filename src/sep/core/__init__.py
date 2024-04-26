@@ -343,6 +343,7 @@ class TaskApiBackendHandler(ApiBackendHandler):
         :param task_name:
         :return:
         """
+        self._xsrf_to_headers()
         return await async_request(
             url=f"{self.request.protocol}://{self.request.host}/tasks/api/execute/{task_name}",
             method="POST",
