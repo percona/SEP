@@ -40,7 +40,6 @@ import mimetypes
 from os import (
     environ,
     getpid,
-    path,
 )
 import pathlib
 from secrets import token_bytes
@@ -63,10 +62,7 @@ from tornado.options import (
     parse_command_line,
     parse_config_file,
 )
-from tornado.web import (
-    Application,
-    StaticFileHandler,
-)
+from tornado.web import Application
 from tornado.util import ObjectDict
 import uvicorn
 import yaml
@@ -80,10 +76,9 @@ from .core import (
     RemoteCallHandler,
 )
 from .inventory.api import app as inventory_app
-from .inventory.router import get_default_router as inventory_router
+from .router import get_module_routers
 from .tasks.api import app as tasks_app
 from .tasks.nomad import NomadRemoteCallHandler
-from .tasks.router import get_default_router as tasks_router
 
 __all__ = []
 __version__ = "0.0.1"
@@ -165,28 +160,7 @@ class Config(ObjectDict):
             loaded_handlers.append(self.handlers[i])
             app_log.debug("Handler %s loaded", handler[1])
 
-        # TODO: Built-in rules, here temporarily
-        # With a registry, which in its simplest form could just be "modules" in the JSON config,
-        # we could look up what should be enabled and go off to each to retrieve its handlers. This would
-        # allow the app/handler/registry to be the source of the configuration. Perhaps this could even remove
-        # the need to populate the handlers and instead get used to configure an intelligent router
-        loaded_handlers.append([r"^/$", HomepageHandler, {}])
-        loaded_handlers.append([r"^/api/(?P<route>signin|signout)$", AuthZHandler, {}])
-
-        # Static file handler
-        source_dir = path.abspath(path.join(__file__, "..", "..", ".."))
-        if "static_path" in self.sep and self.sep.static_path is not None:
-            static_path = pathlib.Path(self.sep.static_path)
-            if not static_path.exists():
-                raise asyncio.exceptions.CancelledError(f"Cannot find static_path {static_path}")
-        else:
-            static_path = path.abspath(path.join(source_dir, "static"))
-        loaded_handlers.append([r"^/static/(.*)", StaticFileHandler, {"path": static_path}])
-
-        # Built-in routers
-        for handler in inventory_router(cfg=self.modules, handlers_only=True):
-            loaded_handlers.append(handler)
-        for handler in tasks_router(cfg=self.modules, handlers_only=True):
+        for handler in get_module_routers(cfg=self.modules, handlers_only=True):
             loaded_handlers.append(handler)
         return loaded_handlers
 
