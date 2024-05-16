@@ -1,0 +1,118 @@
+{% extends "../base.html" %}
+
+{% block title %}MySQL Backups{% end %}
+
+{% block style %}
+<link rel="stylesheet" href="/static/datatables/datatables.min.css" media="screen,projection" />
+<style>
+    label + input[type=text]{display: block}
+    /*label:has(+ select){display: none}*/
+    table form{display:inline-block}
+    table button{width:2.2rem;height:2.2rem}
+</style>
+{% end %}
+
+{% block behaviours-optimized-extra %}{% end %}
+
+{% block main %}
+
+{% set template_data = data.get("template_data", {}) %}
+{% set hosts = template_data.get("hosts", []) %}
+{% set backups = template_data.get("backups", []) %}
+{% set xsrf_form_html = data.get("xsrf_form_html") %}
+{% from tornado.escape import xhtml_unescape %}
+{%
+    set hint = {}
+    hint["BACKUP_DIR"] = "Backup destination path."
+    hint["LOGGING_DIR"] = "Backup logs path."
+%}
+
+<h3><b>Environments:</b> [ {% for env in template_data.get("environments", []) %} {{ env }} {%end%} ]</h3>
+
+<h2>Backup Hosts</h2>
+{% for backup_host in backups %}
+<h3>> {{ backup_host["backup_host"] }}</h3>
+<table>
+    <tr>
+        <th><h4>Backups List</h4></th>
+        <th align="right">
+            <form id="{{ backup_host['task_name'] }}-send" method="post" action="execute/{{ backup_host['task_name'] }}">
+                <button type="submit" class="icons">start</button>
+                <input type="hidden" name="task" value="{{ backup_host['task_name'] }}">
+                <input type="hidden" name="host" value="{{ backup_host['backup_host'] }}">
+                {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
+            </form>
+        </th>
+    </tr>
+</table>
+<table>
+    <tr>
+        <th>Alias</th>
+        <th>Type</th>
+        <th>Host</th>
+        <th>Upload</th>
+        <th>Actions</th>
+    </tr>
+    {% for backup in backup_host["all"]["SERVER_LIST"] %}
+    <tr>
+        <td>{{ backup["ALIAS"] }}</td>
+        <td>{{ backup["BACKUP_TYPE"] }}</td>
+        <td>{{ backup["HOST"] }}</td>
+        <td>{{ backup["UPLOAD"] }}</td>
+        <td>&nbsp;</td>
+    </tr>
+    {% end %}
+    <tr>
+        <td><input type="text" id="task_name" name="task_name" class="validate"/></td>
+        <td><input type="text" id="task_name" name="task_name" class="validate"/></td>
+        <td><input type="text" id="task_name" name="task_name" class="validate"/></td>
+        <td><input type="text" id="task_name" name="task_name" class="validate"/></td>
+        <td><button type="submit" class="icons">add</button></td>
+    </tr>
+</table>
+<h4>General Configs</h4>
+<table>
+    <tr>
+        <th>Config</th>
+        <th>Value</th>
+        <th>Description</th>
+    </tr>
+    {% for k,v in backup_host["all"]["ALL_SERVERS"].items() %}
+    <tr>
+        <td>{{ k }}</td>
+        <td>{{ v }}</td>
+        <td>{{ hint.get(k, '') }}</td>
+    </tr>
+    {% end %}
+</table>
+{% end %}
+<!--
+<table>
+    <tr>
+        <th>Host</th>
+        <th>XtraBackup</th>
+        <th>Mydumper</th>
+        <th>Binlogs</th>
+    </tr>
+    {% for host in hosts %}
+    <tr>
+        <td>{{ host['name'] }}</td>
+        <td class="flex">
+            <form id="Default_alias-send" method="post" action="execute/Default_alias">
+                <button name="location" class="icons">send</button>
+                <input type="hidden" name="task" value="Default_alias">
+                <input type="hidden" name="host" value="platform-team16">
+                {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
+            </form>
+        </td>
+        <td>-</td>
+        <td>-</td>
+    </tr>
+    {% end %}
+</table>
+-->
+
+<h2>Create new Backup</h2>
+{% include "partials/create-form.html" %}
+
+{% end %}

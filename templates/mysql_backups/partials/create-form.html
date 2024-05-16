@@ -1,0 +1,84 @@
+{% from tornado.escape import xhtml_unescape %}
+{% set modal_required = False %}
+{% set form_class = "modal" if modal_required else "" %}
+<form action="" method="post" class="{{ form_class }}">
+    <fieldset>
+        <legend>Backup Server</legend>
+        <label for="task_name">Name
+            <input type="text" id="task_name" name="task_name" class="validate"/>
+        </label>
+        <br />
+        <label for="hostname">Select host
+            <select id="hostname" name="hostname">
+                {% for host in hosts %}
+                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+                {% end %}
+            </select>
+        </label>
+    </fieldset>
+    <fieldset>
+        <legend>General Config</legend>
+        <label for="backup_dir">Destination path
+            <input type="text" id="backup_dir" name="backup_dir" class="validate" value="/percona-backups" size="50"/>
+        </label>
+        <br />
+        <label for="logging_dir">Logging directory
+            <input type="text" id="logging_dir" name="logging_dir" class="validate" value="/var/log/percona/backups" size="50"/>
+        </label>
+    </fieldset>
+    <fieldset>
+        <legend>Xtrabackup Config</legend>
+        <label for="XTRABACKUP_COPIES">Retiention Copies
+            <input type="text" id="XTRABACKUP_COPIES" name="XTRABACKUP_COPIES" class="validate" value="2"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_KILL_QUERIES">Kill Queries
+            <input type="checkbox" id="XTRABACKUP_KILL_QUERIES" name="XTRABACKUP_KILL_QUERIES" class="validate" checked/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_KILL_QUERIES_TIMEOUT">Kill Queries Timeout
+            <input type="text" id="XTRABACKUP_KILL_QUERIES_TIMEOUT" name="XTRABACKUP_KILL_QUERIES_TIMEOUT" class="validate" value="10"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_KILL_QUERY_TYPE">Kill Queries Type
+            <select id="XTRABACKUP_KILL_QUERY_TYPE" name="XTRABACKUP_KILL_QUERY_TYPE">
+                <option value="select" selected>Select</option>
+                <option value="all">All</option>
+            </select>
+        </label>
+        <br />
+        <label for="XTRABACKUP_BIN_CMD">Binary Command
+            <select id="XTRABACKUP_BIN_CMD" name="XTRABACKUP_BIN_CMD">
+                <option value="innobackupex">innobackupex</option>
+                <option value="xtrabackup" selected>xtrabackup</option>
+                <option value="mariadb-backup">mariadb-backup</option>
+            </select>
+        </label>
+    </fieldset>
+    <fieldset>
+        <legend>Backups List</legend>
+        <label for="backup_type_xtrabackup">xtrabackup</label>
+        <input type="radio" id="backup_type_xtrabackup" name="backup_type" value="X" checked/>
+        <label for="backup_type_mydumper" disabled>mydumper</label>
+        <input type="radio" id="backup_type_mydumper" name="backup_type" value="M" readonly />
+        <br>
+        <label for="alias">Alias
+            <input type="text" id="alias" name="alias" class="validate" value=""/>
+        </label>
+        <br>
+        <label for="host">Host
+            <input type="text" id="host" name="host" class="validate" value=""/>
+        </label>
+        <br>
+        <label for="upload">Upload
+            <select id="upload" name="upload">
+                <option value="no" selected>No</option>
+                <option value="S3">S3</option>
+            </select>
+        </label>
+    </fieldset>
+
+    <button type="submit">Create</button>
+    <button type="reset">Reset</button>
+    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
+</form>
