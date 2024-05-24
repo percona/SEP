@@ -9,13 +9,22 @@ def build_task_payload(config) -> GeneratedTask:
     :param config:
     :return:
     """
+
+    if config["run_from"][0]:
+        dsn = f"h={config['hostname'][0]},D={config['schema_name'][0]},t={config['table_name'][0]}"
+        target = config["run_from"][0]
+    else:
+        dsn = f"D={config['schema_name'][0]},t={config['table_name'][0]}"
+        target = config["hostname"][0]
+
+
     return GeneratedTask(
         app="alters",
         commands=[
             {
                 "args": [
                     f"--alter={config['alter'][0]}",
-                    f"D={config['schema_name'][0]},t={config['table_name'][0]}",
+                    dsn,
                     "--execute",
                 ],
                 "command": "pt-online-schema-change",
@@ -23,5 +32,5 @@ def build_task_payload(config) -> GeneratedTask:
             }
         ],
         name=config["task_name"][0],
-        target=config["hostname"][0],
+        target=target,
     )

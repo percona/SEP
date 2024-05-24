@@ -21,6 +21,7 @@
 {% set template_data = data.get("template_data", {}) %}
 {% if isinstance(template_data, dict) %}
     {% set hosts = template_data.get("hosts", []) %}
+    {% set mysql_hosts = template_data.get("mysql_hosts", []) %}
     {% set running_tasks = template_data.get("running_tasks", []) %}
     {% set saved_tasks = template_data.get("tasks", []) %}
     {% set pending_tasks = template_data.get("scheduled_tasks", []) %}
@@ -29,6 +30,7 @@
     {% set scheduled_tasks = template_data.get("scheduled_tasks", []) %}
 {% else %}
     {% set hosts = [] %}
+    {% set mysql_hosts = [] %}
     {% set running_tasks = [] %}
     {% set saved_tasks = [] %}
     {% set pending_tasks = [] %}
@@ -43,7 +45,7 @@
 {% if not saved_tasks and not history_tasks %}
     {% set modal_required = False %}
 <h2>Configure a schema change</h2>
-    {% if not len(hosts) %}
+    {% if not len(mysql_hosts) %}
     <p>Unable to find suitable database instances.</p>
     {% else %}
         {% include "partials/create-form.html" %}

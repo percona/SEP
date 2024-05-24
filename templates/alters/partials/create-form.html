@@ -9,6 +9,13 @@
             <input type="text" id="task_name" name="task_name" class="validate" />
             <label for="hostname">Select host</label>
             <select id="hostname" name="hostname">
+            {% for host in mysql_hosts %}
+                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+            {% end %}
+            </select>
+            <label for="run_from">Run from</label>
+            <select id="run_from" name="run_from">
+                <option value="" selected>Local to DB Host</option>
             {% for host in hosts %}
                 <option value="{{ host['name'] }}">{{ host['name'] }}</option>
             {% end %}
