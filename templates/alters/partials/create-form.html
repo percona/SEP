@@ -23,7 +23,21 @@
                 <label for="alter">Alter</label>
                 <input type="text" id="alter" name="alter" class="validate" />
             </fieldset>
+            <fieldset>
+                <legend>Advanced options</legend>
+                <label for="recursion_method">Recursion method</label>
+                    <select id="recursion_method" name="recursion_method">
+                        <option value="processlist" selected>processlist</option>
+                        <option value="host">host</option>
+                        <option value="dsn">dsn</option>
+                        <option value="none">none</option>
+                    </select>
+                    <label for="dsn_table">DSN Table</label>
+                <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="schema.table" />
+            </fieldset>
         </fieldset>
+    </fieldset>
+</fieldset>
 
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
