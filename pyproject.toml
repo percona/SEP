@@ -42,6 +42,7 @@ dependencies = [
     "PyYAML==6.0.1",
     "python-multipart==0.0.7",
     "python-nomad==2.0.0",
+    "requests==2.32.0",
     "SQLAlchemy==1.4.51",
     "tornado==6.3.3",
     "urllib3==2.0.7",
