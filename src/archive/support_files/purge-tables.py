@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Script to purge tables. Can alert using Nagios when appropriate.
 
@@ -28,7 +28,8 @@ except ImportError:
     import MySQLdb as mysql  # noqa
     from _mysql_exceptions import OperationalError, ProgrammingError  # noqa
 
-LOGGING_DIR = "/var/log/percona"
+HOME_DIR = os.getenv("HOME")
+LOGGING_DIR = f"{HOME_DIR}/.local/percona/logs"
 LOGGING_FILE = "purge_tables.log"
 LOGGING_FORMAT = "%(asctime)s::PID <%(process)d>::%(levelname)s::%(message)s"
 LOGGING_LVL = logging.INFO
@@ -43,14 +44,14 @@ else:
     logging.basicConfig(filename=os.path.join(LOGGING_DIR, LOGGING_FILE), level=LOGGING_LVL, format=LOGGING_FORMAT)
 
 PT_ARCHIVER_BIN = "/usr/bin/pt-archiver"
-CFG_FILE = "/etc/rdba/purge_tables.yml"
+CFG_FILE = f"{HOME_DIR}/.config/percona/purge_tables.yml"
 
 
 def main():  # noqa pylint: disable=too-many-locals, too-many-statements, too-many-branches
     """Main Function"""
 
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-c", "--conf", help="path to options file")
+    parser.add_argument("-c", "--conf", "--config", help="path to options file")
     parser.add_argument("-l", "--lockfile", help="Path to lock file")
     parser.add_argument("-a", "--alias", help="Purge process to run")
     parser.add_argument("-d", "--dry-run", action="store_true", default=False, help="Dry run instead of execute")
