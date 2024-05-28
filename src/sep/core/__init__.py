@@ -5,6 +5,7 @@ The sep.core module primarily provides reusable resources for other modules,
 such as a base request handler, dummy handler, etc
 """
 
+from asyncio import sleep
 from collections import namedtuple
 from http import HTTPStatus
 import json
@@ -389,6 +390,22 @@ class TaskApiBackendHandler(ApiBackendHandler):
             url=f"{self.request.protocol}://{self.request.host}/tasks/api/history/{task_name}", request=self.request
         )
 
+    async def _full_task_run(self, task_payload: dict) -> str:
+        """Run a task and returns its stdout"""
+
+        # create the task
+        self._xsrf_to_headers(task_payload)
+        task = await self._create_task(task_payload)
+        await self._execute_task(task['name'])
+        task_details = await self._get_task(task['name'])
+        while task_details['status'] != 2:
+            await sleep(1)
+            task_details = await self._get_task(task['name'])
+
+        if task_details['status'] == 1: #OK
+            return task_details["stdout"]
+
+        return None
 
 class DummyHandler(BaseHandler):
     """

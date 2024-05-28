@@ -16,6 +16,7 @@ from sep.core.models import Widget
 from sep.tasks.api.models import (
     TASK_HISTORY_STATUS_LOOKUP,
     TASK_HISTORY_STATUS_MAP,
+    GeneratedTask
 )
 
 from .utils import build_task_payload
@@ -42,6 +43,7 @@ class AlterHandler(TaskApiBackendHandler):
                 await self._alter_view_details(route_path[1])
                 return
 
+        schemas = await self._get_schemas("platform-team16") # Fixme
         hosts = await self._hosts_with_service("mysql")
         tasks = await self._formatted_alter_tasks()
 
@@ -212,3 +214,23 @@ class AlterHandler(TaskApiBackendHandler):
             except (KeyError, IndexError):
                 continue
         return alters
+
+    async def _get_schemas(self, host) -> str:
+        task = GeneratedTask(
+                app="sep_inventory",
+                commands=[
+                    {
+                        "args": [
+                            "--batch",
+                            "--skip-column-names",
+                            "-e SHOW SCHEMAS"
+                        ],
+                        "command": "mysql",
+                        "meta": {},
+                    }
+                ],
+                name=f"get_schemas_{host}",
+                target=host,
+            )
+
+        return await self._full_task_run(dict(task))
