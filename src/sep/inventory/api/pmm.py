@@ -37,11 +37,11 @@ def to_json(self):
     return json.dumps(self.to_dict())
 
 
-Node = namedtuple("Node", ["id", "name", "type", "services"])
+Node = namedtuple("Node", ["address", "id", "name", "type", "services"])
 Node.to_dict = to_dict
 Node.to_json = to_json
 
-Service = namedtuple("Service", ["cluster", "environment", "id", "name", "node_id", "type"])
+Service = namedtuple("Service", ["address", "cluster", "environment", "id", "name", "node_id", "type"])
 Service.to_dict = to_dict
 
 
@@ -113,6 +113,7 @@ class InventorySource:
                 # TODO: Lookup extra data for the node
                 for node in data:
                     nodes[node["node_id"]] = Node(
+                        address=node["address"],
                         id=node["node_id"],
                         name=node["node_name"],
                         services=[v for _, v in self.services.items() if v.node_id == node["node_id"]],
@@ -146,6 +147,7 @@ class InventorySource:
             for service_type, data in req.get("json", {}).items():
                 for service in data:
                     services[service["service_id"]] = Service(
+                        address=service["address"],
                         cluster=service.get("cluster"),
                         id=service["service_id"],
                         name=service["service_name"],

@@ -10,14 +10,19 @@
             <label for="hostname">Select host</label>
             <select id="hostname" name="hostname">
             {% for host in mysql_hosts %}
-                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+                <option value="{{ host['address'] }}">{{ host['name'] }}</option>
+                {% for svc in host['data']['services'] %}
+                    {% if svc['type'] == 'mysql' %}
+                    <option value="{{ svc['address'] }}">{{ host['name'] }} - {{ svc['address'] }}</option>
+                    {% end %}
+                {% end %}
             {% end %}
             </select>
             <label for="run_from">Run from</label>
             <select id="run_from" name="run_from">
                 <option value="" selected>Local to DB Host</option>
             {% for host in hosts %}
-                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+                <option value="{{ host['address'] }}">{{ host['name'] }}</option>
             {% end %}
             </select>
         </fieldset>
