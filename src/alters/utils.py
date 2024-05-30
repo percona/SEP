@@ -10,12 +10,10 @@ def build_task_payload(config) -> GeneratedTask:
     :return:
     """
 
-    if config["run_from"][0]:
-        dsn = f"h={config['hostname'][0]},D={config['schema_name'][0]},t={config['table_name'][0]}"
-        target = config["run_from"][0]
-    else:
+    if config["connect_to"][0] == 'localhost':
         dsn = f"D={config['schema_name'][0]},t={config['table_name'][0]}"
-        target = config["hostname"][0]
+    else:
+        dsn = f"h={config['hostname'][0]},D={config['schema_name'][0]},t={config['table_name'][0]}"
 
 
     return GeneratedTask(
@@ -32,5 +30,5 @@ def build_task_payload(config) -> GeneratedTask:
             }
         ],
         name=config["task_name"][0],
-        target=target,
+        target=config["hostname"][0],
     )

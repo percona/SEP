@@ -92,6 +92,7 @@ class InventoryItemData(BaseModel):
 class InventoryItemBaseModel(BaseModel):
     """Model for tasks"""
 
+    address: str
     name: str
     node_id: str
     data: InventoryItemData
@@ -120,6 +121,7 @@ inventory = Table(
         nullable=False,
         primary_key=True,
     ),
+    Column("address", String(INVENTORY_ALIAS_LENGTH), nullable=False),
     Column("name", String(INVENTORY_ALIAS_LENGTH), nullable=False),
     Column("node_id", String(INVENTORY_ALIAS_LENGTH), nullable=False),
     Column("data", InventoryItemServiceType, nullable=False),
