@@ -15,6 +15,10 @@ def build_task_payload(config) -> GeneratedTask:
     else:
         dsn = f"h={config['hostname'][0]},D={config['schema_name'][0]},t={config['table_name'][0]}"
 
+    if config['recursion_method'][0] == 'dsn':
+        recursion_method = f"dsn={config['dsn_table'][0]}"
+    else:
+        recursion_method = config['recursion_method'][0]
 
     return GeneratedTask(
         app="alters",
@@ -23,6 +27,7 @@ def build_task_payload(config) -> GeneratedTask:
                 "args": [
                     f"--alter={config['alter'][0]}",
                     dsn,
+                    f"--recursion-method={recursion_method}",
                     "--execute",
                 ],
                 "command": "pt-online-schema-change",
