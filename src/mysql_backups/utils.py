@@ -6,11 +6,14 @@ import yaml
 
 from sep.tasks.api.models import GeneratedTask
 
-MYSQL_BACKUPS_CONFIG_X = {
+
+SERVER_LIST = {"ALIAS": "Default_alias", "BACKUP_TYPE": "X", "HOST": "locahost", "UPLOAD": None}
+
+MYSQL_BACKUPS_CONFIG = {
     "ALL_SERVERS": {"LOGGING_DIR": "/var/log/percona/backups",
                     "BACKUP_DIR": "/percona-backups"},
     "CRON_ENTRIES": [],
-    "SERVER_LIST": [{"ALIAS": "Default_alias", "BACKUP_TYPE": "X", "HOST": "locahost", "UPLOAD": None}],
+    "SERVER_LIST": [],
 }
 
 '''
@@ -38,53 +41,53 @@ def build_task_payload(config) -> GeneratedTask:
     :param config:
     :return:
     """
-    print(config)
-    backup_config = MYSQL_BACKUPS_CONFIG_X.copy()
-    '''
-    match config["backup_type"]:
-        case ["X"]:
-            backup_config = MYSQL_BACKUPS_CONFIG_X.copy()
-        case _:
-            raise NotImplementedError("Currently only 'xtrabackup' is supported")
-    '''
+    backup_config = MYSQL_BACKUPS_CONFIG.copy()
+    backup_config_list = SERVER_LIST.copy()
+
+    # Set general configs
     backup_config_all = backup_config["ALL_SERVERS"]
-    backup_config_list = backup_config["SERVER_LIST"][0]
     backup_config_all.update(LOGGING_DIR=config["logging_dir"][0],
                              BACKUP_DIR=config["backup_dir"][0])
+    backup_config.update(ALL_SERVERS=backup_config_all)
+
+    # In the future this will be a loop
+    backup_config_list = SERVER_LIST.copy()
     backup_config_list.update(
         ALIAS=config["alias"][0],
         BACKUP_TYPE=config["backup_type"][0],
         HOST=config["host"][0],
         UPLOAD=config["upload"][0]
     )
-    backup_config.update(ALL_SERVERS=backup_config_all,
-                         SERVER_LIST=[backup_config_list])
+    backup_config['SERVER_LIST'].append(backup_config_list)
+
+    # Scheduler not impletemented yet
+    #schedule = {
+    #                "Spec": "*/15 * * * * *",
+    #                "SpecType": "cron",
+    #                "Enabled": True,
+    #                "ProhibitOverlap": True
+    #            }
 
     return GeneratedTask(
         app="mysql_backups",
         commands=[
             {
                 "args": [
-                    f"--alias={config['alias'][0]}",
+                    f"--server={config['alias'][0]}",
                     "--config=${NOMAD_TASK_DIR}/backup_config.yaml",
                 ],
                 "command": "/usr/local/percona/msp/backup/bin/backup_xtrabackup.py",
                 "config": [
                     {
                         "content": yaml.dump(backup_config),
-                        "path": "backup_config.yaml",
+                        "path": "local/backup_config.yaml",
                     }
                 ],
             }
         ],
-        name=f"mysql_backups_{config['hostname'][0]}",
+        name=config['task_name'][0],
         target=config["hostname"][0],
-        schedule={
-                    "Spec": "*/15 * * * * *",
-                    "SpecType": "cron",
-                    "Enabled": True,
-                    "ProhibitOverlap": True
-                }
+        #schedule=schedule
     )
 
 

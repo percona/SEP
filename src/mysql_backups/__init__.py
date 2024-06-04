@@ -14,7 +14,6 @@ from http import HTTPStatus
 from urllib.parse import parse_qs
 from tornado.log import app_log
 from tornado.web import HTTPError
-import yaml
 
 from sep.core import TaskApiBackendHandler
 from sep.core.models import Widget
@@ -46,20 +45,45 @@ class MysqlBackupsHandler(TaskApiBackendHandler):
         match route_path[0]:
             case "api":
                 api_request = True
+            case "host":
+                await self._backup_view_host(route_path[1])
+                return
 
         hosts = await self._hosts_with_service("mysql")
         backups = await self._formatted_backup_tasks([x["name"] for x in hosts])
         environments = []
-        backup_hosts = {}
+
         for host in hosts:
             for service in host['data']['services']:
                 environments.append(service['environment'])
 
+        self.data.update(
+            template_data={
+                "hosts": hosts,
+                "environments": set(environments),
+                "backups": backups,
+            }
+        )
+        if api_request:
+            raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
+
+    async def _backup_view_host(self, host_name):
+        """Handles detailed view"""
+
+        hosts = await self._hosts_with_service("mysql")
+        environments = []
+
+        for host in hosts:
+            for service in host['data']['services']:
+                environments.append(service['environment'])
+
+        backups = await self._formatted_backup_tasks([host_name])
+
         scheduled_tasks = []
         history_tasks = []
         running_tasks = []
-        for backup in backups:
-            history = await self._task_history(backup["name"])
+        for backup in backups[host_name]:
+            history = await self._task_history(backup['task_name'])
             for hist in history:
                 match TASK_HISTORY_STATUS_LOOKUP[hist["status"]]:
                     case "success" | "failed":
@@ -69,23 +93,15 @@ class MysqlBackupsHandler(TaskApiBackendHandler):
                     case "running":
                         running_tasks.append(hist)
 
-        #backup_hosts = [x for x in hosts if x["name"] in [y["backup_host"] for y in backups]]
-
-        print("backups")
-        print(backups)
-        print("backup_hosts")
-        print(backup_hosts)
-
         self.data.update(
+            template_path="mysql_backups/host.html",
             template_data={
                 "hosts": hosts,
                 "environments": set(environments),
-                "backups": backups
+                "backups": backups,
+                "history_tasks": history_tasks
             }
         )
-        if api_request:
-            raise HTTPError(status_code=HTTPStatus.NOT_FOUND)
-
 
     async def post(self, route) -> None:
         """Serve POST requests"""
@@ -104,20 +120,16 @@ class MysqlBackupsHandler(TaskApiBackendHandler):
                 await self._create_task(dict(build_task_payload(payload)))
         self.redirect(redirect)
 
-
     async def _formatted_backup_tasks(self, hosts) -> list:
         """
         returns a list of backup tasks filtered by a host list
         """
-
-        backups = []
+        backups = {}
         for task in await self._list_tasks():
             try:
-                # TODO: this is engine-specific
-                print("task")
-                print(task)
                 task_data = json.loads(task["data"])
                 backup_host = task_data["Constraints"][0]["RTarget"]
+
                 # This filter might be moved to _list_tasks in the future
                 if backup_host in hosts:
                     templates = task_data["TaskGroups"][0]["Tasks"][0]["Templates"]
@@ -127,11 +139,12 @@ class MysqlBackupsHandler(TaskApiBackendHandler):
                         meta = {"hostname": "Unknown", "name": "Unknown", "table": "Unknown"}
                     meta.update(id=task["id"])
                     meta.update(task_name=task["name"])
-                    meta.update(cron=task_data["Periodic"]["Spec"])
                     meta.update(backup_host=backup_host)
-                    #meta.update(backup_data=)
-                    backups.append(meta)
-            except (KeyError, IndexError):
+                    if backup_host not in backups:
+                        backups[backup_host] = []
+                    backups[backup_host].append(meta)
+            except (KeyError, IndexError) as exc:
+                app_log.exception(exc)
                 continue
         return backups
 
