@@ -50,7 +50,7 @@
             <td>{{ backup["BACKUP_TYPE"] }}</td>
             <td>{{ backup["HOST"] }}</td>
             <td>{{ backup["UPLOAD"] }}</td>
-            <form id="{{ backup_details['task_name'] }}-send" method="post" action="execute/{{ backup_details['task_name'] }}">
+            <form id="{{ backup_details['task_name'] }}-send" method="post" action="/mysql_backups/execute/{{ backup_details['task_name'] }}">
             <td>
                     <button type="submit" class="icons">start</button>
                     <input type="hidden" name="task" value="{{ backup_details['task_name'] }}">
