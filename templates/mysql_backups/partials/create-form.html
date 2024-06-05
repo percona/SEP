@@ -31,28 +31,28 @@
         </label>
         <br />
         <label for="hardlink">Hardlink
-            <input type="checkbox" id="hardlink" name="hardlink" class="validate" checked/>
+            <input type="checkbox" id="hardlink" name="hardlink" class="validate" value="yes" checked/>
         </label>
         <br />
         <label for="compress">Compress
-            <input type="checkbox" id="compress" name="compress" class="validate" checked/>
+            <input type="checkbox" id="compress" name="compress" class="validate" value="yes" checked/>
         </label>
         <br />
-        <label for="check_dick_space">Check Disk Space
-            <input type="checkbox" id="check_dick_space" name="check_dick_space" class="validate" checked/>
+        <label for="check_disk_space">Check Disk Space
+            <input type="checkbox" id="check_disk_space" name="check_disk_space" class="validate" value="yes" checked/>
         </label>
         <br />
         <label for="post_run_encrypt">Post Run Encryption
-            <input type="checkbox" id="post_run_encrypt" name="post_run_encrypt" class="validate"/>
+            <input type="checkbox" id="post_run_encrypt" name="post_run_encrypt" class="validate" value="yes"/>
             <small>Set this option if you want to encrypt w/o upload. This disables hardlinking.</small>
         </label>
         <br />
         <label for="only_if_running_slave">Only if Slave is running
-            <input type="checkbox" id="only_if_running_slave" name="only_if_running_slave" class="validate" />
+            <input type="checkbox" id="only_if_running_slave" name="only_if_running_slave" class="validate" value="yes" />
         </label>
         <br />
         <label for="only_if_read_only">Only if READ_ONLY
-            <input type="checkbox" id="only_if_read_only" name="only_if_read_only" class="validate" />
+            <input type="checkbox" id="only_if_read_only" name="only_if_read_only" class="validate" value="yes" />
         </label>
         <br />
         <label for="debug">Debug
@@ -69,7 +69,7 @@
         </label>
         <br />
         <label for="skip_pending_shutdown">Skip Pending Shutdown
-            <input type="checkbox" id="skip_pending_shutdown" name="skip_pending_shutdown" class="validate" />
+            <input type="checkbox" id="skip_pending_shutdown" name="skip_pending_shutdown" class="validate" value="yes" />
         </label>
     </fieldset>
     <fieldset>
@@ -98,11 +98,11 @@
         </label>
         <br />
         <label for="XTRABACKUP_VERIFY">Verify
-            <input type="checkbox" id="XTRABACKUP_VERIFY" name="XTRABACKUP_VERIFY" class="validate" checked/>
+            <input type="checkbox" id="XTRABACKUP_VERIFY" name="XTRABACKUP_VERIFY" class="validate" value="yes" checked/>
         </label>
         <br />
         <label for="XTRABACKUP_PREPARE">Prepare
-            <input type="checkbox" id="XTRABACKUP_PREPARE" name="XTRABACKUP_PREPARE" class="validate" />
+            <input type="checkbox" id="XTRABACKUP_PREPARE" name="XTRABACKUP_PREPARE" class="validate" value="yes" />
         </label>
         <br />
         <label for="XTRABACKUP_PREPARE_MEMORY">Rlimit
@@ -110,15 +110,15 @@
         </label>
         <br />
         <label for="XTRABACKUP_DESYNC_PXC">Dsync PXC
-            <input type="checkbox" id="XTRABACKUP_DESYNC_PXC" name="XTRABACKUP_DESYNC_PXC" class="validate" checked/>
+            <input type="checkbox" id="XTRABACKUP_DESYNC_PXC" name="XTRABACKUP_DESYNC_PXC" class="validate" value="yes" checked/>
         </label>
         <br />
         <label for="XTRABACKUP_RSYNC">Rsync
-            <input type="checkbox" id="XTRABACKUP_RSYNC" name="XTRABACKUP_RSYNC" class="validate" checked/>
+            <input type="checkbox" id="XTRABACKUP_RSYNC" name="XTRABACKUP_RSYNC" class="validate" value="yes" checked/>
         </label>
         <br />
         <label for="XTRABACKUP_SLAVE_INFO">Replica Info
-            <input type="checkbox" id="XTRABACKUP_SLAVE_INFO" name="XTRABACKUP_SLAVE_INFO" class="validate" checked/>
+            <input type="checkbox" id="XTRABACKUP_SLAVE_INFO" name="XTRABACKUP_SLAVE_INFO" class="validate" value="yes" checked/>
         </label>
         <br />
         <label for="XTRABACKUP_DEFAULTS_FILE">XtraBackup defaults file
@@ -147,21 +147,23 @@ This is not well tested on the base tool, so skipping support here for now
             </select>
             <small>When to run a full backup.</small>
         </label>
+    <!-- # Do we need to support it?
         <br />
         <label for="XTRABACKUP_LOCAL_SSH_DESTINATION">Local SSH destination
             <input type="text" id="XTRABACKUP_LOCAL_SSH_DESTINATION" name="XTRABACKUP_LOCAL_SSH_DESTINATION" class="validate" value="" placeholder="user@host" size="30"/>
         </label>
+    -->
         <br />
         <label for="XTRABACKUP_AES256_KEYFILE">AES256 Key file path
             <input type="text" id="XTRABACKUP_AES256_KEYFILE" name="XTRABACKUP_AES256_KEYFILE" class="validate" value="" placeholder="/etc/rdba/xb_keyfile" size="30"/>
         </label>
         <br />
         <label for="XTRABACKUP_STOP_SLAVE">Stop Replica
-            <input type="checkbox" id="XTRABACKUP_STOP_SLAVE" name="XTRABACKUP_STOP_SLAVE" class="validate" />
+            <input type="checkbox" id="XTRABACKUP_STOP_SLAVE" name="XTRABACKUP_STOP_SLAVE" class="validate" value="yes" />
         </label>
         <br />
         <label for="XTRABACKUP_LOCK_DDL">Lock DDL
-            <input type="checkbox" id="XTRABACKUP_LOCK_DDL" name="XTRABACKUP_LOCK_DDL" class="validate" />
+            <input type="checkbox" id="XTRABACKUP_LOCK_DDL" name="XTRABACKUP_LOCK_DDL" class="validate" value="yes" />
             <small>Use only on Percona Server with PXB 2.4</small>
         </label>
         <br />
