@@ -69,7 +69,6 @@ class Executor:
         status = ObjectDict()
 
         # TODO: determine scenarios for execution, such as looking up an existing job
-        # TODO: Periodic Jobs can't be duplicated
         task_data = ObjectDict(json.loads(self.task.data))
         if queue_item["execution_request"].get("meta"):
             # TODO: target is currently pushed in to meta
@@ -132,100 +131,70 @@ class Executor:
                 history.update().where(history.c.id == queue_id).values(execution_request=self.execution_request)
             )
 
+        allocation_filters = [f'JobID == "{job.ID}"', f'EvalID == "{status.EvalID}"']
+        allocations = self.backend.allocations.get_allocations(filter_=" and ".join(allocation_filters))
+        app_log.debug("Job: %r", job)
+        app_log.debug("Allocations: %r", [x["JobID"] for x in allocations])
+
+        async with self.database.engine.begin() as conn:
+            await conn.execute(
+                history.update()
+                .where(history.c.id == queue_id)
+                .values(status=TASK_HISTORY_STATUS_MAP["running"], updated_at=get_timestamp())
+            )
+
+        alloc = ObjectDict()
         task_logs = ObjectDict()
         task_states = ObjectDict()
         attempts = 0
-        if status.EvalID:
-            allocation_filters = [f'JobID == "{job.ID}"', f'EvalID == "{status.EvalID}"']
-            allocations = self.backend.allocations.get_allocations(filter_=" and ".join(allocation_filters))
-            app_log.debug("Job: %r", job)
-            app_log.debug("Allocations: %r", [x["JobID"] for x in allocations])
-
-            async with self.database.engine.begin() as conn:
-                await conn.execute(
-                    history.update()
-                    .where(history.c.id == queue_id)
-                    .values(status=TASK_HISTORY_STATUS_MAP["running"], updated_at=get_timestamp())
-                )
-
-            alloc = ObjectDict()
-            while allocations:
-                match job.Type:
-                    case "service":
-                        raise NotImplementedError("Service job support is TBD")
-                    case "batch" | "system" | "sysbatch":
-                        alloc = ObjectDict(allocations[0])
-                        task_states[alloc.EvalID] = alloc.TaskStates
-                        task_logs.setdefault(alloc.EvalID, {})
-                        if alloc.TaskStates:
-                            for step in alloc.TaskStates:
-                                try:
-                                    task_logs[alloc.EvalID][step] = {
-                                        "allocation_id": alloc.ID,
-                                        "stdout": self.backend.client.stream_logs.stream(
-                                            alloc.ID, task=step, type_="stdout"
-                                        ),
-                                        "stderr": self.backend.client.stream_logs.stream(
-                                            alloc.ID, task=step, type_="stderr"
-                                        ),
-                                    }
-                                except nomad.api.exceptions.BaseNomadException:
-                                    task_logs[alloc.EvalID][step] = {
-                                        "allocation_id": alloc.ID,
-                                        "stdout": None,
-                                        "stderr": None,
-                                    }
-                    case _:
-                        raise NotImplementedError(f'Unrecognized job type "{job.Type}"')
-                match alloc.ClientStatus:
-                    case "complete" | "failed":
-                        if alloc.FollowupEvalID:
-                            allocations = self.backend.allocations.get_allocations(
-                                filter_=f'EvalID == "{alloc.FollowupEvalID}"'
-                            )
-                            continue
-                        stop_ts = time.time_ns()
-                        break
-                    case _:
-                        allocations = self.backend.allocations.get_allocations(filter_=" and ".join(allocation_filters))
-                attempts += 1
-                app_log.debug("Attempt %d found status %s", attempts, alloc.ClientStatus)
-                await sleep(interval)
-
-            match alloc.ClientStatus:
-                case "complete":
-                    status = TASK_HISTORY_STATUS_MAP["success"]
+        while allocations:
+            match job.Type:
+                case "service":
+                    raise NotImplementedError("Service job support is TBD")
+                case "batch" | "system" | "sysbatch":
+                    alloc = ObjectDict(allocations[0])
+                    task_states[alloc.EvalID] = alloc.TaskStates
+                    task_logs.setdefault(alloc.EvalID, {})
+                    if alloc.TaskStates:
+                        for step in alloc.TaskStates:
+                            try:
+                                task_logs[alloc.EvalID][step] = {
+                                    "allocation_id": alloc.ID,
+                                    "stdout": self.backend.client.stream_logs.stream(
+                                        alloc.ID, task=step, type_="stdout"
+                                    ),
+                                    "stderr": self.backend.client.stream_logs.stream(
+                                        alloc.ID, task=step, type_="stderr"
+                                    ),
+                                }
+                            except nomad.api.exceptions.BaseNomadException:
+                                task_logs[alloc.EvalID][step] = {
+                                    "allocation_id": alloc.ID,
+                                    "stdout": None,
+                                    "stderr": None,
+                                }
                 case _:
-                    status = TASK_HISTORY_STATUS_MAP["failed"]
-        else:
-            # Periodic Jobs
-            # This Job doesn't have en EvailID or Allocations, it just starts new "child" Jobs.
-            # So we only need to track the job.Status
+                    raise NotImplementedError(f'Unrecognized job type "{job.Type}"')
+            match alloc.ClientStatus:
+                case "complete" | "failed":
+                    if alloc.FollowupEvalID:
+                        allocations = self.backend.allocations.get_allocations(
+                            filter_=f'EvalID == "{alloc.FollowupEvalID}"'
+                        )
+                        continue
+                    stop_ts = time.time_ns()
+                    break
+                case _:
+                    allocations = self.backend.allocations.get_allocations(filter_=" and ".join(allocation_filters))
+            attempts += 1
+            app_log.debug("Attempt %d found status %s", attempts, alloc.ClientStatus)
+            await sleep(interval)
 
-
-            # DELETE CODE: we don't need to track the Job status as normal ones. We can leave on running state from here.
-
-            attempts = 0
-            this_job = self.backend.job.get_job(job.ID)
-
-            async with self.database.engine.begin() as conn:
-                await conn.execute(
-                    history.update()
-                    .where(history.c.id == queue_id)
-                    .values(status=TASK_HISTORY_STATUS_MAP["running"], updated_at=get_timestamp())
-                )
-
-            while True:
-                match this_job["Status"]:
-                    case "dead":
-                        stop_ts = time.time_ns()
-                        break
-                    case _:
-                        this_job = self.backend.job.get_job(job.ID)
-                attempts += 1
-                app_log.debug("Attempt %d found status %s for the Periodic Job", attempts, this_job["Status"])
-                await sleep(interval)
-
+        match alloc.ClientStatus:
+            case "complete":
+                status = TASK_HISTORY_STATUS_MAP["success"]
+            case _:
+                status = TASK_HISTORY_STATUS_MAP["failed"]
 
         self.execution_request.tracking.update(
             task_states=task_states,
@@ -237,5 +206,4 @@ class Executor:
             started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=timezone.utc),
             finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=timezone.utc),
         )
-
         return self.execution_request, status
