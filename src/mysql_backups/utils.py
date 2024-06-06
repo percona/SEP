@@ -10,8 +10,8 @@ from sep.tasks.api.models import GeneratedTask
 SERVER_LIST = {"ALIAS": "Default_alias", "BACKUP_TYPE": "X", "HOST": "locahost", "UPLOAD": None}
 
 MYSQL_BACKUPS_CONFIG = {
-    "ALL_SERVERS": {"LOGGING_DIR": "/var/log/percona/backups",
-                    "BACKUP_DIR": "/percona-backups",
+    "ALL_SERVERS": {"LOGGING_DIR": "/home/percona/logs/sep/backups",
+                    "BACKUP_DIR": "/home/percona/sep-backups",
                     "PORT": 3306,
                     "HARDLINK": True,
                     "COMPRESS": True,
@@ -20,7 +20,7 @@ MYSQL_BACKUPS_CONFIG = {
                     "ONLY_IF_RUNNING_SLAVE": False,
                     "ONLY_IF_READ_ONLY": False,
                     "DEBUG": "no",
-                    "DEFAULTS_FILE": "/home/percona/.my.cnf",
+                    "DEFAULTS_FILE": "~/.my.cnf",
                     "MYCNF_PATH": "/etc/mysql/my.cnf",
                     "SKIP_PENDING_SHUTDOWN": False,
                     "XTRABACKUP_COPIES": 2,

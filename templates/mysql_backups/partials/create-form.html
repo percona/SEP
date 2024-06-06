@@ -19,11 +19,11 @@
     <fieldset>
         <legend>General Config</legend>
         <label for="backup_dir">Destination path
-            <input type="text" id="backup_dir" name="backup_dir" class="validate" value="/percona-backups" size="50"/>
+            <input type="text" id="backup_dir" name="backup_dir" class="validate" value="/home/percona/sep-backups" size="50"/>
         </label>
         <br />
         <label for="logging_dir">Logging directory
-            <input type="text" id="logging_dir" name="logging_dir" class="validate" value="/var/log/percona/backups" size="50"/>
+            <input type="text" id="logging_dir" name="logging_dir" class="validate" value="/home/percona/logs/sep/backups" size="50"/>
         </label>
         <br />
         <label for="port">Port
@@ -73,15 +73,17 @@
         </label>
     </fieldset>
     <fieldset>
+        <div>
         <legend>Xtrabackup Config</legend>
         <label for="XTRABACKUP_COPIES">Retiention Copies
             <input type="text" id="XTRABACKUP_COPIES" name="XTRABACKUP_COPIES" class="validate" value="2" size="3"/>
         </label>
-        <br />
+        </div>
+        <div>
         <label for="XTRABACKUP_KILL_QUERIES">Kill Queries
             <input type="checkbox" id="XTRABACKUP_KILL_QUERIES" name="XTRABACKUP_KILL_QUERIES" class="validate" checked/>
         </label>
-        <br />
+        </div>
         <label for="XTRABACKUP_KILL_QUERIES_TIMEOUT">Kill Queries Timeout
             <input type="text" id="XTRABACKUP_KILL_QUERIES_TIMEOUT" name="XTRABACKUP_KILL_QUERIES_TIMEOUT" class="validate" value="10" size="4"/>
         </label>
@@ -122,7 +124,7 @@
         </label>
         <br />
         <label for="XTRABACKUP_DEFAULTS_FILE">XtraBackup defaults file
-            <input type="text" id="XTRABACKUP_DEFAULTS_FILE" name="XTRABACKUP_DEFAULTS_FILE" class="validate" value="/etc/rdba/xb.cnf" size="30"/>
+            <input type="text" id="XTRABACKUP_DEFAULTS_FILE" name="XTRABACKUP_DEFAULTS_FILE" class="validate" value="" placeholder="/etc/rdba/xb.cnf" size="30"/>
         </label>
         <br />
         <label for="XTRABACKUP_EXTRA_ARGS">XtraBackup extra arguments
@@ -135,8 +137,8 @@ This is not well tested on the base tool, so skipping support here for now
         <br />
         <label for="XTRABACKUP_INCREMENTAL_CYCLE">Incremental Cycle
             <select id="XTRABACKUP_INCREMENTAL_CYCLE" name="XTRABACKUP_INCREMENTAL_CYCLE">
-                <option value="select" selected>weekly</option>
-                <option value="all">daily</option>
+                <option value="weekly" selected>weekly</option>
+                <option value="daily">daily</option>
                 <option value="1">1</option>
                 <option value="2">2</option>
                 <option value="3">3</option>
