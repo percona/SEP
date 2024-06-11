@@ -74,7 +74,7 @@ def build_task_payload(config) -> GeneratedTask:
     :return:
     """
     backup_config = MYSQL_BACKUPS_CONFIG.copy()
-    backup_config_list = SERVER_LIST.copy()
+
 
     # Set general configs
     backup_config_all = backup_config["ALL_SERVERS"]
@@ -114,8 +114,12 @@ def build_task_payload(config) -> GeneratedTask:
     )
     backup_config.update(ALL_SERVERS=backup_config_all)
 
-    # In the future this will be a loop
+    # Adding it to avoid duplication from previous execution
+    backup_config['SERVER_LIST'] = []
+
     backup_config_list = SERVER_LIST.copy()
+
+    # In the future this will be a loop
     backup_config_list.update(
         ALIAS=config["alias"][0],
         BACKUP_TYPE=config["backup_type"][0],
