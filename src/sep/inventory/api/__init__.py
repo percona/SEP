@@ -93,6 +93,7 @@ async def lookup_inventory(source: str = "pmm"):
             services.append(InventoryItemService(**svc.to_dict()))
         item_data = InventoryItemData(name=node.name, services=services)
         model = InventoryItemBaseModel(
+            address=node.address,
             name=node.name,
             node_id=node.id,
             data=item_data,

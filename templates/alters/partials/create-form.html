@@ -4,13 +4,23 @@
     <fieldset>
         <legend>Main options</legend>
         <fieldset>
-            <legend>Change details</legend>
-            <label for="task_name">Task name</label>
-            <input type="text" id="task_name" name="task_name" class="validate" />
+            <legend>Executor Host</legend>
             <label for="hostname">Select host</label>
             <select id="hostname" name="hostname">
             {% for host in hosts %}
                 <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+            {% end %}
+            </select>
+        </fieldset>
+        <fieldset>
+            <legend>Change details</legend>
+            <label for="task_name">Task name</label>
+            <input type="text" id="task_name" name="task_name" class="validate" />
+            <label for="connect_to">Database host</label>
+            <select id="connect_to" name="connect_to">
+                <option value="localhost" selected>localhost (Executor Node)</option>
+            {% for host in mysql_hosts %}
+                <option value="{{ host['address'] }}">{{ host['name'] }}</option>
             {% end %}
             </select>
         </fieldset>
