@@ -1,0 +1,210 @@
+{% from tornado.escape import xhtml_unescape %}
+{% set modal_required = False %}
+{% set form_class = "modal" if modal_required else "" %}
+<form action="" method="post" class="{{ form_class }}">
+    <fieldset>
+        <legend>Backup Server</legend>
+        <label for="task_name">Name
+            <input type="text" id="task_name" name="task_name" class="validate"/>
+        </label>
+        <br />
+        <label for="hostname">Select host
+            <select id="hostname" name="hostname">
+                {% for host in hosts %}
+                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+                {% end %}
+            </select>
+        </label>
+    </fieldset>
+    <fieldset>
+        <legend>General Config</legend>
+        <label for="backup_dir">Destination path
+            <input type="text" id="backup_dir" name="backup_dir" class="validate" value="/home/percona/sep-backups" size="50"/>
+        </label>
+        <br />
+        <label for="logging_dir">Logging directory
+            <input type="text" id="logging_dir" name="logging_dir" class="validate" value="/home/percona/logs/sep/backups" size="50"/>
+        </label>
+        <br />
+        <label for="port">Port
+            <input type="text" id="port" name="port" class="validate" value="3306" size="5"/>
+        </label>
+        <br />
+        <label for="hardlink">Hardlink
+            <input type="checkbox" id="hardlink" name="hardlink" class="validate" value="yes" checked/>
+        </label>
+        <br />
+        <label for="compress">Compress
+            <input type="checkbox" id="compress" name="compress" class="validate" value="yes" checked/>
+        </label>
+        <br />
+        <label for="check_disk_space">Check Disk Space
+            <input type="checkbox" id="check_disk_space" name="check_disk_space" class="validate" value="yes" checked/>
+        </label>
+        <br />
+        <label for="post_run_encrypt">Post Run Encryption
+            <input type="checkbox" id="post_run_encrypt" name="post_run_encrypt" class="validate" value="yes"/>
+            <small>Set this option if you want to encrypt w/o upload. This disables hardlinking.</small>
+        </label>
+        <br />
+        <label for="only_if_running_slave">Only if Slave is running
+            <input type="checkbox" id="only_if_running_slave" name="only_if_running_slave" class="validate" value="yes" />
+        </label>
+        <br />
+        <label for="only_if_read_only">Only if READ_ONLY
+            <input type="checkbox" id="only_if_read_only" name="only_if_read_only" class="validate" value="yes" />
+        </label>
+        <br />
+        <label for="debug">Debug
+            <input type="checkbox" id="debug" name="debug" class="validate" />
+        </label>
+        <br />
+        <label for="defaults_file">Default .my.cnf File
+            <input type="text" id="defaults_file" name="defaults_file" class="validate" value="/home/percona/.my.cnf" size="50"/>
+            <small>File to use for MySQL authentication</small>
+        </label>
+        <br />
+        <label for="mycnf_path">MySQL config file
+            <input type="text" id="mycnf_path" name="mycnf_path" class="validate" value="/etc/mysql/my.cnf" size="50"/>
+        </label>
+        <br />
+        <label for="skip_pending_shutdown">Skip Pending Shutdown
+            <input type="checkbox" id="skip_pending_shutdown" name="skip_pending_shutdown" class="validate" value="yes" />
+        </label>
+    </fieldset>
+    <fieldset>
+        <div>
+        <legend>Xtrabackup Config</legend>
+        <label for="XTRABACKUP_COPIES">Retiention Copies
+            <input type="text" id="XTRABACKUP_COPIES" name="XTRABACKUP_COPIES" class="validate" value="2" size="3"/>
+        </label>
+        </div>
+        <div>
+        <label for="XTRABACKUP_KILL_QUERIES">Kill Queries
+            <input type="checkbox" id="XTRABACKUP_KILL_QUERIES" name="XTRABACKUP_KILL_QUERIES" class="validate" checked/>
+        </label>
+        </div>
+        <label for="XTRABACKUP_KILL_QUERIES_TIMEOUT">Kill Queries Timeout
+            <input type="text" id="XTRABACKUP_KILL_QUERIES_TIMEOUT" name="XTRABACKUP_KILL_QUERIES_TIMEOUT" class="validate" value="10" size="4"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_KILL_QUERY_TYPE">Kill Queries Type
+            <select id="XTRABACKUP_KILL_QUERY_TYPE" name="XTRABACKUP_KILL_QUERY_TYPE">
+                <option value="select" selected>Select</option>
+                <option value="all">All</option>
+            </select>
+        </label>
+        <br />
+        <label for="XTRABACKUP_RLIMIT">Rlimit
+            <input type="text" id="XTRABACKUP_RLIMIT" name="XTRABACKUP_RLIMIT" class="validate" value="[65536, 65536]" size="20"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_VERIFY">Verify
+            <input type="checkbox" id="XTRABACKUP_VERIFY" name="XTRABACKUP_VERIFY" class="validate" value="yes" checked/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_PREPARE">Prepare
+            <input type="checkbox" id="XTRABACKUP_PREPARE" name="XTRABACKUP_PREPARE" class="validate" value="yes" />
+        </label>
+        <br />
+        <label for="XTRABACKUP_PREPARE_MEMORY">Rlimit
+            <input type="text" id="XTRABACKUP_PREPARE_MEMORY" name="XTRABACKUP_PREPARE_MEMORY" class="validate" value="2G" size="10"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_DESYNC_PXC">Dsync PXC
+            <input type="checkbox" id="XTRABACKUP_DESYNC_PXC" name="XTRABACKUP_DESYNC_PXC" class="validate" value="yes" checked/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_RSYNC">Rsync
+            <input type="checkbox" id="XTRABACKUP_RSYNC" name="XTRABACKUP_RSYNC" class="validate" value="yes" checked/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_SLAVE_INFO">Replica Info
+            <input type="checkbox" id="XTRABACKUP_SLAVE_INFO" name="XTRABACKUP_SLAVE_INFO" class="validate" value="yes" checked/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_DEFAULTS_FILE">XtraBackup defaults file
+            <input type="text" id="XTRABACKUP_DEFAULTS_FILE" name="XTRABACKUP_DEFAULTS_FILE" class="validate" value="" placeholder="/etc/rdba/xb.cnf" size="30"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_EXTRA_ARGS">XtraBackup extra arguments
+            <input type="text" id="XTRABACKUP_EXTRA_ARGS" name="XTRABACKUP_EXTRA_ARGS" class="validate" value="" placeholder="--compress-threads=2" size="30"/>
+        </label>
+<!--
+#  XTRABACKUP_INCREMENTAL_METHOD: less_space  # less_space | fast_restore
+This is not well tested on the base tool, so skipping support here for now
+-->
+        <br />
+        <label for="XTRABACKUP_INCREMENTAL_CYCLE">Incremental Cycle
+            <select id="XTRABACKUP_INCREMENTAL_CYCLE" name="XTRABACKUP_INCREMENTAL_CYCLE">
+                <option value="weekly" selected>weekly</option>
+                <option value="daily">daily</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+            </select>
+            <small>When to run a full backup.</small>
+        </label>
+    <!-- # Do we need to support it?
+        <br />
+        <label for="XTRABACKUP_LOCAL_SSH_DESTINATION">Local SSH destination
+            <input type="text" id="XTRABACKUP_LOCAL_SSH_DESTINATION" name="XTRABACKUP_LOCAL_SSH_DESTINATION" class="validate" value="" placeholder="user@host" size="30"/>
+        </label>
+    -->
+        <br />
+        <label for="XTRABACKUP_AES256_KEYFILE">AES256 Key file path
+            <input type="text" id="XTRABACKUP_AES256_KEYFILE" name="XTRABACKUP_AES256_KEYFILE" class="validate" value="" placeholder="/etc/rdba/xb_keyfile" size="30"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_STOP_SLAVE">Stop Replica
+            <input type="checkbox" id="XTRABACKUP_STOP_SLAVE" name="XTRABACKUP_STOP_SLAVE" class="validate" value="yes" />
+        </label>
+        <br />
+        <label for="XTRABACKUP_LOCK_DDL">Lock DDL
+            <input type="checkbox" id="XTRABACKUP_LOCK_DDL" name="XTRABACKUP_LOCK_DDL" class="validate" value="yes" />
+            <small>Use only on Percona Server with PXB 2.4</small>
+        </label>
+        <br />
+        <label for="XTRABACKUP_LOCK_DDL_TIMEOUT">Lock DDL timeout
+            <input type="text" id="XTRABACKUP_LOCK_DDL_TIMEOUT" name="XTRABACKUP_LOCK_DDL_TIMEOUT" class="validate" value="60" placeholder="" size="4"/>
+        </label>
+        <br />
+        <label for="XTRABACKUP_BIN_CMD">Binary Command
+            <select id="XTRABACKUP_BIN_CMD" name="XTRABACKUP_BIN_CMD">
+                <option value="innobackupex">innobackupex</option>
+                <option value="xtrabackup" selected>xtrabackup</option>
+                <option value="mariadb-backup">mariadb-backup</option>
+            </select>
+        </label>
+    </fieldset>
+    <fieldset>
+        <legend>Backups List</legend>
+        <label for="backup_type_xtrabackup">xtrabackup</label>
+        <input type="radio" id="backup_type_xtrabackup" name="backup_type" value="X" checked/>
+        <label for="backup_type_mydumper" disabled>mydumper</label>
+        <input type="radio" id="backup_type_mydumper" name="backup_type" value="M" disabled />
+        <br>
+        <label for="alias">Alias
+            <input type="text" id="alias" name="alias" class="validate" value=""/>
+        </label>
+        <br>
+        <label for="host">Host
+            <input type="text" id="host" name="host" class="validate" value=""/>
+        </label>
+        <br>
+        <label for="upload">Upload
+            <select id="upload" name="upload">
+                <option value="no" selected>No</option>
+                <option value="S3">S3</option>
+            </select>
+        </label>
+    </fieldset>
+
+    <button type="submit">Create</button>
+    <button type="reset">Reset</button>
+    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
+</form>
