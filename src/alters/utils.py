@@ -10,17 +10,23 @@ def build_task_payload(config) -> GeneratedTask:
     :return:
     """
 
+    if config["connect_to"][0] == 'localhost':
+        dsn = f"D={config['schema_name'][0]},t={config['table_name'][0]}"
+    else:
+        dsn = f"h={config['connect_to'][0]},D={config['schema_name'][0]},t={config['table_name'][0]}"
+
     if config['recursion_method'][0] == 'dsn':
         recursion_method = f"dsn={config['dsn_table'][0]}"
     else:
         recursion_method = config['recursion_method'][0]
+
     return GeneratedTask(
         app="alters",
         commands=[
             {
                 "args": [
                     f"--alter={config['alter'][0]}",
-                    f"D={config['schema_name'][0]},t={config['table_name'][0]}",
+                    dsn,
                     f"--recursion-method={recursion_method}",
                     "--execute",
                 ],

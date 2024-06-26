@@ -42,7 +42,9 @@ class AlterHandler(TaskApiBackendHandler):
                 await self._alter_view_details(route_path[1])
                 return
 
-        hosts = await self._hosts_with_service("mysql")
+        all_hosts = await self._hosts()
+        mysql_hosts = await self._hosts_with_service("mysql")
+
         tasks = await self._formatted_alter_tasks()
 
         scheduled_tasks = []
@@ -58,9 +60,11 @@ class AlterHandler(TaskApiBackendHandler):
                         scheduled_tasks.append(hist)
                     case "running":
                         running_tasks.append(hist)
+
         self.data.update(
             template_data={
-                "hosts": hosts,
+                "hosts": all_hosts,
+                "mysql_hosts": mysql_hosts,
                 "tasks": tasks,
                 "scheduled_tasks": scheduled_tasks,
                 "history_tasks": history_tasks,
