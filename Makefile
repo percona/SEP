@@ -40,6 +40,7 @@ pip-audit: venv
 	@"${PIP}" install --upgrade --quiet pip-tools pip-audit
 	@"${VENV_BIN}"/pip-compile --no-strip-extras --generate-hashes pyproject.toml
 	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
+	@rm requirements.txt
 
 bandit: venv
 	@"${PIP}" install --upgrade --quiet bandit[toml]

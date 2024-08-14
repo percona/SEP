@@ -1,7 +1,7 @@
 python:
   - '**/**.py'
-  - 'requirements.txt'
   - 'pyproject.toml'
+  - 'poetry.lock'
 
 #docs:
 #  - 'docs/**'
