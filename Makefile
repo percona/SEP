@@ -19,7 +19,7 @@ prep:
 venv: prep
 	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
 	@"${PIP}" install --no-cache -U pip wheel poetry;
-	@source "${VENV_BIN}"/activate; "${VENV_BIN}"/poetry install
+	@source "${VENV_BIN}"/activate; "${VENV_BIN}"/poetry install --with audit
 
 build: export TMPDIR=build/tmp
 build: prep
@@ -30,20 +30,17 @@ format:
 	@ruff format .
 
 lint: venv
-	@"${PIP}" install --upgrade ruff
-	@ruff check .
+	@"${VENV_BIN}"/ruff check .
 
 audit: export TMPDIR=build/tmp
 audit: prep lint bandit pip-audit
 
 pip-audit: venv
-	@"${PIP}" install --upgrade --quiet pip-tools pip-audit
 	@"${VENV_BIN}"/pip-compile --no-strip-extras --generate-hashes pyproject.toml
 	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
 	@rm requirements.txt
 
 bandit: venv
-	@"${PIP}" install --upgrade --quiet bandit[toml]
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r src
 
 css:

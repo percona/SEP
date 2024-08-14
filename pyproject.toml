@@ -52,6 +52,15 @@ cryptography = "^42.0.4"
 pyjwt = "^2.8.0"
 yarl = "^1.9.2"
 
+[tool.poetry.group.audit]
+optional = true
+
+[tool.poetry.group.audit.dependencies]
+ruff = "^0.5.7"
+pip-tools = "^7.4.1"
+pip-audit = "^2.7.3"
+bandit = {extras = ["toml"], version = "^1.7.9"}
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
