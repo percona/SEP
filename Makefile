@@ -2,7 +2,7 @@
 
 SHELL?=/usr/bin/bash
 
-PYTHON=python3.11
+PYTHON=python3
 RELEASE_VER?=
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
