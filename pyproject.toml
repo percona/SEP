@@ -1,18 +1,19 @@
-[project]
+[tool.poetry]
 name = "sep"
+version = "0.0.1"
 description = "SEP: Services Enablement Platform"
-license = {file = "LICENSE"}
-readme = "README.md"
-
 authors = [
-    {name = "Ceri Williams", email = "ceri.williams@percona.com"},
-    {name = "Max Bubenick", email = "max.bubenick@percona.com"},
+    "Ceri Williams <ceri.williams@percona.com>",
+    "Max Bubenick <max.bubenick@percona.com>",
+    "Yan Orestes <yan.orestes@percona.com>",
 ]
 maintainers = [
-    {name = "Ceri Williams", email = "ceri.williams@percona.com"},
-    {name = "Max Bubenick", email = "max.bubenick@percona.com"},
+    "Ceri Williams <ceri.williams@percona.com>",
+    "Max Bubenick <max.bubenick@percona.com>",
+    "Yan Orestes <yan.orestes@percona.com>",
 ]
-
+readme = "README.md"
+repository = "https://github.com/percona/SEP"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Framework :: FastAPI",
@@ -29,31 +30,31 @@ classifiers = [
     "Typing :: Typed"
 ]
 
-dependencies = [
-    "aiohttp==3.9.4",
-    "casdoor==1.17.1",
-    "cryptography==42.0.4",
-    "databases==0.8.0",
-    "databases[aiosqlite]",
-    "fastapi==0.109.1",
-    "idna==3.7",
-    "itsdangerous==2.1.2",
-    "pydantic==2.4.0",
-    "PyYAML==6.0.1",
-    "python-multipart==0.0.7",
-    "python-nomad==2.0.0",
-    "requests==2.32.0",
-    "SQLAlchemy==1.4.51",
-    "tornado==6.4.1",
-    "urllib3==2.2.2",
-    "uvicorn==0.24.0.post1",
-    "uvloop==0.18.0"
-]
+[tool.poetry.dependencies]
+python = "^3.11"
+aiohttp = "^3.9.4"
+databases = {version = "^0.8.0", extras = ["aiosqlite"]}
+casdoor = "^1.17.1"
+fastapi = "^0.109.1"
+idna = "^3.7"
+itsdangerous = "^2.1.2"
+pydantic = "^2.4.0"
+PyYAML = "^6.0.1"
+python-multipart = "^0.0.7"
+python-nomad = "^2.0.0"
+requests = "^2.32.3"
+SQLAlchemy = "^1.4.51"
+tornado = "^6.4.1"
+urllib3 = "^2.2.2"
+uvicorn = "^0.24.0.post1"
+uvloop = "^0.18.0"
+cryptography = "^42.0.4"
+pyjwt = "^2.8.0"
+yarl = "^1.9.2"
 
-dynamic = [
-    "version"
-]
-requires-python = ">=3.11"
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.bandit]
 exclude_dirs = [
@@ -108,6 +109,3 @@ line-ending = "auto"
 
 [tool.ruff.lint.mccabe]
 max-complexity = 13
-
-[tool.setuptools.dynamic]
-version = {attr = "sep.__version__"}
