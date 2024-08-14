@@ -4,8 +4,13 @@ SHELL?=/usr/bin/bash
 
 PYTHON=python3.11
 RELEASE_VER?=
-VENV?=venv
-PIP="${VENV}/bin/pip"
+ifdef VIRTUAL_ENV
+    VENV=${VIRTUAL_ENV}
+else
+    VENV?=venv
+endif
+VENV_BIN="${VENV}/bin"
+PIP="${VENV_BIN}/pip"
 
 
 prep:
