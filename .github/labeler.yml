@@ -11,4 +11,4 @@ skip-test:
   - 'CODEOWNERS'
   - 'README.md'
   - '.gitignore'
-  - 'build/**'
+  - 'dist/**'

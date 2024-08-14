@@ -11,20 +11,16 @@ else
 endif
 VENV_BIN="${VENV}/bin"
 PIP="${VENV_BIN}/pip"
+POETRY="${VENV_BIN}/poetry"
 
 
-prep:
-	@install -d build/tmp
-
-venv: prep
+venv: pyproject.toml poetry.lock
 	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
 	@"${PIP}" install --no-cache -U pip wheel poetry;
-	@source "${VENV_BIN}"/activate; "${VENV_BIN}"/poetry install --with audit
+	@source "${VENV_BIN}"/activate; "${POETRY}" install --with audit
 
-build: export TMPDIR=build/tmp
-build: prep
-	@python3 -m build --wheel --outdir build
-	@rm -rf sep.egg-info
+build: venv
+	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
 
 format:
 	@ruff format .
@@ -32,7 +28,6 @@ format:
 lint: venv
 	@"${VENV_BIN}"/ruff check .
 
-audit: export TMPDIR=build/tmp
 audit: prep lint bandit pip-audit
 
 pip-audit: venv
