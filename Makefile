@@ -29,21 +29,21 @@ build: prep
 format:
 	@ruff format .
 
-lint:
-	@pip install --upgrade ruff
+lint: venv
+	@"${PIP}" install --upgrade ruff
 	@ruff check .
 
 audit: export TMPDIR=build/tmp
 audit: prep lint bandit pip-audit
 
-pip-audit:
-	@pip install --upgrade --quiet pip-tools pip-audit
-	@pip-compile --no-strip-extras --generate-hashes pyproject.toml
-	@pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
+pip-audit: venv
+	@"${PIP}" install --upgrade --quiet pip-tools pip-audit
+	@"${VENV_BIN}"/pip-compile --no-strip-extras --generate-hashes pyproject.toml
+	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
 
-bandit:
-	@pip install --upgrade --quiet bandit toml 'bandit[toml]'
-	@bandit -c pyproject.toml -r src
+bandit: venv
+	@"${PIP}" install --upgrade --quiet bandit[toml]
+	@"${VENV_BIN}"/bandit -c pyproject.toml -r src
 
 css:
 	@sassc src/sass/css/base.scss static/themes/materialize/css/base.css
