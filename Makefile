@@ -17,9 +17,9 @@ prep:
 	@install -d build/tmp
 
 venv: prep
-	@"${PYTHON}" -m venv "${VENV}"
-	@"${VENV}"/bin/pip install --no-cache -U pip wheel;
-	@[[ ! -f requirements.txt ]] || "${VENV}"/bin/pip install --no-cache -r requirements.txt;
+	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
+	@"${PIP}" install --no-cache -U pip wheel poetry;
+	@source "${VENV_BIN}"/activate; "${VENV_BIN}"/poetry install
 
 build: export TMPDIR=build/tmp
 build: prep
