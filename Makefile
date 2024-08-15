@@ -2,43 +2,41 @@
 
 SHELL?=/usr/bin/bash
 
-PYTHON=python3.11
+PYTHON=python3
 RELEASE_VER?=
-VENV?=venv
-PIP="${VENV}/bin/pip"
+ifdef VIRTUAL_ENV
+    VENV=${VIRTUAL_ENV}
+else
+    VENV?=venv
+endif
+VENV_BIN="${VENV}/bin"
+PIP="${VENV_BIN}/pip"
+POETRY="${VENV_BIN}/poetry"
 
 
-prep:
-	@install -d build/tmp
+venv: pyproject.toml poetry.lock
+	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
+	@"${PIP}" install --no-cache -U pip wheel poetry;
+	@source "${VENV_BIN}"/activate; "${POETRY}" install --with audit
 
-venv: prep
-	@"${PYTHON}" -m venv "${VENV}"
-	@"${VENV}"/bin/pip install --no-cache -U pip wheel;
-	@[[ ! -f requirements.txt ]] || "${VENV}"/bin/pip install --no-cache -r requirements.txt;
-
-build: export TMPDIR=build/tmp
-build: prep
-	@python3 -m build --wheel --outdir build
-	@rm -rf sep.egg-info
+build: venv
+	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
 
 format:
 	@ruff format .
 
-lint:
-	@pip install --upgrade ruff
-	@ruff check .
+lint: venv
+	@"${VENV_BIN}"/ruff check .
 
-audit: export TMPDIR=build/tmp
 audit: prep lint bandit pip-audit
 
-pip-audit:
-	@pip install --upgrade --quiet pip-tools pip-audit
-	@pip-compile --no-strip-extras --generate-hashes pyproject.toml
-	@pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
+pip-audit: venv
+	@"${VENV_BIN}"/pip-compile --no-strip-extras --generate-hashes pyproject.toml
+	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt
+	@rm requirements.txt
 
-bandit:
-	@pip install --upgrade --quiet bandit toml 'bandit[toml]'
-	@bandit -c pyproject.toml -r src
+bandit: venv
+	@"${VENV_BIN}"/bandit -c pyproject.toml -r src
 
 css:
 	@sassc src/sass/css/base.scss static/themes/materialize/css/base.css
