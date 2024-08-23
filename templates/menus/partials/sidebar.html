@@ -1,17 +1,20 @@
-# TODO: we will define the menu programmatically
+{## TODO: we will define the menu programmatically#}
 {% block sidebar %}
-{% set user = data.get("user") %}
-{% set casdoor_login_url = data.get("casdoor_login_url", "#") %}
 <nav class="sidebar" id="sep">
     <ul>
-        {% if isinstance(user, dict) and user["isAdmin"] %}
-        <li class="casdoor"><a href="{{ casdoor_login_url.scheme }}://{{ casdoor_login_url.netloc }}">Casdoor</a></li>
-        {% end %}
+        {% if user.is_admin %}
+        <li class="casdoor"><a href="{{ casdoor_url }}" target="_blank">Casdoor</a></li>
+        {% endif %}
         <li class="backup"><a href="/mysql_backups/">MySQL Backups</a></li>
         <li class="alters"><a href="/alters/">Schema Change</a></li>
         <li class="archive"><a href="/archiver/">Data Archiver</a></li>
         <li class="tasks"><a href="/tasks/">Task Manager</a></li>
-        <li class="signout"><a href="/api/signout">Sign out</a></li>
+        {#   TODO: logout route with CSRF post     #}
+        <li class="signout">
+            <a href="javascript:;" onclick="document.getElementById('logoutForm').submit();">Sign out</a>
+            <form action="/logout" method="POST" style="display:none;" id="logoutForm">
+            </form>
+        </li>
     </ul>
 </nav>
-{% end %}
+{% endblock %}
