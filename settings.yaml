@@ -1,0 +1,11 @@
+CASDOOR:
+  ENDPOINT: http://localhost:9999
+AUTH:
+  REDIRECT_URI: http://localhost:8000/oauth/callback
+  USER_MODEL: app.models.CasdoorUser
+  COOKIE_NAME: casdoorToken
+TEMPLATES_DIR: templates
+BACKEND_CORS_ORIGINS:
+  - http://localhost:8000
+  - http://127.0.0.1:8000
+
