@@ -5,6 +5,7 @@ import logging
 from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
+from typing import Annotated
 from typing import Literal
 from typing import Self
 
@@ -14,8 +15,10 @@ from pydantic import AnyUrl
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import DirectoryPath
+from pydantic import Field
 from pydantic import field_validator
 from pydantic import FilePath
+from pydantic import HttpUrl
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
@@ -89,6 +92,13 @@ class CasdoorOptions(BaseModel):
             front_endpoint=self.FRONT_ENDPOINT,
         )
 
+    @field_validator("ENDPOINT", "FRONT_ENDPOINT")
+    @classmethod
+    def validate_http_url(cls, v: str) -> str:
+        """Validate HTTP URL as string."""
+        url = HttpUrl(v)
+        return str(url).strip("/")
+
 
 class AuthOptions(BaseModel):
     """Configuration options for authentication.
@@ -109,8 +119,8 @@ class AuthOptions(BaseModel):
 
     """
 
-    REDIRECT_URI: str
-    POST_LOGIN_URI: str = "/"
+    REDIRECT_URI: HttpUrl
+    POST_LOGIN_URI: HttpUrl | Annotated[str, Field(pattern=r"^\/[^\s]*$")] = "/"
     OAUTH_LINK: str = ""
     USER_MODEL: str = ""
     COOKIE_NAME: str = "authToken"
