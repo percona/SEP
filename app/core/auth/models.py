@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import EmailStr
 from pydantic import Field
+from pydantic import field_validator
 from pydantic import FutureDatetime
 from pydantic import PastDatetime
 from pydantic import UUID4
@@ -19,7 +20,6 @@ from pydantic import UUID4
 from app.core.config import settings
 
 
-# TODO: expires_in should be serialized as int
 class OAuthToken(BaseModel):
     """Represent an OAuth token.
 
@@ -44,6 +44,7 @@ class OAuthToken(BaseModel):
     id_token: str
     refresh_token: str
     token_type: str
+    # TODO: expires_in should be serialized as int
     expires_in: timedelta
     scope: str
 
@@ -150,8 +151,15 @@ class BaseUser(BaseModel):
     first_name: str = ""
     last_name: str = ""
     is_admin: bool = False
-    created_time: datetime = datetime.now(tz=UTC)
-    updated_time: datetime = datetime.now(tz=UTC)
+    created_time: datetime | None = datetime.now(tz=UTC)
+    updated_time: datetime | None = datetime.now(tz=UTC)
+
+    @field_validator("created_time", "updated_time", mode="before")
+    @classmethod
+    def falsy_to_none(cls, v: str):
+        if not v:
+            return None
+        return v
 
     @computed_field
     @property
