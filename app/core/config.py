@@ -4,9 +4,7 @@ import importlib.util
 import logging
 from enum import IntEnum
 from functools import cached_property
-from os import PathLike
 from pathlib import Path
-from typing import Annotated
 from typing import Literal
 from typing import Self
 
@@ -14,33 +12,19 @@ from casdoor import AsyncCasdoorSDK
 from casdoor import CasdoorSDK
 from pydantic import AnyUrl
 from pydantic import BaseModel
-from pydantic import BeforeValidator
 from pydantic import computed_field
 from pydantic import DirectoryPath
-from pydantic import Field
 from pydantic import field_validator
-from pydantic import FilePath
-from pydantic import HttpUrl
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
 from pydantic_settings import SettingsConfigDict
 from pydantic_settings import YamlConfigSettingsSource
 
+from app.core.fields import RelativeFilePath
+from app.core.fields import StrHttpUrl
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
-
-def resolve_relative_path(v: PathLike | str) -> Path:
-    """Resolve relative paths with BASE_DIR."""
-    return BASE_DIR / v
-
-
-RelativeFilePath = Annotated[
-    FilePath, BeforeValidator(resolve_relative_path), Field(validate_default=True)
-]
-RelativeDirectoryPath = Annotated[
-    DirectoryPath, BeforeValidator(resolve_relative_path), Field(validate_default=True)
-]
 
 
 class LogLevel(IntEnum):
@@ -83,13 +67,13 @@ class CasdoorOptions(BaseModel):
 
     """
 
-    ENDPOINT: str
+    ENDPOINT: StrHttpUrl
     CLIENT_ID: str
     CLIENT_SECRET: str
     CERTIFICATE_PATH: RelativeFilePath = Path("data/token_jwt_key.pem")
     ORGANIZATION_NAME: str = "built-in"
     APPLICATION_NAME: str = "app-built-in"
-    FRONT_ENDPOINT: str | None = None
+    FRONT_ENDPOINT: StrHttpUrl | None = None
 
     @computed_field
     @cached_property
@@ -123,13 +107,6 @@ class CasdoorOptions(BaseModel):
             application_name=self.APPLICATION_NAME,
             front_endpoint=self.FRONT_ENDPOINT,
         )
-
-    @field_validator("ENDPOINT", "FRONT_ENDPOINT")
-    @classmethod
-    def validate_http_url(cls, v: str) -> str:
-        """Validate HTTP URL as string."""
-        url = HttpUrl(v)
-        return str(url).strip("/")
 
 
 class BaseYamlSettings(BaseSettings):

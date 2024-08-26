@@ -1,3 +1,5 @@
+"""Define SEP settings."""
+
 from pathlib import Path
 from typing import Annotated
 from typing import Self
@@ -9,8 +11,8 @@ from pydantic import model_validator
 from pydantic_settings import SettingsConfigDict
 
 from app.core.config import BaseYamlSettings
-from app.core.config import RelativeDirectoryPath
 from app.core.config import settings
+from app.core.fields import RelativeDirectoryPath
 
 
 class OAuthOptions(BaseModel):

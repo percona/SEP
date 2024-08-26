@@ -11,13 +11,13 @@ import jwt
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import EmailStr
-from pydantic import Field
 from pydantic import field_validator
 from pydantic import FutureDatetime
 from pydantic import PastDatetime
 from pydantic import UUID4
 
 from app.core.config import settings
+from app.core.fields import RequiredStr
 
 
 class OAuthToken(BaseModel):
@@ -146,7 +146,7 @@ class BaseUser(BaseModel):
     """
 
     id: UUID4
-    username: str = Field(min_length=1)
+    username: RequiredStr
     email: EmailStr | Literal[""] = ""
     first_name: str = ""
     last_name: str = ""

@@ -28,7 +28,6 @@ def get_user_model() -> type[BaseUser]:
 
     """
     if settings.AUTH_USER_MODEL:
-        print(settings.AUTH_USER_MODEL)
         module_name, model_name = settings.AUTH_USER_MODEL.rsplit(".", 1)
         module = import_module(module_name)
         return getattr(module, model_name)
