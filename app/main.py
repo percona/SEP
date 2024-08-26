@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
+from app.inventory.main import inventory_app
 from app.sep.main import sep_app
 
 casdoor_sdk = settings.CASDOOR.SDK
@@ -24,6 +25,7 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_headers=["*"],
     )
 app.include_router(api_router, prefix="/api")
+app.mount("/api/inventory", inventory_app)
 app.mount("/", sep_app)
 
 

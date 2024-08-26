@@ -4,6 +4,9 @@ CASDOOR:
 OAUTH:
   REDIRECT_URI: http://localhost:8000/oauth/callback
   COOKIE_NAME: casdoorToken
+PMM:
+  ENDPOINT: https://127.0.0.1
+  VERIFY_SSL: false
 TEMPLATES_DIR: templates
 BACKEND_CORS_ORIGINS:
   - http://localhost:8000
