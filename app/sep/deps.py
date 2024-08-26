@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
+from app.sep.config import sep_settings
 from app.sep.exceptions import OAuthRedirectException
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ User = get_user_model()
 
 
 async def get_current_user(
-    token: Annotated[str, Cookie(alias=settings.AUTH.COOKIE_NAME)] = "",
+    token: Annotated[str, Cookie(alias=sep_settings.OAUTH.COOKIE_NAME)] = "",
 ) -> User:
     """Return the authenticated user from a cookie token.
 

@@ -1,6 +1,6 @@
 """Define reusable exceptions."""
 
 from app.core.auth.exceptions import HTTPTemporaryRedirectException
-from app.core.config import settings
+from app.sep.config import sep_settings
 
-OAuthRedirectException = HTTPTemporaryRedirectException(settings.AUTH.OAUTH_LINK)
+OAuthRedirectException = HTTPTemporaryRedirectException(sep_settings.OAUTH.AUTH_LINK)

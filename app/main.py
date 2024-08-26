@@ -4,7 +4,6 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.staticfiles import StaticFiles
 
 from app.api.main import api_router
 from app.core.config import settings
@@ -13,7 +12,6 @@ from app.sep.main import sep_app
 casdoor_sdk = settings.CASDOOR.SDK
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(

@@ -4,6 +4,7 @@ import importlib.util
 import logging
 from enum import IntEnum
 from functools import cached_property
+from os import PathLike
 from pathlib import Path
 from typing import Annotated
 from typing import Literal
@@ -13,6 +14,7 @@ from casdoor import AsyncCasdoorSDK
 from casdoor import CasdoorSDK
 from pydantic import AnyUrl
 from pydantic import BaseModel
+from pydantic import BeforeValidator
 from pydantic import computed_field
 from pydantic import DirectoryPath
 from pydantic import Field
@@ -25,7 +27,37 @@ from pydantic_settings import PydanticBaseSettingsSource
 from pydantic_settings import SettingsConfigDict
 from pydantic_settings import YamlConfigSettingsSource
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+
+def resolve_relative_path(v: PathLike | str) -> Path:
+    """Resolve relative paths with BASE_DIR."""
+    return BASE_DIR / v
+
+
+RelativeFilePath = Annotated[
+    FilePath, BeforeValidator(resolve_relative_path), Field(validate_default=True)
+]
+RelativeDirectoryPath = Annotated[
+    DirectoryPath, BeforeValidator(resolve_relative_path), Field(validate_default=True)
+]
+
+
+class LogLevel(IntEnum):
+    """Enumeration of logging levels."""
+
+    CRITICAL = logging.CRITICAL
+    FATAL = logging.CRITICAL
+    ERROR = logging.ERROR
+    WARNING = logging.WARNING
+    WARN = logging.WARNING
+    INFO = logging.INFO
+    DEBUG = logging.DEBUG
+    NOTSET = logging.NOTSET
+    DISABLED = logging.NOTSET
+
+
+# TODO: Make Casdoor optional, custom auth backend model selectable in settings
 class CasdoorOptions(BaseModel):
     """Configuration options for Casdoor integration.
 
@@ -54,7 +86,7 @@ class CasdoorOptions(BaseModel):
     ENDPOINT: str
     CLIENT_ID: str
     CLIENT_SECRET: str
-    CERTIFICATE_PATH: FilePath = Path("data/token_jwt_key.pem")
+    CERTIFICATE_PATH: RelativeFilePath = Path("data/token_jwt_key.pem")
     ORGANIZATION_NAME: str = "built-in"
     APPLICATION_NAME: str = "app-built-in"
     FRONT_ENDPOINT: str | None = None
@@ -100,112 +132,16 @@ class CasdoorOptions(BaseModel):
         return str(url).strip("/")
 
 
-class AuthOptions(BaseModel):
-    """Configuration options for authentication.
-
-    Attributes
-    ----------
-    REDIRECT_URI : str
-        The URI to redirect from OAuth.
-    POST_LOGIN_URI : str, optional
-        The URI to redirect to after login. Defaults to "/".
-    OAUTH_LINK : str, optional
-        The OAuth link for authentication.
-        Defaults to `CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI)`.
-    USER_MODEL : str, optional
-        The full import path of the user model class. Must be importable.
-    COOKIE_NAME : str, optional
-        The key of the authentication cookie. Defaults to "authToken".
-
-    """
-
-    REDIRECT_URI: HttpUrl
-    POST_LOGIN_URI: HttpUrl | Annotated[str, Field(pattern=r"^\/[^\s]*$")] = "/"
-    OAUTH_LINK: str = ""
-    USER_MODEL: str = ""
-    COOKIE_NAME: str = "authToken"
-
-    @field_validator("USER_MODEL")
-    @classmethod
-    def validate_auth_user_model_is_importable(cls, v: str) -> str:
-        """Validate that the user model specified in `USER_MODEL` is importable."""
-        # TODO: Find a way to validate class without circular import
-        if v:
-            try:
-                module_name, _ = v.rsplit(".", 1)
-            except ValueError as exc:
-                raise ValueError(
-                    "AUTH_USER_MODEL must follow the format module.class",
-                ) from exc
-            else:
-                if importlib.util.find_spec(module_name) is None:
-                    raise ValueError(f"No module named {module_name}")
-        return v
-
-
-class LogLevel(IntEnum):
-    """Enumeration of logging levels."""
-
-    CRITICAL = logging.CRITICAL
-    FATAL = logging.CRITICAL
-    ERROR = logging.ERROR
-    WARNING = logging.WARNING
-    WARN = logging.WARNING
-    INFO = logging.INFO
-    DEBUG = logging.DEBUG
-    NOTSET = logging.NOTSET
-    DISABLED = logging.NOTSET
-
-
-class Settings(BaseSettings):
-    """Main application settings class.
-
-    Attributes
-    ----------
-    CASDOOR : CasdoorOptions
-        Casdoor configuration options.
-    AUTH : AuthOptions
-        Authentication configuration options.
-    JWT_ALGORITHM : Literal["HS256", "RS256"], optional
-        The JWT algorithm used for encoding/decoding tokens, either "HS256" or "RS256".
-        Defaults to "HS256".
-    SECRET_KEY : str, optional
-        The secret key used for signing tokens.
-        Defaults to the contents of PRIVATE_KEY_PATH.
-    PRIVATE_KEY_PATH : FilePath, optional
-        The file path to the private key used for signing tokens.
-    BASE_DIR : DirectoryPath, optional
-        The base directory of the application.
-        Defaults to `Path(__file__).resolve().parent.parent.parent`
-    TEMPLATES_DIR : Path, optional
-        The directory containing template files. Defaults to `BASE_DIR/"templates"`
-    STATIC_DIR : Path, optional
-        The directory containing static files. Defaults to `BASE_DIR/"static"`
-    LOGGING : LogLevel, optional
-        The logging level for the application. Defaults to `LogLevel.WARNING`.
-    BACKEND_CORS_ORIGINS : list of AnyUrl
-        A list of allowed CORS origins.
-    PUBLIC_KEY
-
-    """
+class BaseYamlSettings(BaseSettings):
+    """Base settings class for YAML config."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_nested_delimiter="__",
         yaml_file="settings.yaml",
         cli_parse_args=True,
+        extra="ignore",
     )
-    # TODO: Custom YamlConfigSettingsSource to separate settings by dev env
-    CASDOOR: CasdoorOptions
-    AUTH: AuthOptions
-    JWT_ALGORITHM: Literal["HS256", "RS256"] = "HS256"
-    SECRET_KEY: str = ""
-    PRIVATE_KEY_PATH: FilePath | None = None
-    BASE_DIR: DirectoryPath = Path(__file__).resolve().parent.parent.parent
-    TEMPLATES_DIR: Path = Path("templates")
-    STATIC_DIR: Path = Path("static")
-    LOGGING: LogLevel = LogLevel.WARNING
-    BACKEND_CORS_ORIGINS: list[AnyUrl] = []
 
     @classmethod
     def settings_customise_sources(
@@ -217,6 +153,7 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Load settings from Yaml file."""
+        # TODO: Custom YamlConfigSettingsSource to separate settings by dev env
         return (
             YamlConfigSettingsSource(settings_cls),
             init_settings,
@@ -224,6 +161,46 @@ class Settings(BaseSettings):
             dotenv_settings,
             file_secret_settings,
         )
+
+
+class Settings(BaseYamlSettings):
+    """Main application settings class.
+
+    Attributes
+    ----------
+    CASDOOR : CasdoorOptions
+        Casdoor configuration options.
+    AUTH_USER_MODEL : str, optional
+        The full import path of the user model class. Must be importable.
+    JWT_ALGORITHM : str, optional
+        The JWT algorithm used for encoding/decoding tokens, either "HS256" or "RS256".
+        Defaults to "RS256".
+    SECRET_KEY : str, optional
+        The secret key used for signing tokens.
+        Defaults to the contents of PRIVATE_KEY_PATH.
+    PRIVATE_KEY_PATH : FilePath, optional
+        The file path to the private key used for signing tokens.
+    LOGGING : LogLevel, optional
+        The logging level for the application. Defaults to `LogLevel.WARNING`.
+    BACKEND_CORS_ORIGINS : list of AnyUrl
+        A list of allowed CORS origins.
+    PUBLIC_KEY
+
+    """
+
+    CASDOOR: CasdoorOptions
+    AUTH_USER_MODEL: str = ""
+    JWT_ALGORITHM: Literal["HS256", "RS256"] = "RS256"
+    SECRET_KEY: str = ""
+    PRIVATE_KEY_PATH: RelativeFilePath | None = None
+    LOGGING: LogLevel = LogLevel.WARNING
+    BACKEND_CORS_ORIGINS: list[AnyUrl] = []
+
+    @computed_field
+    @property
+    def BASE_DIR(self) -> DirectoryPath:
+        """The base directory for the application."""
+        return BASE_DIR
 
     @computed_field
     @property
@@ -234,14 +211,6 @@ class Settings(BaseSettings):
         return self.SECRET_KEY
 
     @model_validator(mode="after")
-    def _resolve_relative_paths(self) -> Self:
-        self.TEMPLATES_DIR = self.BASE_DIR / self.TEMPLATES_DIR
-        self.STATIC_DIR = self.BASE_DIR / self.STATIC_DIR
-        self.CASDOOR.CERTIFICATE_PATH = self.BASE_DIR / self.CASDOOR.CERTIFICATE_PATH
-        self.PRIVATE_KEY_PATH = self.BASE_DIR / self.PRIVATE_KEY_PATH
-        return self
-
-    @model_validator(mode="after")
     def _set_default_secret_key(self) -> Self:
         if not self.SECRET_KEY:
             if not self.PRIVATE_KEY_PATH:
@@ -249,14 +218,6 @@ class Settings(BaseSettings):
             # TODO: private key with passphrase
             with self.PRIVATE_KEY_PATH.open() as key_file:
                 self.SECRET_KEY = key_file.read()
-        return self
-
-    @model_validator(mode="after")
-    def _set_default_oauth_link(self) -> Self:
-        if not self.AUTH.OAUTH_LINK:
-            self.AUTH.OAUTH_LINK = self.CASDOOR.SYNC_SDK.get_auth_link(
-                self.AUTH.REDIRECT_URI,
-            )
         return self
 
     @field_validator("LOGGING", mode="before")
@@ -269,6 +230,23 @@ class Settings(BaseSettings):
             return LogLevel[v.upper()]
         except KeyError as exc:
             raise ValueError(f"Invalid log level: '{v}'") from exc
+
+    @field_validator("AUTH_USER_MODEL")
+    @classmethod
+    def validate_auth_user_model_is_importable(cls, v: str) -> str:
+        """Validate that the user model specified in `AUTH_USER_MODEL` is importable."""
+        # TODO: Find a way to validate class without circular import
+        if v:
+            try:
+                module_name, _ = v.rsplit(".", 1)
+            except ValueError as exc:
+                raise ValueError(
+                    "AUTH_USER_MODEL must follow the format module.class",
+                ) from exc
+            else:
+                if importlib.util.find_spec(module_name) is None:
+                    raise ValueError(f"No module named {module_name}")
+        return v
 
 
 settings = Settings()
