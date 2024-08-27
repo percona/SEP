@@ -183,6 +183,14 @@ class BaseUser(BaseModel):
         raise NotImplementedError(".get_oauth_token() must be overridden.")
 
     @classmethod
+    async def get_user(cls, username: RequiredStr) -> Self:
+        raise NotImplementedError(".get_user() must be overridden.")
+
+    @classmethod
+    async def get_users(cls) -> list[Self]:
+        raise NotImplementedError(".get_users() must be overridden.")
+
+    @classmethod
     async def from_token_payload(cls, token_payload: BaseTokenPayload) -> Self:
         raise NotImplementedError(".from_token_payload() must be overridden.")
 

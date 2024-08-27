@@ -12,10 +12,10 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.auth.utils import get_user_model
 from app.sep.config import sep_settings
-from app.sep.deps import CurrentUser
 from app.sep.deps import DefaultContext
 from app.sep.deps import get_current_user
 from app.sep.deps import get_default_context
+from app.sep.deps import IsAuthenticatedCookie
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,8 @@ async def callback(code: str) -> RedirectResponse:
     return response
 
 
-@sep_app.post("/logout")
-async def logout(user: CurrentUser) -> RedirectResponse:
+@sep_app.post("/logout", dependencies=[IsAuthenticatedCookie])
+async def logout() -> RedirectResponse:
     """Logout route."""
     # TODO: CSRF protection
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)

@@ -168,6 +168,37 @@ class CasdoorUser(BaseUser):
         return OAuthToken(**oauth_data)
 
     @classmethod
+    async def get_user(cls, username: CasdoorUsernameField) -> Self:
+        """Get user by username.
+
+        Parameters
+        ----------
+        username: CasdoorUsernameField
+            The username of the user.
+
+        Returns
+        -------
+        CasdoorUser
+            An instance of `CasdoorUser`.
+
+        """
+        user_data = await casdoor_sdk.get_user(username)
+        return cls(**user_data)
+
+    @classmethod
+    async def get_users(cls) -> list[Self]:
+        """Get user list.
+
+        Returns
+        -------
+        list of CasdoorUser
+            The list of users.
+
+        """
+        users_data = await casdoor_sdk.get_users()
+        return [cls(**user_data) for user_data in users_data]
+
+    @classmethod
     async def from_token_payload(cls, token_payload: CasdoorTokenPayload) -> Self:
         """Create an instance of `CasdoorUser` from a `CasdoorTokenPayload`.
 
@@ -182,8 +213,7 @@ class CasdoorUser(BaseUser):
             An instance of `CasdoorUser`.
 
         """
-        user_data = await casdoor_sdk.get_user(token_payload.username)
-        return cls(**user_data)
+        return await cls.get_user(token_payload.username)
 
     @classmethod
     async def from_jwt(cls, token: str) -> Self:

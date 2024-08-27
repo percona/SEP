@@ -9,6 +9,7 @@ from jwt import InvalidTokenError
 from pydantic import ValidationError
 
 from app.api.exceptions import InactiveUserException
+from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
 
@@ -52,4 +53,32 @@ async def get_current_user(token: AuthToken) -> User:
     return user
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
+IsAuthenticatedDep = Depends(get_current_user)
+CurrentUser = Annotated[User, IsAuthenticatedDep]
+
+
+async def get_current_admin(current_user: CurrentUser) -> User:
+    """Return the authenticated admin from an OAuth2 token.
+
+    Parameters
+    ----------
+    current_user: CurrentUser
+        The current logged-in user.
+
+    Returns
+    -------
+    User
+        The authenticated admin user.
+
+    Raises
+    ------
+    HTTPForbiddenException
+        If the user is not an admin.
+
+    """
+    if not current_user.is_admin:
+        raise HTTPForbiddenException
+    return current_user
+
+
+IsAdminDep = Depends(get_current_admin)
