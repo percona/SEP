@@ -1,12 +1,10 @@
 """Define settings for the Inventory API."""
 
-from pydantic_settings import SettingsConfigDict
-
-from app.core.config import BaseYamlSettings
+from app.core.config import BaseYamlExtraSettings
 from app.inventory.sources import PMMSource
 
 
-class InventorySettings(BaseYamlSettings):
+class InventorySettings(BaseYamlExtraSettings):
     """Settings for the Inventory API.
 
     Attributes
@@ -20,13 +18,6 @@ class InventorySettings(BaseYamlSettings):
 
     """
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_nested_delimiter="__",
-        yaml_file="settings.yaml",
-        cli_parse_args=False,
-        extra="ignore",
-    )
     PMM: PMMSource
 
 

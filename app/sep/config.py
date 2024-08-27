@@ -8,9 +8,8 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import HttpUrl
 from pydantic import model_validator
-from pydantic_settings import SettingsConfigDict
 
-from app.core.config import BaseYamlSettings
+from app.core.config import BaseYamlExtraSettings
 from app.core.config import settings
 from app.core.fields import RelativeDirectoryPath
 
@@ -46,7 +45,7 @@ class OAuthOptions(BaseModel):
         return self
 
 
-class SEPSettings(BaseYamlSettings):
+class SEPSettings(BaseYamlExtraSettings):
     """Settings for SEP.
 
     Attributes
@@ -60,13 +59,6 @@ class SEPSettings(BaseYamlSettings):
 
     """
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_nested_delimiter="__",
-        yaml_file="settings.yaml",
-        cli_parse_args=False,
-        extra="ignore",
-    )
     OAUTH: OAuthOptions
     TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
     STATIC_DIR: RelativeDirectoryPath = Path("static")

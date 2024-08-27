@@ -26,6 +26,46 @@ from app.core.fields import StrHttpUrl
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+class BaseYamlSettings(BaseSettings):
+    """Base settings class for YAML config."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_nested_delimiter="__",
+        yaml_file="settings.yaml",
+        cli_parse_args=True,
+        extra="ignore",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Load settings from Yaml file."""
+        # TODO: Custom YamlConfigSettingsSource to separate settings by dev env
+        return (
+            YamlConfigSettingsSource(settings_cls),
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
+
+
+class BaseYamlExtraSettings(BaseYamlSettings):
+    """Base settings for extra configuration."""
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_nested_delimiter="__",
+        yaml_file="settings.yaml",
+        cli_parse_args=False,
+        extra="ignore",
+    )
 
 class LogLevel(IntEnum):
     """Enumeration of logging levels."""
@@ -109,35 +149,9 @@ class CasdoorOptions(BaseModel):
         )
 
 
-class BaseYamlSettings(BaseSettings):
-    """Base settings class for YAML config."""
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_nested_delimiter="__",
-        yaml_file="settings.yaml",
-        cli_parse_args=True,
-        extra="ignore",
-    )
 
     @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Load settings from Yaml file."""
-        # TODO: Custom YamlConfigSettingsSource to separate settings by dev env
-        return (
-            YamlConfigSettingsSource(settings_cls),
-            init_settings,
-            env_settings,
-            dotenv_settings,
-            file_secret_settings,
-        )
 
 
 class Settings(BaseYamlSettings):
