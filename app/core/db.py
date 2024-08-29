@@ -3,6 +3,7 @@ Database abstraction and tooling
 """
 
 import copy
+import logging
 from datetime import datetime, UTC
 import json
 from typing import (
@@ -31,7 +32,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.sql import ClauseElement
-from tornado.log import app_log
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_DATABASE_DSN = "sqlite+aiosqlite://"
@@ -87,7 +89,7 @@ class DbBaseModel(BaseModel):
 
         :return:
         """
-        app_log.debug("Serializing data: %r, %r", args, kwargs)
+        logger.debug("Serializing data: %r, %r", args, kwargs)
         return json.dumps(*args, default=pydantic_encoder, **kwargs)
 
 
@@ -153,7 +155,7 @@ def get_database(dsn: str | bytes, include_engine=True) -> Database:
     :return: the database instance
     :rtype: databases.Database
     """
-    app_log.debug("Acquiring database")
+    logger.debug("Acquiring database")
     if dsn in [b"", "", None]:
         raise ValueError("The DSN is empty")
     if "://" not in dsn:
@@ -163,8 +165,8 @@ def get_database(dsn: str | bytes, include_engine=True) -> Database:
         db.engine = get_engine(dsn, connect_args=DEFAULT_DATABASE_CONNECT_ARGS)
         db.metadata = get_metadata()
         db.metadata.bind = db.engine
-    app_log.debug("Engine: %s", db.engine.url)
-    app_log.debug("Serializer: %s", db.engine.dialect._json_serializer)
+    logger.debug("Engine: %s", db.engine.url)
+    logger.debug("Serializer: %s", db.engine.dialect._json_serializer)
     return db
 
 
