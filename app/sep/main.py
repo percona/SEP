@@ -1,8 +1,11 @@
 """Define SEP routes."""
 
+import json
 import logging
+from typing import Annotated
 
 from fastapi import FastAPI
+from fastapi import Form
 from fastapi import Request
 from fastapi import status
 from fastapi.responses import HTMLResponse
@@ -16,6 +19,10 @@ from app.sep.deps import DefaultContext
 from app.sep.deps import get_current_user
 from app.sep.deps import get_default_context
 from app.sep.deps import IsAuthenticatedCookie
+from app.sep.deps import TaskAPI
+from app.tasks.main import TRANSLATION_MAPPING
+from app.tasks.models import TASK_BACKEND_LOOKUP
+from app.tasks.nomad.utils import transform_payload
 
 logger = logging.getLogger(__name__)
 
@@ -82,5 +89,78 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="homepage.html",
+        context=context,
+    )
+
+
+@sep_app.get("/tasks", response_class=HTMLResponse)
+async def tasks_list(
+    request: Request, context: DefaultContext, tasks_api: TaskAPI
+) -> HTMLResponse:
+    """Tasks index route."""
+    context["tasks"] = await tasks_api.get("/")
+    context["backends"] = TASK_BACKEND_LOOKUP
+    return templates.TemplateResponse(
+        request=request,
+        name="tasks/list.html",
+        context=context,
+    )
+
+
+@sep_app.post("/tasks", response_class=HTMLResponse)
+async def task_create(
+    taskalias: Annotated[str, Form()],
+    taskdef: Annotated[str, Form()],
+    format: Annotated[str, Form()],
+    taskeng: Annotated[int, Form()],
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Tasks index route."""
+    payload = {
+        "taskalias": taskalias,
+        "taskdef": taskdef,
+        "format": format,
+        "taskeng": taskeng,
+    }
+    logger.debug("Create task: %s", payload)
+    for mapping in TRANSLATION_MAPPING["create"]:
+        if mapping.old not in payload:
+            continue
+        match mapping.action:
+            case "backend":
+                backend = TASK_BACKEND_LOOKUP[payload["taskeng"]]
+                match backend:
+                    case "nomad":
+                        payload[mapping.new] = await transform_payload(
+                            payload[mapping.old],
+                            payload["format"],
+                        )
+                    case _:
+                        raise NotImplementedError("backend is unsupported")
+            case "flatten":
+                payload[mapping.new] = payload[mapping.old]
+            case "update":
+                payload.setdefault(mapping.new, {})
+                payload[mapping.new].update({mapping.old: payload[mapping.old]})
+            case _:
+                payload[mapping.new] = payload[mapping.old]
+        del payload[mapping.old]
+    logger.debug(payload)
+    await tasks_api.post("/", json=payload)
+    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@sep_app.get("/tasks/{task_name}", response_class=HTMLResponse)
+async def tasks_detail(
+    task_name: str, request: Request, context: DefaultContext, tasks_api: TaskAPI
+) -> HTMLResponse:
+    """Tasks detail route."""
+    context["task"] = await tasks_api.get(f"/{task_name}")
+    context["history"] = await tasks_api.get(f"/history/{task_name}")
+    context["TRANSLATION_MAPPING"] = TRANSLATION_MAPPING
+    context["task_data"] = json.loads(context["task"]["data"])
+    return templates.TemplateResponse(
+        request=request,
+        name="tasks/view.html",
         context=context,
     )

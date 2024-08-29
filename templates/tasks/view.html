@@ -1,80 +1,67 @@
-{% extends "../base.html" %}
+{% extends "base.html" %}
 
-{% block title %}Task: {{ data.get("template_data", {}).get("name") }}{% end %}
+{% block title %}Task: {{ task.get("name") }}{% endblock %}
 
 # TODO: the template is currently Nomad-specific
 {% block main %}
 
-{% from sep.tasks import TRANSLATION_MAPPING %}
-
-{% set backends = data.get("backends") %}
-{% set base_uri = data.get("base_uri") %}
-{% set template_data = data.get("template_data", {}) %}
-{% set xsrf_form_html = data.get("xsrf_form_html") %}
-{% set task = template_data.get("task") %}
-
 <dl>
-  <dt>Engine</dt> <dd>{{ backends[template_data["backend"]].capitalize() }}</dd>
-  <dt>Created</dt> <dd>{{ template_data["created_at"] }}</dd>
+  <dt>Engine</dt> <dd>{{ Nomad }}</dd>
+  <dt>Created</dt> <dd>{{ task["created_at"] }}</dd>
   <dt>Specification</dt> <dd>
   <code>
     {{ task }}
   </code>
   </dd>
   <dt>Available to</dt> <dd><ul>
-  {% for owner in template_data["meta"]["owners"] %}
+  {% for owner in task["meta"]["owners"] %}
     {% for mapping in TRANSLATION_MAPPING.get("owners", []) %}
       {% if mapping.value == owner %}
     <li>{{ mapping.label }}</li>
-      {% end %}
-    {% end %}
-  {% end %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
   </ul></dd>
 </dl>
 
 <form method="post" action="">
-  <input type="hidden" name="location" value="{{ base_uri }}api/execute/{{ template_data['name'] }}" />
-  <input name="task" type="hidden" value="{{ template_data['name'] }}" />
-  {% if task.get("ParameterizedJob") %}
+  <input type="hidden" name="location" value="{{ base_uri }}api/execute/{{ task['name'] }}" />
+  <input name="task" type="hidden" value="{{ task['name'] }}" />
+  {% if task_data.get("ParameterizedJob") %}
     <fieldset>
       <legend>Configuration</legend>
-      {% if task["ParameterizedJob"] %}
-        {% set optional = task["ParameterizedJob"].get("MetaOptional", []) %}
-        {% set required = task["ParameterizedJob"].get("MetaRequired", []) %}
+      {% if task_data["ParameterizedJob"] %}
+        {% set optional = task_data["ParameterizedJob"].get("MetaOptional", []) %}
+        {% set required = task_data["ParameterizedJob"].get("MetaRequired", []) %}
       {% else %}
         {% set optional = [] %}
         {% set required = [] %}
-      {% end %}
-      {% set meta_defaults = task["Meta"] %}
+      {% endif %}
+      {% set meta_defaults = task_data["Meta"] %}
     {% for item in required %}
       <label>{{ item.capitalize() }} (required)
       {% if item == "target" %}
         {% include "partials/select-host.html" %}
       {% else %}
         <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" required />
-      {% end %}
+      {% endif %}
       </label>
-    {% end %}
+    {% endfor %}
     {% for item in optional %}
     <label>{{ item.capitalize() }}
       {% if item == "target" %}
       {% include "partials/select-host.html" %}
       {% else %}
       <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" />
-      {% end %}
+      {% endif %}
     </label>
-    {% end %}
+    {% endfor %}
     </fieldset>
-  {% end %}
+  {% endif %}
   <button type="submit">Execute</button>
-  {% from tornado.escape import xhtml_unescape %}
-  {% apply xhtml_unescape %}
-  {{ xsrf_form_html() }}
-  {% end %}
 </form>
 
-{% if template_data.get("history") %}
-    {% from json import loads %}
+{% if history is defined and history|length > 0 %}
     <table>
       <caption>History</caption>
       <thead>
@@ -88,17 +75,15 @@
         <tr><td colspan="3">&nbsp;</td></tr>
       </tfoot>
       <tbody>
-      {% for item in template_data["history"] %}
-      {% apply xhtml_unescape %}
+      {% for item in history %}
           <tr>
             <th scope="row">{{ item["created_at"] }}</th>
             <th scope="row">{{ item["updated_at"] }}</th>
             <td>{{ item["status"].capitalize() }}</td>
           </tr>
-      {% end %}
-      {% end %}
+      {% endfor %}
       </tbody>
     </table>
-{% end %}
+{% endif %}
 
-{% end %}
+{% endblock %}

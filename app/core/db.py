@@ -1,36 +1,27 @@
-"""
-Database abstraction and tooling
-"""
+"""Database abstraction and tooling"""
 
 import copy
-import logging
-from datetime import datetime, UTC
 import json
-from typing import (
-    Any,
-    Dict,
-    Optional,
-    Union,
-)
+import logging
+from datetime import datetime
+from datetime import UTC
+from typing import Any
+from typing import Dict
+from typing import Optional
+from typing import Union
 
 from databases import Database as BaseDatabase
 from fastapi import Query
-from pydantic import (
-    BaseModel,
-    Field,
-)
+from pydantic import BaseModel
+from pydantic import Field
 from pydantic.json import pydantic_encoder
-from sqlalchemy import (
-    Column,
-    DateTime,
-    func,
-    MetaData,
-    Table,
-)
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    create_async_engine,
-)
+from sqlalchemy import Column
+from sqlalchemy import DateTime
+from sqlalchemy import func
+from sqlalchemy import MetaData
+from sqlalchemy import Table
+from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.sql import ClauseElement
 
 logger = logging.getLogger(__name__)
@@ -50,6 +41,7 @@ DATABASE_EXTRA_COLUMNS = [
 
 QUERY_FILTERS = {"status": ["*"], "owner": ["*"]}
 
+
 def get_timestamp() -> datetime:
     """Get the current time in UTC
 
@@ -58,6 +50,7 @@ def get_timestamp() -> datetime:
     """
     return datetime.now(tz=UTC)
 
+
 class Database(BaseDatabase):
     """Database with some extra sparkles"""
 
@@ -65,7 +58,10 @@ class Database(BaseDatabase):
     metadata: MetaData
 
     async def execute(
-        self, query: Union[ClauseElement, str], values: Optional[dict] = None, last_row_id: bool = True
+        self,
+        query: Union[ClauseElement, str],
+        values: Optional[dict] = None,
+        last_row_id: bool = True,
     ) -> Any:
         if not self.is_connected:
             await self.connect()
@@ -111,7 +107,9 @@ async def startup(database: Database, metadata: Union[MetaData, None] = None):
         database.metadata = metadata
 
     if not hasattr(database, "engine"):
-        database.engine = get_engine(database.url, connect_args=DEFAULT_DATABASE_CONNECT_ARGS)
+        database.engine = get_engine(
+            database.url, connect_args=DEFAULT_DATABASE_CONNECT_ARGS
+        )
     if database.metadata.bind != database.engine:
         database.metadata.bind = database.engine
 
@@ -145,8 +143,7 @@ def prepare_connection(connection, record, **kwargs):
 
 
 def get_database(dsn: str | bytes, include_engine=True) -> Database:
-    """
-    Create a database instance
+    """Create a database instance
 
     :param dsn: the data source, including the driver
     :type dsn: str | bytes
@@ -171,8 +168,7 @@ def get_database(dsn: str | bytes, include_engine=True) -> Database:
 
 
 def get_engine(dsn: str | bytes, connect_args: Dict[str, Any]) -> AsyncEngine:
-    """
-    Create an engine instance
+    """Create an engine instance
 
     :param dsn: the data source, including the driver
     :type dsn: str | bytes
@@ -180,12 +176,13 @@ def get_engine(dsn: str | bytes, connect_args: Dict[str, Any]) -> AsyncEngine:
     :type connect_args: dict | None
     :return:
     """
-    return create_async_engine(dsn, connect_args=connect_args, json_serializer=DbBaseModel.json_serialize)
+    return create_async_engine(
+        dsn, connect_args=connect_args, json_serializer=DbBaseModel.json_serialize
+    )
 
 
 def get_metadata() -> MetaData:
-    """
-    Create a metadata instance
+    """Create a metadata instance
 
     :return:
     :rtype: sqlalchemy.MetaData
@@ -193,7 +190,9 @@ def get_metadata() -> MetaData:
     return MetaData()
 
 
-def get_filtered_query(filters: dict, query: Query, table: Table, mapping: dict) -> Query:
+def get_filtered_query(
+    filters: dict, query: Query, table: Table, mapping: dict
+) -> Query:
     """Apply a where clause to a query
 
     :param filters:
@@ -215,7 +214,9 @@ def get_filtered_query(filters: dict, query: Query, table: Table, mapping: dict)
             continue
         # TODO: temporary solution for JSON querying of the tasks.meta.owner
         if field == "owner" and table.name == "tasks":
-            filtered_query = filtered_query.where(func.json_extract(table.c.meta, "$.owners") == f'["{value}"]')
+            filtered_query = filtered_query.where(
+                func.json_extract(table.c.meta, "$.owners") == f'["{value}"]'
+            )
             continue
         if field not in table.columns:
             continue

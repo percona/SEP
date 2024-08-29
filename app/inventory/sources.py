@@ -1,19 +1,15 @@
 from collections import defaultdict
 from typing import Any
 
-from aiohttp import ClientResponse
-from aiohttp import ClientSession
-from pydantic import BaseModel
-
 from app.core.fields import RequiredStr
-from app.core.fields import StrHttpUrl
+from app.core.requests import RemoteAPI
 from app.inventory.models import InventoryItem
 from app.inventory.models import Node
 from app.inventory.models import Service
 
 
 # TODO: Make base models abstract
-class BaseSource(BaseModel):
+class BaseSource:
     """Base class for inventory data sources.
 
     This class serves as a template for data sources that need to implement the
@@ -25,128 +21,12 @@ class BaseSource(BaseModel):
 
 
 # TODO: Select source in settings
-class PMMSource(BaseSource):
+class PMMSource(BaseSource, RemoteAPI):
     """PMM data source implementation.
 
     This class interacts with the PMM API to fetch nodes, services, and construct
     inventory items.
-
-    Attributes
-    ----------
-    ENDPOINT : StrHttpUrl
-        The base URL for the PMM API.
-    API_KEY : str
-        The API key for authenticating requests to the PMM API.
-    VERIFY_SSL : bool, optional
-        Whether to verify SSL certificates for requests. Defaults to `True`.
-
     """
-
-    ENDPOINT: StrHttpUrl
-    API_KEY: str
-    VERIFY_SSL: bool = True
-
-    @property
-    def headers(self) -> dict[str, str]:
-        """Return the headers to be used in API requests.
-
-        Includes content type, accept headers, and authorization with the API key.
-
-        Returns
-        -------
-        dict[str, str]
-            A dictionary containing the headers for API requests.
-
-        """
-        return {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.API_KEY}",
-        }
-
-    async def _request(self, method: str, path: str, **kwargs) -> ClientResponse:
-        if not self.VERIFY_SSL:
-            kwargs["ssl"] = False
-        async with ClientSession(
-            base_url=self.ENDPOINT,
-            headers=self.headers,
-        ) as session:
-            return await session.request(method, path, **kwargs)
-
-    async def request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
-        """Perform an HTTP request and return the JSON response.
-
-        Parameters
-        ----------
-        method : str
-            The HTTP method (e.g., "GET", "POST") to use for the request.
-        path : str
-            The API endpoint path to request.
-        **kwargs : dict, optional
-            Additional keyword arguments to pass to the request.
-
-        Returns
-        -------
-        dict[str, Any]
-            The JSON response as a dictionary.
-
-        """
-        response = await self._request(method, path, **kwargs)
-        return await response.json()
-
-    async def get(self, path: str, **kwargs) -> dict[str, Any]:
-        """Perform a GET request and return the JSON response.
-
-        Parameters
-        ----------
-        path : str
-            The API endpoint path to request.
-        **kwargs : dict, optional
-            Additional keyword arguments to pass to the request.
-
-        Returns
-        -------
-        dict[str, Any]
-            The JSON response as a dictionary.
-
-        """
-        return await self.request("GET", path, **kwargs)
-
-    async def post(self, path: str, **kwargs) -> dict[str, Any]:
-        """Perform a POST request and return the JSON response.
-
-        Parameters
-        ----------
-        path : str
-            The API endpoint path to request.
-        **kwargs : dict, optional
-            Additional keyword arguments to pass to the request.
-
-        Returns
-        -------
-        dict[str, Any]
-            The JSON response as a dictionary.
-
-        """
-        return await self.request("POST", path, **kwargs)
-
-    async def put(self, path: str, **kwargs) -> dict[str, Any]:
-        """Perform a PUT request and return the JSON response.
-
-        Parameters
-        ----------
-        path : str
-            The API endpoint path to request.
-        **kwargs : dict, optional
-            Additional keyword arguments to pass to the request.
-
-        Returns
-        -------
-        dict[str, Any]
-            The JSON response as a dictionary.
-
-        """
-        return await self.request("PUT", path, **kwargs)
 
     async def get_nodes(self, node_type: str = "") -> dict[str, Any]:
         """Fetch and return a dictionary of nodes by type from the PMM API.

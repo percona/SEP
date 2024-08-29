@@ -1,13 +1,10 @@
-{% from tornado.escape import xhtml_unescape %}
-{% from sep.tasks import TRANSLATION_MAPPING %}
-{% from sep.tasks.api.models import TASK_ALIAS_LENGTH, TASK_BACKEND_MAP %}
 <h2>Create a new task</h2>
 <form action="" method="post">
     <fieldset>
         <legend>Enter a new task definition</legend>
         <div>
             <label>Alias
-                <input id="taskalias" name="taskalias" maxlength="{{ TASK_ALIAS_LENGTH }}" size="20" />
+                <input id="taskalias" name="taskalias" maxlength="100" size="20" />
             </label>
         </div>
         <label>Definition
@@ -15,11 +12,9 @@
         </label>
         <fieldset>
             <legend>Format</legend>
-            {% if "nomad" in TASK_BACKEND_MAP %}
             <label title="Nomad-only">HCL
                 <input type="radio" id="format-hcl" name="format" value="hcl" />
             </label>
-            {% end %}
             <label>JSON
                 <input type="radio" id="format-json" name="format" value="json" />
             </label>
@@ -29,25 +24,16 @@
         </fieldset>
         <label>Engine
             <select id="taskeng" name="taskeng">
-            {% for engine, val in TASK_BACKEND_MAP.items() %}
-                <option value="{{ val }}">{{ engine.capitalize() }}</option>
-            {% end %}
+                <option value="1">Nomad</option>
             </select>
         </label>
         <label>Owner
             <select id="owners" name="owners">
-                {% if not TRANSLATION_MAPPING.get("owners") %}
                 <option value="*">Any</option>
-                {% else %}
-                    {% for owner in TRANSLATION_MAPPING["owners"] %}
-                <option value="{{ owner.value }}">{{ owner.label }}</option>
-                    {% end %}
-                {% end %}
+                <option value="archiver">Data Archiver</option>
+                <option value="alter">Schema Change</option>
             </select>
         </label>
     </fieldset>
     <button type="submit" title="Add a new task">Create</button>
-    {% apply xhtml_unescape %}
-    {{ xsrf_form_html() }}
-    {% end %}
 </form>

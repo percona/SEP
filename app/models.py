@@ -231,7 +231,9 @@ class CasdoorUser(BaseUser):
 
         """
         token_payload = await CasdoorTokenPayload.from_jwt(token)
-        return await cls.from_token_payload(token_payload)
+        user = await cls.from_token_payload(token_payload)
+        user._access_token = token
+        return user
 
     @classmethod
     async def from_code(cls, code: str) -> Self:
@@ -249,7 +251,7 @@ class CasdoorUser(BaseUser):
 
         """
         oauth_token = await cls.authenticate(code)
-        return await cls.from_token(oauth_token.access_token)
+        return await cls.from_jwt(oauth_token.access_token)
 
     @classmethod
     async def from_password(cls, username: str, password: str) -> Self:
@@ -269,4 +271,4 @@ class CasdoorUser(BaseUser):
 
         """
         oauth_token = await cls.authenticate(username=username, password=password)
-        return await cls.from_token(oauth_token.access_token)
+        return await cls.from_jwt(oauth_token.access_token)

@@ -153,6 +153,7 @@ class BaseUser(BaseModel):
     is_admin: bool = False
     created_time: datetime | None = datetime.now(tz=UTC)
     updated_time: datetime | None = datetime.now(tz=UTC)
+    _access_token: str = ""
 
     @field_validator("created_time", "updated_time", mode="before")
     @classmethod
@@ -172,6 +173,10 @@ class BaseUser(BaseModel):
     def is_active(self) -> bool:
         """Indicate whether the user is currently active."""
         return True
+
+    @property
+    def access_token(self) -> str:
+        return self._access_token
 
     @staticmethod
     async def get_oauth_token(
@@ -196,7 +201,7 @@ class BaseUser(BaseModel):
 
     @classmethod
     async def from_jwt(cls, token: str) -> Self:
-        raise NotImplementedError(".from_token() must be overridden.")
+        raise NotImplementedError(".from_jwt() must be overridden.")
 
     @classmethod
     async def from_code(cls, code: str) -> Self:

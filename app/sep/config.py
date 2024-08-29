@@ -62,6 +62,8 @@ class SEPSettings(BaseYamlExtraSettings):
     OAUTH: OAuthOptions
     TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
     STATIC_DIR: RelativeDirectoryPath = Path("static")
+    INVENTORY_ENDPOINT: HttpUrl
+    TASKS_ENDPOINT: HttpUrl
 
 
 sep_settings = SEPSettings()

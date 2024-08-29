@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import DirectoryPath
 from pydantic import field_validator
+from pydantic import HttpUrl
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
@@ -25,6 +26,7 @@ from app.core.fields import RelativeFilePath
 from app.core.fields import StrHttpUrl
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 
 class BaseYamlSettings(BaseSettings):
     """Base settings class for YAML config."""
@@ -59,6 +61,7 @@ class BaseYamlSettings(BaseSettings):
 
 class BaseYamlExtraSettings(BaseYamlSettings):
     """Base settings for extra configuration."""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_nested_delimiter="__",
@@ -66,6 +69,7 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         cli_parse_args=False,
         extra="ignore",
     )
+
 
 class LogLevel(IntEnum):
     """Enumeration of logging levels."""
@@ -149,11 +153,6 @@ class CasdoorOptions(BaseModel):
         )
 
 
-
-
-    @classmethod
-
-
 class Settings(BaseYamlSettings):
     """Main application settings class.
 
@@ -186,6 +185,7 @@ class Settings(BaseYamlSettings):
     PRIVATE_KEY_PATH: RelativeFilePath | None = None
     LOGGING: LogLevel = LogLevel.WARNING
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
+    BASE_URI: HttpUrl
 
     @computed_field
     @property

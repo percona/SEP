@@ -11,4 +11,8 @@ TEMPLATES_DIR: templates
 BACKEND_CORS_ORIGINS:
   - http://localhost:8000
   - http://127.0.0.1:8000
-
+NOMAD:
+  ENDPOINT: http://127.0.0.1:4646
+INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
+TASKS_ENDPOINT: http://localhost:8000/api/tasks
+BASE_URI: http://localhost:8000

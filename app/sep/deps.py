@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
+from app.core.requests import RemoteAPI
 from app.sep.config import sep_settings
 from app.sep.exceptions import OAuthRedirectException
 
@@ -74,7 +75,24 @@ def get_default_context(user: CurrentUser) -> dict[str, Any]:
     return {
         "user": user,
         "casdoor_url": settings.CASDOOR.ENDPOINT,
+        "base_uri": settings.BASE_URI,
     }
 
 
 DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
+
+
+def get_inventory_api(user: CurrentUser) -> RemoteAPI:
+    return RemoteAPI(
+        ENDPOINT=sep_settings.INVENTORY_ENDPOINT, API_KEY=user.access_token
+    )
+
+
+InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
+
+
+async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
+    return RemoteAPI(ENDPOINT=sep_settings.TASKS_ENDPOINT, API_KEY=user.access_token)
+
+
+TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
