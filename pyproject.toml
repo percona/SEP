@@ -29,6 +29,7 @@ classifiers = [
     "Topic :: System :: Systems Administration",
     "Typing :: Typed"
 ]
+package-mode = false # TODO: for now
 
 [tool.poetry.dependencies]
 python = "^3.11"
