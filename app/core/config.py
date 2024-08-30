@@ -2,6 +2,7 @@
 
 import importlib.util
 import logging
+import secrets
 from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
@@ -51,11 +52,9 @@ class BaseYamlSettings(BaseSettings):
         """Load settings from Yaml file."""
         # TODO: Custom YamlConfigSettingsSource to separate settings by dev env
         return (
-            YamlConfigSettingsSource(settings_cls),
-            init_settings,
             env_settings,
             dotenv_settings,
-            file_secret_settings,
+            YamlConfigSettingsSource(settings_cls),
         )
 
 
@@ -181,7 +180,7 @@ class Settings(BaseYamlSettings):
     CASDOOR: CasdoorOptions
     AUTH_USER_MODEL: str = ""
     JWT_ALGORITHM: Literal["HS256", "RS256"] = "RS256"
-    SECRET_KEY: str = ""
+    SECRET_KEY: str = secrets.token_urlsafe(32)
     PRIVATE_KEY_PATH: RelativeFilePath | None = None
     LOGGING: LogLevel = LogLevel.WARNING
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
@@ -203,9 +202,7 @@ class Settings(BaseYamlSettings):
 
     @model_validator(mode="after")
     def _set_default_secret_key(self) -> Self:
-        if not self.SECRET_KEY:
-            if not self.PRIVATE_KEY_PATH:
-                raise ValueError("Either SECRET_KEY or PRIVATE_KEY_PATH must be set")
+        if self.PRIVATE_KEY_PATH:
             # TODO: private key with passphrase
             with self.PRIVATE_KEY_PATH.open() as key_file:
                 self.SECRET_KEY = key_file.read()
