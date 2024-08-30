@@ -67,7 +67,7 @@ class Executor:
                 for i, constraint in enumerate(task_data["Constraints"]):
                     meta = "${NOMAD_META_" + meta_var + "}"
                     task_data["Constraints"][i] = json.loads(
-                        json.dumps(constraint).replace(meta, meta_val)
+                        json.dumps(constraint).replace(meta, meta_val),
                     )
 
         try:
@@ -89,7 +89,7 @@ class Executor:
                             new_job = True
                         case _:
                             raise NotImplementedError(
-                                f"{task_data.get("Type")} job support is TBD"
+                                f"{task_data.get("Type")} job support is TBD",
                             )
         except nomad.api.exceptions.URLNotFoundNomadException:
             logger.debug("Unable to match job, creating a new one")
@@ -105,11 +105,12 @@ class Executor:
                     task_data["ID"] += f"-{uuid1()}"
                 case _:
                     raise NotImplementedError(
-                        f"{task_data.get("Type")} job support is TBD"
+                        f"{task_data.get("Type")} job support is TBD",
                     )
 
             status = self.backend.job.register_job(
-                id_=task_data.ID, job={"Job": task_data}
+                id_=task_data["ID"],
+                job={"Job": task_data},
             )
             logger.debug("Job status: %r", status)
             job = self.backend.job.get_job(task_data["ID"])
@@ -133,7 +134,7 @@ class Executor:
             f'EvalID == "{status["EvalID"]}"',
         ]
         allocations = self.backend.allocations.get_allocations(
-            filter_=" and ".join(allocation_filters)
+            filter_=" and ".join(allocation_filters),
         )
         logger.debug("Job: %r", job)
         logger.debug("Allocations: %r", [x["JobID"] for x in allocations])
@@ -195,7 +196,7 @@ class Executor:
                     break
                 case _:
                     allocations = self.backend.allocations.get_allocations(
-                        filter_=" and ".join(allocation_filters)
+                        filter_=" and ".join(allocation_filters),
                     )
             attempts += 1
             logger.debug("Attempt %d found status %s", attempts, alloc["ClientStatus"])

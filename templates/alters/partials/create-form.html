@@ -1,4 +1,3 @@
-{% from tornado.escape import xhtml_unescape %}
 {% set form_class = "modal" if modal_required else "" %}
 <form action="" method="post" class="{{ form_class }}">
     <fieldset>
@@ -9,7 +8,7 @@
             <select id="hostname" name="hostname">
             {% for host in hosts %}
                 <option value="{{ host['name'] }}">{{ host['name'] }}</option>
-            {% end %}
+            {% endfor %}
             </select>
         </fieldset>
         <fieldset>
@@ -21,7 +20,7 @@
                 <option value="localhost" selected>localhost (Executor Node)</option>
             {% for host in mysql_hosts %}
                 <option value="{{ host['address'] }}">{{ host['name'] }}</option>
-            {% end %}
+            {% endfor %}
             </select>
         </fieldset>
             <fieldset>
@@ -51,5 +50,4 @@
 
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
-    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
 </form>

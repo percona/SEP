@@ -6,6 +6,7 @@ from typing import Self
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import field_validator
 from pydantic import HttpUrl
 from pydantic import model_validator
 
@@ -64,6 +65,13 @@ class SEPSettings(BaseYamlExtraSettings):
     STATIC_DIR: RelativeDirectoryPath = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
+    ALTERS_DB_USERNAME: str | None = None
+    ALTERS_DB_PASSWORD: str | None = None
+
+    @field_validator("ALTERS_DB_PASSWORD")
+    @classmethod
+    def escape_db_password(cls, v: str) -> str:
+        return v.replace(",", "\\,")
 
 
 sep_settings = SEPSettings()

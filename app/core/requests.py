@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 from urllib.parse import urljoin
 
@@ -6,6 +7,8 @@ from aiohttp import ClientSession
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import HttpUrl
+
+logger = logging.getLogger(__name__)
 
 
 class RemoteAPI(BaseModel):
@@ -23,7 +26,7 @@ class RemoteAPI(BaseModel):
     @property
     def BASE_URL(self) -> str:
         url = str(self.ENDPOINT)
-        if self.BASE_PATH:
+        if self.BASE_PATH.strip("/"):
             url = url.replace(self.BASE_PATH, "")
         return url
 
@@ -53,6 +56,13 @@ class RemoteAPI(BaseModel):
         path = path + "/" if trailing_slash else path
         if not self.VERIFY_SSL:
             kwargs["ssl"] = False
+        logger.debug(
+            "Sending %s request to %s%s with kwargs %s",
+            method,
+            self.BASE_URL,
+            path,
+            kwargs,
+        )
         async with ClientSession(
             base_url=self.BASE_URL,
             headers=self.headers,
@@ -60,7 +70,10 @@ class RemoteAPI(BaseModel):
             return await session.request(method, path, **kwargs)
 
     async def request(
-        self, method: str, path: str, **kwargs
+        self,
+        method: str,
+        path: str,
+        **kwargs,
     ) -> Any:  # TODO: improve type hint
         """Perform an HTTP request and return the JSON response.
 

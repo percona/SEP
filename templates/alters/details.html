@@ -1,29 +1,21 @@
 
-{% extends "../../templates/base.html" %}
+{% extends "base.html" %}
 
-{% block title %}Schema Change - {{ data["template_data"]["task_name"] }}{% end %}
+{% block title %}Schema Change - {{ task["name"] }}{% endblock %}
 
 {% block style %}
-<link rel="stylesheet" href="/static/datatables/datatables.min.css" media="screen,projection" />
+<link rel="stylesheet" href="/static/datatables/dataTables.min.css" media="screen,projection" />
 <style>
   label + input[type=text]{display: block}
   /*label:has(+ select){display: none}*/
   table form{display:inline-block}
   table button{width:2.2rem;height:2.2rem}
 </style>
-{% end %}
+{% endblock %}
 
-{% block behaviours_optimized_extra %}{% end %}
+{% block behaviours_optimized_extra %}{% endblock %}
 
 {% block main %}
-{% from sep.tasks.api.models import TASK_HISTORY_STATUS_MAP %}
-
-{% set template_data = data.get("template_data", {}) %}
-{% set task_name = template_data.get("task_name", []) %}
-{% set task = template_data.get("task", []) %}
-{% set history = template_data.get("history", []) %}
-{% set stats = template_data.get("stats", []) %}
-{% set xsrf_form_html = data.get("xsrf_form_html") %}
 
 <table class="row section">
   <caption>Overview</caption>
@@ -60,24 +52,25 @@
       <tr>
         <th>{{ k }}</th>
         <td>
-          {% if isinstance(v, dict) %}
+          {% if v is mapping %}
             <ul>
             {% for j, w in v.items() %}
               <li>{{ j }}: {{ w }}</li>
-            {% end %}
+            {% endfor %}
             </ul>
-          {% elif isinstance(v, list) and v %}
+          {% elif v is iterable and v is not string %}
+{#              TODO: Refactor all these weird tests #}
             <ul>
               {% for j, w in v[0].items() %}
               <li>{{ j }}: {{ w }}</li>
-              {% end %}
+              {% endfor %}
             </ul>
           {% else %}
             <code>{{ v }}</code>
-          {% end %}
+          {% endif %}
         </td>
       </tr>
-    {% end %}
+    {% endfor %}
     </tbody>
   </table>
 </section>
@@ -103,19 +96,19 @@
         <td>{{ stats["status"]["pass"] }}</td>
         <td>{{ stats["status"]["fail"] }}</td>
         <td>{{ stats["last_finished_at"] }}</td>
-        <td>{{ round(stats["duration"]["average_seconds"] or 0, 3) }}</td>
-        <td>{{ round(stats["duration"]["last_seconds"] or 0, 3) }}</td>
+        <td>{{ stats["duration"]["average_seconds"] or 0|round(3) }}</td>
+        <td>{{ stats["duration"]["last_seconds"] or 0|round(3) }}</td>
       </tr>
     </tbody>
   </table>
   {% else %}
   <p>No data</p>
-  {% end %}
+  {% endif %}
 </section>
 
 <section>
   <h2>History</h2>
   {% set history_tasks = history %}
-  {% include "partials/completed-tasks.html" %}
+  {% include "alters/partials/completed-tasks.html" %}
 </section>
-{% end %}
+{% endblock %}

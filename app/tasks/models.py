@@ -178,19 +178,19 @@ class TaskGroup(CustomSerializeBaseModel):
                 if self.parallel:
                     for i, task in enumerate(self.tasks):
                         data["TaskGroups"].append(
-                            {"Name": f"{self.name}{i+1}", "Tasks": [task.model_dump()]}
+                            {"Name": f"{self.name}{i+1}", "Tasks": [task.model_dump()]},
                         )
                 else:
                     data["TaskGroups"].append(
                         {
                             "Name": self.name,
                             "Tasks": [task.model_dump() for task in self.tasks],
-                        }
+                        },
                     )
         return data
 
 
-class GeneratedTask(CustomSerializeBaseModel):
+class GeneratedTask(BaseModel):
     """Model for a generated task"""
 
     app: str
@@ -337,7 +337,7 @@ class TaskStats(BaseModel):
             ]
             self._raw["durations"].append(task.execution_request.tracking["duration"])
             self._raw["finished_at"].append(
-                task.execution_request.tracking["finished_at"]
+                task.execution_request.tracking["finished_at"],
             )
 
         # TODO:

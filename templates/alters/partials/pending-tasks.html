@@ -20,9 +20,9 @@
         <a href="delete/{{ task['name'] }}"><i class="icons">delete forever</i></a>
       </td>
     </tr>
-    {% end %}
+    {% endfor %}
   </tbody>
 </table>
 {% else %}
 <p>No data</p>
-{% end %}
+{% endif %}

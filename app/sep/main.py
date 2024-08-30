@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import FastAPI
 from fastapi import Form
+from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from fastapi.responses import HTMLResponse
@@ -15,13 +16,16 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.auth.utils import get_user_model
 from app.sep.config import sep_settings
+from app.sep.deps import AltersGeneratedTask
 from app.sep.deps import DefaultContext
 from app.sep.deps import get_current_user
 from app.sep.deps import get_default_context
+from app.sep.deps import InventoryAPI
 from app.sep.deps import IsAuthenticatedCookie
 from app.sep.deps import TaskAPI
 from app.tasks.main import TRANSLATION_MAPPING
 from app.tasks.models import TASK_BACKEND_LOOKUP
+from app.tasks.models import TASK_HISTORY_STATUS_LOOKUP
 from app.tasks.nomad.utils import transform_payload
 
 logger = logging.getLogger(__name__)
@@ -95,7 +99,9 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
 
 @sep_app.get("/tasks", response_class=HTMLResponse)
 async def tasks_list(
-    request: Request, context: DefaultContext, tasks_api: TaskAPI
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Tasks index route."""
     context["tasks"] = await tasks_api.get("/")
@@ -123,6 +129,7 @@ async def task_create(
         "taskeng": taskeng,
     }
     logger.debug("Create task: %s", payload)
+    # TODO: name should be unique
     for mapping in TRANSLATION_MAPPING["create"]:
         if mapping.old not in payload:
             continue
@@ -152,7 +159,10 @@ async def task_create(
 
 @sep_app.get("/tasks/{task_name}", response_class=HTMLResponse)
 async def tasks_detail(
-    task_name: str, request: Request, context: DefaultContext, tasks_api: TaskAPI
+    task_name: str,
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Tasks detail route."""
     context["task"] = await tasks_api.get(f"/{task_name}")
@@ -164,3 +174,129 @@ async def tasks_detail(
         name="tasks/view.html",
         context=context,
     )
+
+
+@sep_app.post("/tasks/{task_name}", response_class=RedirectResponse)
+async def tasks_execute(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Tasks execute route."""
+    await tasks_api.post(f"/execute/{task_name}")
+    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@sep_app.get("/alters", response_class=HTMLResponse)
+async def alters_index(
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+) -> HTMLResponse:
+    all_hosts = await inventory_api.get("/")
+    mysql_hosts = []
+    for host in all_hosts:
+        for service in host["services"]:
+            if service["type"] == "mysql":
+                mysql_hosts.append(host)
+                break
+    tasks = []
+    for task in await tasks_api.get("/"):
+        try:
+            data = json.loads(task["data"])
+            try:
+                meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+                taskinfo = {
+                    "hostname": data["Constraints"][0]["RTarget"],
+                    "name": task["name"],
+                    "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+                }
+            except (KeyError, IndexError):
+                taskinfo = {
+                    "hostname": "Unknown",
+                    "name": "Unknown",
+                    "table": "Unknown",
+                }
+            taskinfo.update(id=task["id"])
+            tasks.append(taskinfo)
+        except (KeyError, IndexError):
+            continue
+    history_tasks = []
+    scheduled_tasks = []
+    running_tasks = []
+    for task in tasks:
+        history = await tasks_api.get(f"/history/{task['name']}")
+        for hist in history:
+            match TASK_HISTORY_STATUS_LOOKUP[hist["status"]]:
+                case "success" | "failed":
+                    history_tasks.append(hist)
+                case "pending":
+                    scheduled_tasks.append(hist)
+                case "running":
+                    running_tasks.append(hist)
+    context.update(
+        {
+            "hosts": all_hosts,
+            "mysql_hosts": mysql_hosts,
+            "tasks": tasks,
+            "scheduled_tasks": scheduled_tasks,
+            "running_tasks": running_tasks,
+            "history_tasks": history_tasks,
+        }
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="alters/index.html",
+        context=context,
+    )
+
+
+@sep_app.post("/alters", response_class=HTMLResponse)
+async def alters_create(
+    task: AltersGeneratedTask, task_api: TaskAPI
+) -> RedirectResponse:
+    logger.debug("Create alters task: %s", task)
+    await task_api.post("/generate", json=task.model_dump())
+    # TODO: Redirect to created task
+    return RedirectResponse(
+        "/tasks", status_code=status.HTTP_303_SEE_OTHER
+    )  # TODO: Custom redirect class
+
+
+@sep_app.get("/alters/{task_name}", response_class=HTMLResponse)
+async def alters_detail(
+    task_name: str,
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
+) -> HTMLResponse:
+    """Tasks detail route."""
+    task = await tasks_api.get(
+        f"/{task_name}"
+    )  # TODO: refactor - (ab)use pydantic models
+    if "alters" not in task.get("meta", {}).get("owners", []):  # TODO: filter on query
+        raise HTTPException(404)
+    logger.debug("TASK DETAIL: %s", task)
+    data = json.loads(task["data"])
+    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
+    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    task_data = {
+        "name": task["name"],
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+        "hostname": data["Constraints"][0]["RTarget"],
+        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+        "cmd": f'{task_config["command"]} {" ".join(task_config["args"])}',
+        "meta": meta,
+    }
+    context["task"] = task_data
+    context["history"] = await tasks_api.get(f"/history/{task_name}")
+    context["stats"] = await tasks_api.get(f"/stats/{task_name}")
+    return templates.TemplateResponse(
+        request=request,
+        name="alters/details.html",
+        context=context,
+    )
+
+
+# TODO: take all these logics from routes layer

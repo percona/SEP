@@ -50,7 +50,8 @@ DEFAULT_EXECUTION_MODE = "background"
 DEFAULT_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
 
 BACKEND_POLL_INTERVAL_SECONDS = getenv(
-    "TASKS_BACKEND_POLL_INTERVAL_SECONDS", DEFAULT_BACKEND_POLL_INTERVAL_SECONDS
+    "TASKS_BACKEND_POLL_INTERVAL_SECONDS",
+    DEFAULT_BACKEND_POLL_INTERVAL_SECONDS,
 )
 DATABASE_URL = getenv("TASKS_DATABASE_URL", DEFAULT_DATABASE_DSN)
 ORIGINS = getenv("TASKS_ORIGINS", DEFAULT_ORIGINS).split(",")
@@ -65,7 +66,7 @@ GENERIC_NOMAD_BATCH_TEMPLATE = {
             "LTarget": "${node.unique.name}",
             "RTarget": "valid_node_required",
             "Operand": "=",
-        }
+        },
     ],
     "Periodic": None,
     "TaskGroups": [
@@ -165,11 +166,12 @@ async def prepare_database():
             case "tasks":
                 for job_type in ["batch", "sysbatch"]:
                     query = tasks.select().where(
-                        tasks.c.name == f"generic-nomad-{job_type}"
+                        tasks.c.name == f"generic-nomad-{job_type}",
                     )
                     if not await database.fetch_all(query):
                         tasks_app.log.debug(
-                            "Generating %s template", f"generic-nomad-{job_type}"
+                            "Generating %s template",
+                            f"generic-nomad-{job_type}",
                         )
                         match job_type:
                             case "batch":
@@ -186,7 +188,7 @@ async def prepare_database():
                             meta={"owners": ["*"]},
                         )
                         missing_templates.append(
-                            tasks.insert().values(**task.model_dump())
+                            tasks.insert().values(**task.model_dump()),
                         )
             case _:
                 continue
@@ -226,7 +228,9 @@ async def list_tasks(request: Request):
 
 
 @tasks_app.get(
-    path="/history", dependencies=[IsAuthenticatedDep], response_model=list[TaskHistory]
+    path="/history",
+    dependencies=[IsAuthenticatedDep],
+    response_model=list[TaskHistory],
 )
 async def list_task_history(request: Request):
     """Create a new task
@@ -247,7 +251,9 @@ async def list_task_history(request: Request):
 
 
 @tasks_app.delete(
-    path="/{task}", dependencies=[IsAuthenticatedDep], response_class=JSONResponse
+    path="/{task}",
+    dependencies=[IsAuthenticatedDep],
+    response_class=JSONResponse,
 )
 async def delete_task(task: str):
     """Deleta a task
@@ -304,7 +310,9 @@ async def get_task_history(task: str):
 
 
 @tasks_app.get(
-    path="/stats/{task}", dependencies=[IsAuthenticatedDep], response_model=TaskStats
+    path="/stats/{task}",
+    dependencies=[IsAuthenticatedDep],
+    response_model=TaskStats,
 )
 async def get_task_stats(task: str):
     """Calculate the statistics for the task
@@ -314,7 +322,7 @@ async def get_task_stats(task: str):
     """
     tasks_app.log.debug("Requesting task stats for %s", task)
     return TaskStats(
-        tasks=[TaskHistory(**dict(item)) for item in await get_task_history(task)]
+        tasks=[TaskHistory(**dict(item)) for item in await get_task_history(task)],
     )
 
 
@@ -332,10 +340,14 @@ async def create_task(task: Task):
 
 
 @tasks_app.post(
-    path="/generate", dependencies=[IsAuthenticatedDep], response_model=TaskHistory
+    path="/generate",
+    dependencies=[IsAuthenticatedDep],
+    response_model=TaskHistory,
 )
 async def generate_task(
-    generated_task: GeneratedTask, request: Request, background_tasks: BackgroundTasks
+    generated_task: GeneratedTask,
+    request: Request,
+    background_tasks: BackgroundTasks,
 ):
     """Generate a new task execution using a template
 
@@ -345,21 +357,24 @@ async def generate_task(
     :return:
     """
     tasks_app.log.debug(
-        "Generating task %s from %s", generated_task.name, generated_task.template
+        "Generating task %s from %s",
+        generated_task.name,
+        generated_task.template,
     )
     try:
         task = Task(
             **dict(
                 await database.fetch_one(
                     tasks.select().where(
-                        tasks.c.name == f"generic-nomad-{generated_task.template}"
+                        tasks.c.name == f"generic-nomad-{generated_task.template}",
                     ),
                 ),
             ),
         )
     except TypeError:
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="Missing template"
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Missing template",
         )
 
     # TODO: enhance options for generating tasks
@@ -417,7 +432,7 @@ async def generate_task(
             )
         case _:
             raise NotImplementedError(
-                f"{TASK_BACKEND_LOOKUP[task.backend]} is currently unsupported"
+                f"{TASK_BACKEND_LOOKUP[task.backend]} is currently unsupported",
             )
 
     if generated_task.persist:
@@ -453,7 +468,9 @@ async def generate_task(
 
 
 @tasks_app.post(
-    path="/history", dependencies=[IsAuthenticatedDep], response_model=TaskHistory
+    path="/history",
+    dependencies=[IsAuthenticatedDep],
+    response_model=TaskHistory,
 )
 async def create_task_history(task: TaskHistory):
     """Create a new task
@@ -473,7 +490,9 @@ async def create_task_history(task: TaskHistory):
     response_class=JSONResponse,
 )
 async def execute_history_id(
-    history_id: int, request: Request, background_tasks: BackgroundTasks
+    history_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
 ):
     """Trigger a history item for processing
 
@@ -483,7 +502,7 @@ async def execute_history_id(
     :return:
     """
     history_record = await database.fetch_one(
-        history.select().where(history.c.id == history_id)
+        history.select().where(history.c.id == history_id),
     )
     if not history_record:
         tasks_app.log.error("No match found for tasks.history.id = %d", history_id)
@@ -556,7 +575,9 @@ async def execute_task_name(
 
 
 async def _schedule_queue_item(
-    history_recorded: dict, background_tasks: BackgroundTasks, request: Request
+    history_recorded: dict,
+    background_tasks: BackgroundTasks,
+    request: Request,
 ):
     """:param history_recorded:
     :param background_tasks:
@@ -568,14 +589,17 @@ async def _schedule_queue_item(
         mode = tasks_settings.EXECUTE_MODE
     except AttributeError:
         tasks_app.log.warning(
-            "Task execution mode is not configured, using %s", DEFAULT_EXECUTION_MODE
+            "Task execution mode is not configured, using %s",
+            DEFAULT_EXECUTION_MODE,
         )
         mode = DEFAULT_EXECUTION_MODE
 
     match mode:
         case "background":
             background_tasks.add_task(
-                _process_queue_item, queue_id=history_recorded["id"], request=request
+                _process_queue_item,
+                queue_id=history_recorded["id"],
+                request=request,
             )
         case _:
             tasks_app.log.critical("Unknown execution mode '%s'", mode)
@@ -598,7 +622,7 @@ async def _process_queue_item(queue_id: int, request: Request):
     :return:
     """
     queue_item = await database.fetch_one(
-        history.select().where(history.c.id == queue_id)
+        history.select().where(history.c.id == queue_id),
     )
     if queue_item is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
@@ -622,7 +646,8 @@ async def _process_queue_item(queue_id: int, request: Request):
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
     processed_request, status = await executor.run(
-        queue_item, BACKEND_POLL_INTERVAL_SECONDS
+        queue_item,
+        BACKEND_POLL_INTERVAL_SECONDS,
     )
     async with database.engine.begin() as conn:
         await conn.execute(

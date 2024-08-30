@@ -1,5 +1,4 @@
-{% if history_tasks %}
-{% from sep.tasks.api.models import TASK_HISTORY_STATUS_MAP %}
+{% if history_tasks is defined and history_tasks|length > 0 %}
 <table class="responsive-table">
     <thead>
       <tr>
@@ -12,34 +11,34 @@
     </thead>
     <tbody>
     {% for h in history_tasks %}
-        {% if h['status'] in [v for k, v in TASK_HISTORY_STATUS_MAP.items() if k in ["failed", "success"]] %}
+        {% if h['status'] in [0, 1] %}
     <tr>
       <td>
-        {% if h['status'] == TASK_HISTORY_STATUS_MAP["success"] %}
+        {% if h['status'] == 0 %}
         <i class="icons">done</i>
         {% else %}
         <i class="icons">error</i>
-        {% end %}
+        {% endif %}
       </td>
       <td>{{ h['execution_request']['tracking']['started_at'] }}</td>
       <td>{{ h['execution_request']['tracking']['finished_at'] }}</td>
-      <td>{{ round(h['execution_request']['tracking']['duration'], 3) }}</td>
+      <td>{{ h['execution_request']['tracking']['duration']|round(3) }}</td>
       <td>
-        {% if h['status'] != TASK_HISTORY_STATUS_MAP["success"] %}
+        {% if h['status'] != 0 %}
         <ul>
           {% for message in h['errors'] %}
           <li>{{ message }}</li>
-          {% end %}
+          {% endfor %}
         </ul>
         {% else %}
         None
-        {% end %}
+        {% endif %}
       </td>
     </tr>
-      {% end %}
-    {% end %}
+      {% endif %}
+    {% endfor %}
     </tbody>
 </table>
 {% else %}
 <p>No data</p>
-{% end %}
+{% endif %}
