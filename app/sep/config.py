@@ -70,8 +70,9 @@ class SEPSettings(BaseYamlExtraSettings):
 
     @field_validator("ALTERS_DB_PASSWORD")
     @classmethod
-    def escape_db_password(cls, v: str) -> str:
-        return v.replace(",", "\\,")
+    def escape_db_password(cls, v: str | None) -> str:
+        if v is not None:
+            return v.replace(",", "\\,")
 
 
 sep_settings = SEPSettings()
