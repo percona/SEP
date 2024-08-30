@@ -57,12 +57,14 @@ In Casdoor's web interface, navigate to Identity > Certs > cert-built-in
 (should be in [this link](http://localhost:9999/certs/admin/cert-built-in)) and click on
 the **Download certificate** button. Save the `token_jwt_key.pem` file in the **SEP/data** folder.
 
+![image](https://github.com/user-attachments/assets/fbacba5d-4f08-4331-b54f-985015f750ac)
+
 > [!TIP]
 > You can store your cert file with any other name or in any other folder by adding the
 > setting `CERTIFICATE_PATH` in the `CASDOOR` section in `settings.yaml`, or the
 > `CASDOOR__CERTIFICATE_PATH` in your env vars/.env. 
 
-3. Create a .env file in the project root folder to store your secrets.
+4. Create a .env file in the project root folder to store your secrets.
 See the [secrets section](#secrets) of the README for more details.
 
 ## Configuration
@@ -93,8 +95,14 @@ echo -e "CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nCASDOOR__CLIENT_SECRET=YOUR_
 
 1. In a browser, open Casdoor's web interface and login (the default credentials are `admin:123`).
 If you followed the Docker tutorial, it should be in http://localhost:9999.
+
+![image](https://github.com/user-attachments/assets/770d9957-ca7e-48b5-8e40-1dd232038fde)
+
 2. Navigate to Identity > Applications > app-built-in. If you followed the Docker tutorial,
 it should be in http://localhost:9999/applications/built-in/app-built-in
+
+![image](https://github.com/user-attachments/assets/2b95de9d-33ce-4f60-9457-f89e7c6ce619)
+
 3. Copy the app's Client ID and Client Secret and replace the respective `YOUR_CASDOOR_CLIENT_ID`
 and `YOUR_CASDOOR_CLIENT_SECRET` in the .env file you created.
 
@@ -102,10 +110,21 @@ and `YOUR_CASDOOR_CLIENT_SECRET` in the .env file you created.
 
 1. In a browser, open PMM's web interface and login (the default credentials are `admin:admin`).
 If you followed the Docker tutorial, it should be in https://localhost.
+
+![image](https://github.com/user-attachments/assets/1d521d18-388d-49ea-be32-168d7940748b)
+
 2. Navigate to Configuration > API keys. If you followed the Docker tutorial, it should
 be in https://localhost/graph/org/apikeys.
-3. Click the **Add API key** button to create a new API key. Make sure the **Role** is set to **Admin**.
+
+![image](https://github.com/user-attachments/assets/c98792c9-a247-49d7-aafd-c4fcb3523848)
+
+3. Click the **New API key** button to create a new API key. Make sure the **Role** is set to **Admin**.
+
+![image](https://github.com/user-attachments/assets/59a8a2c0-2a5e-4183-a3b9-b3f7f858f9b8)
+
 4. Copy the generated API Key and replace the respective `YOUR_PMM_API_KEY` in your .env file.
+
+![image](https://github.com/user-attachments/assets/a6879771-6350-4505-944a-a5be8183f54c)
 
 ## Usage
 
@@ -125,3 +144,5 @@ python3 -m app.main --logging=debug
 ```
 
 SEP will be available in http://localhost:8000.
+
+![image](https://github.com/user-attachments/assets/cec67a8e-341a-45d5-9144-e6c24f5128eb)
