@@ -11,6 +11,26 @@ LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(
 REFRESH_INTERVAL = 3600
 
 
+def to_uppercase(name: str) -> str:
+    """Convert a string to uppercase.
+
+    This function takes a string input and returns a new string with all
+    characters converted to uppercase.
+
+    Parameters
+    ----------
+    name : str
+        The string to be converted to uppercase.
+
+    Returns
+    -------
+    str
+        The input string converted to uppercase.
+
+    """
+    return name.upper()
+
+
 class ErrorFormatter:
     __storage = {}
 

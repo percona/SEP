@@ -13,6 +13,7 @@ from casdoor import CasdoorSDK
 from pydantic import AnyUrl
 from pydantic import BaseModel
 from pydantic import computed_field
+from pydantic import ConfigDict
 from pydantic import DirectoryPath
 from pydantic import field_validator
 from pydantic import HttpUrl
@@ -25,8 +26,20 @@ from pydantic_settings import YamlConfigSettingsSource
 from app.core.fields import RelativeFilePath
 from app.core.fields import StrHttpUrl
 from app.core.fields import StrImportableAttribute
+from app.core.utils import to_uppercase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+class BaseCaseInsensitiveModel(BaseModel):
+    """A base model with case-insensitive alias generation.
+
+    This model uses a custom alias generator that converts field names to uppercase.
+    It also allows population of fields by their name, making it case-insensitive
+    when handling data.
+    """
+
+    model_config = ConfigDict(alias_generator=to_uppercase, populate_by_name=True)
 
 
 class BaseYamlSettings(BaseSettings):

@@ -4,30 +4,30 @@ from urllib.parse import urljoin
 
 from aiohttp import ClientResponse
 from aiohttp import ClientSession
-from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import HttpUrl
+
+from app.core.config import BaseCaseInsensitiveModel
 
 logger = logging.getLogger(__name__)
 
 
-class RemoteAPI(BaseModel):
-    # TODO: fix case
-    ENDPOINT: HttpUrl
-    API_KEY: str
-    VERIFY_SSL: bool = True
+class RemoteAPI(BaseCaseInsensitiveModel):
+    endpoint: HttpUrl
+    api_key: str
+    verify_ssl: bool = True
 
     @computed_field
     @property
-    def BASE_PATH(self) -> str:
-        return "/" + self.ENDPOINT.path.strip("/")
+    def base_path(self) -> str:
+        return "/" + self.endpoint.path.strip("/")
 
     @computed_field
     @property
-    def BASE_URL(self) -> str:
-        url = str(self.ENDPOINT)
-        if self.BASE_PATH.strip("/"):
-            url = url.replace(self.BASE_PATH, "")
+    def base_url(self) -> str:
+        url = str(self.endpoint)
+        if self.base_path.strip("/"):
+            url = url.replace(self.base_path, "")
         return url.rstrip("/")
 
     @property
@@ -45,27 +45,27 @@ class RemoteAPI(BaseModel):
         return {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.API_KEY}",
+            "Authorization": f"Bearer {self.api_key}",
         }
 
     async def _request(self, method: str, path: str, **kwargs) -> ClientResponse:
         trailing_slash = path.endswith("/")
         path = path.strip("/")
-        base_path = self.BASE_PATH + "/" if path else self.BASE_PATH
+        base_path = self.base_path + "/" if path else self.base_path
         path = urljoin(base_path, path)
         path = path + "/" if trailing_slash else path
-        if not self.VERIFY_SSL:
+        if not self.verify_ssl:
             kwargs["ssl"] = False
         logger.debug(
             "Sending %s request to %s%s with kwargs %s and headers %s",
             method,
-            self.BASE_URL,
+            self.base_url,
             path,
             kwargs,
             self.headers,
         )
         async with ClientSession(
-            base_url=self.BASE_URL,
+            base_url=self.base_url,
             headers=self.headers,
         ) as session:
             return await session.request(method, path, **kwargs)

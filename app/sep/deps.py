@@ -87,8 +87,8 @@ DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
 # TODO: Proper SDK
 def get_inventory_api(user: CurrentUser) -> RemoteAPI:
     return RemoteAPI(
-        ENDPOINT=sep_settings.INVENTORY_ENDPOINT,
-        API_KEY=user.access_token,
+        endpoint=sep_settings.INVENTORY_ENDPOINT,
+        api_key=user.access_token,
     )
 
 
@@ -96,7 +96,7 @@ InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 
 
 async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
-    return RemoteAPI(ENDPOINT=sep_settings.TASKS_ENDPOINT, API_KEY=user.access_token)
+    return RemoteAPI(endpoint=sep_settings.TASKS_ENDPOINT, api_key=user.access_token)
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
