@@ -28,7 +28,7 @@ class RemoteAPI(BaseModel):
         url = str(self.ENDPOINT)
         if self.BASE_PATH.strip("/"):
             url = url.replace(self.BASE_PATH, "")
-        return url
+        return url.rstrip("/")
 
     @property
     def headers(self) -> dict[str, str]:
@@ -57,11 +57,12 @@ class RemoteAPI(BaseModel):
         if not self.VERIFY_SSL:
             kwargs["ssl"] = False
         logger.debug(
-            "Sending %s request to %s%s with kwargs %s",
+            "Sending %s request to %s%s with kwargs %s and headers %s",
             method,
             self.BASE_URL,
             path,
             kwargs,
+            self.headers,
         )
         async with ClientSession(
             base_url=self.BASE_URL,
