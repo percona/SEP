@@ -17,3 +17,8 @@ NOMAD:
 INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
 TASKS_ENDPOINT: http://localhost:8000/api/tasks
 BASE_URI: http://localhost:8000
+PLUGINS:
+  - NAME: Schema Change
+    MODULE_NAME: alters
+    URI_PATH: /alters
+    CSS_CLASS: alters

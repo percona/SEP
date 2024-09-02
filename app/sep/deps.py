@@ -78,6 +78,7 @@ def get_default_context(user: CurrentUser) -> dict[str, Any]:
         "user": user,
         "casdoor_url": settings.CASDOOR.ENDPOINT,
         "base_uri": settings.BASE_URI,
+        "plugins": sep_settings.PLUGINS,
     }
 
 

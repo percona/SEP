@@ -1,0 +1,137 @@
+"""Define routes for the alters plugin."""
+
+import json
+import logging
+
+from fastapi import APIRouter
+from fastapi import HTTPException
+from fastapi import Request
+from fastapi import status
+from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
+
+from app.sep.config import sep_settings
+from app.sep.deps import AltersGeneratedTask
+from app.sep.deps import DefaultContext
+from app.sep.deps import InventoryAPI
+from app.sep.deps import TaskAPI
+from app.tasks.models import TASK_HISTORY_STATUS_LOOKUP
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+templates = sep_settings.TEMPLATES
+
+
+@router.get("/", response_class=HTMLResponse)
+async def alters_index(
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+) -> HTMLResponse:
+    all_hosts = await inventory_api.get("/")
+    mysql_hosts = []
+    for host in all_hosts:
+        for service in host["services"]:
+            if service["type"] == "mysql":
+                mysql_hosts.append(host)
+                break
+    tasks = []
+    for task in await tasks_api.get("/"):
+        try:
+            data = json.loads(task["data"])
+            try:
+                meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+                taskinfo = {
+                    "hostname": data["Constraints"][0]["RTarget"],
+                    "name": task["name"],
+                    "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+                }
+            except (KeyError, IndexError):
+                taskinfo = {
+                    "hostname": "Unknown",
+                    "name": "Unknown",
+                    "table": "Unknown",
+                }
+            taskinfo.update(id=task["id"])
+            tasks.append(taskinfo)
+        except (KeyError, IndexError):
+            continue
+    history_tasks = []
+    scheduled_tasks = []
+    running_tasks = []
+    for task in tasks:
+        history = await tasks_api.get(f"/history/{task['name']}")
+        for hist in history:
+            match TASK_HISTORY_STATUS_LOOKUP[hist["status"]]:
+                case "success" | "failed":
+                    history_tasks.append(hist)
+                case "pending":
+                    scheduled_tasks.append(hist)
+                case "running":
+                    running_tasks.append(hist)
+    context.update(
+        {
+            "hosts": all_hosts,
+            "mysql_hosts": mysql_hosts,
+            "tasks": tasks,
+            "scheduled_tasks": scheduled_tasks,
+            "running_tasks": running_tasks,
+            "history_tasks": history_tasks,
+        },
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="alters/index.html",
+        context=context,
+    )
+
+
+@router.post("/", response_class=HTMLResponse)
+async def alters_create(
+    task: AltersGeneratedTask,
+    task_api: TaskAPI,
+) -> RedirectResponse:
+    logger.debug("Create alters task: %s", task)
+    await task_api.post("/generate", json=task.model_dump())
+    # TODO: Redirect to created task
+    return RedirectResponse(
+        "/tasks",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )  # TODO: Custom redirect class
+
+
+@router.get("/{task_name}", response_class=HTMLResponse)
+async def alters_detail(
+    task_name: str,
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
+) -> HTMLResponse:
+    """Tasks detail route."""
+    task = await tasks_api.get(
+        f"/{task_name}",
+    )  # TODO: refactor - (ab)use pydantic models
+    if "alters" not in task.get("meta", {}).get("owners", []):  # TODO: filter on query
+        raise HTTPException(404)
+    logger.debug("TASK DETAIL: %s", task)
+    data = json.loads(task["data"])
+    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
+    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    task_data = {
+        "name": task["name"],
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+        "hostname": data["Constraints"][0]["RTarget"],
+        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+        "cmd": f'{task_config["command"]} {" ".join(task_config["args"])}',
+        "meta": meta,
+    }
+    context["task"] = task_data
+    context["history"] = await tasks_api.get(f"/history/{task_name}")
+    context["stats"] = await tasks_api.get(f"/stats/{task_name}")
+    return templates.TemplateResponse(
+        request=request,
+        name="alters/details.html",
+        context=context,
+    )

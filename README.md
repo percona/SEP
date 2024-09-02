@@ -108,10 +108,25 @@ These are the possible settings you can have, per app:
 
 
 Path settings (`CASDOOR__CERTIFICATE_PATH`, `TEMPLATES_DIR`, `STATIC_DIR`, etc.) may have
-relative or absolute values. Relative paths will be resolved from the project root folder. 
+relative or absolute values. Relative paths will be resolved from the project root folder.
 
 > [!CAUTION]
 > *Do not store secrets in settings.yaml, as the file is shared in the git repository.
+> See the [secrets section](#secrets) of the README for more details.
+
+### Plugins
+
+SEP works with modular plugins. Plugins are FastAPI routers that will be added to the application
+according to defined settings. Each plugin must have their own module in `app.sep.plugins`
+with a `router` inside. An example of a plugin can be found in the base settings.yaml:
+
+```yaml
+PLUGINS:
+  - NAME: Schema Change
+    MODULE_NAME: alters
+    URI_PATH: /alters
+    CSS_CLASS: alters
+```
 
 ### Secrets
 

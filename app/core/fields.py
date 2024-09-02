@@ -59,6 +59,8 @@ RelativeDirectoryPath = Annotated[
 StrHttpUrl = Annotated[str, AfterValidator(validate_http_url)]
 StrImportableModule = Annotated[str, AfterValidator(validate_module_is_importable)]
 StrImportableAttribute = Annotated[
-    str, AfterValidator(validate_attribute_is_importable)
+    str,
+    AfterValidator(validate_attribute_is_importable),
 ]
 RequiredStr = Annotated[str, Field(min_length=1)]
+URIPath = Annotated[str, Field(pattern=r"^\/[^\s]*$")]
