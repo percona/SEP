@@ -1,6 +1,5 @@
 """Define the application settings."""
 
-import importlib.util
 import logging
 import secrets
 from enum import IntEnum
@@ -25,6 +24,7 @@ from pydantic_settings import YamlConfigSettingsSource
 
 from app.core.fields import RelativeFilePath
 from app.core.fields import StrHttpUrl
+from app.core.fields import StrImportableAttribute
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -159,7 +159,7 @@ class Settings(BaseYamlSettings):
     ----------
     CASDOOR : CasdoorOptions
         Casdoor configuration options.
-    AUTH_USER_MODEL : str, optional
+    AUTH_USER_MODEL : StrImportableAttribute, optional
         The full import path of the user model class. Must be importable.
     JWT_ALGORITHM : str, optional
         The JWT algorithm used for encoding/decoding tokens, either "HS256" or "RS256".
@@ -180,7 +180,7 @@ class Settings(BaseYamlSettings):
     """
 
     CASDOOR: CasdoorOptions
-    AUTH_USER_MODEL: str = ""
+    AUTH_USER_MODEL: StrImportableAttribute = ""
     JWT_ALGORITHM: Literal["HS256", "RS256"] = "HS256"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     PRIVATE_KEY_PATH: RelativeFilePath | None = None
@@ -220,23 +220,6 @@ class Settings(BaseYamlSettings):
             return LogLevel[v.upper()]
         except KeyError as exc:
             raise ValueError(f"Invalid log level: '{v}'") from exc
-
-    @field_validator("AUTH_USER_MODEL")
-    @classmethod
-    def validate_auth_user_model_is_importable(cls, v: str) -> str:
-        """Validate that the user model specified in `AUTH_USER_MODEL` is importable."""
-        # TODO: Find a way to validate class without circular import
-        if v:
-            try:
-                module_name, _ = v.rsplit(".", 1)
-            except ValueError as exc:
-                raise ValueError(
-                    "AUTH_USER_MODEL must follow the format module.class",
-                ) from exc
-            else:
-                if importlib.util.find_spec(module_name) is None:
-                    raise ValueError(f"No module named {module_name}")
-        return v
 
 
 settings = Settings()
