@@ -76,8 +76,42 @@ SEP will read settings in the following order of priority:
 
 The [settings.yaml](https://github.com/percona/SEP/blob/main/settings.yaml) has base settings that you can (but don't need to) change.
 
+Some settings are app-specific and you might not need them for running another app.
+These are the possible settings you can have, per app:
+
+
+| Name                       | App       | Required | Default                                             | settings.yaml                                  |
+|----------------------------|-----------|----------|-----------------------------------------------------|------------------------------------------------|
+| BASE_URI                   | all       | yes      | N/A                                                 | N/A                                            |
+| CASDOOR__ENDPOINT          | all       | yes      | N/A                                                 | N/A                                            |
+| CASDOOR__CERTIFICATE_PATH  | all       | yes      | N/A                                                 | data/token_jwt_key.pem                         |
+| CASDOOR__ORGANIZATION_NAME | all       | no       | built-in                                            | N/A                                            |
+| CASDOOR__APPLICATION_NAME  | all       | no       | app-built-in                                        | N/A                                            |
+| AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                         |
+| LOGGING                    | all       | no       | WARNING                                             | N/A                                            |
+| BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000] |
+| PMM__ENDPOINT              | inventory | yes      | N/A                                                 | https://127.0.0.1                              |
+| PMM__VERIFY_SSL            | inventory | no       | True                                                | False                                          |
+| NOMAD__ENDPOINT            | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                          |
+| NOMAD__SECURE              | tasks     | no       | False                                               | N/A                                            |
+| NOMAD__TIMEOUT             | tasks     | no       | 10                                                  | N/A                                            |
+| NOMAD__VERIFY              | tasks     | no       | False                                               | N/A                                            |
+| EXECUTE_MODE               | tasks     | no       | background                                          | N/A                                            |
+| INVENTORY_ENDPOINT         | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory            |
+| TASKS_ENDPOINT             | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                |
+| OAUTH__REDIRECT_URI        | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback           |
+| OAUTH__POST_LOGIN_URI      | sep       | no       | /                                                   | N/A                                            |
+| OAUTH__AUTH_LINK           | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                            |
+| OAUTH__COOKIE_NAME         | sep       | no       | authToken                                           | casdoorToken                                   |
+| TEMPLATES_DIR              | sep       | no       | templates                                           | templates                                      |
+| STATIC_DIR                 | sep       | no       | static                                              | N/A                                            |
+
+
+Path settings (`CASDOOR__CERTIFICATE_PATH`, `TEMPLATES_DIR`, `STATIC_DIR`, etc.) may have
+relative or absolute values. Relative paths will be resolved from the project root folder. 
+
 > [!CAUTION]
-> Do not store secrets in settings.yaml, as the file is shared in the git repository.
+> *Do not store secrets in settings.yaml, as the file is shared in the git repository.
 
 ### Secrets
 

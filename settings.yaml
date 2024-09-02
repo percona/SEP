@@ -1,6 +1,7 @@
 AUTH_USER_MODEL: app.models.CasdoorUser
 CASDOOR:
   ENDPOINT: http://localhost:9999
+  CERTIFICATE_PATH: data/token_jwt_key.pem
 OAUTH:
   REDIRECT_URI: http://localhost:8000/oauth/callback
   COOKIE_NAME: casdoorToken

@@ -113,7 +113,7 @@ class CasdoorOptions(BaseModel):
     ENDPOINT: StrHttpUrl
     CLIENT_ID: str
     CLIENT_SECRET: str
-    CERTIFICATE_PATH: RelativeFilePath = Path("data/token_jwt_key.pem")
+    CERTIFICATE_PATH: RelativeFilePath
     ORGANIZATION_NAME: str = "built-in"
     APPLICATION_NAME: str = "app-built-in"
     FRONT_ENDPOINT: StrHttpUrl | None = None
@@ -173,13 +173,15 @@ class Settings(BaseYamlSettings):
         The logging level for the application. Defaults to `LogLevel.WARNING`.
     BACKEND_CORS_ORIGINS : list of AnyUrl
         A list of allowed CORS origins.
+    BASE_URI: HttpUrl
+        Base URI for the application.
     PUBLIC_KEY
 
     """
 
     CASDOOR: CasdoorOptions
     AUTH_USER_MODEL: str = ""
-    JWT_ALGORITHM: Literal["HS256", "RS256"] = "RS256"
+    JWT_ALGORITHM: Literal["HS256", "RS256"] = "HS256"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     PRIVATE_KEY_PATH: RelativeFilePath | None = None
     LOGGING: LogLevel = LogLevel.WARNING
