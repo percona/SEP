@@ -57,7 +57,7 @@ class Service(BaseModel):
     service_id: RequiredStr
     name: RequiredStr = Field(validation_alias=AliasChoices("service_name", "name"))
     type: RequiredStr
-    port: int
+    port: int | None = None
     database_name: str | None = None
     environment: str | None = None
 
