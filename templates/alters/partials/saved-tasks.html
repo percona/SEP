@@ -1,4 +1,4 @@
-{% if saved_tasks %}
+{% if tasks %}
 <table>
     <thead>
     <tr>
@@ -9,23 +9,23 @@
     </tr>
     </thead>
     <tbody>
-    {% for mytask in saved_tasks %}
+    {% for mytask in tasks %}
     <tr>
         <td>{{ mytask['name'] }}</td>
         <td>{{ mytask['hostname'] }}</td>
         <td>{{ mytask['table'] }}</td>
         <td class="flex">
-            <form id="{{ mytask['name'] }}-send" method="post" action="execute/{{ mytask['name'] }}">
+            <form id="{{ mytask['name'] }}-send" method="post" action="/tasks/{{ mytask['name'] }}">
                 <button name="location" class="icons">send</button>
-                <input type="hidden" name="task" value="{{ mytask['name'] }}">
-                <input type="hidden" name="host" value="{{ mytask['hostname'] }}">
+                <input type="hidden" name="redirect_to" value="/alters/">
             </form>
-            <form id="{{ mytask['name'] }}-info" method="get" action="details/{{ mytask['name'] }}">
+            <form id="{{ mytask['name'] }}-info" method="get" action="{{ mytask['name'] }}">
                 <button class="icons">info</button>
             </form>
-            <form id="{{ mytask['name'] }}-delete" method="post" action="delete/{{ mytask['name'] }}">
+            <form id="{{ mytask['name'] }}-delete" method="post" action="/tasks/{{ mytask['name'] }}/delete">
                 <button name="location" class="icons">delete forever</button>
-                <input type="hidden" name="task" value="{{ mytask['name'] }}">
+{#                TODO: confirm dialog #}
+                <input type="hidden" name="redirect_to" value="/alters/">
             </form>
         </td>
     </tr>

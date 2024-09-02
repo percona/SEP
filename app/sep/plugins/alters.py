@@ -38,25 +38,16 @@ async def alters_index(
                 break
     tasks = []
     for task in await tasks_api.get("/"):
-        try:
+        if "alters" in task.get("meta", {}).get("owners", []):  # TODO: filter on query
             data = json.loads(task["data"])
-            try:
-                meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
-                taskinfo = {
-                    "hostname": data["Constraints"][0]["RTarget"],
-                    "name": task["name"],
-                    "table": f'{meta["schema_name"]}.{meta["table_name"]}',
-                }
-            except (KeyError, IndexError):
-                taskinfo = {
-                    "hostname": "Unknown",
-                    "name": "Unknown",
-                    "table": "Unknown",
-                }
-            taskinfo.update(id=task["id"])
+            meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+            taskinfo = {
+                "hostname": data["Constraints"][0]["RTarget"],
+                "name": task["name"],
+                "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+                "id": task["id"],
+            }
             tasks.append(taskinfo)
-        except (KeyError, IndexError):
-            continue
     history_tasks = []
     scheduled_tasks = []
     running_tasks = []
@@ -96,7 +87,7 @@ async def alters_create(
     await task_api.post("/generate", json=task.model_dump())
     # TODO: Redirect to created task
     return RedirectResponse(
-        "/tasks",
+        "/alters",
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class
 

@@ -61,6 +61,10 @@
   <button type="submit">Execute</button>
 </form>
 
+<form method="post" action="/tasks/{{ task['name'] }}/delete">
+  <button type="submit">Delete</button>
+</form>
+
 {% if history is defined and history|length > 0 %}
     <table>
       <caption>History</caption>

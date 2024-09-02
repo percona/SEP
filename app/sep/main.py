@@ -14,6 +14,7 @@ from fastapi.responses import RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from app.core.auth.utils import get_user_model
+from app.core.fields import URIPath
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
 from app.sep.deps import get_current_user
@@ -180,10 +181,22 @@ async def tasks_detail(
 async def tasks_execute(
     task_name: str,
     tasks_api: TaskAPI,
+    redirect_to: Annotated[URIPath, Form()] = "/tasks",
 ) -> RedirectResponse:
     """Tasks execute route."""
-    await tasks_api.post(f"/execute/{task_name}")
-    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+    await tasks_api.post(f"/execute/{task_name}")  # TODO: send meta form fields
+    return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@sep_app.post("/tasks/{task_name}/delete", response_class=RedirectResponse)
+async def tasks_execute(
+    task_name: str,
+    tasks_api: TaskAPI,
+    redirect_to: Annotated[URIPath, Form()] = "/tasks",
+) -> RedirectResponse:
+    """Tasks delete route."""
+    await tasks_api.delete(f"/{task_name}")
+    return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
 
 
 # TODO: take all these logics from routes layer
