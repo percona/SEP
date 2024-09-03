@@ -10,6 +10,7 @@ from typing import Self
 
 from casdoor import AsyncCasdoorSDK
 from casdoor import CasdoorSDK
+from fastapi.utils import deep_dict_update
 from pydantic import AnyUrl
 from pydantic import BaseModel
 from pydantic import computed_field
@@ -22,13 +23,16 @@ from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
 from pydantic_settings import SettingsConfigDict
 from pydantic_settings import YamlConfigSettingsSource
+from pydantic_settings.sources import PathType
 
 from app.core.fields import RelativeFilePath
+from app.core.fields import RequiredStr
 from app.core.fields import StrHttpUrl
 from app.core.fields import StrImportableAttribute
 from app.core.utils import to_uppercase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DEFAULT_FASTAPI_ENV = "development"
 
 
 class BaseCaseInsensitiveModel(BaseModel):
@@ -42,6 +46,23 @@ class BaseCaseInsensitiveModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_uppercase, populate_by_name=True)
 
 
+class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
+    def __init__(
+        self,
+        settings_cls: type[BaseSettings],
+        yaml_file: PathType | None = Path("settings.yaml"),
+        yaml_file_encoding: str | None = None,
+        prefix: RequiredStr | None = None,
+        base_prefix: RequiredStr | None = "default",
+    ):
+        super().__init__(settings_cls, yaml_file, yaml_file_encoding)
+        if prefix:
+            prefix_data = self.yaml_data.get(prefix, {})
+            self.yaml_data = self.yaml_data.get(base_prefix, {}) if base_prefix else {}
+            deep_dict_update(self.yaml_data, prefix_data)
+            self.init_kwargs = self.yaml_data
+
+
 class BaseYamlSettings(BaseSettings):
     """Base settings class for YAML config."""
 
@@ -52,6 +73,7 @@ class BaseYamlSettings(BaseSettings):
         cli_parse_args=True,
         extra="ignore",
     )
+    FASTAPI_ENV: str = DEFAULT_FASTAPI_ENV
 
     @classmethod
     def settings_customise_sources(
@@ -63,11 +85,13 @@ class BaseYamlSettings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Load settings from Yaml file."""
-        # TODO: Custom YamlConfigSettingsSource to separate settings by dev env
+        yaml_prefix = env_settings.env_vars.get(
+            "fastapi_env"
+        ) or dotenv_settings.env_vars.get("fastapi_env", DEFAULT_FASTAPI_ENV)
         return (
             env_settings,
             dotenv_settings,
-            YamlConfigSettingsSource(settings_cls),
+            YamlPrefixConfigSettingsSource(settings_cls, prefix=yaml_prefix),
         )
 
 

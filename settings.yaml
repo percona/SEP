@@ -1,24 +1,34 @@
-AUTH_USER_MODEL: app.models.CasdoorUser
-CASDOOR:
-  ENDPOINT: http://localhost:9999
-  CERTIFICATE_PATH: data/token_jwt_key.pem
-OAUTH:
-  REDIRECT_URI: http://localhost:8000/oauth/callback
-  COOKIE_NAME: casdoorToken
-PMM:
-  ENDPOINT: https://127.0.0.1
-  VERIFY_SSL: false
-TEMPLATES_DIR: templates
-BACKEND_CORS_ORIGINS:
-  - http://localhost:8000
-  - http://127.0.0.1:8000
-NOMAD:
-  ENDPOINT: http://127.0.0.1:4646
-INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
-TASKS_ENDPOINT: http://localhost:8000/api/tasks
-BASE_URI: http://localhost:8000
-PLUGINS:
-  - NAME: Schema Change
-    MODULE_NAME: alters
-    URI_PATH: /alters
-    CSS_CLASS: alters
+default:
+  AUTH_USER_MODEL: app.models.CasdoorUser
+  CASDOOR:
+    ENDPOINT: http://localhost:9999
+    CERTIFICATE_PATH: data/token_jwt_key.pem
+  OAUTH:
+    REDIRECT_URI: http://localhost:8000/oauth/callback
+    COOKIE_NAME: casdoorToken
+  PMM:
+    ENDPOINT: https://127.0.0.1
+    VERIFY_SSL: false
+  TEMPLATES_DIR: templates
+  BACKEND_CORS_ORIGINS:
+    - http://localhost:8000
+    - http://127.0.0.1:8000
+  NOMAD:
+    ENDPOINT: http://127.0.0.1:4646
+  BASE_URI: http://localhost:8000
+  PLUGINS:
+    - NAME: Schema Change
+      MODULE_NAME: alters
+      URI_PATH: /alters
+      CSS_CLASS: alters
+development:
+  INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
+  TASKS_ENDPOINT: http://localhost:8000/api/tasks
+  PLUGINS:
+    - NAME: Task Manager
+      MODULE_NAME: tasks
+      URI_PATH: /tasks
+      CSS_CLASS: tasks
+production:
+  INVENTORY_ENDPOINT: http://127.0.0.1:8001
+  TASKS_ENDPOINT: http://127.0.0.1:8002

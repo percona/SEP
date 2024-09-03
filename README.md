@@ -140,6 +140,21 @@ You can create a basic .env file template by running the following command in th
 echo -e "CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nCASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\nPMM__API_KEY=YOUR_PMM_API_KEY" > .env
 ```
 
+### Environment
+
+You can categorize settings by environments in settings.yaml:
+```yaml
+default:
+  # defaults settings shared by all environments
+development:
+  # development settings
+production:
+  # production settings
+```
+
+To switch environment, use the environment variable `FASTAPI_ENV` or add `FASTAPI_ENV`
+to your .env file.
+
 #### Getting Casdoor's Client ID and Client Secret
 
 1. In a browser, open Casdoor's web interface and login (the default credentials are `admin:123`).
