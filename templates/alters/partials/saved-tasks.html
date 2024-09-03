@@ -15,17 +15,15 @@
         <td>{{ mytask['hostname'] }}</td>
         <td>{{ mytask['table'] }}</td>
         <td class="flex">
-            <form id="{{ mytask['name'] }}-send" method="post" action="/tasks/{{ mytask['name'] }}">
+            <form id="{{ mytask['name'] }}-send" method="post" action="{{ mytask['name'] }}">
                 <button name="location" class="icons">send</button>
-                <input type="hidden" name="redirect_to" value="/alters/">
             </form>
             <form id="{{ mytask['name'] }}-info" method="get" action="{{ mytask['name'] }}">
                 <button class="icons">info</button>
             </form>
-            <form id="{{ mytask['name'] }}-delete" method="post" action="/tasks/{{ mytask['name'] }}/delete">
+            <form id="{{ mytask['name'] }}-delete" method="post" action="{{ mytask['name'] }}/delete">
                 <button name="location" class="icons">delete forever</button>
 {#                TODO: confirm dialog #}
-                <input type="hidden" name="redirect_to" value="/alters/">
             </form>
         </td>
     </tr>

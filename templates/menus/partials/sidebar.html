@@ -7,7 +7,6 @@
         {% for plugin in plugins %}
         <li class="{{ plugin.css_class }}"><a href="{{ plugin.uri_path }}/">{{ plugin.name }}</a></li>
         {% endfor %}
-        <li class="tasks"><a href="/tasks/">Task Manager</a></li>
         {#   TODO: logout route with CSRF post     #}
         <li class="signout">
             <a href="javascript:;" onclick="document.getElementById('logoutForm').submit();">Sign out</a>

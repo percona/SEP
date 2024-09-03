@@ -4,7 +4,6 @@ import json
 import logging
 
 from fastapi import APIRouter
-from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from fastapi.responses import HTMLResponse
@@ -15,6 +14,7 @@ from app.sep.deps import AltersGeneratedTask
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import TaskAPI
+from app.sep.plugins.alters.deps import AltersTask
 from app.tasks.models import TASK_HISTORY_STATUS_LOOKUP
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,6 @@ async def alters_create(
 ) -> RedirectResponse:
     logger.debug("Create alters task: %s", task)
     await task_api.post("/generate", json=task.model_dump())
-    # TODO: Redirect to created task
     return RedirectResponse(
         "/alters",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -94,17 +93,12 @@ async def alters_create(
 
 @router.get("/{task_name}", response_class=HTMLResponse)
 async def alters_detail(
-    task_name: str,
+    task: AltersTask,
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Tasks detail route."""
-    task = await tasks_api.get(
-        f"/{task_name}",
-    )  # TODO: refactor - (ab)use pydantic models
-    if "alters" not in task.get("meta", {}).get("owners", []):  # TODO: filter on query
-        raise HTTPException(404)
     logger.debug("TASK DETAIL: %s", task)
     data = json.loads(task["data"])
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
@@ -119,10 +113,30 @@ async def alters_detail(
         "meta": meta,
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/history/{task_name}")
-    context["stats"] = await tasks_api.get(f"/stats/{task_name}")
+    context["history"] = await tasks_api.get(f"/history/{task["name"]}")
+    context["stats"] = await tasks_api.get(f"/stats/{task["name"]}")
     return templates.TemplateResponse(
         request=request,
         name="alters/details.html",
         context=context,
     )
+
+
+@router.post("/{task_name}", response_class=RedirectResponse)
+async def alters_execute(
+    task: AltersTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Alters execute route."""
+    await tasks_api.post(f"/execute/{task["name"]}")  # TODO: send meta form fields
+    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{task_name}/delete", response_class=RedirectResponse)
+async def alters_execute(
+    task: AltersTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Alters execute route."""
+    await tasks_api.delete(f"/{task["name"]}")
+    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
