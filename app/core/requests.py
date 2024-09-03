@@ -49,11 +49,16 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         }
 
     async def _request(self, method: str, path: str, **kwargs) -> ClientResponse:
-        trailing_slash = path.endswith("/")
-        path = path.strip("/")
-        base_path = self.base_path + "/" if path else self.base_path
-        path = urljoin(base_path, path)
-        path = path + "/" if trailing_slash else path
+        if self.base_path == "/":
+            path = urljoin(self.base_path, path)
+        else:
+            trailing_slash = path.endswith("/")
+            path = path.strip("/")
+            base_path = (
+                self.base_path + "/" if path and self.base_path else self.base_path
+            )
+            path = urljoin(base_path, path)
+            path = path + "/" if trailing_slash else path
         if not self.verify_ssl:
             kwargs["ssl"] = False
         logger.debug(

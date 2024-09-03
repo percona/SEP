@@ -14,6 +14,7 @@ from fastapi.responses import RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from app.core.auth.utils import get_user_model
+from app.core.config import settings
 from app.core.fields import URIPath
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
@@ -200,3 +201,16 @@ async def tasks_execute(
 
 
 # TODO: take all these logics from routes layer
+
+if __name__ == "__main__":
+    # TODO: Rich formatting and custom logging handlers
+    logging.basicConfig(
+        level=settings.LOGGING,
+        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
+        "%(module)s.%(funcName)s - %(message)s",
+    )
+    import uvicorn
+
+    uvicorn.run(
+        sep_app, host="0.0.0.0", port=8000
+    )  # TODO: Specify host/port in settings

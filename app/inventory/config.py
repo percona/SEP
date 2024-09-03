@@ -1,5 +1,7 @@
 """Define settings for the Inventory API."""
 
+from pydantic import HttpUrl
+
 from app.core.config import BaseYamlExtraSettings
 from app.inventory.sources import PMMSource
 
@@ -19,6 +21,7 @@ class InventorySettings(BaseYamlExtraSettings):
     """
 
     PMM: PMMSource
+    INVENTORY_ENDPOINT: HttpUrl
 
 
 inventory_settings = InventorySettings()

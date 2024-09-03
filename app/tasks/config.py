@@ -16,6 +16,7 @@ class NomadOptions(BaseModel):
 class TasksSettings(BaseYamlExtraSettings):
     NOMAD: NomadOptions
     EXECUTE_MODE: str = "background"
+    TASKS_ENDPOINT: HttpUrl
 
 
 tasks_settings = TasksSettings()
