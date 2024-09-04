@@ -104,6 +104,6 @@ if __name__ == "__main__":
 
     uvicorn.run(
         sep_app,
-        host="0.0.0.0",
-        port=8000,
-    )  # TODO: Specify host/port in settings
+        host=sep_settings.SEP_ENDPOINT.host,
+        port=sep_settings.SEP_ENDPOINT.port,
+    )

@@ -103,7 +103,7 @@ async def startup(database: Database, metadata: Union[MetaData, None] = None):
 
     if not hasattr(database, "metadata") and metadata is None:
         raise ValueError("metadata is not defined")
-    elif isinstance(metadata, MetaData):
+    if isinstance(metadata, MetaData):
         database.metadata = metadata
 
     if not hasattr(database, "engine"):

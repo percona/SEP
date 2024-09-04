@@ -86,7 +86,7 @@ class BaseYamlSettings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Load settings from Yaml file."""
         yaml_prefix = env_settings.env_vars.get(
-            "fastapi_env"
+            "fastapi_env",
         ) or dotenv_settings.env_vars.get("fastapi_env", DEFAULT_FASTAPI_ENV)
         return (
             env_settings,
@@ -153,7 +153,8 @@ class CasdoorOptions(BaseModel):
     CERTIFICATE_PATH: RelativeFilePath
     ORGANIZATION_NAME: str = "built-in"
     APPLICATION_NAME: str = "app-built-in"
-    FRONT_ENDPOINT: StrHttpUrl | None = None
+    FRONT_ENDPOINT: StrHttpUrl = ""
+    ALLOWED_ISSUERS: list[StrHttpUrl] = []
 
     @computed_field
     @cached_property
@@ -187,6 +188,18 @@ class CasdoorOptions(BaseModel):
             application_name=self.APPLICATION_NAME,
             front_endpoint=self.FRONT_ENDPOINT,
         )
+
+    @model_validator(mode="after")
+    def _set_default_allowed_issuers(self) -> Self:
+        if self.ENDPOINT not in self.ALLOWED_ISSUERS:
+            self.ALLOWED_ISSUERS.append(self.ENDPOINT)
+        return self
+
+    @model_validator(mode="after")
+    def _set_default_front_endpoint(self) -> Self:
+        if not self.FRONT_ENDPOINT:
+            self.FRONT_ENDPOINT = self.ENDPOINT
+        return self
 
 
 class Settings(BaseYamlSettings):

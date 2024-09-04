@@ -3,10 +3,12 @@
 from functools import cached_property
 from pathlib import Path
 from typing import Self
+from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from pydantic import computed_field
+from pydantic import Field
 from pydantic import field_validator
 from pydantic import HttpUrl
 from pydantic import model_validator
@@ -43,9 +45,15 @@ class OAuthOptions(BaseModel):
     @model_validator(mode="after")
     def _set_default_auth_link(self) -> Self:
         if not self.AUTH_LINK:
-            self.AUTH_LINK = settings.CASDOOR.SYNC_SDK.get_auth_link(
-                self.REDIRECT_URI,
-            )
+            url = settings.CASDOOR.FRONT_ENDPOINT + "/login/oauth/authorize?"
+            params = {
+                "client_id": settings.CASDOOR.CLIENT_ID,
+                "response_type": "code",
+                "redirect_uri": self.REDIRECT_URI,
+                "scope": "read",
+                "state": settings.CASDOOR.APPLICATION_NAME,
+            }
+            self.AUTH_LINK = url + urlencode(params)
         return self
 
 
@@ -76,6 +84,7 @@ class SEPSettings(BaseYamlExtraSettings):
     STATIC_DIR: RelativeDirectoryPath = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
+    SEP_ENDPOINT: HttpUrl = Field(default="http://0.0.0.0:8000", validate_default=True)
     ALTERS_DB_USERNAME: str | None = None
     ALTERS_DB_PASSWORD: str | None = None
     PLUGINS: list[Plugin] = []

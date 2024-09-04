@@ -7,7 +7,8 @@ from app.sep.deps import TaskAPI
 
 
 async def get_alters_task(
-    task_name: str, tasks_api: TaskAPI
+    task_name: str,
+    tasks_api: TaskAPI,
 ) -> dict:  # TODO: refactor - (ab)use pydantic models
     task = await tasks_api.get(
         f"/{task_name}",

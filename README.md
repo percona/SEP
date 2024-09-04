@@ -17,8 +17,7 @@ casbin/casdoor-all-in-one
 You can start PMM with Docker by running
 ```shell
 docker run --detach --restart always \
---publish 443:443 \
---network host \
+--publish 8443:443 \
 --volume pmm-data:/srv \
 --name pmm-server \
 percona/pmm-server:2
