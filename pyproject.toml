@@ -48,7 +48,7 @@ SQLAlchemy = "^1.4.51"
 urllib3 = "^2.2.2"
 uvicorn = "^0.24.0.post1"
 uvloop = "^0.18.0"
-cryptography = "^42.0.4"
+cryptography = "^43.0.1"
 pyjwt = "^2.8.0"
 yarl = "^1.9.2"
 jinja2 = "^3.1.4"
@@ -62,9 +62,9 @@ optional = true
 
 [tool.poetry.group.audit.dependencies]
 ruff = "^0.5.7"
-pip-tools = "^7.4.1"
 pip-audit = "^2.7.3"
 bandit = {extras = ["toml"], version = "^1.7.9"}
+poetry-plugin-export = "^1.8.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -75,8 +75,6 @@ exclude_dirs = [
     ".git",
     ".github",
     "build",
-    "src/archive/support_files",
-    "src/sass",
     "venv"
 ]
 
@@ -109,8 +107,8 @@ output-format = "github"
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "N", "C90", "I", "FLY", "S"]
-ignore = ["I001"]
+select = ["E", "N", "I", "FLY", "S"]
+ignore = ["I001", "N802"]
 fixable = ["ALL"]
 unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
@@ -120,6 +118,3 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-
-[tool.ruff.lint.mccabe]
-max-complexity = 13
