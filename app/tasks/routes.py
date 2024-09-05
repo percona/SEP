@@ -482,6 +482,7 @@ async def _process_queue_item(queue_id: int, request: Request):
                 "secure": tasks_settings.NOMAD.SECURE,
                 "timeout": tasks_settings.NOMAD.TIMEOUT,
                 "verify": tasks_settings.NOMAD.VERIFY,
+                "cert": tasks_settings.NOMAD.CERT,
             }
             executor = NomadExecutor(backend_config, database, execution_request, task)
         case _:

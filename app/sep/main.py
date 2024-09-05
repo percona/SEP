@@ -32,6 +32,7 @@ templates = sep_settings.TEMPLATES
 
 
 # TODO: Improve exception handlers, maybe use it for redirects
+# TODO: better errors for external services -- pmm, nomad, casdoor
 @sep_app.exception_handler(500)
 async def custom_error_handler(request, exc):
     """Load custom error page."""

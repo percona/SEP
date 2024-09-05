@@ -15,7 +15,10 @@ from pydantic import HttpUrl
 
 def resolve_relative_path(v: PathLike | str) -> Path:
     """Resolve relative paths with BASE_DIR."""
-    return Path(__file__).resolve().parent.parent.parent / v
+    try:
+        return Path(__file__).resolve().parent.parent.parent / v
+    except TypeError as exc:
+        raise ValueError from exc
 
 
 def validate_http_url(v: str) -> str:

@@ -43,7 +43,12 @@ production_docker:
       - http://127.0.0.1:9999
       - http://host.docker.internal:9999
   NOMAD:
-    ENDPOINT: http://host.docker.internal:4646
+    ENDPOINT: https://host.docker.internal:4646
+    SECURE: true
+    VERIFY: data/nomad-agent-ca.pem
+    CERT:
+      - data/global-client-nomad.pem
+      - data/global-client-nomad-key.pem
   BACKEND_CORS_ORIGINS:
     - http://localhost:8003
     - http://127.0.0.1:8003

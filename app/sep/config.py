@@ -20,6 +20,7 @@ from app.core.fields import URIPath
 from app.sep.models import Plugin
 
 
+# TODO: Adjust/correct/complete docstrings
 class OAuthOptions(BaseModel):
     """Configuration options for OAuth2 authentication.
 

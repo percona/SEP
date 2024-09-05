@@ -26,6 +26,7 @@ async def transform_payload(payload: str | bytes, payload_format: str) -> str:
         secure=tasks_settings.NOMAD.SECURE,
         timeout=tasks_settings.NOMAD.TIMEOUT,
         verify=tasks_settings.NOMAD.VERIFY,
+        cert=tasks_settings.NOMAD.CERT,
     )
 
     match payload_format:
