@@ -3,7 +3,7 @@
 ###########
 
 # Use an official Python runtime as a parent image
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -14,8 +14,8 @@ ENV FASTAPI_ENV production
 WORKDIR /app
 
 # install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc netcat-traditional
+RUN apk update && \
+    apk add --no-cache gcc netcat-openbsd
 
 # Install dependencies
 COPY pyproject.toml /app/
