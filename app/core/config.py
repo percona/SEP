@@ -9,7 +9,6 @@ from typing import Literal
 from typing import Self
 
 from casdoor import AsyncCasdoorSDK
-from casdoor import CasdoorSDK
 from fastapi.utils import deep_dict_update
 from pydantic import AnyUrl
 from pydantic import BaseModel
@@ -143,7 +142,6 @@ class CasdoorOptions(BaseModel):
         The front-end endpoint for the Casdoor integration.
     CERTIFICATE
     SDK
-    SYNC_SDK
 
     """
 
@@ -167,19 +165,6 @@ class CasdoorOptions(BaseModel):
     def SDK(self) -> AsyncCasdoorSDK:
         """Asynchronous Casdoor SDK instance."""
         return AsyncCasdoorSDK(
-            endpoint=self.ENDPOINT,
-            client_id=self.CLIENT_ID,
-            client_secret=self.CLIENT_SECRET,
-            certificate=self.CERTIFICATE,
-            org_name=self.ORGANIZATION_NAME,
-            application_name=self.APPLICATION_NAME,
-            front_endpoint=self.FRONT_ENDPOINT,
-        )
-
-    @cached_property
-    def SYNC_SDK(self) -> CasdoorSDK:
-        """Synchronous Casdoor SDK instance."""
-        return CasdoorSDK(
             endpoint=self.ENDPOINT,
             client_id=self.CLIENT_ID,
             client_secret=self.CLIENT_SECRET,
