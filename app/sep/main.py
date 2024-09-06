@@ -107,4 +107,5 @@ if __name__ == "__main__":
         sep_app,
         host=sep_settings.SEP_ENDPOINT.host,
         port=sep_settings.SEP_ENDPOINT.port,
+        proxy_headers=sep_settings.PROXY_HEADERS,
     )

@@ -89,6 +89,7 @@ class SEPSettings(BaseYamlExtraSettings):
     ALTERS_DB_USERNAME: str | None = None
     ALTERS_DB_PASSWORD: str | None = None
     PLUGINS: list[Plugin] = []
+    PROXY_HEADERS: bool = False
 
     @field_validator("ALTERS_DB_PASSWORD")
     @classmethod
