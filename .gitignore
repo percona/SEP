@@ -384,3 +384,4 @@ MigrationBackup/
 *.patch
 *.pem
 *.key
+static/sep-db.sql.txt
