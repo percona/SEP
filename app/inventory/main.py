@@ -39,4 +39,6 @@ if __name__ == "__main__":
         inventory_app,
         host=inventory_settings.INVENTORY_ENDPOINT.host,
         port=inventory_settings.INVENTORY_ENDPOINT.port,
+        ssl_keyfile=inventory_settings.INVENTORY_SSL_KEYFILE,
+        ssl_certfile=inventory_settings.INVENTORY_SSL_CERTFILE,
     )

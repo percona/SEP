@@ -17,6 +17,8 @@ casdoor_sdk = settings.CASDOOR.SDK
 
 app = FastAPI()
 
+# TODO: update deprecates
+
 
 @app.on_event("startup")
 async def startup():

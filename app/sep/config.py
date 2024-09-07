@@ -16,6 +16,7 @@ from pydantic import model_validator
 from app.core.config import BaseYamlExtraSettings
 from app.core.config import settings
 from app.core.fields import RelativeDirectoryPath
+from app.core.fields import RelativeFilePath
 from app.core.fields import URIPath
 from app.sep.models import Plugin
 
@@ -90,6 +91,8 @@ class SEPSettings(BaseYamlExtraSettings):
     ALTERS_DB_PASSWORD: str | None = None
     PLUGINS: list[Plugin] = []
     PROXY_HEADERS: bool = False
+    SSL_KEYFILE: RelativeFilePath | None = None
+    SSL_CERTFILE: RelativeFilePath | None = None
 
     @field_validator("ALTERS_DB_PASSWORD")
     @classmethod

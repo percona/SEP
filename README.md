@@ -54,7 +54,7 @@ source venv/bin/activate
 
 In Casdoor's web interface, navigate to Identity > Certs > cert-built-in
 (should be in [this link](http://localhost:9999/certs/admin/cert-built-in)) and click on
-the **Download certificate** button. Save the `token_jwt_key.pem` file in the **SEP/data** folder.
+the **Download certificate** button. Save the `token_jwt_key.pem` file in the **SEP/data/certs/casdoor** folder.
 
 ![image](https://github.com/user-attachments/assets/fbacba5d-4f08-4331-b54f-985015f750ac)
 
@@ -83,7 +83,7 @@ These are the possible settings you can have, per app:
 |----------------------------|-----------|----------|-----------------------------------------------------|------------------------------------------------|
 | BASE_URI                   | all       | yes      | N/A                                                 | N/A                                            |
 | CASDOOR__ENDPOINT          | all       | yes      | N/A                                                 | N/A                                            |
-| CASDOOR__CERTIFICATE_PATH  | all       | yes      | N/A                                                 | data/token_jwt_key.pem                         |
+| CASDOOR__CERTIFICATE_PATH  | all       | yes      | N/A                                                 | data/certs/token_jwt_key.pem                   |
 | CASDOOR__ORGANIZATION_NAME | all       | no       | built-in                                            | N/A                                            |
 | CASDOOR__APPLICATION_NAME  | all       | no       | app-built-in                                        | N/A                                            |
 | AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                         |

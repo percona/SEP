@@ -222,6 +222,7 @@ class Settings(BaseYamlSettings):
     LOGGING: LogLevel = LogLevel.WARNING
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     BASE_URI: HttpUrl
+    SSL_CAFILE: RelativeFilePath | None = None
 
     @computed_field
     @property

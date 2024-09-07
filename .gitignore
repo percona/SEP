@@ -384,4 +384,7 @@ MigrationBackup/
 *.patch
 *.pem
 *.key
+*.srl
+*.p12
 static/sep-db.sql.txt
+data/nomad.hcl

@@ -2,7 +2,7 @@ default:
   AUTH_USER_MODEL: app.models.CasdoorUser
   CASDOOR:
     ENDPOINT: http://localhost:9999
-    CERTIFICATE_PATH: data/token_jwt_key.pem
+    CERTIFICATE_PATH: data/certs/casdoor/token_jwt_key.pem
   OAUTH:
     REDIRECT_URI: http://localhost:8000/oauth/callback
     COOKIE_NAME: casdoorToken
@@ -30,14 +30,14 @@ development:
       URI_PATH: /tasks
       CSS_CLASS: tasks
 production_docker:
-  SEP_ENDPOINT: http://0.0.0.0:8003
-  INVENTORY_ENDPOINT: http://inventory_api:8001
-  TASKS_ENDPOINT: http://tasks_api:8002
+  SEP_ENDPOINT: https://0.0.0.0:8003
+  INVENTORY_ENDPOINT: https://inventory_api:8001
+  TASKS_ENDPOINT: https://tasks_api:8002
   PMM:
     ENDPOINT: https://host.docker.internal:8443
   CASDOOR:
     ENDPOINT: http://casdoor:8000
-    FRONT_ENDPOINT: http://localhost:9999
+    FRONT_ENDPOINT: https://localhost:9999
     ALLOWED_ISSUERS:
       - http://localhost:9999
       - http://127.0.0.1:9999
@@ -45,13 +45,20 @@ production_docker:
   NOMAD:
     ENDPOINT: https://host.docker.internal:4646
     SECURE: true
-    VERIFY: data/nomad-agent-ca.pem
+    VERIFY: data/certs/sep-ca.pem
     CERT:
-      - data/global-client-nomad.pem
-      - data/global-client-nomad-key.pem
+      - data/certs/nomad/global-client-nomad.pem
+      - data/certs/nomad/global-client-nomad-key.pem
   BACKEND_CORS_ORIGINS:
-    - http://localhost:8003
-    - http://127.0.0.1:8003
+    - https://localhost:8003
+    - https://127.0.0.1:8003
   OAUTH:
-    REDIRECT_URI: http://localhost/oauth/callback
-  BASE_URI: http://localhost
+    REDIRECT_URI: https://localhost/oauth/callback
+  BASE_URI: https://localhost
+  SSL_CAFILE: data/certs/sep-ca.pem
+  SSL_KEYFILE: data/certs/sep/localhost-cert-key.pem
+  SSL_CERTFILE: data/certs/sep/localhost-cert.pem
+  INVENTORY_SSL_KEYFILE: data/certs/sep/inventory_api-cert-key.pem
+  INVENTORY_SSL_CERTFILE: data/certs/sep/inventory_api-cert.pem
+  TASKS_SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
+  TASKS_SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem

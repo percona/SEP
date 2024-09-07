@@ -13,8 +13,10 @@ from pydantic import ValidationError
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.requests import RemoteAPI
+from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.sep.exceptions import OAuthRedirectException
+from app.tasks.config import tasks_settings
 from app.tasks.models import GeneratedTask
 
 logger = logging.getLogger(__name__)
@@ -90,6 +92,9 @@ def get_inventory_api(user: CurrentUser) -> RemoteAPI:
     return RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
         api_key=user.access_token,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=inventory_settings.INVENTORY_SSL_KEYFILE,
+        ssl_certfile=inventory_settings.INVENTORY_SSL_CERTFILE,
     )
 
 
@@ -97,7 +102,13 @@ InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 
 
 async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
-    return RemoteAPI(endpoint=sep_settings.TASKS_ENDPOINT, api_key=user.access_token)
+    return RemoteAPI(
+        endpoint=sep_settings.TASKS_ENDPOINT,
+        api_key=user.access_token,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=tasks_settings.TASKS_SSL_KEYFILE,
+        ssl_certfile=tasks_settings.TASKS_SSL_CERTFILE,
+    )
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]

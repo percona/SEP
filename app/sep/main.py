@@ -108,4 +108,6 @@ if __name__ == "__main__":
         host=sep_settings.SEP_ENDPOINT.host,
         port=sep_settings.SEP_ENDPOINT.port,
         proxy_headers=sep_settings.PROXY_HEADERS,
+        ssl_keyfile=sep_settings.SSL_KEYFILE,
+        ssl_certfile=sep_settings.SSL_CERTFILE,
     )

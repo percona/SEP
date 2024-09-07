@@ -1,4 +1,7 @@
 import logging
+from functools import cached_property
+from ssl import create_default_context
+from ssl import SSLContext
 from typing import Any
 from urllib.parse import urljoin
 
@@ -8,6 +11,7 @@ from pydantic import computed_field
 from pydantic import HttpUrl
 
 from app.core.config import BaseCaseInsensitiveModel
+from app.core.fields import RelativeFilePath
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,20 @@ class RemoteAPI(BaseCaseInsensitiveModel):
     endpoint: HttpUrl
     api_key: str
     verify_ssl: bool = True
+    ssl_cafile: RelativeFilePath | None = None
+    ssl_keyfile: RelativeFilePath | None = (
+        None  # TODO: make this single tuple like with nomad
+    )
+    ssl_certfile: RelativeFilePath | None = None
+
+    @cached_property
+    def ssl_context(self) -> SSLContext:
+        context = create_default_context(cafile=self.ssl_cafile)
+        if self.ssl_certfile:
+            context.load_cert_chain(
+                certfile=self.ssl_certfile, keyfile=self.ssl_keyfile
+            )
+        return context
 
     @computed_field
     @property
@@ -59,7 +77,9 @@ class RemoteAPI(BaseCaseInsensitiveModel):
             )
             path = urljoin(base_path, path)
             path = path + "/" if trailing_slash else path
-        if not self.verify_ssl:
+        if self.verify_ssl:
+            kwargs["ssl"] = self.ssl_context
+        else:
             kwargs["ssl"] = False
         logger.debug(
             "Sending %s request to %s%s with kwargs %s and headers %s",

@@ -19,6 +19,8 @@ class TasksSettings(BaseYamlExtraSettings):
     NOMAD: NomadOptions
     EXECUTE_MODE: str = "background"
     TASKS_ENDPOINT: HttpUrl
+    TASKS_SSL_KEYFILE: RelativeFilePath | None = None
+    TASKS_SSL_CERTFILE: RelativeFilePath | None = None
 
 
 tasks_settings = TasksSettings()

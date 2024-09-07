@@ -197,10 +197,21 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
         "%(module)s.%(funcName)s - %(message)s",
     )
+
+    @tasks_app.on_event("startup")
+    async def startup():
+        await prepare_database()
+
+    @tasks_app.on_event("shutdown")
+    async def shutdown():
+        await database_shutdown()
+
     import uvicorn
 
     uvicorn.run(
         tasks_app,
         host=tasks_settings.TASKS_ENDPOINT.host,
         port=tasks_settings.TASKS_ENDPOINT.port,
+        ssl_keyfile=tasks_settings.TASKS_SSL_KEYFILE,
+        ssl_certfile=tasks_settings.TASKS_SSL_CERTFILE,
     )
