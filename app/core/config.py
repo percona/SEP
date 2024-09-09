@@ -15,7 +15,6 @@ from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import DirectoryPath
 from pydantic import field_validator
-from pydantic import HttpUrl
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
@@ -27,6 +26,7 @@ from app.core.fields import RelativeFilePath
 from app.core.fields import RequiredStr
 from app.core.fields import StrHttpUrl
 from app.core.fields import StrImportableAttribute
+from app.core.fields import URL
 from app.core.utils import deep_dict_update
 from app.core.utils import to_uppercase
 
@@ -151,8 +151,19 @@ class CasdoorOptions(BaseModel):
     CERTIFICATE_PATH: RelativeFilePath
     ORGANIZATION_NAME: str = "built-in"
     APPLICATION_NAME: str = "app-built-in"
-    FRONT_ENDPOINT: StrHttpUrl = ""
+    FRONT_ENDPOINT: URL = URL()
     ALLOWED_ISSUERS: list[StrHttpUrl] = []
+
+    def get_frontend_url(self, base_url: URL | None = None) -> URL:
+        frontend_url = self.FRONT_ENDPOINT
+        base_url = URL(self.ENDPOINT) if base_url is None else base_url
+        url_data = {
+            "scheme": frontend_url.scheme or base_url.scheme,
+            "hostname": frontend_url.hostname or base_url.hostname,
+            "port": frontend_url.port or base_url.port,
+            "path": frontend_url.path or base_url.path,
+        }
+        return frontend_url.replace(**url_data)
 
     @computed_field
     @cached_property
@@ -171,19 +182,12 @@ class CasdoorOptions(BaseModel):
             certificate=self.CERTIFICATE,
             org_name=self.ORGANIZATION_NAME,
             application_name=self.APPLICATION_NAME,
-            front_endpoint=self.FRONT_ENDPOINT,
         )
 
     @model_validator(mode="after")
     def _set_default_allowed_issuers(self) -> Self:
         if self.ENDPOINT not in self.ALLOWED_ISSUERS:
             self.ALLOWED_ISSUERS.append(self.ENDPOINT)
-        return self
-
-    @model_validator(mode="after")
-    def _set_default_front_endpoint(self) -> Self:
-        if not self.FRONT_ENDPOINT:
-            self.FRONT_ENDPOINT = self.ENDPOINT
         return self
 
 
@@ -208,8 +212,6 @@ class Settings(BaseYamlSettings):
         The logging level for the application. Defaults to `LogLevel.WARNING`.
     BACKEND_CORS_ORIGINS : list of AnyUrl
         A list of allowed CORS origins.
-    BASE_URI: HttpUrl
-        Base URI for the application.
     PUBLIC_KEY
 
     """
@@ -221,7 +223,6 @@ class Settings(BaseYamlSettings):
     PRIVATE_KEY_PATH: RelativeFilePath | None = None
     LOGGING: LogLevel = LogLevel.WARNING
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
-    BASE_URI: HttpUrl
     SSL_CAFILE: RelativeFilePath | None = None
 
     @computed_field

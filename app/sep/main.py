@@ -14,8 +14,10 @@ from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
+from app.sep.deps import get_base_url
 from app.sep.deps import get_current_user
 from app.sep.deps import get_default_context
+from app.sep.deps import get_oauth_redirect_exception
 from app.sep.deps import IsAuthenticatedCookie
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,11 @@ templates = sep_settings.TEMPLATES
 @sep_app.exception_handler(500)
 async def custom_error_handler(request, exc):
     """Load custom error page."""
-    user = await get_current_user(request.cookies.get(sep_settings.OAUTH.COOKIE_NAME))
+    base_url = get_base_url(request)
+    user = await get_current_user(
+        get_oauth_redirect_exception(base_url),
+        request.cookies.get(sep_settings.OAUTH.COOKIE_NAME),
+    )
     return templates.TemplateResponse(
         request=request,
         status_code=exc.status_code,
@@ -48,7 +54,11 @@ async def custom_error_handler(request, exc):
 @sep_app.exception_handler(404)
 async def custom_404_handler(request, exc):
     """Load custom 404 page."""
-    user = await get_current_user(request.cookies.get(sep_settings.OAUTH.COOKIE_NAME))
+    base_url = get_base_url(request)
+    user = await get_current_user(
+        get_oauth_redirect_exception(base_url),
+        request.cookies.get(sep_settings.OAUTH.COOKIE_NAME),
+    )
     return templates.TemplateResponse(
         request=request,
         status_code=404,

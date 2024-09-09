@@ -7,15 +7,17 @@ from typing import Any
 from fastapi import Cookie
 from fastapi import Depends
 from fastapi import Form
+from fastapi import Request
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 
+from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
+from app.core.fields import URL
 from app.core.requests import RemoteAPI
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
-from app.sep.exceptions import OAuthRedirectException
 from app.tasks.config import tasks_settings
 from app.tasks.models import GeneratedTask
 
@@ -23,7 +25,25 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
+def get_base_url(request: Request) -> URL:
+    return request.url.replace(path="")
+
+
+BaseURL = Annotated[URL, Depends(get_base_url)]
+
+
+def get_oauth_redirect_exception(base_url: BaseURL) -> HTTPTemporaryRedirectException:
+    logger.error("BASE_URL: %s", base_url)
+    return HTTPTemporaryRedirectException(sep_settings.OAUTH.get_auth_url(base_url))
+
+
+OAuthRedirectException = Annotated[
+    HTTPTemporaryRedirectException, Depends(get_oauth_redirect_exception)
+]
+
+
 async def get_current_user(
+    oauth_redirect_exception: OAuthRedirectException,
     token: Annotated[str, Cookie(alias=sep_settings.OAUTH.COOKIE_NAME)] = "",
 ) -> User:
     """Return the authenticated user from a cookie token.
@@ -50,11 +70,11 @@ async def get_current_user(
         user = await User.from_jwt(token)
     except (InvalidTokenError, ValidationError):
         logger.exception("Failed to authenticate user")
-        raise OAuthRedirectException from None
+        raise oauth_redirect_exception from None
     if not user.is_active:
         logger.error("User %s is not active", user.username)
         # TODO: Message on inactive
-        raise OAuthRedirectException
+        raise oauth_redirect_exception
     return user
 
 
@@ -62,13 +82,15 @@ IsAuthenticatedCookie = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticatedCookie]
 
 
-def get_default_context(user: CurrentUser) -> dict[str, Any]:
+def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
     """Return the default context for templates.
 
     Parameters
     ----------
     user: CurrentUser
         The authenticated user.
+    base_uri: BaseURI
+        The base URI of the application.
 
     Returns
     -------
@@ -78,8 +100,8 @@ def get_default_context(user: CurrentUser) -> dict[str, Any]:
     """
     return {
         "user": user,
-        "casdoor_url": settings.CASDOOR.FRONT_ENDPOINT,
-        "base_uri": settings.BASE_URI,
+        "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
+        "base_uri": base_uri,
         "plugins": sep_settings.PLUGINS,
     }
 

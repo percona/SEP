@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.main import api_router
 from app.core.config import settings
 from app.inventory.main import inventory_app
+from app.sep.config import sep_settings
 from app.sep.main import sep_app
 from app.tasks.main import database_shutdown
 from app.tasks.main import prepare_database
@@ -55,4 +56,6 @@ if __name__ == "__main__":
     )
     import uvicorn
 
-    uvicorn.run(app, host=settings.BASE_URI.host, port=settings.BASE_URI.port)
+    uvicorn.run(
+        app, host=sep_settings.SEP_ENDPOINT.host, port=sep_settings.SEP_ENDPOINT.port
+    )

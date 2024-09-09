@@ -2,7 +2,6 @@
 
 from functools import cached_property
 from pathlib import Path
-from typing import Self
 from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
@@ -11,13 +10,13 @@ from pydantic import computed_field
 from pydantic import Field
 from pydantic import field_validator
 from pydantic import HttpUrl
-from pydantic import model_validator
 
 from app.core.config import BaseYamlExtraSettings
 from app.core.config import settings
 from app.core.fields import RelativeDirectoryPath
 from app.core.fields import RelativeFilePath
 from app.core.fields import URIPath
+from app.core.fields import URL
 from app.sep.models import Plugin
 
 
@@ -39,24 +38,31 @@ class OAuthOptions(BaseModel):
 
     """
 
-    REDIRECT_URI: HttpUrl
+    REDIRECT_URI: HttpUrl | URIPath
     POST_LOGIN_URI: HttpUrl | URIPath = "/"
     AUTH_LINK: str = ""
     COOKIE_NAME: str = "authToken"
 
-    @model_validator(mode="after")
-    def _set_default_auth_link(self) -> Self:
-        if not self.AUTH_LINK:
-            url = settings.CASDOOR.FRONT_ENDPOINT + "/login/oauth/authorize?"
-            params = {
-                "client_id": settings.CASDOOR.CLIENT_ID,
-                "response_type": "code",
-                "redirect_uri": self.REDIRECT_URI,
-                "scope": "read",
-                "state": settings.CASDOOR.APPLICATION_NAME,
-            }
-            self.AUTH_LINK = url + urlencode(params)
-        return self
+    def get_auth_url(self, base_url: URL | None = None) -> str:
+        if self.AUTH_LINK:
+            return self.AUTH_LINK
+
+        redirect_uri = self.REDIRECT_URI
+
+        if base_url is not None and isinstance(self.REDIRECT_URI, str):
+            redirect_uri = base_url.replace(path=redirect_uri)
+
+        params = {
+            "client_id": settings.CASDOOR.CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "scope": "read",
+            "state": settings.CASDOOR.APPLICATION_NAME,
+        }
+        url = settings.CASDOOR.get_frontend_url(base_url).replace(
+            path="/login/oauth/authorize", query=urlencode(params)
+        )
+        return str(url)
 
 
 class SEPSettings(BaseYamlExtraSettings):
