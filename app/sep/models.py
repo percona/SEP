@@ -1,7 +1,8 @@
 """Define models for the SEP app."""
 
-from typing import Self
+from typing import Any
 
+from pydantic import ConfigDict
 from pydantic import field_validator
 from pydantic import HttpUrl
 from pydantic import model_validator
@@ -37,10 +38,19 @@ class Plugin(BaseCaseInsensitiveModel):
 
     """
 
+    model_config = ConfigDict(frozen=True)
     name: str
     module_name: StrImportableModule
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
+
+    def __hash__(self) -> int:
+        return hash(self.module_name)
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, Plugin):
+            return self.module_name == other.module_name
+        raise NotImplementedError
 
     @field_validator("module_name", mode="before")
     @classmethod
@@ -63,9 +73,11 @@ class Plugin(BaseCaseInsensitiveModel):
         """
         return f"app.sep.plugins.{v}"
 
-    @model_validator(mode="after")
-    def _set_default_from_name(self) -> Self:
-        slug = slugify(self.name)
-        self.uri_path = self.uri_path or f"/{slug}"
-        self.css_class = self.css_class or slug
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _set_default_from_name(cls, data: Any) -> Any:
+        if isinstance(data, dict) and (name := data.get("name")):
+            slug = slugify(name)
+            data["uri_path"] = data.get("uri_path") or f"/{slug}"
+            data["css_class"] = data.get("css_class") or slug
+        return data

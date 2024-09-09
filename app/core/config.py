@@ -9,7 +9,6 @@ from typing import Literal
 from typing import Self
 
 from casdoor import AsyncCasdoorSDK
-from fastapi.utils import deep_dict_update
 from pydantic import AnyUrl
 from pydantic import BaseModel
 from pydantic import computed_field
@@ -28,6 +27,7 @@ from app.core.fields import RelativeFilePath
 from app.core.fields import RequiredStr
 from app.core.fields import StrHttpUrl
 from app.core.fields import StrImportableAttribute
+from app.core.utils import deep_dict_update
 from app.core.utils import to_uppercase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

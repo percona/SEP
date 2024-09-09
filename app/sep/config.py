@@ -89,7 +89,7 @@ class SEPSettings(BaseYamlExtraSettings):
     SEP_ENDPOINT: HttpUrl = Field(default="http://0.0.0.0:8000", validate_default=True)
     ALTERS_DB_USERNAME: str | None = None
     ALTERS_DB_PASSWORD: str | None = None
-    PLUGINS: list[Plugin] = []
+    PLUGINS: set[Plugin] = set()
     PROXY_HEADERS: bool = False
     SSL_KEYFILE: RelativeFilePath | None = None
     SSL_CERTFILE: RelativeFilePath | None = None

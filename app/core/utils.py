@@ -5,6 +5,7 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from datetime import timezone
 from http import HTTPStatus
+from typing import Any
 from typing import Callable
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
@@ -116,3 +117,21 @@ def get_timestamp() -> datetime:
     :rtype: datetime
     """
     return datetime.now(tz=timezone.utc)
+
+
+def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> None:
+    for key, value in update_dict.items():
+        if (
+            key in main_dict
+            and isinstance(main_dict[key], dict)
+            and isinstance(value, dict)
+        ):
+            deep_dict_update(main_dict[key], value)
+        elif (
+            key in main_dict
+            and isinstance(main_dict[key], list)
+            and isinstance(update_dict[key], list)
+        ):
+            main_dict[key] = update_dict[key] + main_dict[key]
+        else:
+            main_dict[key] = value
