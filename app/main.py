@@ -57,5 +57,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        app, host=sep_settings.SEP_ENDPOINT.host, port=sep_settings.SEP_ENDPOINT.port
+        app,
+        host=sep_settings.SEP_ENDPOINT.host,
+        port=sep_settings.SEP_ENDPOINT.port,
     )

@@ -60,7 +60,8 @@ class OAuthOptions(BaseModel):
             "state": settings.CASDOOR.APPLICATION_NAME,
         }
         url = settings.CASDOOR.get_frontend_url(base_url).replace(
-            path="/login/oauth/authorize", query=urlencode(params)
+            path="/login/oauth/authorize",
+            query=urlencode(params),
         )
         return str(url)
 

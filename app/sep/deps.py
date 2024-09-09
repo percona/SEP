@@ -38,7 +38,8 @@ def get_oauth_redirect_exception(base_url: BaseURL) -> HTTPTemporaryRedirectExce
 
 
 OAuthRedirectException = Annotated[
-    HTTPTemporaryRedirectException, Depends(get_oauth_redirect_exception)
+    HTTPTemporaryRedirectException,
+    Depends(get_oauth_redirect_exception),
 ]
 
 
