@@ -31,7 +31,8 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         context = create_default_context(cafile=self.ssl_cafile)
         if self.ssl_certfile:
             context.load_cert_chain(
-                certfile=self.ssl_certfile, keyfile=self.ssl_keyfile
+                certfile=self.ssl_certfile,
+                keyfile=self.ssl_keyfile,
             )
         return context
 
