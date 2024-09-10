@@ -101,21 +101,21 @@ These are the possible settings you can have, per app:
 | AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                         |
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                            |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000] |
-| PMM__ENDPOINT              | inventory | yes      | N/A                                                 | https://127.0.0.1                              |
-| PMM__VERIFY_SSL            | inventory | no       | True                                                | False                                          |
-| NOMAD__ENDPOINT            | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                          |
-| NOMAD__SECURE              | tasks     | no       | False                                               | N/A                                            |
-| NOMAD__TIMEOUT             | tasks     | no       | 10                                                  | N/A                                            |
-| NOMAD__VERIFY              | tasks     | no       | False                                               | N/A                                            |
-| EXECUTE_MODE               | tasks     | no       | background                                          | N/A                                            |
-| INVENTORY_ENDPOINT         | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory            |
-| TASKS_ENDPOINT             | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                |
-| OAUTH__REDIRECT_URI        | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback           |
-| OAUTH__POST_LOGIN_URI      | sep       | no       | /                                                   | N/A                                            |
-| OAUTH__AUTH_LINK           | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                            |
-| OAUTH__COOKIE_NAME         | sep       | no       | authToken                                           | casdoorToken                                   |
-| TEMPLATES_DIR              | sep       | no       | templates                                           | templates                                      |
-| STATIC_DIR                 | sep       | no       | static                                              | N/A                                            |
+| INVENTORY__PMM__ENDPOINT   | inventory | yes      | N/A                                                 | https://127.0.0.1                              |
+| INVENTORY__PMM__VERIFY_SSL | inventory | no       | True                                                | False                                          |
+| TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                          |
+| TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                            |
+| TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | N/A                                            |
+| TASKS__NOMAD__VERIFY       | tasks     | no       | False                                               | N/A                                            |
+| TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                            |
+| SEP__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory            |
+| SEP__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                |
+| SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback           |
+| SEP__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                            |
+| SEP__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                            |
+| SEP__OAUTH__COOKIE_NAME    | sep       | no       | authToken                                           | casdoorToken                                   |
+| SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                      |
+| SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                            |
 
 
 Path settings (`CASDOOR__CERTIFICATE_PATH`, `TEMPLATES_DIR`, `STATIC_DIR`, etc.) may have

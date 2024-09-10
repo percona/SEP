@@ -58,6 +58,6 @@ if __name__ == "__main__":
 
     uvicorn.run(
         app,
-        host=sep_settings.SEP_ENDPOINT.host,
-        port=sep_settings.SEP_ENDPOINT.port,
+        host=sep_settings.UVICORN_HOST,
+        port=sep_settings.UVICORN_PORT,
     )

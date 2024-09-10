@@ -7,56 +7,71 @@ default:
     ALLOWED_ISSUERS:
       - http://localhost:9999
       - http://127.0.0.1:9999
-  OAUTH:
-    COOKIE_NAME: casdoorToken
-    REDIRECT_URI: /oauth/callback
-  PMM:
-    ENDPOINT: https://127.0.0.1:8443
-    VERIFY_SSL: false
-  TEMPLATES_DIR: templates
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
-  NOMAD:
-    ENDPOINT: http://127.0.0.1:4646
-  SEP_ENDPOINT: http://localhost:8000
-  PLUGINS:
-    - NAME: Schema Change
-      MODULE_NAME: alters
-      URI_PATH: /alters
-      CSS_CLASS: alters
+  SEP:
+    OAUTH:
+      COOKIE_NAME: casdoorToken
+      REDIRECT_URI: /oauth/callback
+    PLUGINS:
+      - NAME: Schema Change
+        MODULE_NAME: alters
+        URI_PATH: /alters
+        CSS_CLASS: alters
+  INVENTORY:
+    PMM:
+      ENDPOINT: https://127.0.0.1:8443
+      VERIFY_SSL: false
+  TASKS:
+    NOMAD:
+      ENDPOINT: http://127.0.0.1:4646
+
 development:
-  INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
-  TASKS_ENDPOINT: http://localhost:8000/api/tasks
-  PLUGINS:
-    - NAME: Task Manager
-      MODULE_NAME: tasks
-      URI_PATH: /tasks
-      CSS_CLASS: tasks
+  SEP:
+    INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
+    TASKS_ENDPOINT: http://localhost:8000/api/tasks
+    PLUGINS:
+      - NAME: Task Manager
+        MODULE_NAME: tasks
+        URI_PATH: /tasks
+        CSS_CLASS: tasks
+  TASKS:
+    NOMAD:
+      ENDPOINT: https://127.0.0.1:4646
+      SECURE: true
+      VERIFY: data/certs/sep-ca.pem
+      CERT:
+        - data/certs/nomad/global-client-nomad.pem
+        - data/certs/nomad/global-client-nomad-key.pem
+
 production_docker:
-  SEP_ENDPOINT: https://0.0.0.0:8003
-  INVENTORY_ENDPOINT: https://inventory_api:8001
-  TASKS_ENDPOINT: https://tasks_api:8002
-  PMM:
-    ENDPOINT: https://host.docker.internal:8443
   CASDOOR:
     ENDPOINT: http://casdoor:8000
     ALLOWED_ISSUERS:
       - http://host.docker.internal:9999
-  NOMAD:
-    ENDPOINT: https://host.docker.internal:4646
-    SECURE: true
-    VERIFY: data/certs/sep-ca.pem
-    CERT:
-      - data/certs/nomad/global-client-nomad.pem
-      - data/certs/nomad/global-client-nomad-key.pem
+  SEP:
+    INVENTORY_ENDPOINT: https://inventory_api:9001
+    TASKS_ENDPOINT: https://tasks_api:9002
+    SSL_KEYFILE: data/certs/sep/localhost-cert-key.pem
+    SSL_CERTFILE: data/certs/sep/localhost-cert.pem
+    PROXY_HEADERS: true
+  INVENTORY:
+    PMM:
+      ENDPOINT: https://host.docker.internal:8443
+    SSL_KEYFILE: data/certs/sep/inventory_api-cert-key.pem
+    SSL_CERTFILE: data/certs/sep/inventory_api-cert.pem
+  TASKS:
+    NOMAD:
+      ENDPOINT: https://host.docker.internal:4646
+      SECURE: true
+      VERIFY: data/certs/sep-ca.pem
+      CERT:
+        - data/certs/nomad/global-client-nomad.pem
+        - data/certs/nomad/global-client-nomad-key.pem
+    SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
+    SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
   BACKEND_CORS_ORIGINS:
     - https://localhost:8003
     - https://127.0.0.1:8003
   SSL_CAFILE: data/certs/sep-ca.pem
-  SSL_KEYFILE: data/certs/sep/localhost-cert-key.pem
-  SSL_CERTFILE: data/certs/sep/localhost-cert.pem
-  INVENTORY_SSL_KEYFILE: data/certs/sep/inventory_api-cert-key.pem
-  INVENTORY_SSL_CERTFILE: data/certs/sep/inventory_api-cert.pem
-  TASKS_SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
-  TASKS_SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem

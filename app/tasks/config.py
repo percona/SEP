@@ -1,5 +1,7 @@
 """Define settings for the Inventory API."""
 
+from typing import ClassVar
+
 from pydantic import BaseModel
 from pydantic import HttpUrl
 
@@ -16,11 +18,10 @@ class NomadOptions(BaseModel):
 
 
 class TasksSettings(BaseYamlExtraSettings):
+    SETTINGS_PREFIXES: ClassVar[tuple[str]] = ("TASKS",)
+    UVICORN_PORT: int = 8002
     NOMAD: NomadOptions
     EXECUTE_MODE: str = "background"
-    TASKS_ENDPOINT: HttpUrl
-    TASKS_SSL_KEYFILE: RelativeFilePath | None = None
-    TASKS_SSL_CERTFILE: RelativeFilePath | None = None
 
 
 tasks_settings = TasksSettings()

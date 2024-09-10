@@ -1,9 +1,8 @@
 """Define settings for the Inventory API."""
 
-from pydantic import HttpUrl
+from typing import ClassVar
 
 from app.core.config import BaseYamlExtraSettings
-from app.core.fields import RelativeFilePath
 from app.inventory.sources import PMMSource
 
 
@@ -21,10 +20,9 @@ class InventorySettings(BaseYamlExtraSettings):
 
     """
 
+    SETTINGS_PREFIXES: ClassVar[tuple[str]] = ("INVENTORY",)
+    UVICORN_PORT: int = 8001
     PMM: PMMSource
-    INVENTORY_ENDPOINT: HttpUrl
-    INVENTORY_SSL_KEYFILE: RelativeFilePath | None = None
-    INVENTORY_SSL_CERTFILE: RelativeFilePath | None = None
 
 
 inventory_settings = InventorySettings()

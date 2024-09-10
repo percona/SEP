@@ -115,8 +115,8 @@ if __name__ == "__main__":
 
     uvicorn.run(
         sep_app,
-        host=sep_settings.SEP_ENDPOINT.host,
-        port=sep_settings.SEP_ENDPOINT.port,
+        host=sep_settings.UVICORN_HOST,
+        port=sep_settings.UVICORN_PORT,
         proxy_headers=sep_settings.PROXY_HEADERS,
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,

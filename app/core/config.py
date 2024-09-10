@@ -1,12 +1,15 @@
 """Define the application settings."""
 
 import logging
+import re
 import secrets
 from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
+from typing import ClassVar
 from typing import Literal
 from typing import Self
+from typing import Sequence
 
 from casdoor import AsyncCasdoorSDK
 from pydantic import AnyUrl
@@ -34,6 +37,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
 
 
+class LogLevel(IntEnum):
+    """Enumeration of logging levels."""
+
+    CRITICAL = logging.CRITICAL
+    FATAL = logging.CRITICAL
+    ERROR = logging.ERROR
+    WARNING = logging.WARNING
+    WARN = logging.WARNING
+    INFO = logging.INFO
+    DEBUG = logging.DEBUG
+    NOTSET = logging.NOTSET
+    DISABLED = logging.NOTSET
+
+
 class BaseCaseInsensitiveModel(BaseModel):
     """A base model with case-insensitive alias generation.
 
@@ -51,13 +68,21 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
         settings_cls: type[BaseSettings],
         yaml_file: PathType | None = Path("settings.yaml"),
         yaml_file_encoding: str | None = None,
-        prefix: RequiredStr | None = None,
+        prefixes: Sequence[RequiredStr] = (),
         base_prefix: RequiredStr | None = "default",
     ):
         super().__init__(settings_cls, yaml_file, yaml_file_encoding)
-        if prefix:
-            prefix_data = self.yaml_data.get(prefix, {})
-            self.yaml_data = self.yaml_data.get(base_prefix, {}) if base_prefix else {}
+        if prefixes:
+            prefix_data = self.yaml_data.get(prefixes[0], {})
+            base_prefix_data = (
+                self.yaml_data.get(base_prefix, {}) if base_prefix else {}
+            )
+            for prefix in prefixes[1:]:
+                prefix_data = prefix_data.get(prefix, {})
+                base_prefix_data = (
+                    base_prefix_data.get(prefix, {}) if base_prefix else {}
+                )
+            self.yaml_data = base_prefix_data
             deep_dict_update(self.yaml_data, prefix_data)
             self.init_kwargs = self.yaml_data
 
@@ -73,6 +98,7 @@ class BaseYamlSettings(BaseSettings):
         extra="ignore",
     )
     FASTAPI_ENV: str = DEFAULT_FASTAPI_ENV
+    LOGGING: LogLevel = LogLevel.WARNING
 
     @classmethod
     def settings_customise_sources(
@@ -90,13 +116,25 @@ class BaseYamlSettings(BaseSettings):
         return (
             env_settings,
             dotenv_settings,
-            YamlPrefixConfigSettingsSource(settings_cls, prefix=yaml_prefix),
+            YamlPrefixConfigSettingsSource(settings_cls, prefixes=(yaml_prefix,)),
         )
+
+    @field_validator("LOGGING", mode="before")
+    @classmethod
+    def validate_log_level(cls, v: LogLevel | str) -> LogLevel:
+        """Uppercase the provided logging level."""
+        if isinstance(v, LogLevel):
+            return v
+        try:
+            return LogLevel[v.upper()]
+        except KeyError as exc:
+            raise ValueError(f"Invalid log level: '{v}'") from exc
 
 
 class BaseYamlExtraSettings(BaseYamlSettings):
     """Base settings for extra configuration."""
 
+    SETTINGS_PREFIXES: ClassVar[tuple[str]]
     model_config = SettingsConfigDict(
         env_file=".env",
         env_nested_delimiter="__",
@@ -104,20 +142,39 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         cli_parse_args=False,
         extra="ignore",
     )
+    UVICORN_HOST: str = "127.0.0.1"
+    UVICORN_PORT: int = 0
+    SSL_KEYFILE: RelativeFilePath | None = None
+    SSL_CERTFILE: RelativeFilePath | None = None
 
-
-class LogLevel(IntEnum):
-    """Enumeration of logging levels."""
-
-    CRITICAL = logging.CRITICAL
-    FATAL = logging.CRITICAL
-    ERROR = logging.ERROR
-    WARNING = logging.WARNING
-    WARN = logging.WARNING
-    INFO = logging.INFO
-    DEBUG = logging.DEBUG
-    NOTSET = logging.NOTSET
-    DISABLED = logging.NOTSET
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Load settings from Yaml file."""
+        yaml_prefix = env_settings.env_vars.get(
+            "fastapi_env",
+        ) or dotenv_settings.env_vars.get("fastapi_env", DEFAULT_FASTAPI_ENV)
+        env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
+        for env_source in [env_settings, dotenv_settings]:
+            env_vars = {}
+            for key, value in env_source.env_vars.items():
+                env_vars[re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)] = (
+                    value
+                )
+            env_source.env_vars = env_vars
+        return (
+            env_settings,
+            dotenv_settings,
+            YamlPrefixConfigSettingsSource(
+                settings_cls, prefixes=(yaml_prefix, *cls.SETTINGS_PREFIXES)
+            ),
+        )
 
 
 # TODO: Make Casdoor optional, custom auth backend model selectable in settings
@@ -246,17 +303,6 @@ class Settings(BaseYamlSettings):
             with self.PRIVATE_KEY_PATH.open() as key_file:
                 self.SECRET_KEY = key_file.read()
         return self
-
-    @field_validator("LOGGING", mode="before")
-    @classmethod
-    def validate_log_level(cls, v: LogLevel | str) -> LogLevel:
-        """Uppercase the provided logging level."""
-        if isinstance(v, LogLevel):
-            return v
-        try:
-            return LogLevel[v.upper()]
-        except KeyError as exc:
-            raise ValueError(f"Invalid log level: '{v}'") from exc
 
 
 settings = Settings()

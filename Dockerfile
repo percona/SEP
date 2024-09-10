@@ -55,13 +55,15 @@ RUN pip install --no-cache /wheels/*
 # Copy entrypoint.sh
 COPY ./entrypoint.sh .
 RUN chmod +x $APP_HOME/entrypoint.sh
-RUN chown sep:sep $APP_HOME/entrypoint.sh
-
-# Change to the app user
-USER sep
 
 # Copy project
 COPY . $APP_HOME
+
+# Chown all the files to the sep system user
+RUN chown -R sep:sep $APP_HOME
+
+# Change to the sep system user
+USER sep
 
 # Run entrypoint.sh
 ENTRYPOINT ["/home/sep/app/entrypoint.sh"]

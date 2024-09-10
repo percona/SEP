@@ -37,8 +37,8 @@ if __name__ == "__main__":
 
     uvicorn.run(
         inventory_app,
-        host=inventory_settings.INVENTORY_ENDPOINT.host,
-        port=inventory_settings.INVENTORY_ENDPOINT.port,
-        ssl_keyfile=inventory_settings.INVENTORY_SSL_KEYFILE,
-        ssl_certfile=inventory_settings.INVENTORY_SSL_CERTFILE,
+        host=inventory_settings.UVICORN_HOST,
+        port=inventory_settings.UVICORN_PORT,
+        ssl_keyfile=inventory_settings.SSL_KEYFILE,
+        ssl_certfile=inventory_settings.SSL_CERTFILE,
     )

@@ -2,19 +2,18 @@
 
 from functools import cached_property
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from pydantic import computed_field
-from pydantic import Field
 from pydantic import field_validator
 from pydantic import HttpUrl
 
 from app.core.config import BaseYamlExtraSettings
 from app.core.config import settings
 from app.core.fields import RelativeDirectoryPath
-from app.core.fields import RelativeFilePath
 from app.core.fields import URIPath
 from app.core.fields import URL
 from app.sep.models import Plugin
@@ -88,18 +87,17 @@ class SEPSettings(BaseYamlExtraSettings):
 
     """
 
+    SETTINGS_PREFIXES: ClassVar[tuple[str]] = ("SEP",)
+    UVICORN_PORT: int = 8000
     OAUTH: OAuthOptions
     TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
     STATIC_DIR: RelativeDirectoryPath = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
-    SEP_ENDPOINT: HttpUrl = Field(default="http://0.0.0.0:8000", validate_default=True)
     ALTERS_DB_USERNAME: str | None = None
     ALTERS_DB_PASSWORD: str | None = None
     PLUGINS: set[Plugin] = set()
     PROXY_HEADERS: bool = False
-    SSL_KEYFILE: RelativeFilePath | None = None
-    SSL_CERTFILE: RelativeFilePath | None = None
 
     @field_validator("ALTERS_DB_PASSWORD")
     @classmethod

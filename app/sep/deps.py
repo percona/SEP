@@ -116,8 +116,8 @@ def get_inventory_api(user: CurrentUser) -> RemoteAPI:
         endpoint=sep_settings.INVENTORY_ENDPOINT,
         api_key=user.access_token,
         ssl_cafile=settings.SSL_CAFILE,
-        ssl_keyfile=inventory_settings.INVENTORY_SSL_KEYFILE,
-        ssl_certfile=inventory_settings.INVENTORY_SSL_CERTFILE,
+        ssl_keyfile=inventory_settings.SSL_KEYFILE,
+        ssl_certfile=inventory_settings.SSL_CERTFILE,
     )
 
 
@@ -129,8 +129,8 @@ async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
         endpoint=sep_settings.TASKS_ENDPOINT,
         api_key=user.access_token,
         ssl_cafile=settings.SSL_CAFILE,
-        ssl_keyfile=tasks_settings.TASKS_SSL_KEYFILE,
-        ssl_certfile=tasks_settings.TASKS_SSL_CERTFILE,
+        ssl_keyfile=tasks_settings.SSL_KEYFILE,
+        ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
 
 

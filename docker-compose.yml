@@ -10,14 +10,14 @@ services:
     user: 1001:1001
     build: .
     command: python -m app.inventory.main --logging=debug
-    volumes:
-      - .:/app
     expose:
-      - 8001
+      - 9001
     depends_on:
       - casdoor
     environment:
       - FASTAPI_ENV=production_docker
+      - UVICORN_HOST=inventory_api
+      - UVICORN_PORT=9001
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -25,14 +25,14 @@ services:
     user: 1001:1001
     build: .
     command: python -m app.tasks.main --logging=debug
-    volumes:
-      - .:/app
     expose:
-      - 8002
+      - 9002
     depends_on:
       - casdoor
     environment:
       - FASTAPI_ENV=production_docker
+      - UVICORN_HOST=tasks_api
+      - UVICORN_PORT=9002
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -40,16 +40,16 @@ services:
     user: 1001:1001
     build: .
     command: python -m app.sep.main --logging=debug
-    volumes:
-      - .:/app
     expose:
-      - 8003
+      - 9000
     depends_on:
       - inventory_api
       - tasks_api
       - casdoor
     environment:
       - FASTAPI_ENV=production_docker
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=9000
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

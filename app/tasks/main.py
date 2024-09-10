@@ -193,7 +193,7 @@ def prepare_connection(connection, record):
 if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
-        level=settings.LOGGING,
+        level=tasks_settings.LOGGING,
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
         "%(module)s.%(funcName)s - %(message)s",
     )
@@ -210,8 +210,8 @@ if __name__ == "__main__":
 
     uvicorn.run(
         tasks_app,
-        host=tasks_settings.TASKS_ENDPOINT.host,
-        port=tasks_settings.TASKS_ENDPOINT.port,
-        ssl_keyfile=tasks_settings.TASKS_SSL_KEYFILE,
-        ssl_certfile=tasks_settings.TASKS_SSL_CERTFILE,
+        host=tasks_settings.UVICORN_HOST,
+        port=tasks_settings.UVICORN_PORT,
+        ssl_keyfile=tasks_settings.SSL_KEYFILE,
+        ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
