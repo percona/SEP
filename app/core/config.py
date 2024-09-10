@@ -152,7 +152,7 @@ class CasdoorOptions(BaseModel):
     ORGANIZATION_NAME: str = "built-in"
     APPLICATION_NAME: str = "app-built-in"
     FRONT_ENDPOINT: URL = URL()
-    ALLOWED_ISSUERS: list[StrHttpUrl] = []
+    ALLOWED_ISSUERS: list[StrHttpUrl] | Literal["*"] = []
 
     def get_frontend_url(self, base_url: URL | None = None) -> URL:
         frontend_url = self.FRONT_ENDPOINT
@@ -186,7 +186,7 @@ class CasdoorOptions(BaseModel):
 
     @model_validator(mode="after")
     def _set_default_allowed_issuers(self) -> Self:
-        if self.ENDPOINT not in self.ALLOWED_ISSUERS:
+        if self.ALLOWED_ISSUERS != "*" and self.ENDPOINT not in self.ALLOWED_ISSUERS:
             self.ALLOWED_ISSUERS.append(self.ENDPOINT)
         return self
 

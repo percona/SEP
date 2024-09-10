@@ -51,7 +51,10 @@ class CasdoorTokenPayload(BaseTokenPayload):
     @classmethod
     def validate_iss(cls, v: str) -> str:
         """Validate if the token's iss is the same as `settings.CASDOOR.ENDPOINT`."""
-        if v not in settings.CASDOOR.ALLOWED_ISSUERS:
+        if (
+            settings.CASDOOR.ALLOWED_ISSUERS != "*"
+            and v not in settings.CASDOOR.ALLOWED_ISSUERS
+        ):
             raise ValueError(f"Unknown token issuer: {v}")
         return v
 
