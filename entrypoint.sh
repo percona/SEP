@@ -8,5 +8,4 @@ done
 echo "Casdoor started"
 
 # Start the FastAPI app
-echo "Starting SEP app..."
-poetry run python -m app.sep.main --logging=debug
+exec "$@"

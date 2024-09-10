@@ -7,8 +7,9 @@ services:
       - 8000
 
   inventory_api:
+    user: 1001:1001
     build: .
-    command: poetry run python -m app.inventory.main --logging=debug
+    command: python -m app.inventory.main --logging=debug
     volumes:
       - .:/app
     expose:
@@ -21,8 +22,9 @@ services:
       - "host.docker.internal:host-gateway"
 
   tasks_api:
+    user: 1001:1001
     build: .
-    command: poetry run python -m app.tasks.main --logging=debug
+    command: python -m app.tasks.main --logging=debug
     volumes:
       - .:/app
     expose:
@@ -35,8 +37,9 @@ services:
       - "host.docker.internal:host-gateway"
 
   sep:
+    user: 1001:1001
     build: .
-    entrypoint: /app/entrypoint.sh
+    command: python -m app.sep.main --logging=debug
     volumes:
       - .:/app
     expose:
@@ -65,5 +68,3 @@ services:
 
 volumes:
   casdoor-data:
-
-
