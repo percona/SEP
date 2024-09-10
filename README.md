@@ -63,7 +63,19 @@ the **Download certificate** button. Save the `token_jwt_key.pem` file in the **
 > setting `CERTIFICATE_PATH` in the `CASDOOR` section in `settings.yaml`, or the
 > `CASDOOR__CERTIFICATE_PATH` in your env vars/.env. 
 
-4. Create a .env file in the project root folder to store your secrets.
+4. Add your Redirect URL to the Casdoor application
+
+In Casdoor's web interface, navigate to Identity > Applications > app-built-in
+(should be in [this link](http://localhost:9999/applications/built-in/app-built-in))
+and scroll to **Redirect URLs**.
+
+The Redirect URL you should add depends on how SEP is running (see [Usage](#usage)).
+For example, if you're running SEP in your localhost with HTTP in port 8000, you shoul
+add the URLs `http://localhost:8000/oauth/callback` and `http://127.0.0.1:8000/oauth/callback`.
+
+![image](https://github.com/user-attachments/assets/8a562b77-00c7-4192-bba3-d22e3514766f)
+
+5. Create a .env file in the project root folder to store your secrets.
 See the [secrets section](#secrets) of the README for more details.
 
 ## Configuration
