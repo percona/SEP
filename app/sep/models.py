@@ -6,11 +6,11 @@ from pydantic import ConfigDict
 from pydantic import field_validator
 from pydantic import HttpUrl
 from pydantic import model_validator
-from slugify import slugify
 
 from app.core.config import BaseCaseInsensitiveModel
 from app.core.fields import StrImportableModule
 from app.core.fields import URIPath
+from app.core.utils import slugify
 
 
 class Plugin(BaseCaseInsensitiveModel):

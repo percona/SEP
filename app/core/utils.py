@@ -1,6 +1,8 @@
 """Utility library"""
 
 import asyncio
+import re
+import unicodedata
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from datetime import timezone
@@ -135,3 +137,13 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
             main_dict[key] = update_dict[key] + main_dict[key]
         else:
             main_dict[key] = value
+
+
+def slugify(text: str) -> str:
+    slug = (
+        unicodedata.normalize("NFKD", text)
+        .encode("ascii", "ignore")
+        .decode("utf-8")
+        .lower()
+    )
+    return re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
