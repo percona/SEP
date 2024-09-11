@@ -108,13 +108,13 @@ async def alters_detail(
         "created_at": task["created_at"],
         "updated_at": task["updated_at"],
         "hostname": data["Constraints"][0]["RTarget"],
-        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
-        "cmd": f'{task_config["command"]} {" ".join(task_config["args"])}',
+        "table": f"{meta['schema_name']}.{meta['table_name']}",
+        "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/history/{task["name"]}")
-    context["stats"] = await tasks_api.get(f"/stats/{task["name"]}")
+    context["history"] = await tasks_api.get(f"/history/{task['name']}")
+    context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
     return templates.TemplateResponse(
         request=request,
         name="alters/details.html",
@@ -128,7 +128,7 @@ async def alters_execute(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Alters execute route."""
-    await tasks_api.post(f"/execute/{task["name"]}")  # TODO: send meta form fields
+    await tasks_api.post(f"/execute/{task['name']}")  # TODO: send meta form fields
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -138,5 +138,5 @@ async def alters_execute(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Alters execute route."""
-    await tasks_api.delete(f"/{task["name"]}")
+    await tasks_api.delete(f"/{task['name']}")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

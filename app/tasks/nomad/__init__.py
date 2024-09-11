@@ -89,7 +89,7 @@ class Executor:
                             new_job = True
                         case _:
                             raise NotImplementedError(
-                                f"{task_data.get("Type")} job support is TBD",
+                                f"{task_data.get('Type')} job support is TBD",
                             )
         except nomad.api.exceptions.URLNotFoundNomadException:
             logger.debug("Unable to match job, creating a new one")
@@ -105,7 +105,7 @@ class Executor:
                     task_data["ID"] += f"-{uuid1()}"
                 case _:
                     raise NotImplementedError(
-                        f"{task_data.get("Type")} job support is TBD",
+                        f"{task_data.get('Type')} job support is TBD",
                     )
 
             status = self.backend.job.register_job(
