@@ -36,14 +36,6 @@ development:
         MODULE_NAME: tasks
         URI_PATH: /tasks
         CSS_CLASS: tasks
-  TASKS:
-    NOMAD:
-      ENDPOINT: https://127.0.0.1:4646
-      SECURE: true
-      VERIFY: data/certs/sep-ca.pem
-      CERT:
-        - data/certs/nomad/global-client-nomad.pem
-        - data/certs/nomad/global-client-nomad-key.pem
 
 production_docker:
   CASDOOR:
