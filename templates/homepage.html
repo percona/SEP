@@ -1,20 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Services Enablement Platform{% end %}
+{% block title %}Services Enablement Platform{% endblock %}
 
-{% block home_link %}<a>{% end %}
-{% block title_prefix %}{% end %}
+{% block home_link %}{% endblock %}
+{% block title_prefix %}{% endblock %}
 
 {% block main %}
-    {% set template_data = data.get("template_data", {}) %}
-    {% set dashboard = template_data.get("dashboard", {}) %}
-    {% set widgets = dashboard.get("widgets", []) %}
-
-    {% if len(widgets) %}
+    {% if widgets is defined and widgets|length > 0 %}
     <section id="widgets">
         {% for widget in widgets %}
             {% include "widget.html" %}
-        {% end %}
+        {% endfor %}
     </section>
-    {% end %}
-{% end %}
+    {% endif %}
+{% endblock %}

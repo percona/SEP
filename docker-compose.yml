@@ -1,0 +1,70 @@
+services:
+  casdoor:
+    image: casbin/casdoor-all-in-one
+    volumes:
+      - casdoor-data:/var/lib/mysql:z,rw
+    expose:
+      - 8000
+
+  inventory_api:
+    user: 1001:1001
+    build: .
+    command: python -m app.inventory.main --logging=debug
+    expose:
+      - 9001
+    depends_on:
+      - casdoor
+    environment:
+      - FASTAPI_ENV=production_docker
+      - UVICORN_HOST=inventory_api
+      - UVICORN_PORT=9001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  tasks_api:
+    user: 1001:1001
+    build: .
+    command: python -m app.tasks.main --logging=debug
+    expose:
+      - 9002
+    depends_on:
+      - casdoor
+    environment:
+      - FASTAPI_ENV=production_docker
+      - UVICORN_HOST=tasks_api
+      - UVICORN_PORT=9002
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  sep:
+    user: 1001:1001
+    build: .
+    command: python -m app.sep.main --logging=debug
+    expose:
+      - 9000
+    depends_on:
+      - inventory_api
+      - tasks_api
+      - casdoor
+    environment:
+      - FASTAPI_ENV=production_docker
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=9000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9999:9999"
+    volumes:
+      - ./data/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./data/certs/sep/localhost-cert.pem:/etc/nginx/ssl/localhost-cert.pem
+      - ./data/certs/sep/localhost-cert-key.pem:/etc/nginx/ssl/localhost-cert-key.pem
+    depends_on:
+      - sep
+
+volumes:
+  casdoor-data:

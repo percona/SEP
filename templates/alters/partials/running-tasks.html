@@ -16,13 +16,13 @@
        <td>{{ task['execution_request']['target'] }}</td>
        <td>{{ task['updated_at'] }}</td>
        <td>
-         <a href="/alters/details/{{ task_name }}"><i class="icons">visibility</i></a>
+         <a href="/alters/{{ task_name }}"><i class="icons">visibility</i></a>
          <!-- TODO <i class="icons">cancel</i>-->
        </td>
      </tr>
-     {% end %}
+     {% endfor %}
   </tbody>
 </table>
 {% else %}
 <p>No data</p>
-{% end %}
+{% endif %}

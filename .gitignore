@@ -104,7 +104,7 @@ celerybeat-schedule
 celerybeat.pid
 
 # Environments
-.env
+.env*
 .venv
 env/
 venv/
@@ -383,4 +383,8 @@ MigrationBackup/
 *.diff
 *.patch
 *.pem
-config.py
+*.key
+*.srl
+*.p12
+static/sep-db.sql.txt
+data/nomad.hcl

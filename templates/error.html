@@ -1,21 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Uh oh! We've found a problem{% end %}
+{% block title %}Uh oh! We've found a problem{% endblock %}
 
 {% block main %}
-    {% from sep.core.utils import format_error_heading, format_error_message %}
-    {% set template_data = data.get("template_data", {}) %}
-    {% set user = data.get("user") %}
-    {% if isinstance(user, dict) and user["isAdmin"] %}
-        {% set trace = template_data.get("trace", []) %}
-    {% else %}
-        {% set trace = [] %}
-    {% end %}
-
-    <h2>{{ format_error_heading(template_data) }}</h2>
-    <p>{{ format_error_message(template_data) }}</p>
-    {% if trace %}
+    <h2>Error</h2>
+    {% if user.is_admin %}
     <h3>Traceback</h3>
-    <pre>{{ "".join(trace) }}</pre>
-    {% end %}
-{% end %}
+    <pre>{{ exception }}</pre>
+    {% endif %}
+{% endblock %}
