@@ -172,7 +172,8 @@ class BaseYamlExtraSettings(BaseYamlSettings):
             env_settings,
             dotenv_settings,
             YamlPrefixConfigSettingsSource(
-                settings_cls, prefixes=(yaml_prefix, *cls.SETTINGS_PREFIXES)
+                settings_cls,
+                prefixes=(yaml_prefix, *cls.SETTINGS_PREFIXES),
             ),
         )
 
@@ -197,6 +198,9 @@ class CasdoorOptions(BaseModel):
         The name of the application in Casdoor. Defaults to "app-built-in".
     FRONT_ENDPOINT : str, optional
         The front-end endpoint for the Casdoor integration.
+    ALLOWED_ISSUERS : Literal["*"] or list of StrHttpUrl, optional
+        The allowed token issuers (iss) for JWT validation. Use "*" to allow any issuer.
+        Defaults to a list with `ENDPOINT`.
     CERTIFICATE
     SDK
 
@@ -212,6 +216,24 @@ class CasdoorOptions(BaseModel):
     ALLOWED_ISSUERS: list[StrHttpUrl] | Literal["*"] = []
 
     def get_frontend_url(self, base_url: URL | None = None) -> URL:
+        """Get Casdoor's front-end URL from a base URL.
+
+        Construct the frontend URL for Casdoor integration by replacing any missing
+         parts (scheme, hostname, port, path) from the `FRONT_ENDPOINT` with
+         corresponding parts from the `base_url`.
+
+        Parameters
+        ----------
+        base_url : URL, optional
+            The base URL to be used when constructing the frontend URL. If not provided,
+            the Casdoor API endpoint (`ENDPOINT`) is used as the base.
+
+        Returns
+        -------
+        URL
+            The constructed front-end URL.
+
+        """
         frontend_url = self.FRONT_ENDPOINT
         base_url = URL(self.ENDPOINT) if base_url is None else base_url
         url_data = {
@@ -257,27 +279,22 @@ class Settings(BaseYamlSettings):
         Casdoor configuration options.
     AUTH_USER_MODEL : StrImportableAttribute, optional
         The full import path of the user model class. Must be importable.
-    JWT_ALGORITHM : str, optional
-        The JWT algorithm used for encoding/decoding tokens, either "HS256" or "RS256".
-        Defaults to "RS256".
     SECRET_KEY : str, optional
         The secret key used for signing tokens.
-        Defaults to the contents of PRIVATE_KEY_PATH.
-    PRIVATE_KEY_PATH : FilePath, optional
-        The file path to the private key used for signing tokens.
+        Defaults to `secrets.token_urlsafe(32)`.
     LOGGING : LogLevel, optional
         The logging level for the application. Defaults to `LogLevel.WARNING`.
     BACKEND_CORS_ORIGINS : list of AnyUrl
         A list of allowed CORS origins.
-    PUBLIC_KEY
+    SSL_CAFILE: RelativeFilePath, optional
+        The SSL CA file to use for remote API requests.
+    BASE_DIR
 
     """
 
     CASDOOR: CasdoorOptions
     AUTH_USER_MODEL: StrImportableAttribute = ""
-    JWT_ALGORITHM: Literal["HS256", "RS256"] = "HS256"
     SECRET_KEY: str = secrets.token_urlsafe(32)
-    PRIVATE_KEY_PATH: RelativeFilePath | None = None
     LOGGING: LogLevel = LogLevel.WARNING
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
@@ -287,22 +304,6 @@ class Settings(BaseYamlSettings):
     def BASE_DIR(self) -> DirectoryPath:
         """The base directory for the application."""
         return BASE_DIR
-
-    @computed_field
-    @property
-    def PUBLIC_KEY(self) -> str:
-        """The public key used for decoding JWT tokens."""
-        if self.JWT_ALGORITHM == "RS256":
-            return self.CASDOOR.CERTIFICATE
-        return self.SECRET_KEY
-
-    @model_validator(mode="after")
-    def _set_default_secret_key(self) -> Self:
-        if self.PRIVATE_KEY_PATH:
-            # TODO: private key with passphrase
-            with self.PRIVATE_KEY_PATH.open() as key_file:
-                self.SECRET_KEY = key_file.read()
-        return self
 
 
 settings = Settings()

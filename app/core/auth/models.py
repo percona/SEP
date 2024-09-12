@@ -7,7 +7,6 @@ from functools import cached_property
 from typing import Literal
 from typing import Self
 
-import jwt
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import EmailStr
@@ -16,7 +15,6 @@ from pydantic import FutureDatetime
 from pydantic import PastDatetime
 from pydantic import UUID4
 
-from app.core.config import settings
 from app.core.fields import RequiredStr
 
 
@@ -79,40 +77,8 @@ class BaseTokenPayload(BaseModel):
 
     @classmethod
     async def from_jwt(cls, token: str) -> Self:
-        """Decode a JWT token and returns an instance of `BaseTokenPayload`.
-
-        Parameters
-        ----------
-        token : str
-            The JWT token to decode.
-
-        Returns
-        -------
-        BaseTokenPayload
-            An instance of `BaseTokenPayload` populated with the decoded data.
-
-        """
-        data = jwt.decode(
-            token,
-            settings.PUBLIC_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-        )
-        return cls(**data)
-
-    def to_jwt(self) -> str:
-        """Encode the current instance into a JWT token string.
-
-        Returns
-        -------
-        str
-            The encoded JWT token as a string.
-
-        """
-        return jwt.encode(
-            self.model_dump(),
-            settings.PRIVATE_KEY,
-            algorithm=settings.JWT_ALGORITHM,
-        )
+        """Decode a JWT token and returns an instance of `BaseTokenPayload`."""
+        raise NotImplementedError(".from_jwt() must be overridden.")
 
 
 class BaseUser(BaseModel):
