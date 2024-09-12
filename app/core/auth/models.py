@@ -1,7 +1,6 @@
 """Define the base auth models."""
 
 from datetime import datetime
-from datetime import timedelta
 from datetime import UTC
 from functools import cached_property
 from typing import Literal
@@ -16,6 +15,7 @@ from pydantic import PastDatetime
 from pydantic import UUID4
 
 from app.core.fields import RequiredStr
+from app.core.fields import TimedeltaSeconds
 
 
 class OAuthToken(BaseModel):
@@ -42,8 +42,7 @@ class OAuthToken(BaseModel):
     id_token: str
     refresh_token: str
     token_type: str
-    # TODO: expires_in should be serialized as int
-    expires_in: timedelta
+    expires_in: TimedeltaSeconds
     scope: str
 
 
@@ -62,6 +61,8 @@ class BaseTokenPayload(BaseModel):
         The expiration time of the token.
     nbf : PastDatetime
         The time before which the token must not be accepted for processing.
+    jti: str
+        The JWT token identifier.
 
     Notes
     -----
@@ -74,6 +75,7 @@ class BaseTokenPayload(BaseModel):
     aud: list[str]
     exp: FutureDatetime
     nbf: PastDatetime
+    jti: str
 
     @classmethod
     async def from_jwt(cls, token: str) -> Self:
@@ -152,6 +154,10 @@ class BaseUser(BaseModel):
         refresh_token: str | None = None,
     ) -> OAuthToken:
         raise NotImplementedError(".get_oauth_token() must be overridden.")
+
+    @staticmethod
+    async def invalidate_oauth_token(access_token: str) -> None:
+        raise NotImplementedError(".invalidate_oauth_token() must be overridden.")
 
     @classmethod
     async def get_user(cls, username: RequiredStr) -> Self:

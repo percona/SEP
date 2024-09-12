@@ -179,6 +179,7 @@ class BaseYamlExtraSettings(BaseYamlSettings):
 
 
 # TODO: Make Casdoor optional, custom auth backend model selectable in settings
+# TODO: Build our own Casdoor SDK for better methods and logging
 class CasdoorOptions(BaseModel):
     """Configuration options for Casdoor integration.
 

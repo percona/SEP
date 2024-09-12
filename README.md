@@ -113,7 +113,7 @@ These are the possible settings you can have, per app:
 | SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback           |
 | SEP__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                            |
 | SEP__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                            |
-| SEP__OAUTH__COOKIE_NAME    | sep       | no       | authToken                                           | casdoorToken                                   |
+| SEP__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                   |
 | SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                      |
 | SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                            |
 
