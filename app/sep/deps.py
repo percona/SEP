@@ -146,6 +146,20 @@ async def build_alters_task_payload(
     recursion_method: Annotated[str, Form()],
     alter: Annotated[str, Form()],
     dsn_table: Annotated[str, Form()] = "",
+    pause_file: Annotated[str, Form()] = "",
+    new_table_name: Annotated[str, Form()] = "",
+    print_arg: Annotated[str, Form()] = "",
+    progress: Annotated[str, Form()] = "",
+    no_swap_tables: Annotated[str, Form()] = "",
+    no_drop_old_table: Annotated[str, Form()] = "",
+    no_drop_new_table: Annotated[str, Form()] = "",
+    no_drop_triggers: Annotated[str, Form()] = "",
+    tries: Annotated[str, Form()] = "",
+    set_vars: Annotated[str, Form()] = "",
+    critical_load: Annotated[str, Form()] = "",
+    max_load: Annotated[str, Form()] = "",
+    chunk_time: Annotated[str, Form()] = "",
+    max_lag: Annotated[str, Form()] = ""
 ) -> GeneratedTask:
     """Create a payload for the backend
 
@@ -164,17 +178,58 @@ async def build_alters_task_payload(
 
     if recursion_method == "dsn":
         recursion_method = f"dsn={dsn_table}"
-    else:
-        recursion_method = recursion_method
+
+    args = [
+        f"--alter={alter}",
+        dsn,
+        f"--recursion-method={recursion_method}",
+    ]
+
+    if pause_file:
+        args.append(f'--pause-file={pause_file}')
+
+    if new_table_name:
+        args.append(f'--new-table-name={new_table_name}')
+
+    if print_arg:
+        args.append('--print')
+        args.append(f'--progress={progress}')
+
+    if no_swap_tables:
+        args.append('--no-swap-tables')
+
+    if no_drop_old_table:
+        args.append('--no-drop-old-table')
+
+    if no_drop_new_table:
+        args.append('--no-drop-new-table')
+
+    if no_drop_triggers:
+        args.append('--no-drop-triggers')
+
+    if tries:
+        args.append(f'--tries={tries}')
+
+    if set_vars:
+        args.append(f'--set-vars={set_vars}')
+
+    if critical_load:
+        args.append(f'--critical-load={critical_load}')
+
+    if max_load:
+        args.append(f'--max-load={max_load}')
+
+    if chunk_time:
+        args.append(f'--chunk-time={chunk_time}')
+
+    if max_lag:
+        args.append(f'--max-lag={max_lag}')
 
     return GeneratedTask(
         app="alters",
         commands=[
             {
-                "args": [
-                    f"--alter={alter}",
-                    dsn,
-                    f"--recursion-method={recursion_method}",
+                "args": args + [
                     "--execute",
                 ],
                 "command": "pt-online-schema-change",

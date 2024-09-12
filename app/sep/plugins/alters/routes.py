@@ -83,6 +83,7 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
+    """Creates an alter task"""
     logger.debug("Create alters task: %s", task)
     await task_api.post("/generate", json=task.model_dump())
     return RedirectResponse(
@@ -133,7 +134,7 @@ async def alters_execute(
 
 
 @router.post("/{task_name}/delete", response_class=RedirectResponse)
-async def alters_execute(
+async def alters_delete(
     task: AltersTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
