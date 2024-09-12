@@ -48,6 +48,7 @@ class HTTPTemporaryRedirectException(HTTPException):
     """
 
     def __init__(self, location: str):
+        self.location = location
         super().__init__(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
             headers={"Location": location},

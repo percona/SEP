@@ -37,6 +37,7 @@ class CasdoorTokenPayload(BaseTokenPayload):
     aud
     exp
     nbf
+    jti
     username: CasdoorUsernameField
         The user's Casdoor username.
     active: bool
@@ -170,6 +171,29 @@ class CasdoorUser(BaseUser):
             oauth_data = await casdoor_sdk.get_oauth_token(code, username, password)
         return OAuthToken(**oauth_data)
 
+    @staticmethod
+    async def invalidate_oauth_token(access_token: str) -> None:
+        """Invalidate an OAuth token.
+
+        Invalidate an OAuth token by refreshing the token.
+
+        Parameters
+        ----------
+        access_token : str,
+            The access token to invalidate.
+
+        """
+        token_payload = await CasdoorTokenPayload.from_jwt(access_token)
+        async with casdoor_sdk._session as session:
+            token_data = await session.get(
+                "/api/get-token",
+                headers=casdoor_sdk.headers,
+                params={"id": token_payload.jti},
+            )
+        await CasdoorUser.get_oauth_token(
+            refresh_token=token_data["data"]["refreshToken"],
+        )
+
     @classmethod
     async def get_user(cls, username: CasdoorUsernameField) -> Self:
         """Get user by username.
@@ -253,7 +277,7 @@ class CasdoorUser(BaseUser):
             An instance of `CasdoorUser`.
 
         """
-        oauth_token = await cls.authenticate(code)
+        oauth_token = await cls.get_oauth_token(code)
         return await cls.from_jwt(oauth_token.access_token)
 
     @classmethod
@@ -273,5 +297,5 @@ class CasdoorUser(BaseUser):
             An instance of `CasdoorUser`.
 
         """
-        oauth_token = await cls.authenticate(username=username, password=password)
+        oauth_token = await cls.get_oauth_token(username=username, password=password)
         return await cls.from_jwt(oauth_token.access_token)

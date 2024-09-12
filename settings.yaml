@@ -12,8 +12,9 @@ default:
     - http://127.0.0.1:8000
   SEP:
     OAUTH:
-      COOKIE_NAME: casdoorToken
       REDIRECT_URI: /oauth/callback
+    SESSION:
+      COOKIE_NAME: casdoorToken
     PLUGINS:
       - NAME: Schema Change
         MODULE_NAME: alters
@@ -48,6 +49,8 @@ production_docker:
     SSL_KEYFILE: data/certs/sep/localhost-cert-key.pem
     SSL_CERTFILE: data/certs/sep/localhost-cert.pem
     PROXY_HEADERS: true
+    SESSION:
+      SECURE: true
   INVENTORY:
     PMM:
       ENDPOINT: https://host.docker.internal:8443

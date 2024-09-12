@@ -1,6 +1,7 @@
 """Define reusable fields and validators."""
 
 import importlib.util
+from datetime import timedelta
 from os import PathLike
 from pathlib import Path
 from typing import Annotated
@@ -13,6 +14,7 @@ from pydantic import Field
 from pydantic import FilePath
 from pydantic import GetCoreSchemaHandler
 from pydantic import HttpUrl
+from pydantic import PlainSerializer
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
 from starlette.datastructures import URL as StarletteURL  # noqa: N811
@@ -104,3 +106,7 @@ StrImportableAttribute = Annotated[
 ]
 RequiredStr = Annotated[str, Field(min_length=1)]
 URIPath = Annotated[str, Field(pattern=r"^\/[^\s]*$")]
+TimedeltaSeconds = Annotated[
+    timedelta,
+    PlainSerializer(lambda v: round(v.total_seconds()), return_type=int),
+]
