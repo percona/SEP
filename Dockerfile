@@ -19,7 +19,7 @@ RUN apk update && apk add --no-cache gcc
 # Export requirements
 RUN pip install --upgrade pip wheel poetry==1.8.3 poetry-plugin-export
 COPY ./pyproject.toml ./poetry.lock /usr/src/sep/
-RUN poetry export -f requirements.txt --output requirements.txt
+RUN poetry export --with postgresql -f requirements.txt --output requirements.txt
 
 # Build Wheel archives for requirements
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.txt
@@ -54,7 +54,11 @@ RUN pip install --no-cache /wheels/*
 
 # Copy entrypoint.sh
 COPY ./entrypoint.sh .
+COPY ./entrypoint_persistent.sh .
 RUN chmod +x $APP_HOME/entrypoint.sh
+RUN chmod +x $APP_HOME/entrypoint_persistent.sh
+
+COPY ./.env.docker .env
 
 # Copy project
 COPY . $APP_HOME

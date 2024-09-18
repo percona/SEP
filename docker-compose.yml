@@ -1,45 +1,74 @@
+x-api-environment:
+  environment: &api-environment
+    FASTAPI_ENV: production_docker
+    LOGGING: debug
+
+x-api-db-environment:
+  environment: &api-db-environment
+    <<: *api-environment
+    DATABASE__ENGINE: postgresql
+    DATABASE__USER: postgres
+    DATABASE__PASSWORD: postgres
+    DATABASE__HOST: sep-db
+    DATABASE__PORT: 5432
+    DATABASE__NAME: sep
+
 services:
   casdoor:
     image: casbin/casdoor-all-in-one
     volumes:
       - casdoor-data:/var/lib/mysql:z,rw
+      - ./data/casdoor_init_data.json:/init_data.json
     expose:
       - 8000
+
+  sep-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: sep
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - sep-data:/var/lib/postgresql/data
+    expose:
+      - 5432
 
   inventory_api:
     user: 1001:1001
     build: .
-    command: python -m app.inventory.main --logging=debug
+    command: inventory
     expose:
       - 9001
     depends_on:
       - casdoor
     environment:
-      - FASTAPI_ENV=production_docker
-      - UVICORN_HOST=inventory_api
-      - UVICORN_PORT=9001
+      <<: *api-environment
+      UVICORN_HOST: inventory_api
+      UVICORN_PORT: 9001
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   tasks_api:
     user: 1001:1001
     build: .
-    command: python -m app.tasks.main --logging=debug
+    command: tasks
+    entrypoint: /home/sep/app/entrypoint_persistent.sh
     expose:
       - 9002
     depends_on:
       - casdoor
+      - sep-db
     environment:
-      - FASTAPI_ENV=production_docker
-      - UVICORN_HOST=tasks_api
-      - UVICORN_PORT=9002
+      <<: *api-db-environment
+      UVICORN_HOST: tasks_api
+      UVICORN_PORT: 9002
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   sep:
     user: 1001:1001
     build: .
-    command: python -m app.sep.main --logging=debug
+    command: sep
     expose:
       - 9000
     depends_on:
@@ -47,9 +76,9 @@ services:
       - tasks_api
       - casdoor
     environment:
-      - FASTAPI_ENV=production_docker
-      - UVICORN_HOST=0.0.0.0
-      - UVICORN_PORT=9000
+      <<: *api-environment
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: 9000
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -68,3 +97,4 @@ services:
 
 volumes:
   casdoor-data:
+  sep-data:
