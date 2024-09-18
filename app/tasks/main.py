@@ -44,6 +44,7 @@ TRANSLATION_MAPPING = {
 
 @asynccontextmanager
 async def initial_tasks_setup(app: FastAPI):
+    """Initialize Tasks database data."""
     async_session = get_async_session()
     async with async_session() as session:
         await init_db(session)

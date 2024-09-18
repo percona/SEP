@@ -49,11 +49,7 @@ router = APIRouter()
 # TODO: Pagination
 @router.get(path="/", dependencies=[IsAuthenticatedDep], response_model=list[Task])
 async def list_tasks(session: SessionDep, owner: str | None = None):
-    """List all tasks
-
-    :param request:
-    :return:
-    """
+    """List all active tasks."""
     logger.debug("Listing tasks")
     return await TaskManager.list_active(session=session, owner=owner)
 
@@ -64,12 +60,7 @@ async def list_tasks(session: SessionDep, owner: str | None = None):
     response_class=JSONResponse,
 )
 async def delete_task(session: SessionDep, task: str):
-    """Deleta a task
-
-    :param task:
-    :raises HTTPException: when the task does not exist
-    :return: status message
-    """
+    """Delete a task."""
     logger.debug("Deleting task %s", task)
     deleted_task = await TaskManager.delete_by_name(session=session, name=task)
     # TODO: Use Pydantic models
@@ -78,11 +69,7 @@ async def delete_task(session: SessionDep, task: str):
 
 @router.get(path="/{task}", dependencies=[IsAuthenticatedDep], response_model=Task)
 async def get_task(session: SessionDep, task: str):
-    """Retrieve a task
-
-    :param task:
-    :return:
-    """
+    """Retrieve a task by its name."""
     logger.debug("Requesting task %s", task)
     result = await TaskManager.retrieve_by_name(session=session, name=task)
     if not result:
@@ -92,11 +79,7 @@ async def get_task(session: SessionDep, task: str):
 
 @router.post(path="/", dependencies=[IsAuthenticatedDep], response_model=Task)
 async def create_task(session: SessionDep, task: Task):
-    """Create a new task
-
-    :param task:
-    :return:
-    """
+    """Create a new task."""
     logger.debug("Creating task %s", task.name)
     return await TaskManager.save(session, task)
 
@@ -112,13 +95,7 @@ async def generate_task(
     request: Request,
     background_tasks: BackgroundTasks,
 ):
-    """Generate a new task execution using a template
-
-    :param generated_task:
-    :param request:
-    :param background_tasks:
-    :return:
-    """
+    """Generate a new task execution using a template."""
     logger.debug(
         "Generating task %s from %s",
         generated_task.name,
@@ -238,18 +215,9 @@ async def execute_task_name(
     background_tasks: BackgroundTasks,
     target: Optional[Annotated[str, Form()]] = Form("all"),
 ):
-    """Send a task for execution
-
-    TODO: optional arg (if possible), else a structured one
-          so that tasks can be executed with arbitrary parameters
-
-    :param task:
-    :param target:
-    :param task_name:
-    :param request:
-    :param background_tasks:
-    :return:
-    """
+    """Send a task for execution."""
+    # TODO: optional arg (if possible), else a structured one
+    #           so that tasks can be executed with arbitrary parameters
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)
     if config.is_template:
@@ -289,13 +257,7 @@ async def execute_history_id(
     request: Request,
     background_tasks: BackgroundTasks,
 ):
-    """Trigger a history item for processing
-
-    :param history_id:
-    :param request:
-    :param background_tasks:
-    :return:
-    """
+    """Trigger a history item for processing."""
     history_record = await TaskHistoryManager.get_or_404(
         session,
         id=history_id,
@@ -315,11 +277,7 @@ async def execute_history_id(
     response_model=list[TaskHistory],
 )
 async def list_task_history(session: SessionDep, status: str | None = None):
-    """Create a new task
-
-    :param request:
-    :return:
-    """
+    """Create a new task."""
     logger.debug("Listing task history")
     try:
         history_status = (
@@ -341,11 +299,7 @@ async def list_task_history(session: SessionDep, status: str | None = None):
     response_model=list[TaskHistoryResponse],
 )
 async def get_task_history(session: SessionDep, task: str):
-    """Retrieve a task
-
-    :param task:
-    :return:
-    """
+    """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
     return await TaskHistoryManager.list_by_task_name(
         session=session,
@@ -360,11 +314,7 @@ async def get_task_history(session: SessionDep, task: str):
     response_model=TaskHistory,
 )
 async def create_task_history(session: SessionDep, task: TaskHistory):
-    """Create a new task
-
-    :param task:
-    :return:
-    """
+    """Create a new task history."""
     logger.debug("Creating task history %s", task.name)
     return await TaskHistoryManager.save(session, task)
 
@@ -375,11 +325,7 @@ async def create_task_history(session: SessionDep, task: TaskHistory):
     response_model=TaskStats,
 )
 async def get_task_stats(session: SessionDep, task: str):
-    """Calculate the statistics for the task
-
-    :param task:
-    :return:
-    """
+    """Calculate the statistics for the task."""
     logger.debug("Requesting task stats for %s", task)
     return TaskStats(
         tasks=await TaskHistoryManager.list_by_task_name(
@@ -395,11 +341,6 @@ async def _schedule_queue_item(
     background_tasks: BackgroundTasks,
     request: Request,
 ):
-    """:param history_recorded:
-    :param background_tasks:
-    :param request:
-    :return:
-    """
     # Check how to proceed with execution
     mode = tasks_settings.EXECUTE_MODE
     match mode:
@@ -416,12 +357,7 @@ async def _schedule_queue_item(
 
 
 async def _process_queue_item(queue_id: int, request: Request):
-    """Process an item from the history table
-
-    :param queue_id:
-    :param request:
-    :return:
-    """
+    """Process an item from the history table."""
     async_session = get_async_session()
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(

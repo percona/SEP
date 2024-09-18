@@ -1,4 +1,4 @@
-"""Nomad"""
+"""Provide task execution management for Nomad jobs."""
 
 import json
 import logging
@@ -24,6 +24,20 @@ logger = logging.getLogger(__name__)
 
 # TODO: Pydantic
 class Executor:
+    """Manage the execution of tasks on a Nomad backend.
+
+    The `Executor` class handles task execution for jobs, interacting with the
+    Nomad backend. It manages job creation, status tracking, and updating task history.
+
+    Attributes
+    ----------
+    backend : nomad.Nomad
+        The Nomad client used for interacting with the backend.
+    task : Task
+        The task to be executed.
+
+    """
+
     backend: nomad.Nomad
     task: Task
 
@@ -32,12 +46,6 @@ class Executor:
         cfg: dict,
         task: Task,
     ) -> None:
-        """Configure the executor
-
-        :param cfg:
-        :param task:
-        :return:
-        """
         self.backend = nomad.Nomad(**cfg)
         self.task = task
 
@@ -47,6 +55,34 @@ class Executor:
         queue_item: TaskHistory,
         interval: int,
     ) -> TaskHistory:
+        """Run a task on the Nomad backend and update task history.
+
+        This method executes the task on the Nomad backend, handles job creation and
+        tracking, and updates the task's execution history with logs, states, and
+        timing information.
+
+        Parameters
+        ----------
+        session : AsyncSession
+            The SQLAlchemy asynchronous session to use for database operations.
+        queue_item : TaskHistory
+            The task history record for tracking this execution.
+        interval : int
+            The interval (in seconds) for checking the status of the job.
+
+        Returns
+        -------
+        TaskHistory
+            The updated task history with execution details.
+
+        Raises
+        ------
+        ValueError
+            If the job or job status cannot be determined.
+        NotImplementedError
+            If the job type or certain Nomad features are not yet supported.
+
+        """
         job = {}
         status = {}
 
@@ -77,8 +113,6 @@ class Executor:
                     #                       "MetaRequired": ["command"], "Payload": ""}
                     # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
                     raise NotImplementedError("Parameterized job support is TBD")
-                    # if not self.backend.jobs.get_jobs(filter_=f'Name == "{task_data.Name}"'):
-                    #    raise nomad.api.exceptions.URLNotFoundNomadException(f"{task_data.Name} could not be found")
                 case _:
                     match self.task.data.get("Type"):
                         case "batch" | "system" | "sysbatch":

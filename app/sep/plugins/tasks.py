@@ -1,3 +1,5 @@
+"""Define routes for the Tasks Plugin."""
+
 import logging
 from typing import Annotated
 
@@ -28,7 +30,7 @@ async def tasks_list(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Tasks index route."""
+    """Homepage of Tasks Plugin."""
     context["tasks"] = await tasks_api.get("/")
     context["available_backends"] = TaskBackendEnum
     return templates.TemplateResponse(
@@ -46,7 +48,7 @@ async def task_create(  # TODO: Use pydantic model for request data
     taskeng: Annotated[str, Form()],
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Tasks index route."""
+    """Create task."""
     payload = {
         "taskalias": taskalias,
         "taskdef": taskdef,
@@ -97,7 +99,7 @@ async def tasks_detail(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Tasks detail route."""
+    """Retrieve task."""
     context["task"] = await tasks_api.get(
         f"/{task_name}",
     )  # TODO: Use Pydantic/SQLModel models
@@ -117,7 +119,7 @@ async def tasks_execute(
     tasks_api: TaskAPI,
     redirect_to: Annotated[URIPath, Form()] = "/tasks",
 ) -> RedirectResponse:
-    """Tasks execute route."""
+    """Execute task."""
     await tasks_api.post(f"/execute/{task_name}")  # TODO: send meta form fields
     return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
 
@@ -128,6 +130,6 @@ async def tasks_delete(
     tasks_api: TaskAPI,
     redirect_to: Annotated[URIPath, Form()] = "/tasks",
 ) -> RedirectResponse:
-    """Tasks delete route."""
+    """Delete task."""
     await tasks_api.delete(f"/{task_name}")
     return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)

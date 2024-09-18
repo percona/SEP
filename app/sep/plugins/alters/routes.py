@@ -28,6 +28,7 @@ async def alters_index(
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
 ) -> HTMLResponse:
+    """Homepage of alters plugin."""
     all_hosts = await inventory_api.get("/")
     mysql_hosts = []
     for host in all_hosts:
@@ -82,6 +83,7 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
+    """Create new alters task."""
     logger.debug("Create alters task: %s", task)
     # TODO: validate response
     await task_api.post(
@@ -101,7 +103,7 @@ async def alters_detail(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Tasks detail route."""
+    """Retrieve alters task."""
     data = task["data"]
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
@@ -129,7 +131,7 @@ async def alters_execute(
     task: AltersTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Alters execute route."""
+    """Execute alters task."""
     await tasks_api.post(f"/execute/{task['name']}")  # TODO: send meta form fields
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -139,6 +141,6 @@ async def alters_delete(
     task: AltersTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Alters delete route."""
+    """Delete alters task."""
     await tasks_api.delete(f"/{task["name"]}")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

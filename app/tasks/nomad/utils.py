@@ -1,4 +1,4 @@
-"""Nomad"""
+"""Define utilities for interacting with Nomad."""
 
 import json
 import logging
@@ -17,11 +17,26 @@ logger = logging.getLogger(__name__)
 
 # TODO: Use pydantic models instead of dict for job validation
 async def validate_job(job: dict[str, Any]) -> dict[str, Any]:
-    """Parse and validate a job spec payload
+    """Validate a Nomad job specification.
 
-    :param payload:
-    :param payload_format:
-    :return:
+    This function sends a job specification to the Nomad backend for validation.
+    If validation fails, it raises an HTTPException with the corresponding status code.
+
+    Parameters
+    ----------
+    job : dict[str, Any]
+        The Nomad job specification to validate.
+
+    Returns
+    -------
+    dict[str, Any]
+        The original job specification if validation is successful.
+
+    Raises
+    ------
+    HTTPException
+        If validation fails or Nomad returns an error status code.
+
     """
     backend = Nomad(
         address=tasks_settings.NOMAD.ENDPOINT,
@@ -44,11 +59,30 @@ async def transform_payload(
     payload: str | bytes,
     payload_format: str,
 ) -> dict[str, Any]:
-    """Parse and validate a job spec payload
+    """Parse and validate a job spec payload based on its format.
 
-    :param payload:
-    :param payload_format:
-    :return:
+    This function parses the payload according to the specified format
+    (HCL, JSON, or YAML) and validates it using the Nomad backend.
+
+    Parameters
+    ----------
+    payload : str or bytes
+        The job specification payload to be parsed.
+    payload_format : str
+        The format of the payload, which can be "hcl", "json", or "yaml".
+
+    Returns
+    -------
+    dict[str, Any]
+        The parsed and validated job specification.
+
+    Raises
+    ------
+    ValueError
+        If the provided payload format is unsupported.
+    HTTPException
+        If validation of the job specification fails.
+
     """
     backend = Nomad(
         address=tasks_settings.NOMAD.ENDPOINT,
