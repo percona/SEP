@@ -94,7 +94,6 @@ class BaseYamlSettings(BaseSettings):
         env_file=".env",
         env_nested_delimiter="__",
         yaml_file="settings.yaml",
-        cli_parse_args=True,
         extra="ignore",
     )
     FASTAPI_ENV: str = DEFAULT_FASTAPI_ENV
@@ -135,13 +134,6 @@ class BaseYamlExtraSettings(BaseYamlSettings):
     """Base settings for extra configuration."""
 
     SETTINGS_PREFIXES: ClassVar[tuple[str]]
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_nested_delimiter="__",
-        yaml_file="settings.yaml",
-        cli_parse_args=False,
-        extra="ignore",
-    )
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
     SSL_KEYFILE: RelativeFilePath | None = None

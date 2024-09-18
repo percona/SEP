@@ -215,7 +215,7 @@ source venv/bin/activate
 
 3. Start SEP:
 ```shell
-python3 -m app.main --logging=debug
+LOGGING=debug python3 -m app.main
 ```
 
 SEP will be available in http://localhost:8000.
