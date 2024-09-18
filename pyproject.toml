@@ -53,6 +53,7 @@ pydantic-settings = "^2.4.0"
 email-validator = "^2.2.0"
 greenlet = "^3.0.3"
 aiosqlite = "^0.20.0"
+alembic = "^1.13.2"
 sqlmodel = "^0.0.22"
 
 [tool.poetry.group.audit]
