@@ -24,7 +24,9 @@
         </fieldset>
         <label>Engine
             <select id="taskeng" name="taskeng">
-                <option value="1">Nomad</option>
+                {% for backend in available_backends %}
+                <option value="{{ backend }}">{{ backend.capitalize() }}</option>
+                {% endfor %}
             </select>
         </label>
         <label>Owner

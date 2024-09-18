@@ -8,13 +8,13 @@ from datetime import datetime
 from datetime import timezone
 from uuid import uuid1
 
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 import nomad
-from app.core.db import Database
-from app.core.db import get_timestamp
-from app.tasks.models import history
+from app.tasks.crud import TaskHistoryManager
 from app.tasks.models import Task
-from app.tasks.models import TASK_HISTORY_STATUS_MAP
-from app.tasks.models import TaskExecutionRequest
+from app.tasks.models import TaskHistory
+from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = ["Executor"]
 
@@ -22,58 +22,54 @@ __all__ = ["Executor"]
 logger = logging.getLogger(__name__)
 
 
+# TODO: Pydantic
 class Executor:
     backend: nomad.Nomad
-    database: Database
-    execution_request: TaskExecutionRequest
     task: Task
 
     def __init__(
         self,
         cfg: dict,
-        database: Database,
-        execution_request: TaskExecutionRequest,
         task: Task,
     ) -> None:
         """Configure the executor
 
         :param cfg:
-        :param database:
-        :param execution_request:
         :param task:
         :return:
         """
         self.backend = nomad.Nomad(**cfg)
-        self.database = database
-        self.execution_request = execution_request
         self.task = task
 
-    async def run(self, queue_item: dict, interval: int) -> (dict, int):
+    async def run(
+        self,
+        session: AsyncSession,
+        queue_item: TaskHistory,
+        interval: int,
+    ) -> TaskHistory:
         job = {}
-        queue_id = queue_item["id"]
         status = {}
 
         # TODO: determine scenarios for execution, such as looking up an existing job
-        task_data = json.loads(self.task.data)
-        if queue_item["execution_request"].get("meta"):
+        if queue_item.execution_request.meta:
             # TODO: target is currently pushed in to meta
-            queue_item["execution_request"]["meta"]["target"] = queue_item[
-                "execution_request"
-            ]["target"]
+            queue_item.execution_request.meta["target"] = (
+                queue_item.execution_request.target
+            )
             # TODO: DC is currently forced
-            queue_item["execution_request"]["meta"]["dc"] = "dc1"
+            queue_item.execution_request.meta["dc"] = "dc1"
             # TODO: allow templates in more fields, currently only for constraints
-            for meta_var, meta_val in queue_item["execution_request"]["meta"].items():
-                for i, constraint in enumerate(task_data["Constraints"]):
+            for meta_var, meta_val in queue_item.execution_request.meta.items():
+                for i, constraint in enumerate(self.task.data["Constraints"]):
                     meta = "${NOMAD_META_" + meta_var + "}"
-                    task_data["Constraints"][i] = json.loads(
+                    self.task.data["Constraints"][i] = json.loads(
                         json.dumps(constraint).replace(meta, meta_val),
                     )
 
         try:
             new_job = False
 
-            match task_data.get("ParameterizedJob"):
+            match self.task.data.get("ParameterizedJob"):
                 # TODO: temporary to avoid ParameterizedJobs
                 case True:
                     # Example content:
@@ -84,12 +80,12 @@ class Executor:
                     # if not self.backend.jobs.get_jobs(filter_=f'Name == "{task_data.Name}"'):
                     #    raise nomad.api.exceptions.URLNotFoundNomadException(f"{task_data.Name} could not be found")
                 case _:
-                    match task_data.get("Type"):
+                    match self.task.data.get("Type"):
                         case "batch" | "system" | "sysbatch":
                             new_job = True
                         case _:
                             raise NotImplementedError(
-                                f"{task_data.get('Type')} job support is TBD",
+                                f"{self.task.data.get('Type')} job support is TBD",
                             )
         except nomad.api.exceptions.URLNotFoundNomadException:
             logger.debug("Unable to match job, creating a new one")
@@ -100,20 +96,20 @@ class Executor:
 
         start_ts, stop_ts = time.time_ns(), None
         if new_job:
-            match task_data.get("Type"):
+            match self.task.data.get("Type"):
                 case "batch" | "system" | "sysbatch":
-                    task_data["ID"] += f"-{uuid1()}"
+                    self.task.data["ID"] += f"-{uuid1()}"
                 case _:
                     raise NotImplementedError(
-                        f"{task_data.get('Type')} job support is TBD",
+                        f"{self.task.data.get('Type')} job support is TBD",
                     )
 
             status = self.backend.job.register_job(
-                id_=task_data["ID"],
-                job={"Job": task_data},
+                id_=self.task.data["ID"],
+                job={"Job": self.task.data},
             )
             logger.debug("Job status: %r", status)
-            job = self.backend.job.get_job(task_data["ID"])
+            job = self.backend.job.get_job(self.task.data["ID"])
         if not job:
             logger.error("Unable to determine job")
             raise ValueError("The job could not be determined")
@@ -121,13 +117,12 @@ class Executor:
             logger.error("Unable to determine status")
             raise ValueError("The job status could not be determined")
 
-        self.execution_request.tracking.update(evaluation_id=status["EvalID"])
-        async with self.database.engine.begin() as conn:
-            await conn.execute(
-                history.update()
-                .where(history.c.id == queue_id)
-                .values(execution_request=self.execution_request),
-            )
+        queue_item.execution_request.tracking.update(evaluation_id=status["EvalID"])
+        queue_item = await TaskHistoryManager.save(
+            session,
+            queue_item,
+            flag_modified_fields=("execution_request",),
+        )
 
         allocation_filters = [
             f'JobID == "{job["ID"]}"',
@@ -139,15 +134,8 @@ class Executor:
         logger.debug("Job: %r", job)
         logger.debug("Allocations: %r", [x["JobID"] for x in allocations])
 
-        async with self.database.engine.begin() as conn:
-            await conn.execute(
-                history.update()
-                .where(history.c.id == queue_id)
-                .values(
-                    status=TASK_HISTORY_STATUS_MAP["running"],
-                    updated_at=get_timestamp(),
-                ),
-            )
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item = await TaskHistoryManager.save(session, queue_item)
 
         alloc = {}
         task_logs = {}
@@ -204,11 +192,11 @@ class Executor:
 
         match alloc["ClientStatus"]:
             case "complete":
-                status = TASK_HISTORY_STATUS_MAP["success"]
+                queue_item.status = TaskHistoryStatusEnum.SUCCESS
             case _:
-                status = TASK_HISTORY_STATUS_MAP["failed"]
+                queue_item.status = TaskHistoryStatusEnum.FAILED
 
-        self.execution_request.tracking.update(
+        queue_item.execution_request.tracking.update(
             task_states=task_states,
             task_logs=task_logs,
             duration=((stop_ts - start_ts) / 1000**3) - (attempts * interval),
@@ -218,4 +206,9 @@ class Executor:
             started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=timezone.utc),
             finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=timezone.utc),
         )
-        return self.execution_request, status
+        queue_item = await TaskHistoryManager.save(
+            session,
+            queue_item,
+            flag_modified_fields=("execution_request",),
+        )
+        return queue_item

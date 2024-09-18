@@ -10,7 +10,7 @@
   </thead>
   <tbody>
      {% for task in running_tasks %}
-     {% set task_name = task["name"] %}
+     {% set task_name = task["task"]["name"] %}
      <tr>
        <td>{{ task_name }}</td>
        <td>{{ task['execution_request']['target'] }}</td>

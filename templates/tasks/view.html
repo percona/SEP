@@ -2,92 +2,94 @@
 
 {% block title %}Task: {{ task.get("name") }}{% endblock %}
 
-# TODO: the template is currently Nomad-specific
+{## TODO: the template is currently Nomad-specific#}
+{# TODO: Adjust indentation of all templates #}
 {% block main %}
 
 <dl>
-  <dt>Engine</dt> <dd>{{ Nomad }}</dd>
-  <dt>Created</dt> <dd>{{ task["created_at"] }}</dd>
-  <dt>Specification</dt> <dd>
-  <code>
-    {{ task }}
-  </code>
-  </dd>
-  <dt>Available to</dt> <dd><ul>
-  {% for owner in task["meta"]["owners"] %}
+    <dt>Engine</dt> <dd>{{ Nomad }}</dd>
+    <dt>Created</dt> <dd>{{ task["created_at"] }}</dd>
+    <dt>Specification</dt> <dd>
+    <code>
+        {{ task }}
+    </code>
+    </dd>
+    <dt>Available to</dt> <dd><ul>
     {% for mapping in TRANSLATION_MAPPING.get("owners", []) %}
-      {% if mapping.value == owner %}
+        {% if mapping.value == task["owner"] %}
     <li>{{ mapping.label }}</li>
-      {% endif %}
+        {% endif %}
     {% endfor %}
-  {% endfor %}
   </ul></dd>
 </dl>
 
+{% if not task["is_template"] %}
 <form method="post" action="">
-  <input type="hidden" name="location" value="{{ base_uri }}api/execute/{{ task['name'] }}" />
-  <input name="task" type="hidden" value="{{ task['name'] }}" />
-  {% if task_data.get("ParameterizedJob") %}
+    <input type="hidden" name="location" value="{{ base_uri }}/api/execute/{{ task['name'] }}" />
+    <input name="task" type="hidden" value="{{ task['name'] }}" />
+    {% if task_data.get("ParameterizedJob") %}
     <fieldset>
-      <legend>Configuration</legend>
-      {% if task_data["ParameterizedJob"] %}
-        {% set optional = task_data["ParameterizedJob"].get("MetaOptional", []) %}
-        {% set required = task_data["ParameterizedJob"].get("MetaRequired", []) %}
-      {% else %}
-        {% set optional = [] %}
-        {% set required = [] %}
-      {% endif %}
-      {% set meta_defaults = task_data["Meta"] %}
-    {% for item in required %}
-      <label>{{ item.capitalize() }} (required)
-      {% if item == "target" %}
-        {% include "partials/select-host.html" %}
-      {% else %}
-        <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" required />
-      {% endif %}
-      </label>
-    {% endfor %}
-    {% for item in optional %}
-    <label>{{ item.capitalize() }}
-      {% if item == "target" %}
-      {% include "partials/select-host.html" %}
-      {% else %}
-      <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" />
-      {% endif %}
-    </label>
-    {% endfor %}
+        <legend>Configuration</legend>
+        {% if task_data["ParameterizedJob"] %}
+            {% set optional = task_data["ParameterizedJob"].get("MetaOptional", []) %}
+            {% set required = task_data["ParameterizedJob"].get("MetaRequired", []) %}
+        {% else %}
+            {% set optional = [] %}
+            {% set required = [] %}
+        {% endif %}
+        {% set meta_defaults = task_data["Meta"] %}
+        {% for item in required %}
+        <label>{{ item.capitalize() }} (required)
+            {% if item == "target" %}
+            {% include "partials/select-host.html" %}
+            {% else %}
+            <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" required />
+            {% endif %}
+        </label>
+        {% endfor %}
+        {% for item in optional %}
+        <label>{{ item.capitalize() }}
+            {% if item == "target" %}
+            {% include "partials/select-host.html" %}
+            {% else %}
+            <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" />
+            {% endif %}
+        </label>
+        {% endfor %}
     </fieldset>
-  {% endif %}
-  <button type="submit">Execute</button>
+    {% endif %}
+    <button type="submit">Execute</button>
 </form>
+{% endif %}
 
+{% if not task["protected"] %}
 <form method="post" action="/tasks/{{ task['name'] }}/delete">
-  <button type="submit">Delete</button>
+    <button type="submit">Delete</button>
 </form>
+{% endif %}
 
 {% if history is defined and history|length > 0 %}
-    <table>
-      <caption>History</caption>
-      <thead>
+<table>
+    <caption>History</caption>
+    <thead>
         <tr>
-          <th>Submitted</th>
-          <th>Last updated</th>
-          <th>Status</th>
+            <th>Submitted</th>
+            <th>Last updated</th>
+            <th>Status</th>
         </tr>
-      </thead>
-      <tfoot>
+    </thead>
+    <tfoot>
         <tr><td colspan="3">&nbsp;</td></tr>
-      </tfoot>
-      <tbody>
-      {% for item in history %}
-          <tr>
+    </tfoot>
+    <tbody>
+        {% for item in history %}
+        <tr>
             <th scope="row">{{ item["created_at"] }}</th>
             <th scope="row">{{ item["updated_at"] }}</th>
             <td>{{ item["status"] }}</td>
-          </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
 {% endif %}
-
 {% endblock %}

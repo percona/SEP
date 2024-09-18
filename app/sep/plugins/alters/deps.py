@@ -1,9 +1,12 @@
+import logging
 from typing import Annotated
 
 from fastapi import Depends
 from fastapi import HTTPException
 
 from app.sep.deps import TaskAPI
+
+logger = logging.getLogger(__name__)
 
 
 async def get_alters_task(
@@ -13,7 +16,9 @@ async def get_alters_task(
     task = await tasks_api.get(
         f"/{task_name}",
     )  # TODO: refactor - (ab)use pydantic models
-    if "alters" not in task.get("meta", {}).get("owners", []):  # TODO: filter on query
+    if (
+        task.get("owner") != "alters"
+    ):  # TODO: Consider getting owner name from plugin MODULE_NAME
         raise HTTPException(404)
     return task
 
