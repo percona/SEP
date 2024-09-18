@@ -120,7 +120,15 @@ class RemoteAPI(BaseCaseInsensitiveModel):
 
         """
         response = await self._request(method, path, **kwargs)
-        return await response.json()
+        response_data = await response.json()
+        logger.debug(
+            "%s request to %s%s response: %s",
+            method,
+            self.base_url,
+            path,
+            response_data,
+        )
+        return response_data
 
     async def get(self, path: str, **kwargs) -> Any:
         """Perform a GET request and return the JSON response.
