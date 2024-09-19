@@ -20,6 +20,7 @@ from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
+from app.sep.models import AltersCreate
 from app.tasks.config import tasks_settings
 from app.tasks.models import GeneratedTask
 
@@ -48,7 +49,7 @@ BaseURL = Annotated[URL, Depends(get_base_url)]
 
 
 def get_oauth_redirect_exception(base_url: BaseURL) -> HTTPTemporaryRedirectException:
-    """Return the HTTPTemporaryRedirectException for OAuth2 login
+    """Return the HTTPTemporaryRedirectException for OAuth2 login.
 
     Create an HTTP redirect exception to handle OAuth2 redirection, clearing
     the old session cookie in the process.
@@ -120,7 +121,7 @@ def get_access_token_from_cookie(  # nosec B107
         )
     except BadSignature:
         logger.debug("Failed to unsign token", exc_info=True)
-        raise oauth_redirect_exception
+        raise oauth_redirect_exception from None
 
 
 AccessTokenCookie = Annotated[str, Depends(get_access_token_from_cookie)]
@@ -252,14 +253,7 @@ TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
 
 
 async def build_alters_task_payload(
-    task_name: Annotated[str, Form()],
-    hostname: Annotated[str, Form()],
-    connect_to: Annotated[str, Form()],
-    schema_name: Annotated[str, Form()],
-    table_name: Annotated[str, Form()],
-    recursion_method: Annotated[str, Form()],
-    alter: Annotated[str, Form()],
-    dsn_table: Annotated[str, Form()] = "",
+    form: Annotated[AltersCreate, Form()],
 ) -> GeneratedTask:
     """Build the alter task payload from form.
 
@@ -268,23 +262,8 @@ async def build_alters_task_payload(
 
     Parameters
     ----------
-    task_name : str
-        The name of the task to be created.
-    hostname : str
-        The target hostname for the task execution.
-    connect_to : str
-        The connection type, which could be a hostname or `localhost`.
-    schema_name : str
-        The database schema name on which the task will operate.
-    table_name : str
-        The table name within the schema to be altered.
-    recursion_method : str
-        The method for handling recursion.
-    alter : str
-        The specific alter command to be executed.
-    dsn_table : str, optional
-        The DSN table for recursion method when using `dsn`.
-        Defaults to an empty string.
+    form : AltersCreate
+        The form data for the Alters creation.
 
     Returns
     -------
@@ -293,37 +272,30 @@ async def build_alters_task_payload(
         and parameters for the Alters task execution.
 
     """
-    if connect_to == "localhost":
-        dsn = f"D={schema_name},t={table_name}"
+    if form.connect_to == "localhost":
+        dsn = f"D={form.schema_name},t={form.table_name}"
     else:
-        dsn = f"h={connect_to},D={schema_name},t={table_name}"
-    if sep_settings.ALTERS_DB_USERNAME:
-        dsn += f",u={sep_settings.ALTERS_DB_USERNAME}"
-    if sep_settings.ALTERS_DB_PASSWORD:
-        dsn += f",p={sep_settings.ALTERS_DB_PASSWORD}"
-        # TODO: mask/hash password on view
+        dsn = f"h={form.connect_to},D={form.schema_name},t={form.table_name}"
 
-    if recursion_method == "dsn":
-        recursion_method = f"dsn={dsn_table}"
-    else:
-        recursion_method = recursion_method
+    if form.recursion_method == "dsn":
+        form.recursion_method = f"dsn={form.dsn_table}"
 
     return GeneratedTask(
         app="alters",
         commands=[
             {
                 "args": [
-                    f"--alter={alter}",
+                    f"--alter={form.alter}",
                     dsn,
-                    f"--recursion-method={recursion_method}",
+                    f"--recursion-method={form.recursion_method}",
                     "--execute",
                 ],
                 "command": "pt-online-schema-change",
-                "meta": {"schema_name": schema_name, "table_name": table_name},
+                "meta": {"schema_name": form.schema_name, "table_name": form.table_name},
             },
         ],
-        name=task_name,
-        target=hostname,
+        name=form.task_name,
+        target=form.hostname,
     )
 
 
