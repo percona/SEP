@@ -142,5 +142,5 @@ async def alters_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete alters task."""
-    await tasks_api.delete(f"/{task["name"]}")
+    await tasks_api.delete(f"/{task['name']}")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
