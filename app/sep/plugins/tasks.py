@@ -1,9 +1,11 @@
-import json
+"""Define routes for the Tasks Plugin."""
+
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter
 from fastapi import Form
+from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from fastapi.responses import HTMLResponse
@@ -14,7 +16,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
 from app.sep.deps import TaskAPI
 from app.tasks.main import TRANSLATION_MAPPING
-from app.tasks.models import TASK_BACKEND_LOOKUP
+from app.tasks.models import TaskBackendEnum
 from app.tasks.nomad.utils import transform_payload
 
 logger = logging.getLogger(__name__)
@@ -28,9 +30,9 @@ async def tasks_list(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Tasks index route."""
+    """Homepage of Tasks Plugin."""
     context["tasks"] = await tasks_api.get("/")
-    context["backends"] = TASK_BACKEND_LOOKUP
+    context["available_backends"] = TaskBackendEnum
     return templates.TemplateResponse(
         request=request,
         name="tasks/list.html",
@@ -39,14 +41,14 @@ async def tasks_list(
 
 
 @router.post("/", response_class=HTMLResponse)
-async def task_create(
+async def task_create(  # TODO: Use pydantic model for request data
     taskalias: Annotated[str, Form()],
     taskdef: Annotated[str, Form()],
     format: Annotated[str, Form()],
-    taskeng: Annotated[int, Form()],
+    taskeng: Annotated[str, Form()],
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Tasks index route."""
+    """Create task."""
     payload = {
         "taskalias": taskalias,
         "taskdef": taskdef,
@@ -60,7 +62,15 @@ async def task_create(
             continue
         match mapping.action:
             case "backend":
-                backend = TASK_BACKEND_LOOKUP[payload["taskeng"]]
+                try:
+                    backend = TaskBackendEnum(payload["taskeng"])
+                except ValueError:  # TODO: Use pydantic model for request validation
+                    logger.error(
+                        "Backend %s is not supported",
+                        payload["taskeng"],
+                        exc_info=True,
+                    )
+                    raise HTTPException(status.HTTP_400_BAD_REQUEST)
                 match backend:
                     case "nomad":
                         payload[mapping.new] = await transform_payload(
@@ -89,11 +99,13 @@ async def tasks_detail(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Tasks detail route."""
-    context["task"] = await tasks_api.get(f"/{task_name}")
+    """Retrieve task."""
+    context["task"] = await tasks_api.get(
+        f"/{task_name}",
+    )  # TODO: Use Pydantic/SQLModel models
     context["history"] = await tasks_api.get(f"/history/{task_name}")
     context["TRANSLATION_MAPPING"] = TRANSLATION_MAPPING
-    context["task_data"] = json.loads(context["task"]["data"])
+    context["task_data"] = context["task"]["data"]
     return templates.TemplateResponse(
         request=request,
         name="tasks/view.html",
@@ -107,7 +119,7 @@ async def tasks_execute(
     tasks_api: TaskAPI,
     redirect_to: Annotated[URIPath, Form()] = "/tasks",
 ) -> RedirectResponse:
-    """Tasks execute route."""
+    """Execute task."""
     await tasks_api.post(f"/execute/{task_name}")  # TODO: send meta form fields
     return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
 
@@ -118,6 +130,6 @@ async def tasks_delete(
     tasks_api: TaskAPI,
     redirect_to: Annotated[URIPath, Form()] = "/tasks",
 ) -> RedirectResponse:
-    """Tasks delete route."""
+    """Delete task."""
     await tasks_api.delete(f"/{task_name}")
     return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)

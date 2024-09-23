@@ -20,8 +20,8 @@
   <tbody>
   {% for task in tasks %}
   <tr>
-    <th><a href="{{ base_uri }}tasks/{{ task['name'] }}">{{ task["name"] }}</a></th>
-    <td>{{ backends[task["backend"]].capitalize() }}</td>
+    <th><a href="{{ base_uri }}/tasks/{{ task['name'] }}">{{ task["name"] }}</a></th>
+    <td>{{ task["backend"].capitalize() }}</td>
     <td>{{ task["created_at"] }}</td>
   </tr>
   {% endfor %}

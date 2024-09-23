@@ -5,7 +5,6 @@ from http.cookies import SimpleCookie
 from typing import Annotated
 from typing import Any
 
-from fastapi import Cookie
 from fastapi import Depends
 from fastapi import Form
 from fastapi import Request
@@ -81,12 +80,9 @@ OAuthRedirectException = Annotated[
 ]
 
 
-def get_access_token_from_cookie(
+def get_access_token_from_cookie(  # nosec B107
     oauth_redirect_exception: OAuthRedirectException,
-    signed_access_token: Annotated[
-        str,
-        Cookie(alias=sep_settings.SESSION.COOKIE_NAME),
-    ] = "",
+    signed_access_token: str = "",
 ) -> str:
     """Return the unsigned token from the signed cookie.
 
@@ -131,17 +127,14 @@ AccessTokenCookie = Annotated[str, Depends(get_access_token_from_cookie)]
 
 
 async def get_current_user(
-    oauth_redirect_exception: OAuthRedirectException,
-    token: AccessTokenCookie,
+    request: Request,
 ) -> User:
     """Return the authenticated user from a cookie token.
 
     Parameters
     ----------
-    oauth_redirect_exception : OAuthRedirectException
-        The exception to raise if the token is invalid or cannot be verified.
-    token: AccessTokenCookie
-        The cookie token to authenticate the user.
+    request : Request
+        The HTTP request object from which the base URL is derived.
 
     Returns
     -------
@@ -154,6 +147,12 @@ async def get_current_user(
         If the token is invalid or the user is inactive.
 
     """
+    base_url = get_base_url(request)
+    oauth_redirect_exception = get_oauth_redirect_exception(base_url)
+    token = get_access_token_from_cookie(
+        oauth_redirect_exception,
+        request.cookies.get(sep_settings.SESSION.COOKIE_NAME, ""),
+    )
     try:
         user = await User.from_jwt(token)
     except (BadSignature, InvalidTokenError, ValidationError) as exc:
@@ -166,8 +165,8 @@ async def get_current_user(
     return user
 
 
-IsAuthenticatedCookie = Depends(get_current_user)
-CurrentUser = Annotated[User, IsAuthenticatedCookie]
+IsAuthenticated = Depends(get_current_user)
+CurrentUser = Annotated[User, IsAuthenticated]
 
 
 def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:

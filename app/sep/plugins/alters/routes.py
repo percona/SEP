@@ -1,6 +1,5 @@
 """Define routes for the alters plugin."""
 
-import json
 import logging
 
 from fastapi import APIRouter
@@ -15,7 +14,7 @@ from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import TaskAPI
 from app.sep.plugins.alters.deps import AltersTask
-from app.tasks.models import TASK_HISTORY_STATUS_LOOKUP
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,6 +28,7 @@ async def alters_index(
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
 ) -> HTMLResponse:
+    """Homepage of alters plugin."""
     all_hosts = await inventory_api.get("/")
     mysql_hosts = []
     for host in all_hosts:
@@ -38,8 +38,8 @@ async def alters_index(
                 break
     tasks = []
     for task in await tasks_api.get("/"):
-        if "alters" in task.get("meta", {}).get("owners", []):  # TODO: filter on query
-            data = json.loads(task["data"])
+        if task.get("owner") == "alters":  # TODO: filter on query
+            data = task["data"]
             meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
             taskinfo = {
                 "hostname": data["Constraints"][0]["RTarget"],
@@ -54,19 +54,19 @@ async def alters_index(
     for task in tasks:
         history = await tasks_api.get(f"/history/{task['name']}")
         for hist in history:
-            match TASK_HISTORY_STATUS_LOOKUP[hist["status"]]:
-                case "success" | "failed":
+            match TaskHistoryStatusEnum(hist["status"]):
+                case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
                     history_tasks.append(hist)
-                case "pending":
+                case TaskHistoryStatusEnum.PENDING:
                     scheduled_tasks.append(hist)
-                case "running":
+                case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
     context.update(
         {
             "hosts": all_hosts,
             "mysql_hosts": mysql_hosts,
             "tasks": tasks,
-            "scheduled_tasks": scheduled_tasks,
+            "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
         },
@@ -83,8 +83,13 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
+    """Create new alters task."""
     logger.debug("Create alters task: %s", task)
-    await task_api.post("/generate", json=task.model_dump())
+    # TODO: validate response
+    await task_api.post(
+        "/generate",
+        json=task.model_dump(),
+    )  # TODO: Proper error for unique constraint
     return RedirectResponse(
         "/alters",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -98,9 +103,8 @@ async def alters_detail(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Tasks detail route."""
-    logger.debug("TASK DETAIL: %s", task)
-    data = json.loads(task["data"])
+    """Retrieve alters task."""
+    data = task["data"]
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
     task_data = {
@@ -127,7 +131,7 @@ async def alters_execute(
     task: AltersTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Alters execute route."""
+    """Execute alters task."""
     await tasks_api.post(f"/execute/{task['name']}")  # TODO: send meta form fields
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -137,6 +141,6 @@ async def alters_delete(
     task: AltersTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Alters delete route."""
-    await tasks_api.delete(f"/{task["name"]}")
+    """Delete alters task."""
+    await tasks_api.delete(f"/{task['name']}")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

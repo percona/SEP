@@ -10,7 +10,7 @@
   </thead>
   <tbody>
     {% for task in pending_tasks %}
-    {% set task_name = task["name"] %}
+    {% set task_name = task["task"]["name"] %}
     <tr>
       <td>{{ task_name }}</td>
       <td>{{ task['execution_request']['target'] }}</td>
@@ -18,7 +18,7 @@
       <td>
         <a href="{{ task_name }}"><i class="icons">visibility</i></a>
         <a href="javascript:;" onclick="document.getElementById('deleteTaskForm').submit();"><i class="icons">delete forever</i></a>
-        <form action="{{ task['name'] }}/delete" method="POST" style="display:none;" id="deleteTaskForm"></form>
+        <form action="{{ task_name }}/delete" method="POST" style="display:none;" id="deleteTaskForm"></form>
       </td>
     </tr>
     {% endfor %}

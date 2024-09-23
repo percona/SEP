@@ -50,7 +50,12 @@ source venv/bin/activate
 > [!TIP]
 > Use `venv/bin/activate.fish` if you're on a Fish shell.
 
-3. Download your Casdoor certificate
+3. Create SEP's databases with `make migrate`:
+```shell
+make migrate
+```
+
+4. Download your Casdoor certificate
 
 In Casdoor's web interface, navigate to Identity > Certs > cert-built-in
 (should be in [this link](http://localhost:9999/certs/admin/cert-built-in)) and click on
@@ -63,7 +68,7 @@ the **Download certificate** button. Save the `token_jwt_key.pem` file in the **
 > setting `CERTIFICATE_PATH` in the `CASDOOR` section in `settings.yaml`, or the
 > `CASDOOR__CERTIFICATE_PATH` in your env vars/.env. 
 
-4. Add your Redirect URL to the Casdoor application
+5. Add your Redirect URL to the Casdoor application
 
 In Casdoor's web interface, navigate to Identity > Applications > app-built-in
 (should be in [this link](http://localhost:9999/applications/built-in/app-built-in))
@@ -75,7 +80,7 @@ add the URLs `http://localhost:8000/oauth/callback` and `http://127.0.0.1:8000/o
 
 ![image](https://github.com/user-attachments/assets/8a562b77-00c7-4192-bba3-d22e3514766f)
 
-5. Create a .env file in the project root folder to store your secrets.
+6. Create a .env file in the project root folder to store your secrets.
 See the [secrets section](#secrets) of the README for more details.
 
 ## Configuration
@@ -108,6 +113,12 @@ These are the possible settings you can have, per app:
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | N/A                                            |
 | TASKS__NOMAD__VERIFY       | tasks     | no       | False                                               | N/A                                            |
 | TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                            |
+| TASKS__DATABASE__ENGINE    | tasks     | no       | sqlite                                              | N/A                                            |
+| TASKS__DATABASE__NAME      | tasks     | no       | tasks.db                                            | N/A                                            |
+| TASKS__DATABASE__USER      | tasks     | no       | N/A                                                 | N/A                                            |
+| TASKS__DATABASE__PASSWORD  | tasks     | no       | N/A                                                 | N/A                                            |
+| TASKS__DATABASE__HOST      | tasks     | no       | N/A                                                 | N/A                                            |
+| TASKS__DATABASE__PORT      | tasks     | no       | N/A                                                 | N/A                                            |
 | SEP__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory            |
 | SEP__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                |
 | SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback           |
@@ -215,9 +226,94 @@ source venv/bin/activate
 
 3. Start SEP:
 ```shell
-python3 -m app.main --logging=debug
+LOGGING=debug python3 -m app.main
 ```
 
 SEP will be available in http://localhost:8000.
 
 ![image](https://github.com/user-attachments/assets/cec67a8e-341a-45d5-9144-e6c24f5128eb)
+
+## Alternative: Use Docker Compose
+
+You can also run sep with Docker Compose by following these steps:
+
+1. Enter the project folder:
+```shell
+cd SEP
+```
+
+2. Generate the SSL certificates with the [`generate_certs.sh`](https://github.com/percona/SEP/blob/main/generate_certs.sh) script:
+```shell
+./generate_certs.sh
+```
+
+3. Generate Casdoor's init data with the [`generate_casdoor_init_data.sh`](https://github.com/percona/SEP/blob/main/generate_casdoor_init_data.sh) script:
+```shell
+./generate_casdoor_init_data.sh
+```
+You can use the `-p/--password` argument to specify a password for the initial user:
+```shell
+./generate_casdoor_init_data.sh -p password
+```
+If no password is specified, a random one will be generated.
+
+By now, your `data` folder should look something like this:
+```
+data
+├── nomad.hcl
+├── certs
+│   ├── nomad
+│   │   ├── global-client-nomad.pem
+│   │   ├── global-server-nomad-key.pem
+│   │   ├── global-client-nomad-key.pem
+│   │   ├── global-client-nomad.p12
+│   │   └── global-server-nomad.pem
+│   ├── sep-ca-key.pem
+│   ├── sep
+│   │   ├── localhost-cert-key.pem
+│   │   ├── inventory_api-cert-key.pem
+│   │   ├── tasks_api-cert.pem
+│   │   ├── localhost-cert.pem
+│   │   ├── inventory_api-cert.pem
+│   │   └── tasks_api-cert-key.pem
+│   ├── casdoor
+│   │   ├── sep_token_jwt_key.pem
+│   │   ├── README.md
+│   │   ├── sep_token_jwt_key.key
+│   └── sep-ca.pem
+├── mime.types
+├── casdoor_init_data.json
+├── http-tests
+│   ├── inventory.http
+│   ├── nomad.http
+│   ├── task_history.http
+│   └── tasks.http
+└── nginx.conf
+```
+
+4. Add your PMM API key to the `.env.docker` file
+
+By now, a `.env.docker` file should have been created in your current directory.
+Open it and replace `REPLACE_WITH_YOUR_PMM_API_KEY` with your actual PMM API key.
+
+5. Start Nomad with the new generated config:
+```shell
+nomad agent -config /path/to/SEP/data/nomad.hcl
+```
+Replace `/path/to/SEP` with the path in which the project folder is stored in your computer.
+
+> [!IMPORTANT]
+> Make sure you're not running other Nomad instances.
+
+6. Build the Docker Compose services:
+```shell
+docker compose build
+```
+
+7. Start the Docker Compose services:
+```shell
+docker compose up
+```
+
+SEP will be available in https://localhost.
+You can stop SEP with CTRL-C and later start it again with `docker compose up`.

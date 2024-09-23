@@ -22,8 +22,7 @@ from app.sep.deps import DefaultContext
 from app.sep.deps import get_base_url
 from app.sep.deps import get_current_user
 from app.sep.deps import get_default_context
-from app.sep.deps import get_oauth_redirect_exception
-from app.sep.deps import IsAuthenticatedCookie
+from app.sep.deps import IsAuthenticated
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +45,8 @@ async def custom_error_handler(request, exc):
     """Load custom error page."""
     base_url = get_base_url(request)
     try:
-        user = await get_current_user(
-            get_oauth_redirect_exception(base_url),
-            request.cookies.get(sep_settings.SESSION.COOKIE_NAME),
-        )
+        # TODO: Refactor
+        user = await get_current_user(request)
     except HTTPTemporaryRedirectException as redirect_exc:
         return RedirectResponse(
             redirect_exc.location,
@@ -68,10 +65,13 @@ async def custom_error_handler(request, exc):
 async def custom_404_handler(request, exc):
     """Load custom 404 page."""
     base_url = get_base_url(request)
-    user = await get_current_user(
-        get_oauth_redirect_exception(base_url),
-        request.cookies.get(sep_settings.SESSION.COOKIE_NAME),
-    )
+    try:
+        user = await get_current_user(request)
+    except HTTPTemporaryRedirectException as redirect_exc:
+        return RedirectResponse(
+            redirect_exc.location,
+            status_code=redirect_exc.status_code,
+        )
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
@@ -94,7 +94,7 @@ async def callback(code: str) -> RedirectResponse:
     return response
 
 
-@sep_app.post("/logout", dependencies=[IsAuthenticatedCookie])
+@sep_app.post("/logout", dependencies=[IsAuthenticated])
 async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
     # TODO: CSRF protection

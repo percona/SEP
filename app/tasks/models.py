@@ -1,4 +1,4 @@
-"""Task API data models
+"""Define models for the Task API.
 
 Todo:
 ----
@@ -10,127 +10,104 @@ Todo:
 
 """
 
-from enum import IntEnum
+from datetime import datetime
+from enum import auto
+from enum import StrEnum
 from statistics import mean
-from typing import Any
 from typing import Optional
 
-from pydantic import BaseModel as PydanticBaseModel
+from pydantic import AliasGenerator
+from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import model_serializer
-from sqlalchemy import BigInteger
 from sqlalchemy import Column
 from sqlalchemy import Enum
 from sqlalchemy import Index
-from sqlalchemy import Integer
 from sqlalchemy import JSON
-from sqlalchemy import null
-from sqlalchemy import String
-from sqlalchemy import Table
-from sqlalchemy import UniqueConstraint
+from sqlmodel import Field as SQLField
+from sqlmodel import Relationship
 
-# from sqlalchemy.ext.declarative import declarative_base
-from app.core.db import DATABASE_EXTRA_COLUMNS
-from app.core.db import DbBaseModel
-from app.core.db import get_metadata
+from app.core.db import BaseSQLModel
+from app.core.db.models import DateTimeWithTimezone
 
 TASK_ALIAS_LENGTH = 100
-TASK_BACKEND_MAP = {  # CAUTION: changing existing values should be done with the utmost care
-    "nomad": 1,
-}
-TASK_BACKEND_LOOKUP = {v: k for k, v in TASK_BACKEND_MAP.items()}
-
-TASK_HISTORY_STATUS_MAP = {  # CAUTION: changing existing values should be done with the utmost care
-    "failed": 1,
-    "pending": 2,
-    "running": 3,
-    "success": 0,
-}
-TASK_HISTORY_STATUS_LOOKUP = {v: k for k, v in TASK_HISTORY_STATUS_MAP.items()}
-
-# SchemaBase = declarative_base(metadata=get_metadata())
 
 
-class BaseModel(PydanticBaseModel):
-    """Custom Pydantic base model"""
+class TaskBackendEnum(StrEnum):
+    """Control the choice of backends.
 
-    engine: str = "nomad"
+    Attributes
+    ----------
+    NOMAD : str
+        Enum value for Nomad backend.
 
-    _excluded_fields = ["engine"]
-    _transform_fields = {"nomad": {"*": "capitalize"}}
+    """
 
-
-class CustomSerializeBaseModel(BaseModel):
-    """Extended base model for customisation"""
-
-    def format_attr_name(self, attr: str) -> str:
-        """Format an attribute name, such as when dumping the model
-
-        :param attr:
-        :return:
-        """
-        mapping = self._transform_fields.get(self.engine, {})
-        if attr in mapping:
-            transform = mapping[attr]
-        elif "*" in mapping:
-            transform = mapping["*"]
-        else:
-            transform = "__str__"
-        return getattr(attr, transform)() if hasattr(attr, transform) else transform
-
-    @model_serializer
-    def serialize_model(self) -> Any:
-        """Special serializer for models"""
-        match self.engine:
-            case _:
-                return {
-                    self.format_attr_name(k): v
-                    for k, v in vars(self).items()
-                    if k not in self._excluded_fields
-                }
+    NOMAD = auto()
 
 
-class TaskBackendEnum(IntEnum):
-    """Control the choice of backends"""
+class TaskHistoryStatusEnum(StrEnum):
+    """Define status codes for task executions.
 
-    nomad = TASK_BACKEND_MAP["nomad"]
+    Attributes
+    ----------
+    FAILED : str
+        Enum value for failed tasks.
+    PENDING : str
+        Enum value for pending tasks.
+    RUNNING : str
+        Enum value for running tasks.
+    SUCCESS : str
+        Enum value for successfully completed tasks.
+
+    """
+
+    FAILED = auto()
+    PENDING = auto()
+    RUNNING = auto()
+    SUCCESS = auto()
 
 
-class TaskHistoryStatusEnum(IntEnum):
-    """Status codes"""
+class TaskExecutionRequest(BaseModel):
+    """Represent an execution request.
 
-    failed = TASK_HISTORY_STATUS_MAP["failed"]
-    pending = TASK_HISTORY_STATUS_MAP["pending"]
-    running = TASK_HISTORY_STATUS_MAP["running"]
-    success = TASK_HISTORY_STATUS_MAP["success"]
+    Attributes
+    ----------
+    task : str
+        The task name.
+    target : str
+        The target system or environment.
+    meta : dict, optional
+        Additional metadata for the task. Defaults to an empty dictionary.
+    tracking : dict, optional
+        Tracking information for task execution. Defaults to a dictionary with keys
+        for allocation and evaluation IDs.
 
-
-class TaskExecution(BaseModel):
-    """Model for initiating task execution"""
-
-    task: str
-
-
-class TaskExecutionRequest(CustomSerializeBaseModel):
-    """Model for execution requests"""
+    """
 
     model_config = ConfigDict(extra="allow")
-
     task: str
     target: str
     meta: Optional[dict] = {}
     tracking: Optional[dict] = {"allocation_id": None, "evaluation_id": None}
 
-    @model_serializer
-    def serialize_model(self) -> Any:
-        """Special serializer for models"""
-        return {k: v for k, v in vars(self).items() if k not in self._excluded_fields}
 
+class TaskGroupTaskTemplate(BaseModel):
+    """Represent a task group for controlling task templates.
 
-class TaskGroupTaskTemplate(CustomSerializeBaseModel):
-    """Model for controlling task templates"""
+    Attributes
+    ----------
+    content : str or bytes
+        The content of the task template.
+    path : str
+        The file path where the template will be applied.
+    mode : str
+        The execution mode of the task. Defaults to "restart".
+    perms : str
+        The file permissions for the template. Defaults to "0644".
+
+    """
 
     content: str | bytes
     path: str
@@ -147,9 +124,33 @@ class TaskGroupTaskTemplate(CustomSerializeBaseModel):
     }
 
 
-class TaskGroupTask(CustomSerializeBaseModel):
-    """Model for tasks that belong to a job task group task"""
+class TaskGroupTask(BaseModel):
+    """Represent a task that belong to a job task group.
 
+    Attributes
+    ----------
+    name : str
+        The name of the task.
+    driver : str
+        The driver to be used for task execution. Defaults to "raw_exec".
+    user : str
+        The user who will execute the task. Defaults to an empty string.
+    config : dict or list or str or bytes
+        The configuration details for the task.
+    meta : dict
+        Additional metadata for the task. Defaults to an empty dictionary.
+    restart : dict
+        Task restart policy. Defaults to a dictionary specifying no retries.
+    templates : list[TaskGroupTaskTemplate]
+        A list of task templates to be applied. Defaults to an empty list.
+
+    """
+
+    model_config = ConfigDict(
+        alias_generator=AliasGenerator(
+            serialization_alias=lambda field_name: field_name.title(),
+        ),
+    )  # TODO: Reuse
     name: str
     driver: str = "raw_exec"
     user: str = ""
@@ -159,8 +160,21 @@ class TaskGroupTask(CustomSerializeBaseModel):
     templates: list[TaskGroupTaskTemplate] = []  # TODO
 
 
-class TaskGroup(CustomSerializeBaseModel):
-    """Model for task group tasks"""
+class TaskGroup(BaseModel):
+    """Represent a task group.
+
+    Attributes
+    ----------
+    engine : str
+        The backend engine for task execution. Defaults to "nomad".
+    name : str
+        The name of the task group. Defaults to "execution".
+    parallel : bool
+        Whether tasks should be executed in parallel. Defaults to False.
+    tasks : list[TaskGroupTask]
+        A list of tasks in the group.
+
+    """
 
     engine: str = "nomad"
     name: str = "execution"
@@ -168,9 +182,13 @@ class TaskGroup(CustomSerializeBaseModel):
     tasks: list[TaskGroupTask] = []
 
     def to_payload(self):
-        """Convert to a backend-specific payload format
+        """Convert to a backend-specific payload format.
 
-        :return:
+        Returns
+        -------
+        dict
+            A dictionary representing the payload for the task group.
+
         """
         data = {"TaskGroups": []}
         match self.engine:
@@ -178,66 +196,153 @@ class TaskGroup(CustomSerializeBaseModel):
                 if self.parallel:
                     for i, task in enumerate(self.tasks):
                         data["TaskGroups"].append(
-                            {"Name": f"{self.name}{i+1}", "Tasks": [task.model_dump()]},
+                            {
+                                "Name": f"{self.name}{i+1}",
+                                "Tasks": [task.model_dump(by_alias=True)],
+                            },
                         )
                 else:
                     data["TaskGroups"].append(
                         {
                             "Name": self.name,
-                            "Tasks": [task.model_dump() for task in self.tasks],
+                            "Tasks": [
+                                task.model_dump(by_alias=True) for task in self.tasks
+                            ],
                         },
                     )
         return data
 
 
 class GeneratedTask(BaseModel):
-    """Model for a generated task"""
+    """Represent a generated task.
+
+    Attributes
+    ----------
+    app : str
+        The application name associated with the task.
+    commands : list
+        A list of commands to execute the task.
+    name : str
+        The task name.
+    target : str
+        The target system for task execution.
+    artifacts : list or None
+        Artifacts produced by the task. Defaults to None.
+    parallel : bool
+        Whether the task will run in parallel. Defaults to False.
+    persist : bool
+        Whether the task should persist after completion. Defaults to True.
+    schedule : dict
+        The scheduling configuration for the task. Defaults to {"save_only": True}.
+    template : str
+        The task template type. Defaults to "batch".
+
+    """
 
     app: str
     commands: list
     name: str
     target: str
     artifacts: list | None = None
-    # config: dict | list | str | bytes | None = None
     parallel: bool = False
     persist: bool = True
     schedule: dict = {"save_only": True}
     template: str = "batch"
 
 
-class Task(DbBaseModel):
-    """Model for tasks"""
+class Task(BaseSQLModel, table=True):
+    """Represent a task stored in the database.
 
-    name: str
-    data: str
+    Attributes
+    ----------
+    name : str
+        The name of the task.
+    data : dict
+        The task data stored in JSON format.
+    backend : TaskBackendEnum
+        The backend used for task execution. Defaults to Nomad.
+    owner : str or None
+        The owner of the task. Defaults to None.
+    is_template : bool
+        Whether the task is a template. Defaults to False.
+    protected : bool
+        Whether the task is protected from deletion. Defaults to False.
+    history : list[TaskHistory]
+        The history of task executions.
+    deleted_at : datetime or None
+        The deletion timestamp, if applicable.
 
-    backend: TaskBackendEnum = TaskBackendEnum.nomad
-    meta: dict = {"owners": ["*"]}
+    """
+
+    __table_args__ = (
+        Index("ix_task_deleted_at_owner", "deleted_at", "owner"),
+        Index("ix_task_deleted_at_name", "deleted_at", "name"),
+        Index(
+            "ix_task_deleted_at_name_is_template",
+            "deleted_at",
+            "name",
+            "is_template",
+        ),
+    )
+    name: str = SQLField(max_length=255, unique=True, index=True)
+    data: dict = SQLField(sa_column=Column(JSON, nullable=False))
+    backend: TaskBackendEnum = SQLField(
+        default=TaskBackendEnum.NOMAD,
+        sa_column=Column(Enum(TaskBackendEnum), nullable=False),
+    )
+    owner: str | None = SQLField(default=None, index=True)
+    is_template: bool = SQLField(default=False, index=True)
+    protected: bool = False
+    history: list["TaskHistory"] = Relationship(back_populates="task")
+    deleted_at: datetime | None = SQLField(
+        sa_type=DateTimeWithTimezone,
+        default=None,
+        index=True,
+    )
 
 
-class TaskHistory(DbBaseModel):
-    """Model for task history"""
+class TaskHistory(BaseSQLModel, table=True):
+    """Represent a task execution history.
 
-    name: str
-    execution_request: TaskExecutionRequest
-    data: Task
-    status: int = TASK_HISTORY_STATUS_MAP["pending"]
+    Attributes
+    ----------
+    execution_request : TaskExecutionRequest
+        The request that triggered the task execution.
+    status : TaskHistoryStatusEnum
+        The status of the task execution. Defaults to pending.
+    task_id : int
+        The ID of the task associated with the execution.
+    task : Task
+        The task associated with this execution history.
+
+    """
+
+    __table_args__ = (Index("ix_taskhistory_task_id_status", "task_id", "status"),)
+    execution_request: TaskExecutionRequest = SQLField(
+        sa_column=Column(JSON, nullable=False),
+    )
+    status: TaskHistoryStatusEnum = SQLField(
+        default=TaskHistoryStatusEnum.PENDING,
+        sa_column=Column(Enum(TaskHistoryStatusEnum), nullable=False, index=True),
+    )
+    task_id: int = SQLField(foreign_key="task.id", index=True)
+    task: Task = Relationship(back_populates="history")
 
     @computed_field
     @property
     def errors(self) -> list:
-        """Return a list of errors for the executed task
+        """Return a list of errors for the executed task.
 
-        :return:
+        Returns
+        -------
+        list
+            A list of error messages encountered during task execution.
+
         """
-        if (
-            self.status
-            not in [
-                TASK_HISTORY_STATUS_MAP["success"],
-                TASK_HISTORY_STATUS_MAP["failed"],
-            ]
-            or not self.execution_request.tracking["task_states"]
-        ):
+        if self.status not in [
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.FAILED,
+        ] or not self.execution_request.tracking.get("task_states"):
             return []
         errors = set()
         for _, tasks in self.execution_request.tracking["task_states"].items():
@@ -249,9 +354,45 @@ class TaskHistory(DbBaseModel):
         return list(errors)
 
 
-class TaskStats(BaseModel):
-    """Model for task stats"""
+class TaskHistoryResponse(BaseSQLModel):
+    """Represent a task history API response.
 
+    Attributes
+    ----------
+    execution_request : TaskExecutionRequest
+        The request that triggered the task execution.
+    status : TaskHistoryStatusEnum
+        The status of the task execution.
+    task : Task
+        The task associated with this execution history.
+    errors : list
+        A list of errors encountered during the task execution.
+
+    """
+
+    execution_request: TaskExecutionRequest
+    status: TaskHistoryStatusEnum
+    task: Task
+    errors: list
+
+
+class TaskStats(BaseModel):
+    """Model for task statistics.
+
+    Attributes
+    ----------
+    engine : str
+        The backend engine used for task execution. Defaults to "nomad".
+    tasks : list[TaskHistory]
+        A list of task execution histories.
+    total
+    status
+    duration
+    last_finished_at
+
+    """
+
+    engine: str = "nomad"
     tasks: list[TaskHistory] = Field(default=[], exclude=True)
 
     _durations: dict = {
@@ -268,28 +409,36 @@ class TaskStats(BaseModel):
     @computed_field
     @property
     def total(self) -> int:
-        """The total number of tasks
+        """Return the total number of tasks.
 
-        :return:
+        Returns
+        -------
+        int
+            The total number of tasks.
+
         """
         return len(self.tasks)
 
     @computed_field
     @property
     def status(self) -> dict:
-        """The status summary
+        """Return the task status summary.
 
-        :return:
+        Returns
+        -------
+        dict
+            A dictionary summarizing the number of passed and failed tasks.
+
         """
         status = {
             "pass": 0,
             "fail": 0,
         }
         for task in self.tasks:
-            match TASK_HISTORY_STATUS_LOOKUP[task.status]:
-                case "failed":
+            match task.status:
+                case TaskHistoryStatusEnum.FAILED:
                     status["fail"] += 1
-                case "success":
+                case TaskHistoryStatusEnum.SUCCESS:
                     status["pass"] += 1
                 case _:
                     pass
@@ -298,9 +447,13 @@ class TaskStats(BaseModel):
     @computed_field
     @property
     def duration(self) -> dict:
-        """The duration summary
+        """Return the task duration summary.
 
-        :return:
+        Returns
+        -------
+        dict
+            A dictionary summarizing average, last, and total task durations.
+
         """
         if self._durations["average_seconds"] is None:
             self._process()
@@ -309,9 +462,13 @@ class TaskStats(BaseModel):
     @computed_field
     @property
     def last_finished_at(self) -> str | None:
-        """Find the last datetime that the task finished running
+        """Return the last finished task timestamp.
 
-        :return:
+        Returns
+        -------
+        str or None
+            The timestamp of the last task finished, or None if not available.
+
         """
         if not self._raw["finished_at"]:
             self._process()
@@ -322,30 +479,25 @@ class TaskStats(BaseModel):
 
         :return:
         """
-        # def _durations_from_states():
-        #    for _, state in task.execution_request.tracking["task_states"].items():
-        #        for _, info in state.items():
-        #            _f = datetime.fromisoformat(info["FinishedAt"])
-        #            _s = datetime.fromisoformat(info["StartedAt"] if info["StartedAt"] else info["FinishedAt"])
-        #            self._durations["tasks"][task.id] = (_f - _s).seconds
-        #            self._raw["durations"].append(self._durations["tasks"][task.id])
-        #            self._raw["finished_at"].append(str(_f))
 
         def _durations_from_tracking():
-            self._durations["tasks"][task.id] = task.execution_request.tracking[
-                "duration"
-            ]
+            self._durations["tasks"][task.id] = (
+                task.execution_request.tracking[  # TODO: Use Pydantic models
+                    "duration"
+                ]
+            )
             self._raw["durations"].append(task.execution_request.tracking["duration"])
             self._raw["finished_at"].append(
                 task.execution_request.tracking["finished_at"],
             )
 
         # TODO:
+        #  - Refactor
         #  - handle extra backends
         #  - consider moving some logic to the TaskHistory model and then call from here
         for i, task in enumerate(self.tasks):
             if i == 0:
-                self.engine = TASK_BACKEND_LOOKUP[task.data.backend]
+                self.engine = task.task.backend
             try:
                 _durations_from_tracking()
             except KeyError:
@@ -356,104 +508,3 @@ class TaskStats(BaseModel):
                 last_seconds=self._raw["durations"].pop(),
                 total_seconds=sum(self._raw["durations"]),
             )
-
-
-# class Tasks(SchemaBase):
-#    """Schema definition for Task"""
-#
-#    __tablename__ = "tasks"
-#
-#    id = Column(
-#        BigInteger().with_variant(Integer, dialect_name="sqlite"),
-#        autoincrement=True,
-#        nullable=False,
-#        primary_key=True,
-#    )
-#    name = Column(String(TASK_ALIAS_LENGTH), nullable=False)
-#    data = Column(JSON, nullable=False)
-#    backend = Column(Enum(TaskBackendEnum).with_variant(Integer, dialect_name="sqlite"), default=null(), nullable=True)
-#    meta = Column(JSON, nullable=False)
-#
-#
-# class TasksHistory(SchemaBase):
-#    """Schema definition for TaskHistory"""
-#    __tablename__ = "tasks_history"
-#
-#    id = Column(
-#        BigInteger().with_variant(Integer, dialect_name="sqlite"),
-#        autoincrement=True,
-#        nullable=False,
-#        primary_key=True,
-#    )
-#    name = Column(String(TASK_ALIAS_LENGTH), nullable=False)
-#    execution_request = Column(JSON, nullable=False)
-#    data = Column(JSON, nullable=False)
-#    status = Column(Enum(TaskHistoryStatusEnum).with_variant(Integer, dialect_name="sqlite"), nullable=False)
-
-
-# @event.listens_for(Tasks, "engine_connect")
-# def init_data(table: Table, connection, **kw):
-#    """Initialize/update the data when connecting to the engine
-#
-#    :param table:
-#    :param connection:
-#    :param kw:
-#    :return:
-#    """
-#    match table.name:
-#        case "tasks":
-#            query = table.select().where(table.c.name == "generic-nomad")
-#    # connection.execute(table.insert(), )
-
-
-tasks = Table(
-    "tasks",
-    get_metadata(),
-    Column(
-        "id",
-        BigInteger().with_variant(Integer, dialect_name="sqlite"),
-        autoincrement=True,
-        nullable=False,
-        primary_key=True,
-    ),
-    Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
-    Column("data", JSON, nullable=False),
-    Column(
-        "backend",
-        Enum(TaskBackendEnum).with_variant(Integer, dialect_name="sqlite"),
-        default=null(),
-        nullable=True,
-    ),
-    Column("meta", JSON, nullable=False),
-)
-# tasks = Tasks()
-
-history = Table(
-    "tasks_history",
-    get_metadata(),
-    Column(
-        "id",
-        BigInteger().with_variant(Integer, dialect_name="sqlite"),
-        autoincrement=True,
-        nullable=False,
-        primary_key=True,
-    ),
-    Column("name", String(TASK_ALIAS_LENGTH), nullable=False),
-    Column("execution_request", JSON, nullable=False),
-    Column("data", JSON, nullable=False),
-    Column(
-        "status",
-        Enum(TaskHistoryStatusEnum).with_variant(Integer, dialect_name="sqlite"),
-        nullable=False,
-    ),
-)
-# history = TasksHistory()
-
-# UniqueConstraint("name", tasks.name)
-Index("task_name", history.name)
-
-for col in DATABASE_EXTRA_COLUMNS:
-    tasks.append_column(col.copy())
-    history.append_column(col.copy())
-
-(UniqueConstraint("name", "deleted_at"),)
