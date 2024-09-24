@@ -10,26 +10,13 @@ from app.core.config import settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app
-from app.tasks.main import database_shutdown
-from app.tasks.main import prepare_database
+from app.tasks.main import initial_tasks_setup
 from app.tasks.main import tasks_app
 
 casdoor_sdk = settings.CASDOOR.SDK
 
-app = FastAPI()
 
-# TODO: update deprecates
-
-
-@app.on_event("startup")
-async def startup():
-    await prepare_database()
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await database_shutdown()
-
+app = FastAPI(lifespan=initial_tasks_setup)
 
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
