@@ -194,7 +194,6 @@ async def generate_task(
     if not generated_task.schedule:
         await _schedule_queue_item(
             history_recorded=history_record,
-            request=request,
             background_tasks=background_tasks,
         )
     return history_record
@@ -240,7 +239,7 @@ async def execute_task_name(
     history_recorded = await TaskHistoryManager.save(session, task_history)
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-    return await _schedule_queue_item(history_recorded, background_tasks, request)
+    return await _schedule_queue_item(history_recorded, background_tasks)
 
 
 @router.post(
@@ -262,7 +261,6 @@ async def execute_history_id(
     )
     return await _schedule_queue_item(
         history_recorded=history_record,
-        request=request,
         background_tasks=background_tasks,
     )
 
@@ -335,7 +333,6 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
 async def _schedule_queue_item(
     history_recorded: TaskHistory,
     background_tasks: BackgroundTasks,
-    request: Request,
 ) -> dict[str, TaskHistory]:
     # Check how to proceed with execution
     mode = tasks_settings.EXECUTE_MODE
@@ -344,7 +341,6 @@ async def _schedule_queue_item(
             background_tasks.add_task(
                 _process_queue_item,
                 queue_id=history_recorded.id,
-                request=request,
             )
         case _:
             logger.critical("Unknown execution mode '%s'", mode)

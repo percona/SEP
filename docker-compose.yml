@@ -37,12 +37,13 @@ services:
     image: sep-image:latest
     user: 1001:1001
     command: inventory
+    entrypoint: /home/sep/app/entrypoint_persistent.sh
     expose:
       - 9001
     depends_on:
       - casdoor
     environment:
-      <<: *api-environment
+      <<: *api-db-environment
       UVICORN_HOST: inventory_api
       UVICORN_PORT: 9001
     extra_hosts:
