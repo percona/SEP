@@ -53,6 +53,7 @@ makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py
 				read -p "Enter description for new $$capitalized Migration: " desc; \
 				"${VENV_BIN}"/alembic --name $$app revision --autogenerate -m "$$desc"; \
 				rm alembic_check.log; \
+				continue; \
 			else \
 				cat alembic_check.log; \
 				rm alembic_check.log; \
@@ -65,5 +66,5 @@ makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py
 
 migrate: venv alembic.ini app/tasks/migrations/versions
 	@for app in $(APPS); do \
-		"${VENV_BIN}"/alembic --name $$module upgrade head; \
+		"${VENV_BIN}"/alembic --name $$app upgrade head; \
 	done
