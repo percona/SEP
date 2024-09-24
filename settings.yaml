@@ -41,6 +41,9 @@ development:
 production_docker:
   CASDOOR:
     ENDPOINT: http://casdoor:8000
+    CERTIFICATE_PATH: data/certs/casdoor/sep_token_jwt_key.pem
+    APPLICATION_NAME: sep-app
+    ORGANIZATION_NAME: sep
     ALLOWED_ISSUERS:
       - http://host.docker.internal:9999
   SEP:

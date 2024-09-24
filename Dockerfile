@@ -3,7 +3,7 @@
 ###########
 
 # Use an official Python runtime as a parent image
-FROM python:3.12-alpine AS builder
+FROM python:3.11-alpine AS builder
 
 # Set work directory
 WORKDIR /usr/src/sep
@@ -30,7 +30,7 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requir
 #########
 
 # Use an official Python runtime as a parent image
-FROM python:3.12-alpine
+FROM python:3.11-alpine
 
 # Create directory for the sep user
 RUN mkdir -p /home/sep
@@ -58,6 +58,7 @@ COPY ./entrypoint_persistent.sh .
 RUN chmod +x $APP_HOME/entrypoint.sh
 RUN chmod +x $APP_HOME/entrypoint_persistent.sh
 
+# TODO: Always use .env.docker even if there's a .env
 COPY ./.env.docker .env
 
 # Copy project
