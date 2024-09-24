@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Node {{ node.name }}{% endblock %}
+
+{% block main %}
+<h2>Node Details</h2>
+<dl>
+    <dt>ID</dt>
+    <dd>{{ node.id }}</dd>
+    <dt>Name</dt>
+    <dd>{{ node.name }}</dd>
+    <dt>Address</dt>
+    <dd>{{ node.address }}</dd>
+    <dt>Type</dt>
+    <dd>{{ node.type }}</dd>
+    <dt>External ID</dt>
+    <dd>{{ node.external_id }}</dd>
+    <dt>Source</dt>
+    <dd>{{ node.source }}</dd>
+</dl>
+
+<h3>Services on this Node</h3>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Port</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for service in node.services %}
+        <tr>
+            <td>{{ service.id }}</td>
+            <td><a href="services/{{ service.id }}">{{ service.name }}</a></td>
+            <td>{{ service.type }}</td>
+            <td>{{ service.port }}</td>
+            <td>
+                <form action="/inventory/services/{{ service.id }}/delete" method="post" style="display:inline;">
+                    <button type="submit">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Add a New Service</h3>
+{% include "inventory/partials/service-create-form.html" %}
+{% endblock %}

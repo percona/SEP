@@ -74,5 +74,6 @@ async def create_table_for_schema(
     table: TableWrite,
 ) -> Table:
     """Create Table for Schema."""
-    logger.debug("Creating table for schema %s: %s", schema.id, table)
-    return await TableManager.create(session, table, schema_id=schema.id)
+    table.schema_id = schema.id
+    logger.error("Creating table for schema %s: %s", schema.id, table)
+    return await TableManager.create(session, table)

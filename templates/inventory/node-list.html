@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Node List{% endblock %}
+
+{% block main %}
+<h2>Node List</h2>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Address</th>
+            <th>Type</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for node in inventory %}
+        <tr>
+            <td>{{ node.id }}</td>
+            <td><a href="{{ node.id }}">{{ node.name }}</a></td>
+            <td>{{ node.address }}</td>
+            <td>{{ node.type }}</td>
+{#            TODO: add all info #}
+            <td>
+                <form action="{{ node.id }}/delete" method="post" style="display:inline;">
+{#                    TODO: Replace with icon #}
+                    <button type="submit">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Add a New Node</h3>
+{% include "inventory/partials/node-create-form.html" %}
+{% endblock %}

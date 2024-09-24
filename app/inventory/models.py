@@ -58,7 +58,7 @@ class NodeBase(SQLModel):
         default=None,
         sa_column=Column(EnumField(SourceEnum)),
     )
-    type: RequiredStr = "generic"  # TODO: Enum with allowed values
+    type: RequiredStr = SQLField(default="generic")  # TODO: Enum with allowed values
 
     @model_validator(mode="after")
     def validate_external_id_source(self) -> Self:
@@ -170,6 +170,13 @@ class ServiceBase(SQLModel):
 class ServiceWrite(ServiceBase):
     """Define the model for writing service data to the inventory."""
 
+    node_id: int | None = SQLField(
+        default=None,
+        foreign_key="node.id",
+        index=True,
+        ondelete="CASCADE",
+    )
+
 
 class Service(ServiceBase, BaseSQLModel, table=True):
     """Represent a service running on a node in the inventory.
@@ -272,7 +279,8 @@ class Schema(SchemaBase, BaseSQLModel, table=True):
         Index("ix_schema_name_service_id", "name", "service_id", unique=True),
     )
     service: Service = Relationship(back_populates="schemas")
-    tables: list["Table"] = Relationship(back_populates="schema", cascade_delete=True)
+    tables: list["Table"] = Relationship(cascade_delete=True)
+    # TODO: Investigate why back populates with Table is not working
 
 
 class SchemaWrite(SchemaBase):
@@ -354,11 +362,16 @@ class Table(TableBase, BaseSQLModel, table=True):
         Index("ix_table_name_schema_id", "name", "schema_id", unique=True),
     )
 
-    schema: Schema = Relationship(back_populates="tables")
-
 
 class TableWrite(TableBase):
     """Define the model for writing table data to the inventory."""
+
+    schema_id: int | None = SQLField(
+        default=None,
+        foreign_key="schema.id",
+        index=True,
+        ondelete="CASCADE",
+    )
 
 
 class TableResponse(TableBase, BaseSQLModel):

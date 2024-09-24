@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Service {{ service.name }} ({{ service.node_id }}){% endblock %}
+
+{% block main %}
+<h2>Service Details</h2>
+<dl>
+    <dt>ID</dt>
+    <dd>{{ service.id }}</dd>
+    <dt>Name</dt>
+    <dd>{{ service.name }}</dd>
+    <dt>Type</dt>
+    <dd>{{ service.type }}</dd>
+    <dt>Port</dt>
+    <dd>{{ service.port }}</dd>
+    <dt>Environment</dt>
+    <dd>{{ service.environment }}</dd>
+    <dt>Node ID</dt>
+    <dd>{{ service.node_id }}</dd>
+</dl>
+
+<h3>Schemas in this Service</h3>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for schema in service.schemas %}
+        <tr>
+            <td>{{ schema.id }}</td>
+            <td><a href="/inventory/schemas/{{ schema.id }}">{{ schema.name }}</a></td>
+            <td>
+                <form action="/inventory/schemas/{{ schema.id }}/delete" method="post" style="display:inline;">
+                    <button type="submit">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Add a New Schema</h3>
+{% include "inventory/partials/schema-create-form.html" %}
+{% endblock %}

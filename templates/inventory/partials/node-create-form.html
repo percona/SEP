@@ -1,0 +1,21 @@
+<form action="" method="post">
+    <fieldset>
+        <legend>Create New Node</legend>
+        <label for="address">Address:</label>
+        <input type="text" name="address" id="address" required>
+
+        <label for="name">Name:</label>
+        <input type="text" name="name" id="name" required>
+
+        <label for="external_id">External ID:</label>
+        <input type="text" name="external_id" id="external_id">
+
+        <label for="source">Source:</label>
+{#        TODO: source enum #}
+        <input type="text" name="source" id="source">
+
+        <label for="type">Type:</label>
+        <input type="text" name="type" id="type" value="generic">
+    </fieldset>
+    <button type="submit">Create Node</button>
+</form>

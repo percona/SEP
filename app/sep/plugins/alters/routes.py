@@ -12,6 +12,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import AltersGeneratedTask
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
+from app.sep.deps import IsAuthenticated
 from app.sep.deps import TaskAPI
 from app.sep.plugins.alters.deps import AltersTask
 from app.tasks.models import TaskHistoryStatusEnum
@@ -21,7 +22,7 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def alters_index(
     request: Request,
     context: DefaultContext,
@@ -78,7 +79,7 @@ async def alters_index(
     )
 
 
-@router.post("/", response_class=HTMLResponse)
+@router.post("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
@@ -96,7 +97,7 @@ async def alters_create(
     )  # TODO: Custom redirect class
 
 
-@router.get("/{task_name}", response_class=HTMLResponse)
+@router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def alters_detail(
     task: AltersTask,
     request: Request,
@@ -126,7 +127,11 @@ async def alters_detail(
     )
 
 
-@router.post("/{task_name}", response_class=RedirectResponse)
+@router.post(
+    "/{task_name}",
+    dependencies=[IsAuthenticated],
+    response_class=RedirectResponse,
+)
 async def alters_execute(
     task: AltersTask,
     tasks_api: TaskAPI,
@@ -136,7 +141,11 @@ async def alters_execute(
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/{task_name}/delete", response_class=RedirectResponse)
+@router.post(
+    "/{task_name}/delete",
+    dependencies=[IsAuthenticated],
+    response_class=RedirectResponse,
+)
 async def alters_delete(
     task: AltersTask,
     tasks_api: TaskAPI,

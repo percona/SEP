@@ -14,6 +14,7 @@ from fastapi.responses import RedirectResponse
 from app.core.fields import URIPath
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
+from app.sep.deps import IsAuthenticated
 from app.sep.deps import TaskAPI
 from app.tasks.main import TRANSLATION_MAPPING
 from app.tasks.models import TaskBackendEnum
@@ -24,7 +25,7 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def tasks_list(
     request: Request,
     context: DefaultContext,
@@ -40,7 +41,7 @@ async def tasks_list(
     )
 
 
-@router.post("/", response_class=HTMLResponse)
+@router.post("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def task_create(  # TODO: Use pydantic model for request data
     taskalias: Annotated[str, Form()],
     taskdef: Annotated[str, Form()],
@@ -70,7 +71,7 @@ async def task_create(  # TODO: Use pydantic model for request data
                         payload["taskeng"],
                         exc_info=True,
                     )
-                    raise HTTPException(status.HTTP_400_BAD_REQUEST)
+                    raise HTTPException(status.HTTP_400_BAD_REQUEST) from None
                 match backend:
                     case "nomad":
                         payload[mapping.new] = await transform_payload(
@@ -92,7 +93,7 @@ async def task_create(  # TODO: Use pydantic model for request data
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.get("/{task_name}", response_class=HTMLResponse)
+@router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def tasks_detail(
     task_name: str,
     request: Request,
@@ -113,7 +114,7 @@ async def tasks_detail(
     )
 
 
-@router.post("/{task_name}", response_class=RedirectResponse)
+@router.post("/{task_name}", dependencies=[IsAuthenticated])
 async def tasks_execute(
     task_name: str,
     tasks_api: TaskAPI,
@@ -124,7 +125,7 @@ async def tasks_execute(
     return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/{task_name}/delete", response_class=RedirectResponse)
+@router.post("/{task_name}/delete", dependencies=[IsAuthenticated])
 async def tasks_delete(
     task_name: str,
     tasks_api: TaskAPI,
