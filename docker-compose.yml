@@ -34,8 +34,8 @@ services:
       - 5432
 
   inventory_api:
+    image: sep-image:latest
     user: 1001:1001
-    build: .
     command: inventory
     expose:
       - 9001
@@ -49,8 +49,8 @@ services:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
   tasks_api:
+    image: sep-image:latest
     user: 1001:1001
-    build: .
     command: tasks
     entrypoint: /home/sep/app/entrypoint_persistent.sh
     expose:
@@ -66,8 +66,9 @@ services:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
   sep:
-    user: 1001:1001
+    image: sep-image:latest
     build: .
+    user: 1001:1001
     command: sep
     expose:
       - 9000
