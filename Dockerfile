@@ -17,7 +17,7 @@ ENV FASTAPI_ENV production_docker
 RUN apk update && apk add --no-cache gcc
 
 # Export requirements
-RUN pip install --upgrade pip wheel poetry==1.8.3 poetry-plugin-export
+RUN pip install --no-cache-dir wheel poetry==1.8.3 poetry-plugin-export
 COPY ./pyproject.toml ./poetry.lock /usr/src/sep/
 RUN poetry export --with postgresql -f requirements.txt --output requirements.txt
 
@@ -49,8 +49,8 @@ WORKDIR $APP_HOME
 RUN apk update && apk add --no-cache netcat-openbsd
 COPY --from=builder /usr/src/sep/wheels /wheels
 COPY --from=builder /usr/src/sep/requirements.txt .
-RUN pip install --upgrade pip wheel
-RUN pip install --no-cache /wheels/*
+RUN pip install --no-cache-dir wheel
+RUN pip install --no-cache-dir /wheels/*
 
 # Copy entrypoint.sh
 COPY ./entrypoint.sh .
