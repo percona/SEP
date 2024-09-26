@@ -15,7 +15,7 @@ x-api-db-environment:
 
 services:
   casdoor:
-    image: casbin/casdoor-all-in-one
+    image: docker.io/casbin/casdoor-all-in-one
     volumes:
       - casdoor-data:/var/lib/mysql:z,rw
       - ./data/casdoor_init_data.json:/init_data.json
@@ -23,7 +23,7 @@ services:
       - 8000
 
   sep-db:
-    image: postgres:16
+    image: docker.io/library/postgres:16
     environment:
       POSTGRES_DB: sep
       POSTGRES_USER: postgres
@@ -46,7 +46,7 @@ services:
       UVICORN_HOST: inventory_api
       UVICORN_PORT: 9001
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${HOST_IP:-host-gateway}"
 
   tasks_api:
     user: 1001:1001
@@ -63,7 +63,7 @@ services:
       UVICORN_HOST: tasks_api
       UVICORN_PORT: 9002
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${HOST_IP:-host-gateway}"
 
   sep:
     user: 1001:1001
@@ -71,6 +71,8 @@ services:
     command: sep
     expose:
       - 9000
+    volumes:
+      - ./static:/home/sep/app/static
     depends_on:
       - inventory_api
       - tasks_api
@@ -80,14 +82,14 @@ services:
       UVICORN_HOST: 0.0.0.0
       UVICORN_PORT: 9000
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${HOST_IP:-host-gateway}"
 
   nginx:
-    image: nginx:1.27-alpine
+    image: docker.io/library/nginx:1.27-alpine
     ports:
-      - "80:80"
-      - "443:443"
-      - "9999:9999"
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "${CASDOOR_PORT:-9999}:9999"
     volumes:
       - ./data/nginx.conf:/etc/nginx/conf.d/default.conf
       - ./data/certs/sep/localhost-cert.pem:/etc/nginx/ssl/localhost-cert.pem

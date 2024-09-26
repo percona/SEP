@@ -3,7 +3,7 @@
 ###########
 
 # Use an official Python runtime as a parent image
-FROM python:3.11-alpine AS builder
+FROM docker.io/library/python:3.11-alpine AS builder
 
 # Set work directory
 WORKDIR /usr/src/sep
@@ -30,7 +30,7 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requir
 #########
 
 # Use an official Python runtime as a parent image
-FROM python:3.11-alpine
+FROM docker.io/library/python:3.11-alpine
 
 # Create directory for the sep user
 RUN mkdir -p /home/sep
