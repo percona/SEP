@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import AltersGeneratedTask
+from app.sep.plugins.alters.deps import AltersGeneratedTask
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import IsAuthenticated
