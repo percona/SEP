@@ -1,6 +1,7 @@
 """Define routes for the Inventory Plugin."""
 
-from typing import Literal
+import logging
+from typing import Annotated
 
 from fastapi import APIRouter
 from fastapi import Form
@@ -13,7 +14,12 @@ from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import IsAuthenticated
+from app.sep.plugins.inventory.models import CreateNodeRequest
+from app.sep.plugins.inventory.models import CreateSchemaRequest
+from app.sep.plugins.inventory.models import CreateServiceRequest
+from app.sep.plugins.inventory.models import CreateTableRequest
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
@@ -54,21 +60,10 @@ async def node_detail(
 @router.post("/", dependencies=[IsAuthenticated])
 async def node_create(
     inventory_api: InventoryAPI,
-    address: str = Form(...),
-    name: str = Form(...),
-    external_id: str = Form(None),
-    source: str = Form(None),
-    node_type: str = Form("generic"),
+    node_data: Annotated[CreateNodeRequest, Form()],
 ) -> RedirectResponse:
     """Create Node."""
-    node_data = {
-        "address": address,
-        "name": name,
-        "external_id": external_id or None,
-        "source": source or None,
-        "type": node_type,
-    }
-    await inventory_api.post("/", json=node_data)
+    await inventory_api.post("/", json=node_data.model_dump(by_alias=True))
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -110,22 +105,13 @@ async def service_detail(
 async def service_create_for_node(
     node_id: int,
     inventory_api: InventoryAPI,
-    name: str = Form(...),
-    service_type: str = Form(...),
-    external_id: str = Form(None),
-    port: int | Literal[""] = Form(None),
-    environment: str = Form(None),
+    service_data: Annotated[CreateServiceRequest, Form()],
 ) -> RedirectResponse:
     """Create Service for Node."""
-    service_data = {
-        "name": name,
-        "type": service_type,
-        "external_id": external_id or None,
-        "port": port or None,
-        "environment": environment or None,
-        "node_id": node_id,
-    }
-    await inventory_api.post(f"/{node_id}/services/", json=service_data)
+    await inventory_api.post(
+        f"/{node_id}/services/",
+        json=service_data.model_dump(by_alias=True),
+    )
     return RedirectResponse(
         f"/inventory/{node_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -174,14 +160,13 @@ async def schema_detail(
 async def schema_create_for_service(
     service_id: int,
     inventory_api: InventoryAPI,
-    name: str = Form(...),
+    schema_data: Annotated[CreateSchemaRequest, Form()],
 ) -> RedirectResponse:
     """Create Schema for Service."""
-    schema_data = {
-        "name": name,
-        "service_id": service_id,
-    }
-    await inventory_api.post(f"/services/{service_id}/schemas/", json=schema_data)
+    await inventory_api.post(
+        f"/services/{service_id}/schemas/",
+        json=schema_data.model_dump(by_alias=True),
+    )
     return RedirectResponse(
         f"/inventory/services/{service_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -202,23 +187,17 @@ async def schema_delete(
     )
 
 
-# TODO: Use pydantic models instead of retyping each argument
-
-
 @router.post("/schemas/{schema_id}/tables/", dependencies=[IsAuthenticated])
 async def table_create_for_schema(
     schema_id: int,
     inventory_api: InventoryAPI,
-    name: str = Form(...),
-    create: str = Form("generic"),
+    table_data: Annotated[CreateTableRequest, Form()],
 ) -> RedirectResponse:
     """Create Table for Schema."""
-    table_data = {
-        "name": name,
-        "create": create,
-        "schema_id": schema_id,
-    }
-    await inventory_api.post(f"/schemas/{schema_id}/tables/", json=table_data)
+    await inventory_api.post(
+        f"/schemas/{schema_id}/tables/",
+        json=table_data.model_dump(by_alias=True),
+    )
     return RedirectResponse(
         f"/inventory/schemas/{schema_id}",
         status_code=status.HTTP_303_SEE_OTHER,
