@@ -27,7 +27,7 @@
         {% for table in schema.tables %}
         <tr>
             <td>{{ table.id }}</td>
-            <td><a href="/inventory/tables/{{ table.id }}">{{ table.name }}</a></td>
+            <td>{{ table.name }}</td>
             <td>{{ table.create }}</td>
             <td>
                 <form action="/inventory/tables/{{ table.id }}/delete" method="post" style="display:inline;">

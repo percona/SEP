@@ -21,7 +21,7 @@ router = APIRouter()
 async def list_tables(session: SessionDep) -> list[TableResponse]:
     """List Tables."""
     logger.debug("Listing tables")
-    return await TableManager.list(session, select_related=[Table.tables])
+    return await TableManager.list(session)
 
 
 @router.get("/{table_id}", dependencies=[IsAuthenticatedDep])
@@ -30,7 +30,6 @@ async def retrieve_table(session: SessionDep, table_id: int) -> TableResponse:
     logger.debug("Retrieving table %s", table_id)
     return await TableManager.get_or_404(
         session,
-        select_related=[Table.tables],
         id=table_id,
     )
 

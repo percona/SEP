@@ -202,27 +202,6 @@ async def schema_delete(
     )
 
 
-@router.get(
-    "/tables/{table_id}",
-    dependencies=[IsAuthenticated],
-    response_class=HTMLResponse,
-)
-async def table_detail(
-    request: Request,
-    table_id: int,
-    context: DefaultContext,
-    inventory_api: InventoryAPI,
-) -> HTMLResponse:
-    """Retrieve Table Details."""
-    table = await inventory_api.get(f"/tables/{table_id}")
-    context["table"] = table
-    return templates.TemplateResponse(
-        request=request,
-        name="inventory/table-detail.html",
-        context=context,
-    )
-
-
 # TODO: Use pydantic models instead of retyping each argument
 
 
