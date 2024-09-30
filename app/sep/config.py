@@ -18,6 +18,7 @@ from pydantic import HttpUrl
 from app.core.config import BaseCaseInsensitiveModel
 from app.core.config import BaseYamlExtraSettings
 from app.core.config import settings
+from app.core.db.config import DatabaseOptions
 from app.core.fields import RelativeDirectoryPath
 from app.core.fields import TimedeltaSeconds
 from app.core.fields import URIPath
@@ -137,6 +138,9 @@ class SEPSettings(BaseYamlExtraSettings):
         A list of plugins used by SEP. Defaults to an empty list.
     PROXY_HEADERS : bool, optional
         Whether to use proxy headers (like `X-Forwarded-For`). Defaults to `False`.
+    DATABASE : DatabaseOptions
+        The database configuration options.
+        Defaults to an SQLite database with the name 'sep.db'.
     TEMPLATES
 
     """
@@ -151,6 +155,7 @@ class SEPSettings(BaseYamlExtraSettings):
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: set[Plugin] = set()
     PROXY_HEADERS: bool = False
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
 
     @computed_field
     @cached_property
