@@ -1,13 +1,22 @@
 """Define models for the SEP app."""
 
+from enum import auto
+from enum import StrEnum
 from typing import Any
 
 from pydantic import ConfigDict
 from pydantic import field_validator
 from pydantic import HttpUrl
 from pydantic import model_validator
+from sqlalchemy import Column
+from sqlalchemy import Enum as EnumField
+from sqlalchemy import Index
+from sqlmodel import Field as SQLField
 
 from app.core.config import BaseCaseInsensitiveModel
+from app.core.db import BaseSQLModel
+from app.core.fields import RequiredStr
+from app.core.fields import StrImportableAttribute
 from app.core.fields import StrImportableModule
 from app.core.fields import URIPath
 from app.core.utils import slugify
@@ -81,3 +90,116 @@ class Plugin(BaseCaseInsensitiveModel):
             data["uri_path"] = data.get("uri_path") or f"/{slug}"
             data["css_class"] = data.get("css_class") or slug
         return data
+
+
+class Synchronizer(BaseCaseInsensitiveModel):
+    """Represent a synchronizer for the SEP app.
+
+    This model represents a synchronizer component within the SEP application,
+    including its importable attribute and any additional keyword arguments required for
+    its operation.
+
+    Attributes
+    ----------
+    syncer : StrImportableAttribute
+        The importable attribute name for the synchronizer. This field is automatically
+        prefixed with "app.sep.sync.syncers." during validation.
+    extra_kwargs : dict[str, Any]
+        Additional keyword arguments to be passed in the syncer instantiation.
+
+    """
+
+    model_config = ConfigDict(frozen=True)
+    syncer: StrImportableAttribute
+    extra_kwargs: dict[str, Any]
+
+    def __hash__(self) -> int:
+        return hash(self.syncer)
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, Synchronizer):
+            return self.syncer == other.syncer
+        raise NotImplementedError
+
+    @field_validator("syncer", mode="before")
+    @classmethod
+    def resolve_syncer_path(cls, v: str) -> str:
+        """Resolve the full path for the syncer.
+
+        Prefix the provided synchronizer name with "app.sep.sync.syncers." to form the
+        complete import path.
+
+        Parameters
+        ----------
+        v : str
+            The base syncer name provided.
+
+        Returns
+        -------
+        str
+            The fully qualified path for the synchronizer.
+
+        """
+        return f"app.sep.sync.syncers.{v}"
+
+
+class SyncInventoryTypeEnum(StrEnum):
+    """Enumerate the types of inventory items that can be synchronized."""
+
+    INVENTORY = auto()
+    NODE = auto()
+    SERVICE = auto()
+    SCHEMA = auto()
+    TABLE = auto()
+
+
+class SyncStatusEnum(StrEnum):
+    """Enumerate the possible statuses of a synchronization process."""
+
+    PENDING = auto()
+    RUNNING = auto()
+    SUCCESS = auto()
+    FAILED = auto()
+
+
+class SyncInstance(BaseSQLModel, table=True):
+    """Represent a synchronization instance in the SEP app.
+
+    This model represents an instance of a synchronization process, tracking its
+    inventory item, type, associated task history, synchronizer, and current status.
+
+    Attributes
+    ----------
+    inventory_id : int
+        The identifier of the inventory item being synchronized.
+    inventory_type : SyncInventoryTypeEnum
+        The type of the inventory item being synchronized.
+    task_history_id : int or None
+        The identifier of the task history associated with this synchronization
+        instance.
+    syncer : RequiredStr
+        The name of the synchronizer responsible for this synchronization.
+    status : SyncStatusEnum
+        The current status of the synchronization process.
+
+    """
+
+    __table_args__ = (
+        Index(
+            "ix_syncinstance_inventory_id_inventory_type_status",
+            "inventory_id",
+            "inventory_type",
+            "status",
+        ),
+        Index("ix_syncinstance_inventory_type_status", "inventory_type", "status"),
+    )
+    inventory_id: int = SQLField(index=True)
+    inventory_type: SyncInventoryTypeEnum = SQLField(
+        sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
+    )
+    task_history_id: int | None = None
+    syncer: RequiredStr = SQLField(index=True)
+    status: SyncStatusEnum = SQLField(
+        default=SyncStatusEnum.PENDING,
+        sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
+    )

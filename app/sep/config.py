@@ -24,6 +24,7 @@ from app.core.fields import TimedeltaSeconds
 from app.core.fields import URIPath
 from app.core.fields import URL
 from app.sep.models import Plugin
+from app.sep.models import Synchronizer
 
 
 class OAuthOptions(BaseModel):
@@ -134,13 +135,15 @@ class SEPSettings(BaseYamlExtraSettings):
         The endpoint URL for the Inventory API.
     TASKS_ENDPOINT : HttpUrl
         The endpoint URL for the Tasks API.
-    PLUGINS : list of Plugin, optional
-        A list of plugins used by SEP. Defaults to an empty list.
+    PLUGINS : set of Plugin, optional
+        A set of plugins used by SEP. Defaults to an empty set.
     PROXY_HEADERS : bool, optional
         Whether to use proxy headers (like `X-Forwarded-For`). Defaults to `False`.
     DATABASE : DatabaseOptions
         The database configuration options.
         Defaults to an SQLite database with the name 'sep.db'.
+    SYNCERS : set of Synchronizer, optional
+        A set of synchronizers used by SEP. Defaults to an empty set.
     TEMPLATES
 
     """
@@ -156,6 +159,7 @@ class SEPSettings(BaseYamlExtraSettings):
     PLUGINS: set[Plugin] = set()
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+    SYNCERS: set[Synchronizer] = set()
 
     @computed_field
     @cached_property
