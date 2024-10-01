@@ -14,10 +14,10 @@ from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import IsAuthenticated
-from app.sep.plugins.inventory.models import CreateNodeRequest
-from app.sep.plugins.inventory.models import CreateSchemaRequest
-from app.sep.plugins.inventory.models import CreateServiceRequest
-from app.sep.plugins.inventory.models import CreateTableRequest
+from app.sep.inventory import Node
+from app.sep.inventory import Schema
+from app.sep.inventory import Service
+from app.sep.inventory import Table
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,10 +60,10 @@ async def node_detail(
 @router.post("/", dependencies=[IsAuthenticated])
 async def node_create(
     inventory_api: InventoryAPI,
-    node_data: Annotated[CreateNodeRequest, Form()],
+    node_data: Annotated[Node, Form()],
 ) -> RedirectResponse:
     """Create Node."""
-    await inventory_api.post("/", json=node_data.model_dump(by_alias=True))
+    await inventory_api.post("/", json=node_data.model_dump())
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -105,12 +105,12 @@ async def service_detail(
 async def service_create_for_node(
     node_id: int,
     inventory_api: InventoryAPI,
-    service_data: Annotated[CreateServiceRequest, Form()],
+    service_data: Annotated[Service, Form()],
 ) -> RedirectResponse:
     """Create Service for Node."""
     await inventory_api.post(
         f"/{node_id}/services/",
-        json=service_data.model_dump(by_alias=True),
+        json=service_data.model_dump(),
     )
     return RedirectResponse(
         f"/inventory/{node_id}",
@@ -160,12 +160,12 @@ async def schema_detail(
 async def schema_create_for_service(
     service_id: int,
     inventory_api: InventoryAPI,
-    schema_data: Annotated[CreateSchemaRequest, Form()],
+    schema_data: Annotated[Schema, Form()],
 ) -> RedirectResponse:
     """Create Schema for Service."""
     await inventory_api.post(
         f"/services/{service_id}/schemas/",
-        json=schema_data.model_dump(by_alias=True),
+        json=schema_data.model_dump(),
     )
     return RedirectResponse(
         f"/inventory/services/{service_id}",
@@ -191,12 +191,12 @@ async def schema_delete(
 async def table_create_for_schema(
     schema_id: int,
     inventory_api: InventoryAPI,
-    table_data: Annotated[CreateTableRequest, Form()],
+    table_data: Annotated[Table, Form()],
 ) -> RedirectResponse:
     """Create Table for Schema."""
     await inventory_api.post(
         f"/schemas/{schema_id}/tables/",
-        json=table_data.model_dump(by_alias=True),
+        json=table_data.model_dump(),
     )
     return RedirectResponse(
         f"/inventory/schemas/{schema_id}",
