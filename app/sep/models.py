@@ -3,6 +3,7 @@
 from enum import auto
 from enum import StrEnum
 from typing import Any
+from typing import Self
 
 from pydantic import ConfigDict
 from pydantic import field_validator
@@ -170,17 +171,17 @@ class SyncInstance(BaseSQLModel, table=True):
 
     Attributes
     ----------
-    inventory_id : int
+    inventory_id : int or None
         The identifier of the inventory item being synchronized.
     inventory_type : SyncInventoryTypeEnum
         The type of the inventory item being synchronized.
-    task_history_id : int or None
+    task_history_id : int or None, optional
         The identifier of the task history associated with this synchronization
-        instance.
+        instance. Defaults to None
     syncer : RequiredStr
         The name of the synchronizer responsible for this synchronization.
-    status : SyncStatusEnum
-        The current status of the synchronization process.
+    status : SyncStatusEnum, optional
+        The current status of the synchronization process. Defaults to PENDING.
 
     """
 
@@ -193,7 +194,7 @@ class SyncInstance(BaseSQLModel, table=True):
         ),
         Index("ix_syncinstance_inventory_type_status", "inventory_type", "status"),
     )
-    inventory_id: int = SQLField(index=True)
+    inventory_id: int | None = SQLField(index=True)
     inventory_type: SyncInventoryTypeEnum = SQLField(
         sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
     )
@@ -203,3 +204,14 @@ class SyncInstance(BaseSQLModel, table=True):
         default=SyncStatusEnum.PENDING,
         sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
     )
+
+    @model_validator(mode="after")
+    def _validate_inventory_id_not_null(self) -> Self:
+        if (
+            self.inventory_id is None
+            and self.inventory_type != SyncInventoryTypeEnum.INVENTORY
+        ):
+            raise ValueError(
+                f"inventory_id cannot be None for type {self.inventory_type}",
+            )
+        return self

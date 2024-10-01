@@ -1,8 +1,8 @@
 """Create SyncInstance table
 
-Revision ID: 9bf4bfdcb4fc
+Revision ID: 75e02f5b2c40
 Revises: 
-Create Date: 2024-09-30 17:59:18.138893
+Create Date: 2024-10-01 09:51:39.487806
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '9bf4bfdcb4fc'
+revision: str = '75e02f5b2c40'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -25,7 +25,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('inventory_id', sa.Integer(), nullable=False),
+    sa.Column('inventory_id', sa.Integer(), nullable=True),
     sa.Column('inventory_type', sa.Enum('INVENTORY', 'NODE', 'SERVICE', 'SCHEMA', 'TABLE', name='syncinventorytypeenum'), nullable=False),
     sa.Column('task_history_id', sa.Integer(), nullable=True),
     sa.Column('syncer', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
