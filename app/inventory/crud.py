@@ -1,19 +1,11 @@
 """Define database operations for the Inventory API."""
 
-from typing import TypeVar
-
-from sqlmodel import SQLModel
-
-from app.core.db import BaseSQLModel
 from app.core.db.crud import BaseChildManager
 from app.core.db.crud import BaseManager
 from app.inventory.models import Node
 from app.inventory.models import Schema
 from app.inventory.models import Service
 from app.inventory.models import Table
-
-T = TypeVar("T", bound=BaseSQLModel)
-M = TypeVar("M", bound=SQLModel)
 
 
 class NodeManager(BaseManager):
