@@ -13,11 +13,12 @@ from sqlalchemy import Column
 from sqlalchemy import Enum as EnumField
 from sqlalchemy import Index
 from sqlmodel import Field as SQLField
+from sqlmodel import Relationship
+from sqlmodel import SQLModel
 
 from app.core.config import BaseCaseInsensitiveModel
 from app.core.db import BaseSQLModel
 from app.core.fields import RequiredStr
-from app.core.fields import StrImportableAttribute
 from app.core.fields import StrImportableModule
 from app.core.fields import URIPath
 from app.core.utils import slugify
@@ -93,57 +94,6 @@ class Plugin(BaseCaseInsensitiveModel):
         return data
 
 
-class Synchronizer(BaseCaseInsensitiveModel):
-    """Represent a synchronizer for the SEP app.
-
-    This model represents a synchronizer component within the SEP application,
-    including its importable attribute and any additional keyword arguments required for
-    its operation.
-
-    Attributes
-    ----------
-    syncer : StrImportableAttribute
-        The importable attribute name for the synchronizer. This field is automatically
-        prefixed with "app.sep.sync.syncers." during validation.
-    extra_kwargs : dict[str, Any]
-        Additional keyword arguments to be passed in the syncer instantiation.
-
-    """
-
-    model_config = ConfigDict(frozen=True)
-    syncer: StrImportableAttribute
-    extra_kwargs: dict[str, Any]
-
-    def __hash__(self) -> int:
-        return hash(self.syncer)
-
-    def __eq__(self, other: Any) -> bool:
-        if isinstance(other, Synchronizer):
-            return self.syncer == other.syncer
-        raise NotImplementedError
-
-    @field_validator("syncer", mode="before")
-    @classmethod
-    def resolve_syncer_path(cls, v: str) -> str:
-        """Resolve the full path for the syncer.
-
-        Prefix the provided synchronizer name with "app.sep.sync.syncers." to form the
-        complete import path.
-
-        Parameters
-        ----------
-        v : str
-            The base syncer name provided.
-
-        Returns
-        -------
-        str
-            The fully qualified path for the synchronizer.
-
-        """
-        return f"app.sep.sync.syncers.{v}"
-
-
 class SyncInventoryTypeEnum(StrEnum):
     """Enumerate the types of inventory items that can be synchronized."""
 
@@ -163,7 +113,24 @@ class SyncStatusEnum(StrEnum):
     FAILED = auto()
 
 
-class SyncInstance(BaseSQLModel, table=True):
+class SyncInstanceBase(SQLModel):
+    """Define the base structure for a synchronization instance.
+
+    This model provides the foundational fields required for tracking a synchronization
+    instance, including the synchronizer responsible for the synchronization.
+
+    Attributes
+    ----------
+    syncer : RequiredStr
+        The name of the synchronizer responsible for this synchronization. Indexed for
+        quick lookup.
+
+    """
+
+    syncer: RequiredStr = SQLField(index=True)
+
+
+class SyncInstance(BaseSQLModel, SyncInstanceBase, table=True):
     """Represent a synchronization instance in the SEP app.
 
     This model represents an instance of a synchronization process, tracking its
@@ -171,39 +138,109 @@ class SyncInstance(BaseSQLModel, table=True):
 
     Attributes
     ----------
+    syncer : RequiredStr
+        The name of the synchronizer responsible for this synchronization. Indexed for
+        quick lookup.
+    items: list[SyncItem]
+        A list of synchronization items associated with this synchronization instance.
+
+    """
+
+    items: list["SyncItem"] = Relationship(
+        back_populates="sync_instance",
+        cascade_delete=True,
+    )
+
+
+class SyncInstanceWrite(SyncInstanceBase):
+    """Define the write model for creating a synchronization instance.
+
+    This model extends `SyncInstanceBase` and is used specifically for creating
+    new synchronization instances.
+
+    Attributes
+    ----------
+    syncer : RequiredStr
+        The name of the synchronizer responsible for this synchronization. Indexed for
+        quick lookup.
+
+    """
+
+
+class SyncItemBase(SQLModel):
+    """Define the base structure for a synchronization item.
+
+    This model provides the foundational fields required for tracking individual
+    synchronization items, including the associated inventory item and synchronization
+    status.
+
+    Attributes
+    ----------
     inventory_id : int or None
         The identifier of the inventory item being synchronized.
     inventory_type : SyncInventoryTypeEnum
         The type of the inventory item being synchronized.
+    status : SyncStatusEnum, optional
+        The current status of the synchronization process. Defaults to PENDING.
     task_history_id : int or None, optional
         The identifier of the task history associated with this synchronization
         instance. Defaults to None
-    syncer : RequiredStr
-        The name of the synchronizer responsible for this synchronization.
+    sync_instance_id : int
+        The foreign key referencing the associated synchronization instance.
+
+
+    """
+
+    inventory_id: int | None = SQLField(index=True)
+    inventory_type: SyncInventoryTypeEnum = SQLField(
+        sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
+    )
+    status: SyncStatusEnum = SQLField(
+        default=SyncStatusEnum.PENDING,
+        sa_column=Column(EnumField(SyncStatusEnum), nullable=False, index=True),
+    )
+    task_history_id: int | None = None
+    sync_instance_id: int = SQLField(
+        foreign_key="syncinstance.id",
+        index=True,
+        ondelete="CASCADE",
+    )
+
+
+class SyncItem(SyncItemBase, BaseSQLModel, table=True):
+    """Represent a synchronization item.
+
+    This model represents an individual synchronization task within a synchronization
+    instance, tracking its inventory item, type, status, and associated task history.
+
+    Attributes
+    ----------
+    inventory_id : int or None
+            The identifier of the inventory item being synchronized.
+    inventory_type : SyncInventoryTypeEnum
+        The type of the inventory item being synchronized.
     status : SyncStatusEnum, optional
         The current status of the synchronization process. Defaults to PENDING.
+    task_history_id : int or None, optional
+        The identifier of the task history associated with this synchronization
+        instance. Defaults to None
+    sync_instance_id : int
+        The foreign key referencing the associated synchronization instance.
+    sync_instance : SyncInstance
+        The synchronization instance to which this item belongs.
 
     """
 
     __table_args__ = (
         Index(
-            "ix_syncinstance_inventory_id_inventory_type_status",
+            "ix_syncitem_inventory_id_inventory_type_status",
             "inventory_id",
             "inventory_type",
             "status",
         ),
-        Index("ix_syncinstance_inventory_type_status", "inventory_type", "status"),
+        Index("ix_syncitem_inventory_type_status", "inventory_type", "status"),
     )
-    inventory_id: int | None = SQLField(index=True)
-    inventory_type: SyncInventoryTypeEnum = SQLField(
-        sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
-    )
-    task_history_id: int | None = None
-    syncer: RequiredStr = SQLField(index=True)
-    status: SyncStatusEnum = SQLField(
-        default=SyncStatusEnum.PENDING,
-        sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
-    )
+    sync_instance: SyncInstance = Relationship(back_populates="items")
 
     @model_validator(mode="after")
     def _validate_inventory_id_not_null(self) -> Self:
@@ -215,3 +252,26 @@ class SyncInstance(BaseSQLModel, table=True):
                 f"inventory_id cannot be None for type {self.inventory_type}",
             )
         return self
+
+
+class SyncItemWrite(SyncItemBase):
+    """Define the write model for creating a synchronization item.
+
+    This model extends `SyncItemBase` and is used specifically for creating
+    new synchronization items.
+
+    Attributes
+    ----------
+    inventory_id : int or None
+        The identifier of the inventory item being synchronized.
+    inventory_type : SyncInventoryTypeEnum
+        The type of the inventory item being synchronized.
+    status : SyncStatusEnum, optional
+        The current status of the synchronization process. Defaults to PENDING.
+    task_history_id : int or None, optional
+        The identifier of the task history associated with this synchronization
+        instance. Defaults to None
+    sync_instance_id : int
+        The foreign key referencing the associated synchronization instance.
+
+    """
