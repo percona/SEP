@@ -7,6 +7,8 @@ from app.core.db.utils import get_async_session_from_engine
 from app.core.db.utils import json_serializer
 from app.sep.config import sep_settings
 
+# TODO(yan): Make SQLAlchemy log level configurable
+# SEP-128
 engine = create_async_engine(
     sep_settings.DATABASE.URL,
     echo=True,
