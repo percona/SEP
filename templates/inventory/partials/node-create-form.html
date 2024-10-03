@@ -11,11 +11,30 @@
         <input type="text" name="external_id" id="external_id">
 
         <label for="source">Source:</label>
-{#        TODO: source enum #}
-        <input type="text" name="source" id="source">
+        <select id="source" name="source">
+            <option value="" selected>Select a source</option>
+            {% for source in source_enum %}
+            <option value="{{ source }}">{{ source }}</option>
+            {% endfor %}
+        </select>
 
         <label for="type">Type:</label>
         <input type="text" name="type" id="type" value="generic">
     </fieldset>
     <button type="submit">Create Node</button>
 </form>
+
+<script type="text/javascript">
+    const sourceSelect = document.getElementById('source');
+    const externalIdInput = document.getElementById('external_id');
+
+    function toggleExternalId() {
+        externalIdInput.disabled = !sourceSelect.value;
+    }
+
+    // Initialize the state on page load
+    toggleExternalId();
+
+    // Add event listener for changes in the select element
+    sourceSelect.addEventListener('change', toggleExternalId);
+</script>

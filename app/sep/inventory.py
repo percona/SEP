@@ -1,5 +1,7 @@
 """Define models for interacting with the Inventory API."""
 
+from enum import auto
+from enum import StrEnum
 from typing import Self
 
 from pydantic import BaseModel
@@ -10,6 +12,12 @@ from pydantic import model_validator
 from app.core.db import BaseSQLModel
 from app.core.fields import EmptyStrToNone
 from app.core.fields import RequiredStr
+
+
+class SourceEnum(StrEnum):
+    """Enumeration of possible data sources for a node."""
+
+    PMM = auto()
 
 
 class BaseInventoryModel(BaseModel):
@@ -69,12 +77,12 @@ class Node(NodeBase):
     type : RequiredStr, optional
         The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
-    source : RequiredStr or EmptyStrToNone, optional
+    source : SourceEnum or EmptyStrToNone, optional
         The source of the node information. Defaults to None.
 
     """
 
-    source: RequiredStr | EmptyStrToNone = None  # TODO: Create redundant source enum
+    source: SourceEnum | EmptyStrToNone = None
 
 
 class CreatedServiceNode(BaseSQLModel, Node):
@@ -100,7 +108,7 @@ class CreatedServiceNode(BaseSQLModel, Node):
     type : RequiredStr, optional
         The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
-    source : RequiredStr or EmptyStrToNone, optional
+    source : SourceEnum or EmptyStrToNone, optional
         The source of the node information. Defaults to None.
 
     """
@@ -129,7 +137,7 @@ class CreatedNode(BaseSQLModel, Node):
     type : RequiredStr, optional
         The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
-    source : RequiredStr or EmptyStrToNone, optional
+    source : SourceEnum or EmptyStrToNone, optional
         The source of the node information. Defaults to None.
     services : list[CreatedService]
         A list of existent services associated with the node.

@@ -17,6 +17,7 @@ from app.sep.deps import IsAuthenticated
 from app.sep.inventory import Node
 from app.sep.inventory import Schema
 from app.sep.inventory import Service
+from app.sep.inventory import SourceEnum
 from app.sep.inventory import Table
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ async def node_list(
 ) -> HTMLResponse:
     """List Nodes."""
     context["inventory"] = await inventory_api.get("/")
+    context["source_enum"] = SourceEnum
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html",
