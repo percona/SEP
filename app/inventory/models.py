@@ -109,14 +109,36 @@ class Node(NodeBase, BaseSQLModel, table=True):
 
 
 class NodeWrite(NodeBase):
-    """Define the model for writing node data to the inventory."""
+    """Define the model for writing node data to the inventory.
+
+    Attributes
+    ----------
+    address : RequiredStr
+        The network address of the node.
+    name : RequiredStr
+        The name of the node.
+    external_id : RequiredStr or None, optional
+        An external identifier for the node, indexed for quick lookup. Defaults to None.
+    source : SourceEnum or None, optional
+        The source from which the node information is derived. Indexed for quick lookup.
+        Defaults to None.
+    type : RequiredStr
+        The type of the node (e.g., remote, generic). Defaults to "generic".
+
+    """
 
 
-class NodeResponse(NodeBase, BaseSQLModel):
+class NodeResponse(BaseSQLModel, NodeBase):
     """Represent a node API response.
 
     Attributes
     ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     address : RequiredStr
         The network address of the node.
     name : RequiredStr
@@ -171,7 +193,27 @@ class ServiceBase(SQLModel):
 
 
 class ServiceWrite(ServiceBase):
-    """Define the model for writing service data to the inventory."""
+    """Define the model for writing service data to the inventory.
+
+    Attributes
+    ----------
+    external_id : RequiredStr or None, optional
+        An external identifier for the service, indexed for quick lookup.
+        Defaults to None.
+    name : RequiredStr
+        The name of the service.
+    type : ServiceTypeEnum
+        The type of the service (e.g., MYSQL, POSTGRESQL).
+    port : int or None, optional
+        The port number on which the service is running. Defaults to None.
+    environment : str or None, optional
+        The environment in which the service is running (e.g., production, staging).
+        Defaults to None.
+    node_id : int or None, optional
+        The foreign key referencing the node to which the service belongs.
+        Defaults to None.
+
+    """
 
     node_id: int | None = SQLField(
         default=None,
@@ -181,11 +223,17 @@ class ServiceWrite(ServiceBase):
     )
 
 
-class Service(ServiceBase, BaseSQLModel, table=True):
+class Service(BaseSQLModel, ServiceBase, table=True):
     """Represent a service running on a node in the inventory.
 
     Attributes
     ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     external_id : RequiredStr or None
         An external identifier for the service. Must be unique for node_id,
         as defined by composite index ix_service_external_id_node_id.
@@ -219,11 +267,17 @@ class Service(ServiceBase, BaseSQLModel, table=True):
     )
 
 
-class ServiceResponse(ServiceBase, BaseSQLModel):
+class ServiceResponse(BaseSQLModel, ServiceBase):
     """Define the service API response.
 
     Attributes
     ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     external_id : RequiredStr or None
         An external identifier for the service.
     name : RequiredStr
@@ -249,6 +303,12 @@ class ServiceDetailResponse(ServiceResponse):
 
     Attributes
     ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     external_id : RequiredStr or None
         An external identifier for the service.
     name : RequiredStr
@@ -287,11 +347,17 @@ class SchemaBase(SQLModel):
     service_id: int = SQLField(foreign_key="service.id", index=True, ondelete="CASCADE")
 
 
-class Schema(SchemaBase, BaseSQLModel, table=True):
+class Schema(BaseSQLModel, SchemaBase, table=True):
     """Represent a database schema within a service.
 
     Attributes
     ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     name : RequiredStr
         The name of the schema. Must be unique for service_id, as defined by composite
         index ix_schema_name_service_id.
@@ -309,8 +375,7 @@ class Schema(SchemaBase, BaseSQLModel, table=True):
         Index("ix_schema_name_service_id", "name", "service_id", unique=True),
     )
     service: Service = Relationship(back_populates="schemas")
-    tables: list["Table"] = Relationship(cascade_delete=True)
-    # TODO: Investigate why back populates with Table is not working
+    tables: list["Table"] = Relationship(back_populates="database", cascade_delete=True)
 
 
 class SchemaWrite(SchemaBase):
@@ -334,11 +399,17 @@ class SchemaWrite(SchemaBase):
     )
 
 
-class SchemaResponse(SchemaBase, BaseSQLModel):
+class SchemaResponse(BaseSQLModel, SchemaBase):
     """Define the schema API response.
 
     Attributes
     ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     name : RequiredStr
         The name of the schema.
     service_id : int
@@ -370,11 +441,17 @@ class TableBase(SQLModel):
     schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
 
 
-class Table(TableBase, BaseSQLModel, table=True):
+class Table(BaseSQLModel, TableBase, table=True):
     """Represent a table within a schema.
 
     Attributes
     ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     name : RequiredStr
         The name of the table. Must be unique for schema_id, as defined by composite
         index ix_table_name_schema_id.
@@ -383,7 +460,7 @@ class Table(TableBase, BaseSQLModel, table=True):
     schema_id : int
         The unique identifier of the schema to which the table belongs. Must be unique
         for name, as defined by composite index ix_table_name_schema_id.
-    schema : Schema
+    database : Schema
         The schema to which the table is associated.
 
     """
@@ -391,10 +468,22 @@ class Table(TableBase, BaseSQLModel, table=True):
     __table_args__ = (
         Index("ix_table_name_schema_id", "name", "schema_id", unique=True),
     )
+    database: Schema = Relationship(back_populates="tables")
 
 
 class TableWrite(TableBase):
-    """Define the model for writing table data to the inventory."""
+    """Define the model for writing table data to the inventory.
+
+    Attributes
+    ----------
+    name : RequiredStr
+        The name of the table.
+    create : RequiredStr
+        The SQL statement used to create the table.
+    schema_id : int
+        The foreign key referencing the schema to which the table belongs.
+
+    """
 
     schema_id: int | None = SQLField(
         default=None,
@@ -404,5 +493,22 @@ class TableWrite(TableBase):
     )
 
 
-class TableResponse(TableBase, BaseSQLModel):
-    """Define the table API response."""
+class TableResponse(BaseSQLModel, TableBase):
+    """Define the table API response.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
+    name : RequiredStr
+        The name of the table.
+    create : RequiredStr
+        The SQL statement used to create the table.
+    schema_id : int
+        The foreign key referencing the schema to which the table belongs.
+
+    """
