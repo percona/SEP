@@ -157,7 +157,10 @@ class ServiceBase(SQLModel):
 
     """
 
-    external_id: RequiredStr | None = SQLField(default=None, index=True)
+    external_id: RequiredStr | None = SQLField(
+        default=None,
+        index=True,
+    )  # TODO: validate external_id not null if node source is defined
     name: RequiredStr
     type: ServiceTypeEnum = SQLField(
         sa_column=Column(EnumField(ServiceTypeEnum), nullable=False),
@@ -239,6 +242,33 @@ class ServiceResponse(ServiceBase, BaseSQLModel):
     """
 
     schemas: list["Schema"]
+
+
+class ServiceDetailResponse(ServiceResponse):
+    """Define the service retrieve API response.
+
+    Attributes
+    ----------
+    external_id : RequiredStr or None
+        An external identifier for the service.
+    name : RequiredStr
+        The name of the service.
+    type : ServiceTypeEnum
+        The type of the service (e.g., MYSQL, POSTGRESQL).
+    port : int or None
+        The port number on which the service is running.
+    environment : str or None
+        The environment in which the service is running, if set.
+    node_id : int
+        The unique identifier of the node on which the service is running.
+    schemas : list[Schema]
+        A list of schemas associated with the service.
+    node: Node
+        The service's node.
+
+    """
+
+    node: Node
 
 
 class SchemaBase(SQLModel):

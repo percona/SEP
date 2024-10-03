@@ -13,6 +13,7 @@ from app.inventory.models import Schema
 from app.inventory.models import SchemaResponse
 from app.inventory.models import SchemaWrite
 from app.inventory.models import Service
+from app.inventory.models import ServiceDetailResponse
 from app.inventory.models import ServiceResponse
 from app.inventory.models import ServiceTypeEnum
 from app.inventory.models import ServiceWrite
@@ -37,12 +38,15 @@ async def list_services(
 
 
 @router.get("/{service_id}", dependencies=[IsAuthenticatedDep])
-async def retrieve_service(session: SessionDep, service_id: int) -> ServiceResponse:
+async def retrieve_service(
+    session: SessionDep,
+    service_id: int,
+) -> ServiceDetailResponse:
     """Retrieve Service."""
     logger.debug("Retrieving service %s", service_id)
     return await ServiceManager.get_or_404(
         session,
-        select_related=[Service.schemas],
+        select_related=[Service.schemas, Service.node],
         id=service_id,
     )
 
