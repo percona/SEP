@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter
 
 from app.api.deps import IsAuthenticatedDep
+from app.api.exceptions import HTTPBadRequestException
 from app.core.fields import RequiredStr
 from app.inventory.crud import NodeManager
 from app.inventory.crud import ServiceManager
@@ -109,5 +110,9 @@ async def create_service_for_node(
     service: ServiceWrite,
 ) -> Service:
     """Create Service for Node."""
+    if service.external_id and not node.source:
+        raise HTTPBadRequestException(
+            "Cannot set external_id if the service's node has no source",
+        )
     logger.debug("Creating service for node %s: %s", node.id, service)
     return await ServiceManager.create(session, service, node_id=node.id)
