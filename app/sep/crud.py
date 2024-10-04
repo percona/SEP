@@ -84,7 +84,7 @@ class SyncItemManager(BaseManager):
         session: AsyncSession,
         instance_create: SyncItemWrite,
         **extra_fields: Any,
-    ) -> SyncItem:
+    ) -> tuple[SyncItem, bool]:
         """Retrieve an existing SyncItem or create a new one if none exists.
 
         This method attempts to find a `SyncItem` with the specified `inventory_id`,
@@ -103,8 +103,9 @@ class SyncItemManager(BaseManager):
 
         Returns
         -------
-        SyncItem
-            The existing or newly created SyncItem.
+        tuple[SyncItem, bool]
+            The existing or newly created SyncItem, and a bool specifying whether a new
+            SyncItem was created
 
         """
         sync_in_progress = await cls.first(
@@ -115,8 +116,8 @@ class SyncItemManager(BaseManager):
             sync_instance_id=instance_create.sync_instance_id,
         )
         if sync_in_progress:
-            return sync_in_progress
-        return await super().create(session, instance_create, **extra_fields)
+            return sync_in_progress, False
+        return await super().create(session, instance_create, **extra_fields), True
 
     @classmethod
     async def start_sync(cls, session: AsyncSession, instance: SyncItem) -> SyncItem:
