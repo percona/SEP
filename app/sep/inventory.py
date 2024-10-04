@@ -85,35 +85,6 @@ class Node(NodeBase):
     source: SourceEnum | EmptyStrToNone = None
 
 
-class CreatedServiceNode(BaseSQLModel, Node):
-    """Represent a node from a created service.
-
-    This model extends `Node` and `BaseSQLModel` to integrate attributes from an
-    existent database node.
-
-    Attributes
-    ----------
-    id : int or None
-        The primary key of the node in the inventory database.
-    created_at : datetime, optional
-        The timestamp when the node was created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record was last updated.
-    address : RequiredStr
-        The network address of the node.
-    external_id : RequiredStr or EmptyStrToNone, optional
-        The external identifier for the node, aliased as "node_id". Defaults to None.
-    name : RequiredStr
-        The name of the node, aliased as "node_name".
-    type : RequiredStr, optional
-        The type of the node (e.g., "generic"), aliased as "node_type".
-        Defaults to "generic".
-    source : SourceEnum or EmptyStrToNone, optional
-        The source of the node information. Defaults to None.
-
-    """
-
-
 class CreatedNode(BaseSQLModel, Node):
     """Represent an existent node from the inventory database.
 
@@ -162,6 +133,35 @@ class CreatedNode(BaseSQLModel, Node):
         for service in self.services:
             service.node = CreatedServiceNode.model_validate(self)
         return self
+
+
+class CreatedServiceNode(BaseSQLModel, Node):
+    """Represent a node from a created service.
+
+    This model extends `Node` and `BaseSQLModel` to integrate attributes from an
+    existent database node.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key of the node in the inventory database.
+    created_at : datetime, optional
+        The timestamp when the node was created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record was last updated.
+    address : RequiredStr
+        The network address of the node.
+    external_id : RequiredStr or EmptyStrToNone, optional
+        The external identifier for the node, aliased as "node_id". Defaults to None.
+    name : RequiredStr
+        The name of the node, aliased as "node_name".
+    type : RequiredStr, optional
+        The type of the node (e.g., "generic"), aliased as "node_type".
+        Defaults to "generic".
+    source : SourceEnum or EmptyStrToNone, optional
+        The source of the node information. Defaults to None.
+
+    """
 
 
 class Service(BaseInventoryModel):
@@ -231,7 +231,7 @@ class CreatedService(BaseSQLModel, Service):
     node: CreatedServiceNode | None = None
 
 
-class Schema(BaseModel):
+class Schema(BaseInventoryModel):
     """Represent an inventory schema.
 
     Attributes
@@ -244,7 +244,29 @@ class Schema(BaseModel):
     name: RequiredStr
 
 
-class Table(BaseModel):
+class CreatedSchema(BaseSQLModel, Schema):
+    """Represent an existent schema from the inventory database.
+
+    This model extends `Schema` and `BaseSQLModel` to integrate attributes from an
+    existent database schema.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key of the node in the inventory database.
+    created_at : datetime, optional
+        The timestamp when the node was created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record was last updated.
+    name : RequiredStr
+        The name of the schema.
+
+    """
+
+    name: RequiredStr
+
+
+class Table(BaseInventoryModel):
     """Represent an inventory table.
 
     This model represents a table within a schema in the Inventory API, including its
@@ -252,6 +274,31 @@ class Table(BaseModel):
 
     Attributes
     ----------
+    name : RequiredStr
+        The name of the table.
+    create : RequiredStr
+        The SQL statement used to create the table.
+
+    """
+
+    name: RequiredStr
+    create: RequiredStr
+
+
+class CreatedTable(BaseSQLModel, Table):
+    """Represent an existent table from the inventory database.
+
+    This model extends `Table` and `BaseSQLModel` to integrate attributes from an
+    existent database table.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key of the node in the inventory database.
+    created_at : datetime, optional
+        The timestamp when the node was created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record was last updated.
     name : RequiredStr
         The name of the table.
     create : RequiredStr
