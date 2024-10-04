@@ -3,7 +3,7 @@
 ###########
 
 # Use an official Python runtime as a parent image
-FROM python:3.12-alpine AS builder
+FROM docker.io/library/python:3.11-alpine AS builder
 
 # Set work directory
 WORKDIR /usr/src/sep
@@ -17,7 +17,7 @@ ENV FASTAPI_ENV production_docker
 RUN apk update && apk add --no-cache gcc
 
 # Export requirements
-RUN pip install --upgrade pip wheel poetry==1.8.3 poetry-plugin-export
+RUN pip install --no-cache-dir wheel poetry==1.8.3 poetry-plugin-export
 COPY ./pyproject.toml ./poetry.lock /usr/src/sep/
 RUN poetry export --with postgresql -f requirements.txt --output requirements.txt
 
@@ -30,7 +30,7 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requir
 #########
 
 # Use an official Python runtime as a parent image
-FROM python:3.12-alpine
+FROM docker.io/library/python:3.11-alpine
 
 # Create directory for the sep user
 RUN mkdir -p /home/sep
@@ -49,8 +49,8 @@ WORKDIR $APP_HOME
 RUN apk update && apk add --no-cache netcat-openbsd
 COPY --from=builder /usr/src/sep/wheels /wheels
 COPY --from=builder /usr/src/sep/requirements.txt .
-RUN pip install --upgrade pip wheel
-RUN pip install --no-cache /wheels/*
+RUN pip install --no-cache-dir wheel
+RUN pip install --no-cache-dir /wheels/*
 
 # Copy entrypoint.sh
 COPY ./entrypoint.sh .
@@ -58,6 +58,7 @@ COPY ./entrypoint_persistent.sh .
 RUN chmod +x $APP_HOME/entrypoint.sh
 RUN chmod +x $APP_HOME/entrypoint_persistent.sh
 
+# TODO: Always use .env.docker even if there's a .env
 COPY ./.env.docker .env
 
 # Copy project
