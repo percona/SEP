@@ -54,7 +54,6 @@ RUN pip install --no-cache-dir /wheels/*
 
 # Copy entrypoint.sh
 COPY ./entrypoint.sh .
-COPY entrypoint.sh .
 RUN chmod +x $APP_HOME/entrypoint.sh
 
 # TODO: Always use .env.docker even if there's a .env
