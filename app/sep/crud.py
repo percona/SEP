@@ -42,8 +42,8 @@ class SyncItemManager(BaseManager):
     ) -> SyncItem:
         """Create and save a new SyncItem in the database.
 
-        This method checks if a synchronization item with the same `inventory_id`,
-        `inventory_type`, and `sync_instance_id` is already in progress. If so, it
+        This method checks if a synchronization item with the same `entity_id`,
+        `entity_type`, and `sync_instance_id` is already in progress. If so, it
         raises a `SyncItemAlreadyInProgressError`. Otherwise, it creates and saves
         the new `SyncItem`.
 
@@ -64,14 +64,14 @@ class SyncItemManager(BaseManager):
         Raises
         ------
         SyncItemAlreadyInProgressError
-            If a SyncItem with the same `inventory_id`, `inventory_type`, and
+            If a SyncItem with the same `entity_id`, `entity_type`, and
             `sync_instance_id` is already in progress.
 
         """
         sync_in_progress = await cls.first(
             session,
-            inventory_id=instance_create.inventory_id,
-            inventory_type=instance_create.inventory_type,
+            entity_id=instance_create.entity_id,
+            entity_type=instance_create.entity_type,
             sync_instance_id=instance_create.sync_instance_id,
         )
         if sync_in_progress:  # TODO: timeout for deleting old syncs
@@ -87,8 +87,8 @@ class SyncItemManager(BaseManager):
     ) -> tuple[SyncItem, bool]:
         """Retrieve an existing SyncItem or create a new one if none exists.
 
-        This method attempts to find a `SyncItem` with the specified `inventory_id`,
-        `inventory_type`, and `sync_instance_id` that is either pending or running.
+        This method attempts to find a `SyncItem` with the specified `entity_id`,
+        `entity_type`, and `sync_instance_id` that is either pending or running.
         If such an item exists, it returns it. Otherwise, it creates and saves a new
         `SyncItem`.
 
@@ -111,8 +111,8 @@ class SyncItemManager(BaseManager):
         sync_in_progress = await cls.first(
             session,
             status=SyncStatusEnum.PENDING,
-            inventory_id=instance_create.inventory_id,
-            inventory_type=instance_create.inventory_type,
+            entity_id=instance_create.entity_id,
+            entity_type=instance_create.entity_type,
             sync_instance_id=instance_create.sync_instance_id,
         )
         if sync_in_progress:

@@ -28,7 +28,7 @@ class SyncItemAlreadyInProgressError(SyncError):
     def __init__(self, sync_in_progress: SyncItem) -> None:
         self.sync_in_progress = sync_in_progress
         message = (
-            f"A sync item with this inventory_id, inventory_type, and "
+            f"A sync item with this entity_id, entity_type, and "
             f"sync_instance is already in progress ({sync_in_progress})."
         )
         super().__init__(message)
@@ -50,7 +50,7 @@ class SyncInstanceAlreadyInProgressError(SyncError):
     def __init__(self, *sync_items: SyncItem) -> None:
         self.sync_items = sync_items
         message = (
-            f"A sync item with this syncer is already in progress for the "
+            f"A sync instance with this syncer is already in progress for the "
             f"following sync items: {sync_items}."
         )
         super().__init__(message)

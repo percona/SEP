@@ -94,8 +94,8 @@ class Plugin(BaseCaseInsensitiveModel):
         return data
 
 
-class SyncInventoryTypeEnum(StrEnum):
-    """Enumerate the types of inventory items that can be synchronized."""
+class SyncInventoryEntityTypeEnum(StrEnum):
+    """Enumerate the types of inventory entities that can be synchronized."""
 
     INVENTORY = auto()
     NODE = auto()
@@ -176,9 +176,9 @@ class SyncItemBase(SQLModel):
 
     Attributes
     ----------
-    inventory_id : int or None
+    entity_id : int or None
         The identifier of the inventory item being synchronized.
-    inventory_type : SyncInventoryTypeEnum
+    entity_type : SyncInventoryEntityTypeEnum
         The type of the inventory item being synchronized.
     status : SyncStatusEnum, optional
         The current status of the synchronization process. Defaults to PENDING.
@@ -191,9 +191,11 @@ class SyncItemBase(SQLModel):
 
     """
 
-    inventory_id: int | None = SQLField(index=True)
-    inventory_type: SyncInventoryTypeEnum = SQLField(
-        sa_column=Column(EnumField(SyncInventoryTypeEnum), nullable=False, index=True),
+    entity_id: int | None = SQLField(index=True)
+    entity_type: SyncInventoryEntityTypeEnum = SQLField(
+        sa_column=Column(
+            EnumField(SyncInventoryEntityTypeEnum), nullable=False, index=True
+        ),
     )
     status: SyncStatusEnum = SQLField(
         default=SyncStatusEnum.PENDING,
@@ -215,9 +217,9 @@ class SyncItem(SyncItemBase, BaseSQLModel, table=True):
 
     Attributes
     ----------
-    inventory_id : int or None
+    entity_id : int or None
             The identifier of the inventory item being synchronized.
-    inventory_type : SyncInventoryTypeEnum
+    entity_type : SyncInventoryEntityTypeEnum
         The type of the inventory item being synchronized.
     status : SyncStatusEnum, optional
         The current status of the synchronization process. Defaults to PENDING.
@@ -233,23 +235,23 @@ class SyncItem(SyncItemBase, BaseSQLModel, table=True):
 
     __table_args__ = (
         Index(
-            "ix_syncitem_inventory_id_inventory_type_status",
-            "inventory_id",
-            "inventory_type",
+            "ix_syncitem_entity_id_entity_type_status",
+            "entity_id",
+            "entity_type",
             "status",
         ),
-        Index("ix_syncitem_inventory_type_status", "inventory_type", "status"),
+        Index("ix_syncitem_entity_type_status", "entity_type", "status"),
     )
     sync_instance: SyncInstance = Relationship(back_populates="items")
 
     @model_validator(mode="after")
-    def _validate_inventory_id_not_null(self) -> Self:
+    def _validate_entity_id_not_null(self) -> Self:
         if (
-            self.inventory_id is None
-            and self.inventory_type != SyncInventoryTypeEnum.INVENTORY
+            self.entity_id is None
+            and self.entity_type != SyncInventoryEntityTypeEnum.INVENTORY
         ):
             raise ValueError(
-                f"inventory_id cannot be None for type {self.inventory_type}",
+                f"entity_id cannot be None for type {self.entity_type}",
             )
         return self
 
@@ -262,9 +264,9 @@ class SyncItemWrite(SyncItemBase):
 
     Attributes
     ----------
-    inventory_id : int or None
+    entity_id : int or None
         The identifier of the inventory item being synchronized.
-    inventory_type : SyncInventoryTypeEnum
+    entity_type : SyncInventoryEntityTypeEnum
         The type of the inventory item being synchronized.
     status : SyncStatusEnum, optional
         The current status of the synchronization process. Defaults to PENDING.
