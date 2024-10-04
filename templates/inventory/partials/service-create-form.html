@@ -12,8 +12,10 @@
             <option value="external">External</option>
         </select>
 
+        {% if node.source %}
         <label for="external_id">External ID:</label>
         <input type="text" name="external_id" id="external_id">
+        {% endif %}
 
         <label for="port">Port:</label>
         <input type="number" name="port" id="port">

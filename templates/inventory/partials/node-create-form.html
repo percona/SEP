@@ -7,9 +7,6 @@
         <label for="name">Name:</label>
         <input type="text" name="name" id="name" required>
 
-        <label for="external_id">External ID:</label>
-        <input type="text" name="external_id" id="external_id">
-
         <label for="source">Source:</label>
         <select id="source" name="source">
             <option value="" selected>Select a source</option>
@@ -17,6 +14,9 @@
             <option value="{{ source }}">{{ source }}</option>
             {% endfor %}
         </select>
+
+        <label for="external_id">External ID:</label>
+        <input type="text" name="external_id" id="external_id">
 
         <label for="type">Type:</label>
         <input type="text" name="type" id="type" value="generic">

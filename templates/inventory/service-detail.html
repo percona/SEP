@@ -11,10 +11,20 @@
     <dd>{{ service.name }}</dd>
     <dt>Type</dt>
     <dd>{{ service.type }}</dd>
+    {% if service.node.source %}
+    <dt>Source</dt>
+    <dd>{{ service.node.source }}</dd>
+    {% endif %}
+    {% if service.external_id %}
+    <dt>External ID</dt>
+    <dd>{{ service.external_id }}</dd>
+    {% endif %}
     <dt>Port</dt>
     <dd>{{ service.port }}</dd>
+    {% if service.environment %}
     <dt>Environment</dt>
     <dd>{{ service.environment }}</dd>
+    {% endif %}
     <dt>Node ID</dt>
     <dd>{{ service.node_id }}</dd>
 </dl>
