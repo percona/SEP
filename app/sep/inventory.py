@@ -31,40 +31,11 @@ class BaseInventoryModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class NodeBase(BaseInventoryModel):
-    """Define the base structure for node-related data.
-
-    This model serves as a foundation for node-related operations, including the
-    network address, external identifier, name, and type of the node.
-
-    Attributes
-    ----------
-    address : RequiredStr
-        The network address of the node.
-    external_id : RequiredStr or EmptyStrToNone, optional
-        The external identifier for the node, aliased as "node_id". Defaults to None.
-    name : RequiredStr
-        The name of the node, aliased as "node_name".
-    type : RequiredStr, optional
-        The type of the node (e.g., "generic"), aliased as "node_type".
-        Defaults to "generic".
-
-    """
-
-    address: RequiredStr
-    external_id: RequiredStr | EmptyStrToNone = Field(
-        default=None,
-        validation_alias="node_id",
-    )
-    name: RequiredStr = Field(validation_alias="node_name")
-    type: RequiredStr = Field(default="generic", validation_alias="node_type")
-
-
-class Node(NodeBase):
+class Node(BaseInventoryModel):
     """Represent an inventory node.
 
-    This model extends `NodeBase` by including additional attributes specific to
-    the node's source. It represents a complete node entity within the Inventory API.
+    This model represents a node within the Inventory API, including its network
+    address, external identifier, name, and type.
 
     Attributes
     ----------
@@ -82,6 +53,13 @@ class Node(NodeBase):
 
     """
 
+    address: RequiredStr
+    external_id: RequiredStr | EmptyStrToNone = Field(
+        default=None,
+        validation_alias="node_id",
+    )
+    name: RequiredStr = Field(validation_alias="node_name")
+    type: RequiredStr = Field(default="generic", validation_alias="node_type")
     source: SourceEnum | EmptyStrToNone = None
 
 
