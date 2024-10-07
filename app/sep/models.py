@@ -9,6 +9,7 @@ from pydantic import ConfigDict
 from pydantic import field_validator
 from pydantic import HttpUrl
 from pydantic import model_validator
+from pydantic import UUID4
 from sqlalchemy import Column
 from sqlalchemy import Enum as EnumField
 from sqlalchemy import Index
@@ -17,7 +18,7 @@ from sqlmodel import Relationship
 from sqlmodel import SQLModel
 
 from app.core.config import BaseCaseInsensitiveModel
-from app.core.db import BaseSQLModel
+from app.core.db.models import BaseUUIDSQLModel
 from app.core.fields import RequiredStr
 from app.core.fields import StrImportableModule
 from app.core.fields import URIPath
@@ -130,7 +131,7 @@ class SyncInstanceBase(SQLModel):
     syncer: RequiredStr = SQLField(index=True)
 
 
-class SyncInstance(BaseSQLModel, SyncInstanceBase, table=True):
+class SyncInstance(BaseUUIDSQLModel, SyncInstanceBase, table=True):
     """Represent a synchronization instance in the SEP app.
 
     This model represents an instance of a synchronization process, tracking its
@@ -138,6 +139,12 @@ class SyncInstance(BaseSQLModel, SyncInstanceBase, table=True):
 
     Attributes
     ----------
+    id : UUID4
+        The primary key for the table. Automatically generated using UUID4.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     syncer : RequiredStr
         The name of the synchronizer responsible for this synchronization. Indexed for
         quick lookup.
@@ -185,7 +192,7 @@ class SyncItemBase(SQLModel):
     task_history_id : int or None, optional
         The identifier of the task history associated with this synchronization
         instance. Defaults to None
-    sync_instance_id : int
+    sync_instance_id : UUID4
         The foreign key referencing the associated synchronization instance.
 
 
@@ -194,7 +201,9 @@ class SyncItemBase(SQLModel):
     entity_id: int | None = SQLField(index=True)
     entity_type: SyncInventoryEntityTypeEnum = SQLField(
         sa_column=Column(
-            EnumField(SyncInventoryEntityTypeEnum), nullable=False, index=True
+            EnumField(SyncInventoryEntityTypeEnum),
+            nullable=False,
+            index=True,
         ),
     )
     status: SyncStatusEnum = SQLField(
@@ -202,14 +211,14 @@ class SyncItemBase(SQLModel):
         sa_column=Column(EnumField(SyncStatusEnum), nullable=False, index=True),
     )
     task_history_id: int | None = None
-    sync_instance_id: int = SQLField(
+    sync_instance_id: UUID4 = SQLField(
         foreign_key="syncinstance.id",
         index=True,
         ondelete="CASCADE",
     )
 
 
-class SyncItem(SyncItemBase, BaseSQLModel, table=True):
+class SyncItem(BaseUUIDSQLModel, SyncItemBase, table=True):
     """Represent a synchronization item.
 
     This model represents an individual synchronization task within a synchronization
@@ -217,6 +226,12 @@ class SyncItem(SyncItemBase, BaseSQLModel, table=True):
 
     Attributes
     ----------
+    id : UUID4
+        The primary key for the table. Automatically generated using UUID4.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
     entity_id : int or None
             The identifier of the inventory item being synchronized.
     entity_type : SyncInventoryEntityTypeEnum
@@ -226,7 +241,7 @@ class SyncItem(SyncItemBase, BaseSQLModel, table=True):
     task_history_id : int or None, optional
         The identifier of the task history associated with this synchronization
         instance. Defaults to None
-    sync_instance_id : int
+    sync_instance_id : UUID4
         The foreign key referencing the associated synchronization instance.
     sync_instance : SyncInstance
         The synchronization instance to which this item belongs.
@@ -273,7 +288,7 @@ class SyncItemWrite(SyncItemBase):
     task_history_id : int or None, optional
         The identifier of the task history associated with this synchronization
         instance. Defaults to None
-    sync_instance_id : int
+    sync_instance_id : UUID4
         The foreign key referencing the associated synchronization instance.
 
     """
