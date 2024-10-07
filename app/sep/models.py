@@ -1,6 +1,7 @@
 """Define models for the SEP app."""
 
 from enum import auto
+from enum import IntEnum
 from enum import StrEnum
 from typing import Any
 from typing import Self
@@ -95,7 +96,7 @@ class Plugin(BaseCaseInsensitiveModel):
         return data
 
 
-class SyncInventoryEntityTypeEnum(StrEnum):
+class SyncInventoryEntityTypeEnum(IntEnum):
     """Enumerate the types of inventory entities that can be synchronized."""
 
     INVENTORY = auto()
