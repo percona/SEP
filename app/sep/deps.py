@@ -6,7 +6,6 @@ from typing import Annotated
 from typing import Any
 
 from fastapi import Depends
-from fastapi import Form
 from fastapi import Request
 from itsdangerous import BadSignature
 from jwt import InvalidTokenError
@@ -21,7 +20,6 @@ from app.core.security import crypto_timestamp_serializer
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
-from app.tasks.models import GeneratedTask
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -48,7 +46,7 @@ BaseURL = Annotated[URL, Depends(get_base_url)]
 
 
 def get_oauth_redirect_exception(base_url: BaseURL) -> HTTPTemporaryRedirectException:
-    """Return the HTTPTemporaryRedirectException for OAuth2 login
+    """Return the HTTPTemporaryRedirectException for OAuth2 login.
 
     Create an HTTP redirect exception to handle OAuth2 redirection, clearing
     the old session cookie in the process.
@@ -120,7 +118,7 @@ def get_access_token_from_cookie(  # nosec B107
         )
     except BadSignature:
         logger.debug("Failed to unsign token", exc_info=True)
-        raise oauth_redirect_exception
+        raise oauth_redirect_exception from None
 
 
 AccessTokenCookie = Annotated[str, Depends(get_access_token_from_cookie)]
@@ -249,137 +247,3 @@ def get_tasks_api(user: CurrentUser) -> RemoteAPI:
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
-
-
-async def build_alters_task_payload(
-    task_name: Annotated[str, Form()],
-    hostname: Annotated[str, Form()],
-    connect_to: Annotated[str, Form()],
-    schema_name: Annotated[str, Form()],
-    table_name: Annotated[str, Form()],
-    recursion_method: Annotated[str, Form()],
-    alter: Annotated[str, Form()],
-    dsn_table: Annotated[str, Form()] = "",
-    pause_file: Annotated[str, Form()] = "",
-    new_table_name: Annotated[str, Form()] = "",
-    print_arg: Annotated[str, Form()] = "",
-    progress: Annotated[str, Form()] = "",
-    no_swap_tables: Annotated[str, Form()] = "",
-    no_drop_old_table: Annotated[str, Form()] = "",
-    no_drop_new_table: Annotated[str, Form()] = "",
-    no_drop_triggers: Annotated[str, Form()] = "",
-    tries: Annotated[str, Form()] = "",
-    set_vars: Annotated[str, Form()] = "",
-    critical_load: Annotated[str, Form()] = "",
-    max_load: Annotated[str, Form()] = "",
-    chunk_time: Annotated[str, Form()] = "",
-    max_lag: Annotated[str, Form()] = ""
-) -> GeneratedTask:
-    """Build the alter task payload from form.
-
-    Build the payload for an Alters task to be executed, including the
-    necessary command arguments for performing schema changes.
-
-    Parameters
-    ----------
-    task_name : str
-        The name of the task to be created.
-    hostname : str
-        The target hostname for the task execution.
-    connect_to : str
-        The connection type, which could be a hostname or `localhost`.
-    schema_name : str
-        The database schema name on which the task will operate.
-    table_name : str
-        The table name within the schema to be altered.
-    recursion_method : str
-        The method for handling recursion.
-    alter : str
-        The specific alter command to be executed.
-    dsn_table : str, optional
-        The DSN table for recursion method when using `dsn`.
-        Defaults to an empty string.
-
-    Returns
-    -------
-    GeneratedTask
-        A fully constructed `GeneratedTask` object containing all the necessary commands
-        and parameters for the Alters task execution.
-
-    """
-    if connect_to == "localhost":
-        dsn = f"D={schema_name},t={table_name}"
-    else:
-        dsn = f"h={connect_to},D={schema_name},t={table_name}"
-    if sep_settings.ALTERS_DB_USERNAME:
-        dsn += f",u={sep_settings.ALTERS_DB_USERNAME}"
-    if sep_settings.ALTERS_DB_PASSWORD:
-        dsn += f",p={sep_settings.ALTERS_DB_PASSWORD}"
-        # TODO: mask/hash password on view
-
-    if recursion_method == "dsn":
-        recursion_method = f"dsn={dsn_table}"
-
-    args = [
-        f"--alter={alter}",
-        dsn,
-        f"--recursion-method={recursion_method}",
-    ]
-
-    if pause_file:
-        args.append(f'--pause-file={pause_file}')
-
-    if new_table_name:
-        args.append(f'--new-table-name={new_table_name}')
-
-    if print_arg:
-        args.append('--print')
-        args.append(f'--progress={progress}')
-
-    if no_swap_tables:
-        args.append('--no-swap-tables')
-
-    if no_drop_old_table:
-        args.append('--no-drop-old-table')
-
-    if no_drop_new_table:
-        args.append('--no-drop-new-table')
-
-    if no_drop_triggers:
-        args.append('--no-drop-triggers')
-
-    if tries:
-        args.append(f'--tries={tries}')
-
-    if set_vars:
-        args.append(f'--set-vars={set_vars}')
-
-    if critical_load:
-        args.append(f'--critical-load={critical_load}')
-
-    if max_load:
-        args.append(f'--max-load={max_load}')
-
-    if chunk_time:
-        args.append(f'--chunk-time={chunk_time}')
-
-    if max_lag:
-        args.append(f'--max-lag={max_lag}')
-
-    return GeneratedTask(
-        app="alters",
-        commands=[
-            {
-                "args": args + [
-                    "--execute",
-                ],
-                "command": "pt-online-schema-change",
-                "meta": {"schema_name": schema_name, "table_name": table_name},
-            },
-        ],
-        name=task_name,
-        target=hostname,
-    )
-
-
-AltersGeneratedTask = Annotated[GeneratedTask, Depends(build_alters_task_payload)]

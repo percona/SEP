@@ -4,11 +4,110 @@ import logging
 from typing import Annotated
 
 from fastapi import Depends
+from fastapi import Form
 from fastapi import HTTPException
 
 from app.sep.deps import TaskAPI
+from app.sep.plugins.alters.models import AltersCreate
+from app.tasks.models import GeneratedTask
 
 logger = logging.getLogger(__name__)
+
+
+async def build_alters_task_payload(
+    form: Annotated[AltersCreate, Form()],
+) -> GeneratedTask:
+    """Build the alter task payload from form.
+
+    Build the payload for an Alters task to be executed, including the
+    necessary command arguments for performing schema changes.
+
+    Parameters
+    ----------
+    form : AltersCreate
+        The form data for the Alters creation.
+
+    Returns
+    -------
+    GeneratedTask
+        A fully constructed `GeneratedTask` object containing all the necessary commands
+        and parameters for the Alters task execution.
+
+    """
+    if form.connect_to == "localhost":
+        dsn = f"D={form.schema_name},t={form.table_name}"
+    else:
+        dsn = f"h={form.connect_to},D={form.schema_name},t={form.table_name}"
+
+    if form.recursion_method == "dsn":
+        form.recursion_method = f"dsn={form.dsn_table}"
+
+    args = [
+        f"--alter={form.alter}",
+        dsn,
+        f"--recursion-method={form.recursion_method}",
+    ]
+
+    if form.pause_file:
+        args.append(f'--pause-file={form.pause_file}')
+
+    if form.new_table_name:
+        args.append(f'--new-table-name={form.new_table_name}')
+
+    if form.print_arg:
+        args.append('--print')
+        args.append(f'--progress={form.progress}')
+
+    if form.no_swap_tables:
+        args.append('--no-swap-tables')
+
+    if form.no_drop_old_table:
+        args.append('--no-drop-old-table')
+
+    if form.no_drop_new_table:
+        args.append('--no-drop-new-table')
+
+    if form.no_drop_triggers:
+        args.append('--no-drop-triggers')
+
+    if form.tries:
+        args.append(f'--tries={form.tries}')
+
+    if form.set_vars:
+        args.append(f'--set-vars={form.set_vars}')
+
+    if form.critical_load:
+        args.append(f'--critical-load={form.critical_load}')
+
+    if form.max_load:
+        args.append(f'--max-load={form.max_load}')
+
+    if form.chunk_time:
+        args.append(f'--chunk-time={form.chunk_time}')
+
+    if form.max_lag:
+        args.append(f'--max-lag={form.max_lag}')
+
+    return GeneratedTask(
+        app="alters",
+        commands=[
+            {
+                "args": args + [
+                    "--execute",
+                ],
+                "command": "pt-online-schema-change",
+                "meta": {
+                    "schema_name": form.schema_name,
+                    "table_name": form.table_name,
+                },
+            },
+        ],
+        name=form.task_name,
+        target=form.hostname,
+    )
+
+
+AltersGeneratedTask = Annotated[GeneratedTask, Depends(build_alters_task_payload)]
 
 
 async def get_alters_task(

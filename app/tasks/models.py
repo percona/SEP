@@ -14,7 +14,6 @@ from datetime import datetime
 from enum import auto
 from enum import StrEnum
 from statistics import mean
-from typing import Optional
 
 from pydantic import AliasGenerator
 from pydantic import BaseModel
@@ -22,7 +21,7 @@ from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import Field
 from sqlalchemy import Column
-from sqlalchemy import Enum
+from sqlalchemy import Enum as EnumField
 from sqlalchemy import Index
 from sqlalchemy import JSON
 from sqlmodel import Field as SQLField
@@ -89,8 +88,8 @@ class TaskExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
     task: str
     target: str
-    meta: Optional[dict] = {}
-    tracking: Optional[dict] = {"allocation_id": None, "evaluation_id": None}
+    meta: dict | None = {}
+    tracking: dict | None = {"allocation_id": None, "evaluation_id": None}
 
 
 class TaskGroupTaskTemplate(BaseModel):
@@ -181,7 +180,8 @@ class TaskGroup(BaseModel):
     parallel: bool = False
     tasks: list[TaskGroupTask] = []
 
-    def to_payload(self):
+    # TODO: Return Pydantic model
+    def to_payload(self) -> dict[str, list[dict]]:
         """Convert to a backend-specific payload format.
 
         Returns
@@ -250,6 +250,7 @@ class GeneratedTask(BaseModel):
     template: str = "batch"
 
 
+# TODO: Create Base/Write/Response models
 class Task(BaseSQLModel, table=True):
     """Represent a task stored in the database.
 
@@ -288,7 +289,7 @@ class Task(BaseSQLModel, table=True):
     data: dict = SQLField(sa_column=Column(JSON, nullable=False))
     backend: TaskBackendEnum = SQLField(
         default=TaskBackendEnum.NOMAD,
-        sa_column=Column(Enum(TaskBackendEnum), nullable=False),
+        sa_column=Column(EnumField(TaskBackendEnum), nullable=False),
     )
     owner: str | None = SQLField(default=None, index=True)
     is_template: bool = SQLField(default=False, index=True)
@@ -301,6 +302,7 @@ class Task(BaseSQLModel, table=True):
     )
 
 
+# TODO: Create Base/Write models
 class TaskHistory(BaseSQLModel, table=True):
     """Represent a task execution history.
 
@@ -323,7 +325,7 @@ class TaskHistory(BaseSQLModel, table=True):
     )
     status: TaskHistoryStatusEnum = SQLField(
         default=TaskHistoryStatusEnum.PENDING,
-        sa_column=Column(Enum(TaskHistoryStatusEnum), nullable=False, index=True),
+        sa_column=Column(EnumField(TaskHistoryStatusEnum), nullable=False, index=True),
     )
     task_id: int = SQLField(foreign_key="task.id", index=True)
     task: Task = Relationship(back_populates="history")
@@ -345,8 +347,8 @@ class TaskHistory(BaseSQLModel, table=True):
         ] or not self.execution_request.tracking.get("task_states"):
             return []
         errors = set()
-        for _, tasks in self.execution_request.tracking["task_states"].items():
-            for _, state in tasks.items():
+        for tasks in self.execution_request.tracking["task_states"].values():
+            for state in tasks.values():
                 for event in state["Events"]:
                     match event["Type"]:
                         case "Driver Failure":
@@ -474,13 +476,10 @@ class TaskStats(BaseModel):
             self._process()
         return max(self._raw["finished_at"]) if self._raw["finished_at"] else None
 
-    def _process(self):
-        """Process the task data
+    def _process(self) -> None:
+        """Process the task data."""
 
-        :return:
-        """
-
-        def _durations_from_tracking():
+        def _durations_from_tracking() -> None:
             self._durations["tasks"][task.id] = (
                 task.execution_request.tracking[  # TODO: Use Pydantic models
                     "duration"

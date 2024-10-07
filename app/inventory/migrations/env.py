@@ -8,8 +8,8 @@ from sqlmodel import SQLModel
 
 from alembic import context
 
-from app.tasks.config import tasks_settings
-from app.tasks.models import *
+from app.inventory.config import inventory_settings
+from app.inventory.models import *
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -44,13 +44,13 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = tasks_settings.DATABASE.URL
+    url = inventory_settings.DATABASE.URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        version_table="alembic_version_tasks",
+        version_table="alembic_version_inventory",
     )
 
     with context.begin_transaction():
@@ -58,7 +58,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, version_table="alembic_version_tasks")
+    context.configure(connection=connection, target_metadata=target_metadata, version_table="alembic_version_inventory")
 
     with context.begin_transaction():
         context.run_migrations()
@@ -69,8 +69,9 @@ async def run_async_migrations() -> None:
     and associate a connection with the context.
 
     """
+
     config_section = config.get_section(config.config_ini_section, {})
-    config_section["sqlalchemy.url"] = tasks_settings.DATABASE.URL
+    config_section["sqlalchemy.url"] = inventory_settings.DATABASE.URL
     connectable = async_engine_from_config(
         config_section,
         prefix="sqlalchemy.",

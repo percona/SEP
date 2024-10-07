@@ -3,7 +3,6 @@ from typing import Any
 
 from app.core.fields import RequiredStr
 from app.core.requests import RemoteAPI
-from app.inventory.models import InventoryItem
 from app.inventory.models import Node
 from app.inventory.models import Service
 
@@ -16,7 +15,7 @@ class BaseSource:
     `get_inventory` method to retrieve inventory items.
     """
 
-    async def get_inventory(self) -> list[InventoryItem]:
+    async def get_inventory(self) -> list[Node]:
         raise NotImplementedError(".get_inventory() must be overridden.")
 
 
@@ -99,7 +98,7 @@ class PMMSource(BaseSource, RemoteAPI):
                 services_by_node_id[service.node_id].append(service)
         return services_by_node_id
 
-    async def get_inventory(self) -> list[InventoryItem]:
+    async def get_inventory(self) -> list[Node]:
         """Fetch and construct a list of InventoryItem objects from the PMM API.
 
         Returns
