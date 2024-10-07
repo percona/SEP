@@ -1,7 +1,5 @@
 """Define models for interacting with the Inventory API."""
 
-from enum import auto
-from enum import StrEnum
 from typing import Self
 
 from pydantic import BaseModel
@@ -12,12 +10,7 @@ from pydantic import model_validator
 from app.core.db import BaseSQLModel
 from app.core.fields import EmptyStrToNone
 from app.core.fields import RequiredStr
-
-
-class SourceEnum(StrEnum):
-    """Enumeration of possible data sources for a node."""
-
-    PMM = auto()
+from app.inventory.models import SourceEnum
 
 
 class BaseInventoryModel(BaseModel):
@@ -90,10 +83,23 @@ class CreatedNode(BaseSQLModel, Node):
         The source of the node information. Defaults to None.
     services : list[CreatedService]
         A list of existent services associated with the node.
+    children
 
     """
 
     services: list["CreatedService"] = []
+
+    @property
+    def children(self) -> list["CreatedService"]:
+        """Retrieve the list of services associated with the node.
+
+        Returns
+        -------
+        list of CreatedService
+            The services associated with the node.
+
+        """
+        return self.services
 
     @model_validator(mode="after")
     def add_node_to_services(self) -> Self:
@@ -203,10 +209,24 @@ class CreatedService(BaseSQLModel, Service):
         Defaults to "generic".
     node : CreatedServiceNode or None, optional
         The node to which the service is associated. Defaults to None.
+    children
 
     """
 
     node: CreatedServiceNode | None = None
+    schemas: list["CreatedSchema"] = []
+
+    @property
+    def children(self) -> list["CreatedSchema"]:
+        """Retrieve the list of schemas associated with the service.
+
+        Returns
+        -------
+        list of CreatedSchema
+            The schemas associated with the service.
+
+        """
+        return self.schemas
 
 
 class Schema(BaseInventoryModel):
@@ -238,10 +258,24 @@ class CreatedSchema(BaseSQLModel, Schema):
         The timestamp when the record was last updated.
     name : RequiredStr
         The name of the schema.
+    children
 
     """
 
     name: RequiredStr
+    tables: list["CreatedTable"] = []
+
+    @property
+    def children(self) -> list["CreatedTable"]:
+        """Retrieve the list of tables associated with the schema.
+
+        Returns
+        -------
+        list of CreatedTable
+            The tables associated with the schema.
+
+        """
+        return self.tables
 
 
 class Table(BaseInventoryModel):
@@ -286,3 +320,18 @@ class CreatedTable(BaseSQLModel, Table):
 
     name: RequiredStr
     create: RequiredStr
+
+    @property
+    def children(self) -> list:
+        """Retrieve the list of child entities associated with the table.
+
+        Returns
+        -------
+        list
+            An empty list as tables do not have child entities.
+
+        """
+        return []
+
+
+CreatedEntity = CreatedNode | CreatedService | CreatedSchema | CreatedTable
