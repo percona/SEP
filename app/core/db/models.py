@@ -6,7 +6,7 @@ from datetime import UTC
 from sqlalchemy import DateTime
 from sqlalchemy import func
 from sqlalchemy import Integer
-from sqlmodel import Field
+from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
 
 DateTimeWithTimezone = DateTime(timezone=True)
@@ -26,16 +26,16 @@ class BaseSQLModel(SQLModel):
 
     """
 
-    id: int | None = Field(
+    id: int | None = SQLField(
         nullable=False,
         sa_type=Integer,
         sa_column_kwargs={"primary_key": True, "autoincrement": True},
     )
-    created_at: datetime = Field(
+    created_at: datetime = SQLField(
         sa_type=DateTimeWithTimezone,
         default_factory=lambda: datetime.now(UTC),
     )
-    updated_at: datetime | None = Field(
+    updated_at: datetime | None = SQLField(
         default=None,
         sa_type=DateTimeWithTimezone,
         sa_column_kwargs={"onupdate": func.now()},
