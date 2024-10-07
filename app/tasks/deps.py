@@ -1,12 +1,12 @@
 """Define dependencies for the Tasks API."""
 
+from collections.abc import AsyncGenerator
 from typing import Annotated
-from typing import AsyncGenerator
 
 from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.tasks.db import get_async_session
+from app.tasks.db import get_async_session_maker
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -21,7 +21,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         An asynchronous session for database operations.
 
     """
-    async_session = get_async_session()
+    async_session = get_async_session_maker()
     async with async_session() as session:
         yield session
 

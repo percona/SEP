@@ -35,16 +35,16 @@ def json_serializer(data: Any) -> str:
     return json.dumps(jsonable_encoder(data))
 
 
-def get_async_session_from_engine(engine: AsyncEngine) -> AsyncSession:
-    """Return a new asynchronous session for database operations.
+def get_async_session_maker_from_engine(engine: AsyncEngine) -> sessionmaker:
+    """Return a new asynchronous session maker for database operations.
 
-    This function creates a new SQLAlchemy asynchronous session using the predefined
-    engine configuration.
+    This function creates a new SQLAlchemy asynchronous session maker using the
+    predefined engine configuration.
 
     Returns
     -------
-    AsyncSession
-        A new asynchronous session instance.
+    sessionmaker
+        A new asynchronous session maker.
 
     """
     return sessionmaker(

@@ -10,7 +10,7 @@ from app.inventory.crud import NodeManager
 from app.inventory.crud import SchemaManager
 from app.inventory.crud import ServiceManager
 from app.inventory.crud import TableManager
-from app.inventory.db import get_async_session
+from app.inventory.db import get_async_session_maker
 from app.inventory.models import Node
 from app.inventory.models import Schema
 from app.inventory.models import Service
@@ -29,7 +29,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         An asynchronous session for database operations.
 
     """
-    async_session = get_async_session()
+    async_session = get_async_session_maker()
     async with async_session() as session:
         yield session
 
