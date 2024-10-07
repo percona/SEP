@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import field_validator
 from pydantic import HttpUrl
 
 from app.core.config import BaseCaseInsensitiveModel
@@ -134,11 +133,6 @@ class SEPSettings(BaseYamlExtraSettings):
         The endpoint URL for the Inventory API.
     TASKS_ENDPOINT : HttpUrl
         The endpoint URL for the Tasks API.
-    ALTERS_DB_USERNAME : str, optional
-        The username for accessing the Alters database. Defaults to `None`.
-    ALTERS_DB_PASSWORD : str, optional
-        The password for accessing the Alters database. This field is automatically
-        escaped to handle special characters. Defaults to `None`.
     PLUGINS : list of Plugin, optional
         A list of plugins used by SEP. Defaults to an empty list.
     PROXY_HEADERS : bool, optional
@@ -155,32 +149,8 @@ class SEPSettings(BaseYamlExtraSettings):
     STATIC_DIR: RelativeDirectoryPath = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
-    ALTERS_DB_USERNAME: str | None = None
-    ALTERS_DB_PASSWORD: str | None = None
     PLUGINS: set[Plugin] = set()
     PROXY_HEADERS: bool = False
-
-    @field_validator("ALTERS_DB_PASSWORD")
-    @classmethod
-    def escape_db_password(cls, v: str | None) -> str:
-        """Escape special characters in the database password.
-
-        This method replaces commas in the database password with an escaped version
-        to ensure proper handling in connection strings.
-
-        Parameters
-        ----------
-        v : str or None
-            The original database password.
-
-        Returns
-        -------
-        str
-            The escaped database password if `v` is not `None`, otherwise `None`.
-
-        """
-        if v is not None:
-            return v.replace(",", "\\,")
 
     @computed_field
     @cached_property

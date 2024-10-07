@@ -6,11 +6,12 @@ import time
 from asyncio import sleep
 from datetime import datetime
 from datetime import timezone
+from datetime import UTC
 from uuid import uuid1
 
+import nomad
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-import nomad
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.models import Task
 from app.tasks.models import TaskHistory
@@ -108,10 +109,6 @@ class Executor:
             match self.task.data.get("ParameterizedJob"):
                 # TODO: temporary to avoid ParameterizedJobs
                 case True:
-                    # Example content:
-                    # "ParameterizedJob": {"MetaOptional": ["args", "image"],
-                    #                       "MetaRequired": ["command"], "Payload": ""}
-                    # https://python-nomad.readthedocs.io/en/latest/api/job/#dispatch-job
                     raise NotImplementedError("Parameterized job support is TBD")
                 case _:
                     match self.task.data.get("Type"):
@@ -155,7 +152,7 @@ class Executor:
         queue_item = await TaskHistoryManager.save(
             session,
             queue_item,
-            flag_modified_fields=("execution_request",),
+            flag_modified_fields=["execution_request"],
         )
 
         allocation_filters = [
@@ -237,12 +234,11 @@ class Executor:
             raw_duration=(stop_ts - start_ts) / 1000**3,
             started_at_ns=start_ts,
             finished_at_ns=stop_ts,
-            started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=timezone.utc),
-            finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=timezone.utc),
+            started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=UTC),
+            finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=UTC),
         )
-        queue_item = await TaskHistoryManager.save(
+        return await TaskHistoryManager.save(
             session,
             queue_item,
-            flag_modified_fields=("execution_request",),
+            flag_modified_fields=["execution_request"],
         )
-        return queue_item

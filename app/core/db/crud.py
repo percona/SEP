@@ -3,11 +3,11 @@
 import logging
 from collections.abc import Sequence
 from typing import Any
-from typing import Type
 from typing import TypeVar
 
 from sqlalchemy import ScalarResult
 from sqlalchemy.engine import TupleResult
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
@@ -18,24 +18,28 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql._expression_select_cls import Select
 from sqlmodel.sql._expression_select_cls import SelectOfScalar
 
+from app.api.exceptions import HTTPBadRequestException
+from app.api.exceptions import HTTPConflictException
 from app.api.exceptions import HTTPNotFoundException
+from app.core.db import BaseSQLModel
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=SQLModel)
+T = TypeVar("T", bound=BaseSQLModel)
+S = TypeVar("S", bound=SQLModel)
 
 
 class BaseManager:
-    """Manage database operations for a SQLModel-based model.
+    """Manage database operations for a BaseSQLModel-based model.
 
     Attributes
     ----------
     Model : Type[T]
-        The SQLModel class for which this manager handles operations.
+        The BaseSQLModel class for which this manager handles operations.
 
     """
 
-    Model: Type[T]
+    Model: type[T]
 
     @classmethod
     def _filter_query(
@@ -98,7 +102,8 @@ class BaseManager:
             select_related=select_related,
             **equal_filters,
         )
-        return await cls._exec(session, query)
+        result = await cls._exec(session, query)
+        return result.unique()
 
     @classmethod
     async def list(
@@ -288,7 +293,6 @@ class BaseManager:
         await session.commit()
         return instances
 
-    # TODO: Different methods for save/update with validation models
     @classmethod
     async def save(
         cls,
@@ -317,9 +321,79 @@ class BaseManager:
         for field in flag_modified_fields:
             flag_modified(instance, field)
         session.add(instance)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            logger.debug("IntegrityError saving instance %s", instance, exc_info=True)
+            raise HTTPConflictException(
+                exc.args[0],
+            ) from None  # TODO: Improve error message
         await session.refresh(instance)
         return instance
+
+    @classmethod
+    async def create(
+        cls,
+        session: AsyncSession,
+        instance_create: S,
+        **extra_fields: Any,
+    ) -> T:
+        """Create and save a new model instance in the database.
+
+        Parameters
+        ----------
+        session : AsyncSession
+            The SQLAlchemy asynchronous session to use for database operations.
+        instance_create : S
+            The data used to create the new model instance.
+        **extra_fields : Any
+            Additional fields to be set on the model instance.
+
+        Returns
+        -------
+        T
+            The newly created and saved instance.
+
+        """
+        extra_fields["id"] = None
+        instance = cls.Model.model_validate(instance_create, update=extra_fields)
+        return await cls.save(session, instance)
+
+    @classmethod
+    async def update(
+        cls,
+        session: AsyncSession,
+        existing_instance: T,
+        updated_instance: S,
+        *,
+        flag_modified_fields: Sequence[str] = (),
+    ) -> T:
+        """Update an existing model instance with new data and save it.
+
+        Parameters
+        ----------
+        session : AsyncSession
+            The SQLAlchemy asynchronous session to use for database operations.
+        existing_instance : T
+            The existing model instance to be updated.
+        updated_instance : S
+            The new data to update the model instance with.
+        flag_modified_fields : Sequence[str], optional
+            Fields to be flagged as modified before saving.
+
+        Returns
+        -------
+        T
+            The updated and saved instance.
+
+        """
+        updated_instance_data = updated_instance.model_dump(exclude_unset=True)
+        existing_instance.sqlmodel_update(updated_instance_data)
+        return await cls.save(
+            session,
+            existing_instance,
+            flag_modified_fields=flag_modified_fields,
+        )
 
     @classmethod
     async def delete(cls, session: AsyncSession, instance: T) -> T:
@@ -341,3 +415,69 @@ class BaseManager:
         await session.delete(instance)
         await session.commit()
         return instance
+
+
+M = TypeVar("M", bound="BaseManager")
+
+
+class BaseChildManager(BaseManager):
+    """Manage database operations for child models with a parent association.
+
+    Attributes
+    ----------
+    ParentManager : Type[M]
+        The manager class responsible for handling the parent model.
+    connected_by : str
+        The field name that connects the child model to the parent model.
+
+    """
+
+    ParentManager: type[M]
+    connected_by: str
+
+    @classmethod
+    async def update(
+        cls,
+        session: AsyncSession,
+        existing_instance: T,
+        updated_instance: S,
+        *,
+        flag_modified_fields: Sequence[str] = (),
+    ) -> T:
+        """Update an existing child model instance, ensuring parent association.
+
+        Parameters
+        ----------
+        session : AsyncSession
+            The SQLAlchemy asynchronous session to use for database operations.
+        existing_instance : T
+            The existing child model instance to be updated.
+        updated_instance : S
+            The new data to update the child model instance with.
+        flag_modified_fields : Sequence[str], optional
+            Fields to be flagged as modified before saving.
+
+        Returns
+        -------
+        T
+            The updated and saved child instance.
+
+        Raises
+        ------
+        HTTPBadRequestException
+            If the associated parent instance does not exist.
+
+        """
+        parent_id = getattr(updated_instance, cls.connected_by, None)
+        try:
+            await cls.ParentManager.get(session, id=parent_id)
+        except NoResultFound:
+            raise HTTPBadRequestException(
+                f"Invalid {cls.connected_by}: {parent_id}",
+            ) from None
+        return await super().update(
+            session,
+            existing_instance,
+            updated_instance,
+            flag_modified_fields=flag_modified_fields,
+        )

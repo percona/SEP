@@ -6,10 +6,10 @@ from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.orm import sessionmaker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.utils import get_async_session_from_engine
 from app.core.db.utils import json_serializer
 from app.tasks.config import tasks_settings
 from app.tasks.models import Task
@@ -165,8 +165,4 @@ def get_async_session() -> AsyncSession:
         A new asynchronous session instance.
 
     """
-    return sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
+    return get_async_session_from_engine(engine)

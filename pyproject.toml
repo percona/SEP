@@ -35,7 +35,7 @@ package-mode = false # TODO: for now
 python = "^3.11"
 aiohttp = "^3.9.4"
 casdoor = "^1.17.1"
-fastapi = {extras = ["standard"], version = "^0.112.1"}
+fastapi = {version = "^0.115.0", extras = ["standard"]}
 idna = "^3.7"
 itsdangerous = "^2.1.2"
 pydantic = "^2.4.0"

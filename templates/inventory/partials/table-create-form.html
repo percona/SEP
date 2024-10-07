@@ -1,0 +1,11 @@
+<form action="/inventory/schemas/{{ schema.id }}/tables/" method="post">
+    <fieldset>
+        <legend>Create New Table</legend>
+        <label for="name">Name:</label>
+        <input type="text" name="name" id="name" required>
+
+        <label for="create">Create Statement:</label>
+        <textarea name="create" id="create" rows="5" required></textarea>
+    </fieldset>
+    <button type="submit">Create Table</button>
+</form>

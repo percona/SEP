@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Schema {{ schema.name }} ({{ schema.service_id }}){% endblock %}
+
+{% block main %}
+<h2>Schema Details</h2>
+<dl>
+    <dt>ID</dt>
+    <dd>{{ schema.id }}</dd>
+    <dt>Name</dt>
+    <dd>{{ schema.name }}</dd>
+    <dt>Service ID</dt>
+    <dd>{{ schema.service_id }}</dd>
+</dl>
+
+<h3>Tables in this Schema</h3>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Create Statement</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for table in schema.tables %}
+        <tr>
+            <td>{{ table.id }}</td>
+            <td>{{ table.name }}</td>
+            <td>{{ table.create }}</td>
+            <td>
+                <form action="/inventory/tables/{{ table.id }}/delete" method="post" style="display:inline;">
+                    <button name="location" class="icons" style="width: 2em">delete forever</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+
+<h3>Add a New Table</h3>
+{% include "inventory/partials/table-create-form.html" %}
+{% endblock %}

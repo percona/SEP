@@ -6,9 +6,9 @@
             <legend>Executor Host</legend>
             <label for="hostname">Select host</label>
             <select id="hostname" name="hostname">
-            {% for host in hosts %}
-                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
-            {% endfor %}
+                {% for host in hosts %}
+                    <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+                {% endfor %}
             </select>
         </fieldset>
         <fieldset>
@@ -17,37 +17,99 @@
             <input type="text" id="task_name" name="task_name" class="validate" />
             <label for="connect_to">Database host</label>
             <select id="connect_to" name="connect_to">
-                <option value="localhost" selected>localhost (Executor Node)</option>
-            {% for host in mysql_hosts %}
-                <option value="{{ host['address'] }}">{{ host['name'] }}</option>
-            {% endfor %}
+                <option value="" selected>Select a database host</option>
+                {% for host in mysql_hosts %}
+                    <option value="{{ host['address'] }}">{{ host['name'] }}</option>
+                {% endfor %}
             </select>
         </fieldset>
-            <fieldset>
-                <legend>Data</legend>
-                <label for="schema_name">Schema</label>
-                <input type="text" id="schema_name" name="schema_name" class="validate" />
-                <label for="table_name">Table</label>
-                <input type="text" id="table_name" name="table_name" class="validate" />
-                <label for="alter">Alter</label>
-                <input type="text" id="alter" name="alter" class="validate" />
-            </fieldset>
-            <fieldset>
-                <legend>Advanced options</legend>
-                <label for="recursion_method">Recursion method</label>
-                    <select id="recursion_method" name="recursion_method">
-                        <option value="processlist" selected>processlist</option>
-                        <option value="host">host</option>
-                        <option value="dsn">dsn</option>
-                        <option value="none">none</option>
-                    </select>
-                    <label for="dsn_table">DSN Table</label>
-                <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="schema.table" />
-            </fieldset>
+        <fieldset>
+            <legend>Data</legend>
+            <label for="schema_name">Schema</label>
+            <select id="schema_name" name="schema_name" disabled>
+                <option value="">Select a schema</option>
+            </select>
+            <label for="table_name">Table</label>
+            <select id="table_name" name="table_name" disabled>
+                <option value="">Select a table</option>
+            </select>
+            <label for="alter">Alter</label>
+            <input type="text" id="alter" name="alter" class="validate" />
+        </fieldset>
+        <fieldset>
+            <legend>Advanced options</legend>
+            <label for="recursion_method">Recursion method</label>
+            <select id="recursion_method" name="recursion_method">
+                <option value="processlist" selected>processlist</option>
+                <option value="host">host</option>
+                <option value="dsn">dsn</option>
+                <option value="none">none</option>
+            </select>
+            <label for="dsn_table">DSN Table</label>
+            <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="schema.table" />
         </fieldset>
     </fieldset>
-</fieldset>
 
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
 </form>
+
+{% set hostSchemas = {} %}
+{% for host in mysql_hosts %}
+    {% set schemas = {} %}
+    {% for schema in host['schemas'] %}
+        {% set tables = schema['tables'] | map(attribute='name') | list %}
+        {% set _ = schemas.update({schema['name']: tables}) %}
+    {% endfor %}
+    {% set _ = hostSchemas.update({host['address']: schemas}) %}
+{% endfor %}
+
+<script type="text/javascript">
+    const hostSchemas = {{ hostSchemas | tojson }};
+    const connectToSelect = document.getElementById('connect_to');
+    const schemaSelect = document.getElementById('schema_name');
+    const tableSelect = document.getElementById('table_name');
+
+    connectToSelect.addEventListener('change', function() {
+        const selectedHost = this.value;
+        // Reset schema and table selects
+        schemaSelect.disabled = true;
+        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
+        tableSelect.disabled = true;
+        tableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedHost && hostSchemas[selectedHost]) {
+            const schemas = Object.keys(hostSchemas[selectedHost]);
+            if (schemas.length > 0) {
+                schemaSelect.disabled = false;
+                schemas.forEach(function(schemaName) {
+                    const option = document.createElement('option');
+                    option.value = schemaName;
+                    option.textContent = schemaName;
+                    schemaSelect.appendChild(option);
+                });
+            }
+        }
+    });
+
+    schemaSelect.addEventListener('change', function() {
+        const selectedHost = connectToSelect.value;
+        const selectedSchema = this.value;
+        // Reset table select
+        tableSelect.disabled = true;
+        tableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedSchema && hostSchemas[selectedHost][selectedSchema]) {
+            const tables = hostSchemas[selectedHost][selectedSchema];
+            if (tables.length > 0) {
+                tableSelect.disabled = false;
+                tables.forEach(function(tableName) {
+                    const option = document.createElement('option');
+                    option.value = tableName;
+                    option.textContent = tableName;
+                    tableSelect.appendChild(option);
+                });
+            }
+        }
+    });
+</script>

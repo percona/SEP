@@ -4,10 +4,13 @@ import json
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 
 def json_serializer(data: Any) -> str:
-    """Serializes a Python object into a JSON-formatted string.
+    """Serialize a Python object into a JSON-formatted string.
 
     This function encodes a given Python object using `jsonable_encoder`
     to ensure it is serializable, then converts it to a JSON string using `json.dumps`.
@@ -30,3 +33,22 @@ def json_serializer(data: Any) -> str:
 
     """
     return json.dumps(jsonable_encoder(data))
+
+
+def get_async_session_from_engine(engine: AsyncEngine) -> AsyncSession:
+    """Return a new asynchronous session for database operations.
+
+    This function creates a new SQLAlchemy asynchronous session using the predefined
+    engine configuration.
+
+    Returns
+    -------
+    AsyncSession
+        A new asynchronous session instance.
+
+    """
+    return sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )

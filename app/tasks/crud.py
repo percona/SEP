@@ -1,6 +1,5 @@
 """Define database operations for the Tasks API."""
 
-# TODO: All logic here, raise exceptions
 from datetime import datetime
 from datetime import UTC
 

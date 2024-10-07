@@ -36,6 +36,7 @@ class BaseSQLModel(SQLModel):
         default_factory=lambda: datetime.now(UTC),
     )
     updated_at: datetime | None = Field(
+        default=None,
         sa_type=DateTimeWithTimezone,
         sa_column_kwargs={"onupdate": func.now()},
     )

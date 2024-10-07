@@ -4,7 +4,6 @@ import logging
 from http import HTTPStatus
 from os import getenv
 from typing import Annotated
-from typing import Optional
 
 from fastapi import APIRouter
 from fastapi import BackgroundTasks
@@ -47,8 +46,8 @@ router = APIRouter()
 
 
 # TODO: Pagination
-@router.get(path="/", dependencies=[IsAuthenticatedDep], response_model=list[Task])
-async def list_tasks(session: SessionDep, owner: str | None = None):
+@router.get(path="/", dependencies=[IsAuthenticatedDep])
+async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
     return await TaskManager.list_active(session=session, owner=owner)
@@ -59,16 +58,17 @@ async def list_tasks(session: SessionDep, owner: str | None = None):
     dependencies=[IsAuthenticatedDep],
     response_class=JSONResponse,
 )
-async def delete_task(session: SessionDep, task: str):
+async def delete_task(session: SessionDep, task: str) -> dict[str, int | bool]:
     """Delete a task."""
     logger.debug("Deleting task %s", task)
     deleted_task = await TaskManager.delete_by_name(session=session, name=task)
     # TODO: Use Pydantic models
+    # TODO: Return deleted model
     return {"id": deleted_task.id, "deleted": True}
 
 
-@router.get(path="/{task}", dependencies=[IsAuthenticatedDep], response_model=Task)
-async def get_task(session: SessionDep, task: str):
+@router.get(path="/{task}", dependencies=[IsAuthenticatedDep])
+async def get_task(session: SessionDep, task: str) -> Task:
     """Retrieve a task by its name."""
     logger.debug("Requesting task %s", task)
     result = await TaskManager.retrieve_by_name(session=session, name=task)
@@ -77,8 +77,8 @@ async def get_task(session: SessionDep, task: str):
     return result
 
 
-@router.post(path="/", dependencies=[IsAuthenticatedDep], response_model=Task)
-async def create_task(session: SessionDep, task: Task):
+@router.post(path="/", dependencies=[IsAuthenticatedDep])
+async def create_task(session: SessionDep, task: Task) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
     return await TaskManager.save(session, task)
@@ -87,14 +87,13 @@ async def create_task(session: SessionDep, task: Task):
 @router.post(
     path="/generate",
     dependencies=[IsAuthenticatedDep],
-    response_model=TaskHistory,
 )
 async def generate_task(
     session: SessionDep,
     generated_task: GeneratedTask,
     request: Request,
     background_tasks: BackgroundTasks,
-):
+) -> TaskHistory:
     """Generate a new task execution using a template."""
     logger.debug(
         "Generating task %s from %s",
@@ -129,11 +128,9 @@ async def generate_task(
         parallel=generated_task.parallel and len(generated_task.commands) > 1,
     )
     for i, cmd in enumerate(generated_task.commands):
-        templates = []
-        configs = cmd.get("config", [])
-        if configs:
-            for config in configs:
-                templates.append(TaskGroupTaskTemplate(**config))
+        templates = [
+            TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])
+        ]
         tg.tasks.append(
             TaskGroupTask(
                 name=f"step{i+1}" if not cmd.get("name") else cmd["name"],
@@ -197,7 +194,6 @@ async def generate_task(
     if not generated_task.schedule:
         await _schedule_queue_item(
             history_recorded=history_record,
-            request=request,
             background_tasks=background_tasks,
         )
     return history_record
@@ -213,8 +209,8 @@ async def execute_task_name(
     task_name: str,
     request: Request,
     background_tasks: BackgroundTasks,
-    target: Optional[Annotated[str, Form()]] = Form("all"),
-):
+    target: Annotated[str, Form()] | None = Form("all"),
+) -> dict[str, TaskHistory]:
     """Send a task for execution."""
     # TODO: optional arg (if possible), else a structured one
     #           so that tasks can be executed with arbitrary parameters
@@ -243,7 +239,7 @@ async def execute_task_name(
     history_recorded = await TaskHistoryManager.save(session, task_history)
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-    return await _schedule_queue_item(history_recorded, background_tasks, request)
+    return await _schedule_queue_item(history_recorded, background_tasks)
 
 
 @router.post(
@@ -256,27 +252,27 @@ async def execute_history_id(
     history_id: int,
     request: Request,
     background_tasks: BackgroundTasks,
-):
+) -> dict[str, TaskHistory]:
     """Trigger a history item for processing."""
     history_record = await TaskHistoryManager.get_or_404(
         session,
         id=history_id,
         status=TaskHistoryStatusEnum.PENDING,
     )
-    record = await _schedule_queue_item(
+    return await _schedule_queue_item(
         history_recorded=history_record,
-        request=request,
         background_tasks=background_tasks,
     )
-    return record
 
 
 @router.get(
     path="/history",
     dependencies=[IsAuthenticatedDep],
-    response_model=list[TaskHistory],
 )
-async def list_task_history(session: SessionDep, status: str | None = None):
+async def list_task_history(
+    session: SessionDep,
+    status: str | None = None,
+) -> list[TaskHistory]:
     """Create a new task."""
     logger.debug("Listing task history")
     try:
@@ -298,7 +294,7 @@ async def list_task_history(session: SessionDep, status: str | None = None):
     dependencies=[IsAuthenticatedDep],
     response_model=list[TaskHistoryResponse],
 )
-async def get_task_history(session: SessionDep, task: str):
+async def get_task_history(session: SessionDep, task: str) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
     return await TaskHistoryManager.list_by_task_name(
@@ -311,9 +307,8 @@ async def get_task_history(session: SessionDep, task: str):
 @router.post(
     path="/history",
     dependencies=[IsAuthenticatedDep],
-    response_model=TaskHistory,
 )
-async def create_task_history(session: SessionDep, task: TaskHistory):
+async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
     """Create a new task history."""
     logger.debug("Creating task history %s", task.name)
     return await TaskHistoryManager.save(session, task)
@@ -322,9 +317,8 @@ async def create_task_history(session: SessionDep, task: TaskHistory):
 @router.get(
     path="/stats/{task}",
     dependencies=[IsAuthenticatedDep],
-    response_model=TaskStats,
 )
-async def get_task_stats(session: SessionDep, task: str):
+async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
     """Calculate the statistics for the task."""
     logger.debug("Requesting task stats for %s", task)
     return TaskStats(
@@ -339,8 +333,7 @@ async def get_task_stats(session: SessionDep, task: str):
 async def _schedule_queue_item(
     history_recorded: TaskHistory,
     background_tasks: BackgroundTasks,
-    request: Request,
-):
+) -> dict[str, TaskHistory]:
     # Check how to proceed with execution
     mode = tasks_settings.EXECUTE_MODE
     match mode:
@@ -348,7 +341,6 @@ async def _schedule_queue_item(
             background_tasks.add_task(
                 _process_queue_item,
                 queue_id=history_recorded.id,
-                request=request,
             )
         case _:
             logger.critical("Unknown execution mode '%s'", mode)
@@ -356,13 +348,13 @@ async def _schedule_queue_item(
     return {"task_history_id": history_recorded}
 
 
-async def _process_queue_item(queue_id: int, request: Request):
+async def _process_queue_item(queue_id: int) -> None:
     """Process an item from the history table."""
     async_session = get_async_session()
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
-            select_related=(TaskHistory.task,),
+            select_related=[TaskHistory.task],
             id=queue_id,
         )
         task = queue_item.task

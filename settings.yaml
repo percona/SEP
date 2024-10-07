@@ -20,6 +20,11 @@ default:
         MODULE_NAME: alters
         URI_PATH: /alters
         CSS_CLASS: alters
+      - NAME: Inventory
+        MODULE_NAME: inventory
+        URI_PATH: /inventory
+        CSS_CLASS: inventory
+
   INVENTORY:
     PMM:
       ENDPOINT: https://127.0.0.1:8443

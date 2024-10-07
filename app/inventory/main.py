@@ -7,12 +7,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.inventory.config import inventory_settings
-from app.inventory.routes import router
+from app.inventory.routes import nodes
+from app.inventory.routes import schemas
+from app.inventory.routes import services
+from app.inventory.routes import tables
 
 logger = logging.getLogger(__name__)
 
 inventory_app = FastAPI()
-inventory_app.include_router(router)
+inventory_app.include_router(nodes.router, tags=["nodes"])
+inventory_app.include_router(services.router, prefix="/services", tags=["services"])
+inventory_app.include_router(schemas.router, prefix="/schemas", tags=["schemas"])
+inventory_app.include_router(tables.router, prefix="/tables", tags=["tables"])
 
 
 if settings.BACKEND_CORS_ORIGINS:

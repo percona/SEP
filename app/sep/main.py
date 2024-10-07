@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 sep_app = FastAPI()
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
+# TODO: sort plugins
 for plugin in sep_settings.PLUGINS:
     module = import_module(plugin.module_name)
     sep_app.include_router(module.router, prefix=plugin.uri_path)
@@ -82,7 +83,7 @@ async def custom_404_handler(request, exc):
 
 @sep_app.get("/oauth/callback")
 async def callback(code: str) -> RedirectResponse:
-    """Callback route for OAuth."""
+    """Define callback route for OAuth."""
     # TODO: Treat possible exceptions here
     oauth_token = await User.get_oauth_token(code)
     response = RedirectResponse(url=sep_settings.OAUTH.POST_LOGIN_URI)
