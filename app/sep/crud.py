@@ -172,6 +172,32 @@ class SyncItemManager(BaseManager):
         instance.status = status
         return await cls.save(session, instance)
 
+    @classmethod
+    async def fail_sync(
+        cls,
+        session: AsyncSession,
+        instance: SyncItem,
+    ) -> SyncItem:
+        """Mark a SyncItem as failed.
+
+        This method updates the status of the given `SyncItem` to `FAILED` and saves
+        the changes to the database.
+
+        Parameters
+        ----------
+        session : AsyncSession
+            The SQLAlchemy asynchronous session to use for database operations.
+        instance : SyncItem
+            The SyncItem instance to update.
+
+        Returns
+        -------
+        SyncItem
+            The updated SyncItem with status set to `FAILED`.
+
+        """
+        return await cls.finish_sync(session, instance, SyncStatusEnum.FAILED)
+
 
 class SyncInstanceManager(BaseManager):
     """Manage SyncInstance operations, including creation, retrieval, and validation.
@@ -217,6 +243,11 @@ class SyncInstanceManager(BaseManager):
         SyncInstance
             The newly created and saved SyncItem.
 
+        Raises
+        ------
+        SyncInstanceAlreadyInProgressError
+            If a SyncInstance with the same `syncer` is already in progress.
+
         """
         query = select(SyncItem).join(SyncInstance)
         query = cls._filter_query(
@@ -229,3 +260,39 @@ class SyncInstanceManager(BaseManager):
         if syncs_in_progress:
             raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
         return await super().create(session, instance_create, **extra_fields)
+
+    @classmethod
+    async def finish_hanging_items(
+        cls,
+        session: AsyncSession,
+        instance_id: int,
+    ) -> list[SyncItem]:
+        """Mark all hanging SyncItems as failed for a given SyncInstance.
+
+        This method retrieves all `SyncItem` instances associated with the given
+        `SyncInstance` that are either `PENDING` or `RUNNING` and marks them as
+        `FAILED`. It then saves the updated `SyncItem` instances to the database.
+
+        Parameters
+        ----------
+        session : AsyncSession
+            The SQLAlchemy asynchronous session to use for database operations.
+        instance_id : int
+            The ID of the `SyncInstance` whose hanging `SyncItem` instances should be
+            marked as failed.
+
+        Returns
+        -------
+        list[SyncItem]
+            A list of `SyncItem` instances that were marked as failed.
+
+        """
+        hanging_items = await SyncItemManager.list(
+            session,
+            col(SyncItem.status).in_([SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING]),
+            sync_instance_id=instance_id,
+        )
+        for item in hanging_items:
+            item.status = SyncStatusEnum.FAILED
+        await SyncItemManager.save_batch(session, *hanging_items)
+        return hanging_items
