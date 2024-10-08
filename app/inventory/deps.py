@@ -146,6 +146,6 @@ async def get_table(session: SessionDep, table_id: int) -> Table:
 
 
 NodeDep = Annotated[Node, Depends(get_node)]
-ServiceDep = Annotated[Node, Depends(get_service)]
-SchemaDep = Annotated[Node, Depends(get_schema)]
-TableDep = Annotated[Node, Depends(get_table)]
+ServiceDep = Annotated[Service, Depends(get_service)]
+SchemaDep = Annotated[Schema, Depends(get_schema)]
+TableDep = Annotated[Table, Depends(get_table)]
