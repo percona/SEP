@@ -1,30 +1,40 @@
 """Define SEP settings."""
 
+from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
+from typing import Annotated
+from typing import Any
 from typing import ClassVar
 from typing import Literal
+from typing import Self
 from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
+from pydantic import AfterValidator
 from pydantic import AliasGenerator
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import field_validator
 from pydantic import HttpUrl
+from pydantic import model_validator
 
 from app.core.config import BaseCaseInsensitiveModel
+from app.core.config import BaseLowercaseModel
 from app.core.config import BaseYamlExtraSettings
 from app.core.config import settings
 from app.core.db.config import DatabaseOptions
 from app.core.fields import RelativeDirectoryPath
+from app.core.fields import remove_duplicates
+from app.core.fields import StrImportableAttribute
 from app.core.fields import TimedeltaSeconds
 from app.core.fields import URIPath
 from app.core.fields import URL
+from app.core.utils import deep_dict_update
 from app.sep.models import Plugin
-from app.sep.models import Synchronizer
 
 
 class OAuthOptions(BaseModel):
@@ -116,6 +126,54 @@ class SessionOptions(BaseCaseInsensitiveModel):
     SECURE: bool = False
 
 
+class SyncOptions(BaseLowercaseModel):
+    """Represent a synchronizer for the SEP app.
+
+    This model represents a synchronizer component within the SEP application,
+    including its importable attribute and any additional keyword arguments required for
+    its operation.
+
+    Attributes
+    ----------
+    syncer : StrImportableAttribute
+        The importable attribute name for the synchronizer. This field is automatically
+        prefixed with "app.sep.sync.syncers." during validation.
+
+    """
+
+    model_config = ConfigDict(extra="allow")
+    syncer: StrImportableAttribute
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, SyncOptions):
+            return self.syncer == other.syncer
+        raise NotImplementedError
+
+    @field_validator("syncer", mode="before")
+    @classmethod
+    def resolve_syncer_path(cls, v: str) -> str:
+        """Resolve the full path for the syncer.
+
+        Prefix the provided synchronizer name with "app.sep.sync.syncers." to form the
+        complete import path.
+
+        Parameters
+        ----------
+        v : str
+            The base syncer name provided.
+
+        Returns
+        -------
+        str
+            The fully qualified path for the synchronizer.
+
+        """
+        root = "app.sep.sync.syncers."
+        if not v.startswith(root):
+            v = root + v
+        return v
+
+
 class SEPSettings(BaseYamlExtraSettings):
     """Settings for SEP.
 
@@ -142,8 +200,11 @@ class SEPSettings(BaseYamlExtraSettings):
     DATABASE : DatabaseOptions
         The database configuration options.
         Defaults to an SQLite database with the name 'sep.db'.
-    SYNCERS : set of Synchronizer, optional
-        A set of synchronizers used by SEP. Defaults to an empty set.
+    SYNCERS : list of SyncOptions
+        A list of synchronizers used by SEP. Defaults to an empty list with duplicates
+        removed.
+    SYNCER_EXTRA_KWARGS : dict[str, Any]
+        Additional keyword arguments for synchronizers. Defaults to an empty dictionary.
     TEMPLATES
 
     """
@@ -156,10 +217,11 @@ class SEPSettings(BaseYamlExtraSettings):
     STATIC_DIR: RelativeDirectoryPath = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
-    PLUGINS: set[Plugin] = set()
+    PLUGINS: Annotated[list[Plugin], AfterValidator(remove_duplicates)] = []
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
-    SYNCERS: set[Synchronizer] = set()
+    SYNCERS: Annotated[list[SyncOptions], AfterValidator(remove_duplicates)] = []
+    SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
 
     @computed_field
     @cached_property
@@ -176,6 +238,27 @@ class SEPSettings(BaseYamlExtraSettings):
 
         """
         return Jinja2Templates(directory=sep_settings.TEMPLATES_DIR)
+
+    @model_validator(mode="after")
+    def add_syncer_extra_kwargs(self) -> Self:
+        """Integrate extra keyword arguments into synchronizers.
+
+        Merge additional keyword arguments from `SYNCER_EXTRA_KWARGS` into each
+        synchronizer in `SYNCERS` and update the list accordingly.
+
+        Returns
+        -------
+        Self
+            The updated `SEPSettings` instance with modified `SYNCERS`.
+
+        """
+        syncers = []
+        for syncer in self.SYNCERS:
+            syncer_data = deepcopy(self.SYNCER_EXTRA_KWARGS)
+            deep_dict_update(syncer_data, syncer.model_dump())
+            syncers.append(SyncOptions.model_validate(syncer_data))
+        self.SYNCERS = syncers
+        return self
 
 
 sep_settings = SEPSettings()

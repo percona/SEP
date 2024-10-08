@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Any
 from typing import Self
 
-from pydantic import ConfigDict
+from pydantic import computed_field
 from pydantic import field_validator
 from pydantic import HttpUrl
 from pydantic import model_validator
@@ -48,17 +48,14 @@ class Plugin(BaseCaseInsensitiveModel):
         The CSS class associated with the plugin. Defaults to an empty string,
         but is automatically set to a slugified version of the plugin name if
         not provided.
+    router_path
 
     """
 
-    model_config = ConfigDict(frozen=True)
     name: str
     module_name: StrImportableModule
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
-
-    def __hash__(self) -> int:
-        return hash(self.module_name)
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Plugin):
@@ -94,6 +91,12 @@ class Plugin(BaseCaseInsensitiveModel):
             data["uri_path"] = data.get("uri_path") or f"/{slug}"
             data["css_class"] = data.get("css_class") or slug
         return data
+
+    @computed_field
+    @property
+    def router_path(self) -> str:
+        """Return the plugin's router path."""
+        return f"{self.module_name}.router"
 
 
 class SyncInventoryEntityTypeEnum(IntEnum):

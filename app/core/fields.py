@@ -124,6 +124,27 @@ def empty_str_to_none(v: str | None) -> str | None:
     return v
 
 
+def remove_duplicates(v: list) -> list:
+    """Remove duplicates of a list maintaining the order.
+
+    Parameters
+    ----------
+    v : list
+        The list to remove duplicates.
+
+    Returns
+    -------
+    list
+        The list without duplicates.
+
+    """
+    unique_list = []
+    for item in v:
+        if item not in unique_list:
+            unique_list.append(item)
+    return unique_list
+
+
 RelativeFilePath = Annotated[
     FilePath,
     BeforeValidator(resolve_relative_path),
