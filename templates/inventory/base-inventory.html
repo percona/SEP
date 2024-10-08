@@ -13,6 +13,15 @@
 </style>
 {% endblock %}
 
+{% block behaviours %}
+{% if sync_is_running %}
+<script>
+    setTimeout(function(){
+        window.location.reload();
+    }, 1000);
+</script>
+{% endif %}
+{% endblock %}
 
 {% block main %}
 {% block inventory_entity_details %}{% endblock %}
