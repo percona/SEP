@@ -303,7 +303,13 @@
                   padding: .5em;
               }
 
-              button:hover {
+              button:not([disabled]):hover {
+                  cursor: pointer;
+                  background-color: #93C7FF;
+                  color: #2C323E;
+              }
+
+              button[disabled] {
                   background-color: #93C7FF;
                   color: #2C323E;
               }

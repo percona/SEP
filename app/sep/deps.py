@@ -1,6 +1,7 @@
 """Define SEP dependencies."""
 
 import logging
+from collections.abc import AsyncGenerator
 from http.cookies import SimpleCookie
 from typing import Annotated
 from typing import Any
@@ -10,6 +11,7 @@ from fastapi import Request
 from itsdangerous import BadSignature
 from jwt import InvalidTokenError
 from pydantic import ValidationError
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
@@ -19,6 +21,7 @@ from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
+from app.sep.db import get_async_session_maker
 from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
@@ -247,3 +250,23 @@ def get_tasks_api(user: CurrentUser) -> RemoteAPI:
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
+
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Yield an asynchronous database session for FastAPI routes.
+
+    This function provides a dependency for FastAPI routes that yields an `AsyncSession`
+    for interacting with the database. The session is properly closed after use.
+
+    Yields
+    ------
+    AsyncGenerator[AsyncSession, None]
+        An asynchronous session for database operations.
+
+    """
+    async_session_maker = get_async_session_maker()
+    async with async_session_maker() as session:
+        yield session
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]

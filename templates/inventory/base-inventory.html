@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block style %}
+<style>
+    @keyframes spin {
+        from {transform:rotate(0deg);}
+        to {transform:rotate(360deg);}
+    }
+    button[disabled] .icons {
+        display: inline-block;
+        animation: spin 3s linear infinite;
+    }
+</style>
+{% endblock %}
+
+
+{% block main %}
+{% block inventory_entity_details %}{% endblock %}
+{% block inventory_table %}{% endblock %}
+{% block inventory_create %}{% endblock %}
+{% endblock %}
