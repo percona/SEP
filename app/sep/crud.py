@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.db.crud import BaseManager
 from app.sep.models import SyncInstance
 from app.sep.models import SyncInstanceWrite
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.models import SyncItem
 from app.sep.models import SyncItemWrite
 from app.sep.models import SyncStatusEnum
@@ -118,6 +119,43 @@ class SyncItemManager(BaseManager):
         if sync_in_progress:
             return sync_in_progress, False
         return await super().create(session, instance_create, **extra_fields), True
+
+    @classmethod
+    async def sync_is_running(
+        cls,
+        session: AsyncSession,
+        entity_type: SyncInventoryEntityTypeEnum,
+        entity_id: int | None = None,
+    ) -> bool:
+        """Check if a synchronization is currently running for a given entity.
+
+        Determines whether there is an ongoing synchronization process for the specified
+        `entity_type` and optionally `entity_id`. A synchronization is considered
+        running if its status is either `PENDING` or `RUNNING`.
+
+        Parameters
+        ----------
+        session : AsyncSession
+            The SQLAlchemy asynchronous session to use for database operations.
+        entity_type : SyncInventoryEntityTypeEnum
+            The type of the entity to check synchronization status for.
+        entity_id : int, optional
+            The ID of the entity to check synchronization status for.
+            Defaults to `None`.
+
+        Returns
+        -------
+        bool
+            `True` if a synchronization is running, otherwise `False`.
+
+        """
+        sync_in_progress = await cls.first(
+            session,
+            col(SyncItem.status).in_([SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING]),
+            entity_id=entity_id,
+            entity_type=entity_type,
+        )
+        return sync_in_progress is not None
 
     @classmethod
     async def start_sync(cls, session: AsyncSession, instance: SyncItem) -> SyncItem:
