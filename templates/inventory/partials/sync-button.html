@@ -2,7 +2,6 @@
     <h2>{{ inventory_table_title }}</h2>
     {% if can_sync %}
     <form action="{{ inventory_sync_route }}" method="post" style="display: inline;">
-{#    TODO: autoupdate when sync is done #}
         <button {% if sync_is_running %}disabled{% endif %}>
             <span class="icons">autorenew</span>
         </button>
