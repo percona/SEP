@@ -1,15 +1,13 @@
-"""Utility library"""
+"""Define core utility functions."""
 
 import asyncio
 import re
 import unicodedata
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime
-from datetime import timezone
 from http import HTTPStatus
 from importlib import import_module
 from typing import Any
-from typing import Callable
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
 REFRESH_INTERVAL = 3600
@@ -35,6 +33,7 @@ def to_uppercase(name: str) -> str:
     return name.upper()
 
 
+# TODO: Update:
 class ErrorFormatter:
     __storage = {}
 
@@ -108,21 +107,28 @@ async def async_run(func: Callable, *args):
     with ProcessPoolExecutor(max_workers=1) as pool:
         try:
             result = await asyncio.gather(_run_in_process(pool))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             result = None
     return result
 
 
-def get_timestamp() -> datetime:
-    """Get the current time in UTC
-
-    :return: the current time in UTC
-    :rtype: datetime
-    """
-    return datetime.now(tz=timezone.utc)
-
-
 def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> None:
+    """Recursively merge `update_dict` into `main_dict`.
+
+    Update `main_dict` with the contents of `update_dict` recursively. For each key in
+    `update_dict`, if the key exists in `main_dict` and both values are dictionaries,
+    merge them recursively. If the key exists in `main_dict` and both values are lists,
+    prepend the list from `update_dict` to the list in `main_dict`. Otherwise, overwrite
+    the value in `main_dict` with the value from `update_dict`.
+
+    Parameters
+    ----------
+    main_dict : dict[Any, Any]
+        The dictionary to be updated.
+    update_dict : dict[Any, Any]
+        The dictionary containing updates to apply.
+
+    """
     for key, value in update_dict.items():
         if (
             key in main_dict
@@ -140,7 +146,51 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
             main_dict[key] = value
 
 
+def deep_lowercase_dict_keys(data: dict[Any, Any]) -> dict[Any, Any]:
+    """Recursively convert all string keys in a dictionary to lowercase.
+
+    Traverse the input dictionary and convert all keys that are strings to lowercase.
+    If a value is a dictionary, apply the conversion recursively.
+
+    Parameters
+    ----------
+    data : dict[Any, Any]
+        The dictionary whose keys are to be converted to lowercase.
+
+    Returns
+    -------
+    dict[Any, Any]
+        A new dictionary with all string keys converted to lowercase.
+
+    """
+    lowercase_dict = {}
+    for key, value in data.items():
+        new_key = key.lower() if isinstance(key, str) else key
+        new_value = (
+            deep_lowercase_dict_keys(value) if isinstance(value, dict) else value
+        )
+        lowercase_dict[new_key] = new_value
+    return lowercase_dict
+
+
 def slugify(text: str) -> str:
+    """Convert a string into a slug suitable for URLs.
+
+    Normalize the input text by removing non-ASCII characters, converting to lowercase,
+    replacing non-alphanumeric characters with hyphens, and stripping leading/trailing
+    hyphens.
+
+    Parameters
+    ----------
+    text : str
+        The string to convert into a slug.
+
+    Returns
+    -------
+    str
+        The slugified version of the input string.
+
+    """
     slug = (
         unicodedata.normalize("NFKD", text)
         .encode("ascii", "ignore")
