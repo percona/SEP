@@ -1,9 +1,8 @@
 """Define auth utility functions."""
 
-from importlib import import_module
-
 from app.core.auth.models import BaseUser
 from app.core.config import settings
+from app.core.utils import import_var
 
 
 def get_user_model() -> type[BaseUser]:
@@ -28,7 +27,5 @@ def get_user_model() -> type[BaseUser]:
 
     """
     if settings.AUTH_USER_MODEL:
-        module_name, model_name = settings.AUTH_USER_MODEL.rsplit(".", 1)
-        module = import_module(module_name)
-        return getattr(module, model_name)
+        return import_var(settings.AUTH_USER_MODEL)
     return BaseUser

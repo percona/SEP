@@ -1,7 +1,6 @@
 """Define SEP routes."""
 
 import logging
-from importlib import import_module
 
 from fastapi import FastAPI
 from fastapi import Request
@@ -16,6 +15,7 @@ from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.security import crypto_timestamp_serializer
+from app.core.utils import import_var
 from app.sep.config import sep_settings
 from app.sep.deps import AccessTokenCookie
 from app.sep.deps import DefaultContext
@@ -29,10 +29,9 @@ logger = logging.getLogger(__name__)
 sep_app = FastAPI()
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
-# TODO: sort plugins
 for plugin in sep_settings.PLUGINS:
-    module = import_module(plugin.module_name)
-    sep_app.include_router(module.router, prefix=plugin.uri_path)
+    router = import_var(plugin.router_path)
+    sep_app.include_router(router, prefix=plugin.uri_path)
 
 
 User = get_user_model()

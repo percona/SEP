@@ -7,6 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from datetime import timezone
 from http import HTTPStatus
+from importlib import import_module
 from typing import Any
 from typing import Callable
 
@@ -147,3 +148,31 @@ def slugify(text: str) -> str:
         .lower()
     )
     return re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
+
+
+def import_var(path: str) -> Any:
+    """Dynamically import a variable from a given module path.
+
+    Import and return an attribute from a module specified by its dot-separated path.
+
+    Parameters
+    ----------
+    path : str
+        The full dot-separated path to the variable (e.g., "module.submodule.var_name").
+
+    Returns
+    -------
+    Any
+        The imported variable.
+
+    Raises
+    ------
+    ImportError
+        If the module cannot be imported.
+    AttributeError
+        If the attribute does not exist in the module.
+
+    """
+    module_name, attr_name = path.rsplit(".", 1)
+    module = import_module(module_name)
+    return getattr(module, attr_name)
