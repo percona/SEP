@@ -11,15 +11,14 @@ from uuid import uuid4
 
 from async_lru import _LRUCacheWrapper
 from async_lru import alru_cache
-from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import model_validator
 from pydantic import UUID4
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
-from app.core.utils import to_uppercase
 from app.sep.crud import SyncInstanceManager
 from app.sep.crud import SyncItemManager
 from app.sep.db import get_async_session_maker
@@ -44,7 +43,7 @@ from app.sep.sync.exceptions import SyncItemAlreadyInProgressError
 logger = logging.getLogger(__name__)
 
 
-class BaseSyncer(BaseModel):
+class BaseSyncer(BaseCaseInsensitiveModel):
     """Define a base class for syncers in the SEP app.
 
     This class serves as a blueprint for all syncer implementations within
@@ -75,11 +74,7 @@ class BaseSyncer(BaseModel):
 
     """
 
-    model_config = ConfigDict(
-        alias_generator=to_uppercase,
-        populate_by_name=True,
-        ignored_types=(_LRUCacheWrapper,),
-    )
+    model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
     inventory_api: RemoteAPI
     tasks_api: RemoteAPI
