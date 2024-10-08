@@ -1038,17 +1038,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         return entity_type <= cls.SYNC_TO_LIMIT
 
     @classmethod
-    def can_sync_inventory(cls, *check_nodes: CreatedNode) -> bool:
+    def can_sync_inventory(cls) -> bool:
         """Determine if the inventory can be synchronized.
-
-        Checks if inventory synchronization is permitted based on the synchronization
-        rules and the provided nodes.
-
-        Parameters
-        ----------
-        *check_nodes : CreatedNode, optional
-            Nodes to check if synchronization is permissible. Defaults to an empty
-            tuple.
 
         Returns
         -------
@@ -1056,13 +1047,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             `True` if inventory synchronization is allowed, `False` otherwise.
 
         """
-        if cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.INVENTORY):
-            if not check_nodes:
-                return True
-            for node in check_nodes:
-                if cls.can_sync_node(node):
-                    return True
-        return False
+        return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.INVENTORY)
 
     @classmethod
     def can_sync_node(cls, node: CreatedNode) -> bool:  # noqa: ARG003
