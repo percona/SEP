@@ -363,6 +363,28 @@ class PMMSyncer(BaseSyncer):
         for service in syncable_services.values():
             await self.delete_service(service)
 
+    async def fetch_service(self, created_service: CreatedService) -> PMMService:
+        """Fetch updated data for a specific service.
+
+        Retrieve the latest information for the specified service from the PMM API.
+
+        Parameters
+        ----------
+        created_service : CreatedService
+            The service instance for which to fetch updated data.
+
+        Returns
+        -------
+        Service
+            The updated service data.
+
+        """
+        logger.debug(
+            "Fetching service from PMM with external id %s",
+            created_service.external_id,
+        )
+        return await self.pmm_api.get_service(created_service.external_id)
+
     async def perform_service_sync(
         self,
         created_service: CreatedService,
@@ -433,5 +455,7 @@ class PMMSyncer(BaseSyncer):
 
         """
         return (
-            super().can_sync_service(service) and service.node.source == SourceEnum.PMM
+            super().can_sync_service(service)
+            and service.node.source == SourceEnum.PMM
+            and service.external_id
         )

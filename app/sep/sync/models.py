@@ -15,6 +15,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import model_validator
 from pydantic import UUID4
+from pydantic import validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseCaseInsensitiveModel
@@ -179,6 +180,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.TABLE: self.can_sync_table,
         }
 
+    @validate_call
     async def prepare_sync(
         self,
         entity_type: SyncInventoryEntityTypeEnum,
@@ -380,7 +382,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self._session,
                 sync_item,
             )
-            raise SyncFailError from exc
+            raise SyncFailError(entity_type, self.sync_items[sync_item_entity]) from exc
         else:
             await self.finish_sync(entity_type, created_entity)
 
@@ -611,8 +613,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     async def fetch_node(self, created_node: CreatedNode) -> Node:
         """Fetch updated data for a specific node.
 
-        Retrieve the latest information for the specified node from the remote inventory
-        API.
+        Retrieve the latest information for the specified node.
 
         Parameters
         ----------
@@ -666,7 +667,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 created_node,
             ):
                 updated_node = (
-                    self.fetch_node(created_node)
+                    await self.fetch_node(created_node)
                     if updated_node is None
                     else updated_node
                 )
@@ -710,8 +711,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     async def fetch_service(self, created_service: CreatedService) -> Service:
         """Fetch updated data for a specific service.
 
-        Retrieve the latest information for the specified service from the remote
-        inventory API.
+        Retrieve the latest information for the specified service.
 
         Parameters
         ----------
@@ -765,7 +765,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 created_service,
             ):
                 updated_service = (
-                    self.fetch_service(created_service)
+                    await self.fetch_service(created_service)
                     if updated_service is None
                     else updated_service
                 )
@@ -809,8 +809,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     async def fetch_schema(self, created_schema: CreatedSchema) -> Schema:
         """Fetch updated data for a specific schema.
 
-        Retrieve the latest information for the specified schema from the remote
-        inventory API.
+        Retrieve the latest information for the specified schema.
 
         Parameters
         ----------
@@ -837,7 +836,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     async def sync_schema(
         self,
         created_schema: CreatedSchema,
-        updated_schema: Schema,
+        updated_schema: Schema | None = None,
     ) -> None:
         """Synchronize data for a specific schema.
 
@@ -865,7 +864,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 created_schema,
             ):
                 updated_schema = (
-                    self.fetch_schema(created_schema)
+                    await self.fetch_schema(created_schema)
                     if updated_schema is None
                     else updated_schema
                 )
@@ -909,8 +908,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     async def fetch_table(self, created_table: CreatedTable) -> Table:
         """Fetch updated data for a specific table.
 
-        Retrieve the latest information for the specified table from the remote
-        inventory API.
+        Retrieve the latest information for the specified table.
 
         Parameters
         ----------
@@ -937,7 +935,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     async def sync_table(
         self,
         created_table: CreatedTable,
-        updated_table: Table,
+        updated_table: Table | None = None,
     ) -> None:
         """Synchronize data for a specific table.
 
@@ -964,7 +962,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 created_table,
             ):
                 updated_table = (
-                    self.fetch_table(created_table)
+                    await self.fetch_table(created_table)
                     if updated_table is None
                     else updated_table
                 )
