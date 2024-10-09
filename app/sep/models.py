@@ -202,9 +202,6 @@ class SyncItemBase(SQLModel):
     :param status: The current status of the synchronization process. Defaults to
         PENDING.
     :type status: SyncStatusEnum
-    :param task_history_id: The identifier of the task history associated with this
-        synchronization instance. Defaults to None.
-    :type task_history_id: int | None
     :param sync_instance_id: The foreign key referencing the associated synchronization
         instance.
     :type sync_instance_id: UUID4
@@ -222,7 +219,6 @@ class SyncItemBase(SQLModel):
         default=SyncStatusEnum.PENDING,
         sa_column=Column(EnumField(SyncStatusEnum), nullable=False, index=True),
     )
-    task_history_id: int | None = None
     sync_instance_id: UUID4 = SQLField(
         foreign_key="syncinstance.id",
         index=True,
@@ -250,9 +246,6 @@ class SyncItem(BaseUUIDSQLModel, SyncItemBase, table=True):
     :type entity_type: SyncInventoryEntityTypeEnum
     :param status: The current status of the synchronization process.
     :type status: SyncStatusEnum
-    :param task_history_id: The identifier of the task history associated with this
-        synchronization instance.
-    :type task_history_id: int | None
     :param sync_instance_id: The foreign key referencing the associated synchronization
         instance.
     :type sync_instance_id: UUID4
@@ -296,9 +289,6 @@ class SyncItemWrite(SyncItemBase):
     :param status: The current status of the synchronization process. Defaults to
         PENDING.
     :type status: SyncStatusEnum
-    :param task_history_id: The identifier of the task history associated with this
-        synchronization instance. Defaults to None.
-    :type task_history_id: int | None
     :param sync_instance_id: The foreign key referencing the associated synchronization
         instance.
     :type sync_instance_id: UUID4
