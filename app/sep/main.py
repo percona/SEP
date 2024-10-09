@@ -7,6 +7,7 @@ from fastapi import Request
 from fastapi import status
 from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
+from fastapi.responses import Response
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
@@ -44,7 +45,7 @@ templates = sep_settings.TEMPLATES
 async def custom_error_handler(
     request: Request,
     exc: BaseException,
-) -> RedirectResponse | templates.TemplateResponse:
+) -> Response:
     """Load custom error page."""
     base_url = get_base_url(request)
     try:
@@ -68,7 +69,7 @@ async def custom_error_handler(
 async def custom_404_handler(
     request: Request,
     exc: BaseException,
-) -> RedirectResponse | templates.TemplateResponse:
+) -> Response:
     """Load custom 404 page."""
     base_url = get_base_url(request)
     try:
