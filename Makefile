@@ -12,7 +12,7 @@ endif
 VENV_BIN?="${VENV}/bin"
 PIP?="${VENV_BIN}/pip"
 POETRY?="${VENV_BIN}/poetry"
-APPS=tasks inventory
+APPS=tasks inventory sep
 
 
 venv: pyproject.toml poetry.lock

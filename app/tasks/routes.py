@@ -17,7 +17,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.crud import TaskManager
-from app.tasks.db import get_async_session
+from app.tasks.db import get_async_session_maker
 from app.tasks.deps import SessionDep
 from app.tasks.models import GeneratedTask
 from app.tasks.models import Task
@@ -350,7 +350,7 @@ async def _schedule_queue_item(
 
 async def _process_queue_item(queue_id: int) -> None:
     """Process an item from the history table."""
-    async_session = get_async_session()
+    async_session = get_async_session_maker()
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(
             session,

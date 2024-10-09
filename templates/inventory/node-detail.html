@@ -1,9 +1,11 @@
-{% extends "base.html" %}
+{% extends "inventory/base-inventory.html" %}
 
 {% block title %}Node {{ node.name }}{% endblock %}
 
-{% block main %}
-<h2>Node Details</h2>
+{% block inventory_entity_details %}
+{% with inventory_table_title = "Node Details", inventory_sync_route = "/inventory/" ~  node.id ~ "/sync/" %}
+    {% include "inventory/partials/sync-button.html" %}
+{% endwith %}
 <dl>
     <dt>ID</dt>
     <dd>{{ node.id }}</dd>
@@ -22,7 +24,9 @@
         {% endif %}
     {% endif %}
 </dl>
+{% endblock %}
 
+{% block inventory_table %}
 <h3>Services on this Node</h3>
 <table>
     <thead>
@@ -50,7 +54,9 @@
         {% endfor %}
     </tbody>
 </table>
+{% endblock %}
 
+{% block inventory_create %}
 <h3>Add a New Service</h3>
 {% include "inventory/partials/service-create-form.html" %}
 {% endblock %}

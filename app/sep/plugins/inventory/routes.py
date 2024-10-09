@@ -4,6 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter
+from fastapi import BackgroundTasks
 from fastapi import Form
 from fastapi import Request
 from fastapi import status
@@ -11,14 +12,25 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
 
 from app.sep.config import sep_settings
+from app.sep.crud import SyncItemManager
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import IsAuthenticated
+from app.sep.deps import SessionDep
 from app.sep.inventory import Node
 from app.sep.inventory import Schema
 from app.sep.inventory import Service
 from app.sep.inventory import SourceEnum
 from app.sep.inventory import Table
+from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.inventory.deps import CreatedNodeDep
+from app.sep.plugins.inventory.deps import CreatedSchemaDep
+from app.sep.plugins.inventory.deps import CreatedServiceDep
+from app.sep.plugins.inventory.deps import SyncersDep
+from app.sep.plugins.inventory.sync import run_inventory_sync
+from app.sep.plugins.inventory.sync import run_node_sync
+from app.sep.plugins.inventory.sync import run_schema_sync
+from app.sep.plugins.inventory.sync import run_service_sync
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -27,6 +39,8 @@ templates = sep_settings.TEMPLATES
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def node_list(
+    session: SessionDep,
+    syncers: SyncersDep,
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
@@ -34,6 +48,11 @@ async def node_list(
     """List Nodes."""
     context["inventory"] = await inventory_api.get("/")
     context["source_enum"] = SourceEnum
+    context["sync_is_running"] = await SyncItemManager.sync_is_running(
+        session,
+        SyncInventoryEntityTypeEnum.INVENTORY,
+    )
+    context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html",
@@ -41,20 +60,49 @@ async def node_list(
     )
 
 
+@router.post("/sync/", dependencies=[IsAuthenticated])
+async def sync_inventory(
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> RedirectResponse:
+    """Start inventory sync as a background task."""
+    background_tasks.add_task(run_inventory_sync, *syncers)
+    return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/{node_id}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def node_detail(
+    session: SessionDep,
+    syncers: SyncersDep,
     request: Request,
-    node_id: int,
+    node: CreatedNodeDep,
     context: DefaultContext,
-    inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """Retrieve Node Details."""
-    node = await inventory_api.get(f"/{node_id}")
     context["node"] = node
+    context["sync_is_running"] = await SyncItemManager.sync_is_running(
+        session,
+        SyncInventoryEntityTypeEnum.NODE,
+    )
+    context["can_sync"] = any(syncer.can_sync_node(node) for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-detail.html",
         context=context,
+    )
+
+
+@router.post("/{node_id}/sync/", dependencies=[IsAuthenticated])
+async def sync_node(
+    node: CreatedNodeDep,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> RedirectResponse:
+    """Start node sync as a background task."""
+    background_tasks.add_task(run_node_sync, node, *syncers)
+    return RedirectResponse(
+        f"/inventory/{node.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -85,14 +133,19 @@ async def node_delete(
     response_class=HTMLResponse,
 )
 async def service_detail(
+    session: SessionDep,
+    syncers: SyncersDep,
     request: Request,
-    service_id: int,
+    service: CreatedServiceDep,
     context: DefaultContext,
-    inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """Retrieve Service Details."""
-    service = await inventory_api.get(f"/services/{service_id}")
     context["service"] = service
+    context["sync_is_running"] = await SyncItemManager.sync_is_running(
+        session,
+        SyncInventoryEntityTypeEnum.SERVICE,
+    )
+    context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html",
@@ -100,9 +153,21 @@ async def service_detail(
     )
 
 
+@router.post("/services/{service_id}/sync/", dependencies=[IsAuthenticated])
+async def sync_service(
+    service: CreatedServiceDep,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> RedirectResponse:
+    """Start service sync as a background task."""
+    background_tasks.add_task(run_service_sync, service, *syncers)
+    return RedirectResponse(
+        f"/inventory/services/{service.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 # TODO: Use pydantic models instead of retyping each argument
-
-
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated])
 async def service_create_for_node(
     node_id: int,
@@ -140,14 +205,19 @@ async def service_delete(
     response_class=HTMLResponse,
 )
 async def schema_detail(
+    session: SessionDep,
+    syncers: SyncersDep,
     request: Request,
-    schema_id: int,
+    schema: CreatedSchemaDep,
     context: DefaultContext,
-    inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """Retrieve Schema Details."""
-    schema = await inventory_api.get(f"/schemas/{schema_id}")
     context["schema"] = schema
+    context["sync_is_running"] = await SyncItemManager.sync_is_running(
+        session,
+        SyncInventoryEntityTypeEnum.SCHEMA,
+    )
+    context["can_sync"] = any(syncer.can_sync_schema(schema) for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
         name="inventory/schema-detail.html",
@@ -155,9 +225,21 @@ async def schema_detail(
     )
 
 
+@router.post("/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated])
+async def sync_schema(
+    schema: CreatedSchemaDep,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> RedirectResponse:
+    """Start schema sync as a background task."""
+    background_tasks.add_task(run_schema_sync, schema, *syncers)
+    return RedirectResponse(
+        f"/inventory/schemas/{schema.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 # TODO: Use pydantic models instead of retyping each argument
-
-
 @router.post("/services/{service_id}/schemas/", dependencies=[IsAuthenticated])
 async def schema_create_for_service(
     service_id: int,

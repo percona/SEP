@@ -1,9 +1,11 @@
-{% extends "base.html" %}
+{% extends "inventory/base-inventory.html" %}
 
 {% block title %}Service {{ service.name }} ({{ service.node_id }}){% endblock %}
 
-{% block main %}
-<h2>Service Details</h2>
+{% block inventory_entity_details %}
+{% with inventory_table_title = "Service Details", inventory_sync_route = "/inventory/services/" ~  service.id ~ "/sync/" %}
+    {% include "inventory/partials/sync-button.html" %}
+{% endwith %}
 <dl>
     <dt>ID</dt>
     <dd>{{ service.id }}</dd>
@@ -28,7 +30,9 @@
     <dt>Node ID</dt>
     <dd>{{ service.node_id }}</dd>
 </dl>
+{% endblock %}
 
+{% block inventory_table %}
 <h3>Schemas in this Service</h3>
 <table>
     <thead>
@@ -52,7 +56,9 @@
         {% endfor %}
     </tbody>
 </table>
+{% endblock %}
 
+{% block inventory_create %}
 <h3>Add a New Schema</h3>
 {% include "inventory/partials/schema-create-form.html" %}
 {% endblock %}

@@ -3,13 +3,14 @@
 import logging
 import re
 import secrets
+from collections.abc import Sequence
 from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 from typing import ClassVar
 from typing import Literal
 from typing import Self
-from typing import Sequence
 
 from casdoor import AsyncCasdoorSDK
 from pydantic import AnyUrl
@@ -31,6 +32,7 @@ from app.core.fields import StrHttpUrl
 from app.core.fields import StrImportableAttribute
 from app.core.fields import URL
 from app.core.utils import deep_dict_update
+from app.core.utils import deep_lowercase_dict_keys
 from app.core.utils import to_uppercase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -62,7 +64,56 @@ class BaseCaseInsensitiveModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_uppercase, populate_by_name=True)
 
 
+class BaseLowercaseModel(BaseCaseInsensitiveModel):
+    """Define a base model that ensures all dictionary keys are lowercase.
+
+    Inherits from `BaseCaseInsensitiveModel` and applies a transformation to convert
+    all string keys in input data to lowercase before validation.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def force_lowercase_fields(cls, data: Any) -> Any:
+        """Convert all string keys in input data to lowercase before validation.
+
+        Parameters
+        ----------
+        data : Any
+            The input data to be validated, typically a dictionary.
+
+        Returns
+        -------
+        Any
+            The transformed data with all string keys in lowercase.
+
+        """
+        if isinstance(data, dict):
+            data = deep_lowercase_dict_keys(data)
+        return data
+
+
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
+    """Define a YAML configuration settings source with prefix handling.
+
+    This class extends `YamlConfigSettingsSource` to allow loading settings based on
+    specified prefixes. It processes the YAML data by merging data from multiple
+    prefixes into a single configuration.
+
+    Parameters
+    ----------
+    settings_cls : type[BaseSettings]
+        The settings class associated with this source.
+    yaml_file : PathType or None, optional
+        The path to the YAML settings file. Defaults to "settings.yaml".
+    yaml_file_encoding : str or None, optional
+        The encoding of the YAML file. Defaults to `None`.
+    prefixes : Sequence[RequiredStr], optional
+        A sequence of prefixes to navigate through the YAML data.
+    base_prefix : RequiredStr or None, optional
+        The base prefix to start the configuration. Defaults to "default".
+
+    """
+
     def __init__(
         self,
         settings_cls: type[BaseSettings],
@@ -70,7 +121,7 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
         yaml_file_encoding: str | None = None,
         prefixes: Sequence[RequiredStr] = (),
         base_prefix: RequiredStr | None = "default",
-    ):
+    ) -> None:
         super().__init__(settings_cls, yaml_file, yaml_file_encoding)
         if prefixes:
             prefix_data = self.yaml_data.get(prefixes[0], {})

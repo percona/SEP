@@ -24,11 +24,6 @@ default:
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
-
-  INVENTORY:
-    PMM:
-      ENDPOINT: https://127.0.0.1:8443
-      VERIFY_SSL: false
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
@@ -42,6 +37,11 @@ development:
         MODULE_NAME: tasks
         URI_PATH: /tasks
         CSS_CLASS: tasks
+    SYNCERS:
+      - SYNCER: PMMSyncer
+        PMM:
+          ENDPOINT: https://127.0.0.1:8443
+          VERIFY_SSL: false
 
 production_docker:
   CASDOOR:
@@ -59,9 +59,12 @@ production_docker:
     PROXY_HEADERS: true
     SESSION:
       SECURE: true
+    SYNCERS:
+      - SYNCER: PMMSyncer
+        PMM:
+          ENDPOINT: https://host.docker.internal:8443
+          VERIFY_SSL: false
   INVENTORY:
-    PMM:
-      ENDPOINT: https://host.docker.internal:8443
     SSL_KEYFILE: data/certs/sep/inventory_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/inventory_api-cert.pem
   TASKS:

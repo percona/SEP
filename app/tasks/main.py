@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.tasks.config import tasks_settings
-from app.tasks.db import get_async_session
+from app.tasks.db import get_async_session_maker
 from app.tasks.db import init_db
 from app.tasks.routes import router
 
@@ -45,7 +45,7 @@ TRANSLATION_MAPPING = {
 @asynccontextmanager
 async def initial_tasks_setup(app: FastAPI):
     """Initialize Tasks database data."""
-    async_session = get_async_session()
+    async_session = get_async_session_maker()
     async with async_session() as session:
         await init_db(session)
     yield
