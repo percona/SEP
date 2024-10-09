@@ -9,11 +9,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
 
 from app.sep.config import sep_settings
-from app.sep.plugins.alters.deps import AltersGeneratedTask
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import IsAuthenticated
 from app.sep.deps import TaskAPI
+from app.sep.plugins.alters.deps import AltersGeneratedTask
 from app.sep.plugins.alters.deps import AltersTask
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -36,27 +36,26 @@ async def alters_index(
         for service in host["services"]:
             if service["type"] == "mysql":
                 host["schemas"] = await inventory_api.get(
-                    f"/services/{service['id']}/schemas/"
+                    f"/services/{service['id']}/schemas/",
                 )
                 mysql_hosts.append(host)
                 break
     tasks = []
-    for task in await tasks_api.get("/"):
-        if task.get("owner") == "alters":  # TODO: filter on query
-            data = task["data"]
-            meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
-            taskinfo = {
-                "hostname": data["Constraints"][0]["RTarget"],
-                "name": task["name"],
-                "table": f'{meta["schema_name"]}.{meta["table_name"]}',
-                "id": task["id"],
-            }
-            tasks.append(taskinfo)
+    for task in await tasks_api.get("/", params={"owner": "alters"}):
+        data = task["data"]
+        meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+        taskinfo = {
+            "hostname": data["Constraints"][0]["RTarget"],
+            "name": task["name"],
+            "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+            "id": task["id"],
+        }
+        tasks.append(taskinfo)
     history_tasks = []
     scheduled_tasks = []
     running_tasks = []
     for task in tasks:
-        history = await tasks_api.get(f"/history/{task['name']}")
+        history = await tasks_api.get(f"/{task['name']}/history/")
         for hist in history:
             match TaskHistoryStatusEnum(hist["status"]):
                 case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
@@ -121,7 +120,7 @@ async def alters_detail(
         "meta": meta,
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/history/{task['name']}")
+    context["history"] = await tasks_api.get(f"/{task['name']}/history/")
     context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
     return templates.TemplateResponse(
         request=request,

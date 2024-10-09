@@ -91,7 +91,6 @@ async def create_task(session: SessionDep, task: Task) -> Task:
 async def generate_task(
     session: SessionDep,
     generated_task: GeneratedTask,
-    request: Request,
     background_tasks: BackgroundTasks,
 ) -> TaskHistory:
     """Generate a new task execution using a template."""
@@ -105,11 +104,6 @@ async def generate_task(
         name=f"generic-nomad-{generated_task.template}",
         is_template=True,
     )
-    if not template:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Missing template",
-        )
 
     # TODO: enhance options for generating tasks
     task = Task(
@@ -250,7 +244,6 @@ async def execute_task_name(
 async def execute_history_id(
     session: SessionDep,
     history_id: int,
-    request: Request,
     background_tasks: BackgroundTasks,
 ) -> dict[str, TaskHistory]:
     """Trigger a history item for processing."""
@@ -290,7 +283,7 @@ async def list_task_history(
 
 
 @router.get(
-    path="/history/{task}",
+    path="/{task}/history/",
     dependencies=[IsAuthenticatedDep],
     response_model=list[TaskHistoryResponse],
 )
@@ -301,6 +294,22 @@ async def get_task_history(session: SessionDep, task: str) -> list[TaskHistory]:
         session=session,
         task_name=task,
         select_related_task=True,
+    )
+
+
+@router.get(
+    path="/history/{task_history_id}",
+    dependencies=[IsAuthenticatedDep],
+)
+async def retrieve_task_history(
+    session: SessionDep,
+    task_history_id: int,
+) -> TaskHistory:
+    """Retrieve a task history by id."""
+    logger.debug("Requesting task history %s", task_history_id)
+    return await TaskHistoryManager.get_or_404(
+        session=session,
+        id=task_history_id,
     )
 
 

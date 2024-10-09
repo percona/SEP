@@ -45,7 +45,7 @@ async def tasks_list(
 async def task_create(  # TODO: Use pydantic model for request data
     taskalias: Annotated[str, Form()],
     taskdef: Annotated[str, Form()],
-    format: Annotated[str, Form()],
+    fmt: Annotated[str, Form()],
     taskeng: Annotated[str, Form()],
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
@@ -53,7 +53,7 @@ async def task_create(  # TODO: Use pydantic model for request data
     payload = {
         "taskalias": taskalias,
         "taskdef": taskdef,
-        "format": format,
+        "format": fmt,
         "taskeng": taskeng,
     }
     logger.debug("Create task: %s", payload)
@@ -66,10 +66,9 @@ async def task_create(  # TODO: Use pydantic model for request data
                 try:
                     backend = TaskBackendEnum(payload["taskeng"])
                 except ValueError:  # TODO: Use pydantic model for request validation
-                    logger.error(
+                    logger.exception(
                         "Backend %s is not supported",
                         payload["taskeng"],
-                        exc_info=True,
                     )
                     raise HTTPException(status.HTTP_400_BAD_REQUEST) from None
                 match backend:
@@ -104,7 +103,7 @@ async def tasks_detail(
     context["task"] = await tasks_api.get(
         f"/{task_name}",
     )  # TODO: Use Pydantic/SQLModel models
-    context["history"] = await tasks_api.get(f"/history/{task_name}")
+    context["history"] = await tasks_api.get(f"/{task_name}/history/")
     context["TRANSLATION_MAPPING"] = TRANSLATION_MAPPING
     context["task_data"] = context["task"]["data"]
     return templates.TemplateResponse(
