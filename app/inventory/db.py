@@ -9,7 +9,7 @@ from app.inventory.config import inventory_settings
 
 engine = create_async_engine(
     inventory_settings.DATABASE.URL,
-    echo=True,
+    echo=False,
     json_serializer=json_serializer,
 )
 

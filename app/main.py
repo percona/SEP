@@ -41,6 +41,8 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
         "%(module)s.%(funcName)s - %(message)s",
     )
+    logging.getLogger("sqlalchemy.engine").setLevel(settings.SQLALCHEMY_LOGGING)
+
     import uvicorn
 
     uvicorn.run(

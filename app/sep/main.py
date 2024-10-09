@@ -41,7 +41,10 @@ templates = sep_settings.TEMPLATES
 # TODO: Improve exception handlers, maybe use it for redirects
 # TODO: better errors for external services -- pmm, nomad, casdoor
 @sep_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
-async def custom_error_handler(request, exc):
+async def custom_error_handler(
+    request: Request,
+    exc: BaseException,
+) -> RedirectResponse | templates.TemplateResponse:
     """Load custom error page."""
     base_url = get_base_url(request)
     try:
@@ -62,7 +65,10 @@ async def custom_error_handler(request, exc):
 
 
 @sep_app.exception_handler(status.HTTP_404_NOT_FOUND)
-async def custom_404_handler(request, exc):
+async def custom_404_handler(
+    request: Request,
+    exc: BaseException,
+) -> RedirectResponse | templates.TemplateResponse:
     """Load custom 404 page."""
     base_url = get_base_url(request)
     try:
@@ -122,10 +128,12 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
 if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
-        level=settings.LOGGING,
+        level=sep_settings.LOGGING,
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
         "%(module)s.%(funcName)s - %(message)s",
     )
+    logging.getLogger("sqlalchemy.engine").setLevel(settings.SQLALCHEMY_LOGGING)
+
     import uvicorn
 
     uvicorn.run(

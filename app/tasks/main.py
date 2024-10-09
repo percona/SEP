@@ -1,7 +1,8 @@
-"""Tasks API"""
+"""Define routes for the Tasks API."""
 
 import logging
 from collections import namedtuple
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from os import getenv
 
@@ -43,7 +44,7 @@ TRANSLATION_MAPPING = {
 
 
 @asynccontextmanager
-async def initial_tasks_setup(app: FastAPI):
+async def initial_tasks_setup(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     """Initialize Tasks database data."""
     async_session = get_async_session_maker()
     async with async_session() as session:
@@ -72,10 +73,11 @@ if settings.BACKEND_CORS_ORIGINS:
 if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
-        level=tasks_settings.LOGGING,
+        level=settings.LOGGING,
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
         "%(module)s.%(funcName)s - %(message)s",
     )
+    logging.getLogger("sqlalchemy.engine").setLevel(settings.SQLALCHEMY_LOGGING)
 
     import uvicorn
 

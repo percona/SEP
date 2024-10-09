@@ -46,7 +46,7 @@ def json_deserialize(raw_data: str) -> Any:
 
 engine = create_async_engine(
     tasks_settings.DATABASE.URL,
-    echo=True,
+    echo=False,
     json_serializer=json_serializer,
     json_deserializer=json_deserialize,
 )

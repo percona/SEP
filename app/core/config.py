@@ -148,7 +148,6 @@ class BaseYamlSettings(BaseSettings):
         extra="ignore",
     )
     FASTAPI_ENV: str = DEFAULT_FASTAPI_ENV
-    LOGGING: LogLevel = LogLevel.WARNING
 
     @classmethod
     def settings_customise_sources(
@@ -168,17 +167,6 @@ class BaseYamlSettings(BaseSettings):
             dotenv_settings,
             YamlPrefixConfigSettingsSource(settings_cls, prefixes=(yaml_prefix,)),
         )
-
-    @field_validator("LOGGING", mode="before")
-    @classmethod
-    def validate_log_level(cls, v: LogLevel | str) -> LogLevel:
-        """Uppercase the provided logging level."""
-        if isinstance(v, LogLevel):
-            return v
-        try:
-            return LogLevel[v.upper()]
-        except KeyError as exc:
-            raise ValueError(f"Invalid log level: '{v}'") from exc
 
 
 class BaseYamlExtraSettings(BaseYamlSettings):
@@ -328,6 +316,9 @@ class Settings(BaseYamlSettings):
         Defaults to `secrets.token_urlsafe(32)`.
     LOGGING : LogLevel, optional
         The logging level for the application. Defaults to `LogLevel.WARNING`.
+    SQLALCHEMY_LOGGING : LogLevel or None, optional
+        The logging level for the application. Defaults to None, which makes it the same
+        as `LOGGING` on validation.
     BACKEND_CORS_ORIGINS : list of AnyUrl
         A list of allowed CORS origins.
     SSL_CAFILE: RelativeFilePath, optional
@@ -340,6 +331,7 @@ class Settings(BaseYamlSettings):
     AUTH_USER_MODEL: StrImportableAttribute = ""
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
+    SQLALCHEMY_LOGGING: LogLevel | None = None
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
 
@@ -348,6 +340,24 @@ class Settings(BaseYamlSettings):
     def BASE_DIR(self) -> DirectoryPath:
         """The base directory for the application."""
         return BASE_DIR
+
+    @field_validator("LOGGING", mode="before")
+    @classmethod
+    def validate_log_level(cls, v: LogLevel | str) -> LogLevel:
+        """Uppercase the provided logging level."""
+        if isinstance(v, LogLevel):
+            return v
+        try:
+            return LogLevel[v.upper()]
+        except KeyError as exc:
+            raise ValueError(f"Invalid log level: '{v}'") from exc
+
+    @model_validator(mode="after")
+    def set_default_sqlalchemy_logging(self) -> Self:
+        """Set SQLALCHEMY_LOGGING to the same as LOGGING as default."""
+        if self.SQLALCHEMY_LOGGING is None:
+            self.SQLALCHEMY_LOGGING = self.LOGGING
+        return self
 
 
 settings = Settings()
