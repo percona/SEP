@@ -6,51 +6,152 @@ import time
 from asyncio import sleep
 from datetime import datetime
 from datetime import UTC
+from functools import cached_property
+from typing import Any
 from uuid import uuid1
 
 import nomad
+import yaml
+from fastapi import HTTPException
+from fastapi import status
+from nomad import Nomad
+from pydantic import HttpUrl
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.exceptions import HTTPBadRequestException
+from app.core.config import BaseLowercaseModel
+from app.core.fields import RelativeFilePath
+from app.core.utils import async_run
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.models import Task
 from app.tasks.models import TaskHistory
 from app.tasks.models import TaskHistoryStatusEnum
 
-__all__ = ["Executor"]
+__all__ = ["NomadExecutor"]
 
 
 logger = logging.getLogger(__name__)
 
 
-# TODO: Pydantic
-class Executor:
-    """Manage the execution of tasks on a Nomad backend.
+# TODO: Executor interface
+class NomadExecutor(BaseLowercaseModel):
+    """Represent a Nomad task executor.
 
-    The `Executor` class handles task execution for jobs, interacting with the
-    Nomad backend. It manages job creation, status tracking, and updating task history.
-
-    :param backend: The Nomad client used for interacting with the backend.
-    :type backend: nomad.Nomad
-    :param task: The task to be executed.
-    :type task: Task
+    :param endpoint: The URL for the Nomad API endpoint.
+    :type endpoint: HttpUrl
+    :param secure: Whether to use a secure connection. Defaults to False.
+    :type secure: bool
+    :param timeout: The timeout in seconds for requests to the Nomad API.
+        Defaults to 10 seconds.
+    :type timeout: int
+    :param verify: Whether to verify SSL certificates. Can be a file path to the SSL
+        certificate. Defaults to False.
+    :type verify: bool | RelativeFilePath
+    :param cert: SSL certificate and key paths, or a single certificate file path.
+        Defaults to an empty tuple.
+    :type cert: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath
+    :param wait_interval: The interval in seconds between status checks.
+        Defaults to 5 seconds.
+    :type wait_interval: int
     """
 
-    backend: nomad.Nomad
-    task: Task
+    endpoint: HttpUrl
+    secure: bool = False
+    timeout: int = 10
+    verify: bool | RelativeFilePath = False
+    cert: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath = ()
+    wait_interval: int = 5
 
-    def __init__(
-        self,
-        cfg: dict,
-        task: Task,
-    ) -> None:
-        self.backend = nomad.Nomad(**cfg)
-        self.task = task
+    @cached_property
+    def backend(self) -> Nomad:
+        """Get the Nomad backend client.
+
+        :return: An instance of the Nomad client configured with the executor's
+            settings.
+        :rtype: Nomad
+        """
+        return Nomad(
+            address=self.endpoint,
+            secure=self.secure,
+            timeout=self.timeout,
+            verify=self.verify,
+            cert=self.cert,
+        )
+
+    @staticmethod
+    def prepare_task(queue_item: TaskHistory) -> Task:
+        """Prepare a Task instance for execution.
+
+        Modify the task data based on the execution request's metadata, such as setting
+        target and datacenter information, and applying any necessary template
+        substitutions.
+
+        :param queue_item: The task history record containing the task to prepare.
+        :type queue_item: TaskHistory
+        :return: The prepared `Task` instance ready for execution.
+        :rtype: Task
+        """
+        task = queue_item.task
+        # TODO: determine scenarios for execution, such as looking up an existing job
+        if queue_item.execution_request.meta:
+            # TODO: target is currently pushed in to meta
+            queue_item.execution_request.meta["target"] = (
+                queue_item.execution_request.target
+            )
+            # TODO: DC is currently forced
+            queue_item.execution_request.meta["dc"] = "dc1"
+            # TODO: allow templates in more fields, currently only for constraints
+            for meta_var, meta_val in queue_item.execution_request.meta.items():
+                for i, constraint in enumerate(task.data["Constraints"]):
+                    meta = "${NOMAD_META_" + meta_var + "}"
+                    task.data["Constraints"][i] = json.loads(
+                        json.dumps(constraint).replace(meta, meta_val),
+                    )
+        return task
+
+    def register_job(self, task: Task) -> dict[str, Any]:
+        """Register a new job with the Nomad backend.
+
+        Sends the job specification to Nomad for registration. Raises an error if the
+        job status cannot be determined.
+
+        :param task: The task to register as a job.
+        :type task: Task
+        :return: The status response from Nomad after registering the job.
+        :rtype: dict[str, Any]
+        :raises ValueError: If the job status cannot be determined.
+        """
+        status = self.backend.job.register_job(
+            id_=task.data["ID"],
+            job={"Job": task.data},
+        )
+        if not status:
+            logger.error("Unable to determine status for task %s", task.id)
+            raise ValueError("The job status could not be determined")
+        return status
+
+    def get_job(self, task: Task) -> dict[str, Any]:
+        """Retrieve a job's details from the Nomad backend.
+
+        Fetches the job information based on the task's ID. Raises an error if the job
+        cannot be retrieved.
+
+        :param task: The task whose job details are to be retrieved.
+        :type task: Task
+        :return: The job details retrieved from Nomad.
+        :rtype: dict[str, Any]
+        :raises ValueError: If the job could not be determined.
+        """
+        job = self.backend.job.get_job(task.data["ID"])
+        if not job:
+            logger.error("Unable to determine job for task %s", task.id)
+            raise ValueError("The job could not be determined")
+        return job
 
     async def run(
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
-        interval: int,
     ) -> TaskHistory:
         """Run a task on the Nomad backend and update task history.
 
@@ -63,97 +164,92 @@ class Executor:
         :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
-        :param interval: The interval (in seconds) for checking the status of the job.
-        :type interval: int
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         :raises ValueError: If the job or job status cannot be determined.
         :raises NotImplementedError: If the job type or certain Nomad features are not
             yet supported.
         """
-        job = {}
-        status = {}
-
-        # TODO: determine scenarios for execution, such as looking up an existing job
-        if queue_item.execution_request.meta:
-            # TODO: target is currently pushed in to meta
-            queue_item.execution_request.meta["target"] = (
-                queue_item.execution_request.target
-            )
-            # TODO: DC is currently forced
-            queue_item.execution_request.meta["dc"] = "dc1"
-            # TODO: allow templates in more fields, currently only for constraints
-            for meta_var, meta_val in queue_item.execution_request.meta.items():
-                for i, constraint in enumerate(self.task.data["Constraints"]):
-                    meta = "${NOMAD_META_" + meta_var + "}"
-                    self.task.data["Constraints"][i] = json.loads(
-                        json.dumps(constraint).replace(meta, meta_val),
-                    )
-
-        try:
-            new_job = False
-
-            match self.task.data.get("ParameterizedJob"):
-                # TODO: temporary to avoid ParameterizedJobs
-                case True:
-                    raise NotImplementedError("Parameterized job support is TBD")
-                case _:
-                    match self.task.data.get("Type"):
-                        case "batch" | "system" | "sysbatch":
-                            new_job = True
-                        case _:
-                            raise NotImplementedError(
-                                f"{self.task.data.get('Type')} job support is TBD",
-                            )
-        except nomad.api.exceptions.URLNotFoundNomadException:
-            logger.debug("Unable to match job, creating a new one")
-            new_job = True
-        except nomad.api.exceptions.BaseNomadException:
-            logger.error("Failed to process job for %s", self.task.name, exc_info=True)
-            raise
+        task = self.prepare_task(queue_item)
 
         start_ts, stop_ts = time.time_ns(), None
-        if new_job:
-            match self.task.data.get("Type"):
+        if self.task_needs_new_job(task):
+            match task.data.get("Type"):
                 case "batch" | "system" | "sysbatch":
-                    self.task.data["ID"] += f"-{uuid1()}"
+                    task.data["ID"] += f"-{uuid1()}"
                 case _:
                     raise NotImplementedError(
-                        f"{self.task.data.get('Type')} job support is TBD",
+                        f"{task.data.get('Type')} job support is TBD",
                     )
 
-            status = self.backend.job.register_job(
-                id_=self.task.data["ID"],
-                job={"Job": self.task.data},
-            )
-            logger.debug("Job status: %r", status)
-            job = self.backend.job.get_job(self.task.data["ID"])
-        if not job:
-            logger.error("Unable to determine job")
-            raise ValueError("The job could not be determined")
-        if not status:
-            logger.error("Unable to determine status")
-            raise ValueError("The job status could not be determined")
+            job_status = self.register_job(task)
+            logger.debug("Job status: %r", job_status)
+            job = self.get_job(task)
+            logger.debug("Job: %s", job)
+        else:
+            raise NotImplementedError
 
-        queue_item.execution_request.tracking.update(evaluation_id=status["EvalID"])
+        queue_item.execution_request.tracking.update(evaluation_id=job_status["EvalID"])
         queue_item = await TaskHistoryManager.save(
             session,
             queue_item,
             flag_modified_fields=["execution_request"],
         )
 
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item = await TaskHistoryManager.save(session, queue_item)
+
+        queue_item = await self.wait_for_job_completion(
+            job,
+            queue_item,
+            job_status["EvalID"],
+        )
+        stop_ts = time.time_ns()
+        queue_item.execution_request.tracking.update(
+            raw_duration=(stop_ts - start_ts) / 1000**3,
+            started_at_ns=start_ts,
+            finished_at_ns=stop_ts,
+            started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=UTC),
+            finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=UTC),
+        )
+        queue_item.execution_request.tracking["duration"] = (
+            (stop_ts - start_ts) / 1000**3
+        ) - queue_item.execution_request.tracking["duration"]
+        return await TaskHistoryManager.save(
+            session,
+            queue_item,
+            flag_modified_fields=["execution_request"],
+        )
+
+    async def wait_for_job_completion(
+        self,
+        job: dict[str, Any],
+        queue_item: TaskHistory,
+        eval_id: str,
+    ) -> TaskHistory:
+        """Monitor and wait for a Nomad job to complete.
+
+        Continuously checks the status of the job until it reaches a terminal state,
+        updating the task history with logs and states along the way.
+
+        :param job: The job details retrieved from Nomad.
+        :type job: dict[str, Any]
+        :param queue_item: The task history record to update with job execution details.
+        :type queue_item: TaskHistory
+        :param eval_id: The evaluation ID associated with the job execution.
+        :type eval_id: str
+        :return: The updated task history after job completion.
+        :rtype: TaskHistory
+        :raises NotImplementedError: If the job type is not supported.
+        """
         allocation_filters = [
             f'JobID == "{job["ID"]}"',
-            f'EvalID == "{status["EvalID"]}"',
+            f'EvalID == "{eval_id}"',
         ]
         allocations = self.backend.allocations.get_allocations(
             filter_=" and ".join(allocation_filters),
         )
-        logger.debug("Job: %r", job)
         logger.debug("Allocations: %r", [x["JobID"] for x in allocations])
-
-        queue_item.status = TaskHistoryStatusEnum.RUNNING
-        queue_item = await TaskHistoryManager.save(session, queue_item)
 
         alloc = {}
         task_logs = {}
@@ -198,7 +294,6 @@ class Executor:
                             filter_=f'EvalID == "{alloc["FollowupEvalID"]}"',
                         )
                         continue
-                    stop_ts = time.time_ns()
                     break
                 case _:
                     allocations = self.backend.allocations.get_allocations(
@@ -206,7 +301,7 @@ class Executor:
                     )
             attempts += 1
             logger.debug("Attempt %d found status %s", attempts, alloc["ClientStatus"])
-            await sleep(interval)
+            await sleep(self.wait_interval)
 
         match alloc["ClientStatus"]:
             case "complete":
@@ -217,15 +312,98 @@ class Executor:
         queue_item.execution_request.tracking.update(
             task_states=task_states,
             task_logs=task_logs,
-            duration=((stop_ts - start_ts) / 1000**3) - (attempts * interval),
-            raw_duration=(stop_ts - start_ts) / 1000**3,
-            started_at_ns=start_ts,
-            finished_at_ns=stop_ts,
-            started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=UTC),
-            finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=UTC),
+            duration=attempts * self.wait_interval,
         )
-        return await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=["execution_request"],
-        )
+        return queue_item
+
+    def task_needs_new_job(self, task: Task) -> bool:
+        """Determine whether a new job needs to be created for the task.
+
+        Checks the task's configuration to decide if a new job should be registered.
+        Currently, only certain job types are supported.
+
+        :param task: The task to evaluate.
+        :type task: Task
+        :return: `True` if a new job needs to be created, otherwise `False`.
+        :rtype: bool
+        :raises NotImplementedError: If the task's parameterized job feature or job type
+            is not supported.
+        :raises BaseNomadException: If there is an issue communicating with the Nomad
+            backend.
+        """
+        try:
+            match task.data.get("ParameterizedJob"):
+                # TODO: temporary to avoid ParameterizedJobs
+                case True:
+                    raise NotImplementedError("Parameterized job support is TBD")
+                case _:
+                    match task.data.get("Type"):
+                        case "batch" | "system" | "sysbatch":
+                            return True
+                        case _:
+                            raise NotImplementedError(
+                                f"{task.data.get('Type')} job support is TBD",
+                            )
+        except nomad.api.exceptions.URLNotFoundNomadException:
+            logger.debug("Unable to match job, creating a new one")
+            return True
+        except nomad.api.exceptions.BaseNomadException:
+            logger.exception("Failed to process job for %s", task.name)
+            raise
+
+    # TODO: Use pydantic models instead of dict for job validation
+    async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
+        """Validate a Nomad job specification.
+
+        This function sends a job specification to the Nomad backend for validation.
+        If validation fails, it raises an HTTPException with the corresponding status code.
+
+        :param job: The Nomad job specification to validate.
+        :type job: dict[str, Any]
+        :return: The original job specification if validation is successful.
+        :rtype: dict[str, Any]
+        :raises HTTPException: If validation fails or Nomad returns an error status
+            code.
+        """
+        valid = await async_run(self.backend.validate.validate_job, {"Job": job})
+        if valid[0].status_code != status.HTTP_200_OK:
+            raise HTTPException(status_code=valid[0].status_code)
+        resp = json.loads(valid[0].text)
+        if not resp.get("ValidationErrors", []):
+            return job
+        logger.error(valid[0].text)
+        raise HTTPBadRequestException("Invalid job specification")
+
+    async def transform_payload(
+        self,
+        payload: str | bytes,
+        payload_format: str,
+    ) -> dict[str, Any]:
+        """Parse and validate a job spec payload based on its format.
+
+        This function parses the payload according to the specified format
+        (HCL, JSON, or YAML) and validates it using the Nomad backend.
+
+        :param payload: The job specification payload to be parsed.
+        :type payload: str | bytes
+        :param payload_format: The format of the payload, which can be "hcl", "json",
+            or "yaml".
+        :type payload_format: str
+        :return: The parsed and validated job specification.
+        :rtype: dict[str, Any]
+        :raises ValueError: If the provided payload format is unsupported.
+        :raises HTTPException: If validation of the job specification fails.
+        """
+        match payload_format:
+            case "hcl":
+                result = await async_run(self.backend.jobs.parse, payload)
+                parsed = result[0]
+            case "json":
+                parsed = json.loads(str(payload))
+            case "yaml":
+                parsed = yaml.safe_load(payload)
+            case _:
+                raise ValueError(f"unsupported format: {payload_format}")
+
+        logger.debug("Parsed payload: %s", parsed)
+        return await self.validate_job(parsed)

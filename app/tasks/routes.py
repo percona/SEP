@@ -30,8 +30,6 @@ from app.tasks.models import TaskHistory
 from app.tasks.models import TaskHistoryResponse
 from app.tasks.models import TaskHistoryStatusEnum
 from app.tasks.models import TaskStats
-from app.tasks.nomad import Executor as NomadExecutor
-from app.tasks.nomad.utils import validate_job
 
 logger = logging.getLogger(__name__)
 
@@ -156,9 +154,7 @@ async def generate_task(
                     else:
                         tpl["Constraints"][0]["RTarget"] = generated_task.target
                         tpl["Constraints"][0]["Operand"] = "="
-            task.data = await validate_job(
-                job=tpl,
-            )
+            task.data = await tasks_settings.NOMAD.validate_job(job=tpl)
         case _:
             raise NotImplementedError(
                 f"{task.backend} is currently unsupported",
@@ -373,19 +369,8 @@ async def _process_queue_item(queue_id: int) -> None:
 
         match task.backend:
             case TaskBackendEnum.NOMAD:
-                backend_config = {
-                    "address": tasks_settings.NOMAD.ENDPOINT,
-                    "secure": tasks_settings.NOMAD.SECURE,
-                    "timeout": tasks_settings.NOMAD.TIMEOUT,
-                    "verify": tasks_settings.NOMAD.VERIFY,
-                    "cert": tasks_settings.NOMAD.CERT,
-                }
-                executor = NomadExecutor(backend_config, task)
+                executor = tasks_settings.NOMAD
             case _:
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
-        await executor.run(
-            session,
-            queue_item,
-            BACKEND_POLL_INTERVAL_SECONDS,
-        )
+        await executor.run(session, queue_item)
