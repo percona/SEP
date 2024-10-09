@@ -13,7 +13,7 @@ from typing import Literal
 from typing import Self
 
 from casdoor import AsyncCasdoorSDK
-from pydantic import AnyUrl
+from pydantic import AnyUrl, Field
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import ConfigDict
@@ -26,7 +26,7 @@ from pydantic_settings import SettingsConfigDict
 from pydantic_settings import YamlConfigSettingsSource
 from pydantic_settings.sources import PathType
 
-from app.core.fields import RelativeFilePath
+from app.core.fields import RelativeFilePath, LogLevel
 from app.core.fields import RequiredStr
 from app.core.fields import StrHttpUrl
 from app.core.fields import StrImportableAttribute
@@ -37,20 +37,6 @@ from app.core.utils import to_uppercase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
-
-
-class LogLevel(IntEnum):
-    """Enumeration of logging levels."""
-
-    CRITICAL = logging.CRITICAL
-    FATAL = logging.CRITICAL
-    ERROR = logging.ERROR
-    WARNING = logging.WARNING
-    WARN = logging.WARNING
-    INFO = logging.INFO
-    DEBUG = logging.DEBUG
-    NOTSET = logging.NOTSET
-    DISABLED = logging.NOTSET
 
 
 class BaseCaseInsensitiveModel(BaseModel):
@@ -125,14 +111,10 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
         super().__init__(settings_cls, yaml_file, yaml_file_encoding)
         if prefixes:
             prefix_data = self.yaml_data.get(prefixes[0], {})
-            base_prefix_data = (
-                self.yaml_data.get(base_prefix, {}) if base_prefix else {}
-            )
+            base_prefix_data = self.yaml_data.get(base_prefix, {}) if base_prefix else {}
             for prefix in prefixes[1:]:
                 prefix_data = prefix_data.get(prefix, {})
-                base_prefix_data = (
-                    base_prefix_data.get(prefix, {}) if base_prefix else {}
-                )
+                base_prefix_data = base_prefix_data.get(prefix, {}) if base_prefix else {}
             self.yaml_data = base_prefix_data
             deep_dict_update(self.yaml_data, prefix_data)
             self.init_kwargs = self.yaml_data
@@ -195,9 +177,7 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         for env_source in [env_settings, dotenv_settings]:
             env_vars = {}
             for key, value in env_source.env_vars.items():
-                env_vars[re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)] = (
-                    value
-                )
+                env_vars[re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)] = value
             env_source.env_vars = env_vars
         return (
             env_settings,
@@ -316,9 +296,9 @@ class Settings(BaseYamlSettings):
         Defaults to `secrets.token_urlsafe(32)`.
     LOGGING : LogLevel, optional
         The logging level for the application. Defaults to `LogLevel.WARNING`.
-    SQLALCHEMY_LOGGING : LogLevel or None, optional
-        The logging level for the application. Defaults to None, which makes it the same
-        as `LOGGING` on validation.
+    LOGGING_EXTRA : dict[str, LogLevel], optional
+        Extra log levels to set for the application (e.g "sqlalchemy.engine",
+        "aiosqlite", etc.).
     BACKEND_CORS_ORIGINS : list of AnyUrl
         A list of allowed CORS origins.
     SSL_CAFILE: RelativeFilePath, optional
@@ -331,7 +311,7 @@ class Settings(BaseYamlSettings):
     AUTH_USER_MODEL: StrImportableAttribute = ""
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
-    SQLALCHEMY_LOGGING: LogLevel | None = None
+    LOGGING_EXTRA: dict[str, LogLevel] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
 
@@ -340,24 +320,6 @@ class Settings(BaseYamlSettings):
     def BASE_DIR(self) -> DirectoryPath:
         """The base directory for the application."""
         return BASE_DIR
-
-    @field_validator("LOGGING", mode="before")
-    @classmethod
-    def validate_log_level(cls, v: LogLevel | str) -> LogLevel:
-        """Uppercase the provided logging level."""
-        if isinstance(v, LogLevel):
-            return v
-        try:
-            return LogLevel[v.upper()]
-        except KeyError as exc:
-            raise ValueError(f"Invalid log level: '{v}'") from exc
-
-    @model_validator(mode="after")
-    def set_default_sqlalchemy_logging(self) -> Self:
-        """Set SQLALCHEMY_LOGGING to the same as LOGGING as default."""
-        if self.SQLALCHEMY_LOGGING is None:
-            self.SQLALCHEMY_LOGGING = self.LOGGING
-        return self
 
 
 settings = Settings()
