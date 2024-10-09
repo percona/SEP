@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from typing import Any
 from typing import TypeVar
 
+from sqlalchemy import inspect
 from sqlalchemy import ScalarResult
 from sqlalchemy.engine import TupleResult
 from sqlalchemy.exc import IntegrityError
@@ -355,7 +356,12 @@ class BaseManager:
             The newly created and saved instance.
 
         """
-        extra_fields["id"] = None
+        pk_column = inspect(cls.Model).primary_key[0]
+        if pk_column.autoincrement and isinstance(
+            None,
+            cls.Model.model_fields[pk_column.name].annotation,
+        ):
+            extra_fields[pk_column.name] = None
         instance = cls.Model.model_validate(instance_create, update=extra_fields)
         return await cls.save(session, instance)
 

@@ -1,7 +1,5 @@
 """Define models for interacting with the Inventory API."""
 
-from enum import auto
-from enum import StrEnum
 from typing import Self
 
 from pydantic import BaseModel
@@ -12,12 +10,7 @@ from pydantic import model_validator
 from app.core.db import BaseSQLModel
 from app.core.fields import EmptyStrToNone
 from app.core.fields import RequiredStr
-
-
-class SourceEnum(StrEnum):
-    """Enumeration of possible data sources for a node."""
-
-    PMM = auto()
+from app.inventory.models import SourceEnum
 
 
 class BaseInventoryModel(BaseModel):
@@ -31,11 +24,11 @@ class BaseInventoryModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class NodeBase(BaseInventoryModel):
-    """Define the base structure for node-related data.
+class Node(BaseInventoryModel):
+    """Represent an inventory node.
 
-    This model serves as a foundation for node-related operations, including the
-    network address, external identifier, name, and type of the node.
+    This model represents a node within the Inventory API, including its network
+    address, external identifier, name, and type.
 
     Attributes
     ----------
@@ -48,6 +41,8 @@ class NodeBase(BaseInventoryModel):
     type : RequiredStr, optional
         The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
+    source : SourceEnum or EmptyStrToNone, optional
+        The source of the node information. Defaults to None.
 
     """
 
@@ -58,60 +53,7 @@ class NodeBase(BaseInventoryModel):
     )
     name: RequiredStr = Field(validation_alias="node_name")
     type: RequiredStr = Field(default="generic", validation_alias="node_type")
-
-
-class Node(NodeBase):
-    """Represent an inventory node.
-
-    This model extends `NodeBase` by including additional attributes specific to
-    the node's source. It represents a complete node entity within the Inventory API.
-
-    Attributes
-    ----------
-    address : RequiredStr
-        The network address of the node.
-    external_id : RequiredStr or EmptyStrToNone, optional
-        The external identifier for the node, aliased as "node_id". Defaults to None.
-    name : RequiredStr
-        The name of the node, aliased as "node_name".
-    type : RequiredStr, optional
-        The type of the node (e.g., "generic"), aliased as "node_type".
-        Defaults to "generic".
-    source : SourceEnum or EmptyStrToNone, optional
-        The source of the node information. Defaults to None.
-
-    """
-
     source: SourceEnum | EmptyStrToNone = None
-
-
-class CreatedServiceNode(BaseSQLModel, Node):
-    """Represent a node from a created service.
-
-    This model extends `Node` and `BaseSQLModel` to integrate attributes from an
-    existent database node.
-
-    Attributes
-    ----------
-    id : int or None
-        The primary key of the node in the inventory database.
-    created_at : datetime, optional
-        The timestamp when the node was created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record was last updated.
-    address : RequiredStr
-        The network address of the node.
-    external_id : RequiredStr or EmptyStrToNone, optional
-        The external identifier for the node, aliased as "node_id". Defaults to None.
-    name : RequiredStr
-        The name of the node, aliased as "node_name".
-    type : RequiredStr, optional
-        The type of the node (e.g., "generic"), aliased as "node_type".
-        Defaults to "generic".
-    source : SourceEnum or EmptyStrToNone, optional
-        The source of the node information. Defaults to None.
-
-    """
 
 
 class CreatedNode(BaseSQLModel, Node):
@@ -141,10 +83,23 @@ class CreatedNode(BaseSQLModel, Node):
         The source of the node information. Defaults to None.
     services : list[CreatedService]
         A list of existent services associated with the node.
+    children
 
     """
 
     services: list["CreatedService"] = []
+
+    @property
+    def children(self) -> list["CreatedService"]:
+        """Retrieve the list of services associated with the node.
+
+        Returns
+        -------
+        list of CreatedService
+            The services associated with the node.
+
+        """
+        return self.services
 
     @model_validator(mode="after")
     def add_node_to_services(self) -> Self:
@@ -162,6 +117,35 @@ class CreatedNode(BaseSQLModel, Node):
         for service in self.services:
             service.node = CreatedServiceNode.model_validate(self)
         return self
+
+
+class CreatedServiceNode(BaseSQLModel, Node):
+    """Represent a node from a created service.
+
+    This model extends `Node` and `BaseSQLModel` to integrate attributes from an
+    existent database node.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key of the node in the inventory database.
+    created_at : datetime, optional
+        The timestamp when the node was created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record was last updated.
+    address : RequiredStr
+        The network address of the node.
+    external_id : RequiredStr or EmptyStrToNone, optional
+        The external identifier for the node, aliased as "node_id". Defaults to None.
+    name : RequiredStr
+        The name of the node, aliased as "node_name".
+    type : RequiredStr, optional
+        The type of the node (e.g., "generic"), aliased as "node_type".
+        Defaults to "generic".
+    source : SourceEnum or EmptyStrToNone, optional
+        The source of the node information. Defaults to None.
+
+    """
 
 
 class Service(BaseInventoryModel):
@@ -225,13 +209,27 @@ class CreatedService(BaseSQLModel, Service):
         Defaults to "generic".
     node : CreatedServiceNode or None, optional
         The node to which the service is associated. Defaults to None.
+    children
 
     """
 
     node: CreatedServiceNode | None = None
+    schemas: list["CreatedSchema"] = []
+
+    @property
+    def children(self) -> list["CreatedSchema"]:
+        """Retrieve the list of schemas associated with the service.
+
+        Returns
+        -------
+        list of CreatedSchema
+            The schemas associated with the service.
+
+        """
+        return self.schemas
 
 
-class Schema(BaseModel):
+class Schema(BaseInventoryModel):
     """Represent an inventory schema.
 
     Attributes
@@ -244,7 +242,43 @@ class Schema(BaseModel):
     name: RequiredStr
 
 
-class Table(BaseModel):
+class CreatedSchema(BaseSQLModel, Schema):
+    """Represent an existent schema from the inventory database.
+
+    This model extends `Schema` and `BaseSQLModel` to integrate attributes from an
+    existent database schema.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key of the node in the inventory database.
+    created_at : datetime, optional
+        The timestamp when the node was created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record was last updated.
+    name : RequiredStr
+        The name of the schema.
+    children
+
+    """
+
+    name: RequiredStr
+    tables: list["CreatedTable"] = []
+
+    @property
+    def children(self) -> list["CreatedTable"]:
+        """Retrieve the list of tables associated with the schema.
+
+        Returns
+        -------
+        list of CreatedTable
+            The tables associated with the schema.
+
+        """
+        return self.tables
+
+
+class Table(BaseInventoryModel):
     """Represent an inventory table.
 
     This model represents a table within a schema in the Inventory API, including its
@@ -261,3 +295,43 @@ class Table(BaseModel):
 
     name: RequiredStr
     create: RequiredStr
+
+
+class CreatedTable(BaseSQLModel, Table):
+    """Represent an existent table from the inventory database.
+
+    This model extends `Table` and `BaseSQLModel` to integrate attributes from an
+    existent database table.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key of the node in the inventory database.
+    created_at : datetime, optional
+        The timestamp when the node was created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record was last updated.
+    name : RequiredStr
+        The name of the table.
+    create : RequiredStr
+        The SQL statement used to create the table.
+
+    """
+
+    name: RequiredStr
+    create: RequiredStr
+
+    @property
+    def children(self) -> list:
+        """Retrieve the list of child entities associated with the table.
+
+        Returns
+        -------
+        list
+            An empty list as tables do not have child entities.
+
+        """
+        return []
+
+
+CreatedEntity = CreatedNode | CreatedService | CreatedSchema | CreatedTable

@@ -55,6 +55,7 @@ greenlet = "^3.0.3"
 aiosqlite = "^0.20.0"
 alembic = "^1.13.2"
 sqlmodel = "^0.0.22"
+async-lru = "^2.0.4"
 
 [tool.poetry.group.audit]
 optional = true

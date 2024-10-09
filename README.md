@@ -1,5 +1,20 @@
 # SEP - Services Enablement Platform
 
+## Table of Contents
+
+* [Prerequisites](#prerequisites)
+* [Setup](#setup)
+* [Configuration](#configuration)
+   * [Plugins](#plugins)
+   * [Secrets](#secrets)
+      * [Getting Casdoor's Client ID and Client Secret](#getting-casdoors-client-id-and-client-secret)
+   * [Environment](#environment)
+   * [Syncers](#syncers)
+      * [PMMSyncer](#pmmsyncer)
+         * [Getting your PMM API Key](#getting-your-pmm-api-key)
+* [Usage](#usage)
+* [Alternative: Use Docker Compose](#alternative-use-docker-compose)
+
 ## Prerequisites
 
 - [Casdoor](https://casdoor.org/docs/basic/server-installation) or [Docker](https://docs.docker.com/get-started/get-docker/)
@@ -106,8 +121,6 @@ These are the possible settings you can have, per app:
 | AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                         |
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                            |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000] |
-| INVENTORY__PMM__ENDPOINT   | inventory | yes      | N/A                                                 | https://127.0.0.1                              |
-| INVENTORY__PMM__VERIFY_SSL | inventory | no       | True                                                | False                                          |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                          |
 | TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                            |
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | N/A                                            |
@@ -152,30 +165,14 @@ PLUGINS:
 
 ### Secrets
 
-SEP needs some keys and secrets to interact with Casdoor and PMM. They are:
+SEP needs some keys and secrets to interact with Casdoor. They are:
 - `CASDOOR__CLIENT_ID`
 - `CASDOOR__CLIENT_SECRET`
-- `PMM__API_KEY`
 
 You can create a basic .env file template by running the following command in the project root folder:
 ```shell
-echo -e "CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nCASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\nPMM__API_KEY=YOUR_PMM_API_KEY" > .env
+echo -e "CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nCASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\n" > .env
 ```
-
-### Environment
-
-You can categorize settings by environments in settings.yaml:
-```yaml
-default:
-  # defaults settings shared by all environments
-development:
-  # development settings
-production:
-  # production settings
-```
-
-To switch environment, use the environment variable `FASTAPI_ENV` or add `FASTAPI_ENV`
-to your .env file.
 
 #### Getting Casdoor's Client ID and Client Secret
 
@@ -192,7 +189,50 @@ it should be in http://localhost:9999/applications/built-in/app-built-in
 3. Copy the app's Client ID and Client Secret and replace the respective `YOUR_CASDOOR_CLIENT_ID`
 and `YOUR_CASDOOR_CLIENT_SECRET` in the .env file you created.
 
-#### Getting your PMM API Key
+### Environment
+
+You can categorize settings by environments in settings.yaml:
+```yaml
+default:
+  # defaults settings shared by all environments
+development:
+  # development settings
+production:
+  # production settings
+```
+
+To switch environment, use the environment variable `FASTAPI_ENV` or add `FASTAPI_ENV`
+to your .env file.
+
+### Syncers
+
+SEP features Inventory syncing with external services and APIs. You can choose the syncers
+you want to enable in the SEP.SYNCERS section of the configuration:
+
+```yaml
+SEP:
+  # ...
+  SYNCERS:
+    - SYNCER: PMMSyncer
+      PMM:
+        ENDPOINT: https://127.0.0.1:8443
+        VERIFY_SSL: false
+```
+
+Syncers may require additional configuration that can be specifically defined in the `settings.yaml`
+(like the `PMM` section in the example above) or globally defined through the `SEP.SYNCER_EXTRA_KWARGS`
+config (`SEP__SYNCER_EXTRA_KWARGS` for in env settings). Using `SEP__SYNCER_EXTRA_KWARGS`
+is ideal when you have a syncer that needs a secret:
+```
+SEP__SYNCER_EXTRA_KWARGS__PMM__API_KEY=<Your PMM API key)
+```
+
+#### PMMSyncer
+
+Sync Nodes and Services with PMM. Requires the `PMM` setting with `ENDPOINT`, `API_KEY`,
+and optionally `VERIFY_SSL`, `SSL_CAFILE`, `SSL_KEYFILE`, and `SSL_CERTFILE`.
+
+##### Getting your PMM API Key
 
 1. In a browser, open PMM's web interface and login (the default credentials are `admin:admin`).
 If you followed the Docker tutorial, it should be in https://localhost.

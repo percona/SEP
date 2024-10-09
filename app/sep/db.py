@@ -1,14 +1,16 @@
-"""Define database initialization and utility functions for the Inventory API."""
+"""Define database initialization and utility functions for SEP."""
 
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.db.utils import json_serializer
-from app.inventory.config import inventory_settings
+from app.sep.config import sep_settings
 
+# TODO(yan): Make SQLAlchemy log level configurable
+# SEP-128
 engine = create_async_engine(
-    inventory_settings.DATABASE.URL,
+    sep_settings.DATABASE.URL,
     echo=True,
     json_serializer=json_serializer,
 )

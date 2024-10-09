@@ -1,9 +1,12 @@
-{% extends "base.html" %}
+{% extends "inventory/base-inventory.html" %}
+
 
 {% block title %}Node List{% endblock %}
 
-{% block main %}
-<h2>Node List</h2>
+{% block inventory_table %}
+{% with inventory_table_title = "Node List", inventory_sync_route = "/inventory/sync/" %}
+    {% include "inventory/partials/sync-button.html" %}
+{% endwith %}
 <table>
     <thead>
         <tr>
@@ -25,6 +28,7 @@
             <td>{% if node.source %}{{ node.source }}{% if node.external_id %} ({{ node.external_id }}){% endif %}{% endif %}</td>
             <td>
                 <form action="{{ node.id }}/delete" method="post" style="display:inline;">
+{#                    TODO: Fix button clickable size #}
                     <button name="location" class="icons" style="width: 2em">delete forever</button>
                 </form>
             </td>
@@ -32,7 +36,9 @@
         {% endfor %}
     </tbody>
 </table>
+{% endblock %}
 
+{% block inventory_create %}
 <h3>Add a New Node</h3>
 {% include "inventory/partials/node-create-form.html" %}
 {% endblock %}

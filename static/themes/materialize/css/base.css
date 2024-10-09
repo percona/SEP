@@ -170,7 +170,7 @@ table {
     margin-bottom: .5em;
     padding: .5em .5em .5em .75em;
     text-decoration: none; }
-  button:hover {
+  button:not(disabled):hover {
     background-color: transparent;
     color: #2c415b; }
   /* Tables */
