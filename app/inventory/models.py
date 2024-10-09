@@ -411,6 +411,31 @@ class SchemaResponse(BaseSQLModel, SchemaBase):
     tables: list["Table"]
 
 
+class SchemaDetailResponse(SchemaResponse):
+    """Define the schema retrieve API response.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
+    name : RequiredStr
+        The name of the schema.
+    service_id : int
+        The unique identifier of the service to which the schema belongs.
+    tables : list[Table]
+        A list of tables within the schema.
+    service: Service
+        The schema's service.
+
+    """
+
+    service: Service
+
+
 class TableBase(SQLModel):
     """Define the base structure for table-related operations.
 
@@ -493,3 +518,28 @@ class TableResponse(BaseSQLModel, TableBase):
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
     """
+
+
+class TableDetailResponse(TableResponse):
+    """Define the schema retrieve API response.
+
+    Attributes
+    ----------
+    id : int or None
+        The primary key for the table. Auto-incremented and not nullable.
+    created_at : datetime
+        The timestamp when the record is created. Defaults to the current time in UTC.
+    updated_at : datetime or None
+        The timestamp when the record is last updated. Automatically updated on changes.
+    name : RequiredStr
+        The name of the table.
+    create : RequiredStr
+        The SQL statement used to create the table.
+    schema_id : int
+        The foreign key referencing the schema to which the table belongs
+    database: Schema
+        The table's schema.
+
+    """
+
+    database: Schema
