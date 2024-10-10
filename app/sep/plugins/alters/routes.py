@@ -66,7 +66,7 @@ async def alters_index(
                     running_tasks.append(hist)
     context.update(
         {
-            "hosts": all_hosts,
+            "executor_hosts": await tasks_api.get("/hosts/"),
             "mysql_hosts": mysql_hosts,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
@@ -90,7 +90,7 @@ async def alters_create(
     logger.debug("Create alters task: %s", task)
     # TODO: validate response
     await task_api.post(
-        "/generate",
+        "/generate/",
         json=task.model_dump(),
     )  # TODO: Proper error for unique constraint
     return RedirectResponse(

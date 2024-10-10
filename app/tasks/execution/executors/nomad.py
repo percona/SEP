@@ -368,3 +368,18 @@ class NomadExecutor(BaseExecutor):
             return job
         logger.error(valid[0].text)
         raise HTTPBadRequestException("Invalid job specification")
+
+    def get_hosts(self) -> list[str]:
+        """Get healthy node names from Nomad backend.
+
+        Returns
+        -------
+        list of str
+            The list of healthy node names.
+
+        """
+        filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
+        return [
+            node["Name"]
+            for node in self.backend.nodes.get_nodes(filter_=filter_expression)
+        ]

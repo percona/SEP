@@ -84,7 +84,7 @@ async def create_task(session: SessionDep, task: Task) -> Task:
     return await TaskManager.save(session, task)
 
 
-@router.post("/generate", dependencies=[IsAuthenticatedDep])
+@router.post("/generate/", dependencies=[IsAuthenticatedDep])
 async def generate_task(
     session: SessionDep,
     generated_task: GeneratedTask,
@@ -254,7 +254,7 @@ async def execute_history_id(
     )
 
 
-@router.get("/history", dependencies=[IsAuthenticatedDep])
+@router.get("/history/", dependencies=[IsAuthenticatedDep])
 async def list_task_history(
     session: SessionDep,
     status: str | None = None,
@@ -303,7 +303,7 @@ async def retrieve_task_history(
     )
 
 
-@router.post("/history", dependencies=[IsAuthenticatedDep])
+@router.post("/history/", dependencies=[IsAuthenticatedDep])
 async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
     """Create a new task history."""
     logger.debug("Creating task history %s", task.name)
@@ -321,6 +321,12 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
             select_related_task=True,
         ),
     )
+
+
+@router.get("/hosts/", dependencies=[IsAuthenticatedDep])
+async def get_executor_hosts(executor: TaskExecutor) -> list[str]:
+    """Return the executor hosts from the executor."""
+    return executor.get_hosts()
 
 
 async def _schedule_queue_item(

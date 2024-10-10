@@ -6,8 +6,8 @@
             <legend>Executor Host</legend>
             <label for="hostname">Select host</label>
             <select id="hostname" name="hostname">
-                {% for host in hosts %}
-                    <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+                {% for executor_host in executor_hosts %}
+                    <option value="{{ executor_host }}">{{ executor_host }}</option>
                 {% endfor %}
             </select>
         </fieldset>

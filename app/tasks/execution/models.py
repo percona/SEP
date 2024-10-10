@@ -100,3 +100,7 @@ class BaseExecutor(BaseModel, ABC):
             The original job specification if validation is successful.
 
         """
+
+    @abstractmethod
+    def get_hosts(self) -> list[str]:
+        """Get the list of valid executor hosts."""
