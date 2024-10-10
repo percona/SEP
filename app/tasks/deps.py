@@ -6,7 +6,9 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.tasks.config import tasks_settings
 from app.tasks.db import get_async_session_maker
+from app.tasks.execution.models import BaseExecutor
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -24,3 +26,19 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_executor() -> BaseExecutor:
+    """Get the task executor.
+
+    Returns
+    -------
+    BaseExecutor
+        The task executor.
+
+    """
+    # TODO: Allow other executors
+    return tasks_settings.NOMAD
+
+
+TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]

@@ -18,7 +18,9 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
+from app.tasks.deps import get_executor
 from app.tasks.deps import SessionDep
+from app.tasks.deps import TaskExecutor
 from app.tasks.models import GeneratedTask
 from app.tasks.models import Task
 from app.tasks.models import TaskBackendEnum
@@ -52,7 +54,9 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
 
 
 @router.delete(
-    "/{task}", dependencies=[IsAuthenticatedDep], response_class=JSONResponse
+    "/{task}",
+    dependencies=[IsAuthenticatedDep],
+    response_class=JSONResponse,
 )
 async def delete_task(session: SessionDep, task: str) -> dict[str, int | bool]:
     """Delete a task."""
@@ -84,6 +88,7 @@ async def create_task(session: SessionDep, task: Task) -> Task:
 async def generate_task(
     session: SessionDep,
     generated_task: GeneratedTask,
+    executor: TaskExecutor,
     background_tasks: BackgroundTasks,
 ) -> TaskHistory:
     """Generate a new task execution using a template."""
@@ -149,7 +154,7 @@ async def generate_task(
                     else:
                         tpl["Constraints"][0]["RTarget"] = generated_task.target
                         tpl["Constraints"][0]["Operand"] = "="
-            task.data = await tasks_settings.NOMAD.validate_job(job=tpl)
+            task.data = await executor.validate_job(tpl)
         case _:
             raise NotImplementedError(
                 f"{task.backend} is currently unsupported",
@@ -228,7 +233,9 @@ async def execute_task_name(
 
 
 @router.post(
-    "/run/{history_id}", dependencies=[IsAuthenticatedDep], response_class=JSONResponse
+    "/run/{history_id}",
+    dependencies=[IsAuthenticatedDep],
+    response_class=JSONResponse,
 )
 async def execute_history_id(
     session: SessionDep,
@@ -320,6 +327,7 @@ async def _schedule_queue_item(
     history_recorded: TaskHistory,
     background_tasks: BackgroundTasks,
 ) -> dict[str, TaskHistory]:
+    """Schedule queue item to execution."""
     # Check how to proceed with execution
     mode = tasks_settings.EXECUTE_MODE
     match mode:
@@ -350,7 +358,7 @@ async def _process_queue_item(queue_id: int) -> None:
 
         match task.backend:
             case TaskBackendEnum.NOMAD:
-                executor = tasks_settings.NOMAD
+                executor = get_executor()
             case _:
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 

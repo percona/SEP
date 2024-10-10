@@ -6,7 +6,7 @@ from pydantic import ConfigDict
 
 from app.core.config import BaseYamlExtraSettings
 from app.core.db.config import DatabaseOptions
-from app.tasks.nomad import NomadExecutor
+from app.tasks.execution.executors.nomad import NomadExecutor
 
 
 class TasksSettings(BaseYamlExtraSettings):

@@ -10,33 +10,32 @@ from functools import cached_property
 from typing import Any
 from uuid import uuid1
 
-import nomad
-import yaml
 from fastapi import HTTPException
 from fastapi import status
 from nomad import Nomad
+from nomad.api.exceptions import BaseNomadException
+from nomad.api.exceptions import URLNotFoundNomadException
 from pydantic import HttpUrl
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.exceptions import HTTPBadRequestException
-from app.core.config import BaseLowercaseModel
 from app.core.fields import RelativeFilePath
 from app.core.utils import async_run
 from app.tasks.crud import TaskHistoryManager
+from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import Task
 from app.tasks.models import TaskHistory
 from app.tasks.models import TaskHistoryStatusEnum
 
-__all__ = ["NomadExecutor"]
-
-
 logger = logging.getLogger(__name__)
 
 
-# TODO: Executor interface
-class NomadExecutor(BaseLowercaseModel):
+class NomadExecutor(BaseExecutor):
     """Represent a Nomad task executor.
 
+    :param wait_interval: The interval in seconds between status checks.
+        Defaults to 5 seconds.
+    :type wait_interval: int
     :param endpoint: The URL for the Nomad API endpoint.
     :type endpoint: HttpUrl
     :param secure: Whether to use a secure connection. Defaults to False.
@@ -50,9 +49,6 @@ class NomadExecutor(BaseLowercaseModel):
     :param cert: SSL certificate and key paths, or a single certificate file path.
         Defaults to an empty tuple.
     :type cert: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath
-    :param wait_interval: The interval in seconds between status checks.
-        Defaults to 5 seconds.
-    :type wait_interval: int
     """
 
     endpoint: HttpUrl
@@ -60,7 +56,6 @@ class NomadExecutor(BaseLowercaseModel):
     timeout: int = 10
     verify: bool | RelativeFilePath = False
     cert: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath = ()
-    wait_interval: int = 5
 
     @cached_property
     def backend(self) -> Nomad:
@@ -121,14 +116,14 @@ class NomadExecutor(BaseLowercaseModel):
         :rtype: dict[str, Any]
         :raises ValueError: If the job status cannot be determined.
         """
-        status = self.backend.job.register_job(
+        job_status = self.backend.job.register_job(
             id_=task.data["ID"],
             job={"Job": task.data},
         )
-        if not status:
+        if not job_status:
             logger.error("Unable to determine status for task %s", task.id)
             raise ValueError("The job status could not be determined")
-        return status
+        return job_status
 
     def get_job(self, task: Task) -> dict[str, Any]:
         """Retrieve a job's details from the Nomad backend.
@@ -279,7 +274,7 @@ class NomadExecutor(BaseLowercaseModel):
                                         type_="stderr",
                                     ),
                                 }
-                            except nomad.api.exceptions.BaseNomadException:
+                            except BaseNomadException:
                                 task_logs[alloc["EvalID"]][step] = {
                                     "allocation_id": alloc["ID"],
                                     "stdout": None,
@@ -344,10 +339,10 @@ class NomadExecutor(BaseLowercaseModel):
                             raise NotImplementedError(
                                 f"{task.data.get('Type')} job support is TBD",
                             )
-        except nomad.api.exceptions.URLNotFoundNomadException:
+        except URLNotFoundNomadException:
             logger.debug("Unable to match job, creating a new one")
             return True
-        except nomad.api.exceptions.BaseNomadException:
+        except BaseNomadException:
             logger.exception("Failed to process job for %s", task.name)
             raise
 
@@ -373,37 +368,3 @@ class NomadExecutor(BaseLowercaseModel):
             return job
         logger.error(valid[0].text)
         raise HTTPBadRequestException("Invalid job specification")
-
-    async def transform_payload(
-        self,
-        payload: str | bytes,
-        payload_format: str,
-    ) -> dict[str, Any]:
-        """Parse and validate a job spec payload based on its format.
-
-        This function parses the payload according to the specified format
-        (HCL, JSON, or YAML) and validates it using the Nomad backend.
-
-        :param payload: The job specification payload to be parsed.
-        :type payload: str | bytes
-        :param payload_format: The format of the payload, which can be "hcl", "json",
-            or "yaml".
-        :type payload_format: str
-        :return: The parsed and validated job specification.
-        :rtype: dict[str, Any]
-        :raises ValueError: If the provided payload format is unsupported.
-        :raises HTTPException: If validation of the job specification fails.
-        """
-        match payload_format:
-            case "hcl":
-                result = await async_run(self.backend.jobs.parse, payload)
-                parsed = result[0]
-            case "json":
-                parsed = json.loads(str(payload))
-            case "yaml":
-                parsed = yaml.safe_load(payload)
-            case _:
-                raise ValueError(f"unsupported format: {payload_format}")
-
-        logger.debug("Parsed payload: %s", parsed)
-        return await self.validate_job(parsed)
