@@ -52,18 +52,14 @@ async def initial_tasks_setup(app: FastAPI) -> AsyncGenerator[None, None]:  # no
     yield
 
 
-tasks_app = (
-    FastAPI(lifespan=initial_tasks_setup) if __name__ == "__main__" else FastAPI()
-)
+tasks_app = FastAPI(lifespan=initial_tasks_setup) if __name__ == "__main__" else FastAPI()
 tasks_app.include_router(router)
 tasks_app.log = logger
 
 if settings.BACKEND_CORS_ORIGINS:
     tasks_app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
-        ],
+        allow_origins=[str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -74,10 +70,10 @@ if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
         level=settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
-        "%(module)s.%(funcName)s - %(message)s",
+        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
     )
-    logging.getLogger("sqlalchemy.engine").setLevel(settings.SQLALCHEMY_LOGGING)
+    for name, level in settings.LOGGING_EXTRA.items():
+        logging.getLogger(name).setLevel(level)
 
     import uvicorn
 

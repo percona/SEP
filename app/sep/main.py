@@ -130,10 +130,10 @@ if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
         level=sep_settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
-        "%(module)s.%(funcName)s - %(message)s",
+        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
     )
-    logging.getLogger("sqlalchemy.engine").setLevel(settings.SQLALCHEMY_LOGGING)
+    for name, level in settings.LOGGING_EXTRA.items():
+        logging.getLogger(name).setLevel(level)
 
     import uvicorn
 
