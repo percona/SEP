@@ -44,7 +44,7 @@ router = APIRouter()
 
 
 # TODO: Pagination
-@router.get(path="/", dependencies=[IsAuthenticatedDep])
+@router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
@@ -52,9 +52,7 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
 
 
 @router.delete(
-    path="/{task}",
-    dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
+    "/{task}", dependencies=[IsAuthenticatedDep], response_class=JSONResponse
 )
 async def delete_task(session: SessionDep, task: str) -> dict[str, int | bool]:
     """Delete a task."""
@@ -65,7 +63,7 @@ async def delete_task(session: SessionDep, task: str) -> dict[str, int | bool]:
     return {"id": deleted_task.id, "deleted": True}
 
 
-@router.get(path="/{task}", dependencies=[IsAuthenticatedDep])
+@router.get("/{task}", dependencies=[IsAuthenticatedDep])
 async def get_task(session: SessionDep, task: str) -> Task:
     """Retrieve a task by its name."""
     logger.debug("Requesting task %s", task)
@@ -75,17 +73,14 @@ async def get_task(session: SessionDep, task: str) -> Task:
     return result
 
 
-@router.post(path="/", dependencies=[IsAuthenticatedDep])
+@router.post("/", dependencies=[IsAuthenticatedDep])
 async def create_task(session: SessionDep, task: Task) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
     return await TaskManager.save(session, task)
 
 
-@router.post(
-    path="/generate",
-    dependencies=[IsAuthenticatedDep],
-)
+@router.post("/generate", dependencies=[IsAuthenticatedDep])
 async def generate_task(
     session: SessionDep,
     generated_task: GeneratedTask,
@@ -190,7 +185,7 @@ async def generate_task(
 
 
 @router.post(
-    path="/execute/{task_name}",
+    "/execute/{task_name}",
     dependencies=[IsAuthenticatedDep],
     response_class=JSONResponse,
 )
@@ -233,9 +228,7 @@ async def execute_task_name(
 
 
 @router.post(
-    path="/run/{history_id}",
-    dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
+    "/run/{history_id}", dependencies=[IsAuthenticatedDep], response_class=JSONResponse
 )
 async def execute_history_id(
     session: SessionDep,
@@ -254,10 +247,7 @@ async def execute_history_id(
     )
 
 
-@router.get(
-    path="/history",
-    dependencies=[IsAuthenticatedDep],
-)
+@router.get("/history", dependencies=[IsAuthenticatedDep])
 async def list_task_history(
     session: SessionDep,
     status: str | None = None,
@@ -279,7 +269,7 @@ async def list_task_history(
 
 
 @router.get(
-    path="/{task}/history/",
+    "/{task}/history/",
     dependencies=[IsAuthenticatedDep],
     response_model=list[TaskHistoryResponse],
 )
@@ -293,10 +283,7 @@ async def get_task_history(session: SessionDep, task: str) -> list[TaskHistory]:
     )
 
 
-@router.get(
-    path="/history/{task_history_id}",
-    dependencies=[IsAuthenticatedDep],
-)
+@router.get("/history/{task_history_id}", dependencies=[IsAuthenticatedDep])
 async def retrieve_task_history(
     session: SessionDep,
     task_history_id: int,
@@ -309,20 +296,14 @@ async def retrieve_task_history(
     )
 
 
-@router.post(
-    path="/history",
-    dependencies=[IsAuthenticatedDep],
-)
+@router.post("/history", dependencies=[IsAuthenticatedDep])
 async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
     """Create a new task history."""
     logger.debug("Creating task history %s", task.name)
     return await TaskHistoryManager.save(session, task)
 
 
-@router.get(
-    path="/stats/{task}",
-    dependencies=[IsAuthenticatedDep],
-)
+@router.get("/stats/{task}", dependencies=[IsAuthenticatedDep])
 async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
     """Calculate the statistics for the task."""
     logger.debug("Requesting task stats for %s", task)
