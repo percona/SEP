@@ -1,5 +1,9 @@
 """Define reusable fields and validators."""
 
+from enum import IntEnum
+
+import logging
+
 import importlib.util
 from datetime import timedelta
 from os import PathLike
@@ -81,6 +85,20 @@ class URL(StarletteURL):
         return json_schema
 
 
+class LogLevelEnum(IntEnum):
+    """Enumeration of logging levels."""
+
+    CRITICAL = logging.CRITICAL
+    FATAL = logging.CRITICAL
+    ERROR = logging.ERROR
+    WARNING = logging.WARNING
+    WARN = logging.WARNING
+    INFO = logging.INFO
+    DEBUG = logging.DEBUG
+    NOTSET = logging.NOTSET
+    DISABLED = logging.NOTSET
+
+
 def resolve_relative_path(v: PathLike | str) -> Path:
     """Resolve relative paths with BASE_DIR."""
     try:
@@ -145,6 +163,16 @@ def remove_duplicates(v: list) -> list:
     return unique_list
 
 
+def validate_log_level(v: LogLevelEnum | str) -> LogLevelEnum:
+    """Uppercase the provided logging level."""
+    if isinstance(v, LogLevelEnum):
+        return v
+    try:
+        return LogLevelEnum[v.upper()]
+    except KeyError as exc:
+        raise ValueError(f"Invalid log level: '{v}'") from exc
+
+
 RelativeFilePath = Annotated[
     FilePath,
     BeforeValidator(resolve_relative_path),
@@ -168,3 +196,4 @@ TimedeltaSeconds = Annotated[
     timedelta,
     PlainSerializer(lambda v: round(v.total_seconds()), return_type=int),
 ]
+LogLevel = Annotated[LogLevelEnum, BeforeValidator(validate_log_level)]

@@ -7,6 +7,7 @@ from fastapi import Request
 from fastapi import status
 from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
+from fastapi.responses import Response
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
@@ -41,7 +42,10 @@ templates = sep_settings.TEMPLATES
 # TODO: Improve exception handlers, maybe use it for redirects
 # TODO: better errors for external services -- pmm, nomad, casdoor
 @sep_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
-async def custom_error_handler(request, exc):
+async def custom_error_handler(
+    request: Request,
+    exc: BaseException,
+) -> Response:
     """Load custom error page."""
     base_url = get_base_url(request)
     try:
@@ -62,7 +66,10 @@ async def custom_error_handler(request, exc):
 
 
 @sep_app.exception_handler(status.HTTP_404_NOT_FOUND)
-async def custom_404_handler(request, exc):
+async def custom_404_handler(
+    request: Request,
+    exc: BaseException,
+) -> Response:
     """Load custom 404 page."""
     base_url = get_base_url(request)
     try:
@@ -122,10 +129,12 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
 if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
-        level=settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> "
-        "%(module)s.%(funcName)s - %(message)s",
+        level=sep_settings.LOGGING,
+        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
     )
+    for name, level in settings.LOGGING_EXTRA.items():
+        logging.getLogger(name).setLevel(level)
+
     import uvicorn
 
     uvicorn.run(
