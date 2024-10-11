@@ -9,12 +9,9 @@ from app.core.auth.exceptions import HTTPForbiddenException
 class HTTPNotFoundException(HTTPException):
     """Exception raised for resource not found (HTTP 404).
 
-    Parameters
-    ----------
-    detail : str, optional
-        A message providing additional details about the exception. Defaults to
-        "Not Found".
-
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Not Found".
+    :type detail: str
     """
 
     def __init__(self, detail: str = "Not Found") -> None:
@@ -24,12 +21,9 @@ class HTTPNotFoundException(HTTPException):
 class HTTPConflictException(HTTPException):
     """Exception raised for resource conflict (HTTP 409).
 
-    Parameters
-    ----------
-    detail : str, optional
-        A message providing additional details about the exception. Defaults to
-        "Conflict".
-
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Conflict".
+    :type detail: str
     """
 
     def __init__(self, detail: str = "Conflict") -> None:
@@ -39,12 +33,9 @@ class HTTPConflictException(HTTPException):
 class HTTPBadRequestException(HTTPException):
     """Exception raised for bad request (HTTP 400).
 
-    Parameters
-    ----------
-    detail : str, optional
-        A message providing additional details about the exception. Defaults to
-        "Bad Request".
-
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Bad Request".
+    :type detail: str
     """
 
     def __init__(self, detail: str = "Bad Request") -> None:
