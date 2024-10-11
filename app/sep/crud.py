@@ -24,8 +24,8 @@ class SyncItemManager(BaseManager):
     synchronization items, retrieving existing ones, and updating their synchronization
     status.
 
-    :param Model: The SQLModel class this manager is responsible for (`SyncItem`).
-    :type Model: type[SyncItem]
+    :ivar Model: The SQLModel class this manager is responsible for (`SyncItem`).
+    :vartype Model: type[SyncItem]
     """
 
     Model = SyncItem
@@ -207,8 +207,8 @@ class SyncInstanceManager(BaseManager):
     new synchronization instances, retrieving existing ones, and ensuring that no
     duplicate synchronization processes are running concurrently.
 
-    :param Model: The SQLModel class this manager is responsible for (`SyncInstance`).
-    :type Model: type[SyncInstance]
+    :ivar Model: The SQLModel class this manager is responsible for (`SyncInstance`).
+    :vartype Model: type[SyncInstance]
     """
 
     Model = SyncInstance

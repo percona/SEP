@@ -28,7 +28,6 @@ class URL(StarletteURL):
     This class extends Starlette's `URL` class and integrates custom validation
     for use with Pydantic models. It ensures that only valid URLs are accepted
     and provides a custom schema for Pydantic's core validation.
-
     """
 
     @classmethod

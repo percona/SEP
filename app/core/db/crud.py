@@ -34,7 +34,7 @@ class BaseManager:
     """Manage database operations for a BaseSQLModel-based model.
 
     :param Model: The BaseSQLModel class for which this manager handles operations.
-    :type Model: Type[T]
+    :type Model: type[T]
     """
 
     Model: type[T]
@@ -375,7 +375,7 @@ class BaseChildManager(BaseManager):
     """Manage database operations for child models with a parent association.
 
     :param ParentManager: The manager class responsible for handling the parent model.
-    :type ParentManager: Type[M]
+    :type ParentManager: type[M]
     :param connected_by: The field name that connects the child model to the parent
         model.
     :type connected_by: str

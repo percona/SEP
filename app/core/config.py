@@ -246,7 +246,7 @@ class CasdoorOptions(BaseModel):
         :param base_url: The base URL to be used when constructing the frontend
             URL. If not provided, the Casdoor API endpoint (`ENDPOINT`) is used
             as the base.
-        :type base_url: URL | None, optional
+        :type base_url: URL | None
         :return: The constructed front-end URL.
         :rtype: URL
         """
