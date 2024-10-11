@@ -25,17 +25,11 @@ def json_deserialize(raw_data: str) -> Any:
     Attempts to deserialize the input string into a `TaskExecutionRequest` model.
     If validation fails, the raw JSON data is returned as a dictionary.
 
-    Parameters
-    ----------
-    raw_data : str
-        The JSON string to deserialize.
-
-    Returns
-    -------
-    Any
-        A `TaskExecutionRequest` object if deserialization is successful,
+    :param raw_data: The JSON string to deserialize.
+    :type raw_data: str
+    :return: A `TaskExecutionRequest` object if deserialization is successful,
         otherwise the raw data.
-
+    :rtype: Any
     """
     data = json.loads(raw_data)
     try:
@@ -120,11 +114,8 @@ async def init_db(session: AsyncSession) -> None:
     If the generic task templates for 'batch' or 'sysbatch' do not exist in the
     database, this function will add them.
 
-    Parameters
-    ----------
-    session : AsyncSession
-        The SQLAlchemy asynchronous session to use for database operations.
-
+    :param session: The SQLAlchemy asynchronous session to use for database operations.
+    :type session: AsyncSession
     """
     for job_type in ["batch", "sysbatch"]:
         result = await session.exec(
@@ -160,10 +151,7 @@ def get_async_session_maker() -> sessionmaker:
     This function creates a new SQLAlchemy asynchronous session maker using the
     predefined engine configuration.
 
-    Returns
-    -------
-    sessionmaker
-        A new asynchronous session maker.
-
+    :return: A new asynchronous session maker.
+    :rtype: sessionmaker
     """
     return get_async_session_maker_from_engine(engine)

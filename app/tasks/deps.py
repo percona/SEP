@@ -15,11 +15,8 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     This function provides a dependency for FastAPI routes that yields an `AsyncSession`
     for interacting with the database. The session is properly closed after use.
 
-    Yields
-    ------
-    AsyncGenerator[AsyncSession, None]
-        An asynchronous session for database operations.
-
+    :yield: An asynchronous session for database operations.
+    :rtype: AsyncGenerator[AsyncSession, None]
     """
     async_session = get_async_session_maker()
     async with async_session() as session:

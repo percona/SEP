@@ -36,11 +36,8 @@ TASK_ALIAS_LENGTH = 100
 class TaskBackendEnum(StrEnum):
     """Control the choice of backends.
 
-    Attributes
-    ----------
-    NOMAD : str
-        Enum value for Nomad backend.
-
+    :cvar NOMAD: Enum value for Nomad backend.
+    :vartype NOMAD: str
     """
 
     NOMAD = auto()
@@ -49,17 +46,14 @@ class TaskBackendEnum(StrEnum):
 class TaskHistoryStatusEnum(StrEnum):
     """Define status codes for task executions.
 
-    Attributes
-    ----------
-    FAILED : str
-        Enum value for failed tasks.
-    PENDING : str
-        Enum value for pending tasks.
-    RUNNING : str
-        Enum value for running tasks.
-    SUCCESS : str
-        Enum value for successfully completed tasks.
-
+    :cvar FAILED: Enum value for failed tasks.
+    :vartype FAILED: str
+    :cvar PENDING: Enum value for pending tasks.
+    :vartype PENDING: str
+    :cvar RUNNING: Enum value for running tasks.
+    :vartype RUNNING: str
+    :cvar SUCCESS: Enum value for successfully completed tasks.
+    :vartype SUCCESS: str
     """
 
     FAILED = auto()
@@ -71,18 +65,15 @@ class TaskHistoryStatusEnum(StrEnum):
 class TaskExecutionRequest(BaseModel):
     """Represent an execution request.
 
-    Attributes
-    ----------
-    task : str
-        The task name.
-    target : str
-        The target system or environment.
-    meta : dict, optional
-        Additional metadata for the task. Defaults to an empty dictionary.
-    tracking : dict, optional
-        Tracking information for task execution. Defaults to a dictionary with keys
-        for allocation and evaluation IDs.
-
+    :param task: The task name.
+    :type task: str
+    :param target: The target system or environment.
+    :type target: str
+    :param meta: Additional metadata for the task. Defaults to an empty dictionary.
+    :type meta: dict | None
+    :param tracking: Tracking information for task execution. Defaults to a dictionary
+        with keys for allocation and evaluation IDs.
+    :type tracking: dict | None
     """
 
     model_config = ConfigDict(extra="allow")
@@ -95,17 +86,14 @@ class TaskExecutionRequest(BaseModel):
 class TaskGroupTaskTemplate(BaseModel):
     """Represent a task group for controlling task templates.
 
-    Attributes
-    ----------
-    content : str or bytes
-        The content of the task template.
-    path : str
-        The file path where the template will be applied.
-    mode : str
-        The execution mode of the task. Defaults to "restart".
-    perms : str
-        The file permissions for the template. Defaults to "0644".
-
+    :param content: The content of the task template.
+    :type content: str | bytes
+    :param path: The file path where the template will be applied.
+    :type path: str
+    :param mode: The execution mode of the task. Defaults to "restart".
+    :type mode: str
+    :param perms: The file permissions for the template. Defaults to "0644".
+    :type perms: str
     """
 
     content: str | bytes
@@ -124,25 +112,22 @@ class TaskGroupTaskTemplate(BaseModel):
 
 
 class TaskGroupTask(BaseModel):
-    """Represent a task that belong to a job task group.
+    """Represent a task that belongs to a job task group.
 
-    Attributes
-    ----------
-    name : str
-        The name of the task.
-    driver : str
-        The driver to be used for task execution. Defaults to "raw_exec".
-    user : str
-        The user who will execute the task. Defaults to an empty string.
-    config : dict or list or str or bytes
-        The configuration details for the task.
-    meta : dict
-        Additional metadata for the task. Defaults to an empty dictionary.
-    restart : dict
-        Task restart policy. Defaults to a dictionary specifying no retries.
-    templates : list[TaskGroupTaskTemplate]
-        A list of task templates to be applied. Defaults to an empty list.
-
+    :param name: The name of the task.
+    :type name: str
+    :param driver: The driver to be used for task execution. Defaults to "raw_exec".
+    :type driver: str
+    :param user: The user who will execute the task. Defaults to an empty string.
+    :type user: str
+    :param config: The configuration details for the task.
+    :type config: dict | list | str | bytes
+    :param meta: Additional metadata for the task. Defaults to an empty dictionary.
+    :type meta: dict
+    :param restart: Task restart policy. Defaults to a dictionary specifying no retries.
+    :type restart: dict
+    :param templates: A list of task templates to be applied. Defaults to an empty list.
+    :type templates: list[TaskGroupTaskTemplate]
     """
 
     model_config = ConfigDict(
@@ -162,17 +147,14 @@ class TaskGroupTask(BaseModel):
 class TaskGroup(BaseModel):
     """Represent a task group.
 
-    Attributes
-    ----------
-    engine : str
-        The backend engine for task execution. Defaults to "nomad".
-    name : str
-        The name of the task group. Defaults to "execution".
-    parallel : bool
-        Whether tasks should be executed in parallel. Defaults to False.
-    tasks : list[TaskGroupTask]
-        A list of tasks in the group.
-
+    :param engine: The backend engine for task execution. Defaults to "nomad".
+    :type engine: str
+    :param name: The name of the task group. Defaults to "execution".
+    :type name: str
+    :param parallel: Whether tasks should be executed in parallel. Defaults to False.
+    :type parallel: bool
+    :param tasks: A list of tasks in the group.
+    :type tasks: list[TaskGroupTask]
     """
 
     engine: str = "nomad"
@@ -184,11 +166,8 @@ class TaskGroup(BaseModel):
     def to_payload(self) -> dict[str, list[dict]]:
         """Convert to a backend-specific payload format.
 
-        Returns
-        -------
-        dict
-            A dictionary representing the payload for the task group.
-
+        :return: A dictionary representing the payload for the task group.
+        :rtype: dict[str, list[dict[str, Any]]]
         """
         data = {"TaskGroups": []}
         match self.engine:
@@ -216,27 +195,25 @@ class TaskGroup(BaseModel):
 class GeneratedTask(BaseModel):
     """Represent a generated task.
 
-    Attributes
-    ----------
-    app : str
-        The application name associated with the task.
-    commands : list
-        A list of commands to execute the task.
-    name : str
-        The task name.
-    target : str
-        The target system for task execution.
-    artifacts : list or None
-        Artifacts produced by the task. Defaults to None.
-    parallel : bool
-        Whether the task will run in parallel. Defaults to False.
-    persist : bool
-        Whether the task should persist after completion. Defaults to True.
-    schedule : dict
-        The scheduling configuration for the task. Defaults to {"save_only": True}.
-    template : str
-        The task template type. Defaults to "batch".
-
+    :param app: The application name associated with the task.
+    :type app: str
+    :param commands: A list of commands to execute the task.
+    :type commands: list
+    :param name: The task name.
+    :type name: str
+    :param target: The target system for task execution.
+    :type target: str
+    :param artifacts: Artifacts produced by the task. Defaults to None.
+    :type artifacts: list | None
+    :param parallel: Whether the task will run in parallel. Defaults to False.
+    :type parallel: bool
+    :param persist: Whether the task should persist after completion. Defaults to True.
+    :type persist: bool
+    :param schedule: The scheduling configuration for the task. Defaults to
+        {"save_only": True}.
+    :type schedule: dict
+    :param template: The task template type. Defaults to "batch".
+    :type template: str
     """
 
     app: str
@@ -254,25 +231,22 @@ class GeneratedTask(BaseModel):
 class Task(BaseSQLModel, table=True):
     """Represent a task stored in the database.
 
-    Attributes
-    ----------
-    name : str
-        The name of the task.
-    data : dict
-        The task data stored in JSON format.
-    backend : TaskBackendEnum
-        The backend used for task execution. Defaults to Nomad.
-    owner : str or None
-        The owner of the task. Defaults to None.
-    is_template : bool
-        Whether the task is a template. Defaults to False.
-    protected : bool
-        Whether the task is protected from deletion. Defaults to False.
-    history : list[TaskHistory]
-        The history of task executions.
-    deleted_at : datetime or None
-        The deletion timestamp, if applicable.
-
+    :param name: The name of the task.
+    :type name: str
+    :param data: The task data stored in JSON format.
+    :type data: dict
+    :param backend: The backend used for task execution. Defaults to Nomad.
+    :type backend: TaskBackendEnum
+    :param owner: The owner of the task. Defaults to None.
+    :type owner: str | None
+    :param is_template: Whether the task is a template. Defaults to False.
+    :type is_template: bool
+    :param protected: Whether the task is protected from deletion. Defaults to False.
+    :type protected: bool
+    :param history: The history of task executions.
+    :type history: list[TaskHistory]
+    :param deleted_at: The deletion timestamp, if applicable.
+    :type deleted_at: datetime | None
     """
 
     __table_args__ = (
@@ -306,17 +280,14 @@ class Task(BaseSQLModel, table=True):
 class TaskHistory(BaseSQLModel, table=True):
     """Represent a task execution history.
 
-    Attributes
-    ----------
-    execution_request : TaskExecutionRequest
-        The request that triggered the task execution.
-    status : TaskHistoryStatusEnum
-        The status of the task execution. Defaults to pending.
-    task_id : int
-        The ID of the task associated with the execution.
-    task : Task
-        The task associated with this execution history.
-
+    :param execution_request: The request that triggered the task execution.
+    :type execution_request: TaskExecutionRequest
+    :param status: The status of the task execution. Defaults to pending.
+    :type status: TaskHistoryStatusEnum
+    :param task_id: The ID of the task associated with the execution.
+    :type task_id: int
+    :param task: The task associated with this execution history.
+    :type task: Task
     """
 
     __table_args__ = (Index("ix_taskhistory_task_id_status", "task_id", "status"),)
@@ -335,11 +306,8 @@ class TaskHistory(BaseSQLModel, table=True):
     def errors(self) -> list:
         """Return a list of errors for the executed task.
 
-        Returns
-        -------
-        list
-            A list of error messages encountered during task execution.
-
+        :return: A list of error messages encountered during task execution.
+        :rtype: list[str]
         """
         if self.status not in [
             TaskHistoryStatusEnum.SUCCESS,
@@ -359,17 +327,14 @@ class TaskHistory(BaseSQLModel, table=True):
 class TaskHistoryResponse(BaseSQLModel):
     """Represent a task history API response.
 
-    Attributes
-    ----------
-    execution_request : TaskExecutionRequest
-        The request that triggered the task execution.
-    status : TaskHistoryStatusEnum
-        The status of the task execution.
-    task : Task
-        The task associated with this execution history.
-    errors : list
-        A list of errors encountered during the task execution.
-
+    :param execution_request: The request that triggered the task execution.
+    :type execution_request: TaskExecutionRequest
+    :param status: The status of the task execution.
+    :type status: TaskHistoryStatusEnum
+    :param task: The task associated with this execution history.
+    :type task: Task
+    :param errors: A list of errors encountered during the task execution.
+    :type errors: list[str]
     """
 
     execution_request: TaskExecutionRequest
@@ -381,17 +346,10 @@ class TaskHistoryResponse(BaseSQLModel):
 class TaskStats(BaseModel):
     """Model for task statistics.
 
-    Attributes
-    ----------
-    engine : str
-        The backend engine used for task execution. Defaults to "nomad".
-    tasks : list[TaskHistory]
-        A list of task execution histories.
-    total
-    status
-    duration
-    last_finished_at
-
+    :param engine: The backend engine used for task execution. Defaults to "nomad".
+    :type engine: str
+    :param tasks: A list of task execution histories.
+    :type tasks: list[TaskHistory]
     """
 
     engine: str = "nomad"
@@ -413,11 +371,8 @@ class TaskStats(BaseModel):
     def total(self) -> int:
         """Return the total number of tasks.
 
-        Returns
-        -------
-        int
-            The total number of tasks.
-
+        :return: The total number of tasks.
+        :rtype: int
         """
         return len(self.tasks)
 
@@ -426,11 +381,8 @@ class TaskStats(BaseModel):
     def status(self) -> dict:
         """Return the task status summary.
 
-        Returns
-        -------
-        dict
-            A dictionary summarizing the number of passed and failed tasks.
-
+        :return: A dictionary summarizing the number of passed and failed tasks.
+        :rtype: dict[str, int]
         """
         status = {
             "pass": 0,
@@ -451,11 +403,8 @@ class TaskStats(BaseModel):
     def duration(self) -> dict:
         """Return the task duration summary.
 
-        Returns
-        -------
-        dict
-            A dictionary summarizing average, last, and total task durations.
-
+        :return: A dictionary summarizing average, last, and total task durations.
+        :rtype: dict[str, Any]
         """
         if self._durations["average_seconds"] is None:
             self._process()
@@ -466,11 +415,8 @@ class TaskStats(BaseModel):
     def last_finished_at(self) -> str | None:
         """Return the last finished task timestamp.
 
-        Returns
-        -------
-        str or None
-            The timestamp of the last task finished, or None if not available.
-
+        :return: The timestamp of the last task finished, or None if not available.
+        :rtype: str | None
         """
         if not self._raw["finished_at"]:
             self._process()
