@@ -1,10 +1,8 @@
 """Define the application settings."""
 
-import logging
 import re
 import secrets
 from collections.abc import Sequence
-from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -12,13 +10,11 @@ from typing import ClassVar
 from typing import Literal
 from typing import Self
 
-from casdoor import AsyncCasdoorSDK
-from pydantic import AnyUrl, Field
+from pydantic import AnyUrl
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import DirectoryPath
-from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
@@ -26,7 +22,8 @@ from pydantic_settings import SettingsConfigDict
 from pydantic_settings import YamlConfigSettingsSource
 from pydantic_settings.sources import PathType
 
-from app.core.fields import RelativeFilePath, LogLevel
+from app.core.fields import LogLevel
+from app.core.fields import RelativeFilePath
 from app.core.fields import RequiredStr
 from app.core.fields import StrHttpUrl
 from app.core.fields import StrImportableAttribute
@@ -111,10 +108,14 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
         super().__init__(settings_cls, yaml_file, yaml_file_encoding)
         if prefixes:
             prefix_data = self.yaml_data.get(prefixes[0], {})
-            base_prefix_data = self.yaml_data.get(base_prefix, {}) if base_prefix else {}
+            base_prefix_data = (
+                self.yaml_data.get(base_prefix, {}) if base_prefix else {}
+            )
             for prefix in prefixes[1:]:
                 prefix_data = prefix_data.get(prefix, {})
-                base_prefix_data = base_prefix_data.get(prefix, {}) if base_prefix else {}
+                base_prefix_data = (
+                    base_prefix_data.get(prefix, {}) if base_prefix else {}
+                )
             self.yaml_data = base_prefix_data
             deep_dict_update(self.yaml_data, prefix_data)
             self.init_kwargs = self.yaml_data
@@ -177,7 +178,9 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         for env_source in [env_settings, dotenv_settings]:
             env_vars = {}
             for key, value in env_source.env_vars.items():
-                env_vars[re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)] = value
+                env_vars[re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)] = (
+                    value
+                )
             env_source.env_vars = env_vars
         return (
             env_settings,
@@ -214,7 +217,6 @@ class CasdoorOptions(BaseModel):
         The allowed token issuers (iss) for JWT validation. Use "*" to allow any issuer.
         Defaults to a list with `ENDPOINT`.
     CERTIFICATE
-    SDK
 
     """
 
@@ -258,22 +260,10 @@ class CasdoorOptions(BaseModel):
 
     @computed_field
     @cached_property
-    def CERTIFICATE(self) -> str:
+    def CERTIFICATE(self) -> bytes:
         """The contents of the certificate file."""
-        with self.CERTIFICATE_PATH.open() as certificate_file:
+        with self.CERTIFICATE_PATH.open("rb") as certificate_file:
             return certificate_file.read()
-
-    @cached_property
-    def SDK(self) -> AsyncCasdoorSDK:
-        """Asynchronous Casdoor SDK instance."""
-        return AsyncCasdoorSDK(
-            endpoint=self.ENDPOINT,
-            client_id=self.CLIENT_ID,
-            client_secret=self.CLIENT_SECRET,
-            certificate=self.CERTIFICATE,
-            org_name=self.ORGANIZATION_NAME,
-            application_name=self.APPLICATION_NAME,
-        )
 
     @model_validator(mode="after")
     def _set_default_allowed_issuers(self) -> Self:
