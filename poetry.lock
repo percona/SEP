@@ -400,17 +400,6 @@ filecache = ["filelock (>=3.8.0)"]
 redis = ["redis (>=2.10.5)"]
 
 [[package]]
-name = "casdoor"
-version = "1.22.0"
-description = "Python SDK built for Casdoor"
-optional = false
-python-versions = ">=3.6"
-files = [
-    {file = "casdoor-1.22.0-py2.py3-none-any.whl", hash = "sha256:52714e7e900620d6377c99b5b0c62a4446d451037083730a597af1ad5127f7ba"},
-    {file = "casdoor-1.22.0.tar.gz", hash = "sha256:709676055aef8ad80e69abdc8b4582c1fdb6e3509165808eac8f66b8afe96237"},
-]
-
-[[package]]
 name = "certifi"
 version = "2024.8.30"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -3230,4 +3219,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "23c0e18b65c29357100aee0e06ea29a95a86a5750d6e66dd86d1f592365ff0e4"
+content-hash = "1e342a12a4cd50b4118e34856e2c4507f13344e3dbd41128398f687c166188a3"

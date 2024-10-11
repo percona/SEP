@@ -13,15 +13,14 @@ from app.sep.main import sep_app
 from app.tasks.main import initial_tasks_setup
 from app.tasks.main import tasks_app
 
-casdoor_sdk = settings.CASDOOR.SDK
-
-
 app = FastAPI(lifespan=initial_tasks_setup)
 
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=[
+            str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -36,7 +35,7 @@ if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
         level=settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
+        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",
     )
     for name, level in settings.LOGGING_EXTRA.items():
         logging.getLogger(name).setLevel(level)

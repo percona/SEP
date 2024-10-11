@@ -34,7 +34,6 @@ package-mode = false # TODO: for now
 [tool.poetry.dependencies]
 python = "^3.11"
 aiohttp = "^3.9.4"
-casdoor = "^1.17.1"
 fastapi = {version = "^0.115.0", extras = ["standard"]}
 idna = "^3.7"
 itsdangerous = "^2.1.2"
