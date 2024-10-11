@@ -1,4 +1,4 @@
-"""Define database settings"""
+"""Define database settings."""
 
 from enum import StrEnum
 
@@ -11,15 +11,12 @@ from pydantic import field_validator
 class DBEngine(StrEnum):
     """Enum representing supported database engines.
 
-    Attributes
-    ----------
-    SQLITE : str
-        SQLite engine string, using the `aiosqlite` driver.
-    MYSQL : str
-        MySQL engine string, using the `aiomysql` driver.
-    POSTGRESQL : str
-        PostgreSQL engine string, using the `asyncpg` driver.
-
+    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
+    :vartype SQLITE: str
+    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
+    :vartype MYSQL: str
+    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
+    :vartype POSTGRESQL: str
     """
 
     SQLITE = "sqlite+aiosqlite"
@@ -30,23 +27,19 @@ class DBEngine(StrEnum):
 class DatabaseOptions(BaseModel):
     """Configuration options for a database connection.
 
-    Attributes
-    ----------
-    ENGINE : DBEngine
-        The database engine to use (e.g., SQLite, MySQL, PostgreSQL).
+    :param ENGINE: The database engine to use (e.g., SQLite, MySQL, PostgreSQL).
         Defaults to SQLite.
-    USER : str or None
-        The username for the database connection.
-    PASSWORD : str or None
-        The password for the database connection.
-    HOST : str or None
-        The hostname or IP address of the database server.
-    PORT : int or None
-        The port number on which the database is running.
-    NAME : str
-        The name of the database.
-    URL
-
+    :type ENGINE: DBEngine
+    :param USER: The username for the database connection.
+    :type USER: str | None
+    :param PASSWORD: The password for the database connection.
+    :type PASSWORD: str | None
+    :param HOST: The hostname or IP address of the database server.
+    :type HOST: str | None
+    :param PORT: The port number on which the database is running.
+    :type PORT: int | None
+    :param NAME: The name of the database.
+    :type NAME: str
     """
 
     ENGINE: DBEngine = DBEngine.SQLITE
@@ -61,11 +54,8 @@ class DatabaseOptions(BaseModel):
     def URL(self) -> str:
         """Construct the database connection URL.
 
-        Returns
-        -------
-        str
-            A string representing the connection URL based on the configuration.
-
+        :return: A string representing the connection URL based on the configuration.
+        :rtype: str
         """
         host = self.HOST
         name = self.NAME
@@ -91,21 +81,11 @@ class DatabaseOptions(BaseModel):
         Convert a string to a `DBEngine` enum if necessary, raising an error
         if the value is not valid.
 
-        Parameters
-        ----------
-        v : DBEngine or str
-            The database engine value to validate.
-
-        Returns
-        -------
-        DBEngine
-            The validated and converted `DBEngine` enum value.
-
-        Raises
-        ------
-        ValueError
-            If the provided value is not a valid database engine.
-
+        :param v: The database engine value to validate.
+        :type v: DBEngine | str
+        :return: The validated and converted `DBEngine` enum value.
+        :rtype: DBEngine
+        :raises ValueError: If the provided value is not a valid database engine.
         """
         if isinstance(v, DBEngine):
             return v

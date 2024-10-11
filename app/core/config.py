@@ -59,16 +59,10 @@ class BaseLowercaseModel(BaseCaseInsensitiveModel):
     def force_lowercase_fields(cls, data: Any) -> Any:
         """Convert all string keys in input data to lowercase before validation.
 
-        Parameters
-        ----------
-        data : Any
-            The input data to be validated, typically a dictionary.
-
-        Returns
-        -------
-        Any
-            The transformed data with all string keys in lowercase.
-
+        :param data: The input data to be validated, typically a dictionary.
+        :type data: Any
+        :return: The transformed data with all string keys in lowercase.
+        :rtype: Any
         """
         if isinstance(data, dict):
             data = deep_lowercase_dict_keys(data)
@@ -82,19 +76,17 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
     specified prefixes. It processes the YAML data by merging data from multiple
     prefixes into a single configuration.
 
-    Parameters
-    ----------
-    settings_cls : type[BaseSettings]
-        The settings class associated with this source.
-    yaml_file : PathType or None, optional
-        The path to the YAML settings file. Defaults to "settings.yaml".
-    yaml_file_encoding : str or None, optional
-        The encoding of the YAML file. Defaults to `None`.
-    prefixes : Sequence[RequiredStr], optional
-        A sequence of prefixes to navigate through the YAML data.
-    base_prefix : RequiredStr or None, optional
-        The base prefix to start the configuration. Defaults to "default".
-
+    :param settings_cls: The settings class associated with this source.
+    :type settings_cls: type[BaseSettings]
+    :param yaml_file: The path to the YAML settings file. Defaults to "settings.yaml".
+    :type yaml_file: PathType | None
+    :param yaml_file_encoding: The encoding of the YAML file. Defaults to `None`.
+    :type yaml_file_encoding: str | None
+    :param prefixes: A sequence of prefixes to navigate through the YAML data.
+    :type prefixes: Sequence[RequiredStr]
+    :param base_prefix: The base prefix to start the configuration. Defaults to
+        "default".
+    :type base_prefix: RequiredStr | None
     """
 
     def __init__(
@@ -122,7 +114,12 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
 
 
 class BaseYamlSettings(BaseSettings):
-    """Base settings class for YAML config."""
+    """Base settings class for YAML config.
+
+    :param FASTAPI_ENV: The environment used (e.g. development, production).
+        Defaults to "development".
+    :type FASTAPI_ENV: str
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -153,9 +150,21 @@ class BaseYamlSettings(BaseSettings):
 
 
 class BaseYamlExtraSettings(BaseYamlSettings):
-    """Base settings for extra configuration."""
+    """Base settings for extra configuration.
 
-    SETTINGS_PREFIXES: ClassVar[tuple[str]]
+    :cvar SETTINGS_PREFIXES: Tuple of settings prefixes.
+    :vartype SETTINGS_PREFIXES: list[str]
+    :param UVICORN_HOST: The host for Uvicorn. Defaults to "127.0.0.1"
+    :type UVICORN_HOST: str
+    :param UVICORN_PORT: The port for Uvicorn. Defaults to 0.
+    :type UVICORN_PORT: int
+    :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
+    :type SSL_KEYFILE: RelativeFilePath | None
+    :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
+    :type SSL_CERTFILE: RelativeFilePath | None
+    """
+
+    SETTINGS_PREFIXES: ClassVar[list[str]]
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
     SSL_KEYFILE: RelativeFilePath | None = None
@@ -197,27 +206,25 @@ class BaseYamlExtraSettings(BaseYamlSettings):
 class CasdoorOptions(BaseModel):
     """Configuration options for Casdoor integration.
 
-    Attributes
-    ----------
-    ENDPOINT : str
-        The Casdoor API endpoint.
-    CLIENT_ID : str
-        The client ID for Casdoor authentication.
-    CLIENT_SECRET : str
-        The client secret for Casdoor authentication.
-    CERTIFICATE_PATH : FilePath
-        The file path to the Casdoor certificate. Defaults to "data/token_jwt_key.pem".
-    ORGANIZATION_NAME : str
-        The name of the organization in Casdoor. Defaults to "built-in".
-    APPLICATION_NAME : str
-        The name of the application in Casdoor. Defaults to "app-built-in".
-    FRONT_ENDPOINT : str, optional
-        The front-end endpoint for the Casdoor integration.
-    ALLOWED_ISSUERS : Literal["*"] or list of StrHttpUrl, optional
-        The allowed token issuers (iss) for JWT validation. Use "*" to allow any issuer.
-        Defaults to a list with `ENDPOINT`.
-    CERTIFICATE
-
+    :param ENDPOINT: The Casdoor API endpoint.
+    :type ENDPOINT: StrHttpUrl
+    :param CLIENT_ID: The client ID for Casdoor authentication.
+    :type CLIENT_ID: str
+    :param CLIENT_SECRET: The client secret for Casdoor authentication.
+    :type CLIENT_SECRET: str
+    :param CERTIFICATE_PATH: The file path to the Casdoor certificate.
+    :type CERTIFICATE_PATH: RelativeFilePath
+    :param ORGANIZATION_NAME: The name of the organization in Casdoor. Defaults to
+        "built-in".
+    :type ORGANIZATION_NAME: str
+    :param APPLICATION_NAME: The name of the application in Casdoor. Defaults to
+        "app-built-in"
+    :type APPLICATION_NAME: str
+    :param FRONT_ENDPOINT: The front-end endpoint for the Casdoor integration.
+    :type FRONT_ENDPOINT: URL
+    :param ALLOWED_ISSUERS: The allowed token issuers (iss) for JWT validation.
+        Defaults to an empty list.
+    :type ALLOWED_ISSUERS: list[StrHttpUrl] | Literal["*"]
     """
 
     ENDPOINT: StrHttpUrl
@@ -233,20 +240,15 @@ class CasdoorOptions(BaseModel):
         """Get Casdoor's front-end URL from a base URL.
 
         Construct the frontend URL for Casdoor integration by replacing any missing
-         parts (scheme, hostname, port, path) from the `FRONT_ENDPOINT` with
-         corresponding parts from the `base_url`.
+        parts (scheme, hostname, port, path) from the `FRONT_ENDPOINT` with
+        corresponding parts from the `base_url`.
 
-        Parameters
-        ----------
-        base_url : URL, optional
-            The base URL to be used when constructing the frontend URL. If not provided,
-            the Casdoor API endpoint (`ENDPOINT`) is used as the base.
-
-        Returns
-        -------
-        URL
-            The constructed front-end URL.
-
+        :param base_url: The base URL to be used when constructing the frontend
+            URL. If not provided, the Casdoor API endpoint (`ENDPOINT`) is used
+            as the base.
+        :type base_url: URL | None, optional
+        :return: The constructed front-end URL.
+        :rtype: URL
         """
         frontend_url = self.FRONT_ENDPOINT
         base_url = URL(self.ENDPOINT) if base_url is None else base_url
@@ -261,7 +263,11 @@ class CasdoorOptions(BaseModel):
     @computed_field
     @cached_property
     def CERTIFICATE(self) -> bytes:
-        """The contents of the certificate file."""
+        """The contents of the certificate file.
+
+        :return: The certificate file contents.
+        :rtype: bytes
+        """
         with self.CERTIFICATE_PATH.open("rb") as certificate_file:
             return certificate_file.read()
 
@@ -275,30 +281,26 @@ class CasdoorOptions(BaseModel):
 class Settings(BaseYamlSettings):
     """Main application settings class.
 
-    Attributes
-    ----------
-    CASDOOR : CasdoorOptions
-        Casdoor configuration options.
-    AUTH_USER_MODEL : StrImportableAttribute, optional
-        The full import path of the user model class. Must be importable.
-    SECRET_KEY : str, optional
-        The secret key used for signing tokens.
-        Defaults to `secrets.token_urlsafe(32)`.
-    LOGGING : LogLevel, optional
-        The logging level for the application. Defaults to `LogLevel.WARNING`.
-    LOGGING_EXTRA : dict[str, LogLevel], optional
-        Extra log levels to set for the application (e.g "sqlalchemy.engine",
-        "aiosqlite", etc.).
-    BACKEND_CORS_ORIGINS : list of AnyUrl
-        A list of allowed CORS origins.
-    SSL_CAFILE: RelativeFilePath, optional
-        The SSL CA file to use for remote API requests.
-    BASE_DIR
-
+    :param CASDOOR: Casdoor configuration options.
+    :type CASDOOR: CasdoorOptions
+    :param AUTH_USER_MODEL: The full import path of the user model class.
+        Defaults to "app.models.CasdoorUser".
+    :type AUTH_USER_MODEL: StrImportableAttribute
+    :param SECRET_KEY: The secret key used for signing tokens. Defaults to
+        `secrets.token_urlsafe(32)`.
+    :type SECRET_KEY: str
+    :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
+    :type LOGGING: LogLevel
+    :param LOGGING_EXTRA: Extra log levels to set for the application.
+    :type LOGGING_EXTRA: dict[str, LogLevel]
+    :param BACKEND_CORS_ORIGINS: A list of allowed CORS origins.
+    :type BACKEND_CORS_ORIGINS: list[AnyUrl]
+    :param SSL_CAFILE: The SSL CA file to use for remote API requests.
+    :type SSL_CAFILE: RelativeFilePath | None
     """
 
     CASDOOR: CasdoorOptions
-    AUTH_USER_MODEL: StrImportableAttribute = ""
+    AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_EXTRA: dict[str, LogLevel] = {}
@@ -308,7 +310,11 @@ class Settings(BaseYamlSettings):
     @computed_field
     @property
     def BASE_DIR(self) -> DirectoryPath:
-        """The base directory for the application."""
+        """The base directory for the application.
+
+        :return: The base directory.
+        :rtype: DirectoryPath
+        """
         return BASE_DIR
 
 

@@ -19,17 +19,26 @@ class CasdoorSDK(RemoteAPI):
     using client credentials and supports various grant types for obtaining access
     tokens.
 
-    Attributes
-    ----------
-    auth_scheme : str, optional
-        The authentication scheme to use (default is "Basic").
-    client_id : str
-        The client ID for Casdoor authentication.
-    client_secret : str
-        The client secret for Casdoor authentication.
-    org_name : str
-        The organization name in Casdoor.
-
+    :param endpoint: The base URL for the external API endpoint.
+    :type endpoint: HttpUrl
+    :param api_key: The API key for authentication. Defaults to None.
+    :type api_key: str | None
+    :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
+    :type verify_ssl: bool
+    :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
+    :type ssl_cafile: RelativeFilePath | None
+    :param ssl_keyfile: Path to the SSL key file. Defaults to None.
+    :type ssl_keyfile: RelativeFilePath | None
+    :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
+    :type ssl_certfile: RelativeFilePath | None
+    :param auth_scheme: The authentication scheme to use. Defaults to "Basic".
+    :type auth_scheme: str
+    :param client_id: The client ID for Casdoor authentication.
+    :type client_id: str
+    :param client_secret: The client secret for Casdoor authentication.
+    :type client_secret: str
+    :param org_name: The organization name in Casdoor.
+    :type org_name: str
     """
 
     auth_scheme: str = "Basic"
@@ -44,11 +53,8 @@ class CasdoorSDK(RemoteAPI):
         Encodes the `client_id` and `client_secret` into a Base64 string and sets it
         as the `api_key` for authentication.
 
-        Returns
-        -------
-        Self
-            The updated instance with the `api_key` set.
-
+        :return: The updated instance with the `api_key` set.
+        :rtype: Self
         """
         self.api_key = b64encode(
             f"{self.client_id}:{self.client_secret}".encode(),
@@ -65,18 +71,13 @@ class CasdoorSDK(RemoteAPI):
         Sends a request to Casdoor to obtain a new access token using the provided
         refresh token and optional scope.
 
-        Parameters
-        ----------
-        refresh_token : str
-            The refresh token to send to Casdoor.
-        scope : str, optional
-            The OAuth scope for the token request (default is an empty string).
-
-        Returns
-        -------
-        dict[str, Any]
-            The response from Casdoor containing the new access token.
-
+        :param refresh_token: The refresh token to send to Casdoor.
+        :type refresh_token: str
+        :param scope: The OAuth scope for the token request. Defaults to an
+            empty string.
+        :type scope: str
+        :return: The response from Casdoor containing the new access token.
+        :rtype: dict[str, Any]
         """
         data = {
             "grant_type": "refresh_token",
@@ -98,20 +99,17 @@ class CasdoorSDK(RemoteAPI):
         Requests an OAuth token from Casdoor using either an authorization code,
         username and password, or client credentials.
 
-        Parameters
-        ----------
-        code : str, optional
-            The authorization code received from Casdoor via redirect URL.
-        username : str, optional
-            The username for resource owner password credentials grant.
-        password : str, optional
-            The password for resource owner password credentials grant.
-
-        Returns
-        -------
-        dict[str, Any]
-            The OAuth token response from Casdoor.
-
+        :param code: The authorization code received from Casdoor via redirect URL.
+            Defaults to None.
+        :type code: str | None
+        :param username: The username for resource owner password credentials
+            grant. Defaults to None.
+        :type username: str | None
+        :param password: The password for resource owner password credentials
+            grant. Defaults to None.
+        :type password: str | None
+        :return: The OAuth token response from Casdoor.
+        :rtype: dict[str, Any]
         """
         data = {
             "grant_type": "client_credentials",
@@ -136,18 +134,13 @@ class CasdoorSDK(RemoteAPI):
 
         Sends a request to Casdoor to verify the provided token and its type.
 
-        Parameters
-        ----------
-        token : str
-            The token to introspect.
-        token_type : Literal["access_token", "refresh_token"], optional
-            The type of the token being introspected (default is "access_token").
-
-        Returns
-        -------
-        dict[str, Any]
-            The introspection result from Casdoor.
-
+        :param token: The token to introspect.
+        :type token: str
+        :param token_type: The type of the token being introspected.
+            Defaults to "access_token".
+        :type token_type: Literal["access_token", "refresh_token"]
+        :return: The introspection result from Casdoor.
+        :rtype: dict[str, Any]
         """
         return await self.post(
             "/api/login/oauth/introspect",
@@ -160,16 +153,10 @@ class CasdoorSDK(RemoteAPI):
 
         Fetches the token details from Casdoor using the provided token ID.
 
-        Parameters
-        ----------
-        token_id : str
-            The ID of the token to retrieve.
-
-        Returns
-        -------
-        dict[str, Any]
-            The token details retrieved from Casdoor.
-
+        :param token_id: The ID of the token to retrieve.
+        :type token_id: str
+        :return: The token details retrieved from Casdoor.
+        :rtype: dict[str, Any]
         """
         return await self.get("/api/get-token", params={"id": token_id})
 
@@ -178,11 +165,8 @@ class CasdoorSDK(RemoteAPI):
 
         Fetches all users associated with the configured organization from Casdoor.
 
-        Returns
-        -------
-        dict[str, Any]
-            A dictionary containing a list of user information.
-
+        :return: A dictionary containing a list of user information.
+        :rtype: dict[str, Any]
         """
         users = await self.get("/api/get-users", params={"owner": self.org_name})
         return users["data"]
@@ -192,16 +176,10 @@ class CasdoorSDK(RemoteAPI):
 
         Fetches the details of a user identified by the provided user ID.
 
-        Parameters
-        ----------
-        user_id : str
-            The ID of the user to retrieve.
-
-        Returns
-        -------
-        dict[str, Any]
-            A dictionary containing the user's information.
-
+        :param user_id: The ID of the user to retrieve.
+        :type user_id: str
+        :return: A dictionary containing the user's information.
+        :rtype: dict[str, Any]
         """
         user = await self.get(
             "/api/get-user",

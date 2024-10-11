@@ -209,7 +209,7 @@ class SEPSettings(BaseYamlExtraSettings):
 
     """
 
-    SETTINGS_PREFIXES: ClassVar[tuple[str]] = ("SEP",)
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     OAUTH: OAuthOptions
     SESSION: SessionOptions = SessionOptions()

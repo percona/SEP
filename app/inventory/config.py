@@ -21,7 +21,7 @@ class InventorySettings(BaseYamlExtraSettings):
 
     """
 
-    SETTINGS_PREFIXES: ClassVar[tuple[str]] = ("INVENTORY",)
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["INVENTORY"]
     UVICORN_PORT: int = 8001
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="inventory.db")
 

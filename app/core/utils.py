@@ -8,6 +8,7 @@ from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
 from importlib import import_module
 from typing import Any
+from typing import ClassVar
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
 REFRESH_INTERVAL = 3600
@@ -19,55 +20,67 @@ def to_uppercase(name: str) -> str:
     This function takes a string input and returns a new string with all
     characters converted to uppercase.
 
-    Parameters
-    ----------
-    name : str
-        The string to be converted to uppercase.
-
-    Returns
-    -------
-    str
-        The input string converted to uppercase.
-
+    :param name: The string to be converted to uppercase.
+    :type name: str
+    :return: The input string converted to uppercase.
+    :rtype: str
     """
     return name.upper()
 
 
 # TODO: Update:
 class ErrorFormatter:
-    __storage = {}
+    """Format HTTP errors based on provided details.
+
+    The `ErrorFormatter` class provides methods to extract error headings
+    and messages from error details, utilizing HTTP status codes for formatting.
+    """
+
+    __storage: ClassVar[dict] = {}
 
     @property
     def details(self) -> dict:
+        """Get the current error details.
+
+        :return: The current error details.
+        :rtype: dict
+        """
         return self.__storage.get("details", {})
 
     @details.setter
-    def details(self, details: dict):
+    def details(self, details: dict) -> None:
+        """Set the error details.
+
+        :param details: The error details to set.
+        :type details: dict
+        :raises TypeError: If `details` is not a dictionary.
+        """
         if not isinstance(details, dict):
             raise TypeError("details is not a dict")
         if "details" not in self.__storage or self.__storage["details"] != details:
             self.__storage["details"] = details
 
     def format_error_heading(self, details: dict) -> str:
-        """Extract the error heading
+        """Extract the error heading from details.
 
-        :param details:
-        :return:
+        :param details: The error details.
+        :type details: dict
+        :return: The error heading.
+        :rtype: str
         """
         return self._format(details).phrase
 
     def format_error_message(self, details: dict) -> str:
-        """Extract the error message
+        """Extract the error message from details.
 
-        :param details:
-        :return:
+        :param details: The error details.
+        :type details: dict
+        :return: The error message.
+        :rtype: str
         """
         return self._format(details).description
 
     def _format(self, details: dict) -> HTTPStatus:
-        """:param details:
-        :return:
-        """
         self.details = details
         if "status_code" not in self.details:
             return HTTPStatus.NOT_FOUND
@@ -75,9 +88,6 @@ class ErrorFormatter:
 
     @staticmethod
     def _resolve_code(code: int) -> HTTPStatus:
-        """:param code:
-        :return:
-        """
         for status_code in HTTPStatus:
             if code == status_code.value:
                 return status_code
@@ -91,16 +101,18 @@ format_error_heading, format_error_message = (
 )
 
 
-async def async_run(func: Callable, *args):
-    """Execute a non-async call
+async def async_run(func: Callable, *args: Any) -> Any:
+    """Execute a non-async function asynchronously.
 
-    :param func:
-    :param args:
-    :param kwargs:
-    :return:
+    :param func: The function to execute.
+    :type func: Callable
+    :param args: Arguments to pass to the function.
+    :type args: Any
+    :return: The result of the function execution.
+    :rtype: Any
     """
 
-    async def _run_in_process(executor: ProcessPoolExecutor):
+    async def _run_in_process(executor: ProcessPoolExecutor) -> Any:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(executor, func, *args)
 
@@ -115,19 +127,17 @@ async def async_run(func: Callable, *args):
 def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> None:
     """Recursively merge `update_dict` into `main_dict`.
 
-    Update `main_dict` with the contents of `update_dict` recursively. For each key in
-    `update_dict`, if the key exists in `main_dict` and both values are dictionaries,
-    merge them recursively. If the key exists in `main_dict` and both values are lists,
-    prepend the list from `update_dict` to the list in `main_dict`. Otherwise, overwrite
-    the value in `main_dict` with the value from `update_dict`.
+    Update `main_dict` with the contents of `update_dict` recursively. For each
+    key in `update_dict`, if the key exists in `main_dict` and both values are
+    dictionaries, merge them recursively. If the key exists in `main_dict` and
+    both values are lists, prepend the list from `update_dict` to the list in
+    `main_dict`. Otherwise, overwrite the value in `main_dict` with the value
+    from `update_dict`.
 
-    Parameters
-    ----------
-    main_dict : dict[Any, Any]
-        The dictionary to be updated.
-    update_dict : dict[Any, Any]
-        The dictionary containing updates to apply.
-
+    :param main_dict: The dictionary to be updated.
+    :type main_dict: dict[Any, Any]
+    :param update_dict: The dictionary containing updates to apply.
+    :type update_dict: dict[Any, Any]
     """
     for key, value in update_dict.items():
         if (
@@ -149,19 +159,13 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
 def deep_lowercase_dict_keys(data: dict[Any, Any]) -> dict[Any, Any]:
     """Recursively convert all string keys in a dictionary to lowercase.
 
-    Traverse the input dictionary and convert all keys that are strings to lowercase.
-    If a value is a dictionary, apply the conversion recursively.
+    Traverse the input dictionary and convert all keys that are strings to
+    lowercase. If a value is a dictionary, apply the conversion recursively.
 
-    Parameters
-    ----------
-    data : dict[Any, Any]
-        The dictionary whose keys are to be converted to lowercase.
-
-    Returns
-    -------
-    dict[Any, Any]
-        A new dictionary with all string keys converted to lowercase.
-
+    :param data: The dictionary whose keys are to be converted to lowercase.
+    :type data: dict[Any, Any]
+    :return: A new dictionary with all string keys converted to lowercase.
+    :rtype: dict[Any, Any]
     """
     lowercase_dict = {}
     for key, value in data.items():
@@ -176,20 +180,14 @@ def deep_lowercase_dict_keys(data: dict[Any, Any]) -> dict[Any, Any]:
 def slugify(text: str) -> str:
     """Convert a string into a slug suitable for URLs.
 
-    Normalize the input text by removing non-ASCII characters, converting to lowercase,
-    replacing non-alphanumeric characters with hyphens, and stripping leading/trailing
-    hyphens.
+    Normalize the input text by removing non-ASCII characters, converting to
+    lowercase, replacing non-alphanumeric characters with hyphens, and
+    stripping leading/trailing hyphens.
 
-    Parameters
-    ----------
-    text : str
-        The string to convert into a slug.
-
-    Returns
-    -------
-    str
-        The slugified version of the input string.
-
+    :param text: The string to convert into a slug.
+    :type text: str
+    :return: The slugified version of the input string.
+    :rtype: str
     """
     slug = (
         unicodedata.normalize("NFKD", text)
@@ -203,25 +201,16 @@ def slugify(text: str) -> str:
 def import_var(path: str) -> Any:
     """Dynamically import a variable from a given module path.
 
-    Import and return an attribute from a module specified by its dot-separated path.
+    Import and return an attribute from a module specified by its dot-separated
+    path.
 
-    Parameters
-    ----------
-    path : str
-        The full dot-separated path to the variable (e.g., "module.submodule.var_name").
-
-    Returns
-    -------
-    Any
-        The imported variable.
-
-    Raises
-    ------
-    ImportError
-        If the module cannot be imported.
-    AttributeError
-        If the attribute does not exist in the module.
-
+    :param path: The full dot-separated path to the variable (e.g.,
+        "module.submodule.var_name").
+    :type path: str
+    :return: The imported variable.
+    :rtype: Any
+    :raises ImportError: If the module cannot be imported.
+    :raises AttributeError: If the attribute does not exist in the module.
     """
     module_name, attr_name = path.rsplit(".", 1)
     module = import_module(module_name)

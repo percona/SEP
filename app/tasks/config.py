@@ -56,7 +56,7 @@ class TasksSettings(BaseYamlExtraSettings):
 
     """
 
-    SETTINGS_PREFIXES: ClassVar[tuple[str]] = ("TASKS",)
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
     NOMAD: NomadOptions
     EXECUTE_MODE: str = "background"
