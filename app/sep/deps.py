@@ -83,20 +83,19 @@ OAuthRedirectException = Annotated[
 
 def get_access_token_from_cookie(  # nosec B107
     oauth_redirect_exception: OAuthRedirectException,
-    signed_access_token: str = "",
+    request: Request,
 ) -> str:
-    """Return the unsigned token from the signed cookie.
+    """Retrieve and verify the access token from a session cookie.
 
-    Retrieve and verify the access token from a session cookie. If the token
-    is invalid or expired, trigger an OAuth redirect exception.
+    Extracts the signed access token from the request cookies, verifies it, and
+    returns the unsigned token. If verification fails, raises an OAuth redirect exception.
 
     Parameters
     ----------
     oauth_redirect_exception : OAuthRedirectException
         The exception to raise if the token is invalid or cannot be verified.
-    signed_access_token : str, optional
-        The signed access token stored in the session cookie.
-        Defaults to an empty string.
+    request : Request
+        The HTTP request containing the session cookie.
 
     Returns
     -------
@@ -114,13 +113,14 @@ def get_access_token_from_cookie(  # nosec B107
       a maximum age set by the session's expiration time.
 
     """
+    signed_access_token = request.cookies.get(sep_settings.SESSION.COOKIE_NAME, "")
     try:
         return crypto_timestamp_serializer.loads(
             signed_access_token,
             max_age=sep_settings.SESSION.MAX_AGE.total_seconds(),
         )
     except BadSignature:
-        logger.debug("Failed to unsign token", exc_info=True)
+        logger.debug("Failed to unsign token")
         raise oauth_redirect_exception from None
 
 
@@ -152,7 +152,7 @@ async def get_current_user(
     oauth_redirect_exception = get_oauth_redirect_exception(base_url)
     token = get_access_token_from_cookie(
         oauth_redirect_exception,
-        request.cookies.get(sep_settings.SESSION.COOKIE_NAME, ""),
+        request,
     )
     try:
         user = await User.from_jwt(token)
