@@ -14,6 +14,7 @@ from datetime import datetime
 from enum import auto
 from enum import StrEnum
 from statistics import mean
+from typing import Literal
 
 from pydantic import AliasGenerator
 from pydantic import BaseModel
@@ -453,3 +454,16 @@ class TaskStats(BaseModel):
                 last_seconds=self._raw["durations"].pop(),
                 total_seconds=sum(self._raw["durations"]),
             )
+
+
+class TransformPayloadRequest(BaseModel):
+    """Define the request body for the /transform/ API route.
+
+    :param payload: The job specification payload to be parsed.
+    :type payload: str | bytes
+    :param fmt: The format of the payload, which can be "hcl", "json", or "yaml".
+    :type fmt: Literal["hcl", "json", "yaml"]
+    """
+
+    payload: str | bytes
+    fmt: Literal["hcl", "json", "yaml"]

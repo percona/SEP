@@ -4,6 +4,7 @@ import logging
 from http import HTTPStatus
 from os import getenv
 from typing import Annotated
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import BackgroundTasks
@@ -32,6 +33,7 @@ from app.tasks.models import TaskHistory
 from app.tasks.models import TaskHistoryResponse
 from app.tasks.models import TaskHistoryStatusEnum
 from app.tasks.models import TaskStats
+from app.tasks.models import TransformPayloadRequest
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +329,15 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
 async def get_executor_hosts(executor: TaskExecutor) -> list[str]:
     """Return the executor hosts from the executor."""
     return executor.get_hosts()
+
+
+@router.post("/transform/", dependencies=[IsAuthenticatedDep])
+async def transform_payload(
+    executor: TaskExecutor,
+    data: TransformPayloadRequest,
+) -> dict[str, Any]:
+    """Transform a payload string into a dictionary."""
+    return await executor.transform_payload(data.payload, data.fmt)
 
 
 async def _schedule_queue_item(

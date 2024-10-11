@@ -16,7 +16,6 @@ from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
 from app.sep.deps import IsAuthenticated
 from app.sep.deps import TaskAPI
-from app.tasks.config import tasks_settings
 from app.tasks.main import TRANSLATION_MAPPING
 from app.tasks.models import TaskBackendEnum
 
@@ -73,11 +72,12 @@ async def task_create(  # TODO: Use pydantic model for request data
                     raise HTTPException(status.HTTP_400_BAD_REQUEST) from None
                 match backend:
                     case "nomad":
-                        payload[
-                            mapping.new
-                        ] = await tasks_settings.NOMAD.transform_payload(
-                            payload[mapping.old],
-                            payload["format"],
+                        payload[mapping.new] = await tasks_api.post(
+                            "/transform/",
+                            json={
+                                "payload": payload[mapping.old],
+                                "fmt": payload["format"],
+                            },
                         )
                     case _:
                         raise NotImplementedError("backend is unsupported")
