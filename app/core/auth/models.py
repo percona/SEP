@@ -125,7 +125,20 @@ class BaseUser(BaseModel):
 
     @field_validator("created_time", "updated_time", mode="before")
     @classmethod
-    def falsy_to_none(cls, v: str):
+    def falsy_to_none(cls, v: str) -> str:
+        """Convert falsy datetime strings to `None`.
+
+        Parameters
+        ----------
+        v : Any
+            The value to validate and potentially convert.
+
+        Returns
+        -------
+        Any
+            The original value if truthy, otherwise `None`.
+
+        """
         if not v:
             return None
         return v
@@ -144,7 +157,13 @@ class BaseUser(BaseModel):
 
     @property
     def access_token(self) -> str:
+        """Get the user's access token."""
         return self._access_token
+
+    @access_token.setter
+    def access_token(self, v: str) -> None:
+        """Set the user's access token."""
+        self._access_token = v
 
     @staticmethod
     async def get_oauth_token(
@@ -153,32 +172,200 @@ class BaseUser(BaseModel):
         password: str | None = None,
         refresh_token: str | None = None,
     ) -> OAuthToken:
+        """Obtain an OAuth token.
+
+        This method must be overridden in subclasses to provide specific logic for
+        obtaining OAuth tokens based on different grant types.
+
+        Parameters
+        ----------
+        code : str, optional
+            The authorization code received from the OAuth2 provider via redirect URL.
+        username : str, optional
+            The username for resource owner password credentials grant.
+        password : str, optional
+            The password for resource owner password credentials grant.
+        refresh_token : str, optional
+            The refresh token to obtain a new access token.
+
+        Returns
+        -------
+        OAuthToken
+            The OAuth token response.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".get_oauth_token() must be overridden.")
 
     @staticmethod
     async def invalidate_oauth_token(access_token: str) -> None:
+        """Invalidate an OAuth token.
+
+        This method must be overridden in subclasses to provide specific logic for
+        invalidating OAuth tokens.
+
+        Parameters
+        ----------
+        access_token : str
+            The access token to invalidate.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".invalidate_oauth_token() must be overridden.")
 
     @classmethod
     async def get_user(cls, username: RequiredStr) -> Self:
+        """Retrieve a user by username.
+
+        This method must be overridden in subclasses to provide specific logic for
+        retrieving a user from the data store.
+
+        Parameters
+        ----------
+        username : RequiredStr
+            The username of the user to retrieve.
+
+        Returns
+        -------
+        Self
+            An instance of the user model.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".get_user() must be overridden.")
 
     @classmethod
     async def get_users(cls) -> list[Self]:
+        """Retrieve all users.
+
+        This method must be overridden in subclasses to provide specific logic for
+        retrieving all users from the data store.
+
+        Returns
+        -------
+        list[Self]
+            A list of user instances.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".get_users() must be overridden.")
 
     @classmethod
     async def from_token_payload(cls, token_payload: BaseTokenPayload) -> Self:
+        """Create a user instance from a token payload.
+
+        This method must be overridden in subclasses to provide specific logic for
+        constructing a user instance based on the contents of a JWT token payload.
+
+        Parameters
+        ----------
+        token_payload : BaseTokenPayload
+            The decoded JWT token payload.
+
+        Returns
+        -------
+        Self
+            An instance of the user model.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".from_token_payload() must be overridden.")
 
     @classmethod
     async def from_jwt(cls, token: str) -> Self:
+        """Create a user instance from a JWT token.
+
+        This method must be overridden in subclasses to provide specific logic for
+        decoding a JWT token and constructing a user instance.
+
+        Parameters
+        ----------
+        token : str
+            The JWT token string to decode.
+
+        Returns
+        -------
+        Self
+            An instance of the user model.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".from_jwt() must be overridden.")
 
     @classmethod
     async def from_code(cls, code: str) -> Self:
+        """Create a user instance from an authorization code.
+
+        This method must be overridden in subclasses to provide specific logic for
+        exchanging an authorization code for user information and constructing a user
+        instance.
+
+        Parameters
+        ----------
+        code : str
+            The authorization code received from the OAuth2 provider.
+
+        Returns
+        -------
+        Self
+            An instance of the user model.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".from_code() must be overridden.")
 
     @classmethod
     async def from_password(cls, username: str, password: str) -> Self:
+        """Create a user instance from username and password.
+
+        This method must be overridden in subclasses to provide specific logic for
+        authenticating a user with a username and password and constructing a user
+        instance.
+
+        Parameters
+        ----------
+        username : str
+            The username of the user.
+        password : str
+            The password of the user.
+
+        Returns
+        -------
+        Self
+            An instance of the user model.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not overridden in a subclass.
+
+        """
         raise NotImplementedError(".from_password() must be overridden.")
