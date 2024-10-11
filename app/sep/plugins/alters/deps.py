@@ -22,17 +22,11 @@ async def build_alters_task_payload(
     Build the payload for an Alters task to be executed, including the
     necessary command arguments for performing schema changes.
 
-    Parameters
-    ----------
-    form : AltersCreate
-        The form data for the Alters creation.
-
-    Returns
-    -------
-    GeneratedTask
-        A fully constructed `GeneratedTask` object containing all the necessary commands
-        and parameters for the Alters task execution.
-
+    :param form: The form data for the Alters creation.
+    :type form: AltersCreate
+    :return: A fully constructed `GeneratedTask` object containing all the necessary
+        commands and parameters for the Alters task execution.
+    :rtype: GeneratedTask
     """
     if form.connect_to == "localhost":
         dsn = f"D={form.schema_name},t={form.table_name}"
@@ -77,23 +71,14 @@ async def get_alters_task(
     that it is owned by the Alters plugin. If the task does not exist or is not
     owned by Alters, it raises a 404 HTTP exception.
 
-    Parameters
-    ----------
-    task_name : str
-        The name of the task to retrieve.
-    tasks_api : TaskAPI
-        The TaskAPI instance used to make requests to the task service.
-
-    Returns
-    -------
-    dict
-        The task data as a dictionary.
-
-    Raises
-    ------
-    HTTPException
-        If the task is not found or is not owned by Alters (HTTP status 404).
-
+    :param task_name: The name of the task to retrieve.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :return: The task data as a dictionary.
+    :rtype: dict[str, Any]
+    :raises HTTPException: If the task is not found or is not owned by Alters
+        (HTTP status 404).
     """
     task = await tasks_api.get(
         f"/{task_name}",
