@@ -90,9 +90,7 @@ class NomadExecutor(BaseExecutor):
         # TODO: determine scenarios for execution, such as looking up an existing job
         if queue_item.execution_request.meta:
             # TODO: target is currently pushed in to meta
-            queue_item.execution_request.meta["target"] = (
-                queue_item.execution_request.target
-            )
+            queue_item.execution_request.meta["target"] = queue_item.execution_request.target
             # TODO: DC is currently forced
             queue_item.execution_request.meta["dc"] = "dc1"
             # TODO: allow templates in more fields, currently only for constraints
@@ -372,14 +370,8 @@ class NomadExecutor(BaseExecutor):
     def get_hosts(self) -> list[str]:
         """Get healthy node names from Nomad backend.
 
-        Returns
-        -------
-        list of str
-            The list of healthy node names.
-
+        :return: The list of healthy node names.
+        :rtype: list[str]
         """
         filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
-        return [
-            node["Name"]
-            for node in self.backend.nodes.get_nodes(filter_=filter_expression)
-        ]
+        return [node["Name"] for node in self.backend.nodes.get_nodes(filter_=filter_expression)]

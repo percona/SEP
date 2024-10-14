@@ -19,11 +19,9 @@ logger = logging.getLogger(__name__)
 class BaseExecutor(BaseModel, ABC):
     """Define the blueprint of a task executor.
 
-    Attributes
-    ----------
-    wait_interval : int, optional
-        The interval in seconds between status checks. Defaults to 5 seconds.
-
+    :param wait_interval: The interval in seconds between status checks.
+        Defaults to 5 seconds.
+    :type wait_interval: int
     """
 
     wait_interval: int = 5
@@ -70,18 +68,13 @@ class BaseExecutor(BaseModel, ABC):
     ) -> TaskHistory:
         """Run a task and update the related task history.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        queue_item : TaskHistory
-            The task history record for tracking this execution.
-
-        Returns
-        -------
-        TaskHistory
-            The updated task history with execution details.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param queue_item: The task history record for tracking this execution.
+        :type queue_item: TaskHistory
+        :return: The updated task history with execution details.
+        :rtype: TaskHistory
         """
 
     # TODO: Use pydantic models instead of dict for job validation
@@ -89,18 +82,16 @@ class BaseExecutor(BaseModel, ABC):
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Validate a job specification.
 
-        Parameters
-        ----------
-        job : dict[str, Any]
-            The job specification to validate.
-
-        Returns
-        -------
-        dict[str, Any]
-            The original job specification if validation is successful.
-
+        :param job: The job specification to validate.
+        :type job: dict[str, Any]
+        :return: The original job specification if validation is successful.
+        :rtype: dict[str, Any]
         """
 
     @abstractmethod
     def get_hosts(self) -> list[str]:
-        """Get the list of valid executor hosts."""
+        """Get the list of valid executor hosts.
+
+        :return: The list of healthy hostnames.
+        :rtype: list[str]
+        """

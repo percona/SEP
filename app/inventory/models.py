@@ -109,9 +109,7 @@ class Node(NodeBase, BaseSQLModel, table=True):
     :type services: list[Service]
     """
 
-    __table_args__ = (
-        Index("ix_node_external_id_source", "external_id", "source", unique=True),
-    )
+    __table_args__ = (Index("ix_node_external_id_source", "external_id", "source", unique=True),)
     services: list["Service"] = Relationship(back_populates="node", cascade_delete=True)
 
 
@@ -253,9 +251,7 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type schemas: list[Schema]
     """
 
-    __table_args__ = (
-        Index("ix_service_external_id_node_id", "external_id", "node_id", unique=True),
-    )
+    __table_args__ = (Index("ix_service_external_id_node_id", "external_id", "node_id", unique=True),)
 
     node: Node = Relationship(back_populates="services")
     schemas: list["Schema"] = Relationship(
@@ -364,9 +360,7 @@ class Schema(BaseSQLModel, SchemaBase, table=True):
     :type tables: list[Table]
     """
 
-    __table_args__ = (
-        Index("ix_schema_name_service_id", "name", "service_id", unique=True),
-    )
+    __table_args__ = (Index("ix_schema_name_service_id", "name", "service_id", unique=True),)
     service: Service = Relationship(back_populates="schemas")
     tables: list["Table"] = Relationship(back_populates="database", cascade_delete=True)
 
@@ -414,23 +408,20 @@ class SchemaResponse(BaseSQLModel, SchemaBase):
 class SchemaDetailResponse(SchemaResponse):
     """Define the schema retrieve API response.
 
-    Attributes
-    ----------
-    id : int or None
-        The primary key for the table. Auto-incremented and not nullable.
-    created_at : datetime
-        The timestamp when the record is created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record is last updated. Automatically updated on changes.
-    name : RequiredStr
-        The name of the schema.
-    service_id : int
-        The unique identifier of the service to which the schema belongs.
-    tables : list[Table]
-        A list of tables within the schema.
-    service: Service
-        The schema's service.
-
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
+    :param name: The name of the schema.
+    :type name: RequiredStr
+    :param service_id: The unique identifier of the service to which the schema belongs.
+    :type service_id: int
+    :param service: The schema's service.
+    :type service: Service
     """
 
     service: Service
@@ -475,9 +466,7 @@ class Table(BaseSQLModel, TableBase, table=True):
     :type database: Schema
     """
 
-    __table_args__ = (
-        Index("ix_table_name_schema_id", "name", "schema_id", unique=True),
-    )
+    __table_args__ = (Index("ix_table_name_schema_id", "name", "schema_id", unique=True),)
     database: Schema = Relationship(back_populates="tables")
 
 
@@ -523,23 +512,22 @@ class TableResponse(BaseSQLModel, TableBase):
 class TableDetailResponse(TableResponse):
     """Define the schema retrieve API response.
 
-    Attributes
-    ----------
-    id : int or None
-        The primary key for the table. Auto-incremented and not nullable.
-    created_at : datetime
-        The timestamp when the record is created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record is last updated. Automatically updated on changes.
-    name : RequiredStr
-        The name of the table.
-    create : RequiredStr
-        The SQL statement used to create the table.
-    schema_id : int
-        The foreign key referencing the schema to which the table belongs
-    database: Schema
-        The table's schema.
-
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
+    :param name: The name of the table.
+    :type name: RequiredStr
+    :param create: The SQL statement used to create the table.
+    :type create: RequiredStr
+    :param schema_id: The foreign key referencing the schema to which the table belongs.
+    :type schema_id: int
+    :param database: The table's schema.
+    :type database: Schema
     """
 
     database: Schema

@@ -31,11 +31,8 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 def get_executor() -> BaseExecutor:
     """Get the task executor.
 
-    Returns
-    -------
-    BaseExecutor
-        The task executor.
-
+    :return: The task executor.
+    :rtype: BaseExecutor
     """
     # TODO: Allow other executors
     return tasks_settings.NOMAD
