@@ -2,8 +2,6 @@
 
 from typing import ClassVar
 
-from pydantic import ConfigDict
-
 from app.core.config import BaseYamlExtraSettings
 from app.core.db.config import DatabaseOptions
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -27,7 +25,6 @@ class TasksSettings(BaseYamlExtraSettings):
     :type DATABASE: DatabaseOptions
     """
 
-    model_config = ConfigDict(extra="allow")
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
     NOMAD: NomadExecutor
