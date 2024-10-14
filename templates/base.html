@@ -115,94 +115,6 @@
             font-style: normal
         }
 
-        html,
-        body {
-            height: 98%;
-            overflow-y: scroll
-        }
-
-        html {
-            background-color: #303642;
-        }
-
-        body {
-            margin: 0 auto auto auto;
-            max-width: 98%;
-            min-width: 62em;
-            width: 130em;
-            display: grid;
-            grid-template-areas: "head head" "nav  main" "nav  foot";
-            grid-template-rows: 10em 1fr 5em;
-            grid-template-columns: 15em 1fr;
-        }
-
-        body {
-            background-color: #303642;
-        }
-
-        body>main {
-            grid-area: main;
-            padding: 1em;
-            background-color: white;
-            border-right: 1em solid white;
-        }
-
-        body>footer {
-            grid-area: foot;
-            background-color: #2C323E;
-            border-radius: 0 0 4.5em 0;
-            color: #fff;
-            padding: 1em;
-            border-bottom: 1em solid white;
-            border-right: 1em solid white;
-        }
-
-        nav ul {
-            display: block;
-            list-style: none;
-            line-height: 2em;
-            margin-left: -.5em
-        }
-
-        nav li>a {
-            display: block;
-            margin-bottom: .5em;
-            text-decoration: none;
-            padding: .5em .5em .5em .75em;
-            border-radius: 2em;
-        }
-
-        nav a:link,
-        nav a:visited {
-            background-color: #4b5468;
-            color: #fff;
-        }
-
-        nav a:link:after {
-            margin-left: .5em;
-            color: #F0F1F4
-        }
-
-        nav a[href]:hover {
-            background-color: #3a4151;
-            color: #fff;
-        }
-
-        nav a:active,
-        nav a.selected {
-            background-color: #2C323E;
-        }
-
-        nav a.selected {
-            color: #fff;
-        }
-
-        nav a.selected:after {
-            content: "arrow_right";
-            font-family: "Material Icons";
-            font-size: 2em;
-            vertical-align: middle;
-        }
 
         .archive a:before,
         .tasks a:before,
@@ -239,29 +151,380 @@
             content: "task";
         }
 
-        @media (min-width:320px) {
-            /* smartphones, iPhone, portrait 480x320 phones */
-        }
+        @media (max-width:960px) {
 
-        @media (min-width:481px) {
-            /* portrait e-readers (Nook/Kindle), smaller tablets @ 600 or @ 640 wide. */
-        }
-
-        @media (min-width:641px) {
             /* portrait tablets, portrait iPad, landscape e-readers, landscape 800x480 or 854x480 phones */
+            body {
+                height: 98%;
+                overflow-y: scroll;
+                background-color: #303642;
+                margin: 0 auto auto auto;
+                display: grid;
+                grid-template-areas:
+                    "head head"
+                    "main main"
+                    "foot foot";
+                grid-template-rows: 7em 1fr 4em;
+                grid-template-columns: 15em 1fr;
+            }
+
+            body {
+                background-color: #303642;
+            }
+
+            body.active {
+                overflow: hidden;
+            }
+
+            body>nav {
+                grid-area: nav;
+                position: fixed;
+                width: fit-content;
+                left: 1em;
+                top: 130px;
+                height: calc(100vh - 170px);
+                right: 16px;
+                border-radius: 0;
+                pointer-events: none;
+                overflow: hidden;
+                padding: 0;
+                background: transparent;
+                height: 100%;
+                border-left: 0;
+                margin-left: 1em;
+
+            }
+
+            nav ul {
+                transform: translateX(-200px);
+                padding: 1em;
+                background: lightgray;
+                height: calc(100vh - 160px);
+                transition: transform 0.3s linear;
+            }
+
+            nav.active {
+                display: flex;
+                opacity: 1;
+                pointer-events: auto;
+                z-index: 0;
+            }
+
+            nav.active ul {
+                transform: translateX(0);
+            }
+
+            nav ul li a {
+                min-width: 155px;
+            }
+
+            body>main {
+                grid-area: main;
+                padding-right: 1em;
+                padding-left: 2em;
+                background-color: white;
+                border-right: 1em solid white;
+                overflow-y: scroll;
+                min-height: calc(100vh - 13em);
+            }
+
+            body>footer {
+                grid-area: foot;
+                background-color: #2C323E;
+                border-radius: 0 0 4.5em 4.5em;
+                color: #fff;
+                padding: 1em;
+                border-bottom: 1em solid white;
+                border-right: 1em solid white;
+                border-left: 1em solid white;
+                z-index: 1;
+            }
+
+            header {
+                display: flex;
+                grid-template-areas: "icon title";
+                grid-template-columns: 15em 1fr;
+                border-left: 1em solid white;
+                border-top: 1em solid white;
+                border-right: 1em solid white;
+            }
+
+            #full_logo {
+                display: none;
+            }
+
+            #logo {
+                width: fit-content;
+            }
+
+            header h1 {
+                grid-area: title;
+                font-size: 1.8em;
+                flex-grow: 1;
+                align-self: center;
+                text-wrap: nowrap;
+                text-overflow: ellipsis;
+                overflow: hidden;
+            }
+
+            header .hamburger {
+                align-self: center;
+                margin-right: 1em;
+            }
+
+            .hamburger {
+                display: block;
+            }
+
+            .hamburger.active span:nth-child(1) {
+                transform: rotate(45deg) translate(8px, 8px);
+            }
+
+            .hamburger.active span:nth-child(2) {
+                opacity: 0;
+            }
+
+            .hamburger.active span:nth-child(3) {
+                transform: rotate(-45deg) translate(5px, -5px);
+            }
+
+            nav.active {
+                display: flex;
+            }
+
+            svg {
+                height: 90%;
+                width: 75%;
+                grid-area: icon;
+                margin-left: 0.3em;
+            }
+
+            svg path.cls-2 {
+                fill: rgb(255, 255, 255) !important
+            }
+
+            nav ul {
+                display: block;
+                list-style: none;
+                line-height: 2em;
+                margin-left: -.5em
+            }
+
+            nav li>a {
+                display: block;
+                margin-bottom: .5em;
+                text-decoration: none;
+                padding: .5em .5em .5em .75em;
+                border-radius: 2em;
+            }
+
+            nav a:link,
+            nav a:visited {
+                background-color: #4b5468;
+                color: #fff;
+            }
+
+            nav a:link:after {
+                margin-left: .5em;
+                color: #F0F1F4
+            }
+
+            nav a[href]:hover {
+                background-color: #3a4151;
+                color: #fff;
+            }
+
+            nav a:active,
+            nav a.selected {
+                background-color: #2C323E;
+            }
+
+            nav a.selected {
+                color: #fff;
+            }
+
+            nav a.selected:after {
+                content: "arrow_right";
+                font-family: "Material Icons";
+                font-size: 2em;
+                vertical-align: middle;
+            }
+        }
+
+        @media (min-width:320px) and (max-width: 641px) {
+
+            nav ul {
+                width: calc(100vw - 6em);
+                transform: translateX(-100%);
+                margin-left: 0;
+            }
         }
 
         @media (min-width:961px) {
+
             /* tablet, landscape iPad, lo-res laptops ands desktops */
+            body {
+                height: 98%;
+                overflow-y: scroll;
+                background-color: #303642;
+                margin: 0 auto auto auto;
+                display: grid;
+                grid-template-areas: "head head" "nav  main" "nav  foot";
+                grid-template-rows: 7em 1fr 4em;
+                grid-template-columns: 15em 1fr;
+            }
+
+            body {
+                background-color: #303642;
+            }
+
+            body>nav {
+                grid-area: nav;
+                background-color: #F0F1F4;
+                border-radius: 0 0 0 4.5em;
+                padding: 1em;
+                border-left: 1em solid white;
+                border-bottom: 1em solid white
+            }
+
+            body>main {
+                grid-area: main;
+                padding: 1em;
+                background-color: white;
+                border-right: 1em solid white;
+                height: calc(100vh - 8em - 104px);
+                overflow-y: scroll;
+            }
+
+            body>footer {
+                grid-area: foot;
+                background-color: #2C323E;
+                border-radius: 0 0 4.5em 0;
+                color: #fff;
+                padding: 1em;
+                border-bottom: 1em solid white;
+                border-right: 1em solid white;
+            }
+
+            header {
+                display: grid;
+                grid-template-areas: "icon title";
+                grid-template-columns: 15em 1fr;
+                border-left: 1em solid white;
+                border-top: 1em solid white;
+                border-right: 1em solid white;
+            }
+
+            header h1 {
+                grid-area: title;
+                margin-top: 1.2em;
+                font-size: 1.8em;
+            }
+
+            header .hamburger {
+                display: none;
+            }
+
+            #logo {
+                display: none;
+            }
+
+            svg {
+                height: 90%;
+                width: 75%;
+                grid-area: icon;
+                margin-left: 0.3em;
+            }
+
+            svg path.cls-2 {
+                fill: rgb(255, 255, 255) !important
+            }
+
+            nav ul {
+                display: block;
+                list-style: none;
+                line-height: 2em;
+                margin-left: -.5em
+            }
+
+            nav li>a {
+                display: block;
+                margin-bottom: .5em;
+                text-decoration: none;
+                padding: .5em .5em .5em .75em;
+                border-radius: 2em;
+            }
+
+            nav a:link,
+            nav a:visited {
+                background-color: #4b5468;
+                color: #fff;
+            }
+
+            nav a:link:after {
+                margin-left: .5em;
+                color: #F0F1F4
+            }
+
+            nav a[href]:hover {
+                background-color: #3a4151;
+                color: #fff;
+            }
+
+            nav a:active,
+            nav a.selected {
+                background-color: #2C323E;
+            }
+
+            nav a.selected {
+                color: #fff;
+            }
+
+            nav a.selected:after {
+                content: "arrow_right";
+                font-family: "Material Icons";
+                font-size: 2em;
+                vertical-align: middle;
+            }
         }
 
-        @media (min-width:1025px) {
-            /* big landscape tablets, laptops, and desktops */
-        }
+        @media (min-width:1281px) {
 
-        @media (min-width:1440px) {
+            /* big landscape tablets, laptops, and desktops hi-res laptops and desktops */
+            body {
+                height: 98%;
+                overflow-y: scroll;
+                background-color: #303642;
+                margin: 0 auto auto auto;
+                display: grid;
+                grid-template-areas: "head head" "nav  main" "nav  foot";
+                grid-template-rows: 10em 1fr 5em;
+                grid-template-columns: 15em 1fr;
+            }
 
-            /* hi-res laptops and desktops */
+            body {
+                background-color: #303642;
+            }
+
+            body>main {
+                grid-area: main;
+                padding: 1em;
+                background-color: white;
+                border-right: 1em solid white;
+                height: calc(100vh - 8em - 176px);
+                overflow-y: scroll;
+            }
+
+            body>footer {
+                grid-area: foot;
+                background-color: #2C323E;
+                border-radius: 0 0 4.5em 0;
+                color: #fff;
+                padding: 1em;
+                border-bottom: 1em solid white;
+                border-right: 1em solid white;
+            }
+
             header {
                 display: grid;
                 grid-template-areas: "icon title";
@@ -278,7 +541,12 @@
 
             header h1 {
                 grid-area: title;
-                margin-top: 2em
+                margin-top: 1.8em;
+                font-size: 2.5em;
+            }
+
+            header .hamburger {
+                display: none;
             }
 
             svg {
@@ -289,6 +557,53 @@
 
             svg path.cls-2 {
                 fill: rgb(255, 255, 255) !important
+            }
+
+            nav ul {
+                display: block;
+                list-style: none;
+                line-height: 2em;
+                margin-left: -.5em
+            }
+
+            nav li>a {
+                display: block;
+                margin-bottom: .5em;
+                text-decoration: none;
+                padding: .5em .5em .5em .75em;
+                border-radius: 2em;
+            }
+
+            nav a:link,
+            nav a:visited {
+                background-color: #4b5468;
+                color: #fff;
+            }
+
+            nav a:link:after {
+                margin-left: .5em;
+                color: #F0F1F4
+            }
+
+            nav a[href]:hover {
+                background-color: #3a4151;
+                color: #fff;
+            }
+
+            nav a:active,
+            nav a.selected {
+                background-color: #2C323E;
+            }
+
+            nav a.selected {
+                color: #fff;
+            }
+
+            nav a.selected:after {
+                content: "arrow_right";
+                font-family: "Material Icons";
+                font-size: 2em;
+                vertical-align: middle;
             }
         }
 
@@ -455,17 +770,31 @@
             text-align: center;
             vertical-align: middle
         }
+
+        .hamburger {
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+        }
+
+        .hamburger span {
+            background-color: #fff;
+            height: 3px;
+            width: 25px;
+            margin: 3px 0;
+            transition: 0.4s;
+        }
     </style>
     {% block behaviours %}{% endblock %}
 </head>
 
-<body class="has-fixed-sidenav">
+<body class="has-fixed-sidenav" id="body">
     <header>
         {% block home %}
         {% block home_link %}
         <a href="/">
             {% endblock %}
-            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="Layer_2"
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="full_logo"
                 width="1104.09" height="235.3" viewBox="0 0 1104.09 235.3">
                 <defs>
                     <style>
@@ -508,22 +837,45 @@
                     </path>
                 </g>
             </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 271.5 235.3" id="logo">
+                <defs>
+                    <style>
+                        .cls-3 {
+                            fill: url(#linear-gradient2);
+                        }
+                    </style>
+                    <linearGradient id="linear-gradient2" x1="55.63" y1="-28.22" x2="257.29" y2="173.27"
+                        gradientTransform="translate(0 237.3) scale(1 -1)" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#fc3519"></stop>
+                        <stop offset="1" stop-color="#f0d136"></stop>
+                    </linearGradient>
+                </defs>
+                <path class="cls-3"
+                    d="m221.18,148.08c28.96-18.95,38.44-57.6,20.91-87.97-8.78-15.24-22.98-26.15-39.96-30.7-15.73-4.23-32.17-2.5-46.63,4.81L135.75,0l-40.99,71.06L0,235.3h271.5l-50.32-87.22Zm-23.69-101.27c12.34,3.29,22.62,11.22,29.02,22.27,12.58,21.78,6.04,49.39-14.35,63.34l-47.64-82.57c10.26-4.94,21.84-6.02,32.97-3.05Zm-61.74-10.74l104.53,181.2h-61.16L105.16,89.09l30.59-53.02h0ZM31.22,217.26l63.53-110.1,63.53,110.1H31.22Z">
+                </path>
+            </svg>
         </a>
         {% endblock %}
         {% block header %}
         <h1>{% block title_prefix %}SEP: {% endblock %}{{ self.title() }}</h1>
         {% endblock %}
+        <div class="hamburger" id="hamburger">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
     </header>
 
     {% block sidebar %}
     {% include "menus/partials/sidebar.html" %}
     {% endblock %}
 
-    <main>
-        {% block main %}
-        <p>Nothing to see here, move along</p>
-        {% endblock %}
-
+    <main id="main">
+        <div>
+            {% block main %}
+            <p>Nothing to see here, move along</p>
+            {% endblock %}
+        </div>
     </main>
 
     <footer>
@@ -534,6 +886,27 @@
 
     {% block behaviours_optimized %}
     <script src="/static/jquery-3.1.1.min.js"></script>
+    <script>
+        const hamburger = document.getElementById('hamburger');
+        const navMenu = document.getElementById('sep');
+        const body = document.getElementById('body');
+
+        hamburger.addEventListener('click', () => {
+            hamburger.classList.toggle('active');
+            navMenu.classList.toggle('active');
+            body.classList.toggle('active');
+        });
+        const main = document.getElementById('main');
+        const heightOfMain = main.offsetHeight;
+
+        const ul = navMenu.querySelector('ul');
+        if (window.innerWidth < 960) {
+            ul.style.height = heightOfMain + 'px';
+        } else {
+            ul.style.height = '';
+        }
+
+    </script>
     <!--<script src="/static/themes/materialize/js/materialize.js"></script>
       <script>
           $(document).ready(function(){
