@@ -1,10 +1,8 @@
 """Define the application settings."""
 
-import logging
 import re
 import secrets
 from collections.abc import Sequence
-from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -12,13 +10,11 @@ from typing import ClassVar
 from typing import Literal
 from typing import Self
 
-from casdoor import AsyncCasdoorSDK
 from pydantic import AnyUrl
 from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import DirectoryPath
-from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
@@ -26,6 +22,7 @@ from pydantic_settings import SettingsConfigDict
 from pydantic_settings import YamlConfigSettingsSource
 from pydantic_settings.sources import PathType
 
+from app.core.fields import LogLevel
 from app.core.fields import RelativeFilePath
 from app.core.fields import RequiredStr
 from app.core.fields import StrHttpUrl
@@ -37,20 +34,6 @@ from app.core.utils import to_uppercase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
-
-
-class LogLevel(IntEnum):
-    """Enumeration of logging levels."""
-
-    CRITICAL = logging.CRITICAL
-    FATAL = logging.CRITICAL
-    ERROR = logging.ERROR
-    WARNING = logging.WARNING
-    WARN = logging.WARNING
-    INFO = logging.INFO
-    DEBUG = logging.DEBUG
-    NOTSET = logging.NOTSET
-    DISABLED = logging.NOTSET
 
 
 class BaseCaseInsensitiveModel(BaseModel):
@@ -148,7 +131,6 @@ class BaseYamlSettings(BaseSettings):
         extra="ignore",
     )
     FASTAPI_ENV: str = DEFAULT_FASTAPI_ENV
-    LOGGING: LogLevel = LogLevel.WARNING
 
     @classmethod
     def settings_customise_sources(
@@ -168,17 +150,6 @@ class BaseYamlSettings(BaseSettings):
             dotenv_settings,
             YamlPrefixConfigSettingsSource(settings_cls, prefixes=(yaml_prefix,)),
         )
-
-    @field_validator("LOGGING", mode="before")
-    @classmethod
-    def validate_log_level(cls, v: LogLevel | str) -> LogLevel:
-        """Uppercase the provided logging level."""
-        if isinstance(v, LogLevel):
-            return v
-        try:
-            return LogLevel[v.upper()]
-        except KeyError as exc:
-            raise ValueError(f"Invalid log level: '{v}'") from exc
 
 
 class BaseYamlExtraSettings(BaseYamlSettings):
@@ -246,7 +217,6 @@ class CasdoorOptions(BaseModel):
         The allowed token issuers (iss) for JWT validation. Use "*" to allow any issuer.
         Defaults to a list with `ENDPOINT`.
     CERTIFICATE
-    SDK
 
     """
 
@@ -290,22 +260,10 @@ class CasdoorOptions(BaseModel):
 
     @computed_field
     @cached_property
-    def CERTIFICATE(self) -> str:
+    def CERTIFICATE(self) -> bytes:
         """The contents of the certificate file."""
-        with self.CERTIFICATE_PATH.open() as certificate_file:
+        with self.CERTIFICATE_PATH.open("rb") as certificate_file:
             return certificate_file.read()
-
-    @cached_property
-    def SDK(self) -> AsyncCasdoorSDK:
-        """Asynchronous Casdoor SDK instance."""
-        return AsyncCasdoorSDK(
-            endpoint=self.ENDPOINT,
-            client_id=self.CLIENT_ID,
-            client_secret=self.CLIENT_SECRET,
-            certificate=self.CERTIFICATE,
-            org_name=self.ORGANIZATION_NAME,
-            application_name=self.APPLICATION_NAME,
-        )
 
     @model_validator(mode="after")
     def _set_default_allowed_issuers(self) -> Self:
@@ -328,6 +286,9 @@ class Settings(BaseYamlSettings):
         Defaults to `secrets.token_urlsafe(32)`.
     LOGGING : LogLevel, optional
         The logging level for the application. Defaults to `LogLevel.WARNING`.
+    LOGGING_EXTRA : dict[str, LogLevel], optional
+        Extra log levels to set for the application (e.g "sqlalchemy.engine",
+        "aiosqlite", etc.).
     BACKEND_CORS_ORIGINS : list of AnyUrl
         A list of allowed CORS origins.
     SSL_CAFILE: RelativeFilePath, optional
@@ -340,6 +301,7 @@ class Settings(BaseYamlSettings):
     AUTH_USER_MODEL: StrImportableAttribute = ""
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
+    LOGGING_EXTRA: dict[str, LogLevel] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
 

@@ -4,7 +4,6 @@ from typing import Annotated
 from typing import Literal
 from typing import Self
 
-from aiohttp import ClientSession
 from pydantic import AliasChoices
 from pydantic import computed_field
 from pydantic import ConfigDict
@@ -15,9 +14,8 @@ from pydantic.alias_generators import to_camel
 from app.core.auth.models import BaseTokenPayload
 from app.core.auth.models import BaseUser
 from app.core.auth.models import OAuthToken
+from app.core.auth.providers.casdoor import casdoor_sdk
 from app.core.config import settings
-
-casdoor_sdk = settings.CASDOOR.SDK
 
 CasdoorUsernameField = Annotated[
     str,
@@ -86,17 +84,7 @@ class CasdoorTokenPayload(BaseTokenPayload):
             An instance of `CasdoorTokenPayload` populated with the decoded data.
 
         """
-        data = {"token": token, "token_type_hint": "access_token"}
-        headers = {"Authorization": casdoor_sdk.headers["Authorization"]}
-        async with ClientSession(
-            base_url=casdoor_sdk.endpoint,
-            headers=headers,
-        ) as session:
-            token_data = await session.post(
-                "/api/login/oauth/introspect",
-                data=data,
-            )
-            return cls.model_validate(await token_data.json())
+        return cls.model_validate(await casdoor_sdk.introspect_token(token))
 
 
 class CasdoorUser(BaseUser):
@@ -171,7 +159,7 @@ class CasdoorUser(BaseUser):
         if refresh_token:
             oauth_data = await casdoor_sdk.refresh_token_request(refresh_token)
         else:
-            oauth_data = await casdoor_sdk.get_oauth_token(code, username, password)
+            oauth_data = await casdoor_sdk.get_access_token(code, username, password)
         return OAuthToken(**oauth_data)
 
     @staticmethod
@@ -187,16 +175,7 @@ class CasdoorUser(BaseUser):
 
         """
         token_payload = await CasdoorTokenPayload.from_jwt(access_token)
-        headers = {"Authorization": casdoor_sdk.headers["Authorization"]}
-        async with ClientSession(
-            base_url=casdoor_sdk.endpoint,
-            headers=headers,
-        ) as session:
-            response = await session.get(
-                "/api/get-token",
-                params={"id": token_payload.jti},
-            )
-            token_data = await response.json()
+        token_data = await casdoor_sdk.get_token(token_payload.jti)
         await CasdoorUser.get_oauth_token(
             refresh_token=token_data["data"]["refreshToken"],
         )
@@ -266,7 +245,7 @@ class CasdoorUser(BaseUser):
         """
         token_payload = await CasdoorTokenPayload.from_jwt(token)
         user = await cls.from_token_payload(token_payload)
-        user._access_token = token
+        user.access_token = token
         return user
 
     @classmethod
