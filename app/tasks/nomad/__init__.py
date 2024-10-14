@@ -5,7 +5,6 @@ import logging
 import time
 from asyncio import sleep
 from datetime import datetime
-from datetime import timezone
 from datetime import UTC
 from uuid import uuid1
 
@@ -30,13 +29,10 @@ class Executor:
     The `Executor` class handles task execution for jobs, interacting with the
     Nomad backend. It manages job creation, status tracking, and updating task history.
 
-    Attributes
-    ----------
-    backend : nomad.Nomad
-        The Nomad client used for interacting with the backend.
-    task : Task
-        The task to be executed.
-
+    :param backend: The Nomad client used for interacting with the backend.
+    :type backend: nomad.Nomad
+    :param task: The task to be executed.
+    :type task: Task
     """
 
     backend: nomad.Nomad
@@ -62,27 +58,18 @@ class Executor:
         tracking, and updates the task's execution history with logs, states, and
         timing information.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        queue_item : TaskHistory
-            The task history record for tracking this execution.
-        interval : int
-            The interval (in seconds) for checking the status of the job.
-
-        Returns
-        -------
-        TaskHistory
-            The updated task history with execution details.
-
-        Raises
-        ------
-        ValueError
-            If the job or job status cannot be determined.
-        NotImplementedError
-            If the job type or certain Nomad features are not yet supported.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param queue_item: The task history record for tracking this execution.
+        :type queue_item: TaskHistory
+        :param interval: The interval (in seconds) for checking the status of the job.
+        :type interval: int
+        :return: The updated task history with execution details.
+        :rtype: TaskHistory
+        :raises ValueError: If the job or job status cannot be determined.
+        :raises NotImplementedError: If the job type or certain Nomad features are not
+            yet supported.
         """
         job = {}
         status = {}

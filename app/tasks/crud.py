@@ -19,11 +19,8 @@ class TaskManager(BaseManager):
     This class provides methods to interact with `Task` models in the database,
     such as listing active tasks, retrieving tasks by name, and deleting tasks.
 
-    Attributes
-    ----------
-    Model : Type[Task]
-        The SQLModel class this manager is responsible for (`Task`).
-
+    :ivar Model: The SQLModel class this manager is responsible for (`Task`).
+    :vartype Model: type[Task]
     """
 
     Model = Task
@@ -37,19 +34,13 @@ class TaskManager(BaseManager):
     ) -> list[Task]:
         """List all active (non-deleted) tasks.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        owner : str or None, optional
-            The owner of the tasks. If provided, only tasks for this owner will
-            be listed.
-
-        Returns
-        -------
-        list[Task]
-            A list of active tasks.
-
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param owner: The owner of the tasks. If provided, only tasks for this owner
+            will be listed.
+        :type owner: str | None
+        :return: A list of active tasks.
+        :rtype: list[Task]
         """
         return await cls.list(session, col(Task.deleted_at).is_(None), owner=owner)
 
@@ -63,26 +54,16 @@ class TaskManager(BaseManager):
     ) -> Task:
         """Retrieve a task by its name, raising a 404 error if not found.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        name : str
-            The name of the task to retrieve.
-        is_template : bool or None, optional
-            Whether the task should be a template or not.
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param name: The name of the task to retrieve.
+        :type name: str
+        :param is_template: Whether the task should be a template or not.
             Use None to not use the filter. Defaults to None.
-
-        Returns
-        -------
-        Task
-            The task with the given name.
-
-        Raises
-        ------
-        HTTPNotFoundException
-            If no task with the given name is found.
-
+        :type is_template: bool | None
+        :return: The task with the given name.
+        :rtype: Task
+        :raises HTTPNotFoundException: If no task with the given name is found.
         """
         return await cls.get_or_404(session, name=name, is_template=is_template)
 
@@ -92,23 +73,13 @@ class TaskManager(BaseManager):
 
         If the task is protected, a forbidden exception will be raised.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        name : str
-            The name of the task to delete.
-
-        Returns
-        -------
-        Task
-            The deleted task.
-
-        Raises
-        ------
-        HTTPForbiddenException
-            If the task is protected and cannot be deleted.
-
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param name: The name of the task to delete.
+        :type name: str
+        :return: The deleted task.
+        :rtype: Task
+        :raises HTTPForbiddenException: If the task is protected and cannot be deleted.
         """
         task = await cls.retrieve_by_name(session=session, name=name)
         if task.protected:
@@ -122,14 +93,8 @@ class TaskManager(BaseManager):
 class TaskHistoryManager(BaseManager):
     """Manage task history operations, including listing task histories by task name.
 
-    This class provides methods to interact with `TaskHistory` models in the database,
-    such as querying histories for a specific task.
-
-    Attributes
-    ----------
-    Model : Type[TaskHistory]
-        The SQLModel class this manager is responsible for (`TaskHistory`).
-
+    :ivar Model: The SQLModel class this manager is responsible for (`TaskHistory`).
+    :vartype Model: type[TaskHistory]
     """
 
     Model = TaskHistory
@@ -144,20 +109,15 @@ class TaskHistoryManager(BaseManager):
     ) -> list[TaskHistory]:
         """List task histories by the task's name.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        task_name : str
-            The name of the task to list histories for.
-        select_related_task : bool, optional
-            Whether to include the related task data in the result. Defaults to False.
-
-        Returns
-        -------
-        list[TaskHistory]
-            A list of task histories for the specified task.
-
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param task_name: The name of the task to list histories for.
+        :type task_name: str
+        :param select_related_task: Whether to include the related task data in the
+            result. Defaults to False.
+        :type select_related_task: bool
+        :return: A list of task histories for the specified task.
+        :rtype: list[TaskHistory]
         """
         query = select(TaskHistory).join(Task)
         select_related = (TaskHistory.task,) if select_related_task else ()

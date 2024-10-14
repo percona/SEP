@@ -15,22 +15,12 @@ def json_serializer(data: Any) -> str:
     This function encodes a given Python object using `jsonable_encoder`
     to ensure it is serializable, then converts it to a JSON string using `json.dumps`.
 
-    Parameters
-    ----------
-    data : Any
-        The Python object to be serialized. This can be any JSON-serializable
+    :param data: The Python object to be serialized. This can be any JSON-serializable
         data type, such as dictionaries, lists, or primitive data types like
         integers, strings, and booleans.
-
-    Returns
-    -------
-    str
-        A JSON-formatted string representing the serialized form of the input data.
-
-    Notes
-    -----
-    SQLAlchemy needs this function to serialize Pydantic models.
-
+    :type data: Any
+    :return: A JSON-formatted string representing the serialized form of the input data.
+    :rtype: str
     """
     return json.dumps(jsonable_encoder(data))
 
@@ -41,11 +31,10 @@ def get_async_session_maker_from_engine(engine: AsyncEngine) -> sessionmaker:
     This function creates a new SQLAlchemy asynchronous session maker using the
     predefined engine configuration.
 
-    Returns
-    -------
-    sessionmaker
-        A new asynchronous session maker.
-
+    :param engine: The SQLAlchemy asynchronous engine to bind the session maker to.
+    :type engine: AsyncEngine
+    :return: A new asynchronous session maker.
+    :rtype: sessionmaker
     """
     return sessionmaker(
         engine,

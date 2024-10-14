@@ -17,15 +17,14 @@ DateTimeWithTimezone = DateTime(timezone=True)
 class BaseSQLModel(SQLModel):
     """Define a base model for database tables with common fields.
 
-    Attributes
-    ----------
-    id : int or None
-        The primary key for the table. Auto-incremented and not nullable.
-    created_at : datetime
-        The timestamp when the record is created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record is last updated. Automatically updated on changes.
-
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record was last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
     """
 
     id: int | None = SQLField(
@@ -51,15 +50,14 @@ class BaseUUIDSQLModel(BaseSQLModel):
     providing a universally unique identifier for each record. It is useful for
     scenarios where a non-sequential, hard-to-guess primary key is desirable.
 
-    Attributes
-    ----------
-    id : UUID4
-        The primary key for the table. Automatically generated using UUID4.
-    created_at : datetime
-        The timestamp when the record is created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record is last updated. Automatically updated on changes.
-
+    :param id: The primary key for the table. Automatically generated using UUID4.
+    :type id: UUID4
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record was last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
     """
 
     id: UUID4 = SQLField(

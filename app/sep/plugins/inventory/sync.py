@@ -13,11 +13,9 @@ async def run_inventory_sync(*syncers: BaseSyncer) -> None:
     Iterates over each `BaseSyncer` instance and invokes the `sync_inventory` method
     to perform inventory synchronization tasks asynchronously.
 
-    Parameters
-    ----------
-    *syncers : BaseSyncer
-        One or more instances of `BaseSyncer` to perform inventory synchronization.
-
+    :param syncers: One or more instances of `BaseSyncer` to perform inventory
+        synchronization.
+    :type syncers: BaseSyncer
     """
     for syncer in syncers:
         async with syncer as sync:
@@ -34,13 +32,11 @@ async def run_node_sync(
     with the specified `CreatedNode` to perform node synchronization tasks
     asynchronously.
 
-    Parameters
-    ----------
-    created_node : CreatedNode
-        The node that has been created and needs to be synchronized.
-    *syncers : BaseSyncer
-        One or more instances of `BaseSyncer` to perform node synchronization.
-
+    :param created_node: The node that has been created and needs to be synchronized.
+    :type created_node: CreatedNode
+    :param syncers: One or more instances of `BaseSyncer` to perform node
+        synchronization.
+    :type syncers: BaseSyncer
     """
     for syncer in syncers:
         async with syncer as sync:
@@ -57,13 +53,12 @@ async def run_service_sync(
     with the specified `CreatedService` to perform service synchronization tasks
     asynchronously.
 
-    Parameters
-    ----------
-    created_service : CreatedService
-        The service that has been created and needs to be synchronized.
-    *syncers : BaseSyncer
-        One or more instances of `BaseSyncer` to perform service synchronization.
-
+    :param created_service: The service that has been created and needs to be
+        synchronized.
+    :type created_service: CreatedService
+    :param syncers: One or more instances of `BaseSyncer` to perform service
+        synchronization.
+    :type syncers: BaseSyncer
     """
     for syncer in syncers:
         async with syncer as sync:
@@ -80,13 +75,12 @@ async def run_schema_sync(
     with the specified `CreatedSchema` to perform schema synchronization tasks
     asynchronously.
 
-    Parameters
-    ----------
-    created_schema : CreatedSchema
-        The schema that has been created and needs to be synchronized.
-    *syncers : BaseSyncer
-        One or more instances of `BaseSyncer` to perform schema synchronization.
-
+    :param created_schema: The schema that has been created and needs to be
+        synchronized.
+    :type created_schema: CreatedSchema
+    :param syncers: One or more instances of `BaseSyncer` to perform schema
+        synchronization.
+    :type syncers: BaseSyncer
     """
     for syncer in syncers:
         async with syncer as sync:
@@ -103,13 +97,11 @@ async def run_table_sync(
     with the specified `CreatedTable` to perform table synchronization tasks
     asynchronously.
 
-    Parameters
-    ----------
-    created_table : CreatedTable
-        The table that has been created and needs to be synchronized.
-    *syncers : BaseSyncer
-        One or more instances of `BaseSyncer` to perform table synchronization.
-
+    :param created_table: The table that has been created and needs to be synchronized.
+    :type created_table: CreatedTable
+    :param syncers: One or more instances of `BaseSyncer` to perform table
+        synchronization.
+    :type syncers: BaseSyncer
     """
     for syncer in syncers:
         async with syncer as sync:

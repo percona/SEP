@@ -8,26 +8,23 @@ from app.core.fields import RequiredStr
 class AltersCreate(BaseModel):
     """Represent an Alters creation form.
 
-    Attributes
-    ----------
-    task_name : str
-        The name of the task to be created.
-    hostname : str
-        The target hostname for the task execution.
-    connect_to : str
-        The connection type, which could be a hostname or `localhost`.
-    schema_name : str
-        The database schema name on which the task will operate.
-    table_name : str
-        The table name within the schema to be altered.
-    recursion_method : str
-        The method for handling recursion.
-    alter : str
-        The specific alter command to be executed.
-    dsn_table : str, optional
-        The DSN table for recursion method when using `dsn`.
-        Defaults to an empty string.
-
+    :param task_name: The name of the task to be created.
+    :type task_name: RequiredStr
+    :param hostname: The target hostname for the task execution.
+    :type hostname: RequiredStr
+    :param connect_to: The connection type, which could be a hostname or `localhost`.
+    :type connect_to: RequiredStr
+    :param schema_name: The database schema name on which the task will operate.
+    :type schema_name: RequiredStr
+    :param table_name: The table name within the schema to be altered.
+    :type table_name: RequiredStr
+    :param recursion_method: The method for handling recursion.
+    :type recursion_method: RequiredStr
+    :param alter: The specific alter command to be executed.
+    :type alter: RequiredStr
+    :param dsn_table: The DSN table for recursion method when using `dsn`. Defaults to
+        an empty string.
+    :type dsn_table: str
     """
 
     task_name: RequiredStr

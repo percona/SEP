@@ -12,20 +12,11 @@ def get_user_model() -> type[BaseUser]:
     the `settings.AUTH_USER_MODEL` configuration. If no custom user model is
     specified, it returns the `BaseUser` model by default.
 
-    Returns
-    -------
-    Type[BaseUser]
-        The user model class, should be a subclass of `BaseUser`.
-
-    Raises
-    ------
-    ImportError
-        If the module specified in `settings.AUTH_USER_MODEL` cannot be imported.
-    AttributeError
-        If the model class specified in `settings.AUTH_USER_MODEL` cannot be found
-        in the imported module.
-
+    :return: The user model class, should be a subclass of `BaseUser`.
+    :rtype: type[BaseUser]
+    :raises ImportError: If the module specified in `settings.AUTH_USER_MODEL`
+        cannot be imported.
+    :raises AttributeError: If the model class specified in `settings.AUTH_USER_MODEL`
+        cannot be found in the imported module.
     """
-    if settings.AUTH_USER_MODEL:
-        return import_var(settings.AUTH_USER_MODEL)
-    return BaseUser
+    return import_var(settings.AUTH_USER_MODEL)

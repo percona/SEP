@@ -7,10 +7,10 @@ from typing import Any
 
 import yaml
 from fastapi import HTTPException
+from nomad import Nomad
 
 from app.core.utils import async_run
 from app.tasks.config import tasks_settings
-from nomad import Nomad
 
 logger = logging.getLogger(__name__)
 
@@ -22,21 +22,11 @@ async def validate_job(job: dict[str, Any]) -> dict[str, Any]:
     This function sends a job specification to the Nomad backend for validation.
     If validation fails, it raises an HTTPException with the corresponding status code.
 
-    Parameters
-    ----------
-    job : dict[str, Any]
-        The Nomad job specification to validate.
-
-    Returns
-    -------
-    dict[str, Any]
-        The original job specification if validation is successful.
-
-    Raises
-    ------
-    HTTPException
-        If validation fails or Nomad returns an error status code.
-
+    :param job: The Nomad job specification to validate.
+    :type job: dict[str, Any]
+    :return: The original job specification if validation is successful.
+    :rtype: dict[str, Any]
+    :raises HTTPException: If validation fails or Nomad returns an error status code.
     """
     backend = Nomad(
         address=tasks_settings.NOMAD.ENDPOINT,
@@ -64,25 +54,15 @@ async def transform_payload(
     This function parses the payload according to the specified format
     (HCL, JSON, or YAML) and validates it using the Nomad backend.
 
-    Parameters
-    ----------
-    payload : str or bytes
-        The job specification payload to be parsed.
-    payload_format : str
-        The format of the payload, which can be "hcl", "json", or "yaml".
-
-    Returns
-    -------
-    dict[str, Any]
-        The parsed and validated job specification.
-
-    Raises
-    ------
-    ValueError
-        If the provided payload format is unsupported.
-    HTTPException
-        If validation of the job specification fails.
-
+    :param payload: The job specification payload to be parsed.
+    :type payload: str | bytes
+    :param payload_format: The format of the payload, which can be "hcl", "json", or
+        "yaml".
+    :type payload_format: str
+    :return: The parsed and validated job specification.
+    :rtype: dict[str, Any]
+    :raises ValueError: If the provided payload format is unsupported.
+    :raises HTTPException: If validation of the job specification fails.
     """
     backend = Nomad(
         address=tasks_settings.NOMAD.ENDPOINT,

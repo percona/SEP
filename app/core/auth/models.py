@@ -1,5 +1,7 @@
 """Define the base auth models."""
 
+from abc import ABC
+from abc import abstractmethod
 from datetime import datetime
 from datetime import UTC
 from functools import cached_property
@@ -21,21 +23,19 @@ from app.core.fields import TimedeltaSeconds
 class OAuthToken(BaseModel):
     """Represent an OAuth token.
 
-    Attributes
-    ----------
-    access_token : str
-        The token used to access protected resources.
-    id_token : str
-        The token that contains identity information about the user.
-    refresh_token : str
-        The token used to obtain new access tokens after the current one expires.
-    token_type : str
-        The type of token, typically "bearer".
-    expires_in : timedelta
-        The time duration after which the token expires.
-    scope : str
-        The scope of the access granted by the token.
-
+    :param access_token: The token used to access protected resources.
+    :type access_token: str
+    :param id_token: The token that contains identity information about the user.
+    :type id_token: str
+    :param refresh_token: The token used to obtain new access tokens after the
+        current one expires.
+    :type refresh_token: str
+    :param token_type: The type of token, typically "bearer".
+    :type token_type: str
+    :param expires_in: The time duration after which the token expires.
+    :type expires_in: TimedeltaSeconds
+    :param scope: The scope of the access granted by the token.
+    :type scope: str
     """
 
     access_token: str
@@ -46,28 +46,22 @@ class OAuthToken(BaseModel):
     scope: str
 
 
-class BaseTokenPayload(BaseModel):
-    """Base class representing the payload of a JWT token.
+class BaseTokenPayload(BaseModel, ABC):
+    """Base abstract class representing the payload of a JWT token.
 
-    Attributes
-    ----------
-    iss : str
-        The issuer of the token.
-    sub : str
-        The subject or user identifier the token refers to.
-    aud : list of str
-        The audience for whom the token is intended.
-    exp : FutureDatetime
-        The expiration time of the token.
-    nbf : PastDatetime
-        The time before which the token must not be accepted for processing.
-    jti: str
-        The JWT token identifier.
-
-    Notes
-    -----
-    This class is expected to be inherited from.
-
+    :param iss: The issuer of the token.
+    :type iss: str
+    :param sub: The subject or user identifier the token refers to.
+    :type sub: str
+    :param aud: The audience for whom the token is intended.
+    :type aud: list[str]
+    :param exp: The expiration time of the token.
+    :type exp: FutureDatetime
+    :param nbf: The time before which the token must not be accepted for
+        processing.
+    :type nbf: PastDatetime
+    :param jti: The JWT token identifier.
+    :type jti: str
     """
 
     iss: str
@@ -78,39 +72,39 @@ class BaseTokenPayload(BaseModel):
     jti: str
 
     @classmethod
+    @abstractmethod
     async def from_jwt(cls, token: str) -> Self:
-        """Decode a JWT token and returns an instance of `BaseTokenPayload`."""
-        raise NotImplementedError(".from_jwt() must be overridden.")
+        """Create an instance from a JWT token.
+
+        :param token: The JWT token string to decode.
+        :type token: str
+        :return: An instance of the token payload.
+        :rtype: Self
+        """
 
 
-class BaseUser(BaseModel):
-    """Base class representing a user.
+class BaseUser(BaseModel, ABC):
+    """Base abstract class for a user.
 
-    Attributes
-    ----------
-    id : UUID4
-        The unique identifier of the user.
-    username : str
-        The username of the user. Must be at least 1 character long.
-    email : EmailStr, optional
-        The email address of the user.
-    first_name : str, optional
-        The first name of the user.
-    last_name : str, optional
-        The last name of the user.
-    is_admin : bool, optional
-        Whether the user has administrative privileges. Defaults to False.
-    created_time : datetime, optional
-        The datetime when the user was created. Defaults to current datetime.
-    updated_time : datetime, optional
-        The datetime when the user was last updated. Defaults to current datetime.
-    full_name
-    is_active
-
-    Notes
-    -----
-    This class is expected to be inherited from.
-
+    :param id: The unique identifier of the user.
+    :type id: UUID4
+    :param username: The username of the user. Must be at least 1 character long.
+    :type username: RequiredStr
+    :param email: The email address of the user.
+    :type email: EmailStr | Literal[""]
+    :param first_name: The first name of the user.
+    :type first_name: str
+    :param last_name: The last name of the user.
+    :type last_name: str
+    :param is_admin: Whether the user has administrative privileges. Defaults
+        to False.
+    :type is_admin: bool
+    :param created_time: The datetime when the user was created. Defaults to
+        current datetime.
+    :type created_time: datetime | None
+    :param updated_time: The datetime when the user was last updated. Defaults
+        to current datetime.
+    :type updated_time: datetime | None
     """
 
     id: UUID4
@@ -128,16 +122,10 @@ class BaseUser(BaseModel):
     def falsy_to_none(cls, v: str) -> str:
         """Convert falsy datetime strings to `None`.
 
-        Parameters
-        ----------
-        v : Any
-            The value to validate and potentially convert.
-
-        Returns
-        -------
-        Any
-            The original value if truthy, otherwise `None`.
-
+        :param v: The value to validate and potentially convert.
+        :type v: Any
+        :return: The original value if truthy, otherwise `None`.
+        :rtype: Any
         """
         if not v:
             return None
@@ -146,26 +134,43 @@ class BaseUser(BaseModel):
     @computed_field
     @property
     def full_name(self) -> str:
-        """The combination of the user's first and last names."""
+        """The combination of the user's first and last names.
+
+        :return: The user's full name.
+        :rtype: str
+        """
         return f"{self.first_name} {self.last_name}".strip()
 
     @computed_field
     @cached_property
     def is_active(self) -> bool:
-        """Indicate whether the user is currently active."""
+        """Indicate whether the user is currently active.
+
+        :return: True if the user is active, False otherwise.
+        :rtype: bool
+        """
         return True
 
     @property
     def access_token(self) -> str:
-        """Get the user's access token."""
+        """Get the user's access token.
+
+        :return: The user's access token.
+        :rtype: str
+        """
         return self._access_token
 
     @access_token.setter
     def access_token(self, v: str) -> None:
-        """Set the user's access token."""
+        """Set the user's access token.
+
+        :param v: The new access token.
+        :type v: str
+        """
         self._access_token = v
 
     @staticmethod
+    @abstractmethod
     async def get_oauth_token(
         code: str | None = None,
         username: str | None = None,
@@ -177,146 +182,87 @@ class BaseUser(BaseModel):
         This method must be overridden in subclasses to provide specific logic for
         obtaining OAuth tokens based on different grant types.
 
-        Parameters
-        ----------
-        code : str, optional
-            The authorization code received from the OAuth2 provider via redirect URL.
-        username : str, optional
-            The username for resource owner password credentials grant.
-        password : str, optional
-            The password for resource owner password credentials grant.
-        refresh_token : str, optional
-            The refresh token to obtain a new access token.
-
-        Returns
-        -------
-        OAuthToken
-            The OAuth token response.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :param code: The authorization code received from the OAuth2 provider via
+            redirect URL.
+        :type code: str | None
+        :param username: The username for resource owner password credentials grant.
+        :type username: str | None
+        :param password: The password for resource owner password credentials grant.
+        :type password: str | None
+        :param refresh_token: The refresh token to obtain a new access token.
+        :type refresh_token: str | None
+        :return: The OAuth token response.
+        :rtype: OAuthToken
         """
-        raise NotImplementedError(".get_oauth_token() must be overridden.")
 
     @staticmethod
+    @abstractmethod
     async def invalidate_oauth_token(access_token: str) -> None:
         """Invalidate an OAuth token.
 
         This method must be overridden in subclasses to provide specific logic for
         invalidating OAuth tokens.
 
-        Parameters
-        ----------
-        access_token : str
-            The access token to invalidate.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :param access_token: The access token to invalidate.
+        :type access_token: str
         """
-        raise NotImplementedError(".invalidate_oauth_token() must be overridden.")
 
     @classmethod
+    @abstractmethod
     async def get_user(cls, username: RequiredStr) -> Self:
         """Retrieve a user by username.
 
         This method must be overridden in subclasses to provide specific logic for
         retrieving a user from the data store.
 
-        Parameters
-        ----------
-        username : RequiredStr
-            The username of the user to retrieve.
-
-        Returns
-        -------
-        Self
-            An instance of the user model.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :param username: The username of the user to retrieve.
+        :type username: RequiredStr
+        :return: An instance of the user model.
+        :rtype: Self
         """
-        raise NotImplementedError(".get_user() must be overridden.")
 
     @classmethod
+    @abstractmethod
     async def get_users(cls) -> list[Self]:
         """Retrieve all users.
 
         This method must be overridden in subclasses to provide specific logic for
         retrieving all users from the data store.
 
-        Returns
-        -------
-        list[Self]
-            A list of user instances.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :return: A list of user instances.
+        :rtype: list[Self]
         """
-        raise NotImplementedError(".get_users() must be overridden.")
 
     @classmethod
+    @abstractmethod
     async def from_token_payload(cls, token_payload: BaseTokenPayload) -> Self:
         """Create a user instance from a token payload.
 
         This method must be overridden in subclasses to provide specific logic for
         constructing a user instance based on the contents of a JWT token payload.
 
-        Parameters
-        ----------
-        token_payload : BaseTokenPayload
-            The decoded JWT token payload.
-
-        Returns
-        -------
-        Self
-            An instance of the user model.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :param token_payload: The decoded JWT token payload.
+        :type token_payload: BaseTokenPayload
+        :return: An instance of the user model.
+        :rtype: Self
         """
-        raise NotImplementedError(".from_token_payload() must be overridden.")
 
     @classmethod
+    @abstractmethod
     async def from_jwt(cls, token: str) -> Self:
         """Create a user instance from a JWT token.
 
         This method must be overridden in subclasses to provide specific logic for
         decoding a JWT token and constructing a user instance.
 
-        Parameters
-        ----------
-        token : str
-            The JWT token string to decode.
-
-        Returns
-        -------
-        Self
-            An instance of the user model.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :param token: The JWT token string to decode.
+        :type token: str
+        :return: An instance of the user model.
+        :rtype: Self
         """
-        raise NotImplementedError(".from_jwt() must be overridden.")
 
     @classmethod
+    @abstractmethod
     async def from_code(cls, code: str) -> Self:
         """Create a user instance from an authorization code.
 
@@ -324,25 +270,14 @@ class BaseUser(BaseModel):
         exchanging an authorization code for user information and constructing a user
         instance.
 
-        Parameters
-        ----------
-        code : str
-            The authorization code received from the OAuth2 provider.
-
-        Returns
-        -------
-        Self
-            An instance of the user model.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :param code: The authorization code received from the OAuth2 provider.
+        :type code: str
+        :return: An instance of the user model.
+        :rtype: Self
         """
-        raise NotImplementedError(".from_code() must be overridden.")
 
     @classmethod
+    @abstractmethod
     async def from_password(cls, username: str, password: str) -> Self:
         """Create a user instance from username and password.
 
@@ -350,22 +285,10 @@ class BaseUser(BaseModel):
         authenticating a user with a username and password and constructing a user
         instance.
 
-        Parameters
-        ----------
-        username : str
-            The username of the user.
-        password : str
-            The password of the user.
-
-        Returns
-        -------
-        Self
-            An instance of the user model.
-
-        Raises
-        ------
-        NotImplementedError
-            If the method is not overridden in a subclass.
-
+        :param username: The username of the user.
+        :type username: str
+        :param password: The password of the user.
+        :type password: str
+        :return: An instance of the user model.
+        :rtype: Self
         """
-        raise NotImplementedError(".from_password() must be overridden.")
