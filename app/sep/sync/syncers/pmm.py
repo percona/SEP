@@ -12,7 +12,6 @@ from app.core.requests import RemoteAPI
 from app.inventory.models import SourceEnum
 from app.sep.inventory import CreatedNode
 from app.sep.inventory import CreatedService
-from app.sep.inventory import CreatedServiceNode
 from app.sep.inventory import Node
 from app.sep.inventory import Service
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -324,7 +323,7 @@ class PMMSyncer(BaseSyncer):
                         json=service.model_dump(exclude={"node_id"}),
                     ),
                 )
-                created_service.node = CreatedServiceNode.model_validate(created_node)
+                created_service.node = created_node.model_copy(update={"services": []})
             await self.sync_service(created_service, service)
         for service in syncable_services.values():
             await self.delete_service(service)
