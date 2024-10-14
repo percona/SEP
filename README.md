@@ -269,6 +269,13 @@ source venv/bin/activate
 LOGGING=debug python3 -m app.main
 ```
 
+4. **Optionally**, you can run the server for SCSS compilation in parallel with this command:
+```shell
+LOGGING=debug python3 -m app.main & python watch_scss.py
+```
+
+This will start the application and simultaneously watch and compile SCSS changes.
+
 SEP will be available in http://localhost:8000.
 
 ![image](https://github.com/user-attachments/assets/cec67a8e-341a-45d5-9144-e6c24f5128eb)

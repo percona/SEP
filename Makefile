@@ -68,3 +68,6 @@ migrate: venv alembic.ini app/tasks/migrations/versions
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade head; \
 	done
+
+compile-css: venv
+	@source "${VENV_BIN}"/activate; "${PYTHON}" compile_scss.py
