@@ -1,69 +1,23 @@
+@import './utils/variables';
+@import './utils/fonts';
+
 @import './components/header';
 @import './components/footer';
 @import './components/sidebar';
 
-/* Global styles */
-@font-face {
-	font-family: "Material Icons";
-	font-style: normal;
-	font-weight: 400;
-	src: url(/static/themes/materialize/icons.ttf) format("truetype");
-}
-@font-face {
-	font-family: "Poppins", sans-serif;
-	font-style: normal;
-	src: url(/static/themes/materialize/Poppins.ttf) format("truetype");
-}
 /* portrait tablets, portrait iPad, landscape e-readers, landscape 800x480 or 854x480 phones */
 /* tablet, landscape iPad, lo-res laptops ands desktops */
 /* big landscape tablets, laptops, and desktops hi-res laptops and desktops */
-.icons {
-	font-family: "Material Icons";
-	font-weight: normal;
-	font-style: normal;
-	font-size: 1.2em;
-	line-height: 1;
-	letter-spacing: normal;
-	text-transform: none;
-	display: inline-block;
-	white-space: nowrap;
-	word-wrap: normal;
-	direction: ltr;
-}
 * {
 	margin: 0;
 	padding: 0;
 }
 body {
 	background-color: white;
-	color: #303642;
+	color: $primary-background;
 	font: 100% "Poppins", sans-serif;
 	padding: 1em;
 	text-align: left;
-}
-h1 {
-	font-weight: 600;
-	font-size: 2.5em;
-}
-h2 {
-	font-weight: 600;
-	font-size: 1.6666666667em;
-}
-h3 {
-	font-weight: 600;
-	font-size: 1.25em;
-}
-h4 {
-	font-weight: 600;
-	font-size: 1em;
-}
-h5 {
-	font-weight: 600;
-	font-size: 0.8333333333em;
-}
-h6 {
-	font-weight: 600;
-	font-size: 0.7142857143em;
 }
 table {
 	width: 100%;
@@ -74,14 +28,10 @@ table {
 		margin-top: inherit;
 	}
 }
-.notice {
-	font-weight: bolder;
-	font-style: normal;
-}
 form {
 	padding: 1em;
 	>fieldset {
-		border: .2em solid #F0F1F4;
+		border: .2em solid $border-light;
 		>fieldset {
 			border: 0;
 			column-gap: 1em;
@@ -109,25 +59,22 @@ fieldset {
 	padding: 1em;
 }
 input {
-	border: .2em solid #F0F1F4;
+	border: .2em solid $border-light;
 	padding: .5em;
 }
 select {
-	border: .2em solid #F0F1F4;
+	border: .2em solid $border-light;
 	padding: .5em;
 }
 textarea {
-	border: .2em solid #F0F1F4;
+	border: .2em solid $border-light;
 	display: block;
 }
-legend {
-	font-weight: 600;
-}
 button {
-	background-color: #2C323E;
+	background-color: $secondary-background;
 	border: 0;
 	border-radius: 2em;
-	color: #93C7FF;
+	color: $button-primary;
 	line-height: 1;
 	font-size: 1.1em;
 	font-weight: bolder;
@@ -136,14 +83,14 @@ button {
 	&:not([disabled]) {
 		&:hover {
 			cursor: pointer;
-			background-color: #93C7FF;
-			color: #2C323E;
+			background-color: $button-primary;
+			color: $secondary-background;
 		}
 	}
 }
 button[disabled] {
-	background-color: #93C7FF;
-	color: #2C323E;
+	background-color: $button-primary;
+	color: $secondary-background;
 }
 td.flex {
 	border-color: transparent;
@@ -164,12 +111,12 @@ td.flex {
 }
 thead {
 	tr {
-		border-bottom: .2em solid #F0F1F4;
+		border-bottom: .2em solid $border-light;
 	}
 }
 tbody {
 	tr {
-		border-bottom: .2em solid #F0F1F4;
+		border-bottom: .2em solid $border-light;
 	}
 }
 th {
@@ -221,7 +168,7 @@ main {
 	a {
 		&:link {
 			color: #2c415b;
-			color: #2C323E;
+			color: $secondary-background;
 		}
 	}
 	dl {
@@ -242,13 +189,13 @@ main {
 	body {
 		height: 98%;
 		overflow-y: scroll;
-		background-color: #303642;
+		background-color: $primary-background;
 		margin: 0 auto auto auto;
 		display: grid;
 		grid-template-areas: "head head" "main main" "foot foot";
 		grid-template-rows: 7em 1fr 4em;
 		grid-template-columns: 15em 1fr;
-		background-color: #303642;
+		background-color: $primary-background;
 		>main {
 			grid-area: main;
 			padding-right: 1em;
@@ -267,13 +214,13 @@ main {
 	body {
 		height: 98%;
 		overflow-y: scroll;
-		background-color: #303642;
+		background-color: $primary-background;
 		margin: 0 auto auto auto;
 		display: grid;
 		grid-template-areas: "head head" "nav  main" "nav  foot";
 		grid-template-rows: 7em 1fr 4em;
 		grid-template-columns: 15em 1fr;
-		background-color: #303642;
+		background-color: $primary-background;
 		>main {
 			grid-area: main;
 			padding: 1em;
@@ -288,13 +235,13 @@ main {
 	body {
 		height: 98%;
 		overflow-y: scroll;
-		background-color: #303642;
+		background-color: $primary-background;
 		margin: 0 auto auto auto;
 		display: grid;
 		grid-template-areas: "head head" "nav  main" "nav  foot";
 		grid-template-rows: 10em 1fr 5em;
 		grid-template-columns: 15em 1fr;
-		background-color: #303642;
+		background-color: $primary-background;
 
 		& > main {
 			grid-area: main;

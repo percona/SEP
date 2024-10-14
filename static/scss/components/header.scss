@@ -2,9 +2,9 @@
 body {
 	>header {
 		grid-area: head;
-		background-color: #2C323E;
+		background-color: $secondary-background;
 		border-radius: 4.5em 4.5em 0 0;
-		color: #FFF;
+		color: $white;
 		padding: 1em;
 	}
 }
@@ -13,7 +13,7 @@ body {
 	flex-direction: column;
 	cursor: pointer;
 	span {
-		background-color: #FFF;
+		background-color: $white;
 		height: 3px;
 		width: 25px;
 		margin: 3px 0;

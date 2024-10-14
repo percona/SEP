@@ -7,9 +7,9 @@ footer {
 	body {
 		>footer {
 			grid-area: foot;
-			background-color: #2C323E;
+			background-color: $secondary-background;
 			border-radius: 0 0 4.5em 4.5em;
-			color: #FFF;
+			color: $white;
 			padding: 1em;
 			border-bottom: 1em solid white;
 			border-right: 1em solid white;
@@ -22,9 +22,9 @@ footer {
 	body {
 		>footer {
 			grid-area: foot;
-			background-color: #2C323E;
+			background-color: $secondary-background;
 			border-radius: 0 0 4.5em 0;
-			color: #FFF;
+			color: $white;
 			padding: 1em;
 			border-bottom: 1em solid white;
 			border-right: 1em solid white;
@@ -35,9 +35,9 @@ footer {
 	body {
 		>footer {
 			grid-area: foot;
-			background-color: #2C323E;
+			background-color: $secondary-background;
 			border-radius: 0 0 4.5em 0;
-			color: #FFF;
+			color: $white;
 			padding: 1em;
 			border-bottom: 1em solid white;
 			border-right: 1em solid white;

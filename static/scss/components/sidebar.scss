@@ -2,7 +2,7 @@
 body {
 	>nav {
 		grid-area: nav;
-		background-color: #F0F1F4;
+		background-color: $border-light;
 		border-radius: 0 0 0 4.5em;
 		padding: 1em;
 		border-left: 1em solid white;
@@ -73,7 +73,7 @@ body {
 	body {
 		>nav {
 			grid-area: nav;
-			background-color: #F0F1F4;
+			background-color: $border-light;
 			border-radius: 0 0 0 4.5em;
 			padding: 1em;
 			border-left: 1em solid white;
@@ -98,30 +98,30 @@ body {
 		}
 		a {
 			&:link {
-				background-color: #4b5468;
-				color: #fff;
+				background-color: $link-default;
+				color: $white;
 				&:after {
 					margin-left: .5em;
-					color: #F0F1F4;
+					color: $border-light;
 				}
 			}
 			&:visited {
-				background-color: #4b5468;
-				color: #fff;
+				background-color: $link-default;
+				color: $white;
 			}
 			&:active {
-				background-color: #2C323E;
+				background-color: $secondary-background;
 			}
 		}
 		a[href] {
 			&:hover {
-				background-color: #3a4151;
-				color: #fff;
+				background-color: $link-hover;
+				color: $white;
 			}
 		}
 		a.selected {
-			background-color: #2C323E;
-			color: #fff;
+			background-color: $secondary-background;
+			color: $white;
 			&:after {
 				content: "arrow_right";
 				font-family: "Material Icons";
@@ -179,30 +179,30 @@ body {
 		}
 		a {
 			&:link {
-				background-color: #4b5468;
-				color: #fff;
+				background-color: $link-default;
+				color: $white;
 				&:after {
 					margin-left: .5em;
-					color: #F0F1F4;
+					color: $border-light;
 				}
 			}
 			&:visited {
-				background-color: #4b5468;
-				color: #fff;
+				background-color: $link-default;
+				color: $white;
 			}
 			&:active {
-				background-color: #2C323E;
+				background-color: $secondary-background;
 			}
 		}
 		a[href] {
 			&:hover {
-				background-color: #3a4151;
-				color: #fff;
+				background-color: $link-hover;
+				color: $white;
 			}
 		}
 		a.selected {
-			background-color: #2C323E;
-			color: #fff;
+			background-color: $secondary-background;
+			color: $white;
 			&:after {
 				content: "arrow_right";
 				font-family: "Material Icons";
@@ -249,30 +249,30 @@ body {
 		}
 		a {
 			&:link {
-				background-color: #4b5468;
-				color: #fff;
+				background-color: $link-default;
+				color: $white;
 				&:after {
 					margin-left: .5em;
-					color: #F0F1F4;
+					color: $border-light;
 				}
 			}
 			&:visited {
-				background-color: #4b5468;
-				color: #fff;
+				background-color: $link-default;
+				color: $white;
 			}
 			&:active {
-				background-color: #2C323E;
+				background-color: $secondary-background;
 			}
 		}
 		a[href] {
 			&:hover {
-				background-color: #3a4151;
-				color: #fff;
+				background-color: $link-hover;
+				color: $white;
 			}
 		}
 		a.selected {
-			background-color: #2C323E;
-			color: #fff;
+			background-color: $secondary-background;
+			color: $white;
 			&:after {
 				content: "arrow_right";
 				font-family: "Material Icons";
