@@ -1,0 +1,284 @@
+/* Sidebar */
+body {
+	>nav {
+		grid-area: nav;
+		background-color: #F0F1F4;
+		border-radius: 0 0 0 4.5em;
+		padding: 1em;
+		border-left: 1em solid white;
+		border-bottom: 1em solid white;
+	}
+}
+.archive {
+	a {
+		&:before {
+			font-family: "Material Icons";
+			padding-right: .5em;
+			vertical-align: middle;
+			content: "archive";
+		}
+	}
+}
+.tasks {
+	a {
+		&:before {
+			font-family: "Material Icons";
+			padding-right: .5em;
+			vertical-align: middle;
+			content: "task";
+		}
+	}
+}
+.alters {
+	a {
+		&:before {
+			font-family: "Material Icons";
+			padding-right: .5em;
+			vertical-align: middle;
+			content: "adjust";
+		}
+	}
+}
+.inventory {
+	a {
+		&:before {
+			font-family: "Material Icons";
+			padding-right: .5em;
+			vertical-align: middle;
+			content: "inventory";
+		}
+	}
+}
+.casdoor {
+	a {
+		&:before {
+			font-family: "Material Icons";
+			padding-right: .5em;
+			vertical-align: middle;
+			content: "key";
+		}
+	}
+}
+.signout {
+	a {
+		&:before {
+			font-family: "Material Icons";
+			padding-right: .5em;
+			vertical-align: middle;
+			content: "logout";
+		}
+	}
+}
+@media (min-width:961px) {
+	body {
+		>nav {
+			grid-area: nav;
+			background-color: #F0F1F4;
+			border-radius: 0 0 0 4.5em;
+			padding: 1em;
+			border-left: 1em solid white;
+			border-bottom: 1em solid white;
+		}
+	}
+	nav {
+		ul {
+			display: block;
+			list-style: none;
+			line-height: 2em;
+			margin-left: -.5em;
+		}
+		li {
+			>a {
+				display: block;
+				margin-bottom: .5em;
+				text-decoration: none;
+				padding: .5em .5em .5em .75em;
+				border-radius: 2em;
+			}
+		}
+		a {
+			&:link {
+				background-color: #4b5468;
+				color: #fff;
+				&:after {
+					margin-left: .5em;
+					color: #F0F1F4;
+				}
+			}
+			&:visited {
+				background-color: #4b5468;
+				color: #fff;
+			}
+			&:active {
+				background-color: #2C323E;
+			}
+		}
+		a[href] {
+			&:hover {
+				background-color: #3a4151;
+				color: #fff;
+			}
+		}
+		a.selected {
+			background-color: #2C323E;
+			color: #fff;
+			&:after {
+				content: "arrow_right";
+				font-family: "Material Icons";
+				font-size: 2em;
+				vertical-align: middle;
+			}
+		}
+	}
+}
+@media (max-width:960px) {
+	body {
+		>nav {
+			grid-area: nav;
+			position: fixed;
+			width: fit-content;
+			left: 1em;
+			top: 130px;
+			height: calc(100vh - 170px);
+			right: 16px;
+			border-radius: 0;
+			pointer-events: none;
+			overflow: hidden;
+			padding: 0;
+			background: transparent;
+			height: 100%;
+			border-left: 0;
+			margin-left: 1em;
+		}
+	}
+	nav {
+		ul {
+			transform: translateX(-200px);
+			padding: 1em;
+			background: lightgray;
+			height: calc(100vh - 160px);
+			transition: transform 0.3s linear;
+			display: block;
+			list-style: none;
+			line-height: 2em;
+			margin-left: -.5em;
+			li {
+				a {
+					min-width: 155px;
+				}
+			}
+		}
+		li {
+			>a {
+				display: block;
+				margin-bottom: .5em;
+				text-decoration: none;
+				padding: .5em .5em .5em .75em;
+				border-radius: 2em;
+			}
+		}
+		a {
+			&:link {
+				background-color: #4b5468;
+				color: #fff;
+				&:after {
+					margin-left: .5em;
+					color: #F0F1F4;
+				}
+			}
+			&:visited {
+				background-color: #4b5468;
+				color: #fff;
+			}
+			&:active {
+				background-color: #2C323E;
+			}
+		}
+		a[href] {
+			&:hover {
+				background-color: #3a4151;
+				color: #fff;
+			}
+		}
+		a.selected {
+			background-color: #2C323E;
+			color: #fff;
+			&:after {
+				content: "arrow_right";
+				font-family: "Material Icons";
+				font-size: 2em;
+				vertical-align: middle;
+			}
+		}
+	}
+	nav.active {
+		display: flex;
+		opacity: 1;
+		pointer-events: auto;
+		z-index: 0;
+		ul {
+			transform: translateX(0);
+		}
+	}
+}
+@media (min-width:320px) and (max-width: 641px) {
+	nav {
+		ul {
+			width: calc(100vw - 6em);
+			transform: translateX(-100%);
+			margin-left: 0;
+		}
+	}
+}
+@media (min-width:1281px) {
+	nav {
+		ul {
+			display: block;
+			list-style: none;
+			line-height: 2em;
+			margin-left: -.5em;
+		}
+		li {
+			>a {
+				display: block;
+				margin-bottom: .5em;
+				text-decoration: none;
+				padding: .5em .5em .5em .75em;
+				border-radius: 2em;
+			}
+		}
+		a {
+			&:link {
+				background-color: #4b5468;
+				color: #fff;
+				&:after {
+					margin-left: .5em;
+					color: #F0F1F4;
+				}
+			}
+			&:visited {
+				background-color: #4b5468;
+				color: #fff;
+			}
+			&:active {
+				background-color: #2C323E;
+			}
+		}
+		a[href] {
+			&:hover {
+				background-color: #3a4151;
+				color: #fff;
+			}
+		}
+		a.selected {
+			background-color: #2C323E;
+			color: #fff;
+			&:after {
+				content: "arrow_right";
+				font-family: "Material Icons";
+				font-size: 2em;
+				vertical-align: middle;
+			}
+		}
+	}
+}

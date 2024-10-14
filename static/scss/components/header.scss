@@ -1,0 +1,136 @@
+/* Header */
+body {
+	>header {
+		grid-area: head;
+		background-color: #2C323E;
+		border-radius: 4.5em 4.5em 0 0;
+		color: #FFF;
+		padding: 1em;
+	}
+}
+.hamburger {
+	display: flex;
+	flex-direction: column;
+	cursor: pointer;
+	span {
+		background-color: #FFF;
+		height: 3px;
+		width: 25px;
+		margin: 3px 0;
+		transition: 0.4s;
+	}
+}
+@media (max-width:960px) {
+	header {
+		display: flex;
+		grid-template-areas: "icon title";
+		grid-template-columns: 15em 1fr;
+		border-left: 1em solid white;
+		border-top: 1em solid white;
+		border-right: 1em solid white;
+		h1 {
+			grid-area: title;
+			font-size: 1.8em;
+			flex-grow: 1;
+			align-self: center;
+			text-wrap: nowrap;
+			text-overflow: ellipsis;
+			overflow: hidden;
+		}
+		.hamburger {
+			align-self: center;
+			margin-right: 1em;
+		}
+	}
+	#full_logo {
+		display: none;
+	}
+	#logo {
+		width: fit-content;
+	}
+	.hamburger {
+		display: flex;
+	}
+	.hamburger.active {
+		span {
+			&:nth-child(1) {
+				transform: rotate(45deg) translate(8px, 8px);
+			}
+			&:nth-child(2) {
+				opacity: 0;
+			}
+			&:nth-child(3) {
+				transform: rotate(-45deg) translate(5px, -5px);
+			}
+		}
+	}
+	svg {
+		height: 90%;
+		width: 75%;
+		grid-area: icon;
+		margin-left: 0.3em;
+		path.cls-2 {
+			fill: rgb(255, 255, 255) !important;
+		}
+	}
+}
+@media (min-width:961px) {
+	header {
+		display: grid;
+		grid-template-areas: "icon title";
+		grid-template-columns: 15em 1fr;
+		border-left: 1em solid white;
+		border-top: 1em solid white;
+		border-right: 1em solid white;
+		h1 {
+			grid-area: title;
+			margin-top: 1.2em;
+			font-size: 1.8em;
+		}
+		.hamburger {
+			display: none;
+		}
+	}
+	#logo {
+		display: none;
+	}
+	svg {
+		height: 90%;
+		width: 75%;
+		grid-area: icon;
+		margin-left: 0.3em;
+		path.cls-2 {
+			fill: rgb(255, 255, 255) !important;
+		}
+	}
+}
+@media (min-width:1281px) {
+	header {
+		display: grid;
+		grid-template-areas: "icon title";
+		grid-template-columns: 15em 1fr;
+		border-left: 1em solid white;
+		border-top: 1em solid white;
+		border-right: 1em solid white;
+		svg {
+			grid-area: icon;
+			margin-top: -1em;
+		}
+		h1 {
+			grid-area: title;
+			margin-top: 1.8em;
+			font-size: 2.5em;
+		}
+		.hamburger {
+			display: none;
+		}
+	}
+	svg {
+		height: 90%;
+		width: 90%;
+		grid-area: icon;
+		path.cls-2 {
+			fill: rgb(255, 255, 255) !important;
+		}
+	}
+}
