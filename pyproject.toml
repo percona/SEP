@@ -57,6 +57,8 @@ sqlmodel = "^0.0.22"
 async-lru = "^2.0.4"
 python-minifier = "^2.11.2"
 starlette = "^0.40.0"
+libsass = "^0.23.0"
+watchdog = "^5.0.3"
 
 [tool.poetry.group.audit]
 optional = true
