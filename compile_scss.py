@@ -7,8 +7,9 @@ def compile_scss(input_file, output_file):
     """
     try:
         compiled_css = sass.compile(filename=input_file)
+        cleaned_css = compiled_css.replace(' }', '\n}')
         with open(output_file, 'w') as f:
-            f.write(compiled_css)
+            f.write(cleaned_css)
         print(f"Compiled {input_file} -> {output_file}")
     except Exception as e:
         print(f"Error compiling {input_file}: {e}")
