@@ -92,7 +92,6 @@ class TaskExecutionRequest(BaseModel):
     payload: str | None = None
     tracking: dict | None = {"allocation_id": None, "evaluation_id": None}
 
-    @computed_field
     @cached_property
     def payload_content(self) -> str | None:
         """Retrieve the content of the payload if it's a file path.
@@ -103,8 +102,10 @@ class TaskExecutionRequest(BaseModel):
         :return: The content of the payload or None if not applicable.
         :rtype: str | None
         """
-        if self.payload and self.payload.startswith("file://"):
-            payload_path = Path(self.payload.replace("file://", "", 1)).resolve()
+        if self.payload and self.payload.strip().startswith("file://"):
+            payload_path = Path(
+                self.payload.strip().replace("file://", "", 1),
+            ).resolve()
             if payload_path.is_file():
                 with payload_path.open() as payload_file:
                     return payload_file.read()

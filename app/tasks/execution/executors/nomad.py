@@ -297,11 +297,13 @@ class NomadExecutor(BaseExecutor):
                                         alloc["ID"],
                                         task=step,
                                         type_="stdout",
+                                        plain=True,
                                     ),
                                     "stderr": self.backend.client.stream_logs.stream(
                                         alloc["ID"],
                                         task=step,
                                         type_="stderr",
+                                        plain=True,
                                     ),
                                 }
                             except BaseNomadException:
