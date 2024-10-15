@@ -28,36 +28,6 @@ class BaseInventoryModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class Node(BaseInventoryModel):
-    """Represent an inventory node.
-
-    This model represents a node within the Inventory API, including its network
-    address, external identifier, name, and type.
-
-    :param address: The network address of the node.
-    :type address: RequiredStr
-    :param external_id: The external identifier for the node, aliased as "node_id".
-        Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
-    :param name: The name of the node, aliased as "node_name".
-    :type name: RequiredStr
-    :param type: The type of the node (e.g., "generic"), aliased as "node_type".
-        Defaults to "generic".
-    :type type: RequiredStr
-    :param source: The source of the node information. Defaults to None.
-    :type source: SourceEnum | EmptyStrToNone
-    """
-
-    address: RequiredStr
-    name: RequiredStr = Field(validation_alias="node_name")
-    external_id: RequiredStr | EmptyStrToNone = Field(
-        default=None,
-        validation_alias="node_id",
-    )
-    source: SourceEnum | EmptyStrToNone = None
-    type: RequiredStr = Field(default="generic", validation_alias="node_type")
-
-
 class CreatedEntityBase(BaseSQLModel):
     """Base model for created inventory entities.
 
@@ -127,6 +97,37 @@ class CreatedEntityBase(BaseSQLModel):
         return self
 
 
+class Node(BaseInventoryModel):
+    """Represent an inventory node.
+
+    This model represents a node within the Inventory API, including its network
+    address, external identifier, name, and type.
+
+    :param address: The network address of the node.
+    :type address: RequiredStr
+    :param external_id: The external identifier for the node, aliased as "node_id".
+        Defaults to None.
+    :type external_id: RequiredStr | EmptyStrToNone
+    :param name: The name of the node, aliased as "node_name".
+    :type name: RequiredStr
+    :param type: The type of the node (e.g., "generic"), aliased as "node_type".
+        Defaults to "generic".
+    :type type: RequiredStr
+    :param source: The source of the node information. Defaults to None.
+    :type source: SourceEnum | EmptyStrToNone
+    """
+
+    address: RequiredStr
+    name: RequiredStr = Field(validation_alias="node_name")
+    external_id: RequiredStr | EmptyStrToNone = Field(
+        default=None,
+        validation_alias="node_id",
+    )
+    source: SourceEnum | EmptyStrToNone = None
+    type: RequiredStr = Field(default="generic", validation_alias="node_type")
+    services: list[Service] = []
+
+
 class CreatedNode(CreatedEntityBase, Node):
     """Represents an existing node from the inventory database.
 
@@ -191,6 +192,7 @@ class Service(BaseInventoryModel):
     name: RequiredStr = Field(validation_alias="service_name")
     port: int | EmptyStrToNone = None
     type: ServiceTypeEnum = Field(validation_alias="service_type")
+    schemas: list[Schema] = []
 
 
 class CreatedService(CreatedEntityBase, Service):
@@ -245,6 +247,7 @@ class Schema(BaseInventoryModel):
     """
 
     name: RequiredStr
+    tables: list[Table] = []
 
 
 class CreatedSchema(CreatedEntityBase, Schema):

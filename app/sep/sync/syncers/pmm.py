@@ -20,31 +20,6 @@ from app.sep.sync.models import BaseSyncer
 logger = logging.getLogger(__name__)
 
 
-class PMMNode(Node):
-    """Represent a PMM-specific inventory node.
-
-    This class extends the base `Node` model to include PMM-specific attributes
-    such as associated services.
-
-    :param address: The network address of the node.
-    :type address: RequiredStr
-    :param external_id: The external identifier for the node, aliased as "node_id".
-        Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
-    :param name: The name of the node, aliased as "node_name".
-    :type name: RequiredStr
-    :param type: The type of the node (e.g., "generic"), aliased as "node_type".
-        Defaults to "generic".
-    :type type: RequiredStr
-    :param source: The source of the node information. Defaults to None.
-    :type source: SourceEnum | EmptyStrToNone
-    :param services: A list of services associated with the node.
-    :type services: list[PMMService]
-    """
-
-    services: list["PMMService"]
-
-
 class PMMService(Service):
     """Represent a PMM-specific inventory service.
 
@@ -79,7 +54,7 @@ class PMMRemoteAPI(RemoteAPI):
     and services, and managing service associations.
     """
 
-    async def get_node(self, node_id: str) -> PMMNode:
+    async def get_node(self, node_id: str) -> Node:
         """Retrieve a PMM node by its external ID.
 
         Send a request to the PMM API to fetch a node's details by its external ID.
@@ -87,7 +62,7 @@ class PMMRemoteAPI(RemoteAPI):
         :param node_id: The external identifier of the node to retrieve.
         :type node_id: str
         :return: The retrieved node instance.
-        :rtype: PMMNode
+        :rtype: Node
         """
         node_data = await self.post(
             "/v1/inventory/Nodes/Get",
@@ -99,7 +74,7 @@ class PMMRemoteAPI(RemoteAPI):
             "type": node_type,
             "services": await self.get_services(node_id=node_id),
         }
-        return PMMNode.model_validate(node)
+        return Node.model_validate(node)
 
     async def get_service(self, service_id: str) -> PMMService:
         """Retrieve a PMM service by its ID.
@@ -170,7 +145,7 @@ class PMMRemoteAPI(RemoteAPI):
             services_by_node_id[service.node_id].append(service)
         return services_by_node_id
 
-    async def get_nodes(self, node_type: str = "") -> list[PMMNode]:
+    async def get_nodes(self, node_type: str = "") -> list[Node]:
         """Fetch nodes from the PMM API.
 
         Retrieve a list of nodes filtered by node type and associate them with their
@@ -179,8 +154,8 @@ class PMMRemoteAPI(RemoteAPI):
         :param node_type: The type of nodes to retrieve (e.g., "generic"). Defaults to
             an empty string, meaning the field won't be used as a filter.
         :type node_type: str
-        :return: A list of PMMNode instances retrieved from the API.
-        :rtype: list[PMMNode]
+        :return: A list of Node instances retrieved from the API.
+        :rtype: list[Node]
         """
         services_by_node_id = await self.get_services_by_node_external_id()
         nodes_data = await self.post(
@@ -188,7 +163,7 @@ class PMMRemoteAPI(RemoteAPI):
             json={"node_type": node_type},
         )
         return [
-            PMMNode(
+            Node(
                 **node,
                 source=SourceEnum.PMM,
                 type=node_type,
@@ -265,7 +240,7 @@ class PMMSyncer(BaseSyncer):
         for node in syncable_nodes.values():
             await self.delete_node(node)
 
-    async def fetch_node(self, created_node: CreatedNode) -> PMMNode:
+    async def fetch_node(self, created_node: CreatedNode) -> Node:
         """Fetch updated data for a specific node.
 
         Retrieve the latest information for the specified node from the PMM API.
@@ -273,7 +248,7 @@ class PMMSyncer(BaseSyncer):
         :param created_node: The node instance to fetch updated data for.
         :type created_node: CreatedNode
         :return: The updated node data.
-        :rtype: PMMNode
+        :rtype: Node
         """
         logger.debug(
             "Fetching node from PMM with external id %s",
@@ -284,7 +259,7 @@ class PMMSyncer(BaseSyncer):
     async def perform_node_sync(
         self,
         created_node: CreatedNode,
-        updated_node: PMMNode,
+        updated_node: Node,
     ) -> None:
         """Synchronize data for a specific node.
 
@@ -294,7 +269,7 @@ class PMMSyncer(BaseSyncer):
         :param created_node: The local node instance to synchronize.
         :type created_node: CreatedNode
         :param updated_node: The updated node data fetched from the PMM API.
-        :type updated_node: PMMNode
+        :type updated_node: Node
         """
         logger.info("Updating node %s: %s", created_node.id, updated_node)
         CreatedNode.model_validate(
