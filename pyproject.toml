@@ -32,7 +32,7 @@ classifiers = [
 package-mode = false # TODO: for now
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.14"
 aiohttp = "^3.9.4"
 fastapi = {version = "^0.115.0", extras = ["standard"]}
 idna = "^3.7"
@@ -55,6 +55,7 @@ aiosqlite = "^0.20.0"
 alembic = "^1.13.2"
 sqlmodel = "^0.0.22"
 async-lru = "^2.0.4"
+python-minifier = "^2.11.2"
 
 [tool.poetry.group.audit]
 optional = true

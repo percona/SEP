@@ -4,36 +4,36 @@
         <legend>Enter a new task definition</legend>
         <div>
             <label>Alias
-                <input id="taskalias" name="taskalias" maxlength="100" size="20" />
+                <input id="name" name="name" maxlength="100" size="20" required>
             </label>
         </div>
         <label>Definition
-            <textarea id="taskdef" name="taskdef" rows="40" cols="80"></textarea>
+            <textarea id="definition" name="definition" rows="40" cols="80" required></textarea>
         </label>
         <fieldset>
             <legend>Format</legend>
             <label title="Nomad-only">HCL
-                <input type="radio" id="format-hcl" name="fmt" value="hcl" />
+                <input type="radio" id="format-hcl" name="fmt" value="hcl">
             </label>
             <label>JSON
-                <input type="radio" id="format-json" name="fmt" value="json" />
+                <input type="radio" id="format-json" name="fmt" value="json" checked>
             </label>
             <label>YAML
-                <input type="radio" id="format-yaml" name="fmt" value="yaml" checked />
+                <input type="radio" id="format-yaml" name="fmt" value="yaml">
             </label>
         </fieldset>
         <label>Engine
-            <select id="taskeng" name="taskeng">
+            <select id="backend" name="backend" required>
                 {% for backend in available_backends %}
                 <option value="{{ backend }}">{{ backend.capitalize() }}</option>
                 {% endfor %}
             </select>
         </label>
         <label>Owner
-            <select id="owners" name="owners">
-                <option value="*">Any</option>
-                <option value="archiver">Data Archiver</option>
-                <option value="alter">Schema Change</option>
+            <select id="owner" name="owner" required>
+                {% for owner, label in available_owners.items() %}
+                <option value="{{ owner }}" {% if loop.first %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
             </select>
         </label>
     </fieldset>

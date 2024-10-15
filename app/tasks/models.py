@@ -13,7 +13,10 @@ Todo:
 from datetime import datetime
 from enum import auto
 from enum import StrEnum
+from functools import cached_property
+from pathlib import Path
 from statistics import mean
+from typing import Any
 from typing import Literal
 
 from pydantic import AliasGenerator
@@ -21,6 +24,8 @@ from pydantic import BaseModel
 from pydantic import computed_field
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import field_validator
+from pydantic import model_validator
 from sqlalchemy import Column
 from sqlalchemy import Enum as EnumField
 from sqlalchemy import Index
@@ -72,6 +77,9 @@ class TaskExecutionRequest(BaseModel):
     :type target: str
     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
     :type meta: dict | None
+    :param payload: Optional payload or file path for parameterizing the task.
+        Defaults to None.
+    :type payload: str | None
     :param tracking: Tracking information for task execution. Defaults to a dictionary
         with keys for allocation and evaluation IDs.
     :type tracking: dict | None
@@ -81,7 +89,26 @@ class TaskExecutionRequest(BaseModel):
     task: str
     target: str
     meta: dict | None = {}
+    payload: str | None = None
     tracking: dict | None = {"allocation_id": None, "evaluation_id": None}
+
+    @computed_field
+    @cached_property
+    def payload_content(self) -> str | None:
+        """Retrieve the content of the payload if it's a file path.
+
+        If the payload starts with "file://", it attempts to read the file content.
+        Otherwise, it returns the payload string directly.
+
+        :return: The content of the payload or None if not applicable.
+        :rtype: str | None
+        """
+        if self.payload and self.payload.startswith("file://"):
+            payload_path = Path(self.payload.replace("file://", "", 1)).resolve()
+            if payload_path.is_file():
+                with payload_path.open() as payload_file:
+                    return payload_file.read()
+        return self.payload
 
 
 class TaskGroupTaskTemplate(BaseModel):
@@ -275,6 +302,59 @@ class Task(BaseSQLModel, table=True):
         default=None,
         index=True,
     )
+
+    @field_validator("owner")
+    @classmethod
+    def validate_owner(cls, v: str | None) -> str | None:
+        """Validate the owner field.
+
+        If the owner is set to "*", it is considered as no specific owner and returns
+        None.
+
+        :param v: The owner value to validate.
+        :type v: str | None
+        :return: The validated owner value.
+        :rtype: str | None
+        """
+        if v == "*":
+            return None
+        return v
+
+
+class TaskExecuteRequest(BaseModel):
+    """Represent a request to execute a task with additional metadata and payload.
+
+    :param meta: A dictionary of meta variables for the task execution.
+        Defaults to an empty dictionary.
+    :type meta: dict[str, Any]
+    :param payload: Optional payload data or file path for the task execution.
+        Defaults to None.
+    :type payload: str | None
+    """
+
+    meta: dict[str, Any] = {}
+    payload: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_meta(cls, data: Any) -> Any:
+        """Populate the meta field by extracting keys prefixed with 'meta_'.
+
+        This method processes the input data to gather all keys starting with 'meta_'
+        and incorporates them into the meta dictionary.
+
+        :param data: The input data containing potential meta fields.
+        :type data: Any
+        :return: The modified data with the meta field populated.
+        :rtype: Any
+        """
+        if isinstance(data, dict):
+            meta = data.get("meta", {})
+            for key, value in data.items():
+                if key.startswith("meta_"):
+                    meta[key.replace("meta_", "")] = value
+            data["meta"] = meta
+        return data
 
 
 # TODO: Create Base/Write models

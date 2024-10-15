@@ -3,12 +3,15 @@
 import asyncio
 import re
 import unicodedata
+from base64 import b64encode
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
 from importlib import import_module
 from typing import Any
 from typing import ClassVar
+
+from python_minifier import minify
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
 REFRESH_INTERVAL = 3600
@@ -215,3 +218,54 @@ def import_var(path: str) -> Any:
     module_name, attr_name = path.rsplit(".", 1)
     module = import_module(module_name)
     return getattr(module, attr_name)
+
+
+def minify_file_content(content: str, file_ext: str = "") -> str:
+    """Minify Python file content.
+
+    Minify the given Python code string if the file extension is ".py" or not
+    specified. For other file types, return the content unchanged.
+
+    :param content: The content to be minified.
+    :type content: str
+    :param file_ext: The file extension indicating the type of content.
+    :type file_ext: str, optional
+    :return: The minified content if applicable, otherwise the original content.
+    :rtype: str
+    """
+    file_ext = file_ext.lstrip(".").lower()
+    if file_ext and file_ext != "py":
+        return content
+    try:
+        return minify(
+            content,
+            remove_annotations=True,
+            remove_pass=True,
+            remove_literal_statements=True,
+            combine_imports=True,
+            hoist_literals=True,
+            rename_locals=True,
+            rename_globals=True,
+            remove_object_base=True,
+            remove_asserts=True,
+            remove_debug=True,
+            remove_explicit_return_none=True,
+            remove_builtin_exception_brackets=True,
+        )
+    except SyntaxError:
+        return content
+
+
+def b64encode_str(value: str, encoding: str = "utf-8") -> str:
+    """Encode a string to Base64.
+
+    Encode the given string to Base64 format using the specified encoding.
+
+    :param value: The string to be encoded.
+    :type value: str
+    :param encoding: The encoding to use for the string, defaults to "utf-8".
+    :type encoding: str, optional
+    :return: The Base64 encoded string.
+    :rtype: str
+    """
+    return b64encode(value.encode(encoding)).decode(encoding)

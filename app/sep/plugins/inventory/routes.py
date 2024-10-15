@@ -113,7 +113,7 @@ async def node_create(
     node_data: Annotated[Node, Form()],
 ) -> RedirectResponse:
     """Create Node."""
-    await inventory_api.post("/", json=node_data.model_dump())
+    await inventory_api.post("/", json=node_data.model_dump(exclude={"services"}))
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -177,7 +177,7 @@ async def service_create_for_node(
     """Create Service for Node."""
     await inventory_api.post(
         f"/{node_id}/services/",
-        json=service_data.model_dump(),
+        json=service_data.model_dump(exclude={"schemas"}),
     )
     return RedirectResponse(
         f"/inventory/{node_id}",
@@ -249,7 +249,7 @@ async def schema_create_for_service(
     """Create Schema for Service."""
     await inventory_api.post(
         f"/services/{service_id}/schemas/",
-        json=schema_data.model_dump(),
+        json=schema_data.model_dump(exclude={"tables"}),
     )
     return RedirectResponse(
         f"/inventory/services/{service_id}",

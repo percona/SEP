@@ -21,6 +21,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.exceptions import HTTPBadRequestException
 from app.core.fields import RelativeFilePath
 from app.core.utils import async_run
+from app.core.utils import b64encode_str
+from app.core.utils import minify_file_content
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import Task
@@ -49,6 +51,9 @@ class NomadExecutor(BaseExecutor):
     :param cert: SSL certificate and key paths, or a single certificate file path.
         Defaults to an empty tuple.
     :type cert: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath
+    :param minify_payload: Whether to minify payloads before dispatching Parameterized
+        Jobs. Defaults to True.
+    :type minify_payload: bool
     """
 
     endpoint: HttpUrl
@@ -56,6 +61,7 @@ class NomadExecutor(BaseExecutor):
     timeout: int = 10
     verify: bool | RelativeFilePath = False
     cert: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath = ()
+    minify_payload: bool = True
 
     @cached_property
     def backend(self) -> Nomad:
@@ -90,9 +96,9 @@ class NomadExecutor(BaseExecutor):
         # TODO: determine scenarios for execution, such as looking up an existing job
         if queue_item.execution_request.meta:
             # TODO: target is currently pushed in to meta
-            queue_item.execution_request.meta["target"] = queue_item.execution_request.target
-            # TODO: DC is currently forced
-            queue_item.execution_request.meta["dc"] = "dc1"
+            queue_item.execution_request.meta["target"] = (
+                queue_item.execution_request.target
+            )
             # TODO: allow templates in more fields, currently only for constraints
             for meta_var, meta_val in queue_item.execution_request.meta.items():
                 for i, constraint in enumerate(task.data["Constraints"]):
@@ -123,21 +129,45 @@ class NomadExecutor(BaseExecutor):
             raise ValueError("The job status could not be determined")
         return job_status
 
-    def get_job(self, task: Task) -> dict[str, Any]:
+    def dispatch_job(self, queue_item: TaskHistory) -> dict[str, Any]:
+        """Dispatch a parameterized job for execution.
+
+        :param queue_item: The task history containing information about the execution.
+        :type queue_item: TaskHistory
+        :return: The status response from Nomad after dispatching the job.
+        :rtype: dict[str, Any]
+        """
+        logger.debug("Dispatching job: %s", queue_item)
+        payload = queue_item.execution_request.payload_content
+        if payload is not None:
+            if self.minify_payload:
+                payload = minify_file_content(payload)
+            payload = b64encode_str(payload)
+        job_status = self.backend.job.dispatch_job(
+            queue_item.task.data["ID"],
+            payload=payload,
+            meta=queue_item.execution_request.meta,
+        )
+        if not job_status:
+            logger.error("Unable to dispatch task %s", queue_item.task.id)
+            raise ValueError("The job status could not be determined")
+        return job_status
+
+    def get_job(self, job_id: str) -> dict[str, Any]:
         """Retrieve a job's details from the Nomad backend.
 
         Fetches the job information based on the task's ID. Raises an error if the job
         cannot be retrieved.
 
-        :param task: The task whose job details are to be retrieved.
-        :type task: Task
+        :param job_id: The ID of the job to be retrieved.
+        :type job_id: str
         :return: The job details retrieved from Nomad.
         :rtype: dict[str, Any]
         :raises ValueError: If the job could not be determined.
         """
-        job = self.backend.job.get_job(task.data["ID"])
+        job = self.backend.job.get_job(job_id)
         if not job:
-            logger.error("Unable to determine job for task %s", task.id)
+            logger.error("Unable to find job %s", job_id)
             raise ValueError("The job could not be determined")
         return job
 
@@ -166,21 +196,23 @@ class NomadExecutor(BaseExecutor):
         task = self.prepare_task(queue_item)
 
         start_ts, stop_ts = time.time_ns(), None
+        job_status = {}
         if self.task_needs_new_job(task):
-            match task.data.get("Type"):
-                case "batch" | "system" | "sysbatch":
-                    task.data["ID"] += f"-{uuid1()}"
-                case _:
-                    raise NotImplementedError(
-                        f"{task.data.get('Type')} job support is TBD",
-                    )
-
+            if not task.data.get("ParameterizedJob"):
+                match task.data.get("Type"):
+                    case "batch" | "system" | "sysbatch":
+                        task.data["ID"] += f"-{uuid1()}"
+                    case _:
+                        raise NotImplementedError(
+                            f"{task.data.get('Type')} job support is TBD",
+                        )
             job_status = self.register_job(task)
             logger.debug("Job status: %r", job_status)
-            job = self.get_job(task)
+            job = self.get_job(task.data["ID"])
             logger.debug("Job: %s", job)
-        else:
-            raise NotImplementedError
+        if task.data.get("ParameterizedJob"):
+            job_status = self.dispatch_job(queue_item)
+            job = self.get_job(job_status["DispatchedJobID"])
 
         queue_item.execution_request.tracking.update(evaluation_id=job_status["EvalID"])
         queue_item = await TaskHistoryManager.save(
@@ -313,7 +345,6 @@ class NomadExecutor(BaseExecutor):
         """Determine whether a new job needs to be created for the task.
 
         Checks the task's configuration to decide if a new job should be registered.
-        Currently, only certain job types are supported.
 
         :param task: The task to evaluate.
         :type task: Task
@@ -324,25 +355,19 @@ class NomadExecutor(BaseExecutor):
         :raises BaseNomadException: If there is an issue communicating with the Nomad
             backend.
         """
-        try:
-            match task.data.get("ParameterizedJob"):
-                # TODO: temporary to avoid ParameterizedJobs
-                case True:
-                    raise NotImplementedError("Parameterized job support is TBD")
-                case _:
-                    match task.data.get("Type"):
-                        case "batch" | "system" | "sysbatch":
-                            return True
-                        case _:
-                            raise NotImplementedError(
-                                f"{task.data.get('Type')} job support is TBD",
-                            )
-        except URLNotFoundNomadException:
-            logger.debug("Unable to match job, creating a new one")
-            return True
-        except BaseNomadException:
-            logger.exception("Failed to process job for %s", task.name)
-            raise
+        if task.data.get("ParameterizedJob"):
+            try:
+                self.get_job(task.data["ID"])
+            except (ValueError, URLNotFoundNomadException):
+                return True
+            return False
+        match task.data.get("Type"):
+            case "batch" | "system" | "sysbatch":
+                return True
+            case _:
+                raise NotImplementedError(
+                    f"{task.data.get('Type')} job support is TBD",
+                )
 
     # TODO: Use pydantic models instead of dict for job validation
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -374,4 +399,7 @@ class NomadExecutor(BaseExecutor):
         :rtype: list[str]
         """
         filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
-        return [node["Name"] for node in self.backend.nodes.get_nodes(filter_=filter_expression)]
+        return [
+            node["Name"]
+            for node in self.backend.nodes.get_nodes(filter_=filter_expression)
+        ]

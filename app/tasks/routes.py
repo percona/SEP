@@ -3,14 +3,11 @@
 import logging
 from http import HTTPStatus
 from os import getenv
-from typing import Annotated
 from typing import Any
 
 from fastapi import APIRouter
 from fastapi import BackgroundTasks
-from fastapi import Form
 from fastapi import HTTPException
-from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
@@ -25,6 +22,7 @@ from app.tasks.deps import TaskExecutor
 from app.tasks.models import GeneratedTask
 from app.tasks.models import Task
 from app.tasks.models import TaskBackendEnum
+from app.tasks.models import TaskExecuteRequest
 from app.tasks.models import TaskExecutionRequest
 from app.tasks.models import TaskGroup
 from app.tasks.models import TaskGroupTask
@@ -199,9 +197,8 @@ async def generate_task(
 async def execute_task_name(
     session: SessionDep,
     task_name: str,
-    request: Request,
     background_tasks: BackgroundTasks,
-    target: Annotated[str, Form()] | None = Form("all"),
+    execution_data: TaskExecuteRequest,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
     # TODO: optional arg (if possible), else a structured one
@@ -213,17 +210,13 @@ async def execute_task_name(
             f"Task {task_name} is a template and cannot be executed",
         )
     # Record the task execution request
-    meta = {
-        field.replace("meta_", ""): val
-        for field, val in dict(await request.form()).items()
-        if field.startswith("meta_")
-    }
     task_history = TaskHistory(
         task_id=config.id,
         execution_request=TaskExecutionRequest(
             task=task_name,
-            target=target,
-            meta=meta,
+            target=execution_data.meta.get("target", "all"),
+            meta=execution_data.meta,
+            payload=execution_data.payload,
             tracking={"evaluation_id": ""},
         ),
         status=TaskHistoryStatusEnum.PENDING,

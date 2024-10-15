@@ -1,7 +1,6 @@
 """Define routes for the Tasks API."""
 
 import logging
-from collections import namedtuple
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from os import getenv
@@ -25,21 +24,10 @@ BACKEND_POLL_INTERVAL_SECONDS = getenv(
     DEFAULT_BACKEND_POLL_INTERVAL_SECONDS,
 )
 
-TaskOwner = namedtuple("TaskOwner", ["value", "label"])
-TranslateConfig = namedtuple("TranslateConfig", ["old", "new", "action"])
-
-TRANSLATION_MAPPING = {
-    "create": (
-        TranslateConfig("owners", "meta", "update"),
-        TranslateConfig("taskalias", "name", "flatten"),
-        TranslateConfig("taskdef", "data", "backend"),
-        TranslateConfig("taskeng", "engine", "flatten"),
-    ),
-    "owners": (
-        TaskOwner(None, "Any"),
-        TaskOwner("archiver", "Data Archiver"),
-        TaskOwner("alters", "Schema Change"),
-    ),
+AVAILABLE_OWNERS = {
+    "*": "Any",
+    "archiver": "Data Archiver",
+    "alters": "Schema Change",
 }
 
 
@@ -52,14 +40,18 @@ async def initial_tasks_setup(app: FastAPI) -> AsyncGenerator[None, None]:  # no
     yield
 
 
-tasks_app = FastAPI(lifespan=initial_tasks_setup) if __name__ == "__main__" else FastAPI()
+tasks_app = (
+    FastAPI(lifespan=initial_tasks_setup) if __name__ == "__main__" else FastAPI()
+)
 tasks_app.include_router(router)
 tasks_app.log = logger
 
 if settings.BACKEND_CORS_ORIGINS:
     tasks_app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=[
+            str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -70,7 +62,7 @@ if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
         level=settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
+        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",
     )
     for name, level in settings.LOGGING_EXTRA.items():
         logging.getLogger(name).setLevel(level)
