@@ -109,7 +109,9 @@ class Node(NodeBase, BaseSQLModel, table=True):
     :type services: list[Service]
     """
 
-    __table_args__ = (Index("ix_node_external_id_source", "external_id", "source", unique=True),)
+    __table_args__ = (
+        Index("ix_node_external_id_source", "external_id", "source", unique=True),
+    )
     services: list["Service"] = Relationship(back_populates="node", cascade_delete=True)
 
 
@@ -237,13 +239,15 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type name: RequiredStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :type type: ServiceTypeEnum
-    :param port: The port number on which the service is running.
+    :param port: The port number on which the service is running. Must be unique for
+        node_id, as defined by composite index ix_service_port_node_id.
     :type port: int | None
     :param environment: The environment in which the service is running, if set.
     :type environment: str | None
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
-        ix_service_external_id_node_id.
+        ix_service_external_id_node_id, and for port, as defined by composite index
+        ix_service_port_node_id.
     :type node_id: int
     :param node: The node to which the service is associated.
     :type node: Node
@@ -251,7 +255,10 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type schemas: list[Schema]
     """
 
-    __table_args__ = (Index("ix_service_external_id_node_id", "external_id", "node_id", unique=True),)
+    __table_args__ = (
+        Index("ix_service_external_id_node_id", "external_id", "node_id", unique=True),
+        Index("ix_service_port_node_id", "port", "node_id", unique=True),
+    )
 
     node: Node = Relationship(back_populates="services")
     schemas: list["Schema"] = Relationship(
@@ -360,7 +367,9 @@ class Schema(BaseSQLModel, SchemaBase, table=True):
     :type tables: list[Table]
     """
 
-    __table_args__ = (Index("ix_schema_name_service_id", "name", "service_id", unique=True),)
+    __table_args__ = (
+        Index("ix_schema_name_service_id", "name", "service_id", unique=True),
+    )
     service: Service = Relationship(back_populates="schemas")
     tables: list["Table"] = Relationship(back_populates="database", cascade_delete=True)
 
@@ -466,7 +475,9 @@ class Table(BaseSQLModel, TableBase, table=True):
     :type database: Schema
     """
 
-    __table_args__ = (Index("ix_table_name_schema_id", "name", "schema_id", unique=True),)
+    __table_args__ = (
+        Index("ix_table_name_schema_id", "name", "schema_id", unique=True),
+    )
     database: Schema = Relationship(back_populates="tables")
 
 
