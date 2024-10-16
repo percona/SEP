@@ -137,7 +137,8 @@ NOMAD_RUN_PYTHON = {
                         "command": "sh",
                         "args": [
                             "-c",
-                            "python3 -m venv ${NOMAD_ALLOC_DIR}/venv; ${NOMAD_ALLOC_DIR}/venv/bin/pip install -U pip ${NOMAD_META_requirements}",
+                            "python3 -m venv ${NOMAD_ALLOC_DIR}/venv;"
+                            "${NOMAD_ALLOC_DIR}/venv/bin/pip install -U pip ${NOMAD_META_requirements}",
                         ],
                     },
                     "Meta": {},
