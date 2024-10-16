@@ -18,10 +18,14 @@
 
 <p>Perform data archiving tasks, currently MySQL-only.</p>
 
-{% if not saved_tasks and not history_tasks %}
-{% set modal_required = False %}
-<h2>Create an archiving process</h2>
-{% include "archiver/partials/create-form.html" %}
+{% if not tasks and not history_tasks %}
+    {% set modal_required = False %}
+<h2>Configure a archiver</h2>
+    {% if hosts|length < 1 %}
+    <p>Unable to find suitable database instances.</p>
+    {% else %}
+        {% include "archiver/partials/create-form.html" %}
+    {% endif %}
 {% else %}
 {% set modal_required = True %}
 <section id="saved-tasks">
