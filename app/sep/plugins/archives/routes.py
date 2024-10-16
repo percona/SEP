@@ -2,9 +2,12 @@ import logging
 
 from fastapi import APIRouter
 from fastapi import Request
+from fastapi import status
 from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 
 from app.sep.config import sep_settings
+from app.sep.plugins.archives.deps import ArchivesGeneratedTask
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import TaskAPI
@@ -63,3 +66,21 @@ async def alters_index(
         name="archiver/index.html",
         context=context,
     )
+    
+    
+@router.post("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def archives_create(
+    task: ArchivesGeneratedTask,
+    task_api: TaskAPI,
+) -> RedirectResponse:
+    """Create new archives task."""
+    logger.debug("Create archives task: %s", task)
+    # TODO: validate response
+    await task_api.post(
+        "/generate",
+        json=task.model_dump(),
+    )  # TODO: Proper error for unique constraint
+    return RedirectResponse(
+        "/archives",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )  # TODO: Custom redirect class
