@@ -1,5 +1,4 @@
-{% from tornado.escape import xhtml_unescape %}
-{% if saved_tasks %}
+{% if tasks %}
 <table>
     <thead>
         <tr>
@@ -10,7 +9,7 @@
         </tr>
     </thead>
     <tbody>
-        {% for archive in saved_tasks %}
+        {% for archive in tasks %}
         <tr>
             <td>{{ archive['name'] }}</td>
             <td>{{ archive['hostname'] }}</td>
@@ -20,7 +19,6 @@
                     <button name="location" class="icons">send</button>
                     <input type="hidden" name="task" value="{{ archive['name'] }}">
                     <input type="hidden" name="host" value="{{ archive['hostname'] }}">
-                    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% endapply %}
                 </form>
                 <form id="{{ archive['name'] }}-info" method="get" action="details/{{ archive['name'] }}">
                     <button class="icons">info</button>
@@ -28,7 +26,6 @@
                 <form id="{{ archive['name'] }}-delete" method="post" action="delete/{{ archive['name'] }}">
                     <button name="location" class="icons">delete forever</button>
                     <input type="hidden" name="task" value="{{ archive['name'] }}">
-                    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% endapply %}
                 </form>
             </td>
         </tr>

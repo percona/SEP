@@ -55,8 +55,8 @@ async def alters_index(
     context.update(
         {
             "hosts": all_hosts,
-            "archives": tasks,
-            "scheduled_tasks": scheduled_tasks,
+            "tasks": tasks,
+            "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
         },
