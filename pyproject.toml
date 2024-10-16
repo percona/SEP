@@ -56,6 +56,7 @@ alembic = "^1.13.2"
 sqlmodel = "^0.0.22"
 async-lru = "^2.0.4"
 python-minifier = "^2.11.2"
+starlette = "^0.40.0"
 
 [tool.poetry.group.audit]
 optional = true
