@@ -10,13 +10,13 @@
   </thead>
   <tbody>
     {% for archive in running_tasks %}
-    {% set archive_name = archive["name"] %}
+    {% set archive_name = archive["task"]["name"] %}
     <tr>
       <td>{{ archive_name }}</td>
       <td>{{ archive['execution_request']['target'] }}</td>
       <td>{{ archive['updated_at'] }}</td>
       <td>
-        <a href="/archive/details/{{ archive_name }}"><i class="icons">visibility</i></a>
+        <a href="/archives/{{ archive_name }}"><i class="icons">visibility</i></a>
         <i class="icons">cancel</i>
       </td>
     </tr>

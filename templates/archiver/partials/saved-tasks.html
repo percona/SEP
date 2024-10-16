@@ -15,15 +15,15 @@
             <td>{{ archive['hostname'] }}</td>
             <td>{{ archive['table'] }}</td>
             <td class="flex">
-                <form id="{{ archive['name'] }}-send" method="post" action="execute/{{ archive['name'] }}">
+                <form id="{{ archive['name'] }}-send" method="post" action="{{ archive['name'] }}">
                     <button name="location" class="icons">send</button>
                     <input type="hidden" name="task" value="{{ archive['name'] }}">
                     <input type="hidden" name="host" value="{{ archive['hostname'] }}">
                 </form>
-                <form id="{{ archive['name'] }}-info" method="get" action="details/{{ archive['name'] }}">
+                <form id="{{ archive['name'] }}-info" method="get" action="{{ archive['name'] }}">
                     <button class="icons">info</button>
                 </form>
-                <form id="{{ archive['name'] }}-delete" method="post" action="delete/{{ archive['name'] }}">
+                <form id="{{ archive['name'] }}-delete" method="post" action="{{ archive['name'] }}/delete">
                     <button name="location" class="icons">delete forever</button>
                     <input type="hidden" name="task" value="{{ archive['name'] }}">
                 </form>

@@ -10,14 +10,15 @@
   </thead>
   <tbody>
     {% for archive in pending_tasks %}
-    {% set archive_name = archive["name"] %}
+    {% set archive_name = archive["task"]["name"] %}
     <tr>
       <td>{{ archive_name }}</td>
       <td>{{ archive['execution_request']['target'] }}</td>
       <td>{{ archive['created_at'] }}</td>
       <td>
-        <a href="details/{{ archive_name }}"><i class="icons">visibility</i></a>
-        <a href="delete/{{ archive['name'] }}"><i class="icons">delete forever</i></a>
+        <a href="{{ archive_name }}"><i class="icons">visibility</i></a>
+        <a href="javascript:;" onclick="document.getElementById('deleteTaskForm').submit();"><i class="icons">delete forever</i></a>
+        <form action="{{ archive_name }}/delete" method="POST" style="display:none;" id="deleteTaskForm"></form>
       </td>
     </tr>
     {% endfor %}

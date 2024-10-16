@@ -12,6 +12,7 @@ from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
 from app.sep.deps import TaskAPI
 from app.sep.deps import IsAuthenticated
+from app.sep.plugins.archives.deps import ArchivesTask
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -19,13 +20,13 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def alters_index(
+async def archives_index(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
 ) -> HTMLResponse:
-    """Homepage of alters plugin."""
+    """Homepage of archives plugin."""
     all_hosts = await inventory_api.get("/")
     tasks = []
     for task in await tasks_api.get("/"):
@@ -84,3 +85,33 @@ async def archives_create(
         "/archives",
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class
+
+
+@router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def archives_detail(
+    task: ArchivesTask,
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
+) -> HTMLResponse:
+    """Retrieve archives task."""
+    data = task["data"]
+    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
+    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    task_data = {
+        "name": task["name"],
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+        "hostname": data["Constraints"][0]["RTarget"],
+        "table": f"{meta['schema_name']}.{meta['table_name']}",
+        "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
+        "meta": meta,
+    }
+    context["task"] = task_data
+    context["history"] = await tasks_api.get(f"/history/{task['name']}")
+    context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
+    return templates.TemplateResponse(
+        request=request,
+        name="archiver/details.html",
+        context=context,
+    )
