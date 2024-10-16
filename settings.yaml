@@ -25,8 +25,8 @@ default:
         URI_PATH: /inventory
         CSS_CLASS: inventory
       - NAME: Archive
-        MODULE_NAME: archive
-        URI_PATH: /archive
+        MODULE_NAME: archives
+        URI_PATH: /archives
         CSS_CLASS: archive
   TASKS:
     NOMAD:
