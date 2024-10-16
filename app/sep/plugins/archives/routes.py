@@ -115,3 +115,30 @@ async def archives_detail(
         name="archiver/details.html",
         context=context,
     )
+    
+@router.post(
+    "/{task_name}",
+    dependencies=[IsAuthenticated],
+    response_class=RedirectResponse,
+)
+async def archives_execute(
+    task: ArchivesTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Execute archives task."""
+    await tasks_api.post(f"/execute/{task['name']}")  # TODO: send meta form fields
+    return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/delete",
+    dependencies=[IsAuthenticated],
+    response_class=RedirectResponse,
+)
+async def archives_delete(
+    task: ArchivesTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Delete archives task."""
+    await tasks_api.delete(f"/{task['name']}")
+    return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
