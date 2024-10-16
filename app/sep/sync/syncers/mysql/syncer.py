@@ -2,9 +2,12 @@
 
 import json
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 from typing import ClassVar
+
+from async_lru import alru_cache
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedNode
@@ -34,12 +37,16 @@ class MySQLSyncer(BaseTaskSyncer):
     :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
     :param ignore_schemas: A list of schema names to ignore during synchronization.
     :type ignore_schemas: list[str]
+    :param resolve_localhost: Resolve the --host IP to 127.0.0.1 if it's the same as
+        the executor host. Defaults to True.
+    :type resolve_localhost: bool
     """
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.TABLE
     )
     ignore_schemas: list[str] = []
+    resolve_localhost: bool = True
 
     @property
     def payload_path(self) -> Path:
@@ -53,6 +60,24 @@ class MySQLSyncer(BaseTaskSyncer):
         """
         # TODO: Create PAYLOADS_DIR setting and keep payloads/scripts there
         return Path(__file__).parent / "payload.py"
+
+    @alru_cache
+    async def get_task_target(self, host: str) -> str:
+        """Return the target host for the task from the host.
+
+        This method returns `self.force_executor_host` if set. Otherwise, it tries to
+        find a target with the same address as `host`. If it can't, the first available
+        host is returned.
+
+        :param host: The target host.
+        :type host: str
+        :return: The target host for the task.
+        :rtype: str
+        """
+        if self.force_executor_host:
+            return self.force_executor_host
+        available_hosts = await self.get_available_hosts()
+        return available_hosts.get(host, next(iter(available_hosts.values())))
 
     def build_args(
         self,
@@ -83,9 +108,11 @@ class MySQLSyncer(BaseTaskSyncer):
             args += f' --table="{table}"'
         for ignored_schema in self.ignore_schemas:
             args += f" -i {ignored_schema}"
+        if self.resolve_localhost:
+            args += " --resolve-localhost"
         return args
 
-    async def build_meta(self, args: str) -> dict[str, str]:
+    async def build_meta(self, args: str, target: str) -> dict[str, str]:
         """Build metadata for task execution.
 
         Creates a metadata dictionary containing the command-line arguments, target
@@ -93,14 +120,16 @@ class MySQLSyncer(BaseTaskSyncer):
 
         :param args: The command-line arguments for the task.
         :type args: str
+        :param target: The target host for the task.
+        :type target: str
         :return: A dictionary with metadata required for task execution.
         :rtype: dict[str, str]
         """
         # TODO: Figure out a way to keep requirements attached to payloads
         return {
             "args": args,
-            "target": await self.get_task_target(),
-            "requirements": "PyMySQL==1.1.1",
+            "target": target,
+            "requirements": "PyMySQL",
         }
 
     async def wait_for_task_output(
@@ -163,14 +192,17 @@ class MySQLSyncer(BaseTaskSyncer):
             if self.can_sync_service(service)
         ]
         args = self.build_args(*hosts)
-        schemas_data = json.loads(
-            await self.wait_for_task_output(**await self.build_meta(args)),
+        meta = await self.build_meta(
+            args,
+            await self.get_task_target(created_node.address),
         )
+        schemas_data = json.loads(await self.wait_for_task_output(**meta))
         services = []
         for created_service in created_node.services:
-            service_data = created_service.model_dump(exclude={"schemas"})
-            service_data["schemas"] = schemas_data.get(created_service.address, [])
-            services.append(Service.model_validate(service_data))
+            if self.can_sync_service(created_service):
+                service_data = created_service.model_dump(exclude={"schemas"})
+                service_data["schemas"] = schemas_data.get(created_service.address, [])
+                services.append(Service.model_validate(service_data))
         node = Node.model_validate(created_node.model_dump())
         node.services = services
         return node
@@ -190,12 +222,12 @@ class MySQLSyncer(BaseTaskSyncer):
         :param updated_node: The updated node data.
         :type updated_node: Node
         """
-        syncable_services = {}
+        syncable_services = defaultdict(list)
         for service in created_node.services:
-            syncable_services[service.port] = service
+            syncable_services[service.port].append(service)
         for service in updated_node.services:
-            if service.port in syncable_services:
-                await self.sync_service(syncable_services[service.port], service)
+            for created_service in syncable_services[service.port]:
+                await self.sync_service(created_service, service)
 
     async def fetch_service(self, created_service: CreatedService) -> Service:
         """Fetch updated data for a specific service.
@@ -209,9 +241,11 @@ class MySQLSyncer(BaseTaskSyncer):
         :rtype: Service
         """
         args = self.build_args(created_service.address)
-        schemas_data = json.loads(
-            await self.wait_for_task_output(**await self.build_meta(args)),
+        meta = await self.build_meta(
+            args,
+            await self.get_task_target(created_service.node.address),
         )
+        schemas_data = json.loads(await self.wait_for_task_output(**meta))
         service_data = created_service.model_dump(exclude={"schemas"})
         service_data["schemas"] = schemas_data.get(created_service.address, [])
         return Service.model_validate(service_data)
@@ -259,17 +293,20 @@ class MySQLSyncer(BaseTaskSyncer):
         :return: The updated schema data.
         :rtype: Schema
         """
-        if created_schema.service and created_schema.service.address:
-            host = created_schema.service.address
-        else:
+        if (
+            not (created_service := created_schema.service)
+            or not created_service.address
+        ):
             created_service = await self.get_inventory_service(
                 created_schema.service_id,
             )
-            host = created_service.address
+        host = created_service.address
         args = self.build_args(host, schema=created_schema.name)
-        schema_data = json.loads(
-            await self.wait_for_task_output(**await self.build_meta(args)),
+        meta = await self.build_meta(
+            args,
+            await self.get_task_target(created_service.node.address),
         )
+        schema_data = json.loads(await self.wait_for_task_output(**meta))
         return Schema.model_validate(schema_data)
 
     async def perform_schema_sync(
@@ -318,26 +355,32 @@ class MySQLSyncer(BaseTaskSyncer):
         :return: The updated table data.
         :rtype: Table
         """
-        if created_table.database and created_table.database.service:
-            if created_table.database.service.address:
-                host = created_table.database.service.address
+        if (created_schema := created_table.database) and (
+            created_service := created_schema.service
+        ):
+            if created_service.address:
+                host = created_service.address
             else:
                 created_service = await self.get_inventory_service(
-                    created_table.database.service.id,
+                    created_service.id,
                 )
                 host = created_service.address
         else:
-            schema = await self.get_inventory_schema(created_table.database_id)
-            created_service = await self.get_inventory_service(schema.service_id)
+            created_schema = await self.get_inventory_schema(created_table.database_id)
+            created_service = await self.get_inventory_service(
+                created_schema.service_id,
+            )
             host = created_service.address
         args = self.build_args(
             host,
             schema=created_table.database.name,
             table=created_table.name,
         )
-        table_data = json.loads(
-            await self.wait_for_task_output(**await self.build_meta(args)),
+        meta = await self.build_meta(
+            args,
+            await self.get_task_target(created_service.node.address),
         )
+        table_data = json.loads(await self.wait_for_task_output(**meta))
         return Table.model_validate(table_data)
 
     async def perform_table_sync(

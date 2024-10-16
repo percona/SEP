@@ -75,7 +75,8 @@ async def tasks_detail(
     context["history"] = await tasks_api.get(f"/{task_name}/history/")
     context["available_owners"] = AVAILABLE_OWNERS
     context["task_data"] = context["task"]["data"]
-    context["executor_hosts"] = await tasks_api.get("/hosts/")
+    executor_hosts = await tasks_api.get("/hosts/")
+    context["executor_hosts"] = executor_hosts.values()
     return templates.TemplateResponse(
         request=request,
         name="tasks/view.html",

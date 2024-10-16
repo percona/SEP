@@ -64,9 +64,10 @@ async def alters_index(
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
+    executor_hosts = await tasks_api.get("/hosts/")
     context.update(
         {
-            "executor_hosts": await tasks_api.get("/hosts/"),
+            "executor_hosts": executor_hosts.values(),
             "mysql_hosts": mysql_hosts,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,

@@ -89,9 +89,10 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         """
 
     @abstractmethod
-    def get_hosts(self) -> list[str]:
+    def get_hosts(self) -> dict[str, str]:
         """Get the list of valid executor hosts.
 
-        :return: The list of healthy hostnames.
+        :return: A dictionary with host addresses as key and the respective hostnames
+            as values.
         :rtype: list[str]
         """

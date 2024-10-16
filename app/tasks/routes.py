@@ -320,7 +320,7 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
 
 
 @router.get("/hosts/", dependencies=[IsAuthenticatedDep])
-async def get_executor_hosts(executor: TaskExecutor) -> list[str]:
+async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
     """Return the executor hosts from the executor."""
     return executor.get_hosts()
 

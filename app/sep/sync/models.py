@@ -1114,19 +1114,13 @@ class BaseTaskSyncer(BaseSyncer):
     force_executor_host: str | None = None
 
     @alru_cache
-    async def get_task_target(self) -> str:
-        """Return the target host for the task.
+    async def get_available_hosts(self) -> dict[str, str]:
+        """Return the available hosts from the Tasks API.
 
-        This method returns `self.force_executor_host` if set. Otherwise, it returns
-        the first available host from the Tasks API.
-
-        :return: The target host for the task.
-        :rtype: str
+        :return: The available hosts.
+        :rtype: dict[str, str]
         """
-        if self.force_executor_host:
-            return self.force_executor_host
-        available_hosts = await self.tasks_api.get("/hosts/")
-        return available_hosts[0]
+        return await self.tasks_api.get("/hosts/")
 
     async def wait_for_task_output(
         self,

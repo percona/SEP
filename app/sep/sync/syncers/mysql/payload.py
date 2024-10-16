@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import socket
 import sys
 from collections.abc import Sequence
 
@@ -130,6 +131,12 @@ def main() -> None:
         "--table",
         help="Name of the table to fetch create statement for",
     )
+    parser.add_argument(
+        "--resolve-localhost",
+        action="store_true",
+        default=False,
+        help="Resolve the host IP to 127.0.0.1 if it's the same as local IP",
+    )
 
     args = parser.parse_args()
     if args.table and not args.schema:
@@ -138,13 +145,17 @@ def main() -> None:
         sys.exit("Only one host allowed if --schema is specified")
 
     result = {}
+    local_ip = socket.gethostbyname(socket.gethostname())
     for host_entry in args.host:
         host, port = parse_host_port(host_entry)
+        if args.resolve_localhost and host == local_ip:
+            host = "127.0.0.1"
         try:
             with (
                 pymysql.connect(
                     host=host,
                     port=port,
+                    read_default_file="~/.my.cnf",
                 ) as connection,
                 connection.cursor() as cursor,
             ):

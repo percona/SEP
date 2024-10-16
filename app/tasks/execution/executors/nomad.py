@@ -94,6 +94,7 @@ class NomadExecutor(BaseExecutor):
         """
         task = queue_item.task
         # TODO: determine scenarios for execution, such as looking up an existing job
+        task.data["ID"] += f"-{queue_item.execution_request.target}"
         if queue_item.execution_request.meta:
             # TODO: target is currently pushed in to meta
             queue_item.execution_request.meta["target"] = (
@@ -394,14 +395,15 @@ class NomadExecutor(BaseExecutor):
         logger.error(valid[0].text)
         raise HTTPBadRequestException("Invalid job specification")
 
-    def get_hosts(self) -> list[str]:
+    def get_hosts(self) -> dict[str, str]:
         """Get healthy node names from Nomad backend.
 
-        :return: The list of healthy node names.
-        :rtype: list[str]
+        :return: A dictionary with node addresses as key and the respective node names
+            as values.
+        :rtype: dict[str, str]
         """
         filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
-        return [
-            node["Name"]
+        return {
+            node["Address"]: node["Name"]
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
-        ]
+        }
