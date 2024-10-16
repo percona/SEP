@@ -105,16 +105,18 @@ class Node(BaseInventoryModel):
 
     :param address: The network address of the node.
     :type address: RequiredStr
+    :param name: The name of the node, aliased as "node_name".
+    :type name: RequiredStr
     :param external_id: The external identifier for the node, aliased as "node_id".
         Defaults to None.
     :type external_id: RequiredStr | EmptyStrToNone
-    :param name: The name of the node, aliased as "node_name".
-    :type name: RequiredStr
+    :param source: The source of the node information. Defaults to None.
+    :type source: SourceEnum | EmptyStrToNone
     :param type: The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
     :type type: RequiredStr
-    :param source: The source of the node information. Defaults to None.
-    :type source: SourceEnum | EmptyStrToNone
+    :param services: The services associated with the node.
+    :type services: list[Service]
     """
 
     address: RequiredStr
@@ -182,6 +184,8 @@ class Service(BaseInventoryModel):
     :param type: The type of the service (e.g., "service_type"), aliased as
         "service_type".
     :type type: ServiceTypeEnum
+    :param schemas: The schemas associated with the service.
+    :type schemas: list[Schema]
     """
 
     environment: str | None = None
@@ -225,6 +229,8 @@ class CreatedService(CreatedEntityBase, Service):
     :param type: The type of the service (e.g., "service_type"), aliased as
         "service_type".
     :type type: ServiceTypeEnum
+    :param node_id: The ID of the node to which the service belongs.
+    :type node_id: int
     :param node: The node to which the service is associated. Defaults to None.
     :type node: CreatedNode | None
     :param schemas: A list of existing schemas associated with the service.
@@ -233,8 +239,27 @@ class CreatedService(CreatedEntityBase, Service):
 
     CHILDREN_FIELD: ClassVar[str] = "schemas"
     PARENT_FIELD: ClassVar[str] = "node"
+    node_id: int
     node: CreatedNode | None = None
     schemas: list[CreatedSchema] = []
+
+    @property
+    def address(self) -> str | None:
+        """Return the complete address for the service.
+
+        Builds the complete address from the service's node address and the service's
+        port.
+
+        :return: The complete address for the service, or None if the service is not
+            associated with a node
+        :rtype: str | None
+        """
+        if self.node is None:
+            return None
+        host = self.node.address
+        if self.port:
+            host += f":{self.port}"
+        return host
 
 
 class Schema(BaseInventoryModel):
@@ -244,6 +269,8 @@ class Schema(BaseInventoryModel):
 
     :param name: The name of the schema.
     :type name: RequiredStr
+    :param tables: The tables associated with the schema.
+    :type tables: list[Table]
     """
 
     name: RequiredStr
@@ -269,6 +296,8 @@ class CreatedSchema(CreatedEntityBase, Schema):
     :type updated_at: datetime | None
     :param name: The name of the schema.
     :type name: RequiredStr
+    :param service_id: The ID of the service to which the schema belongs.
+    :type service_id: int
     :param service: The service to which the schema is associated. Defaults to None.
     :type service: CreatedService | None
     :param tables: A list of existing tables associated with the schema.
@@ -277,6 +306,7 @@ class CreatedSchema(CreatedEntityBase, Schema):
 
     CHILDREN_FIELD: ClassVar[str] = "tables"
     PARENT_FIELD: ClassVar[str] = "service"
+    service_id: int
     service: CreatedService | None = None
     tables: list[CreatedTable] = []
 
@@ -317,11 +347,14 @@ class CreatedTable(CreatedEntityBase, Table):
     :type name: RequiredStr
     :param create: The SQL statement used to create the table.
     :type create: RequiredStr
+    :param schema_id: The ID of the schema to which the table belongs.
+    :type schema_id: int
     :param database: The schema to which the table is associated. Defaults to None.
     :type database: CreatedSchema | None
     """
 
     PARENT_FIELD: ClassVar[str] = "database"
+    schema_id: int
     database: CreatedSchema | None = Field(default=None, validation_alias="schema")
 
 

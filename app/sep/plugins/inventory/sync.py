@@ -38,9 +38,9 @@ async def run_node_sync(
         synchronization.
     :type syncers: BaseSyncer
     """
-    for syncer in syncers:
+    for syncer_index, syncer in enumerate(syncers):
         async with syncer as sync:
-            await sync.sync_node(created_node)
+            await sync.sync_node(created_node, refresh_at_start=bool(syncer_index))
 
 
 async def run_service_sync(
@@ -60,9 +60,12 @@ async def run_service_sync(
         synchronization.
     :type syncers: BaseSyncer
     """
-    for syncer in syncers:
+    for syncer_index, syncer in enumerate(syncers):
         async with syncer as sync:
-            await sync.sync_service(created_service)
+            await sync.sync_service(
+                created_service,
+                refresh_at_start=bool(syncer_index),
+            )
 
 
 async def run_schema_sync(
@@ -82,9 +85,9 @@ async def run_schema_sync(
         synchronization.
     :type syncers: BaseSyncer
     """
-    for syncer in syncers:
+    for syncer_index, syncer in enumerate(syncers):
         async with syncer as sync:
-            await sync.sync_schema(created_schema)
+            await sync.sync_schema(created_schema, refresh_at_start=bool(syncer_index))
 
 
 async def run_table_sync(
@@ -103,6 +106,6 @@ async def run_table_sync(
         synchronization.
     :type syncers: BaseSyncer
     """
-    for syncer in syncers:
+    for syncer_index, syncer in enumerate(syncers):
         async with syncer as sync:
-            await sync.sync_table(created_table)
+            await sync.sync_table(created_table, refresh_at_start=bool(syncer_index))

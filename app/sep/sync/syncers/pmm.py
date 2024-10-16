@@ -182,7 +182,7 @@ class PMMSyncer(BaseSyncer):
     retrieve, update, and delete inventory data, ensuring that the local inventory is
     consistent with the remote source.
 
-    :cvar SYNC_TO_LIMIT: The upper limit of entity types that can be synchronized.
+    :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized.
         Set to `SyncInventoryEntityTypeEnum.SERVICE`.
     :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
     :param pmm_api: The PMM remote API interface for interacting with the PMM inventory
@@ -271,13 +271,7 @@ class PMMSyncer(BaseSyncer):
         :param updated_node: The updated node data fetched from the PMM API.
         :type updated_node: Node
         """
-        logger.info("Updating node %s: %s", created_node.id, updated_node)
-        CreatedNode.model_validate(
-            await self.inventory_api.put(
-                f"/{created_node.id}",
-                json=updated_node.model_dump(),
-            ),
-        )
+        await self.update_node(created_node, updated_node)
         external_id_to_id = {}
         syncable_services = {}
         for service in created_node.services:
@@ -333,21 +327,12 @@ class PMMSyncer(BaseSyncer):
         :param updated_service: The updated service data fetched from the PMM API.
         :type updated_service: PMMService
         """
-        updated_service_data = updated_service.model_dump()
-        if created_service.node.external_id == updated_service.node_id:
-            updated_service_data["node_id"] = created_service.node.id
-        else:
+        if created_service.node.external_id != updated_service.node_id:
             nodes = await self.get_inventory_nodes(
                 external_id=created_service.node.external_id,
             )
-            updated_service_data["node_id"] = nodes[0].id
-        logger.info("Updating service %s: %s", created_service.id, updated_service_data)
-        CreatedService.model_validate(
-            await self.inventory_api.put(
-                f"/services/{created_service.id}",
-                json=updated_service_data,
-            ),
-        )
+            created_service.node_id = nodes[0].id
+        await self.update_service(created_service, updated_service)
 
     @classmethod
     def can_sync_node(cls, node: CreatedNode) -> bool:

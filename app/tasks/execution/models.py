@@ -7,16 +7,16 @@ from abc import abstractmethod
 from typing import Any
 
 import yaml
-from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import BaseLowercaseModel
 from app.core.utils import async_run
 from app.tasks.models import TaskHistory
 
 logger = logging.getLogger(__name__)
 
 
-class BaseExecutor(BaseModel, ABC):
+class BaseExecutor(BaseLowercaseModel, ABC):
     """Define the blueprint of a task executor.
 
     :param wait_interval: The interval in seconds between status checks.

@@ -198,11 +198,12 @@ async def execute_task_name(
     session: SessionDep,
     task_name: str,
     background_tasks: BackgroundTasks,
-    execution_data: TaskExecuteRequest,
+    execution_data: TaskExecuteRequest = None,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
     # TODO: optional arg (if possible), else a structured one
     #           so that tasks can be executed with arbitrary parameters
+    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)
     if config.is_template:
