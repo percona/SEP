@@ -1,65 +1,50 @@
-{% extends "../base.html" %}
+{% extends "base.html" %}
 
-{% block title %}Data Archiver{% end %}
+{% block title %}Data Archiver{% endblock %}
 
 {% block style %}
 <link rel="stylesheet" href="/static/datatables/dataTables.min.css" media="screen,projection" />
-{% end %}
+{% endblock %}
 
-{% block behaviours_optimized_extra %}{% end %}
+{% block behaviours_optimized_extra %}{% endblock %}
 <script src="/static/datatables/dataTables.min.js"></script>
 <script>
-    $(document).ready(function(){
+    $(document).ready(function () {
         $("select").formSelect();
     });
 </script>
-{% block main %}
 
-{% set template_data = data.get("template_data", {}) %}
-{% if isinstance(template_data, dict) %}
-    {% set hosts = template_data.get("hosts", []) %}
-    {% set running_tasks = template_data.get("running_tasks", []) %}
-    {% set saved_tasks = template_data.get("archives", []) %}
-    {% set pending_tasks = template_data.get("scheduled_tasks", []) %}
-    {% set history_tasks = template_data.get("history_tasks", []) %}
-{% else %}
-    {% set hosts = [] %}
-    {% set running_tasks = [] %}
-    {% set saved_tasks = [] %}
-    {% set pending_tasks = [] %}
-    {% set history_tasks = [] %}
-{% end %}
-{% set xsrf_form_html = data.get("xsrf_form_html") %}
+{% block main %}
 
 <p>Perform data archiving tasks, currently MySQL-only.</p>
 
 {% if not saved_tasks and not history_tasks %}
-    {% set modal_required = False %}
+{% set modal_required = False %}
 <h2>Create an archiving process</h2>
-    {% include "partials/create-form.html" %}
+{% include "archiver/partials/create-form.html" %}
 {% else %}
-    {% set modal_required = True %}
+{% set modal_required = True %}
 <section id="saved-tasks">
     <h2>Saved</h2>
-    {% include "partials/saved-tasks.html" %}
+    {% include "archiver/partials/saved-tasks.html" %}
     <h3>Create an archiving process</h3>
-    {% include "partials/create-form.html" %}
+    {% include "archiver/partials/create-form.html" %}
 </section>
 
 <section id="running-tasks">
     <h2>Running</h2>
-    {% include "partials/running-tasks.html" %}
+    {% include "archiver/partials/running-tasks.html" %}
 </section>
 
 <section id="pending-tasks">
     <h2>Pending</h2>
-    {% include "partials/pending-tasks.html" %}
+    {% include "archiver/partials/pending-tasks.html" %}
 </section>
 
 <section id="completed-tasks">
     <h2>History</h2>
-    {% include "partials/completed-tasks.html" %}
+    {% include "archiver/partials/completed-tasks.html" %}
 </section>
-{% end %}
+{% endif %}
 
-{% end %}
+{% endblock %}

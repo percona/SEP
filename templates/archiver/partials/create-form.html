@@ -1,10 +1,9 @@
-{% from tornado.escape import xhtml_unescape %}
 {% set form_class = "modal" if modal_required else "" %}
 <form action="" method="post" class="{{ form_class }}">
     <fieldset>
         <legend>Archive type</legend>
         <label for="archive_type_where">Where</label>
-        <input type="radio" id="archive_type_where" name="archive_type" value="where" checked/>
+        <input type="radio" id="archive_type_where" name="archive_type" value="where" checked />
         <!--
         <label for="archive_type_swap">Swap and drop</label>
         <input type="radio" id="archive_type_swap" name="archive_type_swap" value="swap" readonly />
@@ -13,19 +12,19 @@
     <fieldset>
         <legend>Source details</legend>
         <label for="task_name">Task name
-            <input type="text" id="task_name" name="task_name" class="validate"/>
+            <input type="text" id="task_name" name="task_name" class="validate" />
         </label>
         <label for="hostname">Select host
             <select id="hostname" name="hostname">
                 {% for host in hosts %}
                 <option value="{{ host['name'] }}">{{ host['name'] }}</option>
-                {% end %}
+                {% endfor %}
             </select>
         </label>
         <fieldset>
             <legend>Type</legend>
             <label for="source_type_table">Table
-                <input type="radio" id="source_type_table" name="source_type" value="table" checked/>
+                <input type="radio" id="source_type_table" name="source_type" value="table" checked />
             </label>
             <!--
             <label for="source_type_query">Query</label>
@@ -35,13 +34,13 @@
         <fieldset>
             <legend>Data</legend>
             <label for="sourcedb">Schema
-                <input type="text" id="sourcedb" name="sourcedb" class="validate"/>
+                <input type="text" id="sourcedb" name="sourcedb" class="validate" />
             </label>
             <label for="sourcetbl">Table
-                <input type="text" id="sourcetbl" name="sourcetbl" class="validate"/>
+                <input type="text" id="sourcetbl" name="sourcetbl" class="validate" />
             </label>
             <label for="where">Where condition
-                <input type="text" id="where" name="where" class="validate"/>
+                <input type="text" id="where" name="where" class="validate" />
             </label>
         </fieldset>
     </fieldset>
@@ -50,7 +49,7 @@
         <fieldset>
             <legend>Type</legend>
             <label for="dest_type_table">Table
-                <input type="radio" id="dest_type_table" name="dest_type" value="table" checked/>
+                <input type="radio" id="dest_type_table" name="dest_type" value="table" checked />
             </label>
             <!--
             <label for="dest_type_file">File</label>
@@ -58,10 +57,9 @@
             -->
         </fieldset>
         <label for="dest_name">Name
-            <input type="text" id="dest_name" name="dest_name" class="validate"/>
+            <input type="text" id="dest_name" name="dest_name" class="validate" />
         </label>
     </fieldset>
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
-    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
 </form>

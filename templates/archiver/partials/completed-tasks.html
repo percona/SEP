@@ -1,25 +1,25 @@
 {% if history_tasks %}
 {% from sep.tasks.api.models import TASK_HISTORY_STATUS_MAP %}
 <table class="responsive-table">
-    <thead>
-      <tr>
-        <th>Status</th>
-        <th>Started at</th>
-        <th>Completed at</th>
-        <th>Duration (<abbr>s</abbr>)</th>
-        <th>Errors</th>
-      </tr>
-    </thead>
-    <tbody>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Started at</th>
+      <th>Completed at</th>
+      <th>Duration (<abbr>s</abbr>)</th>
+      <th>Errors</th>
+    </tr>
+  </thead>
+  <tbody>
     {% for h in history_tasks %}
-        {% if h['status'] in [v for k, v in TASK_HISTORY_STATUS_MAP.items() if k in ["failed", "success"]] %}
+    {% if h['status'] in [v for k, v in TASK_HISTORY_STATUS_MAP.items() if k in ["failed", "success"]] %}
     <tr>
       <td>
         {% if h['status'] == TASK_HISTORY_STATUS_MAP["success"] %}
         <i class="icons">done</i>
         {% else %}
         <i class="icons">error_outline</i>
-        {% end %}
+        {% endif %}
       </td>
       <td>{{ h['execution_request']['tracking']['started_at'] }}</td>
       <td>{{ h['execution_request']['tracking']['finished_at'] }}</td>
@@ -29,17 +29,17 @@
         <ul>
           {% for message in h['errors'] %}
           <li>{{ message }}</li>
-          {% end %}
+          {% endfor %}
         </ul>
         {% else %}
         None
-        {% end %}
+        {% endif %}
       </td>
     </tr>
-      {% end %}
-    {% end %}
-    </tbody>
+    {% endif %}
+    {% endfor %}
+  </tbody>
 </table>
 {% else %}
 <p>No data</p>
-{% end %}
+{% endif %}
