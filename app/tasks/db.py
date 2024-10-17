@@ -122,7 +122,7 @@ NOMAD_RUN_PYTHON = {
     "ParameterizedJob": {
         "Payload": "required",
         "MetaRequired": ["target"],
-        "MetaOptional": ["args", "requirements"],
+        "MetaOptional": ["config", "requirements"],
     },
     "TaskGroups": [
         {
@@ -138,25 +138,38 @@ NOMAD_RUN_PYTHON = {
                         "args": [
                             "-c",
                             "python3 -m venv ${NOMAD_ALLOC_DIR}/venv;"
-                            "${NOMAD_ALLOC_DIR}/venv/bin/pip install -U pip ${NOMAD_META_requirements}",
+                            "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
                         ],
                     },
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_requirements" }}',
+                            "DestPath": "requirements.txt",
+                        },
+                    ],
                 },
                 {
                     "Name": "run-script",
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
-                        "command": "sh",
+                        "command": "${NOMAD_ALLOC_DIR}/venv/bin/python3",
                         "args": [
-                            "-c",
-                            "${NOMAD_ALLOC_DIR}/venv/bin/python3 ${NOMAD_TASK_DIR}/script.py ${NOMAD_META_args}",
+                            "${NOMAD_TASK_DIR}/script.py",
+                            "--config",
+                            "script_config",
                         ],
                     },
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_config" }}',
+                            "DestPath": "script_config",
+                        },
+                    ],
                     "DispatchPayload": {"file": "script.py"},
                 },
                 {
@@ -166,7 +179,12 @@ NOMAD_RUN_PYTHON = {
                     "User": "",
                     "Config": {
                         "command": "rm",
-                        "args": ["-rf", "${NOMAD_ALLOC_DIR}/venv"],
+                        "args": [
+                            "-rf",
+                            "${NOMAD_ALLOC_DIR}/venv",
+                            "requirements.txt",
+                            "script_config",
+                        ],
                     },
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},

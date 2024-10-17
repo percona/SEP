@@ -79,15 +79,15 @@ class MySQLSyncer(BaseTaskSyncer):
         available_hosts = await self.get_available_hosts()
         return available_hosts.get(host, next(iter(available_hosts.values())))
 
-    def build_args(
+    def build_script_config(
         self,
         *hosts: str,
         schema: str | None = None,
         table: str | None = None,
     ) -> str:
-        """Build command-line arguments for synchronization tasks.
+        """Build the configuration for the MySQL sync script.
 
-        Constructs a string of command-line arguments based on the provided hosts,
+        Constructs a JSON configuration based on the provided hosts,
         schema, table, and any schemas to ignore.
 
         :param hosts: Variable length argument list of host addresses.
@@ -96,30 +96,28 @@ class MySQLSyncer(BaseTaskSyncer):
         :type schema: str | None
         :param table: The name of the table to synchronize. Defaults to `None`.
         :type table: str | None
-        :return: A string of constructed command-line arguments.
+        :return: A JSON string containing configuration for the script.
         :rtype: str
         """
-        args = ""
-        for host in hosts:
-            args += f' --host="{host}"'
+        config = {
+            "hosts": hosts,
+            "ignore_schemas": self.ignore_schemas,
+            "resolve_localhost": self.resolve_localhost,
+        }
         if schema:
-            args += f' --schema="{schema}"'
+            config["schema"] = schema
         if table:
-            args += f' --table="{table}"'
-        for ignored_schema in self.ignore_schemas:
-            args += f" -i {ignored_schema}"
-        if self.resolve_localhost:
-            args += " --resolve-localhost"
-        return args
+            config["table"] = table
+        return json.dumps(config)
 
-    async def build_meta(self, args: str, target: str) -> dict[str, str]:
+    async def build_meta(self, config: str, target: str) -> dict[str, str]:
         """Build metadata for task execution.
 
         Creates a metadata dictionary containing the command-line arguments, target
         information, and required dependencies for the synchronization task.
 
-        :param args: The command-line arguments for the task.
-        :type args: str
+        :param config: The configuration for the task script.
+        :type config: str
         :param target: The target host for the task.
         :type target: str
         :return: A dictionary with metadata required for task execution.
@@ -127,7 +125,7 @@ class MySQLSyncer(BaseTaskSyncer):
         """
         # TODO: Figure out a way to keep requirements attached to payloads
         return {
-            "args": args,
+            "config": config,
             "target": target,
             "requirements": "PyMySQL",
         }
@@ -191,9 +189,9 @@ class MySQLSyncer(BaseTaskSyncer):
             for service in created_node.services
             if self.can_sync_service(service)
         ]
-        args = self.build_args(*hosts)
+        script_config = self.build_script_config(*hosts)
         meta = await self.build_meta(
-            args,
+            script_config,
             await self.get_task_target(created_node.address),
         )
         schemas_data = json.loads(await self.wait_for_task_output(**meta))
@@ -240,9 +238,9 @@ class MySQLSyncer(BaseTaskSyncer):
         :return: The updated service data.
         :rtype: Service
         """
-        args = self.build_args(created_service.address)
+        script_config = self.build_script_config(created_service.address)
         meta = await self.build_meta(
-            args,
+            script_config,
             await self.get_task_target(created_service.node.address),
         )
         schemas_data = json.loads(await self.wait_for_task_output(**meta))
@@ -301,9 +299,9 @@ class MySQLSyncer(BaseTaskSyncer):
                 created_schema.service_id,
             )
         host = created_service.address
-        args = self.build_args(host, schema=created_schema.name)
+        script_config = self.build_script_config(host, schema=created_schema.name)
         meta = await self.build_meta(
-            args,
+            script_config,
             await self.get_task_target(created_service.node.address),
         )
         schema_data = json.loads(await self.wait_for_task_output(**meta))
@@ -371,13 +369,13 @@ class MySQLSyncer(BaseTaskSyncer):
                 created_schema.service_id,
             )
             host = created_service.address
-        args = self.build_args(
+        script_config = self.build_script_config(
             host,
             schema=created_table.database.name,
             table=created_table.name,
         )
         meta = await self.build_meta(
-            args,
+            script_config,
             await self.get_task_target(created_service.node.address),
         )
         table_data = json.loads(await self.wait_for_task_output(**meta))

@@ -5,6 +5,7 @@ import json
 import socket
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 import pymysql
 from pymysql.cursors import Cursor
@@ -111,44 +112,31 @@ def main() -> None:
         description="Fetch MySQL create table statements from multiple hosts.",
     )
     parser.add_argument(
-        "--host",
-        action="append",
+        "-c",
+        "--config",
         required=True,
-        help="Host in the format address[:port]",
-    )
-    parser.add_argument(
-        "-i",
-        "--ignore",
-        action="append",
-        default=[],
-        help="Database names to ignore",
-    )
-    parser.add_argument(
-        "--schema",
-        help="Name of the database to fetch create table statements for",
-    )
-    parser.add_argument(
-        "--table",
-        help="Name of the table to fetch create statement for",
-    )
-    parser.add_argument(
-        "--resolve-localhost",
-        action="store_true",
-        default=False,
-        help="Resolve the host IP to 127.0.0.1 if it's the same as local IP",
+        help="Path to JSON config file",
+        type=Path,
     )
 
     args = parser.parse_args()
-    if args.table and not args.schema:
-        sys.exit("--schema must be passed along with --table")
-    if args.schema and len(args.host) > 1:
-        sys.exit("Only one host allowed if --schema is specified")
+    with args.config.open() as config_file:
+        config = json.load(config_file)
+
+    table = config.get("table")
+    schema = config.get("schema")
+    hosts = config.get("hosts", [])
+
+    if table and not schema:
+        sys.exit("schema must be passed along with table")
+    if schema and len(hosts) > 1:
+        sys.exit("Only one host allowed if schema is specified")
 
     result = {}
     local_ip = socket.gethostbyname(socket.gethostname())
-    for host_entry in args.host:
+    for host_entry in hosts:
         host, port = parse_host_port(host_entry)
-        if args.resolve_localhost and host == local_ip:
+        if config.get("resolve_localhost") and host == local_ip:
             host = "127.0.0.1"
         try:
             with (
@@ -159,28 +147,31 @@ def main() -> None:
                 ) as connection,
                 connection.cursor() as cursor,
             ):
-                if args.table:
+                if table:
                     print(
                         json.dumps(
                             get_table(
                                 cursor,
-                                args.schema,
-                                args.table,
+                                schema,
+                                table,
                             ),
                         ),
                     )
                     return
-                if args.schema:
+                if schema:
                     print(
                         json.dumps(
                             get_schema(
                                 cursor,
-                                args.schema,
+                                schema,
                             ),
                         ),
                     )
                     return
-                result[host_entry] = get_all_schemas(cursor, args.ignore)
+                result[host_entry] = get_all_schemas(
+                    cursor,
+                    config.get("ignore_schemas", []),
+                )
         except pymysql.MySQLError as e:
             print(f"Error connecting to {host}:{port} - {e}", file=sys.stderr)
 
