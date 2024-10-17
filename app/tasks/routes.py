@@ -117,7 +117,9 @@ async def generate_task(
         parallel=generated_task.parallel and len(generated_task.commands) > 1,
     )
     for i, cmd in enumerate(generated_task.commands):
-        templates = [TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])]
+        templates = [
+            TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])
+        ]
         tg.tasks.append(
             TaskGroupTask(
                 name=f"step{i+1}" if not cmd.get("name") else cmd["name"],
@@ -253,7 +255,9 @@ async def list_task_history(
     """Create a new task."""
     logger.debug("Listing task history")
     try:
-        history_status = TaskHistoryStatusEnum[status.upper()] if status is not None else None
+         history_status = (
+            TaskHistoryStatusEnum[status.upper()] if status is not None else None
+        )
     except KeyError:
         logger.debug(
             "Status not found in TaskHistoryStatusEnum: %s",
