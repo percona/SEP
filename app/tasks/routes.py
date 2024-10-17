@@ -117,9 +117,7 @@ async def generate_task(
         parallel=generated_task.parallel and len(generated_task.commands) > 1,
     )
     for i, cmd in enumerate(generated_task.commands):
-        templates = [
-            TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])
-        ]
+        templates = [TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])]
         tg.tasks.append(
             TaskGroupTask(
                 name=f"step{i+1}" if not cmd.get("name") else cmd["name"],

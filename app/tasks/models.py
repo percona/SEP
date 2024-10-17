@@ -519,11 +519,9 @@ class TaskStats(BaseModel):
         """Process the task data."""
 
         def _durations_from_tracking() -> None:
-            self._durations["tasks"][task.id] = (
-                task.execution_request.tracking[  # TODO: Use Pydantic models  # noqa: TD002, TD003
-                    "duration"
-                ]
-            )
+            self._durations["tasks"][task.id] = task.execution_request.tracking[  # TODO: Use Pydantic models
+                "duration"
+            ]
             self._raw["durations"].append(task.execution_request.tracking["duration"])
             self._raw["finished_at"].append(
                 task.execution_request.tracking["finished_at"],
