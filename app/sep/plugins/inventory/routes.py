@@ -106,7 +106,6 @@ async def sync_node(
     )
 
 
-# TODO: Use pydantic models instead of retyping each argument
 @router.post("/", dependencies=[IsAuthenticated])
 async def node_create(
     inventory_api: InventoryAPI,
@@ -167,7 +166,6 @@ async def sync_service(
     )
 
 
-# TODO: Use pydantic models instead of retyping each argument
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated])
 async def service_create_for_node(
     node_id: int,
@@ -239,7 +237,6 @@ async def sync_schema(
     )
 
 
-# TODO: Use pydantic models instead of retyping each argument
 @router.post("/services/{service_id}/schemas/", dependencies=[IsAuthenticated])
 async def schema_create_for_service(
     service_id: int,
