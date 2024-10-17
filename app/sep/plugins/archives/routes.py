@@ -30,7 +30,7 @@ async def archives_index(
     all_hosts = await inventory_api.get("/")
     tasks = []
     for task in await tasks_api.get("/"):
-        if task.get("owner") == "alters":  # TODO: filter on query
+        if task.get("owner") == "archiver":  # TODO: filter on query
             data = task["data"]
             meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
             taskinfo = {
@@ -40,6 +40,15 @@ async def archives_index(
                 "id": task["id"],
             }
             tasks.append(taskinfo)
+    mysql_hosts = []
+    for host in all_hosts:
+        for service in host["services"]:
+            if service["type"] == "mysql":
+                host["schemas"] = await inventory_api.get(
+                    f"/services/{service['id']}/schemas/"
+                )
+                mysql_hosts.append(host)
+                break
     history_tasks = []
     scheduled_tasks = []
     running_tasks = []
@@ -56,6 +65,7 @@ async def archives_index(
     context.update(
         {
             "hosts": all_hosts,
+            "mysql_hosts": mysql_hosts,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
@@ -81,10 +91,10 @@ async def archives_create(
         "/generate",
         json=task.model_dump(),
     )  # TODO: Proper error for unique constraint
-    return RedirectResponse(
-        "/archives",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )  # TODO: Custom redirect class
+    #return RedirectResponse(
+    #    "/archives",
+    #    status_code=status.HTTP_303_SEE_OTHER,
+    #)  # TODO: Custom redirect class
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)

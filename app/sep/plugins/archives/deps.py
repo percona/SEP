@@ -42,7 +42,7 @@ async def build_archives_task_payload(
        
     purge_config_all = purge_config["ALL"]
     purge_config_list = purge_config["PURGE_LIST"][0]
-    purge_config_all.update(SOURCE_HOST=form.hostname, SOURCE_PORT=3306)
+    purge_config_all.update(SOURCE_HOST=form.connect_to, SOURCE_PORT=3306)
     purge_config_list.update(
         ALIAS=form.task_name,
         SOURCE_DB=form.sourcedb,
@@ -70,6 +70,8 @@ async def build_archives_task_payload(
                 ],
             }
         ],
+        persist = True,                                                                                                                                                 
+        schedule = {"save_only": True}, 
         name=form.task_name,
         target=form.hostname,
     )
@@ -100,7 +102,7 @@ async def get_archives_task(
         f"/{task_name}",
     )  # TODO: refactor - (ab)use pydantic models
     if (
-        task.get("owner") != "alters"
+        task.get("owner") != "archiver"
     ):  # TODO: Consider getting owner name from plugin MODULE_NAME
         raise HTTPException(404)
     return task

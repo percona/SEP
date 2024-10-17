@@ -1,5 +1,15 @@
 {% set form_class = "modal" if modal_required else "" %}
 <form action="" method="post" class="{{ form_class }}">
+    <legend>Main options</legend>
+    <fieldset>
+        <legend>Executor Host</legend>
+        <label for="hostname">Select host</label>
+        <select id="hostname" name="hostname">
+            {% for host in hosts %}
+            <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+            {% endfor %}
+        </select>
+    </fieldset>
     <fieldset>
         <legend>Archive type</legend>
         <label for="archive_type_where">Where</label>
@@ -14,10 +24,11 @@
         <label for="task_name">Task name
             <input type="text" id="task_name" name="task_name" class="validate" />
         </label>
-        <label for="hostname">Select host
-            <select id="hostname" name="hostname">
-                {% for host in hosts %}
-                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
+        <label for="connect_to">Select a database host
+            <select id="connect_to" name="connect_to">
+                <option value="" selected>Select a database host</option>
+                {% for host in mysql_hosts %}
+                <option value="{{ host['address'] }}">{{ host['name'] }}</option>
                 {% endfor %}
             </select>
         </label>
@@ -34,10 +45,14 @@
         <fieldset>
             <legend>Data</legend>
             <label for="sourcedb">Schema
-                <input type="text" id="sourcedb" name="sourcedb" class="validate" />
+                <select id="sourcedb" name="sourcedb" class="validate" disabled>
+                    <option value="">Select a schema</option>
+                </select>
             </label>
             <label for="sourcetbl">Table
-                <input type="text" id="sourcetbl" name="sourcetbl" class="validate" />
+                <select id="sourcetbl" name="sourcetbl" class="validate" disabled>
+                    <option value="">Select a table</option>
+                </select>
             </label>
             <label for="where">Where condition
                 <input type="text" id="where" name="where" class="validate" />
@@ -57,9 +72,95 @@
             -->
         </fieldset>
         <label for="dest_name">Name
-            <input type="text" id="dest_name" name="dest_name" class="validate" />
+            <select id="dest_name" name="dest_name" class="validate" disabled>
+                <option value="">Select a table</option>
+            </select>
         </label>
     </fieldset>
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
 </form>
+
+{% set hostSchemas = {} %}
+{% for host in mysql_hosts %}
+    {% set schemas = {} %}
+    {% for schema in host['schemas'] %}
+        {% set tables = schema['tables'] | map(attribute='name') | list %}
+        {% set _ = schemas.update({schema['name']: tables}) %}
+    {% endfor %}
+    {% set _ = hostSchemas.update({host['address']: schemas}) %}
+{% endfor %}
+
+<script type="text/javascript">
+    const hostSchemas = {{ hostSchemas | tojson }};
+    const connectToSelect = document.getElementById('connect_to');
+    const schemaSelect = document.getElementById('sourcedb');
+    const tableSelect = document.getElementById('sourcetbl');
+    const destTableSelect = document.getElementById('dest_name');
+    
+    connectToSelect.addEventListener('change', function() {
+        const selectedHost = this.value;
+        // Reset schema and table selects
+        schemaSelect.disabled = true;
+        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
+        tableSelect.disabled = true;
+        tableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedHost && hostSchemas[selectedHost]) {
+            const schemas = Object.keys(hostSchemas[selectedHost]);
+            if (schemas.length > 0) {
+                schemaSelect.disabled = false;
+                schemas.forEach(function(schemaName) {
+                    const option = document.createElement('option');
+                    option.value = schemaName;
+                    option.textContent = schemaName;
+                    schemaSelect.appendChild(option);
+                });
+            }
+        }
+    });
+
+    schemaSelect.addEventListener('change', function() {
+        const selectedHost = connectToSelect.value;
+        const selectedSchema = this.value;
+        // Reset table select
+        tableSelect.disabled = true;
+        tableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedSchema && hostSchemas[selectedHost][selectedSchema]) {
+            const tables = hostSchemas[selectedHost][selectedSchema];
+            if (tables.length > 0) {
+                tableSelect.disabled = false;
+                tables.forEach(function(tableName) {
+                    const option = document.createElement('option');
+                    option.value = tableName;
+                    option.textContent = tableName;
+                    tableSelect.appendChild(option);
+                });
+            }
+        }
+    });
+
+    tableSelect.addEventListener('change', function() {
+        const selectedHost = connectToSelect.value;
+        const selectedSchema = schemaSelect.value;
+        const selectedTable = this.value;
+        // Reset table select
+        destTableSelect.disabled = true;
+        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedTable && hostSchemas[selectedHost][selectedSchema]) {
+            const tables = hostSchemas[selectedHost][selectedSchema];
+            const updatedTables = tables.filter(table => table !== selectedTable);
+            if (updatedTables.length > 0) {
+                destTableSelect.disabled = false;
+                updatedTables.forEach(function(tableName) {
+                    const option = document.createElement('option');
+                    option.value = tableName;
+                    option.textContent = tableName;
+                    destTableSelect.appendChild(option);
+                });
+            }
+        }
+    });
+</script>

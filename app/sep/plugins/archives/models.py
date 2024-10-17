@@ -15,6 +15,8 @@ class ArchivesCreate(BaseModel):
     :type task_name: RequiredStr
     :param hostname: The source hostname where the task will be executed.
     :type hostname: RequiredStr
+    :param connect_to: The connection type, which could be a hostname or `localhost`.
+    :type connect_to: RequiredStr
     :param sourcedb: The source database schema from which data will be purged.
     :type sourcedb: RequiredStr
     :param sourcetbl: The source table within the specified schema from which data will be purged.
@@ -27,6 +29,7 @@ class ArchivesCreate(BaseModel):
 
     archive_type: RequiredStr
     task_name: RequiredStr
+    connect_to: RequiredStr
     hostname: RequiredStr
     sourcedb: RequiredStr
     sourcetbl: RequiredStr
