@@ -136,6 +136,9 @@ class TaskGroupTaskTemplate(BaseModel):
             "perms": "Perms",
         },
     }
+    def transform(self, system: str) -> dict:
+        field_mapping = self._transform_fields.get(system, {})
+        return {field_mapping.get(k, k): v for k, v in self.dict().items()}
 
 
 class TaskGroupTask(BaseModel):
@@ -204,7 +207,12 @@ class TaskGroup(BaseModel):
                         data["TaskGroups"].append(
                             {
                                 "Name": f"{self.name}{i+1}",
-                                "Tasks": [task.model_dump(by_alias=True)],
+                                "Tasks": [
+                                    {
+                                        **task.model_dump(by_alias=True),
+                                        "templates": [t.transform("nomad") for t in task.templates],
+                                    }
+                                ],
                             },
                         )
                 else:
@@ -212,7 +220,11 @@ class TaskGroup(BaseModel):
                         {
                             "Name": self.name,
                             "Tasks": [
-                                task.model_dump(by_alias=True) for task in self.tasks
+                                {
+                                    **task.model_dump(by_alias=True),
+                                    "templates": [t.transform("nomad") for t in task.templates],
+                                }
+                                for task in self.tasks
                             ],
                         },
                     )

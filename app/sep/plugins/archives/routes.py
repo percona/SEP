@@ -32,11 +32,9 @@ async def archives_index(
     for task in await tasks_api.get("/"):
         if task.get("owner") == "archiver":  # TODO: filter on query
             data = task["data"]
-            meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
             taskinfo = {
                 "hostname": data["Constraints"][0]["RTarget"],
                 "name": task["name"],
-                "table": f'{meta["schema_name"]}.{meta["table_name"]}',
                 "id": task["id"],
             }
             tasks.append(taskinfo)
@@ -113,7 +111,6 @@ async def archives_detail(
         "created_at": task["created_at"],
         "updated_at": task["updated_at"],
         "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
     }
