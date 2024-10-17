@@ -67,7 +67,7 @@ async def alters_index(
     executor_hosts = await tasks_api.get("/hosts/")
     context.update(
         {
-            "executor_hosts": executor_hosts.values(),
+            "executor_hosts": list(executor_hosts.values()),
             "mysql_hosts": mysql_hosts,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
@@ -75,6 +75,7 @@ async def alters_index(
             "history_tasks": history_tasks,
         },
     )
+    logger.info("CONTEXT: %s", context)
     return templates.TemplateResponse(
         request=request,
         name="alters/index.html",
