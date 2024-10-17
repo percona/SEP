@@ -12,7 +12,6 @@ from app.core.requests import RemoteAPI
 from app.inventory.models import SourceEnum
 from app.sep.inventory import CreatedNode
 from app.sep.inventory import CreatedService
-from app.sep.inventory import CreatedServiceNode
 from app.sep.inventory import Node
 from app.sep.inventory import Service
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -21,44 +20,28 @@ from app.sep.sync.models import BaseSyncer
 logger = logging.getLogger(__name__)
 
 
-class PMMNode(Node):
-    """Represent a PMM-specific inventory node.
-
-    This class extends the base `Node` model to include PMM-specific attributes
-    such as associated services.
-
-    Attributes
-    ----------
-    address : RequiredStr
-        The network address of the node.
-    external_id : RequiredStr or EmptyStrToNone, optional
-        The external identifier for the node, aliased as "node_id". Defaults to None.
-    name : RequiredStr
-        The name of the node, aliased as "node_name".
-    type : RequiredStr, optional
-        The type of the node (e.g., "generic"), aliased as "node_type".
-        Defaults to "generic".
-    source : SourceEnum or EmptyStrToNone, optional
-        The source of the node information. Defaults to None.
-    services : list of PMMService
-        A list of services associated with the node.
-
-    """
-
-    services: list["PMMService"]
-
-
 class PMMService(Service):
     """Represent a PMM-specific inventory service.
 
     This class extends the base `Service` model to include PMM-specific attributes
     such as the node string identifier (external_id).
 
-    Attributes
-    ----------
-    node_id : str
-        The identifier of the node to which the service is associated.
-
+    :param environment: The environment in which the service is running (e.g.,
+        "production", "staging"). Defaults to None.
+    :type environment: str | None
+    :param external_id: The external identifier for the service, aliased as
+        "service_id". Defaults to None.
+    :type external_id: RequiredStr | EmptyStrToNone
+    :param name: The name of the service, aliased as "service_name".
+    :type name: RequiredStr
+    :param port: The port number on which the service is running, aliased as
+        "service_port". Defaults to None.
+    :type port: int | EmptyStrToNone
+    :param type: The type of the service (e.g., "service_type"), aliased as
+        "service_type". Defaults to "generic".
+    :type type: RequiredStr
+    :param node_id: The identifier of the node to which the service is associated.
+    :type node_id: str
     """
 
     node_id: str
@@ -69,24 +52,17 @@ class PMMRemoteAPI(RemoteAPI):
 
     Provides methods to interact with the PMM inventory system, including fetching nodes
     and services, and managing service associations.
-
     """
 
-    async def get_node(self, node_id: str) -> PMMNode:
+    async def get_node(self, node_id: str) -> Node:
         """Retrieve a PMM node by its external ID.
 
         Send a request to the PMM API to fetch a node's details by its external ID.
 
-        Parameters
-        ----------
-        node_id : str
-            The external identifier of the node to retrieve.
-
-        Returns
-        -------
-        PMMNode
-            The retrieved node instance.
-
+        :param node_id: The external identifier of the node to retrieve.
+        :type node_id: str
+        :return: The retrieved node instance.
+        :rtype: Node
         """
         node_data = await self.post(
             "/v1/inventory/Nodes/Get",
@@ -98,23 +74,17 @@ class PMMRemoteAPI(RemoteAPI):
             "type": node_type,
             "services": await self.get_services(node_id=node_id),
         }
-        return PMMNode.model_validate(node)
+        return Node.model_validate(node)
 
     async def get_service(self, service_id: str) -> PMMService:
         """Retrieve a PMM service by its ID.
 
         Send a request to the PMM API to fetch a service's details by its ID.
 
-        Parameters
-        ----------
-        service_id : str
-            The identifier of the service to retrieve.
-
-        Returns
-        -------
-        PMMService
-            The retrieved service instance.
-
+        :param service_id: The identifier of the service to retrieve.
+        :type service_id: str
+        :return: The retrieved service instance.
+        :rtype: PMMService
         """
         service_data = await self.post(
             "/v1/inventory/Services/Get",
@@ -135,23 +105,17 @@ class PMMRemoteAPI(RemoteAPI):
         Retrieve a list of services filtered by node ID, service type, and external
         group.
 
-        Parameters
-        ----------
-        node_id : str, optional
-            The ID of the node to filter services by. Defaults to an empty string,
-            meaning the field won't be used as a filter.
-        service_type : str, optional
-            The type of services to filter by. Defaults to an empty string,
-            meaning the field won't be used as a filter.
-        external_group : str, optional
-            The external group to filter services by. Defaults to an empty string,
-            meaning the field won't be used as a filter.
-
-        Returns
-        -------
-        list of PMMService
-            A list of PMMService instances retrieved from the API.
-
+        :param node_id: The ID of the node to filter services by. Defaults to an empty
+            string, meaning the field won't be used as a filter.
+        :type node_id: str
+        :param service_type: The type of services to filter by. Defaults to an empty
+            string, meaning the field won't be used as a filter.
+        :type service_type: str
+        :param external_group: The external group to filter services by. Defaults to an
+            empty string, meaning the field won't be used as a filter.
+        :type external_group: str
+        :return: A list of PMMService instances retrieved from the API.
+        :rtype: list[PMMService]
         """
         data = {
             "node_id": node_id,
@@ -173,34 +137,25 @@ class PMMRemoteAPI(RemoteAPI):
         Retrieve all services and organize them into a defaultdict where each key is a
         node ID and each value is a list of associated services.
 
-        Returns
-        -------
-        defaultdict[RequiredStr, list[PMMService]]
-            A defaultdict mapping node IDs to lists of PMMService instances.
-
+        :return: A defaultdict mapping node IDs to lists of PMMService instances.
+        :rtype: defaultdict[RequiredStr, list[PMMService]]
         """
         services_by_node_id = defaultdict(list)
         for service in await self.get_services():
             services_by_node_id[service.node_id].append(service)
         return services_by_node_id
 
-    async def get_nodes(self, node_type: str = "") -> list[PMMNode]:
+    async def get_nodes(self, node_type: str = "") -> list[Node]:
         """Fetch nodes from the PMM API.
 
         Retrieve a list of nodes filtered by node type and associate them with their
         services.
 
-        Parameters
-        ----------
-        node_type : str, optional
-            The type of nodes to retrieve (e.g., "generic"). Defaults to an empty
-            string, meaning the field won't be used as a filter.
-
-        Returns
-        -------
-        list of PMMNode
-            A list of PMMNode instances retrieved from the API.
-
+        :param node_type: The type of nodes to retrieve (e.g., "generic"). Defaults to
+            an empty string, meaning the field won't be used as a filter.
+        :type node_type: str
+        :return: A list of Node instances retrieved from the API.
+        :rtype: list[Node]
         """
         services_by_node_id = await self.get_services_by_node_external_id()
         nodes_data = await self.post(
@@ -208,7 +163,7 @@ class PMMRemoteAPI(RemoteAPI):
             json={"node_type": node_type},
         )
         return [
-            PMMNode(
+            Node(
                 **node,
                 source=SourceEnum.PMM,
                 type=node_type,
@@ -227,14 +182,12 @@ class PMMSyncer(BaseSyncer):
     retrieve, update, and delete inventory data, ensuring that the local inventory is
     consistent with the remote source.
 
-    Attributes
-    ----------
-    SYNC_TO_LIMIT : SyncInventoryEntityTypeEnum
-        The upper limit of entity types that can be synchronized. Set to
-        `SyncInventoryEntityTypeEnum.SERVICE`.
-    pmm_api : PMMRemoteAPI
-        The PMM remote API interface for interacting with the PMM inventory system.
-
+    :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized.
+        Set to `SyncInventoryEntityTypeEnum.SERVICE`.
+    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    :param pmm_api: The PMM remote API interface for interacting with the PMM inventory
+        system.
+    :type pmm_api: PMMRemoteAPI
     """
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
@@ -253,18 +206,14 @@ class PMMSyncer(BaseSyncer):
         Override the base method to fetch nodes from the PMM inventory system by
         always specifying the source to be PMM.
 
-        Parameters
-        ----------
-        external_id : str or None, optional
-            The external identifier of the node. Defaults to None.
-        node_type : str or None, optional
-            The type of the node (e.g., "generic"). Defaults to None.
-
-        Returns
-        -------
-        list of CreatedNode
-            A list of retrieved CreatedNode instances.
-
+        :param external_id: The external identifier of the node. Defaults to None,
+            meaning it won't be used as a filter.
+        :type external_id: str | None
+        :param node_type: The type of the node (e.g., "generic"). Defaults to None,
+            meaning it won't be used as a filter.
+        :type node_type: str | None
+        :return: A list of retrieved CreatedNode instances.
+        :rtype: list[CreatedNode]
         """
         return await super().get_inventory_nodes(external_id, SourceEnum.PMM, node_type)
 
@@ -291,21 +240,15 @@ class PMMSyncer(BaseSyncer):
         for node in syncable_nodes.values():
             await self.delete_node(node)
 
-    async def fetch_node(self, created_node: CreatedNode) -> PMMNode:
+    async def fetch_node(self, created_node: CreatedNode) -> Node:
         """Fetch updated data for a specific node.
 
         Retrieve the latest information for the specified node from the PMM API.
 
-        Parameters
-        ----------
-        created_node : CreatedNode
-            The node instance to fetch updated data for.
-
-        Returns
-        -------
-        PMMNode
-            The updated node data.
-
+        :param created_node: The node instance to fetch updated data for.
+        :type created_node: CreatedNode
+        :return: The updated node data.
+        :rtype: Node
         """
         logger.debug(
             "Fetching node from PMM with external id %s",
@@ -316,28 +259,19 @@ class PMMSyncer(BaseSyncer):
     async def perform_node_sync(
         self,
         created_node: CreatedNode,
-        updated_node: PMMNode,
+        updated_node: Node,
     ) -> None:
         """Synchronize data for a specific node.
 
         Update the local inventory node with data from the PMM API and handle associated
         services.
 
-        Parameters
-        ----------
-        created_node : CreatedNode
-            The local node instance to synchronize.
-        updated_node : PMMNode
-            The updated node data fetched from the PMM API.
-
+        :param created_node: The local node instance to synchronize.
+        :type created_node: CreatedNode
+        :param updated_node: The updated node data fetched from the PMM API.
+        :type updated_node: Node
         """
-        logger.info("Updating node %s: %s", created_node.id, updated_node)
-        CreatedNode.model_validate(
-            await self.inventory_api.put(
-                f"/{created_node.id}",
-                json=updated_node.model_dump(),
-            ),
-        )
+        await self.update_node(created_node, updated_node)
         external_id_to_id = {}
         syncable_services = {}
         for service in created_node.services:
@@ -358,7 +292,7 @@ class PMMSyncer(BaseSyncer):
                         json=service.model_dump(exclude={"node_id"}),
                     ),
                 )
-                created_service.node = CreatedServiceNode.model_validate(created_node)
+                created_service.node = created_node.model_copy(update={"services": []})
             await self.sync_service(created_service, service)
         for service in syncable_services.values():
             await self.delete_service(service)
@@ -368,16 +302,10 @@ class PMMSyncer(BaseSyncer):
 
         Retrieve the latest information for the specified service from the PMM API.
 
-        Parameters
-        ----------
-        created_service : CreatedService
-            The service instance for which to fetch updated data.
-
-        Returns
-        -------
-        Service
-            The updated service data.
-
+        :param created_service: The service instance for which to fetch updated data.
+        :type created_service: CreatedService
+        :return: The updated service data.
+        :rtype: PMMService
         """
         logger.debug(
             "Fetching service from PMM with external id %s",
@@ -394,29 +322,17 @@ class PMMSyncer(BaseSyncer):
 
         Update the local inventory service with data from the PMM API.
 
-        Parameters
-        ----------
-        created_service : CreatedService
-            The local service instance to synchronize.
-        updated_service : PMMService
-            The updated service data fetched from the PMM API.
-
+        :param created_service: The local service instance to synchronize.
+        :type created_service: CreatedService
+        :param updated_service: The updated service data fetched from the PMM API.
+        :type updated_service: PMMService
         """
-        updated_service_data = updated_service.model_dump()
-        if created_service.node.external_id == updated_service.node_id:
-            updated_service_data["node_id"] = created_service.node.id
-        else:
+        if created_service.node.external_id != updated_service.node_id:
             nodes = await self.get_inventory_nodes(
                 external_id=created_service.node.external_id,
             )
-            updated_service_data["node_id"] = nodes[0].id
-        logger.info("Updating service %s: %s", created_service.id, updated_service_data)
-        CreatedService.model_validate(
-            await self.inventory_api.put(
-                f"/services/{created_service.id}",
-                json=updated_service_data,
-            ),
-        )
+            created_service.node_id = nodes[0].id
+        await self.update_service(created_service, updated_service)
 
     @classmethod
     def can_sync_node(cls, node: CreatedNode) -> bool:
@@ -424,16 +340,10 @@ class PMMSyncer(BaseSyncer):
 
         Override the base method to check if the node's source is PMM.
 
-        Parameters
-        ----------
-        node : CreatedNode
-            The node instance to check.
-
-        Returns
-        -------
-        bool
-            `True` if the node can be synchronized, `False` otherwise.
-
+        :param node: The node instance to check.
+        :type node: CreatedNode
+        :return: `True` if the node can be synchronized, `False` otherwise.
+        :rtype: bool
         """
         return super().can_sync_node(node) and node.source == SourceEnum.PMM
 
@@ -443,16 +353,10 @@ class PMMSyncer(BaseSyncer):
 
         Override the base method to check if the service's node's source is PMM.
 
-        Parameters
-        ----------
-        service : CreatedService
-            The service instance to check.
-
-        Returns
-        -------
-        bool
-            `True` if the service can be synchronized, `False` otherwise.
-
+        :param service: The service instance to check.
+        :type service: CreatedService
+        :return: `True` if the service can be synchronized, `False` otherwise.
+        :rtype: bool
         """
         return (
             super().can_sync_service(service)

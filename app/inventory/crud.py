@@ -11,11 +11,8 @@ from app.inventory.models import Table
 class NodeManager(BaseManager):
     """Manage Node operations, including retrieval, listing, and deletion.
 
-    Attributes
-    ----------
-    Model : type[Node]
-        The SQLModel class this manager is responsible for (`Node`).
-
+    :ivar Model: The SQLModel class this manager is responsible for (`Node`).
+    :vartype Model: type[Node]
     """
 
     Model = Node
@@ -24,13 +21,14 @@ class NodeManager(BaseManager):
 class ServiceManager(BaseChildManager):
     """Manage Service operations, including retrieval, listing, and deletion.
 
-    Attributes
-    ----------
-    Model : type[Service]
-        The SQLModel class this manager is responsible for (`Service`).
-    ParentManager : type[NodeManager]
-    connected_by: str
-
+    :ivar Model: The SQLModel class this manager is responsible for (`Service`).
+    :vartype Model: type[Service]
+    :ivar ParentManager: The manager class responsible for handling the parent model
+        (`NodeManager`).
+    :vartype ParentManager: type[NodeManager]
+    :ivar connected_by: The field name that connects the child model to the parent
+        model (`node_id`).
+    :vartype connected_by: str
     """
 
     Model = Service
@@ -41,13 +39,14 @@ class ServiceManager(BaseChildManager):
 class SchemaManager(BaseChildManager):
     """Manage Schema operations, including retrieval, listing, and deletion.
 
-    Attributes
-    ----------
-    Model : type[Schema]
-        The SQLModel class this manager is responsible for (`Schema`).
-    ParentManager : type[ServiceManager]
-    connected_by: str
-
+    :ivar Model: The SQLModel class this manager is responsible for (`Schema`).
+    :vartype Model: type[Schema]
+    :ivar ParentManager: The manager class responsible for handling the parent model
+        (`ServiceManager`).
+    :vartype ParentManager: type[ServiceManager]
+    :ivar connected_by: The field name that connects the child model to the parent
+        model (`service_id`).
+    :vartype connected_by: str
     """
 
     Model = Schema
@@ -58,13 +57,14 @@ class SchemaManager(BaseChildManager):
 class TableManager(BaseChildManager):
     """Manage Table operations, including retrieval, listing, and deletion.
 
-    Attributes
-    ----------
-    Model : type[Table]
-        The SQLModel class this manager is responsible for (`Table`).
-    ParentManager : type[SchemaManager]
-    connected_by: str
-
+    :ivar Model: The SQLModel class this manager is responsible for (`Table`).
+    :vartype Model: type[Table]
+    :ivar ParentManager: The manager class responsible for handling the parent model
+        (`SchemaManager`).
+    :vartype ParentManager: type[SchemaManager]
+    :ivar connected_by: The field name that connects the child model to the parent
+        model (`schema_id`).
+    :vartype connected_by: str
     """
 
     Model = Table

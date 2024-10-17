@@ -18,7 +18,7 @@
 <script>
     setTimeout(function(){
         window.location.reload();
-    }, 1000);
+    }, {{ sync_refresh_time|default(5, true) * 1000}});
 </script>
 {% endif %}
 {% endblock %}

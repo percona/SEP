@@ -33,11 +33,8 @@ S = TypeVar("S", bound=SQLModel)
 class BaseManager:
     """Manage database operations for a BaseSQLModel-based model.
 
-    Attributes
-    ----------
-    Model : Type[T]
-        The BaseSQLModel class for which this manager handles operations.
-
+    :param Model: The BaseSQLModel class for which this manager handles operations.
+    :type Model: type[T]
     """
 
     Model: type[T]
@@ -116,23 +113,18 @@ class BaseManager:
     ) -> list[T]:
         """Return a list of all records that match the query.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        whereclause : _ColumnExpressionArgument[bool], optional
-            SQL expressions for the `where` clause of the query.
-        select_related : Sequence, optional
-            Fields to be loaded using `joinedload` for related objects.
-        equal_filters : dict, optional
-            Keyword arguments representing column names and their respective filter
-            values.
-
-        Returns
-        -------
-        list[T]
-            A list of matching records.
-
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: _ColumnExpressionArgument[bool]
+        :param select_related: Fields to be loaded using `joinedload` for related
+            objects.
+        :type select_related: Sequence
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: A list of matching records.
+        :rtype: list[T]
         """
         # TODO: Pagination
         result = await cls._select(
@@ -153,23 +145,18 @@ class BaseManager:
     ) -> T | None:
         """Return the first record that matches the query.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        whereclause : _ColumnExpressionArgument[bool], optional
-            SQL expressions for the `where` clause of the query.
-        select_related : Sequence, optional
-            Fields to be loaded using `joinedload` for related objects.
-        equal_filters : dict, optional
-            Keyword arguments representing column names and their respective filter
-            values.
-
-        Returns
-        -------
-        T or None
-            The first matching record, or None if no match is found.
-
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: _ColumnExpressionArgument[bool]
+        :param select_related: Fields to be loaded using `joinedload` for related
+            objects.
+        :type select_related: Sequence
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The first matching record, or None if no match is found.
+        :rtype: T | None
         """
         result = await cls._select(
             session,
@@ -189,28 +176,19 @@ class BaseManager:
     ) -> T:
         """Return the single record that matches the query.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        whereclause : _ColumnExpressionArgument[bool], optional
-            SQL expressions for the `where` clause of the query.
-        select_related : Sequence, optional
-            Fields to be loaded using `joinedload` for related objects.
-        equal_filters : dict, optional
-            Keyword arguments representing column names and their respective filter
-            values.
-
-        Returns
-        -------
-        T
-            The matching record.
-
-        Raises
-        ------
-        NoResultFound
-            If no record is found that matches the query.
-
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: _ColumnExpressionArgument[bool]
+        :param select_related: Fields to be loaded using `joinedload` for related
+            objects.
+        :type select_related: Sequence
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The matching record.
+        :rtype: T
+        :raises NoResultFound: If no record is found that matches the query.
         """
         result = await cls._select(
             session,
@@ -230,28 +208,19 @@ class BaseManager:
     ) -> T:
         """Return the single record that matches the query, or raise a 404 error.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for query execution.
-        whereclause : _ColumnExpressionArgument[bool], optional
-            SQL expressions for the `where` clause of the query.
-        select_related : Sequence, optional
-            Fields to be loaded using `joinedload` for related objects.
-        equal_filters : dict, optional
-            Keyword arguments representing column names and their respective filter
-            values.
-
-        Returns
-        -------
-        T
-            The matching record.
-
-        Raises
-        ------
-        HTTPNotFoundException
-            If no record is found that matches the query.
-
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: _ColumnExpressionArgument[bool]
+        :param select_related: Fields to be loaded using `joinedload` for related
+            objects.
+        :type select_related: Sequence
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The matching record.
+        :rtype: T
+        :raises HTTPNotFoundException: If no record is found that matches the query.
         """
         try:
             return await cls.get(
@@ -272,20 +241,15 @@ class BaseManager:
     ) -> Sequence[T]:
         """Save multiple instances of a model to the database.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        instances : T
-            The model instances to be saved.
-        flag_modified_fields : Sequence[str], optional
-            Fields to be flagged as modified before saving.
-
-        Returns
-        -------
-        Sequence[T]
-            The saved instances.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instances: The model instances to be saved.
+        :type instances: T
+        :param flag_modified_fields: Fields to be flagged as modified before saving.
+        :type flag_modified_fields: Sequence[str]
+        :return: The saved instances.
+        :rtype: Sequence[T]
         """
         for instance in instances:
             for field in flag_modified_fields:
@@ -304,20 +268,16 @@ class BaseManager:
     ) -> T:
         """Save a model instance to the database.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        instance : T
-            The model instance to be saved.
-        flag_modified_fields : Sequence[str], optional
-            Fields to be flagged as modified before saving.
-
-        Returns
-        -------
-        T
-            The saved instance.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance: The model instance to be saved.
+        :type instance: T
+        :param flag_modified_fields: Fields to be flagged as modified before saving.
+        :type flag_modified_fields: Sequence[str]
+        :return: The saved instance.
+        :rtype: T
+        :raises HTTPConflictException: If an integrity error occurs during commit.
         """
         for field in flag_modified_fields:
             flag_modified(instance, field)
@@ -341,20 +301,15 @@ class BaseManager:
     ) -> T:
         """Create and save a new model instance in the database.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        instance_create : S
-            The data used to create the new model instance.
-        **extra_fields : Any
-            Additional fields to be set on the model instance.
-
-        Returns
-        -------
-        T
-            The newly created and saved instance.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance_create: The data used to create the new model instance.
+        :type instance_create: S
+        :param extra_fields: Additional fields to be set on the model instance.
+        :type extra_fields: Any
+        :return: The newly created and saved instance.
+        :rtype: T
         """
         pk_column = inspect(cls.Model).primary_key[0]
         if pk_column.autoincrement and isinstance(
@@ -376,22 +331,17 @@ class BaseManager:
     ) -> T:
         """Update an existing model instance with new data and save it.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        existing_instance : T
-            The existing model instance to be updated.
-        updated_instance : S
-            The new data to update the model instance with.
-        flag_modified_fields : Sequence[str], optional
-            Fields to be flagged as modified before saving.
-
-        Returns
-        -------
-        T
-            The updated and saved instance.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param existing_instance: The existing model instance to be updated.
+        :type existing_instance: T
+        :param updated_instance: The new data to update the model instance with.
+        :type updated_instance: S
+        :param flag_modified_fields: Fields to be flagged as modified before saving.
+        :type flag_modified_fields: Sequence[str]
+        :return: The updated and saved instance.
+        :rtype: T
         """
         updated_instance_data = updated_instance.model_dump(exclude_unset=True)
         existing_instance.sqlmodel_update(updated_instance_data)
@@ -405,18 +355,13 @@ class BaseManager:
     async def delete(cls, session: AsyncSession, instance: T) -> T:
         """Delete a model instance from the database.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        instance : T
-            The model instance to be deleted.
-
-        Returns
-        -------
-        T
-            The deleted instance.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance: The model instance to be deleted.
+        :type instance: T
+        :return: The deleted instance.
+        :rtype: T
         """
         await session.delete(instance)
         await session.commit()
@@ -429,13 +374,11 @@ M = TypeVar("M", bound="BaseManager")
 class BaseChildManager(BaseManager):
     """Manage database operations for child models with a parent association.
 
-    Attributes
-    ----------
-    ParentManager : Type[M]
-        The manager class responsible for handling the parent model.
-    connected_by : str
-        The field name that connects the child model to the parent model.
-
+    :param ParentManager: The manager class responsible for handling the parent model.
+    :type ParentManager: type[M]
+    :param connected_by: The field name that connects the child model to the parent
+        model.
+    :type connected_by: str
     """
 
     ParentManager: type[M]
@@ -452,27 +395,19 @@ class BaseChildManager(BaseManager):
     ) -> T:
         """Update an existing child model instance, ensuring parent association.
 
-        Parameters
-        ----------
-        session : AsyncSession
-            The SQLAlchemy asynchronous session to use for database operations.
-        existing_instance : T
-            The existing child model instance to be updated.
-        updated_instance : S
-            The new data to update the child model instance with.
-        flag_modified_fields : Sequence[str], optional
-            Fields to be flagged as modified before saving.
-
-        Returns
-        -------
-        T
-            The updated and saved child instance.
-
-        Raises
-        ------
-        HTTPBadRequestException
-            If the associated parent instance does not exist.
-
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param existing_instance: The existing child model instance to be updated.
+        :type existing_instance: T
+        :param updated_instance: The new data to update the child model instance with.
+        :type updated_instance: S
+        :param flag_modified_fields: Fields to be flagged as modified before saving.
+        :type flag_modified_fields: Sequence[str]
+        :return: The updated and saved child instance.
+        :rtype: T
+        :raises HTTPBadRequestException: If the associated parent instance does not
+            exist.
         """
         parent_id = getattr(updated_instance, cls.connected_by, None)
         try:

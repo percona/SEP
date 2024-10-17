@@ -1,14 +1,17 @@
 """Define base sync models for SEP."""
 
+import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
 from types import TracebackType
+from typing import Any
 from typing import ClassVar
 from typing import Self
 from uuid import uuid4
 
+from aiohttp import ClientResponseError
 from async_lru import _LRUCacheWrapper
 from async_lru import alru_cache
 from pydantic import ConfigDict
@@ -40,10 +43,12 @@ from app.sep.models import SyncItem
 from app.sep.models import SyncItemWrite
 from app.sep.sync.exceptions import SyncFailError
 from app.sep.sync.exceptions import SyncItemAlreadyInProgressError
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
 
+# TODO: Make it abstract
 class BaseSyncer(BaseCaseInsensitiveModel):
     """Define a base class for syncers in the SEP app.
 
@@ -51,34 +56,25 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     the SEP application. It provides the foundational structure, including required
     APIs and abstract methods that can be overridden by subclasses.
 
-    Attributes
-    ----------
-    SYNC_TO_LIMIT : ClassVar[SyncInventoryEntityTypeEnum]
-        The upper limit for entity types that can be synchronized.
-    inventory_api : RemoteAPI
-        The remote API interface for interacting with the inventory system.
-    tasks_api : RemoteAPI
-        The remote API interface for managing synchronization tasks.
-    sync_instance : SyncInstance, optional
-        The synchronization instance used to track sync processes.
-    sync_items : dict
-        A dictionary mapping tuples of entity type and ID to SyncItem objects.
-    sync_id : UUID4
-        The unique identifier for this synchronization.
-    can_sync_mapping
-
-    Notes
-    -----
-    The `SYNC_TO_LIMIT` class attribute defines the maximum entity type that can be
-    synchronized by an instance of this class. This is used by the
-    `.can_sync_entity_type()` method to determine which entities can be synced.
-
+    :cvar SYNC_TO_LIMIT: The upper limit for entity types that can be synchronized.
+    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    :param inventory_api: The remote API interface for interacting with the inventory
+        system.
+    :type inventory_api: RemoteAPI
+    :param sync_instance: The synchronization instance used to track sync processes.
+    :type sync_instance: SyncInstance | None
+    :param sync_items: A dictionary mapping tuples of entity type and ID to SyncItem
+        objects.
+    :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
+    :param sync_id: The unique identifier for this synchronization.
+    :type sync_id: UUID4
+    :param _session: The asynchronous database session.
+    :type _session: AsyncSession
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
     inventory_api: RemoteAPI
-    tasks_api: RemoteAPI
     sync_instance: SyncInstance | None = None
     sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem] = {}
     sync_id: UUID4 = Field(default_factory=uuid4)
@@ -87,11 +83,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     def __hash__(self) -> int:
         """Compute the hash based on the synchronization ID.
 
-        Returns
-        -------
-        int
-            The hash value of the syncer instance.
-
+        :return: The hash value of the syncer instance.
+        :rtype: int
         """
         return hash(self.sync_id)
 
@@ -101,11 +94,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         Initializes the database session and creates a new SyncInstance if one does not
         exist.
 
-        Returns
-        -------
-        Self
-            The syncer instance with an active session and SyncInstance.
-
+        :return: The syncer instance with an active session and SyncInstance.
+        :rtype: BaseSyncer
         """
         session_maker = get_async_session_maker()
         self._session = session_maker()
@@ -128,15 +118,12 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
         Marks any hanging SyncItems as failed and closes the database session.
 
-        Parameters
-        ----------
-        exc_type : type[BaseException]
-            The exception type, if any.
-        exc_val : BaseException
-            The exception value, if any.
-        exc_tb : TracebackType
-            The traceback, if any.
-
+        :param exc_type: The exception type, if any.
+        :type exc_type: type[BaseException]
+        :param exc_val: The exception value, if any.
+        :type exc_val: BaseException
+        :param exc_tb: The traceback, if any.
+        :type exc_tb: Any
         """
         await SyncInstanceManager.finish_hanging_items(
             self._session,
@@ -150,11 +137,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
         If a SyncInstance exists, its ID is assigned to the sync_id attribute.
 
-        Returns
-        -------
-        Self
-            The syncer instance with the updated sync_id.
-
+        :return: The syncer instance with the updated sync_id.
+        :rtype: BaseSyncer
         """
         if self.sync_instance is not None:
             self.sync_id = self.sync_instance.id
@@ -166,12 +150,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     ) -> dict[SyncInventoryEntityTypeEnum, Callable[[CreatedEntity], bool]]:
         """Map entity types to their corresponding sync permission check methods.
 
-        Returns
-        -------
-        dict[SyncInventoryEntityTypeEnum, Callable[[CreatedEntity], bool]]
-            A dictionary mapping each SyncInventoryEntityTypeEnum to a method that
-            determines if that entity can be synchronized.
-
+        :return: A dictionary mapping each SyncInventoryEntityTypeEnum to a method that
+                 determines if that entity can be synchronized.
+        :rtype: dict[SyncInventoryEntityTypeEnum, Callable[[Any], bool]]
         """
         return {
             SyncInventoryEntityTypeEnum.NODE: self.can_sync_node,
@@ -191,14 +172,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method sets up SyncItems for the specified entity and recursively prepares
         synchronization for any child entities if applicable.
 
-        Parameters
-        ----------
-        entity_type : SyncInventoryEntityTypeEnum
-            The type of the entity to synchronize.
-        created_entity : CreatedEntity or None
-            The entity instance to synchronize, or None for top-level (inventory)
-            synchronization.
-
+        :param entity_type: The type of the entity to synchronize.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param created_entity: The entity instance to synchronize, or None for top-level
+            (inventory) synchronization.
+        :type created_entity: CreatedEntity | None
         """
         entity_id = None if created_entity is None else created_entity.id
         logger.debug("Preparing sync for %s with ID %s", entity_type.name, entity_id)
@@ -228,28 +206,19 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         Depending on the entity type, this method fetches related child entities that
         need to be synchronized.
 
-        Parameters
-        ----------
-        entity_type : SyncInventoryEntityTypeEnum
-            The type of the current entity.
-        created_entity : CreatedEntity or None
-            The current entity instance, or None for top-level synchronization.
-
-        Returns
-        -------
-        list of CreatedEntity
-            A list of child entities to be synchronized.
-
-        Notes
-        -----
-        - If the entity type does not have associated child entities or the
-        `created_entity` is None, an empty list is returned.
-
+        :param entity_type: The type of the current entity.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param created_entity: The current entity instance, or None for top-level
+            synchronization.
+        :type created_entity: CreatedEntity | None
+        :return: A list of child entities to be synchronized.
+        :rtype: list[CreatedEntity].
         """
         if entity_type == SyncInventoryEntityTypeEnum.INVENTORY:
             return await self.get_inventory_nodes()
         if entity_type == SyncInventoryEntityTypeEnum.SERVICE:
-            return await self.get_inventory_service_schemas(created_entity.id)
+            created_entity = await self.get_inventory_service(created_entity.id)
+            return created_entity.children
         if created_entity is not None:
             return created_entity.children
         logger.warning(
@@ -269,19 +238,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method attempts to retrieve an existing SyncItem for the specified entity.
         If none exists, it creates a new SyncItem.
 
-        Parameters
-        ----------
-        entity_type : SyncInventoryEntityTypeEnum
-            The type of the entity.
-        entity_id : int or None
-            The unique identifier of the entity, or None for top-level (inventory)
-            synchronization.
-
-        Returns
-        -------
-        SyncItem
-            The existing or newly created SyncItem.
-
+        :param entity_type: The type of the entity.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param entity_id: The unique identifier of the entity, or None for top-level
+            (inventory) synchronization.
+        :type entity_id: int | None
+        :return: The existing or newly created SyncItem.
+        :rtype: SyncItem
         """
         sync_item, created = await SyncItemManager.get_or_create(
             self._session,
@@ -305,19 +268,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method attempts to retrieve or create SyncItems for each provided entity
         ID. If a SyncItem is already in progress for an entity, it logs the exception.
 
-        Parameters
-        ----------
-        entity_type : SyncInventoryEntityTypeEnum
-            The type of the entities.
-        *entity_ids : int or None
-            The unique identifiers of the entities, or None for top-level (inventory)
-            synchronization.
-
-        Returns
-        -------
-        list of SyncItem
-            A list of SyncItems corresponding to the provided entity IDs.
-
+        :param entity_type: The type of the entities.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param entity_ids: The unique identifiers of the entities, or None for top-level
+            (inventory) synchronization.
+        :type entity_ids: int | None
+        :return: A list of SyncItems corresponding to the provided entity IDs.
+        :rtype: list[SyncItem]
         """
         sync_items = []
         for entity_id in entity_ids:
@@ -345,24 +302,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         exceptions by marking the `SyncItem` as failed, and finalizing the
         synchronization status upon successful completion.
 
-        Parameters
-        ----------
-        entity_type : SyncInventoryEntityTypeEnum
-            The type of the entity to synchronize.
-        created_entity : CreatedEntity or None
-            The entity instance to synchronize, or `None` for top-level synchronization.
-
-        Yields
-        ------
-        SyncItem
-            The `SyncItem` instance being managed during the synchronization process.
-
-        Raises
-        ------
-        SyncFailError
-            If an exception occurs during synchronization, indicating that the
-            `SyncItem` has failed.
-
+        :param entity_type: The type of the entity to synchronize.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param created_entity: The entity instance to synchronize, or None for top-level
+            (inventory) synchronization.
+        :type created_entity: CreatedEntity | None
+        :yield: The `SyncItem` instance being managed during the synchronization process.
+        :rtype: SyncItem
+        :raises SyncFailError: If an exception occurs during synchronization.
         """
         entity_id = None if created_entity is None else created_entity.id
         sync_item_entity = (entity_type, entity_id)
@@ -396,14 +343,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method marks the SyncItem as finished and recursively finalizes
         synchronization for any child entities.
 
-        Parameters
-        ----------
-        entity_type : SyncInventoryEntityTypeEnum
-            The type of the entity that was synchronized.
-        created_entity : CreatedEntity or None
-            The entity instance that was synchronized, or None for top-level (inventory)
-            synchronization.
-
+        :param entity_type: The type of the entity that was synchronized.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param created_entity: The entity instance that was synchronized, or None for
+            top-level (inventory) synchronization.
+        :type created_entity: CreatedEntity | None
         """
         entity_id = None
         if created_entity is not None:
@@ -430,23 +374,17 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method fetches nodes from the inventory API based on the provided
         filters. Results are cached to optimize performance.
 
-        Parameters
-        ----------
-        external_id : str or None, optional
-            The external identifier of the node. Defaults to None, meaning it won't be
-            used as a filter.
-        source : SourceEnum or None, optional
-            The source of the node information. Defaults to None, meaning it won't be
-            used as a filter.
-        node_type : str or None, optional
-            The type of the node (e.g., "generic"). Defaults to None, meaning it won't
-            be used as a filter.
-
-        Returns
-        -------
-        list of CreatedNode
-            A list of retrieved CreatedNode instances.
-
+        :param external_id: The external identifier of the node. Defaults to None,
+            meaning it won't be used as a filter.
+        :type external_id: str | None
+        :param source: The source of the node information. Defaults to None, meaning it
+            won't be used as a filter
+        :type source: SourceEnum | None
+        :param node_type: The type of the node (e.g., "generic"). Defaults to None,
+            meaning it won't be used as a filter.
+        :type node_type: str | None
+        :return: A list of retrieved CreatedNode instances.
+        :rtype: list[CreatedNode]
         """
         params = {
             "external_id": external_id,
@@ -468,16 +406,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method fetches a single node from the inventory system using its unique ID.
         The result is cached to optimize performance.
 
-        Parameters
-        ----------
-        node_id : int
-            The unique identifier of the node to retrieve.
-
-        Returns
-        -------
-        CreatedNode
-            The retrieved CreatedNode instance.
-
+        :param node_id: The unique identifier of the node to retrieve.
+        :type node_id: int
+        :return: The retrieved CreatedNode instance.
+        :rtype: CreatedNode
         """
         return CreatedNode.model_validate(await self.inventory_api.get(f"/{node_id}"))
 
@@ -488,19 +420,45 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method fetches a single service from the inventory system using its unique
         ID. The result is cached to optimize performance.
 
-        Parameters
-        ----------
-        service_id : int
-            The unique identifier of the service to retrieve.
-
-        Returns
-        -------
-        CreatedService
-            The retrieved CreatedService instance.
-
+        :param service_id: The unique identifier of the service to retrieve.
+        :type service_id: int
+        :return: The retrieved CreatedService instance.
+        :rtype: CreatedService
         """
         return CreatedService.model_validate(
-            await self.services_api.get(f"/services/{service_id}"),
+            await self.inventory_api.get(f"/services/{service_id}"),
+        )
+
+    @alru_cache
+    async def get_inventory_schema(self, schema_id: int) -> CreatedSchema:
+        """Retrieve a specific inventory schema by its ID.
+
+        This method fetches a single schema from the inventory system using its unique
+        ID. The result is cached to optimize performance.
+
+        :param schema_id: The unique identifier of the schema to retrieve.
+        :type schema_id: int
+        :return: The retrieved CreatedSchema instance.
+        :rtype: CreatedSchema
+        """
+        return CreatedSchema.model_validate(
+            await self.inventory_api.get(f"/schemas/{schema_id}"),
+        )
+
+    @alru_cache
+    async def get_inventory_table(self, table_id: int) -> CreatedTable:
+        """Retrieve a specific inventory table by its ID.
+
+        This method fetches a single table from the inventory system using its unique
+        ID. The result is cached to optimize performance.
+
+        :param table_id: The unique identifier of the table to retrieve.
+        :type table_id: int
+        :return: The retrieved CreatedTable instance.
+        :rtype: CreatedTable
+        """
+        return CreatedTable.model_validate(
+            await self.inventory_api.get(f"/tables/{table_id}"),
         )
 
     @alru_cache
@@ -513,20 +471,15 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method fetches all schemas related to a given service from the inventory
         system. The results are cached to optimize performance.
 
-        Parameters
-        ----------
-        service_id : int
-            The unique identifier of the service whose schemas are to be retrieved.
-
-        Returns
-        -------
-        list of CreatedSchema
-            A list of retrieved CreatedSchema instances.
-
+        :param service_id: The unique identifier of the service whose schemas are to be
+            retrieved.
+        :type service_id: int
+        :return: A list of retrieved CreatedSchema instances.
+        :rtype: list[CreatedSchema]
         """
         return [
             CreatedSchema.model_validate(schema_data)
-            for schema_data in await self.services_api.get(
+            for schema_data in await self.inventory_api.get(
                 f"/services/{service_id}/schemas/",
             )
         ]
@@ -537,11 +490,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method synchronizes the deletion of a node by marking the corresponding
         SyncItem and performing the deletion via the inventory API.
 
-        Parameters
-        ----------
-        created_node : CreatedNode
-            The node instance to be deleted.
-
+        :param created_node: The node instance to be deleted.
+        :type created_node: CreatedNode
         """
         logger.debug("Deleting node %s from inventory", created_node.id)
         async with self.manage_sync_item(
@@ -558,11 +508,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         This method synchronizes the deletion of a service by marking the corresponding
         SyncItem and performing the deletion via the inventory API.
 
-        Parameters
-        ----------
-        created_service : CreatedService
-            The service instance to be deleted.
-
+        :param created_service: The service instance to be deleted.
+        :type created_service: CreatedService
         """
         logger.debug("Deleting service %s from inventory", created_service.id)
         async with self.manage_sync_item(
@@ -573,6 +520,48 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 await self.inventory_api.delete(f"/services/{created_service.id}"),
             )
 
+    async def delete_schema(self, created_schema: CreatedSchema) -> None:
+        """Delete a schema from the inventory system.
+
+        This method synchronizes the deletion of a schema by marking the corresponding
+        SyncItem and performing the deletion via the inventory API.
+
+        Parameters
+        ----------
+        created_schema : CreatedSchema
+            The schema instance to be deleted.
+
+        """
+        logger.debug("Deleting schema %s from inventory", created_schema.id)
+        async with self.manage_sync_item(
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            created_schema,
+        ):
+            CreatedSchema.model_validate(
+                await self.inventory_api.delete(f"/schemas/{created_schema.id}"),
+            )
+
+    async def delete_table(self, created_table: CreatedTable) -> None:
+        """Delete a table from the inventory system.
+
+        This method synchronizes the deletion of a table by marking the corresponding
+        SyncItem and performing the deletion via the inventory API.
+
+        Parameters
+        ----------
+        created_table : CreatedTable
+            The table instance to be deleted.
+
+        """
+        logger.debug("Deleting table %s from inventory", created_table.id)
+        async with self.manage_sync_item(
+            SyncInventoryEntityTypeEnum.TABLE,
+            created_table,
+        ):
+            CreatedTable.model_validate(
+                await self.inventory_api.delete(f"/tables/{created_table.id}"),
+            )
+
     async def sync_inventory(self) -> None:
         """Synchronize the entire inventory.
 
@@ -580,7 +569,6 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         permitted by the synchronization rules. It manages the SyncItem lifecycle and
         delegates the actual synchronization logic to the `perform_inventory_sync`
         method.
-
         """
         if self.can_sync_inventory():
             logger.info("Starting inventory synchronization (%s)", self.get_name())
@@ -598,15 +586,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         data retrieval, processing, and storage operations. It should be overridden by
         subclasses to implement specific synchronization behavior.
 
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".perform_inventory_sync() must be overridden.")
 
@@ -615,47 +595,64 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
         Retrieve the latest information for the specified node.
 
-        Parameters
-        ----------
-        created_node : CreatedNode
-            The node instance for which to fetch updated data.
-
-        Returns
-        -------
-        Node
-            The updated node data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_node: The node instance to fetch updated data for.
+        :type created_node: CreatedNode
+        :return: The updated node data.
+        :rtype: Node
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".fetch_node() must be overridden.")
+
+    async def update_node(
+        self,
+        created_node: CreatedNode,
+        updated_node: Node,
+    ) -> CreatedNode:
+        """Update a node in the inventory system.
+
+        Send the updated node data to the inventory API and validate the response.
+
+        :param created_node: The node instance to update.
+        :type created_node: CreatedNode
+        :param updated_node: The updated node data.
+        :type updated_node: Node
+        :return: The updated `CreatedNode` instance.
+        :rtype: CreatedNode
+        """
+        logger.info("Updating node %s: %s", created_node.id, updated_node)
+        return CreatedNode.model_validate(
+            await self.inventory_api.put(
+                f"/{created_node.id}",
+                json=updated_node.model_dump(exclude={"services"}),
+            ),
+        )
 
     async def sync_node(
         self,
         created_node: CreatedNode,
         updated_node: Node | None = None,
+        *,
+        refresh_at_start: bool = False,
     ) -> None:
         """Synchronize data for a specific node.
 
         Retrieve and update information related to the node identified by
         `created_node`.
 
-        Parameters
-        ----------
-        created_node : CreatedNode
-            The node instance to synchronize.
-        updated_node : Node or None, optional
-            The updated node data. If None, it will be fetched using `.fetch_node()`.
-            Defaults to None.
-
+        :param created_node: The node instance to synchronize.
+        :type created_node: CreatedNode
+        :param updated_node: The updated node data. If None, it will be fetched using
+            `.fetch_node()`. Defaults to None.
+        :type updated_node: Node | None
+        :param refresh_at_start: Whether to refresh the created_node data before
+            synchronization. Defaults to `False`.
+        :type refresh_at_start: bool
         """
+        created_node = (
+            await self.get_inventory_node(created_node.id)
+            if refresh_at_start
+            else created_node
+        )
         if self.can_sync_node(created_node):
             logger.info(
                 "Starting node synchronization (%s) for node %s",
@@ -689,22 +686,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         should be overridden by subclasses to implement specific synchronization
         behavior.
 
-        Parameters
-        ----------
-        created_node : CreatedNode
-            The node instance to synchronize.
-        updated_node : Node
-            The updated node data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_node: The node instance to synchronize.
+        :type created_node: CreatedNode
+        :param updated_node: The updated node data.
+        :type updated_node: Node
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".perform_node_sync() must be overridden.")
 
@@ -713,47 +699,66 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
         Retrieve the latest information for the specified service.
 
-        Parameters
-        ----------
-        created_service : CreatedService
-            The service instance for which to fetch updated data.
-
-        Returns
-        -------
-        Service
-            The updated service data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_service: The service instance for which to fetch updated data.
+        :type created_service: CreatedService
+        :return: The updated service data.
+        :rtype: Service
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".fetch_service() must be overridden.")
+
+    async def update_service(
+        self,
+        created_service: CreatedService,
+        updated_service: Service,
+    ) -> CreatedService:
+        """Update a service in the inventory system.
+
+        Send the updated service data to the inventory API and validate the response.
+
+        :param created_service: The service instance to update.
+        :type created_service: CreatedService
+        :param updated_service: The updated service data.
+        :type updated_service: Service
+        :return: The updated `CreatedService` instance.
+        :rtype: CreatedService
+        """
+        logger.info("Updating service %s: %s", created_service.id, updated_service)
+        updated_service_data = updated_service.model_dump(exclude={"schemas"})
+        updated_service_data["node_id"] = created_service.node_id
+        return CreatedService.model_validate(
+            await self.inventory_api.put(
+                f"/services/{created_service.id}",
+                json=updated_service_data,
+            ),
+        )
 
     async def sync_service(
         self,
         created_service: CreatedService,
         updated_service: Service | None = None,
+        *,
+        refresh_at_start: bool = False,
     ) -> None:
         """Synchronize data for a specific service.
 
         Retrieve and update information related to the service identified by
         `created_service`.
 
-        Parameters
-        ----------
-        created_service : CreatedService
-            The service instance to synchronize.
-        updated_service : Service or None, optional
-            The updated service data. If None, it will be fetched using
-            `.fetch_service()`. Defaults to None.
-
+        :param created_service: The service instance to synchronize.
+        :type created_service: CreatedService
+        :param updated_service: The updated service data. If None, it will be fetched
+            using `.fetch_service()`. Defaults to None.
+        :type updated_service: Service | None
+        :param refresh_at_start: Whether to refresh the created_service data before
+            synchronization. Defaults to `False`.
+        :type refresh_at_start: bool
         """
+        created_service = (
+            await self.get_inventory_service(created_service.id)
+            if refresh_at_start
+            else created_service
+        )
         if self.can_sync_service(created_service):
             logger.info(
                 "Starting service synchronization (%s) for service %s",
@@ -787,22 +792,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         It should be overridden by subclasses to implement specific synchronization
         behavior.
 
-        Parameters
-        ----------
-        created_service : CreatedService
-            The service instance to synchronize.
-        updated_service : Service
-            The updated service data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_service: The service instance to synchronize.
+        :type created_service: CreatedService
+        :param updated_service: The updated service data.
+        :type updated_service: Service
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".perform_service_sync() must be overridden.")
 
@@ -811,48 +805,66 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
         Retrieve the latest information for the specified schema.
 
-        Parameters
-        ----------
-        created_schema : CreatedSchema
-            The schema instance for which to fetch updated data.
-
-        Returns
-        -------
-        Schema
-            The updated schema data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_schema: The schema instance for which to fetch updated data.
+        :type created_schema: CreatedSchema
+        :return: The updated schema data.
+        :rtype: Schema
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".fetch_schema() must be overridden.")
+
+    async def update_schema(
+        self,
+        created_schema: CreatedSchema,
+        updated_schema: Schema,
+    ) -> CreatedSchema:
+        """Update a schema in the inventory system.
+
+        Send the updated schema data to the inventory API and validate the response.
+
+        :param created_schema: The schema instance to update.
+        :type created_schema: CreatedSchema
+        :param updated_schema: The updated schema data.
+        :type updated_schema: Schema
+        :return: The updated `CreatedSchema` instance.
+        :rtype: CreatedSchema
+        """
+        logger.info("Updating schema %s: %s", created_schema.id, updated_schema)
+        updated_schema_data = updated_schema.model_dump(exclude={"tables"})
+        updated_schema_data["service_id"] = created_schema.service_id
+        return CreatedSchema.model_validate(
+            await self.inventory_api.put(
+                f"/schemas/{created_schema.id}",
+                json=updated_schema_data,
+            ),
+        )
 
     async def sync_schema(
         self,
         created_schema: CreatedSchema,
         updated_schema: Schema | None = None,
+        *,
+        refresh_at_start: bool = False,
     ) -> None:
         """Synchronize data for a specific schema.
 
         Retrieve and update information related to the schema identified by
         `created_schema`.
 
-        Parameters
-        ----------
-        created_schema : CreatedSchema
-            The schema instance to synchronize.
-        updated_schema : Schema or None, optional
-            The updated schema data. If None, it will be fetched using
-            `.fetch_schema()`. Defaults to None.
-
-
+        :param created_schema: The schema instance to synchronize.
+        :type created_schema: CreatedSchema
+        :param updated_schema: The updated schema data. If None, it will be fetched
+            using `.fetch_schema()`. Defaults to None.
+        :type updated_schema: Schema | None
+        :param refresh_at_start: Whether to refresh the created_schema data before
+            synchronization. Defaults to `False`.
+        :type refresh_at_start: bool
         """
+        created_schema = (
+            await self.get_inventory_schema(created_schema.id)
+            if refresh_at_start
+            else created_schema
+        )
         if self.can_sync_schema(created_schema):
             logger.info(
                 "Starting schema synchronization (%s) for schema %s",
@@ -886,22 +898,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         It should be overridden by subclasses to implement specific synchronization
         behavior.
 
-        Parameters
-        ----------
-        created_schema : CreatedSchema
-            The schema instance to synchronize.
-        updated_schema : Schema
-            The updated schema data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_schema: The schema instance to synchronize.
+        :type created_schema: CreatedSchema
+        :param updated_schema: The updated schema data.
+        :type updated_schema: Schema
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".perform_schema_sync() must be overridden.")
 
@@ -910,47 +911,66 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
         Retrieve the latest information for the specified table.
 
-        Parameters
-        ----------
-        created_table : CreatedTable
-            The table instance for which to fetch updated data.
-
-        Returns
-        -------
-        Table
-            The updated table data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_table: The table instance for which to fetch updated data.
+        :type created_table: CreatedTable
+        :return: The updated table data.
+        :rtype: Table
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".fetch_table() must be overridden.")
+
+    async def update_table(
+        self,
+        created_table: CreatedTable,
+        updated_table: Table,
+    ) -> CreatedTable:
+        """Update a table in the inventory system.
+
+        Send the updated table data to the inventory API and validate the response.
+
+        :param created_table: The table instance to update.
+        :type created_table: CreatedTable
+        :param updated_table: The updated table data.
+        :type updated_table: Table
+        :return: The updated `CreatedTable` instance.
+        :rtype: CreatedTable
+        """
+        logger.info("Updating table %s: %s", created_table.id, updated_table)
+        updated_table_data = updated_table.model_dump()
+        updated_table_data["schema_id"] = created_table.schema_id
+        return CreatedTable.model_validate(
+            await self.inventory_api.put(
+                f"/tables/{created_table.id}",
+                json=updated_table_data,
+            ),
+        )
 
     async def sync_table(
         self,
         created_table: CreatedTable,
         updated_table: Table | None = None,
+        *,
+        refresh_at_start: bool = False,
     ) -> None:
         """Synchronize data for a specific table.
 
         Retrieve and update information related to the table identified by
         `created_table`.
 
-        Parameters
-        ----------
-        created_table : CreatedTable
-            The table instance to synchronize.
-        updated_table : Table or None, optional
-            The updated table data. If None, it will be fetched using `.fetch_table()`.
-            Defaults to None.
-
+        :param created_table: The table instance to synchronize.
+        :type created_table: CreatedTable
+        :param updated_table: The updated table data. If None, it will be fetched
+            using `.fetch_table()`. Defaults to None.
+        :type updated_table: Table | None
+        :param refresh_at_start: Whether to refresh the created_table data before
+            synchronization. Defaults to `False`.
+        :type refresh_at_start: bool
         """
+        created_table = (
+            await self.get_inventory_table(created_table.id)
+            if refresh_at_start
+            else created_table
+        )
         if self.can_sync_table(created_table):
             logger.info(
                 "Starting table synchronization (%s) for table %s",
@@ -984,22 +1004,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         It should be overridden by subclasses to implement specific synchronization
         behavior.
 
-        Parameters
-        ----------
-        created_table : CreatedTable
-            The table instance to synchronize.
-        updated_table : Table
-            The updated table data.
-
-        Raises
-        ------
-        NotImplementedError
-            Indicates that the method must be overridden by a subclass.
-
-        Notes
-        -----
-        This method is expected to be overriden by a subclass.
-
+        :param created_table: The table instance to synchronize.
+        :type created_table: CreatedTable
+        :param updated_table: The updated table data.
+        :type updated_table: Table
+        :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".perform_table_sync() must be overridden.")
 
@@ -1007,11 +1016,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     def get_name(cls) -> str:
         """Compute the fully qualified name of the synchronizer.
 
-        Returns
-        -------
-        str
-            The synchronizer's name in the format "module.ClassName".
-
+        :return: The synchronizer's name in the format "module.ClassName".
+        :rtype: str
         """
         return f"{cls.__module__}.{cls.__name__}"
 
@@ -1022,16 +1028,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         Checks if the provided entity type is within the permissible synchronization
         limit.
 
-        Parameters
-        ----------
-        entity_type : SyncInventoryEntityTypeEnum
-            The type of the entity to check.
-
-        Returns
-        -------
-        bool
-            `True` if the entity type can be synchronized, `False` otherwise.
-
+        :param entity_type: The type of the entity to check.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :return: `True` if the entity type can be synchronized, `False` otherwise.
+        :rtype: bool
         """
         return entity_type <= cls.SYNC_TO_LIMIT
 
@@ -1039,11 +1039,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     def can_sync_inventory(cls) -> bool:
         """Determine if the inventory can be synchronized.
 
-        Returns
-        -------
-        bool
-            `True` if inventory synchronization is allowed, `False` otherwise.
-
+        :return: `True` if inventory synchronization is allowed, `False` otherwise.
+        :rtype: bool
         """
         return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.INVENTORY)
 
@@ -1051,17 +1048,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     def can_sync_node(cls, node: CreatedNode) -> bool:  # noqa: ARG003
         """Determine if a specific node can be synchronized.
 
-        Parameters
-        ----------
-        node : CreatedNode
-            The node instance to check.
-
-        Returns
-        -------
-        bool
-            `True` if the node can be synchronized, `False` otherwise.
-
-
+        :param node: The node instance to check.
+        :type node: CreatedNode
+        :return: `True` if the node can be synchronized, `False` otherwise.
+        :rtype: bool
         """
         return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.NODE)
 
@@ -1069,17 +1059,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     def can_sync_service(cls, service: CreatedService) -> bool:  # noqa: ARG003
         """Determine if a specific service can be synchronized.
 
-        Parameters
-        ----------
-        service : CreatedService
-            The service instance to check.
-
-        Returns
-        -------
-        bool
-            `True` if the service can be synchronized, `False` otherwise.
-
-
+        :param service: The service instance to check.
+        :type service: CreatedService
+        :return: `True` if the service can be synchronized, `False` otherwise.
+        :rtype: bool
         """
         return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.SERVICE)
 
@@ -1087,17 +1070,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     def can_sync_schema(cls, schema: CreatedSchema) -> bool:  # noqa: ARG003
         """Determine if a specific schema can be synchronized.
 
-        Parameters
-        ----------
-        schema : CreatedSchema
-            The schema instance to check.
-
-        Returns
-        -------
-        bool
-            `True` if the schema can be synchronized, `False` otherwise.
-
-
+        :param schema: The schema instance to check.
+        :type schema: CreatedSchema
+        :return: `True` if the schema can be synchronized, `False` otherwise.
+        :rtype: bool
         """
         return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.SCHEMA)
 
@@ -1105,16 +1081,117 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     def can_sync_table(cls, table: CreatedTable) -> bool:  # noqa: ARG003
         """Determine if a specific table can be synchronized.
 
-        Parameters
-        ----------
-        table : CreatedTable
-            The table instance to check.
-
-        Returns
-        -------
-        bool
-            `True` if the table can be synchronized, `False` otherwise.
-
-
+        :param table: The table instance to check.
+        :type table: CreatedTable
+        :return: `True` if the table can be synchronized, `False` otherwise.
+        :rtype: bool
         """
         return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.TABLE)
+
+
+class BaseTaskSyncer(BaseSyncer):
+    """Provide a base class for task-based synchronizers in the SEP application.
+
+    This class extends `BaseSyncer` by adding task management capabilities through the
+    Tasks API, allowing synchronization processes to execute tasks and handle their
+    outputs.
+
+    :param tasks_api: The remote API interface for managing synchronization tasks.
+    :type tasks_api: RemoteAPI
+    :param task_execution_timeout: The maximum time (in seconds) to wait for a task to
+        complete. Defaults to 300 (5 minutes).
+    :type task_execution_timeout: int
+    :param tasks_execution_wait_interval: The interval (in seconds) between task status
+        checks. Defaults to 5.
+    :type tasks_execution_wait_interval: int
+    :param force_executor_host: The host to force for task execution, if any.
+    :type force_executor_host: str | None
+    """
+
+    tasks_api: RemoteAPI
+    task_execution_timeout: int = 300
+    tasks_execution_wait_interval: int = 5
+    force_executor_host: str | None = None
+
+    @alru_cache
+    async def get_available_hosts(self) -> dict[str, str]:
+        """Return the available hosts from the Tasks API.
+
+        :return: The available hosts.
+        :rtype: dict[str, str]
+        """
+        return await self.tasks_api.get("/hosts/")
+
+    async def wait_for_task_output(
+        self,
+        task_name: str,
+        stdout_step: str,
+        payload: str | None = None,
+        **meta: Any,
+    ) -> str:
+        """Wait for a task to complete and retrieve its output.
+
+        This method initiates a task execution via the tasks API and waits for it to
+        complete within the specified timeout. It retrieves the task's output upon
+        successful completion or raises an error if the task fails or times out.
+
+        :param task_name: The name of the task to execute.
+        :type task_name: str
+        :param stdout_step: The step identifier for output retrieval.
+        :type stdout_step: str
+        :param payload: The payload to send with the task execution request.
+            Defaults to `None`.
+        :type payload: str | None
+        :param meta: Additional metadata to send with the task execution request.
+        :type meta: Any
+        :return: The output from the task's stdout.
+        :rtype: str
+        :raises TimeoutError: If the task times out.
+        :raises ValueError: If the task fails.
+        """
+        response = await self.tasks_api.post(
+            f"/execute/{task_name}",
+            json={"meta": meta, "payload": payload},
+        )
+        task_history = response["task_history_id"]
+        task_history_id = task_history["id"]
+        status = task_history["status"]
+        time_waiting = 0
+        while (
+            status in [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
+            and time_waiting < self.task_execution_timeout
+        ):
+            await asyncio.sleep(self.tasks_execution_wait_interval)
+            time_waiting += 5
+            try:
+                task_history = await self.tasks_api.get(f"/history/{task_history_id}")
+                status = task_history["status"]
+            except ClientResponseError:
+                logger.exception("Error getting task history")
+
+        if status in [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]:
+            raise TimeoutError(f"Task {task_name} timed out")
+
+        # TODO: Avoid keeping duplicate logs
+        evaluation_id = task_history["execution_request"]["tracking"]["evaluation_id"]
+        task_logs = task_history["execution_request"]["tracking"]["task_logs"][
+            evaluation_id
+        ][stdout_step]
+        output = task_logs.get("stdout", "")
+        error_output = task_logs.get("stderr", "")
+        exc_detail = f"Task {task_name} failed"
+
+        if error_output:
+            logger.warning(
+                "Task %s (%s) returned an error message: %s",
+                task_name,
+                task_history_id,
+                error_output,
+            )
+            exc_detail = f"{exc_detail}: {error_output}"
+
+        if status == TaskHistoryStatusEnum.FAILED:
+            # TODO: Create custom exceptions
+            raise ValueError(exc_detail)
+
+        return output

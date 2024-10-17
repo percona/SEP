@@ -33,23 +33,19 @@ class Plugin(BaseCaseInsensitiveModel):
     URI path, and CSS class. It includes custom validators to resolve the module
     path and set default values based on the plugin's name.
 
-    Attributes
-    ----------
-    name : str
-        The name of the plugin.
-    module_name : StrImportableModule
-        The name of the module associated with the plugin. This field is automatically
-        prefixed with "app.sep.plugins." during validation.
-    uri_path : HttpUrl or URIPath, optional
-        The URI path where the plugin is accessible. Defaults to an empty string,
-        but is automatically set to a slugified version of the plugin name if
+    :param name: The name of the plugin.
+    :type name: str
+    :param module_name: The name of the module associated with the plugin. This field is
+        automatically prefixed with "app.sep.plugins." during validation.
+    :type module_name: StrImportableModule
+    :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
+        string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    css_class : str, optional
-        The CSS class associated with the plugin. Defaults to an empty string,
-        but is automatically set to a slugified version of the plugin name if
+    :type uri_path: HttpUrl | URIPath
+    :param css_class: The CSS class associated with the plugin. Defaults to an empty
+        string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    router_path
-
+    :type css_class: str
     """
 
     name: str
@@ -70,16 +66,10 @@ class Plugin(BaseCaseInsensitiveModel):
         This method takes the module name provided and prefixes it with
         "app.sep.plugins." to resolve the full import path.
 
-        Parameters
-        ----------
-        v : str
-            The module name to resolve.
-
-        Returns
-        -------
-        str
-            The full module path with the "app.sep.plugins." prefix.
-
+        :param v: The module name to resolve.
+        :type v: str
+        :return: The full module path with the "app.sep.plugins." prefix.
+        :rtype: str
         """
         return f"app.sep.plugins.{v}"
 
@@ -95,12 +85,28 @@ class Plugin(BaseCaseInsensitiveModel):
     @computed_field
     @property
     def router_path(self) -> str:
-        """Return the plugin's router path."""
+        """Return the plugin's router path.
+
+        :return: The router path derived from the module name.
+        :rtype: str
+        """
         return f"{self.module_name}.router"
 
 
 class SyncInventoryEntityTypeEnum(IntEnum):
-    """Enumerate the types of inventory entities that can be synchronized."""
+    """Enumerate the types of inventory entities that can be synchronized.
+
+    :cvar INVENTORY: Represents the entire inventory.
+    :vartype INVENTORY: int
+    :cvar NODE: Represents a node within the inventory.
+    :vartype NODE: int
+    :cvar SERVICE: Represents a service within a node.
+    :vartype SERVICE: int
+    :cvar SCHEMA: Represents a schema within a service.
+    :vartype SCHEMA: int
+    :cvar TABLE: Represents a table within a schema.
+    :vartype TABLE: int
+    """
 
     INVENTORY = auto()
     NODE = auto()
@@ -110,7 +116,17 @@ class SyncInventoryEntityTypeEnum(IntEnum):
 
 
 class SyncStatusEnum(StrEnum):
-    """Enumerate the possible statuses of a synchronization process."""
+    """Enumerate the possible statuses of a synchronization process.
+
+    :cvar PENDING: The synchronization is pending.
+    :vartype PENDING: str
+    :cvar RUNNING: The synchronization is currently running.
+    :vartype RUNNING: str
+    :cvar SUCCESS: The synchronization completed successfully.
+    :vartype SUCCESS: str
+    :cvar FAILED: The synchronization failed.
+    :vartype FAILED: str
+    """
 
     PENDING = auto()
     RUNNING = auto()
@@ -124,12 +140,9 @@ class SyncInstanceBase(SQLModel):
     This model provides the foundational fields required for tracking a synchronization
     instance, including the synchronizer responsible for the synchronization.
 
-    Attributes
-    ----------
-    syncer : RequiredStr
-        The name of the synchronizer responsible for this synchronization. Indexed for
-        quick lookup.
-
+    :param syncer: The name of the synchronizer responsible for this synchronization.
+        Indexed for quick lookup.
+    :type syncer: RequiredStr
     """
 
     syncer: RequiredStr = SQLField(index=True)
@@ -141,20 +154,20 @@ class SyncInstance(BaseUUIDSQLModel, SyncInstanceBase, table=True):
     This model represents an instance of a synchronization process, tracking its
     inventory item, type, associated task history, synchronizer, and current status.
 
-    Attributes
-    ----------
-    id : UUID4
-        The primary key for the table. Automatically generated using UUID4.
-    created_at : datetime
-        The timestamp when the record is created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record is last updated. Automatically updated on changes.
-    syncer : RequiredStr
-        The name of the synchronizer responsible for this synchronization. Indexed for
-        quick lookup.
-    items: list[SyncItem]
-        A list of synchronization items associated with this synchronization instance.
-
+    :param id: The primary key for the table. Automatically generated using UUID4.
+    :type id: UUID4
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
+    :param syncer: The name of the synchronizer responsible for this synchronization.
+        Indexed for quick lookup.
+    :type syncer: RequiredStr
+    :param items: A list of synchronization items associated with this synchronization
+        instance.
+    :type items: list[SyncItem]
     """
 
     items: list["SyncItem"] = Relationship(
@@ -169,12 +182,9 @@ class SyncInstanceWrite(SyncInstanceBase):
     This model extends `SyncInstanceBase` and is used specifically for creating
     new synchronization instances.
 
-    Attributes
-    ----------
-    syncer : RequiredStr
-        The name of the synchronizer responsible for this synchronization. Indexed for
-        quick lookup.
-
+    :param syncer: The name of the synchronizer responsible for this synchronization.
+        Indexed for quick lookup.
+    :type syncer: RequiredStr
     """
 
 
@@ -185,21 +195,16 @@ class SyncItemBase(SQLModel):
     synchronization items, including the associated inventory item and synchronization
     status.
 
-    Attributes
-    ----------
-    entity_id : int or None
-        The identifier of the inventory item being synchronized.
-    entity_type : SyncInventoryEntityTypeEnum
-        The type of the inventory item being synchronized.
-    status : SyncStatusEnum, optional
-        The current status of the synchronization process. Defaults to PENDING.
-    task_history_id : int or None, optional
-        The identifier of the task history associated with this synchronization
-        instance. Defaults to None
-    sync_instance_id : UUID4
-        The foreign key referencing the associated synchronization instance.
-
-
+    :param entity_id: The identifier of the inventory item being synchronized.
+    :type entity_id: int | None
+    :param entity_type: The type of the inventory item being synchronized.
+    :type entity_type: SyncInventoryEntityTypeEnum
+    :param status: The current status of the synchronization process. Defaults to
+        PENDING.
+    :type status: SyncStatusEnum
+    :param sync_instance_id: The foreign key referencing the associated synchronization
+        instance.
+    :type sync_instance_id: UUID4
     """
 
     entity_id: int | None = SQLField(index=True)
@@ -214,7 +219,6 @@ class SyncItemBase(SQLModel):
         default=SyncStatusEnum.PENDING,
         sa_column=Column(EnumField(SyncStatusEnum), nullable=False, index=True),
     )
-    task_history_id: int | None = None
     sync_instance_id: UUID4 = SQLField(
         foreign_key="syncinstance.id",
         index=True,
@@ -228,28 +232,25 @@ class SyncItem(BaseUUIDSQLModel, SyncItemBase, table=True):
     This model represents an individual synchronization task within a synchronization
     instance, tracking its inventory item, type, status, and associated task history.
 
-    Attributes
-    ----------
-    id : UUID4
-        The primary key for the table. Automatically generated using UUID4.
-    created_at : datetime
-        The timestamp when the record is created. Defaults to the current time in UTC.
-    updated_at : datetime or None
-        The timestamp when the record is last updated. Automatically updated on changes.
-    entity_id : int or None
-            The identifier of the inventory item being synchronized.
-    entity_type : SyncInventoryEntityTypeEnum
-        The type of the inventory item being synchronized.
-    status : SyncStatusEnum, optional
-        The current status of the synchronization process. Defaults to PENDING.
-    task_history_id : int or None, optional
-        The identifier of the task history associated with this synchronization
-        instance. Defaults to None
-    sync_instance_id : UUID4
-        The foreign key referencing the associated synchronization instance.
-    sync_instance : SyncInstance
-        The synchronization instance to which this item belongs.
-
+    :param id: The primary key for the table. Automatically generated using UUID4.
+    :type id: UUID4
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
+    :param entity_id: The identifier of the inventory item being synchronized.
+    :type entity_id: int | None
+    :param entity_type: The type of the inventory item being synchronized.
+    :type entity_type: SyncInventoryEntityTypeEnum
+    :param status: The current status of the synchronization process.
+    :type status: SyncStatusEnum
+    :param sync_instance_id: The foreign key referencing the associated synchronization
+        instance.
+    :type sync_instance_id: UUID4
+    :param sync_instance: The synchronization instance to which this item belongs.
+    :type sync_instance: SyncInstance
     """
 
     __table_args__ = (
@@ -281,18 +282,14 @@ class SyncItemWrite(SyncItemBase):
     This model extends `SyncItemBase` and is used specifically for creating
     new synchronization items.
 
-    Attributes
-    ----------
-    entity_id : int or None
-        The identifier of the inventory item being synchronized.
-    entity_type : SyncInventoryEntityTypeEnum
-        The type of the inventory item being synchronized.
-    status : SyncStatusEnum, optional
-        The current status of the synchronization process. Defaults to PENDING.
-    task_history_id : int or None, optional
-        The identifier of the task history associated with this synchronization
-        instance. Defaults to None
-    sync_instance_id : UUID4
-        The foreign key referencing the associated synchronization instance.
-
+    :param entity_id: The identifier of the inventory item being synchronized.
+    :type entity_id: int | None
+    :param entity_type: The type of the inventory item being synchronized.
+    :type entity_type: SyncInventoryEntityTypeEnum
+    :param status: The current status of the synchronization process. Defaults to
+        PENDING.
+    :type status: SyncStatusEnum
+    :param sync_instance_id: The foreign key referencing the associated synchronization
+        instance.
+    :type sync_instance_id: UUID4
     """

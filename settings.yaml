@@ -42,6 +42,12 @@ development:
         PMM:
           ENDPOINT: https://127.0.0.1:8443
           VERIFY_SSL: false
+      - SYNCER: MySQLSyncer
+        IGNORE_SCHEMAS:
+          - sys
+          - performance_schema
+          - mysql
+          - information_schema
 
 production_docker:
   CASDOOR:
@@ -64,6 +70,12 @@ production_docker:
         PMM:
           ENDPOINT: https://host.docker.internal:8443
           VERIFY_SSL: false
+      - SYNCER: MySQLSyncer
+        IGNORE_SCHEMAS:
+          - sys
+          - performance_schema
+          - mysql
+          - information_schema
   INVENTORY:
     SSL_KEYFILE: data/certs/sep/inventory_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/inventory_api-cert.pem

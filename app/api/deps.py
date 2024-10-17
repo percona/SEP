@@ -25,23 +25,13 @@ AuthToken = Annotated[str, Depends(oauth2_scheme)]
 async def get_current_user(token: AuthToken) -> User:
     """Return the authenticated user from an OAuth2 token.
 
-    Parameters
-    ----------
-    token: AuthToken
-        The OAuth2 token to authenticate the user.
-
-    Returns
-    -------
-    User
-        The authenticated user.
-
-    Raises
-    ------
-    HTTPUnauthorizedException
-        If the token is invalid and authentication fails.
-    InactiveUserException
-        If authentication succeeds but the user is not active.
-
+    :param token: The OAuth2 token to authenticate the user.
+    :type token: AuthToken
+    :return: The authenticated user.
+    :rtype: User
+    :raises HTTPUnauthorizedException: If the token is invalid and authentication fails.
+    :raises InactiveUserException: If authentication succeeds but the user is not
+        active.
     """
     try:
         user = await User.from_jwt(token)
@@ -60,21 +50,11 @@ CurrentUser = Annotated[User, IsAuthenticatedDep]
 async def get_current_admin(current_user: CurrentUser) -> User:
     """Return the authenticated admin from an OAuth2 token.
 
-    Parameters
-    ----------
-    current_user: CurrentUser
-        The current logged-in user.
-
-    Returns
-    -------
-    User
-        The authenticated admin user.
-
-    Raises
-    ------
-    HTTPForbiddenException
-        If the user is not an admin.
-
+    :param current_user: The current logged-in user.
+    :type current_user: CurrentUser
+    :return: The authenticated admin user.
+    :rtype: User
+    :raises HTTPForbiddenException: If the user is not an admin.
     """
     if not current_user.is_admin:
         raise HTTPForbiddenException

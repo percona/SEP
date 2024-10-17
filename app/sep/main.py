@@ -129,8 +129,8 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
 if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers
     logging.basicConfig(
-        level=sep_settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> " "%(module)s.%(funcName)s - %(message)s",
+        level=settings.LOGGING,
+        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",
     )
     for name, level in settings.LOGGING_EXTRA.items():
         logging.getLogger(name).setLevel(level)

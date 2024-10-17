@@ -29,19 +29,22 @@ CasdoorUsernameField = Annotated[
 class CasdoorTokenPayload(BaseTokenPayload):
     """Represent the payload of a Casdoor JWT token.
 
-    Attributes
-    ----------
-    iss
-    sub
-    aud
-    exp
-    nbf
-    jti
-    username: CasdoorUsernameField
-        The user's Casdoor username.
-    active: bool
-        Whether the token is active or not. Must be True.
-
+    :param iss: The issuer of the token.
+    :type iss: str
+    :param sub: The subject or user identifier the token refers to.
+    :type sub: str
+    :param aud: The audience for whom the token is intended.
+    :type aud: list[str]
+    :param exp: The expiration time of the token.
+    :type exp: FutureDatetime
+    :param nbf: The time before which the token must not be accepted for processing.
+    :type nbf: PastDatetime
+    :param jti: The JWT token identifier.
+    :type jti: str
+    :param username: The user's Casdoor username.
+    :type username: CasdoorUsernameField
+    :param active: Whether the token is active or not. Must be True.
+    :type active: bool
     """
 
     username: CasdoorUsernameField
@@ -50,7 +53,13 @@ class CasdoorTokenPayload(BaseTokenPayload):
     @field_validator("iss")
     @classmethod
     def validate_iss(cls, v: str) -> str:
-        """Validate if the token's iss is the same as `settings.CASDOOR.ENDPOINT`."""
+        """Validate if the token's iss is the same as `settings.CASDOOR.ENDPOINT`.
+
+        :param v: The issuer value to validate.
+        :type v: str
+        :return: The validated issuer.
+        :rtype: str
+        """
         if (
             settings.CASDOOR.ALLOWED_ISSUERS != "*"
             and v not in settings.CASDOOR.ALLOWED_ISSUERS
@@ -61,7 +70,13 @@ class CasdoorTokenPayload(BaseTokenPayload):
     @field_validator("aud")
     @classmethod
     def validate_aud(cls, v: list[str]) -> list[str]:
-        """Validate if `settings.CASDOOR.CLIENT_ID` is part of the token's audience."""
+        """Validate if `settings.CASDOOR.CLIENT_ID` is part of the token's audience.
+
+        :param v: The audience list to validate.
+        :type v: list[str]
+        :return: The validated audience list.
+        :rtype: list[str]
+        """
         if settings.CASDOOR.CLIENT_ID not in v:
             raise ValueError(f"Client ID not part of audience: {v}")
         return v
@@ -73,46 +88,43 @@ class CasdoorTokenPayload(BaseTokenPayload):
         Decode and validate a JWT access token and return an instance
         of `CasdoorTokenPayload`.
 
-        Parameters
-        ----------
-        token : str
-            The JWT token to decode.
-
-        Returns
-        -------
-        CasdoorTokenPayload
-            An instance of `CasdoorTokenPayload` populated with the decoded data.
-
+        :param token: The JWT token to decode.
+        :type token: str
+        :return: An instance of `CasdoorTokenPayload` populated with the decoded data.
+        :rtype: CasdoorTokenPayload
         """
         return cls.model_validate(await casdoor_sdk.introspect_token(token))
 
 
 class CasdoorUser(BaseUser):
-    """Base class representing a user.
+    """Represent a Casdoor user.
 
-    Attributes
-    ----------
-    id
-    username
-    email
-    first_name
-    last_name
-    is_admin
-    created_time
-    updated_time
-    full_name
-    is_active
-    username: CasdoorUsernameField
-        The user's Casdoor username.
-    owner: str
-        The user's Casdoor organization.
-    is_forbidden: bool
-        Whether the user has the `is_forbidden` attribute set in Casdoor.
+    :param id: The unique identifier of the user.
+    :type id: UUID4
+    :param email: The email address of the user.
+    :type email: EmailStr
+    :param first_name: The first name of the user.
+    :type first_name: str
+    :param last_name: The last name of the user.
+    :type last_name: str
+    :param is_admin: Whether the user has administrative privileges. Defaults to False.
+    :type is_admin: bool
+    :param created_time: The datetime when the user was created. Defaults to current
+        datetime.
+    :type created_time: datetime | None
+    :param updated_time: The datetime when the user was last updated. Defaults to
+        current datetime.
+    :type updated_time: datetime | None
+    :param username: The user's Casdoor username.
+    :type username: CasdoorUsernameField
+    :param owner: The user's Casdoor organization.
+    :type owner: str
+    :param is_forbidden: Whether the user has the `is_forbidden` attribute set in
+        Casdoor. Defaults to False.
+    :type is_forbidden: bool
+    :param is_deleted: Whether the user has the `is_deleted` attribute set in Casdoor.
         Defaults to False.
-    is_deleted: bool
-        Whether the user has the `is_deleted` attribute set in Casdoor.
-        Defaults to False.
-
+    :type is_deleted: bool
     """
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -124,7 +136,11 @@ class CasdoorUser(BaseUser):
     @computed_field
     @property
     def is_active(self) -> bool:
-        """Return True if the user is not forbidden nor deleted."""
+        """Return True if the user is not forbidden nor deleted.
+
+        :return: True if the user is active.
+        :rtype: bool
+        """
         return not self.is_forbidden and not self.is_deleted
 
     @staticmethod
@@ -139,22 +155,16 @@ class CasdoorUser(BaseUser):
         Get an OAuth token for the user from Casdoor's SDK. Either `code`,
         `refresh_token`, or `username` and `password` must be set.
 
-        Parameters
-        ----------
-        code : str, optional
-            An authorization code used to obtain the token.
-        username : str, optional
-            The username of the user.
-        password : str, optional
-            The password of the user.
-        refresh_token : str, optional
-            A refresh token used to obtain a new access token.
-
-        Returns
-        -------
-        OAuthToken
-            The OAuth token for the user.
-
+        :param code: An authorization code used to obtain the token.
+        :type code: str | None
+        :param username: The username of the user.
+        :type username: str | None
+        :param password: The password of the user.
+        :type password: str | None
+        :param refresh_token: A refresh token used to obtain a new access token.
+        :type refresh_token: str | None
+        :return: The OAuth token for the user.
+        :rtype: OAuthToken
         """
         if refresh_token:
             oauth_data = await casdoor_sdk.refresh_token_request(refresh_token)
@@ -168,11 +178,8 @@ class CasdoorUser(BaseUser):
 
         Invalidate an OAuth token by refreshing the token.
 
-        Parameters
-        ----------
-        access_token : str,
-            The access token to invalidate.
-
+        :param access_token: The access token to invalidate.
+        :type access_token: str
         """
         token_payload = await CasdoorTokenPayload.from_jwt(access_token)
         token_data = await casdoor_sdk.get_token(token_payload.jti)
@@ -184,16 +191,10 @@ class CasdoorUser(BaseUser):
     async def get_user(cls, username: CasdoorUsernameField) -> Self:
         """Get user by username.
 
-        Parameters
-        ----------
-        username: CasdoorUsernameField
-            The username of the user.
-
-        Returns
-        -------
-        CasdoorUser
-            An instance of `CasdoorUser`.
-
+        :param username: The username of the user.
+        :type username: CasdoorUsernameField
+        :return: An instance of `CasdoorUser`.
+        :rtype: CasdoorUser
         """
         user_data = await casdoor_sdk.get_user(username)
         return cls(**user_data)
@@ -202,11 +203,8 @@ class CasdoorUser(BaseUser):
     async def get_users(cls) -> list[Self]:
         """Get user list.
 
-        Returns
-        -------
-        list of CasdoorUser
-            The list of users.
-
+        :return: The list of users.
+        :rtype: list[CasdoorUser]
         """
         users_data = await casdoor_sdk.get_users()
         return [cls(**user_data) for user_data in users_data]
@@ -215,16 +213,10 @@ class CasdoorUser(BaseUser):
     async def from_token_payload(cls, token_payload: CasdoorTokenPayload) -> Self:
         """Create an instance of `CasdoorUser` from a `CasdoorTokenPayload`.
 
-        Parameters
-        ----------
-        token_payload : CasdoorTokenPayload
-            The Casdoor token payload containing user information.
-
-        Returns
-        -------
-        CasdoorUser
-            An instance of `CasdoorUser`.
-
+        :param token_payload: The Casdoor token payload containing user information.
+        :type token_payload: CasdoorTokenPayload
+        :return: An instance of `CasdoorUser`.
+        :rtype: CasdoorUser
         """
         return await cls.get_user(token_payload.username)
 
@@ -232,16 +224,10 @@ class CasdoorUser(BaseUser):
     async def from_jwt(cls, token: str) -> Self:
         """Create an instance of `CasdoorUser` from a JWT token.
 
-        Parameters
-        ----------
-        token : str
-            The JWT token containing user information.
-
-        Returns
-        -------
-        CasdoorUser
-            An instance of `CasdoorUser`.
-
+        :param token: The JWT token containing user information.
+        :type token: str
+        :return: An instance of `CasdoorUser`.
+        :rtype: CasdoorUser
         """
         token_payload = await CasdoorTokenPayload.from_jwt(token)
         user = await cls.from_token_payload(token_payload)
@@ -252,16 +238,10 @@ class CasdoorUser(BaseUser):
     async def from_code(cls, code: str) -> Self:
         """Create an instance of `CasdoorUser` from an authorization code.
 
-        Parameters
-        ----------
-        code : str
-            The authorization code used to obtain user information.
-
-        Returns
-        -------
-        CasdoorUser
-            An instance of `CasdoorUser`.
-
+        :param code: The authorization code used to obtain user information.
+        :type code: str
+        :return: An instance of `CasdoorUser`.
+        :rtype: CasdoorUser
         """
         oauth_token = await cls.get_oauth_token(code)
         return await cls.from_jwt(oauth_token.access_token)
@@ -270,18 +250,12 @@ class CasdoorUser(BaseUser):
     async def from_password(cls, username: str, password: str) -> Self:
         """Create an instance of `CasdoorUser` from a username and password.
 
-        Parameters
-        ----------
-        username : str
-            The username of the user.
-        password : str
-            The password of the user.
-
-        Returns
-        -------
-        CasdoorUser
-            An instance of `CasdoorUser`.
-
+        :param username: The username of the user.
+        :type username: str
+        :param password: The password of the user.
+        :type password: str
+        :return: An instance of `CasdoorUser`.
+        :rtype: CasdoorUser
         """
         oauth_token = await cls.get_oauth_token(username=username, password=password)
         return await cls.from_jwt(oauth_token.access_token)

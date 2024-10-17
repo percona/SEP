@@ -21,18 +21,12 @@ async def get_created_node(inventory_api: InventoryAPI, node_id: int) -> Created
     Fetches the node data from the Inventory API and validates it into a `CreatedNode`
     model.
 
-    Parameters
-    ----------
-    inventory_api : InventoryAPI
-        The API client used to interact with the inventory service.
-    node_id : int
-        The ID of the node to retrieve.
-
-    Returns
-    -------
-    CreatedNode
-        The validated `CreatedNode` instance.
-
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param node_id: The ID of the node to retrieve.
+    :type node_id: int
+    :return: The validated `CreatedNode` instance.
+    :rtype: CreatedNode
     """
     return CreatedNode.model_validate(await inventory_api.get(f"/{node_id}"))
 
@@ -49,18 +43,12 @@ async def get_created_service(
     Fetches the service data from the Inventory API and validates it into a
     `CreatedService` model.
 
-    Parameters
-    ----------
-    inventory_api : InventoryAPI
-        The API client used to interact with the inventory service.
-    service_id : int
-        The ID of the service to retrieve.
-
-    Returns
-    -------
-    CreatedService
-        The validated `CreatedService` instance.
-
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param service_id: The ID of the service to retrieve.
+    :type service_id: int
+    :return: The validated `CreatedService` instance.
+    :rtype: CreatedService
     """
     return CreatedService.model_validate(
         await inventory_api.get(f"/services/{service_id}"),
@@ -79,18 +67,12 @@ async def get_created_schema(
     Fetches the schema data from the Inventory API and validates it into a
     `CreatedSchema` model.
 
-    Parameters
-    ----------
-    inventory_api : InventoryAPI
-        The API client used to interact with the inventory service.
-    schema_id : int
-        The ID of the schema to retrieve.
-
-    Returns
-    -------
-    CreatedSchema
-        The validated `CreatedSchema` instance.
-
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param schema_id: The ID of the schema to retrieve.
+    :type schema_id: int
+    :return: The validated `CreatedSchema` instance.
+    :rtype: CreatedSchema
     """
     return CreatedSchema.model_validate(
         await inventory_api.get(f"/schemas/{schema_id}"),
@@ -106,18 +88,12 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
     Fetches the table data from the Inventory API and validates it into a `CreatedTable`
     model.
 
-    Parameters
-    ----------
-    inventory_api : InventoryAPI
-        The API client used to interact with the inventory service.
-    table_id : int
-        The ID of the table to retrieve.
-
-    Returns
-    -------
-    CreatedTable
-        The validated `CreatedTable` instance.
-
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param table_id: The ID of the table to retrieve.
+    :type table_id: int
+    :return: The validated `CreatedTable` instance.
+    :rtype: CreatedTable
     """
     return CreatedTable.model_validate(await inventory_api.get(f"/tables/{table_id}"))
 
@@ -131,18 +107,12 @@ def get_syncers(inventory_api: InventoryAPI, tasks_api: TaskAPI) -> list[BaseSyn
     Imports and initializes syncer classes as specified in the SEP settings, providing
     the necessary API clients and configuration parameters.
 
-    Parameters
-    ----------
-    inventory_api : InventoryAPI
-        The API client used to interact with the inventory service.
-    tasks_api : TaskAPI
-        The API client used to interact with the task service.
-
-    Returns
-    -------
-    list[BaseSyncer]
-        A list of initialized `BaseSyncer` instances.
-
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param tasks_api: The API client used to interact with the task service.
+    :type tasks_api: TaskAPI
+    :return: A list of initialized `BaseSyncer` instances.
+    :rtype: list[BaseSyncer]
     """
     syncers = []
     for sync_option in sep_settings.SYNCERS:

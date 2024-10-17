@@ -19,13 +19,10 @@ class SyncFailError(SyncError):
     This exception is triggered when an error occurs during the synchronization of a
     specific entity, resulting in the associated `SyncItem` being marked as failed.
 
-    Attributes
-    ----------
-    entity_type : SyncInventoryEntityTypeEnum
-        The type of the entity that failed to synchronize.
-    sync_item : SyncItem
-        The `SyncItem` instance that failed during synchronization.
-
+    :param entity_type: The type of the entity that failed to synchronize.
+    :type entity_type: SyncInventoryEntityTypeEnum
+    :param sync_item: The `SyncItem` instance that failed during synchronization.
+    :type sync_item: SyncItem
     """
 
     def __init__(
@@ -45,11 +42,8 @@ class SyncItemAlreadyInProgressError(SyncError):
     This exception is triggered when an attempt is made to initiate a synchronization
     for an inventory item that is currently being synchronized.
 
-    Attributes
-    ----------
-    sync_in_progress : SyncItem
-        The synchronization item that is already in progress.
-
+    :param sync_in_progress: The synchronization item that is already in progress.
+    :type sync_in_progress: SyncItem
     """
 
     def __init__(self, sync_in_progress: SyncItem) -> None:
@@ -67,11 +61,8 @@ class SyncInstanceAlreadyInProgressError(SyncError):
     This exception is raised when an attempt is made to start a synchronization process
     that is already being handled by another synchronizer.
 
-    Attributes
-    ----------
-    *sync_items : SyncItem
-        The synchronization items that are already in progress.
-
+    :param sync_items: The synchronization items that are already in progress.
+    :type sync_items: Sequence[SyncItem]
     """
 
     def __init__(self, *sync_items: SyncItem) -> None:

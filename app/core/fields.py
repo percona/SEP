@@ -1,11 +1,9 @@
 """Define reusable fields and validators."""
 
-from enum import IntEnum
-
-import logging
-
 import importlib.util
+import logging
 from datetime import timedelta
+from enum import IntEnum
 from os import PathLike
 from pathlib import Path
 from typing import Annotated
@@ -30,7 +28,6 @@ class URL(StarletteURL):
     This class extends Starlette's `URL` class and integrates custom validation
     for use with Pydantic models. It ensures that only valid URLs are accepted
     and provides a custom schema for Pydantic's core validation.
-
     """
 
     @classmethod
@@ -48,21 +45,11 @@ class URL(StarletteURL):
         Attempt to create a `URL` instance from the given string. Raise a
         `ValueError` if the URL is invalid.
 
-        Parameters
-        ----------
-        v : str
-            The URL string to validate.
-
-        Returns
-        -------
-        URL
-            The validated `URL` instance.
-
-        Raises
-        ------
-        ValueError
-            If the provided string is not a valid URL.
-
+        :param v: The URL string to validate.
+        :type v: str
+        :return: The validated `URL` instance.
+        :rtype: URL
+        :raises ValueError: If the provided string is not a valid URL.
         """
         try:
             return cls(v)
@@ -100,7 +87,14 @@ class LogLevelEnum(IntEnum):
 
 
 def resolve_relative_path(v: PathLike | str) -> Path:
-    """Resolve relative paths with BASE_DIR."""
+    """Resolve relative paths with BASE_DIR.
+
+    :param v: The relative path to resolve.
+    :type v: PathLike | str
+    :return: The resolved absolute path.
+    :rtype: Path
+    :raises ValueError: If the path cannot be resolved.
+    """
     try:
         return Path(__file__).resolve().parent.parent.parent / v
     except TypeError as exc:
@@ -108,20 +102,41 @@ def resolve_relative_path(v: PathLike | str) -> Path:
 
 
 def validate_http_url(v: str) -> str:
-    """Validate HTTP URL as string."""
+    """Validate HTTP URL as string.
+
+    :param v: The URL string to validate.
+    :type v: str
+    :return: The validated URL string without trailing slashes.
+    :rtype: str
+    :raises ValueError: If the URL is invalid.
+    """
     url = HttpUrl(v)
     return str(url).strip("/")
 
 
 def validate_module_is_importable(v: str) -> str:
-    """Validate importable module as string."""
+    """Validate importable module as string.
+
+    :param v: The module path to validate.
+    :type v: str
+    :return: The validated module path.
+    :rtype: str
+    :raises ValueError: If the module cannot be found.
+    """
     if importlib.util.find_spec(v) is None:
         raise ValueError(f"No module named {v}")
     return v
 
 
 def validate_attribute_is_importable(v: str) -> str:
-    """Validate importable module.attribute as string."""
+    """Validate importable module.attribute as string.
+
+    :param v: The module.attribute string to validate.
+    :type v: str
+    :return: The validated module.attribute string.
+    :rtype: str
+    :raises ValueError: If the format is incorrect or the module cannot be found.
+    """
     # TODO: Find a way to validate attribute without circular import
     if v:
         try:
@@ -136,25 +151,25 @@ def validate_attribute_is_importable(v: str) -> str:
 
 
 def empty_str_to_none(v: str | None) -> str | None:
-    """Return None if string is empty."""
+    """Return None if string is empty.
+
+    :param v: The string to check.
+    :type v: str | None
+    :return: None if the string is empty, otherwise the string itself.
+    :rtype: str | None
+    """
     if v == "":
         return None
     return v
 
 
 def remove_duplicates(v: list) -> list:
-    """Remove duplicates of a list maintaining the order.
+    """Remove duplicates from a list while maintaining order.
 
-    Parameters
-    ----------
-    v : list
-        The list to remove duplicates.
-
-    Returns
-    -------
-    list
-        The list without duplicates.
-
+    :param v: The list to remove duplicates from.
+    :type v: list
+    :return: The list without duplicates.
+    :rtype: list
     """
     unique_list = []
     for item in v:
@@ -164,7 +179,14 @@ def remove_duplicates(v: list) -> list:
 
 
 def validate_log_level(v: LogLevelEnum | str) -> LogLevelEnum:
-    """Uppercase the provided logging level."""
+    """Validate and return the logging level.
+
+    :param v: The logging level to validate.
+    :type v: LogLevelEnum | str
+    :return: The validated logging level as LogLevelEnum.
+    :rtype: LogLevelEnum
+    :raises ValueError: If the logging level is invalid.
+    """
     if isinstance(v, LogLevelEnum):
         return v
     try:

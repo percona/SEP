@@ -106,14 +106,13 @@ async def sync_node(
     )
 
 
-# TODO: Use pydantic models instead of retyping each argument
 @router.post("/", dependencies=[IsAuthenticated])
 async def node_create(
     inventory_api: InventoryAPI,
     node_data: Annotated[Node, Form()],
 ) -> RedirectResponse:
     """Create Node."""
-    await inventory_api.post("/", json=node_data.model_dump())
+    await inventory_api.post("/", json=node_data.model_dump(exclude={"services"}))
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -167,7 +166,6 @@ async def sync_service(
     )
 
 
-# TODO: Use pydantic models instead of retyping each argument
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated])
 async def service_create_for_node(
     node_id: int,
@@ -177,7 +175,7 @@ async def service_create_for_node(
     """Create Service for Node."""
     await inventory_api.post(
         f"/{node_id}/services/",
-        json=service_data.model_dump(),
+        json=service_data.model_dump(exclude={"schemas"}),
     )
     return RedirectResponse(
         f"/inventory/{node_id}",
@@ -239,7 +237,6 @@ async def sync_schema(
     )
 
 
-# TODO: Use pydantic models instead of retyping each argument
 @router.post("/services/{service_id}/schemas/", dependencies=[IsAuthenticated])
 async def schema_create_for_service(
     service_id: int,
@@ -249,7 +246,7 @@ async def schema_create_for_service(
     """Create Schema for Service."""
     await inventory_api.post(
         f"/services/{service_id}/schemas/",
-        json=schema_data.model_dump(),
+        json=schema_data.model_dump(exclude={"tables"}),
     )
     return RedirectResponse(
         f"/inventory/services/{service_id}",

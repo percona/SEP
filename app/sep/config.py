@@ -40,16 +40,12 @@ from app.sep.models import Plugin
 class OAuthOptions(BaseModel):
     """Configuration options for OAuth2 authentication.
 
-    Attributes
-    ----------
-    REDIRECT_URI : HttpUrl or URIPath
-        The URI to redirect from OAuth.
-    POST_LOGIN_URI : HttpUrl or URIPath, optional
-        The URI to redirect to after login. Defaults to "/".
-    AUTH_LINK : str, optional
-        The OAuth link for authentication.
-        Defaults to an empty string.
-
+    :param REDIRECT_URI: The URI to redirect from OAuth.
+    :type REDIRECT_URI: HttpUrl | URIPath
+    :param POST_LOGIN_URI: The URI to redirect to after login. Defaults to "/".
+    :type POST_LOGIN_URI: HttpUrl | URIPath
+    :param AUTH_LINK: The OAuth link for authentication. Defaults to an empty string.
+    :type AUTH_LINK: str
     """
 
     REDIRECT_URI: HttpUrl | URIPath
@@ -62,19 +58,12 @@ class OAuthOptions(BaseModel):
         If `self.AUTH_LINK` is defined and not empty, return it. Otherwise, construct
         the OAuth2 authorization URL with `settings.CASDOOR.get_frontend_url(base_url)`.
 
-
-        Parameters
-        ----------
-        base_url : URL, optional
-            The base URL to be used for constructing the authorization URL.
-            If `REDIRECT_URL` is a relative path, it will use `base_url` as its base.
-
-        Returns
-        -------
-        str
-            The full OAuth2 authorization URL, containing query parameters for
+        :param base_url: The base URL to be used for constructing the authorization URL.
+            If `REDIRECT_URI` is a relative path, it will use `base_url` as its base.
+        :type base_url: Any
+        :return: The full OAuth2 authorization URL, containing query parameters for
             Client ID, response type, redirect URI, scope, and state.
-
+        :rtype: str
         """
         if self.AUTH_LINK:
             return self.AUTH_LINK
@@ -101,18 +90,15 @@ class OAuthOptions(BaseModel):
 class SessionOptions(BaseCaseInsensitiveModel):
     """Configuration options for a SEP session.
 
-    Attributes
-    ----------
-    COOKIE_NAME : str, optional
-        The key of the authentication cookie. Defaults to "authToken".
-    MAX_AGE : timedelta, optional
-        Maximum age of the session cookie. Defaults to 7 days.
-    SAMESITE : {'lax', 'strict', 'none'}, optional
-        SameSite policy for the session cookie. Defaults to 'lax'.
-    SECURE : bool, optional
-        Whether the session cookie should be accessible only via HTTPS.
+    :param COOKIE_NAME: The key of the authentication cookie. Defaults to "authToken".
+    :type COOKIE_NAME: str
+    :param MAX_AGE: Maximum age of the session cookie. Defaults to 7 days.
+    :type MAX_AGE: TimedeltaSeconds
+    :param SAMESITE: SameSite policy for the session cookie. Defaults to 'lax'.
+    :type SAMESITE: Literal["lax", "strict", "none"]
+    :param SECURE: Whether the session cookie should be accessible only via HTTPS.
         Defaults to False.
-
+    :type SECURE: bool
     """
 
     model_config = ConfigDict(
@@ -133,12 +119,9 @@ class SyncOptions(BaseLowercaseModel):
     including its importable attribute and any additional keyword arguments required for
     its operation.
 
-    Attributes
-    ----------
-    syncer : StrImportableAttribute
-        The importable attribute name for the synchronizer. This field is automatically
-        prefixed with "app.sep.sync.syncers." during validation.
-
+    :param syncer: The importable attribute name for the synchronizer. This field is
+        automatically prefixed with "app.sep.sync.syncers." during validation.
+    :type syncer: StrImportableAttribute
     """
 
     model_config = ConfigDict(extra="allow")
@@ -157,16 +140,10 @@ class SyncOptions(BaseLowercaseModel):
         Prefix the provided synchronizer name with "app.sep.sync.syncers." to form the
         complete import path.
 
-        Parameters
-        ----------
-        v : str
-            The base syncer name provided.
-
-        Returns
-        -------
-        str
-            The fully qualified path for the synchronizer.
-
+        :param v: The base syncer name provided.
+        :type v: str
+        :return: The fully qualified path for the synchronizer.
+        :rtype: str
         """
         root = "app.sep.sync.syncers."
         if not v.startswith(root):
@@ -177,39 +154,43 @@ class SyncOptions(BaseLowercaseModel):
 class SEPSettings(BaseYamlExtraSettings):
     """Settings for SEP.
 
-    Attributes
-    ----------
-    UVICORN_PORT : int, optional
-        The port number used by the Uvicorn server. Defaults to 8000.
-    OAUTH : OAuthOptions
-        OAuth configuration options.
-    SESSION : SessionOptions
-        Session configuration options.
-    TEMPLATES_DIR : Path, optional
-        The directory containing template files. Defaults to `BASE_DIR/"templates"`.
-    STATIC_DIR : Path, optional
-        The directory containing static files. Defaults to `BASE_DIR/"static"`.
-    INVENTORY_ENDPOINT : HttpUrl
-        The endpoint URL for the Inventory API.
-    TASKS_ENDPOINT : HttpUrl
-        The endpoint URL for the Tasks API.
-    PLUGINS : set of Plugin, optional
-        A set of plugins used by SEP. Defaults to an empty set.
-    PROXY_HEADERS : bool, optional
-        Whether to use proxy headers (like `X-Forwarded-For`). Defaults to `False`.
-    DATABASE : DatabaseOptions
-        The database configuration options.
+    :param SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
+        file. Set to ["SEP"].
+    :type SETTINGS_PREFIXES: ClassVar[list[str]]
+    :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
+    :type UVICORN_PORT: int
+    :param OAUTH: OAuth configuration options.
+    :type OAUTH: OAuthOptions
+    :param SESSION: Session configuration options.
+    :type SESSION: SessionOptions
+    :param TEMPLATES_DIR: The directory containing template files. Defaults to
+        `Path("templates")`.
+    :type TEMPLATES_DIR: RelativeDirectoryPath
+    :param STATIC_DIR: The directory containing static files. Defaults to
+        `Path("static")`.
+    :type STATIC_DIR: RelativeDirectoryPath
+    :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
+    :type INVENTORY_ENDPOINT: HttpUrl
+    :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
+    :type TASKS_ENDPOINT: HttpUrl
+    :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
+        duplicates removed.
+    :type PLUGINS: list[Plugin]
+    :param PROXY_HEADERS: Whether to use proxy headers (like `X-Forwarded-For`).
+        Defaults to `False`.
+    :type PROXY_HEADERS: bool
+    :param DATABASE: The database configuration options.
         Defaults to an SQLite database with the name 'sep.db'.
-    SYNCERS : list of SyncOptions
-        A list of synchronizers used by SEP. Defaults to an empty list with duplicates
-        removed.
-    SYNCER_EXTRA_KWARGS : dict[str, Any]
-        Additional keyword arguments for synchronizers. Defaults to an empty dictionary.
-    TEMPLATES
-
+    :type DATABASE: DatabaseOptions
+    :param SYNCERS: A list of synchronizers used by SEP. Defaults to an empty list with
+        duplicates removed.
+    :type SYNCERS: list[SyncOptions]
+    :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
+        to an empty dictionary.
+    :type SYNCER_EXTRA_KWARGS: dict[str, Any]
     """
 
-    SETTINGS_PREFIXES: ClassVar[tuple[str]] = ("SEP",)
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     OAUTH: OAuthOptions
     SESSION: SessionOptions = SessionOptions()
@@ -222,6 +203,7 @@ class SEPSettings(BaseYamlExtraSettings):
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: Annotated[list[SyncOptions], AfterValidator(remove_duplicates)] = []
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
+    SYNC_REFRESH_TIME: int = 5
 
     @computed_field
     @cached_property
@@ -231,11 +213,8 @@ class SEPSettings(BaseYamlExtraSettings):
         This property creates, caches, and returns a `Jinja2Templates` object configured
         with the `TEMPLATES_DIR` directory.
 
-        Returns
-        -------
-        Jinja2Templates
-            The Jinja2 templates object for rendering templates.
-
+        :return: The Jinja2 templates object for rendering templates.
+        :rtype: Jinja2Templates
         """
         return Jinja2Templates(directory=sep_settings.TEMPLATES_DIR)
 
@@ -246,11 +225,8 @@ class SEPSettings(BaseYamlExtraSettings):
         Merge additional keyword arguments from `SYNCER_EXTRA_KWARGS` into each
         synchronizer in `SYNCERS` and update the list accordingly.
 
-        Returns
-        -------
-        Self
-            The updated `SEPSettings` instance with modified `SYNCERS`.
-
+        :return: The updated `SEPSettings` instance with modified `SYNCERS`.
+        :rtype: Self
         """
         syncers = []
         for syncer in self.SYNCERS:

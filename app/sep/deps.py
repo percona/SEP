@@ -31,16 +31,10 @@ User = get_user_model()
 def get_base_url(request: Request) -> URL:
     """Extract the base URL from an incoming request by removing the path.
 
-    Parameters
-    ----------
-    request : Request
-        The HTTP request object from which the base URL is derived.
-
-    Returns
-    -------
-    URL
-        The base URL with the path removed.
-
+    :param request: The HTTP request object from which the base URL is derived.
+    :type request: Request
+    :return: The base URL with the path removed.
+    :rtype: Any
     """
     return request.url.replace(path="")
 
@@ -54,16 +48,11 @@ def get_oauth_redirect_exception(base_url: BaseURL) -> HTTPTemporaryRedirectExce
     Create an HTTP redirect exception to handle OAuth2 redirection, clearing
     the old session cookie in the process.
 
-    Parameters
-    ----------
-    base_url : BaseURL
-        The base URL to be used for generating the OAuth redirect URL.
-
-    Returns
-    -------
-    HTTPTemporaryRedirectException
-        An exception that triggers a temporary redirect to the OAuth2 authorization URL.
-
+    :param base_url: The base URL to be used for generating the OAuth redirect URL.
+    :type base_url: Any
+    :return: An exception that triggers a temporary redirect to the OAuth2 authorization
+        URL.
+    :rtype: HTTPTemporaryRedirectException
     """
     exc = HTTPTemporaryRedirectException(sep_settings.OAUTH.get_auth_url(base_url))
     cookie = SimpleCookie()
@@ -88,30 +77,18 @@ def get_access_token_from_cookie(  # nosec B107
     """Retrieve and verify the access token from a session cookie.
 
     Extracts the signed access token from the request cookies, verifies it, and
-    returns the unsigned token. If verification fails, raises an OAuth redirect exception.
+    returns the unsigned token. If verification fails, raises an OAuth redirect
+        exception.
 
-    Parameters
-    ----------
-    oauth_redirect_exception : OAuthRedirectException
-        The exception to raise if the token is invalid or cannot be verified.
-    request : Request
-        The HTTP request containing the session cookie.
-
-    Returns
-    -------
-    str
-        The verified and unsigned access token.
-
-    Raises
-    ------
-    HTTPTemporaryRedirectException
-        If the token is invalid or cannot be verified due to a `BadSignature`.
-
-    Notes
-    -----
-    - The access token is verified using `crypto_timestamp_serializer` with
-      a maximum age set by the session's expiration time.
-
+    :param oauth_redirect_exception: The exception to raise if the token is invalid or
+        cannot be verified.
+    :type oauth_redirect_exception: HTTPTemporaryRedirectException
+    :param request: The HTTP request containing the session cookie.
+    :type request: Request
+    :return: The verified and unsigned access token.
+    :rtype: str
+    :raises HTTPTemporaryRedirectException: If the token is invalid or cannot be
+        verified due to a `BadSignature`.
     """
     signed_access_token = request.cookies.get(sep_settings.SESSION.COOKIE_NAME, "")
     try:
@@ -132,21 +109,12 @@ async def get_current_user(
 ) -> User:
     """Return the authenticated user from a cookie token.
 
-    Parameters
-    ----------
-    request : Request
-        The HTTP request object from which the base URL is derived.
-
-    Returns
-    -------
-    User
-        The authenticated user.
-
-    Raises
-    ------
-    HTTPTemporaryRedirectException
-        If the token is invalid or the user is inactive.
-
+    :param request: The HTTP request object from which the base URL is derived.
+    :type request: Request
+    :return: The authenticated user.
+    :rtype: User
+    :raises HTTPTemporaryRedirectException: If the token is invalid or the user is
+        inactive.
     """
     base_url = get_base_url(request)
     oauth_redirect_exception = get_oauth_redirect_exception(base_url)
@@ -173,24 +141,19 @@ CurrentUser = Annotated[User, IsAuthenticated]
 def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
     """Return the default context for templates.
 
-    Parameters
-    ----------
-    user: CurrentUser
-        The authenticated user.
-    base_uri: BaseURI
-        The base URI of the application.
-
-    Returns
-    -------
-    dict[str, Any]
-        The default context.
-
+    :param user: The authenticated user.
+    :type user: User
+    :param base_uri: The base URI of the application.
+    :type base_uri: Any
+    :return: The default context.
+    :rtype: dict[str, Any]
     """
     return {
         "user": user,
         "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
         "base_uri": base_uri,
         "plugins": sep_settings.PLUGINS,
+        "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
     }
 
 
@@ -201,17 +164,12 @@ DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
 def get_inventory_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Inventory API.
 
-    Parameters
-    ----------
-    user : CurrentUser
-        The current authenticated user, from which the access token is extracted.
-
-    Returns
-    -------
-    RemoteAPI
-        An instance of `RemoteAPI` configured for the Inventory service, including
+    :param user: The current authenticated user, from which the access token is
+        extracted.
+    :type user: User
+    :return: An instance of `RemoteAPI` configured for the Inventory service, including
         the endpoint, API key, and SSL settings.
-
+    :rtype: RemoteAPI
     """
     return RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
@@ -228,17 +186,12 @@ InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 def get_tasks_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Tasks API.
 
-    Parameters
-    ----------
-    user : CurrentUser
-        The current authenticated user, from which the access token is extracted.
-
-    Returns
-    -------
-    RemoteAPI
-        An instance of `RemoteAPI` configured for the Tasks service, including
+    :param user: The current authenticated user, from which the access token is
+        extracted.
+    :type user: User
+    :return: An instance of `RemoteAPI` configured for the Tasks service, including
         the endpoint, API key, and SSL settings.
-
+    :rtype: RemoteAPI
     """
     return RemoteAPI(
         endpoint=sep_settings.TASKS_ENDPOINT,
@@ -258,11 +211,8 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     This function provides a dependency for FastAPI routes that yields an `AsyncSession`
     for interacting with the database. The session is properly closed after use.
 
-    Yields
-    ------
-    AsyncGenerator[AsyncSession, None]
-        An asynchronous session for database operations.
-
+    :yield: An asynchronous session for database operations.
+    :rtype: AsyncSession
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:

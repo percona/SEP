@@ -20,10 +20,7 @@ def get_async_session_maker() -> sessionmaker:
     This function creates a new SQLAlchemy asynchronous session maker using the
     predefined engine configuration.
 
-    Returns
-    -------
-    sessionmaker
-        A new asynchronous session maker.
-
+    :return: A new asynchronous session maker.
+    :rtype: sessionmaker
     """
     return get_async_session_maker_from_engine(engine)

@@ -23,11 +23,8 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     This function provides a dependency for FastAPI routes that yields an `AsyncSession`
     for interacting with the database. The session is properly closed after use.
 
-    Yields
-    ------
-    AsyncGenerator[AsyncSession, None]
-        An asynchronous session for database operations.
-
+    :yield: An asynchronous session for database operations.
+    :rtype: AsyncGenerator[AsyncSession, None]
     """
     async_session = get_async_session_maker()
     async with async_session() as session:
@@ -43,23 +40,13 @@ async def get_node(session: SessionDep, node_id: int) -> Node:
     Fetch the node corresponding to the provided `node_id`. If no such node exists,
     raise an HTTP 404 Not Found exception.
 
-    Parameters
-    ----------
-    session : AsyncSession
-        The asynchronous database session.
-    node_id : int
-        The unique identifier of the node to retrieve.
-
-    Returns
-    -------
-    Node
-        The node instance corresponding to the provided `node_id`.
-
-    Raises
-    ------
-    HTTPNotFoundException
-        If no node with the specified `node_id` exists.
-
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param node_id: The unique identifier of the node to retrieve.
+    :type node_id: int
+    :return: The node instance corresponding to the provided `node_id`.
+    :rtype: Node
+    :raises HTTPNotFoundException: If no node with the specified `node_id` exists.
     """
     return await NodeManager.get_or_404(session, id=node_id)
 
@@ -70,23 +57,13 @@ async def get_service(session: SessionDep, service_id: int) -> Service:
     Fetch the service corresponding to the provided `service_id`.
     If no such service exists, raise an HTTP 404 Not Found exception.
 
-    Parameters
-    ----------
-    session : AsyncSession
-        The asynchronous database session.
-    service_id : int
-        The unique identifier of the service to retrieve.
-
-    Returns
-    -------
-    Service
-        The service instance corresponding to the provided `service_id`.
-
-    Raises
-    ------
-    HTTPNotFoundException
-        If no service with the specified `service_id` exists.
-
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param service_id: The unique identifier of the service to retrieve.
+    :type service_id: int
+    :return: The service instance corresponding to the provided `service_id`.
+    :rtype: Service
+    :raises HTTPNotFoundException: If no service with the specified `service_id` exists.
     """
     return await ServiceManager.get_or_404(session, id=service_id)
 
@@ -97,23 +74,13 @@ async def get_schema(session: SessionDep, schema_id: int) -> Schema:
     Fetch the schema corresponding to the provided `schema_id`.
     If no such schema exists, raise an HTTP 404 Not Found exception.
 
-    Parameters
-    ----------
-    session : AsyncSession
-        The asynchronous database session.
-    schema_id : int
-        The unique identifier of the schema to retrieve.
-
-    Returns
-    -------
-    Schema
-        The schema instance corresponding to the provided `schema_id`.
-
-    Raises
-    ------
-    HTTPNotFoundException
-        If no schema with the specified `schema_id` exists.
-
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param schema_id: The unique identifier of the schema to retrieve.
+    :type schema_id: int
+    :return: The schema instance corresponding to the provided `schema_id`.
+    :rtype: Schema
+    :raises HTTPNotFoundException: If no schema with the specified `schema_id` exists.
     """
     return await SchemaManager.get_or_404(session, id=schema_id)
 
@@ -124,23 +91,13 @@ async def get_table(session: SessionDep, table_id: int) -> Table:
     Fetch the table corresponding to the provided `table_id`. If no such table exists,
     raise an HTTP 404 Not Found exception.
 
-    Parameters
-    ----------
-    session : AsyncSession
-        The asynchronous database session.
-    table_id : int
-        The unique identifier of the table to retrieve.
-
-    Returns
-    -------
-    Table
-        The table instance corresponding to the provided `table_id`.
-
-    Raises
-    ------
-    HTTPNotFoundException
-        If no table with the specified `table_id` exists.
-
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param table_id: The unique identifier of the table to retrieve.
+    :type table_id: int
+    :return: The table instance corresponding to the provided `table_id`.
+    :rtype: Table
+    :raises HTTPNotFoundException: If no table with the specified `table_id` exists.
     """
     return await TableManager.get_or_404(session, id=table_id)
 
