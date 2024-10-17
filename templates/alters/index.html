@@ -22,6 +22,8 @@
 <h2>Configure a schema change</h2>
     {% if mysql_hosts|length < 1 %}
     <p>Unable to find suitable database instances.</p>
+    {% elif executor_hosts|length < 1 %}
+    <p>Unable to find suitable executor hosts.</p>
     {% else %}
         {% include "alters/partials/create-form.html" %}
     {% endif %}

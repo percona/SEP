@@ -10,6 +10,7 @@ from app.inventory.crud import TableManager
 from app.inventory.deps import SchemaDep
 from app.inventory.deps import SessionDep
 from app.inventory.models import Schema
+from app.inventory.models import SchemaDetailResponse
 from app.inventory.models import SchemaResponse
 from app.inventory.models import SchemaWrite
 from app.inventory.models import Table
@@ -29,12 +30,12 @@ async def list_schemas(session: SessionDep) -> list[SchemaResponse]:
 
 
 @router.get("/{schema_id}", dependencies=[IsAuthenticatedDep])
-async def retrieve_schema(session: SessionDep, schema_id: int) -> SchemaResponse:
+async def retrieve_schema(session: SessionDep, schema_id: int) -> SchemaDetailResponse:
     """Retrieve Schema."""
     logger.debug("Retrieving schema %s", schema_id)
     return await SchemaManager.get_or_404(
         session,
-        select_related=[Schema.tables],
+        select_related=[Schema.tables, Schema.service],
         id=schema_id,
     )
 

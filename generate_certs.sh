@@ -51,8 +51,6 @@ disable_update_check = true
 # Setup data dir
 data_dir = "/tmp/server1"
 
-name = "pmm-server"
-
 advertise {
   # Defaults to the first private IP address.
   http = "127.0.0.1"

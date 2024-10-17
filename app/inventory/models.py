@@ -239,13 +239,15 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type name: RequiredStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :type type: ServiceTypeEnum
-    :param port: The port number on which the service is running.
+    :param port: The port number on which the service is running. Must be unique for
+        node_id, as defined by composite index ix_service_port_node_id.
     :type port: int | None
     :param environment: The environment in which the service is running, if set.
     :type environment: str | None
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
-        ix_service_external_id_node_id.
+        ix_service_external_id_node_id, and for port, as defined by composite index
+        ix_service_port_node_id.
     :type node_id: int
     :param node: The node to which the service is associated.
     :type node: Node
@@ -255,6 +257,7 @@ class Service(BaseSQLModel, ServiceBase, table=True):
 
     __table_args__ = (
         Index("ix_service_external_id_node_id", "external_id", "node_id", unique=True),
+        Index("ix_service_port_node_id", "port", "node_id", unique=True),
     )
 
     node: Node = Relationship(back_populates="services")
@@ -411,6 +414,28 @@ class SchemaResponse(BaseSQLModel, SchemaBase):
     tables: list["Table"]
 
 
+class SchemaDetailResponse(SchemaResponse):
+    """Define the schema retrieve API response.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
+    :param name: The name of the schema.
+    :type name: RequiredStr
+    :param service_id: The unique identifier of the service to which the schema belongs.
+    :type service_id: int
+    :param service: The schema's service.
+    :type service: Service
+    """
+
+    service: Service
+
+
 class TableBase(SQLModel):
     """Define the base structure for table-related operations.
 
@@ -493,3 +518,27 @@ class TableResponse(BaseSQLModel, TableBase):
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
     """
+
+
+class TableDetailResponse(TableResponse):
+    """Define the schema retrieve API response.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: datetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: datetime | None
+    :param name: The name of the table.
+    :type name: RequiredStr
+    :param create: The SQL statement used to create the table.
+    :type create: RequiredStr
+    :param schema_id: The foreign key referencing the schema to which the table belongs.
+    :type schema_id: int
+    :param database: The table's schema.
+    :type database: Schema
+    """
+
+    database: Schema

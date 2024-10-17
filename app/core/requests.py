@@ -152,7 +152,7 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         method: str,
         path: str,
         **kwargs: Any,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | list[Any]:
         """Perform an HTTP request and return the JSON response.
 
         :param method: The HTTP method to use for the request.
@@ -161,8 +161,8 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response.
-        :rtype: dict[str, Any]
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[Any]
         """
         response = await self._request(method, path, **kwargs)
         response_data = await response.json()
@@ -175,62 +175,62 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         )
         return response_data
 
-    async def get(self, path: str, **kwargs: Any) -> dict[str, Any]:
+    async def get(self, path: str, **kwargs: Any) -> dict[str, Any] | list[Any]:
         """Perform a GET request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a dictionary.
-        :rtype: dict[str, Any]
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[Any]
         """
         return await self.request("GET", path, **kwargs)
 
-    async def post(self, path: str, **kwargs: Any) -> dict[str, Any]:
+    async def post(self, path: str, **kwargs: Any) -> dict[str, Any] | list[Any]:
         """Perform a POST request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a dictionary.
-        :rtype: dict[str, Any]
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[Any]
         """
         return await self.request("POST", path, **kwargs)
 
-    async def put(self, path: str, **kwargs: Any) -> dict[str, Any]:
+    async def put(self, path: str, **kwargs: Any) -> dict[str, Any] | list[Any]:
         """Perform a PUT request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a dictionary.
-        :rtype: dict[str, Any]
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[Any]
         """
         return await self.request("PUT", path, **kwargs)
 
-    async def patch(self, path: str, **kwargs: Any) -> dict[str, Any]:
+    async def patch(self, path: str, **kwargs: Any) -> dict[str, Any] | list[Any]:
         """Perform a PATCH request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a dictionary.
-        :rtype: dict[str, Any]
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[Any]
         """
         return await self.request("PATCH", path, **kwargs)
 
-    async def delete(self, path: str, **kwargs: Any) -> dict[str, Any]:
+    async def delete(self, path: str, **kwargs: Any) -> dict[str, Any] | list[Any]:
         """Perform a DELETE request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a dictionary.
-        :rtype: dict[str, Any]
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[Any]
         """
         return await self.request("DELETE", path, **kwargs)

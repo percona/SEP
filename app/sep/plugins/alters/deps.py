@@ -28,6 +28,7 @@ async def build_alters_task_payload(
         commands and parameters for the Alters task execution.
     :rtype: GeneratedTask
     """
+    # TODO: port from Service
     if form.connect_to == "localhost":
         dsn = f"D={form.schema_name},t={form.table_name}"
     else:

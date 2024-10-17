@@ -41,7 +41,7 @@ percona/pmm-server:2
 - [Percona Toolkit](https://www.percona.com/percona-toolkit)
 - [Nomad](https://developer.hashicorp.com/nomad/tutorials/get-started/gs-install)
 
-Make sure your Nomad agent has the name `pmm-server`. For the purpose of development, you can run Nomad with
+For the purpose of development, you can run Nomad with
 ```shell
 sudo nomad agent -node="pmm-server" -dev \
         -bind 0.0.0.0 \

@@ -107,6 +107,109 @@ GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
     ],
 }
 
+NOMAD_RUN_PYTHON = {
+    "ID": "run-python",
+    "Name": "run-python",
+    "Type": "batch",
+    "Datacenters": ["dc1"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "required",
+        "MetaRequired": ["target"],
+        "MetaOptional": ["config", "requirements"],
+    },
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "Tasks": [
+                {
+                    "Name": "prepare-env",
+                    "Lifecycle": {"hook": "prestart", "sidecar": False},
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "sh",
+                        "args": [
+                            "-c",
+                            "python3 -m venv ${NOMAD_ALLOC_DIR}/venv;"
+                            "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_requirements" }}',
+                            "DestPath": "requirements.txt",
+                        },
+                    ],
+                },
+                {
+                    "Name": "run-script",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "${NOMAD_ALLOC_DIR}/venv/bin/python3",
+                        "args": [
+                            "${NOMAD_TASK_DIR}/script.py",
+                            "--config",
+                            "script_config",
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_config" }}',
+                            "DestPath": "script_config",
+                        },
+                    ],
+                    "DispatchPayload": {"file": "script.py"},
+                },
+                {
+                    "Name": "clean-up",
+                    "Lifecycle": {"hook": "poststop", "sidecar": False},
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "rm",
+                        "args": [
+                            "-rf",
+                            "${NOMAD_ALLOC_DIR}/venv",
+                            "requirements.txt",
+                            "script_config",
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                },
+            ],
+        },
+    ],
+}
+
+SYSTEM_TASKS = [
+    Task(
+        name="generic-nomad-batch",
+        data=GENERIC_NOMAD_BATCH_TEMPLATE,
+        is_template=True,
+        protected=True,
+    ),
+    Task(
+        name="generic-nomad-sysbatch",
+        data=GENERIC_NOMAD_SYSBATCH_TEMPLATE,
+        is_template=True,
+        protected=True,
+    ),
+    Task(name="run-python", data=NOMAD_RUN_PYTHON, is_template=False, protected=True),
+]
+
 
 async def init_db(session: AsyncSession) -> None:
     """Initialize the database with generic Nomad task templates.
@@ -117,29 +220,14 @@ async def init_db(session: AsyncSession) -> None:
     :param session: The SQLAlchemy asynchronous session to use for database operations.
     :type session: AsyncSession
     """
-    for job_type in ["batch", "sysbatch"]:
+    for task in SYSTEM_TASKS:
         result = await session.exec(
-            select(Task).where(Task.name == f"generic-nomad-{job_type}"),
+            select(Task).where(Task.name == task.name),
         )
-        task = result.first()
-        if not task:
+        if result.first() is None:
             logger.debug(
-                "Generating %s template",
-                f"generic-nomad-{job_type}",
-            )
-            match job_type:
-                case "batch":
-                    tpl = GENERIC_NOMAD_BATCH_TEMPLATE
-                case "sysbatch":
-                    tpl = GENERIC_NOMAD_SYSBATCH_TEMPLATE
-                case _:
-                    continue
-
-            task = Task(
-                name=tpl["Name"],
-                data=tpl,
-                is_template=True,
-                protected=True,
+                "Creating task %s",
+                task.name,
             )
             session.add(task)
     await session.commit()

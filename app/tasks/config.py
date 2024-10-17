@@ -2,37 +2,9 @@
 
 from typing import ClassVar
 
-from pydantic import BaseModel
-from pydantic import HttpUrl
-
 from app.core.config import BaseYamlExtraSettings
 from app.core.db.config import DatabaseOptions
-from app.core.fields import RelativeFilePath
-
-
-class NomadOptions(BaseModel):
-    """Define settings for Nomad integration.
-
-    :param ENDPOINT: The URL for the Nomad API endpoint.
-    :type ENDPOINT: HttpUrl
-    :param SECURE: Whether to use a secure connection. Defaults to False.
-    :type SECURE: bool
-    :param TIMEOUT: The timeout in seconds for requests to the Nomad API. Defaults to
-        10 seconds.
-    :type TIMEOUT: int
-    :param VERIFY: Whether to verify SSL certificates. Can be a file path to the SSL
-        certificate. Defaults to False.
-    :type VERIFY: bool | RelativeFilePath
-    :param CERT: SSL certificate and key paths, or a single certificate file path.
-        Defaults to an empty tuple.
-    :type CERT: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath
-    """
-
-    ENDPOINT: HttpUrl
-    SECURE: bool = False
-    TIMEOUT: int = 10
-    VERIFY: bool | RelativeFilePath = False
-    CERT: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath = ()
+from app.tasks.execution.executors.nomad import NomadExecutor
 
 
 class TasksSettings(BaseYamlExtraSettings):
@@ -55,7 +27,7 @@ class TasksSettings(BaseYamlExtraSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
-    NOMAD: NomadOptions
+    NOMAD: NomadExecutor
     EXECUTE_MODE: str = "background"
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
 

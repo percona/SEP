@@ -203,6 +203,7 @@ class SEPSettings(BaseYamlExtraSettings):
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: Annotated[list[SyncOptions], AfterValidator(remove_duplicates)] = []
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
+    SYNC_REFRESH_TIME: int = 5
 
     @computed_field
     @cached_property

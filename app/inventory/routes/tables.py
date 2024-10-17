@@ -9,6 +9,7 @@ from app.inventory.crud import TableManager
 from app.inventory.deps import SessionDep
 from app.inventory.deps import TableDep
 from app.inventory.models import Table
+from app.inventory.models import TableDetailResponse
 from app.inventory.models import TableResponse
 from app.inventory.models import TableWrite
 
@@ -25,11 +26,12 @@ async def list_tables(session: SessionDep) -> list[TableResponse]:
 
 
 @router.get("/{table_id}", dependencies=[IsAuthenticatedDep])
-async def retrieve_table(session: SessionDep, table_id: int) -> TableResponse:
+async def retrieve_table(session: SessionDep, table_id: int) -> TableDetailResponse:
     """Retrieve Table."""
     logger.debug("Retrieving table %s", table_id)
     return await TableManager.get_or_404(
         session,
+        select_related=[Table.database],
         id=table_id,
     )
 

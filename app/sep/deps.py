@@ -153,6 +153,7 @@ def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
         "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
         "base_uri": base_uri,
         "plugins": sep_settings.PLUGINS,
+        "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
     }
 
 

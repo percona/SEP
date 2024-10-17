@@ -42,6 +42,12 @@ class TaskManager(BaseManager):
         :return: A list of active tasks.
         :rtype: list[Task]
         """
+        if owner == "*":
+            return await cls.list(
+                session,
+                col(Task.deleted_at).is_(None),
+                col(Task.owner).is_(None),
+            )
         return await cls.list(session, col(Task.deleted_at).is_(None), owner=owner)
 
     @classmethod
