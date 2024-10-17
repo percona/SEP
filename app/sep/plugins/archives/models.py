@@ -20,7 +20,7 @@ class ArchivesCreate(BaseModel):
     :param sourcedb: The source database schema from which data will be purged.
     :type sourcedb: RequiredStr
     :param sourcetbl: The source table within the specified schema from which data will be purged.
-    :type sourcetbl: RequiredStr    
+    :type sourcetbl: RequiredStr
     :param where: The WHERE condition that defines which data will be purged from the source table.
     :type where: RequiredStr
     :param dest_name: The destination table where purged data can be archived.

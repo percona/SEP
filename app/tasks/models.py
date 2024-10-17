@@ -136,6 +136,7 @@ class TaskGroupTaskTemplate(BaseModel):
             "perms": "Perms",
         },
     }
+
     def transform(self, system: str) -> dict:
         field_mapping = self._transform_fields.get(system, {})
         return {field_mapping.get(k, k): v for k, v in self.dict().items()}

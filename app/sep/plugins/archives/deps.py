@@ -20,6 +20,7 @@ PURGE_TABLES_CONFIG_WHERE = {
     "PURGE_LIST": [{"ALIAS": None, "SOURCE_DB": None, "SOURCE_TABLE": None, "DEST_TABLE": None, "WHERE": None}],
 }
 
+
 async def build_archives_task_payload(
     form: Annotated[ArchivesCreate, Form()],
 ) -> GeneratedTask:
@@ -39,7 +40,7 @@ async def build_archives_task_payload(
             purge_config = PURGE_TABLES_CONFIG_WHERE.copy()
         case _:
             raise NotImplementedError("Currently only 'where' is supported")
-       
+
     purge_config_all = purge_config["ALL"]
     purge_config_list = purge_config["PURGE_LIST"][0]
     purge_config_all.update(SOURCE_HOST=form.connect_to, SOURCE_PORT=3306)
@@ -48,9 +49,9 @@ async def build_archives_task_payload(
         SOURCE_DB=form.sourcedb,
         SOURCE_TABLE=form.sourcetbl,
         DEST_TABLE=form.dest_name,
-        WHERE=f'{form.where}',
+        WHERE=f"{form.where}",
     )
-    
+
     purge_config.update(ALL=purge_config_all, PURGE_LIST=[purge_config_list])
 
     return GeneratedTask(
@@ -70,11 +71,12 @@ async def build_archives_task_payload(
                 ],
             }
         ],
-        persist = True,                                                                                                                                                 
-        schedule = {"save_only": True}, 
+        persist=True,
+        schedule={"save_only": True},
         name=form.task_name,
         target=form.hostname,
     )
+
 
 ArchivesGeneratedTask = Annotated[GeneratedTask, Depends(build_archives_task_payload)]
 
@@ -101,9 +103,7 @@ async def get_archives_task(
     task = await tasks_api.get(
         f"/{task_name}",
     )  # TODO: refactor - (ab)use pydantic models
-    if (
-        task.get("owner") != "archiver"
-    ):  # TODO: Consider getting owner name from plugin MODULE_NAME
+    if task.get("owner") != "archiver":  # TODO: Consider getting owner name from plugin MODULE_NAME
         raise HTTPException(404)
     return task
 

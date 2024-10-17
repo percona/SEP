@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
+
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def archives_index(
     request: Request,
@@ -42,9 +43,7 @@ async def archives_index(
     for host in all_hosts:
         for service in host["services"]:
             if service["type"] == "mysql":
-                host["schemas"] = await inventory_api.get(
-                    f"/services/{service['id']}/schemas/"
-                )
+                host["schemas"] = await inventory_api.get(f"/services/{service['id']}/schemas/")
                 mysql_hosts.append(host)
                 break
     history_tasks = []
@@ -75,8 +74,8 @@ async def archives_index(
         name="archiver/index.html",
         context=context,
     )
-    
-    
+
+
 @router.post("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def archives_create(
     task: ArchivesGeneratedTask,
@@ -89,10 +88,10 @@ async def archives_create(
         "/generate",
         json=task.model_dump(),
     )  # TODO: Proper error for unique constraint
-    #return RedirectResponse(
+    # return RedirectResponse(
     #    "/archives",
     #    status_code=status.HTTP_303_SEE_OTHER,
-    #)  # TODO: Custom redirect class
+    # )  # TODO: Custom redirect class
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -122,7 +121,8 @@ async def archives_detail(
         name="archiver/details.html",
         context=context,
     )
-    
+
+
 @router.post(
     "/{task_name}",
     dependencies=[IsAuthenticated],
