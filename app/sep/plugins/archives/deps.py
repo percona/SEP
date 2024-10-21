@@ -66,7 +66,7 @@ async def build_archives_task_payload(
                 "config": [
                     {
                         "content": yaml.dump(purge_config),
-                        "path": "purge_tables.yaml",
+                        "path": "${NOMAD_TASK_DIR}/purge_tables.yaml",
                     }
                 ],
             }
