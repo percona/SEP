@@ -1,6 +1,6 @@
 # vim: ts=8:sw=8:ft=make:noai:noet
 
-SHELL=/bin/sh
+SHELL?=/bin/bash
 
 PYTHON=python3
 RELEASE_VER?=
