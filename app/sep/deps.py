@@ -3,11 +3,9 @@
 import logging
 from collections.abc import AsyncGenerator
 from http.cookies import SimpleCookie
-from typing import Annotated
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import Depends
-from fastapi import Request
+from fastapi import Depends, Request
 from itsdangerous import BadSignature
 from jwt import InvalidTokenError
 from pydantic import ValidationError
@@ -129,7 +127,7 @@ async def get_current_user(
         raise oauth_redirect_exception from None
     if not user.is_active:
         logger.debug("User %s is not active", user.username)
-        # TODO: Message on inactive
+        # TODO: Message on inactive  # noqa: TD002, TD003
         raise oauth_redirect_exception
     return user
 
@@ -160,7 +158,7 @@ def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
 DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
 
 
-# TODO: Proper SDK
+# TODO: Proper SDK  # noqa: TD002, TD003
 def get_inventory_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Inventory API.
 

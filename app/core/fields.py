@@ -6,17 +6,18 @@ from datetime import timedelta
 from enum import IntEnum
 from os import PathLike
 from pathlib import Path
-from typing import Annotated
-from typing import Self
+from typing import Annotated, Self
 
-from pydantic import AfterValidator
-from pydantic import BeforeValidator
-from pydantic import DirectoryPath
-from pydantic import Field
-from pydantic import FilePath
-from pydantic import GetCoreSchemaHandler
-from pydantic import HttpUrl
-from pydantic import PlainSerializer
+from pydantic import (
+    AfterValidator,
+    BeforeValidator,
+    DirectoryPath,
+    Field,
+    FilePath,
+    GetCoreSchemaHandler,
+    HttpUrl,
+    PlainSerializer,
+)
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
 from starlette.datastructures import URL as StarletteURL  # noqa: N811
@@ -137,7 +138,7 @@ def validate_attribute_is_importable(v: str) -> str:
     :rtype: str
     :raises ValueError: If the format is incorrect or the module cannot be found.
     """
-    # TODO: Find a way to validate attribute without circular import
+    # TODO: Find a way to validate attribute without circular import  # noqa: TD002, TD003
     if v:
         try:
             module_name, _ = v.rsplit(".", 1)

@@ -4,20 +4,21 @@ import json
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from async_lru import alru_cache
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.inventory import CreatedNode
-from app.sep.inventory import CreatedSchema
-from app.sep.inventory import CreatedService
-from app.sep.inventory import CreatedTable
-from app.sep.inventory import Node
-from app.sep.inventory import Schema
-from app.sep.inventory import Service
-from app.sep.inventory import Table
+from app.sep.inventory import (
+    CreatedNode,
+    CreatedSchema,
+    CreatedService,
+    CreatedTable,
+    Node,
+    Schema,
+    Service,
+    Table,
+)
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseTaskSyncer
 
@@ -58,7 +59,7 @@ class MySQLSyncer(BaseTaskSyncer):
         :return: The `Path` object pointing to the payload script.
         :rtype: Path
         """
-        # TODO: Create PAYLOADS_DIR setting and keep payloads/scripts there
+        # TODO: Create PAYLOADS_DIR setting and keep payloads/scripts there  # noqa: TD002, TD003
         return Path(__file__).parent / "payload.py"
 
     @alru_cache
@@ -123,7 +124,7 @@ class MySQLSyncer(BaseTaskSyncer):
         :return: A dictionary with metadata required for task execution.
         :rtype: dict[str, str]
         """
-        # TODO: Figure out a way to keep requirements attached to payloads
+        # TODO: Figure out a way to keep requirements attached to payloads  # noqa: TD002, TD003
         return {
             "config": config,
             "target": target,
@@ -172,7 +173,7 @@ class MySQLSyncer(BaseTaskSyncer):
         for node in await self.get_inventory_nodes():
             await self.sync_node(node)
 
-    # TODO: Fail sync in case of MySQL connection error
+    # TODO: Fail sync in case of MySQL connection error  # noqa: TD002, TD003
     async def fetch_node(self, created_node: CreatedNode) -> Node:
         """Fetch updated data for a specific node.
 

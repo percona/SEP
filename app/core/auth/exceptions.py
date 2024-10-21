@@ -1,7 +1,6 @@
 """Define reusable auth exceptions."""
 
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import HTTPException, status
 
 
 class HTTPUnauthorizedException(HTTPException):

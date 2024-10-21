@@ -4,35 +4,37 @@ from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated
-from typing import Any
-from typing import ClassVar
-from typing import Literal
-from typing import Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
-from pydantic import AfterValidator
-from pydantic import AliasGenerator
-from pydantic import BaseModel
-from pydantic import computed_field
-from pydantic import ConfigDict
-from pydantic import Field
-from pydantic import field_validator
-from pydantic import HttpUrl
-from pydantic import model_validator
+from pydantic import (
+    AfterValidator,
+    AliasGenerator,
+    BaseModel,
+    computed_field,
+    ConfigDict,
+    Field,
+    field_validator,
+    HttpUrl,
+    model_validator,
+)
 
-from app.core.config import BaseCaseInsensitiveModel
-from app.core.config import BaseLowercaseModel
-from app.core.config import BaseYamlExtraSettings
-from app.core.config import settings
+from app.core.config import (
+    BaseCaseInsensitiveModel,
+    BaseLowercaseModel,
+    BaseYamlExtraSettings,
+    settings,
+)
 from app.core.db.config import DatabaseOptions
-from app.core.fields import RelativeDirectoryPath
-from app.core.fields import remove_duplicates
-from app.core.fields import StrImportableAttribute
-from app.core.fields import TimedeltaSeconds
-from app.core.fields import URIPath
-from app.core.fields import URL
+from app.core.fields import (
+    RelativeDirectoryPath,
+    remove_duplicates,
+    StrImportableAttribute,
+    TimedeltaSeconds,
+    URIPath,
+    URL,
+)
 from app.core.utils import deep_dict_update
 from app.sep.models import Plugin
 

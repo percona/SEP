@@ -24,7 +24,7 @@ class TaskCreateRequest(BaseModel):
     """
 
     name: RequiredStr
-    payload: RequiredStr  # TODO: Validate trying to parse
+    payload: RequiredStr  # TODO: Validate trying to parse  # noqa: TD002, TD003
     fmt: Literal["hcl", "json", "yaml"]
     backend: TaskBackendEnum
     owner: RequiredStr

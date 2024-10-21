@@ -3,34 +3,26 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter
-from fastapi import BackgroundTasks
-from fastapi import Form
-from fastapi import Request
-from fastapi import status
-from fastapi.responses import HTMLResponse
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, BackgroundTasks, Form, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
-from app.sep.deps import DefaultContext
-from app.sep.deps import InventoryAPI
-from app.sep.deps import IsAuthenticated
-from app.sep.deps import SessionDep
-from app.sep.inventory import Node
-from app.sep.inventory import Schema
-from app.sep.inventory import Service
-from app.sep.inventory import SourceEnum
-from app.sep.inventory import Table
+from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, SessionDep
+from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.inventory.deps import CreatedNodeDep
-from app.sep.plugins.inventory.deps import CreatedSchemaDep
-from app.sep.plugins.inventory.deps import CreatedServiceDep
-from app.sep.plugins.inventory.deps import SyncersDep
-from app.sep.plugins.inventory.sync import run_inventory_sync
-from app.sep.plugins.inventory.sync import run_node_sync
-from app.sep.plugins.inventory.sync import run_schema_sync
-from app.sep.plugins.inventory.sync import run_service_sync
+from app.sep.plugins.inventory.deps import (
+    CreatedNodeDep,
+    CreatedSchemaDep,
+    CreatedServiceDep,
+    SyncersDep,
+)
+from app.sep.plugins.inventory.sync import (
+    run_inventory_sync,
+    run_node_sync,
+    run_schema_sync,
+    run_service_sync,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

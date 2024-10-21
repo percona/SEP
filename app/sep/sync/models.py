@@ -6,49 +6,44 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
 from types import TracebackType
-from typing import Any
-from typing import ClassVar
-from typing import Self
+from typing import Any, ClassVar, Self
 from uuid import uuid4
 
 from aiohttp import ClientResponseError
-from async_lru import _LRUCacheWrapper
-from async_lru import alru_cache
-from pydantic import ConfigDict
-from pydantic import Field
-from pydantic import model_validator
-from pydantic import UUID4
-from pydantic import validate_call
+from async_lru import _LRUCacheWrapper, alru_cache
+from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
-from app.sep.crud import SyncInstanceManager
-from app.sep.crud import SyncItemManager
+from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
-from app.sep.inventory import CreatedEntity
-from app.sep.inventory import CreatedNode
-from app.sep.inventory import CreatedSchema
-from app.sep.inventory import CreatedService
-from app.sep.inventory import CreatedTable
-from app.sep.inventory import Node
-from app.sep.inventory import Schema
-from app.sep.inventory import Service
-from app.sep.inventory import SourceEnum
-from app.sep.inventory import Table
-from app.sep.models import SyncInstance
-from app.sep.models import SyncInstanceWrite
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.models import SyncItem
-from app.sep.models import SyncItemWrite
-from app.sep.sync.exceptions import SyncFailError
-from app.sep.sync.exceptions import SyncItemAlreadyInProgressError
+from app.sep.inventory import (
+    CreatedEntity,
+    CreatedNode,
+    CreatedSchema,
+    CreatedService,
+    CreatedTable,
+    Node,
+    Schema,
+    Service,
+    SourceEnum,
+    Table,
+)
+from app.sep.models import (
+    SyncInstance,
+    SyncInstanceWrite,
+    SyncInventoryEntityTypeEnum,
+    SyncItem,
+    SyncItemWrite,
+)
+from app.sep.sync.exceptions import SyncFailError, SyncItemAlreadyInProgressError
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
 
-# TODO: Make it abstract
+# TODO: Make it abstract  # noqa: TD002, TD003
 class BaseSyncer(BaseCaseInsensitiveModel):
     """Define a base class for syncers in the SEP app.
 
@@ -1172,7 +1167,7 @@ class BaseTaskSyncer(BaseSyncer):
         if status in [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]:
             raise TimeoutError(f"Task {task_name} timed out")
 
-        # TODO: Avoid keeping duplicate logs
+        # TODO: Avoid keeping duplicate logs  # noqa: TD002, TD003
         evaluation_id = task_history["execution_request"]["tracking"]["evaluation_id"]
         task_logs = task_history["execution_request"]["tracking"]["task_logs"][
             evaluation_id
@@ -1191,7 +1186,7 @@ class BaseTaskSyncer(BaseSyncer):
             exc_detail = f"{exc_detail}: {error_output}"
 
         if status == TaskHistoryStatusEnum.FAILED:
-            # TODO: Create custom exceptions
+            # TODO: Create custom exceptions  # noqa: TD002, TD003
             raise ValueError(exc_detail)
 
         return output

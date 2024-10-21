@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-from typing import Self
+from typing import ClassVar, Self
 
-from pydantic import BaseModel
-from pydantic import ConfigDict
-from pydantic import Field
-from pydantic import model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.db import BaseSQLModel
-from app.core.fields import EmptyStrToNone
-from app.core.fields import RequiredStr
-from app.inventory.models import ServiceTypeEnum
-from app.inventory.models import SourceEnum
+from app.core.fields import EmptyStrToNone, RequiredStr
+from app.inventory.models import ServiceTypeEnum, SourceEnum
 
 
 class BaseInventoryModel(BaseModel):

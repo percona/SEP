@@ -59,7 +59,7 @@ cd SEP
 2. Create and activate a virtualenv with the required packages:
 ```shell
 make venv
-source venv/bin/activate 
+source venv/bin/activate
 ```
 
 > [!TIP]
@@ -81,7 +81,7 @@ the **Download certificate** button. Save the `token_jwt_key.pem` file in the **
 > [!TIP]
 > You can store your cert file with any other name or in any other folder by adding the
 > setting `CERTIFICATE_PATH` in the `CASDOOR` section in `settings.yaml`, or the
-> `CASDOOR__CERTIFICATE_PATH` in your env vars/.env. 
+> `CASDOOR__CERTIFICATE_PATH` in your env vars/.env.
 
 5. Add your Redirect URL to the Casdoor application
 
@@ -261,7 +261,7 @@ cd SEP
 
 2. Activate your virtualenv:
 ```shell
-source venv/bin/activate 
+source venv/bin/activate
 ```
 
 3. Start SEP:

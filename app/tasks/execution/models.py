@@ -2,8 +2,7 @@
 
 import json
 import logging
-from abc import ABC
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any
 
 import yaml
@@ -77,7 +76,7 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         :rtype: TaskHistory
         """
 
-    # TODO: Use pydantic models instead of dict for job validation
+    # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
     @abstractmethod
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Validate a job specification.

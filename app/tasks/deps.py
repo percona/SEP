@@ -35,7 +35,7 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
     :return: The task executor.
     :rtype: BaseExecutor
     """
-    # TODO: Allow other executors
+    # TODO: Allow other executors  # noqa: TD002, TD003
     if backend == TaskBackendEnum.NOMAD:
         return tasks_settings.NOMAD
     raise ValueError(f"Unsupported backend {backend}")

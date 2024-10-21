@@ -4,30 +4,23 @@ import json
 import logging
 import time
 from asyncio import sleep
-from datetime import datetime
-from datetime import UTC
+from datetime import datetime, UTC
 from functools import cached_property
 from typing import Any
 from uuid import uuid1
 
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import HTTPException, status
 from nomad import Nomad
-from nomad.api.exceptions import BaseNomadException
-from nomad.api.exceptions import URLNotFoundNomadException
+from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 from pydantic import HttpUrl
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.exceptions import HTTPBadRequestException
 from app.core.fields import RelativeFilePath
-from app.core.utils import async_run
-from app.core.utils import b64encode_str
-from app.core.utils import minify_file_content
+from app.core.utils import async_run, b64encode_str, minify_file_content
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
-from app.tasks.models import Task
-from app.tasks.models import TaskHistory
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +86,14 @@ class NomadExecutor(BaseExecutor):
         :rtype: Task
         """
         task = queue_item.task
-        # TODO: determine scenarios for execution, such as looking up an existing job
+        # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD002, TD003
         task.data["ID"] += f"-{queue_item.execution_request.target}"
         if queue_item.execution_request.meta:
-            # TODO: target is currently pushed in to meta
+            # TODO: target is currently pushed in to meta  # noqa: TD002, TD003
             queue_item.execution_request.meta["target"] = (
                 queue_item.execution_request.target
             )
-            # TODO: allow templates in more fields, currently only for constraints
+            # TODO: allow templates in more fields, currently only for constraints  # noqa: TD002, TD003
             for meta_var, meta_val in queue_item.execution_request.meta.items():
                 for i, constraint in enumerate(task.data["Constraints"]):
                     meta = "${NOMAD_META_" + meta_var + "}"
@@ -372,7 +365,7 @@ class NomadExecutor(BaseExecutor):
                     f"{task.data.get('Type')} job support is TBD",
                 )
 
-    # TODO: Use pydantic models instead of dict for job validation
+    # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Validate a Nomad job specification.
 
