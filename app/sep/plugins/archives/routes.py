@@ -7,11 +7,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
 
 from app.sep.config import sep_settings
-from app.sep.plugins.archives.deps import ArchivesGeneratedTask
 from app.sep.deps import DefaultContext
 from app.sep.deps import InventoryAPI
-from app.sep.deps import TaskAPI
 from app.sep.deps import IsAuthenticated
+from app.sep.deps import TaskAPI
+from app.sep.plugins.archives.deps import ArchivesGeneratedTask
 from app.sep.plugins.archives.deps import ArchivesTask
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -52,7 +52,7 @@ async def archives_index(
     scheduled_tasks = []
     running_tasks = []
     for task in tasks:
-        history = await tasks_api.get(f"/history/{task['name']}")
+        history = await tasks_api.get(f"/{task['name']}/history/")
         for hist in history:
             match TaskHistoryStatusEnum(hist["status"]):
                 case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
@@ -61,9 +61,10 @@ async def archives_index(
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
+    executor_hosts = await tasks_api.get("/hosts/") 
     context.update(
         {
-            "hosts": all_hosts,
+            "executor_hosts": list(executor_hosts.values()),
             "mysql_hosts": mysql_hosts,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
@@ -87,7 +88,7 @@ async def archives_create(
     logger.debug("Create archives task: %s", task)
     # TODO: validate response
     await task_api.post(
-        "/generate",
+        "/generate/",
         json=task.model_dump(),
     )  # TODO: Proper error for unique constraint
     return RedirectResponse(

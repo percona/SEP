@@ -21,8 +21,10 @@
 {% if not tasks and not history_tasks %}
     {% set modal_required = False %}
 <h2>Configure a archiver</h2>
-    {% if hosts|length < 1 %}
+    {% if mysql_hosts|length < 1 %}
     <p>Unable to find suitable database instances.</p>
+    {% elif executor_hosts|length < 1 %}
+    <p>Unable to find suitable executor hosts.</p>
     {% else %}
         {% include "archiver/partials/create-form.html" %}
     {% endif %}
