@@ -48,7 +48,7 @@ python-multipart = "^0.0.7"
 python-nomad = "^2.0.0"
 SQLAlchemy = "^2.0.34"
 urllib3 = "^2.2.2"
-uvicorn = "^0.24.0.post1"
+uvicorn = {extras = ["standard"], version = "^0.32.0"}
 cryptography = "^43.0.1"
 pyjwt = "^2.8.0"
 yarl = "^1.9.2"

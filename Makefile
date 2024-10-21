@@ -1,6 +1,6 @@
 # vim: ts=8:sw=8:ft=make:noai:noet
 
-SHELL?=/bin/bash
+SHELL=/usr/bin/bash
 
 PYTHON=python3
 RELEASE_VER?=
@@ -33,7 +33,7 @@ audit: lint bandit pip-audit
 
 pip-audit: venv
 	@"${POETRY}" export -f requirements.txt --output requirements.txt
-	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt; rm requirements.txt
+	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --disable-pip --require-hashes -r requirements.txt; rm requirements.txt
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
