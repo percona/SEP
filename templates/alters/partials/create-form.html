@@ -39,30 +39,79 @@
                 </select>
             {% endif %}
         </fieldset>
-        <fieldset>
-            <legend>Data</legend>
-            <label for="schema_name">Schema</label>
-            <select id="schema_name" name="schema_name" disabled>
-                <option value="">Select a schema</option>
-            </select>
-            <label for="table_name">Table</label>
-            <select id="table_name" name="table_name" disabled>
-                <option value="">Select a table</option>
-            </select>
-            <label for="alter">Alter</label>
-            <input type="text" id="alter" name="alter" class="validate" required>
-        </fieldset>
-        <fieldset>
-            <legend>Advanced options</legend>
-            <label for="recursion_method">Recursion method</label>
-            <select id="recursion_method" name="recursion_method">
-                <option value="processlist" selected>processlist</option>
-                <option value="host">host</option>
-                <option value="dsn">dsn</option>
-                <option value="none">none</option>
-            </select>
-            <label for="dsn_table">DSN Table</label>
-            <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="schema.table" />
+            <fieldset>
+                <legend>Data</legend>
+                <label for="schema_name">Schema</label>
+                <select id="schema_name" name="schema_name" disabled>
+                    <option value="">Select a schema</option>
+                </select>
+                <label for="table_name">Table</label>
+                <select id="table_name" name="table_name" disabled>
+                    <option value="">Select a table</option>
+                </select>
+            </fieldset>
+            <fieldset>
+                <label for="alter">Alter</label>
+                <input type="text" id="alter" name="alter" class="validate" size="100"/>
+            </fieldset>
+            <fieldset>
+                <legend>Advanced options</legend>
+                <label for="recursion_method">Recursion method</label>
+                    <select id="recursion_method" name="recursion_method">
+                        <option value="processlist" selected>processlist</option>
+                        <option value="host">host</option>
+                        <option value="dsn">dsn</option>
+                        <option value="none">none</option>
+                    </select>
+                <label for="dsn_table">DSN Table</label>
+                <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="schema.table" />
+            </fieldset>
+            <fieldset>
+                <label for="pause_file">Pause file</label>
+                <input type="text" id="pause_file" name="pause_file" class="validate" size="50"/>
+            </fieldset>
+            <fieldset>
+                <label for="new_table_name">New Table Name</label>
+                <input type="text" id="new_table_name" name="new_table_name" class="validate" size="30"/>
+            </fieldset>
+            <fieldset>
+                <label for="print_arg">Print</label>
+                <input type="checkbox" id="print_arg" name="print_arg" checked="true" class="validate"/>
+                <label for="progress">Progress</label>
+                <input type="text" id="progress" name="progress" class="validate" size="15" value="time,10"/>
+            </fieldset>
+            <fieldset>
+                <label for="no_swap_tables">no-swap-tables</label>
+                <input type="checkbox" id="no_swap_tables" name="no_swap_tables" class="validate"/>
+                <label for="no_drop_old_table">no-drop-old-table</label>
+                <input type="checkbox" id="no_drop_old_table" name="no_drop_old_table" class="validate"/>
+                <label for="no_drop_new_table">no-drop-new-table</label>
+                <input type="checkbox" id="no_drop_new_table" name="no_drop_new_table" class="validate"/>
+                <label for="no_drop_triggers">no-drop-triggers</label>
+                <input type="checkbox" id="no_drop_triggers" name="no_drop_triggers" class="validate"/>
+            </fieldset>
+            <fieldset>
+                <label for="tries">Tries</label>
+                <input type="text" id="tries" name="tries" class="validate" value="create_triggers:10000:1,drop_triggers:10000:1,copy_rows:10000:1" size="50"/>
+            </fieldset>
+            <fieldset>
+                <label for="set_vars">Set Vars</label>
+                <input type="text" id="set_vars" name="set_vars" class="validate" value="tx_isolation='READ-COMMITTED',lock_wait_timeout=5" size="70"/>
+            </fieldset>
+            <fieldset>
+                <label for="critical_load">Critical Load</label>
+                <input type="text" id="critical_load" name="critical_load" class="validate" value="threads_running=99999" size="30"/>
+                <label for="max_load">Max Load</label>
+                <input type="text" id="max_load" name="max_load" class="validate" value="Threads_running=50" size="30"/>
+            </fieldset>
+            <fieldset>
+                <label for="chunk_time">Chunk Time</label>
+                <input type="text" id="chunk_time" name="chunk_time" class="validate" value="0.5" size="5"/>
+            </fieldset>
+            <fieldset>
+                <label for="max_lag">Max Lag</label>
+                <input type="text" id="max_lag" name="max_lag" class="validate" value="150" size="5"/>
+            </fieldset>
         </fieldset>
     </fieldset>
 

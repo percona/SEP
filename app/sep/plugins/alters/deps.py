@@ -35,16 +35,48 @@ async def build_alters_task_payload(
     if form.recursion_method == "dsn":
         form.recursion_method = f"dsn={form.dsn_table}"
 
+    args = [
+        f"--alter={form.alter}",
+        dsn,
+        f"--recursion-method={form.recursion_method}",
+    ]
+
+    # Mapping form fields to their respective arguments
+    optional_args = {
+        'pause_file': f'--pause-file={form.pause_file}',
+        'new_table_name': f'--new-table-name={form.new_table_name}',
+        'tries': f'--tries={form.tries}',
+        'set_vars': f'--set-vars={form.set_vars}',
+        'critical_load': f'--critical-load={form.critical_load}',
+        'max_load': f'--max-load={form.max_load}',
+        'chunk_time': f'--chunk-time={form.chunk_time}',
+        'max_lag': f'--max-lag={form.max_lag}',
+    }
+
+    # Adding optional arguments if their values exist
+    args.extend(arg for key, arg in optional_args.items() if getattr(form, key))
+
+    # Adding flag arguments (no value needed, just presence)
+    flag_args = {
+        'print_arg': '--print',
+        'no_swap_tables': '--no-swap-tables',
+        'no_drop_old_table': '--no-drop-old-table',
+        'no_drop_new_table': '--no-drop-new-table',
+        'no_drop_triggers': '--no-drop-triggers',
+    }
+
+    # Adding flag arguments if set to True
+    args.extend(arg for key, arg in flag_args.items() if getattr(form, key))
+
+    # Adding '--progress' argument if 'print_arg' is set
+    if form.print_arg:
+        args.append(f'--progress={form.progress}')
+
     return GeneratedTask(
         app="alters",
         commands=[
             {
-                "args": [
-                    f"--alter={form.alter}",
-                    dsn,
-                    f"--recursion-method={form.recursion_method}",
-                    "--execute",
-                ],
+                "args": [*args, "--execute"],
                 "command": "pt-online-schema-change",
                 "meta": {
                     "schema_name": form.schema_name,
