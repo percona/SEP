@@ -5,17 +5,17 @@ import logging
 from fastapi import APIRouter
 
 from app.api.deps import IsAuthenticatedDep
-from app.inventory.crud import SchemaManager
-from app.inventory.crud import TableManager
-from app.inventory.deps import SchemaDep
-from app.inventory.deps import SessionDep
-from app.inventory.models import Schema
-from app.inventory.models import SchemaDetailResponse
-from app.inventory.models import SchemaResponse
-from app.inventory.models import SchemaWrite
-from app.inventory.models import Table
-from app.inventory.models import TableResponse
-from app.inventory.models import TableWrite
+from app.inventory.crud import SchemaManager, TableManager
+from app.inventory.deps import SchemaDep, SessionDep
+from app.inventory.models import (
+    Schema,
+    SchemaDetailResponse,
+    SchemaResponse,
+    SchemaWrite,
+    Table,
+    TableResponse,
+    TableWrite,
+)
 
 logger = logging.getLogger(__name__)
 

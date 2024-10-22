@@ -3,8 +3,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.db.utils import json_serializer
+from app.core.db.utils import get_async_session_maker_from_engine, json_serializer
 from app.sep.config import sep_settings
 
 engine = create_async_engine(

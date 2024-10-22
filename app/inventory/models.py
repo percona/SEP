@@ -1,17 +1,13 @@
 """Define models for the Inventory API."""
 
-from enum import auto
-from enum import StrEnum
+from enum import auto, StrEnum
 from typing import Self
 
 from pydantic import model_validator
-from sqlalchemy import Column
+from sqlalchemy import Column, Index, Text
 from sqlalchemy import Enum as EnumField
-from sqlalchemy import Index
-from sqlalchemy import Text
 from sqlmodel import Field as SQLField
-from sqlmodel import Relationship
-from sqlmodel import SQLModel
+from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.fields import RequiredStr
@@ -70,7 +66,9 @@ class NodeBase(SQLModel):
         default=None,
         sa_column=Column(EnumField(SourceEnum)),
     )
-    type: RequiredStr = SQLField(default="generic")  # TODO: Enum with allowed values
+    type: RequiredStr = SQLField(
+        default="generic"
+    )  # TODO: Enum with allowed values  # noqa: TD002, TD003
 
     @model_validator(mode="after")
     def validate_external_id_source(self) -> Self:
@@ -183,13 +181,15 @@ class ServiceBase(SQLModel):
     external_id: RequiredStr | None = SQLField(
         default=None,
         index=True,
-    )  # TODO: validate external_id not null if node source is defined
+    )  # TODO: validate external_id not null if node source is defined  # noqa: TD002, TD003
     name: RequiredStr
     type: ServiceTypeEnum = SQLField(
         sa_column=Column(EnumField(ServiceTypeEnum), nullable=False),
     )
     port: int | None = None
-    environment: str | None = None  # TODO: Enum with allowed values
+    environment: str | None = (
+        None  # TODO: Enum with allowed values  # noqa: TD002, TD003
+    )
     node_id: int = SQLField(foreign_key="node.id", index=True, ondelete="CASCADE")
 
 

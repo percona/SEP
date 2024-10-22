@@ -6,15 +6,9 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.inventory.crud import NodeManager
-from app.inventory.crud import SchemaManager
-from app.inventory.crud import ServiceManager
-from app.inventory.crud import TableManager
+from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
 from app.inventory.db import get_async_session_maker
-from app.inventory.models import Node
-from app.inventory.models import Schema
-from app.inventory.models import Service
-from app.inventory.models import Table
+from app.inventory.models import Node, Schema, Service, Table
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

@@ -1,7 +1,6 @@
 """Security utilities module."""
 
-from itsdangerous import URLSafeSerializer
-from itsdangerous import URLSafeTimedSerializer
+from itsdangerous import URLSafeSerializer, URLSafeTimedSerializer
 
 from app.core.config import settings
 

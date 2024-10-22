@@ -5,38 +5,35 @@ from http import HTTPStatus
 from os import getenv
 from typing import Any
 
-from fastapi import APIRouter
-from fastapi import BackgroundTasks
-from fastapi import HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.tasks.config import tasks_settings
-from app.tasks.crud import TaskHistoryManager
-from app.tasks.crud import TaskManager
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.deps import get_executor
-from app.tasks.deps import SessionDep
-from app.tasks.deps import TaskExecutor
-from app.tasks.models import GeneratedTask
-from app.tasks.models import Task
-from app.tasks.models import TaskBackendEnum
-from app.tasks.models import TaskExecuteRequest
-from app.tasks.models import TaskExecutionRequest
-from app.tasks.models import TaskGroup
-from app.tasks.models import TaskGroupTask
-from app.tasks.models import TaskGroupTaskTemplate
-from app.tasks.models import TaskHistory
-from app.tasks.models import TaskHistoryResponse
-from app.tasks.models import TaskHistoryStatusEnum
-from app.tasks.models import TaskStats
-from app.tasks.models import TransformPayloadRequest
+from app.tasks.deps import get_executor, SessionDep, TaskExecutor
+from app.tasks.models import (
+    GeneratedTask,
+    Task,
+    TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskExecutionRequest,
+    TaskGroup,
+    TaskGroupTask,
+    TaskGroupTaskTemplate,
+    TaskHistory,
+    TaskHistoryResponse,
+    TaskHistoryStatusEnum,
+    TaskStats,
+    TransformPayloadRequest,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
-# TODO: Make all these getenv proper settings
+# TODO: Make all these getenv proper settings  # noqa: TD002, TD003
 BACKEND_POLL_INTERVAL_SECONDS = getenv(
     "TASKS_BACKEND_POLL_INTERVAL_SECONDS",
     DEFAULT_BACKEND_POLL_INTERVAL_SECONDS,
@@ -45,7 +42,7 @@ BACKEND_POLL_INTERVAL_SECONDS = getenv(
 router = APIRouter()
 
 
-# TODO: Pagination
+# TODO: Pagination  # noqa: TD002, TD003
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task]:
     """List all active tasks."""
@@ -62,8 +59,8 @@ async def delete_task(session: SessionDep, task: str) -> dict[str, int | bool]:
     """Delete a task."""
     logger.debug("Deleting task %s", task)
     deleted_task = await TaskManager.delete_by_name(session=session, name=task)
-    # TODO: Use Pydantic models
-    # TODO: Return deleted model
+    # TODO: Use Pydantic models  # noqa: TD002, TD003
+    # TODO: Return deleted model  # noqa: TD002, TD003
     return {"id": deleted_task.id, "deleted": True}
 
 
@@ -103,7 +100,7 @@ async def generate_task(
         is_template=True,
     )
 
-    # TODO: enhance options for generating tasks
+    # TODO: enhance options for generating tasks  # noqa: TD002, TD003
     task = Task(
         name=generated_task.name,
         owner=generated_task.app,
@@ -112,7 +109,7 @@ async def generate_task(
     )
     tpl = task.data
 
-    # TODO: currently Nomad-only, with restricted customisation
+    # TODO: currently Nomad-only, with restricted customisation  # noqa: TD002, TD003
     tg = TaskGroup(
         engine=task.backend.name,
         name="execution",
@@ -136,7 +133,7 @@ async def generate_task(
         )
     tpl.update(tg.to_payload())
 
-    # TODO: delete Periodic for now
+    # TODO: delete Periodic for now  # noqa: TD002, TD003
     if "Periodic" in tpl:
         if generated_task.schedule and not generated_task.schedule.get("save_only"):
             tpl["Periodic"] = generated_task.schedule
@@ -147,7 +144,7 @@ async def generate_task(
         case TaskBackendEnum.NOMAD:
             match tpl["Type"]:
                 case "batch":
-                    # TODO: handle more than one constraint
+                    # TODO: handle more than one constraint  # noqa: TD002, TD003
                     if generated_task.target in ["all", "*"]:
                         tpl["Constraints"][0]["RTarget"] = ".*"
                         tpl["Constraints"][0]["Operand"] = "regexp"
@@ -178,7 +175,7 @@ async def generate_task(
         return task_history
 
     history_record = await TaskHistoryManager.save(session, task_history)
-    # TODO: currently we trigger execution immediately as this is equivalent to /execute
+    # TODO: currently we trigger execution immediately as this is equivalent to /execute  # noqa: TD002, TD003
     #       Scheduling will require a periodic job for Nomad if using directly, else the
     #       ability to schedule generically from with the app
     if not generated_task.schedule:
@@ -201,7 +198,7 @@ async def execute_task_name(
     execution_data: TaskExecuteRequest = None,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
-    # TODO: optional arg (if possible), else a structured one
+    # TODO: optional arg (if possible), else a structured one  # noqa: TD002, TD003
     #           so that tasks can be executed with arbitrary parameters
     execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)

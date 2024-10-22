@@ -5,32 +5,33 @@ import secrets
 from collections.abc import Sequence
 from functools import cached_property
 from pathlib import Path
-from typing import Any
-from typing import ClassVar
-from typing import Literal
-from typing import Self
+from typing import Any, ClassVar, Literal, Self
 
-from pydantic import AnyUrl
-from pydantic import BaseModel
-from pydantic import computed_field
-from pydantic import ConfigDict
-from pydantic import DirectoryPath
-from pydantic import model_validator
-from pydantic_settings import BaseSettings
-from pydantic_settings import PydanticBaseSettingsSource
-from pydantic_settings import SettingsConfigDict
-from pydantic_settings import YamlConfigSettingsSource
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    computed_field,
+    ConfigDict,
+    DirectoryPath,
+    model_validator,
+)
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 from pydantic_settings.sources import PathType
 
-from app.core.fields import LogLevel
-from app.core.fields import RelativeFilePath
-from app.core.fields import RequiredStr
-from app.core.fields import StrHttpUrl
-from app.core.fields import StrImportableAttribute
-from app.core.fields import URL
-from app.core.utils import deep_dict_update
-from app.core.utils import deep_lowercase_dict_keys
-from app.core.utils import to_uppercase
+from app.core.fields import (
+    LogLevel,
+    RelativeFilePath,
+    RequiredStr,
+    StrHttpUrl,
+    StrImportableAttribute,
+    URL,
+)
+from app.core.utils import deep_dict_update, deep_lowercase_dict_keys, to_uppercase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
@@ -201,8 +202,8 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         )
 
 
-# TODO: Make Casdoor optional, custom auth backend model selectable in settings
-# TODO: Build our own Casdoor SDK for better methods and logging
+# TODO: Make Casdoor optional, custom auth backend model selectable in settings  # noqa: TD002, TD003
+# TODO: Build our own Casdoor SDK for better methods and logging  # noqa: TD002, TD003
 class CasdoorOptions(BaseModel):
     """Configuration options for Casdoor integration.
 

@@ -1,16 +1,13 @@
 """Define database operations for the Tasks API."""
 
-from datetime import datetime
-from datetime import UTC
+from datetime import datetime, UTC
 
-from sqlmodel import col
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseManager
-from app.tasks.models import Task
-from app.tasks.models import TaskHistory
+from app.tasks.models import Task, TaskHistory
 
 
 class TaskManager(BaseManager):

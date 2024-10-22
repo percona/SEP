@@ -3,22 +3,15 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter
-from fastapi import Form
-from fastapi import Request
-from fastapi import status
-from fastapi.responses import HTMLResponse
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Form, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.fields import URIPath
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext
-from app.sep.deps import IsAuthenticated
-from app.sep.deps import TaskAPI
+from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
 from app.sep.plugins.tasks.models import TaskCreateRequest
 from app.tasks.main import AVAILABLE_OWNERS
-from app.tasks.models import TaskBackendEnum
-from app.tasks.models import TaskExecuteRequest
+from app.tasks.models import TaskBackendEnum, TaskExecuteRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,7 +42,7 @@ async def task_create(
 ) -> RedirectResponse:
     """Create task."""
     logger.debug("Create task: %s", create_task_form)
-    # TODO: name should be unique
+    # TODO: name should be unique  # noqa: TD002, TD003
     task_data = create_task_form.model_dump(exclude={"payload", "fmt"})
     task_data["data"] = await tasks_api.post(
         "/transform/",
@@ -71,7 +64,7 @@ async def tasks_detail(
     """Retrieve task."""
     context["task"] = await tasks_api.get(
         f"/{task_name}",
-    )  # TODO: Use Pydantic/SQLModel models
+    )  # TODO: Use Pydantic/SQLModel models  # noqa: TD002, TD003
     context["history"] = await tasks_api.get(f"/{task_name}/history/")
     context["available_owners"] = AVAILABLE_OWNERS
     context["task_data"] = context["task"]["data"]

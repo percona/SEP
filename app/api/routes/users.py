@@ -4,8 +4,7 @@ import logging
 
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUser
-from app.api.deps import IsAdminDep
+from app.api.deps import CurrentUser, IsAdminDep
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 

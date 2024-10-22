@@ -2,19 +2,22 @@
 
 from typing import Any
 
-from sqlmodel import col
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseManager
-from app.sep.models import SyncInstance
-from app.sep.models import SyncInstanceWrite
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.models import SyncItem
-from app.sep.models import SyncItemWrite
-from app.sep.models import SyncStatusEnum
-from app.sep.sync.exceptions import SyncInstanceAlreadyInProgressError
-from app.sep.sync.exceptions import SyncItemAlreadyInProgressError
+from app.sep.models import (
+    SyncInstance,
+    SyncInstanceWrite,
+    SyncInventoryEntityTypeEnum,
+    SyncItem,
+    SyncItemWrite,
+    SyncStatusEnum,
+)
+from app.sep.sync.exceptions import (
+    SyncInstanceAlreadyInProgressError,
+    SyncItemAlreadyInProgressError,
+)
 
 
 class SyncItemManager(BaseManager):
@@ -62,7 +65,9 @@ class SyncItemManager(BaseManager):
             entity_type=instance_create.entity_type,
             sync_instance_id=instance_create.sync_instance_id,
         )
-        if sync_in_progress:  # TODO: timeout for deleting old syncs
+        if (
+            sync_in_progress
+        ):  # TODO: timeout for deleting old syncs  # noqa: TD002, TD003
             raise SyncItemAlreadyInProgressError(sync_in_progress)
         return await super().create(session, instance_create, **extra_fields)
 
