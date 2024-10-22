@@ -3,9 +3,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter
-from fastapi import Body
-from fastapi import Depends
+from fastapi import APIRouter, Body, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 
@@ -21,7 +19,7 @@ router = APIRouter()
 User = get_user_model()
 
 
-# TODO: Prevent malicious account lockout
+# TODO: Prevent malicious account lockout  # noqa: TD002, TD003
 @router.post("/token")
 async def create_oauth_token(
     form_data: OAuth2PasswordRequestForm = Depends(),  # noqa: B008
@@ -52,7 +50,7 @@ async def create_oauth_token(
     return oauth_token
 
 
-# TODO: refactor repeated code (refresh, token, maybe get_current_user)
+# TODO: refactor repeated code (refresh, token, maybe get_current_user)  # noqa: TD002, TD003
 @router.post("/refresh")
 async def refresh_token(token: Annotated[str, Body()]) -> OAuthToken:
     """Generate an OAuth token for a user from a refresh token.

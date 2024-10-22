@@ -2,19 +2,15 @@
 
 import logging
 from functools import cached_property
-from ssl import create_default_context
-from ssl import SSLContext
+from ssl import create_default_context, SSLContext
 from typing import Any
 from urllib.parse import urljoin
 
-from aiohttp import ClientResponse
-from aiohttp import ClientSession
-from pydantic import computed_field
-from pydantic import HttpUrl
+from aiohttp import ClientResponse, ClientSession
+from pydantic import computed_field, HttpUrl
 
 from app.core.config import BaseCaseInsensitiveModel
-from app.core.fields import RelativeFilePath
-from app.core.fields import RequiredStr
+from app.core.fields import RelativeFilePath, RequiredStr
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +46,7 @@ class RemoteAPI(BaseCaseInsensitiveModel):
     verify_ssl: bool = True
     ssl_cafile: RelativeFilePath | None = None
     ssl_keyfile: RelativeFilePath | None = (
-        None  # TODO: make this single tuple like with nomad
+        None  # TODO: make this single tuple like with nomad  # noqa: TD002, TD003
     )
     ssl_certfile: RelativeFilePath | None = None
 

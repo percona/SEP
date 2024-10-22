@@ -1,7 +1,7 @@
 """Create sync tables
 
 Revision ID: 7f4dec8bc76a
-Revises: 
+Revises:
 Create Date: 2024-10-07 14:50:33.721820
 
 """

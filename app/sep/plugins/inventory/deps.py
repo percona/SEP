@@ -6,12 +6,8 @@ from fastapi import Depends
 
 from app.core.utils import import_var
 from app.sep.config import sep_settings
-from app.sep.deps import InventoryAPI
-from app.sep.deps import TaskAPI
-from app.sep.inventory import CreatedNode
-from app.sep.inventory import CreatedSchema
-from app.sep.inventory import CreatedService
-from app.sep.inventory import CreatedTable
+from app.sep.deps import InventoryAPI, TaskAPI
+from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.sync.models import BaseSyncer
 
 

@@ -31,8 +31,7 @@ jobs:
     - name: Perform audit
       working-directory: ./workspace
       run: |
-        make audit
-        #git diff --exit-code --quiet requirements.txt
+        RUFF_OUTPUT_FORMAT=github make audit
 
     - name: Build package
       working-directory: ./workspace

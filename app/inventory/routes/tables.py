@@ -6,12 +6,8 @@ from fastapi import APIRouter
 
 from app.api.deps import IsAuthenticatedDep
 from app.inventory.crud import TableManager
-from app.inventory.deps import SessionDep
-from app.inventory.deps import TableDep
-from app.inventory.models import Table
-from app.inventory.models import TableDetailResponse
-from app.inventory.models import TableResponse
-from app.inventory.models import TableWrite
+from app.inventory.deps import SessionDep, TableDep
+from app.inventory.models import Table, TableDetailResponse, TableResponse, TableWrite
 
 logger = logging.getLogger(__name__)
 

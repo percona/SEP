@@ -1,7 +1,7 @@
 """Create Task and TaskHistory tables
 
 Revision ID: 04f50684d5d7
-Revises: 
+Revises:
 Create Date: 2024-09-18 15:42:36.634240
 
 """

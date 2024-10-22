@@ -3,9 +3,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends
-from fastapi import Form
-from fastapi import HTTPException
+from fastapi import Depends, Form, HTTPException
 
 from app.sep.deps import TaskAPI
 from app.sep.plugins.alters.models import AltersCreate
@@ -28,7 +26,7 @@ async def build_alters_task_payload(
         commands and parameters for the Alters task execution.
     :rtype: GeneratedTask
     """
-    # TODO: port from Service
+    # TODO: port from Service  # noqa: TD002, TD003
     if form.connect_to == "localhost":
         dsn = f"D={form.schema_name},t={form.table_name}"
     else:
@@ -65,7 +63,7 @@ AltersGeneratedTask = Annotated[GeneratedTask, Depends(build_alters_task_payload
 async def get_alters_task(
     task_name: str,
     tasks_api: TaskAPI,
-) -> dict:  # TODO: refactor - (ab)use pydantic models
+) -> dict:  # TODO: refactor - (ab)use pydantic models  # noqa: TD002, TD003
     """Fetch and validate a task for the Alters plugin.
 
     This function retrieves a task by its name from the Tasks API and validates
@@ -83,10 +81,10 @@ async def get_alters_task(
     """
     task = await tasks_api.get(
         f"/{task_name}",
-    )  # TODO: refactor - (ab)use pydantic models
+    )  # TODO: refactor - (ab)use pydantic models  # noqa: TD002, TD003
     if (
         task.get("owner") != "alters"
-    ):  # TODO: Consider getting owner name from plugin MODULE_NAME
+    ):  # TODO: Consider getting owner name from plugin MODULE_NAME  # noqa: TD002, TD003
         raise HTTPException(404)
     return task
 

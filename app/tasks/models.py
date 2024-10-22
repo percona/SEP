@@ -11,25 +11,23 @@ Todo:
 """
 
 from datetime import datetime
-from enum import auto
-from enum import StrEnum
+from enum import auto, StrEnum
 from functools import cached_property
 from pathlib import Path
 from statistics import mean
-from typing import Any
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import AliasGenerator
-from pydantic import BaseModel
-from pydantic import computed_field
-from pydantic import ConfigDict
-from pydantic import Field
-from pydantic import field_validator
-from pydantic import model_validator
-from sqlalchemy import Column
+from pydantic import (
+    AliasGenerator,
+    BaseModel,
+    computed_field,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+from sqlalchemy import Column, Index, JSON
 from sqlalchemy import Enum as EnumField
-from sqlalchemy import Index
-from sqlalchemy import JSON
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship
 
@@ -163,14 +161,14 @@ class TaskGroupTask(BaseModel):
         alias_generator=AliasGenerator(
             serialization_alias=lambda field_name: field_name.title(),
         ),
-    )  # TODO: Reuse
+    )  # TODO: Reuse  # noqa: TD002, TD003
     name: str
     driver: str = "raw_exec"
     user: str = ""
     config: dict | list | str | bytes
-    meta: dict = {}  # TODO
-    restart: dict = {"attempts": 0, "mode": "fail"}  # TODO
-    templates: list[TaskGroupTaskTemplate] = []  # TODO
+    meta: dict = {}  # TODO  # noqa: TD002, TD003, TD004
+    restart: dict = {"attempts": 0, "mode": "fail"}  # TODO  # noqa: TD002, TD003, TD004
+    templates: list[TaskGroupTaskTemplate] = []  # TODO  # noqa: TD002, TD003, TD004
 
 
 class TaskGroup(BaseModel):
@@ -191,7 +189,7 @@ class TaskGroup(BaseModel):
     parallel: bool = False
     tasks: list[TaskGroupTask] = []
 
-    # TODO: Return Pydantic model
+    # TODO: Return Pydantic model  # noqa: TD002, TD003
     def to_payload(self) -> dict[str, list[dict]]:
         """Convert to a backend-specific payload format.
 
@@ -256,7 +254,7 @@ class GeneratedTask(BaseModel):
     template: str = "batch"
 
 
-# TODO: Create Base/Write/Response models
+# TODO: Create Base/Write/Response models  # noqa: TD002, TD003
 class Task(BaseSQLModel, table=True):
     """Represent a task stored in the database.
 
@@ -358,7 +356,7 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
-# TODO: Create Base/Write models
+# TODO: Create Base/Write models  # noqa: TD002, TD003
 class TaskHistory(BaseSQLModel, table=True):
     """Represent a task execution history.
 
@@ -509,7 +507,7 @@ class TaskStats(BaseModel):
 
         def _durations_from_tracking() -> None:
             self._durations["tasks"][task.id] = (
-                task.execution_request.tracking[  # TODO: Use Pydantic models
+                task.execution_request.tracking[  # TODO: Use Pydantic models  # noqa: TD002, TD003
                     "duration"
                 ]
             )
@@ -518,7 +516,7 @@ class TaskStats(BaseModel):
                 task.execution_request.tracking["finished_at"],
             )
 
-        # TODO:
+        # TODO:  # noqa: TD002, TD003
         #  - Refactor
         #  - handle extra backends
         #  - consider moving some logic to the TaskHistory model and then call from here

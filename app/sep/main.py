@@ -2,12 +2,8 @@
 
 import logging
 
-from fastapi import FastAPI
-from fastapi import Request
-from fastapi import status
-from fastapi.responses import HTMLResponse
-from fastapi.responses import RedirectResponse
-from fastapi.responses import Response
+from fastapi import FastAPI, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
@@ -18,12 +14,14 @@ from app.core.config import settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var
 from app.sep.config import sep_settings
-from app.sep.deps import AccessTokenCookie
-from app.sep.deps import DefaultContext
-from app.sep.deps import get_base_url
-from app.sep.deps import get_current_user
-from app.sep.deps import get_default_context
-from app.sep.deps import IsAuthenticated
+from app.sep.deps import (
+    AccessTokenCookie,
+    DefaultContext,
+    get_base_url,
+    get_current_user,
+    get_default_context,
+    IsAuthenticated,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +37,8 @@ User = get_user_model()
 templates = sep_settings.TEMPLATES
 
 
-# TODO: Improve exception handlers, maybe use it for redirects
-# TODO: better errors for external services -- pmm, nomad, casdoor
+# TODO: Improve exception handlers, maybe use it for redirects  # noqa: TD002, TD003
+# TODO: better errors for external services -- pmm, nomad, casdoor  # noqa: TD002, TD003
 @sep_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
 async def custom_error_handler(
     request: Request,
@@ -49,7 +47,7 @@ async def custom_error_handler(
     """Load custom error page."""
     base_url = get_base_url(request)
     try:
-        # TODO: Refactor
+        # TODO: Refactor  # noqa: TD002, TD003
         user = await get_current_user(request)
     except HTTPTemporaryRedirectException as redirect_exc:
         return RedirectResponse(
@@ -90,7 +88,7 @@ async def custom_404_handler(
 @sep_app.get("/oauth/callback")
 async def callback(code: str) -> RedirectResponse:
     """Define callback route for OAuth."""
-    # TODO: Treat possible exceptions here
+    # TODO: Treat possible exceptions here  # noqa: TD002, TD003
     oauth_token = await User.get_oauth_token(code)
     response = RedirectResponse(url=sep_settings.OAUTH.POST_LOGIN_URI)
     response.set_cookie(
@@ -104,7 +102,7 @@ async def callback(code: str) -> RedirectResponse:
 @sep_app.post("/logout", dependencies=[IsAuthenticated])
 async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
-    # TODO: CSRF protection
+    # TODO: CSRF protection  # noqa: TD002, TD003
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
     try:
@@ -124,10 +122,10 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
     )
 
 
-# TODO: take all these logics from routes layer
+# TODO: take all these logics from routes layer  # noqa: TD002, TD003
 
 if __name__ == "__main__":
-    # TODO: Rich formatting and custom logging handlers
+    # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003
     logging.basicConfig(
         level=settings.LOGGING,
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",

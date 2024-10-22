@@ -10,15 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.tasks.config import tasks_settings
-from app.tasks.db import get_async_session_maker
-from app.tasks.db import init_db
+from app.tasks.db import get_async_session_maker, init_db
 from app.tasks.routes import router
 
 logger = logging.getLogger(__name__)
 
 
 DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
-# TODO: Make all these getenv proper settings
+# TODO: Make all these getenv proper settings  # noqa: TD002, TD003
 BACKEND_POLL_INTERVAL_SECONDS = getenv(
     "TASKS_BACKEND_POLL_INTERVAL_SECONDS",
     DEFAULT_BACKEND_POLL_INTERVAL_SECONDS,
@@ -59,7 +58,7 @@ if settings.BACKEND_CORS_ORIGINS:
 
 
 if __name__ == "__main__":
-    # TODO: Rich formatting and custom logging handlers
+    # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003
     logging.basicConfig(
         level=settings.LOGGING,
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",

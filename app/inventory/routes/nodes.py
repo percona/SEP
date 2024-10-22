@@ -7,18 +7,18 @@ from fastapi import APIRouter
 from app.api.deps import IsAuthenticatedDep
 from app.api.exceptions import HTTPBadRequestException
 from app.core.fields import RequiredStr
-from app.inventory.crud import NodeManager
-from app.inventory.crud import ServiceManager
-from app.inventory.deps import NodeDep
-from app.inventory.deps import SessionDep
-from app.inventory.models import Node
-from app.inventory.models import NodeResponse
-from app.inventory.models import NodeWrite
-from app.inventory.models import Service
-from app.inventory.models import ServiceResponse
-from app.inventory.models import ServiceTypeEnum
-from app.inventory.models import ServiceWrite
-from app.inventory.models import SourceEnum
+from app.inventory.crud import NodeManager, ServiceManager
+from app.inventory.deps import NodeDep, SessionDep
+from app.inventory.models import (
+    Node,
+    NodeResponse,
+    NodeWrite,
+    Service,
+    ServiceResponse,
+    ServiceTypeEnum,
+    ServiceWrite,
+    SourceEnum,
+)
 
 logger = logging.getLogger(__name__)
 

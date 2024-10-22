@@ -1,7 +1,7 @@
 """Create Inventory tables
 
 Revision ID: 8e95b4982efb
-Revises: 
+Revises:
 Create Date: 2024-09-24 17:01:44.575366
 
 """

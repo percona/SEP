@@ -14,13 +14,12 @@ PIP?="${VENV_BIN}/pip"
 POETRY?="${VENV_BIN}/poetry"
 APPS=tasks inventory sep
 
-
 venv: pyproject.toml poetry.lock
 	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
 	@"${PIP}" install --no-cache -U pip wheel poetry;
 	@source "${VENV_BIN}"/activate; "${POETRY}" install --with audit
 
-build: venv
+build: venv app/
 	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
 
 format:
@@ -28,12 +27,13 @@ format:
 
 lint: venv
 	@"${VENV_BIN}"/ruff check .
+	@"${VENV_BIN}"/ruff format --check .
 
 audit: lint bandit pip-audit
 
 pip-audit: venv
 	@"${POETRY}" export -f requirements.txt --output requirements.txt
-	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --require-hashes -r requirements.txt; rm requirements.txt
+	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --disable-pip --require-hashes -r requirements.txt; rm requirements.txt
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app

@@ -1,9 +1,7 @@
 """Provide the CasdoorSDK for interacting with Casdoor services."""
 
 from base64 import b64encode
-from typing import Any
-from typing import Literal
-from typing import Self
+from typing import Any, Literal, Self
 
 from pydantic import model_validator
 

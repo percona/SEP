@@ -10,8 +10,7 @@ from app.core.config import settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app
-from app.tasks.main import initial_tasks_setup
-from app.tasks.main import tasks_app
+from app.tasks.main import initial_tasks_setup, tasks_app
 
 app = FastAPI(lifespan=initial_tasks_setup)
 
@@ -32,7 +31,7 @@ app.mount("/", sep_app)
 
 
 if __name__ == "__main__":
-    # TODO: Rich formatting and custom logging handlers
+    # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003
     logging.basicConfig(
         level=settings.LOGGING,
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",

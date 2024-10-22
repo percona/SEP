@@ -1,11 +1,7 @@
 """Define database operations for the Inventory API."""
 
-from app.core.db.crud import BaseChildManager
-from app.core.db.crud import BaseManager
-from app.inventory.models import Node
-from app.inventory.models import Schema
-from app.inventory.models import Service
-from app.inventory.models import Table
+from app.core.db.crud import BaseChildManager, BaseManager
+from app.inventory.models import Node, Schema, Service, Table
 
 
 class NodeManager(BaseManager):

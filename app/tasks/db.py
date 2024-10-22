@@ -10,11 +10,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.db.utils import json_serializer
+from app.core.db.utils import get_async_session_maker_from_engine, json_serializer
 from app.tasks.config import tasks_settings
-from app.tasks.models import Task
-from app.tasks.models import TaskExecutionRequest
+from app.tasks.models import Task, TaskExecutionRequest
 
 logger = logging.getLogger(__name__)
 
