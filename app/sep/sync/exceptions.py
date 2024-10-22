@@ -1,7 +1,6 @@
 """Define reusable Sync exceptions for the SEP app."""
 
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.models import SyncItem
+from app.sep.models import SyncInventoryEntityTypeEnum, SyncItem
 
 
 class SyncError(Exception):

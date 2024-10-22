@@ -1,28 +1,17 @@
 """Define models for the SEP app."""
 
-from enum import auto
-from enum import IntEnum
-from enum import StrEnum
-from typing import Any
-from typing import Self
+from enum import auto, IntEnum, StrEnum
+from typing import Any, Self
 
-from pydantic import computed_field
-from pydantic import field_validator
-from pydantic import HttpUrl
-from pydantic import model_validator
-from pydantic import UUID4
-from sqlalchemy import Column
+from pydantic import computed_field, field_validator, HttpUrl, model_validator, UUID4
+from sqlalchemy import Column, Index
 from sqlalchemy import Enum as EnumField
-from sqlalchemy import Index
 from sqlmodel import Field as SQLField
-from sqlmodel import Relationship
-from sqlmodel import SQLModel
+from sqlmodel import Relationship, SQLModel
 
 from app.core.config import BaseCaseInsensitiveModel
 from app.core.db.models import BaseUUIDSQLModel
-from app.core.fields import RequiredStr
-from app.core.fields import StrImportableModule
-from app.core.fields import URIPath
+from app.core.fields import RequiredStr, StrImportableModule, URIPath
 from app.core.utils import slugify
 
 

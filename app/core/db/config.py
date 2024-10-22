@@ -2,10 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import AnyUrl
-from pydantic import BaseModel
-from pydantic import computed_field
-from pydantic import field_validator
+from pydantic import AnyUrl, BaseModel, computed_field, field_validator
 
 
 class DBEngine(StrEnum):

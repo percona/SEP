@@ -10,10 +10,7 @@ from pydantic import Field
 from app.core.fields import RequiredStr
 from app.core.requests import RemoteAPI
 from app.inventory.models import SourceEnum
-from app.sep.inventory import CreatedNode
-from app.sep.inventory import CreatedService
-from app.sep.inventory import Node
-from app.sep.inventory import Service
+from app.sep.inventory import CreatedNode, CreatedService, Node, Service
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseSyncer
 

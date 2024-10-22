@@ -1,23 +1,21 @@
 """Define the base auth models."""
 
-from abc import ABC
-from abc import abstractmethod
-from datetime import datetime
-from datetime import UTC
+from abc import ABC, abstractmethod
+from datetime import datetime, UTC
 from functools import cached_property
-from typing import Literal
-from typing import Self
+from typing import Literal, Self
 
-from pydantic import BaseModel
-from pydantic import computed_field
-from pydantic import EmailStr
-from pydantic import field_validator
-from pydantic import FutureDatetime
-from pydantic import PastDatetime
-from pydantic import UUID4
+from pydantic import (
+    BaseModel,
+    computed_field,
+    EmailStr,
+    field_validator,
+    FutureDatetime,
+    PastDatetime,
+    UUID4,
+)
 
-from app.core.fields import RequiredStr
-from app.core.fields import TimedeltaSeconds
+from app.core.fields import RequiredStr, TimedeltaSeconds
 
 
 class OAuthToken(BaseModel):

@@ -2,26 +2,23 @@
 
 import logging
 from collections.abc import Sequence
-from typing import Any
-from typing import TypeVar
+from typing import Any, TypeVar
 
-from sqlalchemy import inspect
-from sqlalchemy import ScalarResult
+from sqlalchemy import inspect, ScalarResult
 from sqlalchemy.engine import TupleResult
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
-from sqlmodel import select
-from sqlmodel import SQLModel
+from sqlmodel import select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel.sql._expression_select_cls import Select
-from sqlmodel.sql._expression_select_cls import SelectOfScalar
+from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
-from app.api.exceptions import HTTPBadRequestException
-from app.api.exceptions import HTTPConflictException
-from app.api.exceptions import HTTPNotFoundException
+from app.api.exceptions import (
+    HTTPBadRequestException,
+    HTTPConflictException,
+    HTTPNotFoundException,
+)
 from app.core.db import BaseSQLModel
 
 logger = logging.getLogger(__name__)
@@ -126,7 +123,7 @@ class BaseManager:
         :return: A list of matching records.
         :rtype: list[T]
         """
-        # TODO: Pagination
+        # TODO: Pagination  # noqa: TD002, TD003
         result = await cls._select(
             session,
             *whereclause,
@@ -288,7 +285,7 @@ class BaseManager:
             logger.debug("IntegrityError saving instance %s", instance, exc_info=True)
             raise HTTPConflictException(
                 exc.args[0],
-            ) from None  # TODO: Improve error message
+            ) from None  # TODO: Improve error message  # noqa: TD002, TD003
         await session.refresh(instance)
         return instance
 

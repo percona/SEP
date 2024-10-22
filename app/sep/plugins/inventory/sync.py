@@ -1,9 +1,6 @@
 """Provide synchronization functions for the SEP inventory."""
 
-from app.sep.inventory import CreatedNode
-from app.sep.inventory import CreatedSchema
-from app.sep.inventory import CreatedService
-from app.sep.inventory import CreatedTable
+from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.sync.models import BaseSyncer
 
 

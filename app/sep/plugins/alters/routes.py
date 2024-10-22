@@ -2,19 +2,12 @@
 
 import logging
 
-from fastapi import APIRouter
-from fastapi import Request
-from fastapi import status
-from fastapi.responses import HTMLResponse
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext
-from app.sep.deps import InventoryAPI
-from app.sep.deps import IsAuthenticated
-from app.sep.deps import TaskAPI
-from app.sep.plugins.alters.deps import AltersGeneratedTask
-from app.sep.plugins.alters.deps import AltersTask
+from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, TaskAPI
+from app.sep.plugins.alters.deps import AltersGeneratedTask, AltersTask
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -90,15 +83,15 @@ async def alters_create(
 ) -> RedirectResponse:
     """Create an alter task."""
     logger.debug("Create alters task: %s", task)
-    # TODO: validate response
+    # TODO: validate response  # noqa: TD002, TD003
     await task_api.post(
         "/generate/",
         json=task.model_dump(),
-    )  # TODO: Proper error for unique constraint
+    )  # TODO: Proper error for unique constraint  # noqa: TD002, TD003
     return RedirectResponse(
         "/alters",
         status_code=status.HTTP_303_SEE_OTHER,
-    )  # TODO: Custom redirect class
+    )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -141,7 +134,9 @@ async def alters_execute(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Execute alters task."""
-    await tasks_api.post(f"/execute/{task['name']}")  # TODO: send meta form fields
+    await tasks_api.post(
+        f"/execute/{task['name']}"
+    )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
 

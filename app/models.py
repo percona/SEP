@@ -1,19 +1,11 @@
 """Define the app models."""
 
-from typing import Annotated
-from typing import Literal
-from typing import Self
+from typing import Annotated, Literal, Self
 
-from pydantic import AliasChoices
-from pydantic import computed_field
-from pydantic import ConfigDict
-from pydantic import Field
-from pydantic import field_validator
+from pydantic import AliasChoices, computed_field, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
-from app.core.auth.models import BaseTokenPayload
-from app.core.auth.models import BaseUser
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
 from app.core.auth.providers.casdoor import casdoor_sdk
 from app.core.config import settings
 

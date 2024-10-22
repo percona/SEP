@@ -8,8 +8,7 @@ from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
 from importlib import import_module
-from typing import Any
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from python_minifier import minify
 
@@ -31,7 +30,7 @@ def to_uppercase(name: str) -> str:
     return name.upper()
 
 
-# TODO: Update:
+# TODO: Update:  # noqa: TD002, TD003
 class ErrorFormatter:
     """Format HTTP errors based on provided details.
 

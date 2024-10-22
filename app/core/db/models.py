@@ -1,13 +1,10 @@
 """Define base database models."""
 
-from datetime import datetime
-from datetime import UTC
+from datetime import datetime, UTC
 from uuid import uuid4
 
 from pydantic import UUID4
-from sqlalchemy import DateTime
-from sqlalchemy import func
-from sqlalchemy import Integer
+from sqlalchemy import DateTime, func, Integer
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
 

@@ -5,18 +5,18 @@ import logging
 from fastapi import APIRouter
 
 from app.api.deps import IsAuthenticatedDep
-from app.inventory.crud import SchemaManager
-from app.inventory.crud import ServiceManager
-from app.inventory.deps import ServiceDep
-from app.inventory.deps import SessionDep
-from app.inventory.models import Schema
-from app.inventory.models import SchemaResponse
-from app.inventory.models import SchemaWrite
-from app.inventory.models import Service
-from app.inventory.models import ServiceDetailResponse
-from app.inventory.models import ServiceResponse
-from app.inventory.models import ServiceTypeEnum
-from app.inventory.models import ServiceWrite
+from app.inventory.crud import SchemaManager, ServiceManager
+from app.inventory.deps import ServiceDep, SessionDep
+from app.inventory.models import (
+    Schema,
+    SchemaResponse,
+    SchemaWrite,
+    Service,
+    ServiceDetailResponse,
+    ServiceResponse,
+    ServiceTypeEnum,
+    ServiceWrite,
+)
 
 logger = logging.getLogger(__name__)
 
