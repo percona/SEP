@@ -1,24 +1,21 @@
 """Define dependencies for the Archives plugin."""
 
 import logging
-import yaml
-
 from typing import Annotated
 
-from fastapi import Depends
-from fastapi import Form
-from fastapi import HTTPException
+import yaml
+from fastapi import Depends, Form, HTTPException
 
 from app.sep.deps import TaskAPI
-from app.sep.plugins.archives.models import ArchivesCreate
+from app.sep.plugins.archives.models import (
+    ArchivesCreate,
+    PurgeConfig,
+    PurgeConfigAll,
+    PurgeConfigItem,
+)
 from app.tasks.models import GeneratedTask
 
 logger = logging.getLogger(__name__)
-
-PURGE_TABLES_CONFIG_WHERE = {
-    "ALL": {"SOURCE_HOST": None, "SOURCE_PORT": 0},
-    "PURGE_LIST": [{"ALIAS": None, "SOURCE_DB": None, "SOURCE_TABLE": None, "DEST_TABLE": None, "WHERE": None}],
-}
 
 
 async def build_archives_task_payload(
@@ -35,24 +32,20 @@ async def build_archives_task_payload(
         commands and parameters for the Archives task execution.
     :rtype: GeneratedTask
     """
-    match form.archive_type:
-        case "where":
-            purge_config = PURGE_TABLES_CONFIG_WHERE.copy()
-        case _:
-            raise NotImplementedError("Currently only 'where' is supported")
-
-    purge_config_all = purge_config["ALL"]
-    purge_config_list = purge_config["PURGE_LIST"][0]
-    purge_config_all.update(SOURCE_HOST=form.connect_to, SOURCE_PORT=3306)
-    purge_config_list.update(
-        ALIAS=form.task_name,
-        SOURCE_DB=form.sourcedb,
-        SOURCE_TABLE=form.sourcetbl,
-        DEST_TABLE=form.dest_name,
-        WHERE=f"{form.where}",
+    purge_config = PurgeConfig(
+        all=PurgeConfigAll(source_host=form.connect_to, source_port=3306),
+        purge_list=[
+            PurgeConfigItem(
+                alias=form.alias,
+                source_db=form.source_db,
+                source_table=form.source_table,
+                where=form.where,
+                dest_table=form.dest_table,
+            )
+        ],
     )
 
-    purge_config.update(ALL=purge_config_all, PURGE_LIST=[purge_config_list])
+    purge_config_yaml = yaml.dump(purge_config.model_dump())
 
     return GeneratedTask(
         app="archiver",
@@ -65,7 +58,7 @@ async def build_archives_task_payload(
                 "command": "/home/percona/bin/purge-tables.py",
                 "config": [
                     {
-                        "content": yaml.dump(purge_config),
+                        "content": purge_config_yaml,
                         "path": "${NOMAD_TASK_DIR}/purge_tables.yaml",
                     }
                 ],
@@ -84,7 +77,7 @@ ArchivesGeneratedTask = Annotated[GeneratedTask, Depends(build_archives_task_pay
 async def get_archives_task(
     task_name: str,
     tasks_api: TaskAPI,
-) -> dict:  # TODO: refactor - (ab)use pydantic models
+) -> dict:  # TODO: refactor - (ab)use pydantic models  # noqa: TD002, TD003
     """Fetch and validate a task for the Archives plugin.
 
     This function retrieves a task by its name from the Tasks API and validates
@@ -102,8 +95,10 @@ async def get_archives_task(
     """
     task = await tasks_api.get(
         f"/{task_name}",
-    )  # TODO: refactor - (ab)use pydantic models
-    if task.get("owner") != "archiver":  # TODO: Consider getting owner name from plugin MODULE_NAME
+    )  # TODO: refactor - (ab)use pydantic models  # noqa: TD002, TD003
+    if (
+        task.get("owner") != "archiver"
+    ):  # TODO: Consider getting owner name from plugin MODULE_NAME  # noqa: TD002, TD003
         raise HTTPException(404)
     return task
 

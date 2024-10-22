@@ -138,8 +138,18 @@ class TaskGroupTaskTemplate(BaseModel):
     }
 
     def transform(self, system: str) -> dict:
+        """Transform task template fields based on the provided system.
+
+        Map the fields of the task template to system-specific field names
+            using `_transform_fields`.
+
+        :param system: The name of the system for field mapping (e.g., "nomad").
+        :type system: str
+        :return: A dictionary with the transformed field names.
+        :rtype: dict
+        """
         field_mapping = self._transform_fields.get(system, {})
-        return {field_mapping.get(k, k): v for k, v in self.dict().items()}
+        return {field_mapping.get(k, k): v for k, v in self.model_dump().items()}
 
 
 class TaskGroupTask(BaseModel):
@@ -211,7 +221,9 @@ class TaskGroup(BaseModel):
                                 "Tasks": [
                                     {
                                         **task.model_dump(by_alias=True),
-                                        "templates": [t.transform("nomad") for t in task.templates],
+                                        "templates": [
+                                            t.transform("nomad") for t in task.templates
+                                        ],
                                     }
                                 ],
                             },
@@ -223,7 +235,9 @@ class TaskGroup(BaseModel):
                             "Tasks": [
                                 {
                                     **task.model_dump(by_alias=True),
-                                    "templates": [t.transform("nomad") for t in task.templates],
+                                    "templates": [
+                                        t.transform("nomad") for t in task.templates
+                                    ],
                                 }
                                 for task in self.tasks
                             ],
@@ -519,9 +533,11 @@ class TaskStats(BaseModel):
         """Process the task data."""
 
         def _durations_from_tracking() -> None:
-            self._durations["tasks"][task.id] = task.execution_request.tracking[  # TODO: Use Pydantic models
-                "duration"
-            ]
+            self._durations["tasks"][task.id] = (
+                task.execution_request.tracking[  # TODO: Use Pydantic models  # noqa: TD002, TD003
+                    "duration"
+                ]
+            )
             self._raw["durations"].append(task.execution_request.tracking["duration"])
             self._raw["finished_at"].append(
                 task.execution_request.tracking["finished_at"],

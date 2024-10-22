@@ -253,7 +253,7 @@ async def list_task_history(
     """Create a new task."""
     logger.debug("Listing task history")
     try:
-         history_status = (
+        history_status = (
             TaskHistoryStatusEnum[status.upper()] if status is not None else None
         )
     except KeyError:

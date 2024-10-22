@@ -1,18 +1,13 @@
+"""Define routes for the archivers plugin."""
+
 import logging
 
-from fastapi import APIRouter
-from fastapi import Request
-from fastapi import status
-from fastapi.responses import HTMLResponse
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext
-from app.sep.deps import InventoryAPI
-from app.sep.deps import IsAuthenticated
-from app.sep.deps import TaskAPI
-from app.sep.plugins.archives.deps import ArchivesGeneratedTask
-from app.sep.plugins.archives.deps import ArchivesTask
+from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, TaskAPI
+from app.sep.plugins.archives.deps import ArchivesGeneratedTask, ArchivesTask
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -30,15 +25,14 @@ async def archives_index(
     """Homepage of archives plugin."""
     all_hosts = await inventory_api.get("/")
     tasks = []
-    for task in await tasks_api.get("/"):
-        if task.get("owner") == "archiver":  # TODO: filter on query
-            data = task["data"]
-            taskinfo = {
-                "hostname": data["Constraints"][0]["RTarget"],
-                "name": task["name"],
-                "id": task["id"],
-            }
-            tasks.append(taskinfo)
+    for task in await tasks_api.get("/", params={"owner": "archiver"}):
+        data = task["data"]
+        taskinfo = {
+            "hostname": data["Constraints"][0]["RTarget"],
+            "name": task["name"],
+            "id": task["id"],
+        }
+        tasks.append(taskinfo)
     mysql_hosts = []
     for host in all_hosts:
         for service in host["services"]:
@@ -59,7 +53,7 @@ async def archives_index(
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
-    executor_hosts = await tasks_api.get("/hosts/") 
+    executor_hosts = await tasks_api.get("/hosts/")
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
@@ -84,15 +78,15 @@ async def archives_create(
 ) -> RedirectResponse:
     """Create new archives task."""
     logger.debug("Create archives task: %s", task)
-    # TODO: validate response
+    # TODO: validate response  # noqa: TD002, TD003
     await task_api.post(
         "/generate/",
         json=task.model_dump(),
-    )  # TODO: Proper error for unique constraint
+    )  # TODO: Proper error for unique constraint  # noqa: TD002, TD003
     return RedirectResponse(
         "/archives",
         status_code=status.HTTP_303_SEE_OTHER,
-    )  # TODO: Custom redirect class
+    )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -134,7 +128,9 @@ async def archives_execute(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Execute archives task."""
-    await tasks_api.post(f"/execute/{task['name']}")  # TODO: send meta form fields
+    await tasks_api.post(
+        f"/execute/{task['name']}"
+    )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
 
 

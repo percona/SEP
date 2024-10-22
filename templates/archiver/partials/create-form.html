@@ -19,18 +19,9 @@
         {% endif %}
     </fieldset>
     <fieldset>
-        <legend>Archive type</legend>
-        <label for="archive_type_where">Where</label>
-        <input type="radio" id="archive_type_where" name="archive_type" value="where" checked />
-        <!--
-        <label for="archive_type_swap">Swap and drop</label>
-        <input type="radio" id="archive_type_swap" name="archive_type_swap" value="swap" readonly />
-        -->
-    </fieldset>
-    <fieldset>
         <legend>Source details</legend>
-        <label for="task_name">Task name
-            <input type="text" id="task_name" name="task_name" class="validate" required/>
+        <label for="alias">Task name
+            <input type="text" id="alias" name="alias" class="validate" required/>
         </label>
         <label for="connect_to">Select a database host
         {% if mysql_hosts|length == 1 %}
@@ -60,13 +51,13 @@
         </fieldset>
         <fieldset>
             <legend>Data</legend>
-            <label for="sourcedb">Schema
-                <select id="sourcedb" name="sourcedb" class="validate" disabled>
+            <label for="source_db">Schema
+                <select id="source_db" name="source_db" class="validate" disabled>
                     <option value="">Select a schema</option>
                 </select>
             </label>
-            <label for="sourcetbl">Table
-                <select id="sourcetbl" name="sourcetbl" class="validate" disabled>
+            <label for="source_table">Table
+                <select id="source_table" name="source_table" class="validate" disabled>
                     <option value="">Select a table</option>
                 </select>
             </label>
@@ -87,8 +78,8 @@
             <input type="radio" id="dest_type_file" name="dest_type" value="file" checked />
             -->
         </fieldset>
-        <label for="dest_name">Name
-            <select id="dest_name" name="dest_name" class="validate" disabled>
+        <label for="dest_table">Name
+            <select id="dest_table" name="dest_table" class="validate" disabled>
                 <option value="">Select a table</option>
             </select>
         </label>
@@ -110,9 +101,9 @@
 <script type="text/javascript">
     const hostSchemas = {{ hostSchemas | tojson }};
     const connectToSelect = document.getElementById('connect_to');
-    const schemaSelect = document.getElementById('sourcedb');
-    const tableSelect = document.getElementById('sourcetbl');
-    const destTableSelect = document.getElementById('dest_name');
+    const schemaSelect = document.getElementById('source_db');
+    const tableSelect = document.getElementById('source_table');
+    const destTableSelect = document.getElementById('dest_table');
 
     function populateSchemas(selectedHost) {
         schemaSelect.disabled = true;
@@ -133,7 +124,7 @@
                 if (schemas.length === 1) {
                     schemaSelect.value = schemas[0];
                     schemaSelect.disabled = true;
-                    schemaSelect.insertAdjacentHTML("afterend", `<input id="schema_name_hidden" type="hidden" name="sourcedb" value="${schemaSelect.value}">`)
+                    schemaSelect.insertAdjacentHTML("afterend", `<input id="schema_name_hidden" type="hidden" name="source_db" value="${schemaSelect.value}">`)
                     populateTables(selectedHost, schemas[0]);
                 }
             }
@@ -157,7 +148,7 @@
                 if (tables.length === 1) {
                     tableSelect.value = tables[0];
                     tableSelect.disabled = true;
-                    tableSelect.insertAdjacentHTML("afterend", `<input id="table_name_hidden" type="hidden" name="sourcetbl" value="${tableSelect.value}">`)
+                    tableSelect.insertAdjacentHTML("afterend", `<input id="table_name_hidden" type="hidden" name="source_table" value="${tableSelect.value}">`)
                 }
             }
         }
