@@ -40,16 +40,6 @@
         {% endif %}
         </label>
         <fieldset>
-            <legend>Type</legend>
-            <label for="source_type_table">Table
-                <input type="radio" id="source_type_table" name="source_type" value="table" checked />
-            </label>
-            <!--
-            <label for="source_type_query">Query</label>
-            <input type="radio" id="source_type_query" name="source_type" value="query" readonly />
-            -->
-        </fieldset>
-        <fieldset>
             <legend>Data</legend>
             <label for="source_db">Schema
                 <select id="source_db" name="source_db" class="validate" disabled>
@@ -68,16 +58,6 @@
     </fieldset>
     <fieldset>
         <legend>Destination details</legend>
-        <fieldset>
-            <legend>Type</legend>
-            <label for="dest_type_table">Table
-                <input type="radio" id="dest_type_table" name="dest_type" value="table" checked />
-            </label>
-            <!--
-            <label for="dest_type_file">File</label>
-            <input type="radio" id="dest_type_file" name="dest_type" value="file" checked />
-            -->
-        </fieldset>
         <label for="dest_table">Name
             <select id="dest_table" name="dest_table" class="validate" disabled>
                 <option value="">Select a table</option>
