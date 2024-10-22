@@ -2,6 +2,7 @@
 
 It can compile individual SCSS files or all SCSS files in a directory and its subdirectories.
 """
+
 import logging
 import os
 from pathlib import Path

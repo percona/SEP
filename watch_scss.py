@@ -13,13 +13,17 @@ from watchdog.observers import Observer
 from compile_scss import compile_all_scss_in_dir, compile_scss
 
 # Initialize logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 class SCSSWatchHandler(FileSystemEventHandler):
     """Handles changes in SCSS files by recompiling them."""
 
-    def __init__(self, scss_file: Path, css_file: Path, pages_scss_dir: Path, pages_css_dir: Path) -> None:
+    def __init__(
+        self, scss_file: Path, css_file: Path, pages_scss_dir: Path, pages_css_dir: Path
+    ) -> None:
         """Initialize the SCSSWatchHandler with paths to the SCSS and CSS files, and directories.
 
         :param scss_file: Path to the main SCSS file
@@ -43,11 +47,14 @@ class SCSSWatchHandler(FileSystemEventHandler):
             # Check if the change is in the pages directory
             if str(self.pages_scss_dir) in event.src_path:
                 logging.info(
-                    "Change detected in pages directory. Compiling all SCSS files in %s...", self.pages_scss_dir
+                    "Change detected in pages directory. Compiling all SCSS files in %s...",
+                    self.pages_scss_dir,
                 )
                 compile_all_scss_in_dir(self.pages_scss_dir, self.pages_css_dir)
             else:
-                logging.info("Detected change in %s. Recompiling SCSS...", event.src_path)
+                logging.info(
+                    "Detected change in %s. Recompiling SCSS...", event.src_path
+                )
                 compile_scss(self.scss_file, self.css_file)
 
 
@@ -59,10 +66,7 @@ if __name__ == "__main__":
 
     # Set up observer to watch SCSS files in both directories
     event_handler = SCSSWatchHandler(
-        scss_dir / "layout.scss",
-        css_dir / "layout.css",
-        pages_scss_dir,
-        pages_css_dir
+        scss_dir / "layout.scss", css_dir / "layout.css", pages_scss_dir, pages_css_dir
     )
     observer = Observer()
 
