@@ -37,7 +37,9 @@ async def archives_index(
     for host in all_hosts:
         for service in host["services"]:
             if service["type"] == "mysql":
-                host["schemas"] = await inventory_api.get(f"/services/{service['id']}/schemas/")
+                host["schemas"] = await inventory_api.get(
+                    f"/services/{service['id']}/schemas/"
+                )
                 mysql_hosts.append(host)
                 break
     history_tasks = []
