@@ -1,54 +1,65 @@
-import sass
-import os
+"""The module provides functions to compile SCSS files into CSS.
 
-def compile_scss(input_file, output_file):
-    """
-    Compile SCSS file into CSS and write it to the specified output file.
-    """
+It can compile individual SCSS files or all SCSS files in a directory and its subdirectories.
+"""
+import logging
+import os
+from pathlib import Path
+
+import sass
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+
+
+def compile_scss(input_file: Path, output_file: Path) -> None:
+    """Compile SCSS file into CSS and write it to the specified output file."""
     try:
-        compiled_css = sass.compile(filename=input_file)
-        cleaned_css = compiled_css.replace(' }', '\n}')
-        with open(output_file, 'w') as f:
+        compiled_css = sass.compile(filename=str(input_file))
+        cleaned_css = compiled_css.replace(" }", "\n}")
+        with output_file.open("w") as f:
             f.write(cleaned_css)
-        print(f"Compiled {input_file} -> {output_file}")
-    except Exception as e:
-        print(f"Error compiling {input_file}: {e}")
-        
-def compile_all_scss_in_dir(input_dir, output_dir):
-    """
-    Compile all SCSS files in the input directory and its subdirectories,
-    saving the corresponding CSS files in the output directory.
+        logging.info("Compiled %s -> %s", input_file, output_file)
+    except (sass.CompileError, OSError):
+        logging.exception("Error compiling %s", input_file)
+
+
+def compile_all_scss_in_dir(input_dir: Path, output_dir: Path) -> None:
+    """Compile all SCSS files in the input directory and its subdirectories.
+
+    Save the corresponding CSS files in the output directory.
     """
     for root, _, files in os.walk(input_dir):
         for file in files:
             if file.endswith(".scss"):
-                scss_file = os.path.join(root, file)
-                
+                scss_file = Path(root) / file
+
                 # Create the corresponding CSS file path by replacing input_dir with output_dir
-                relative_path = os.path.relpath(scss_file, input_dir)
-                css_file = os.path.join(output_dir, relative_path).replace(".scss", ".css")
-                
+                relative_path = scss_file.relative_to(input_dir)
+                css_file = (output_dir / relative_path).with_suffix(".css")
+
                 # Ensure the output directory exists
-                css_dir = os.path.dirname(css_file)
-                if not os.path.exists(css_dir):
-                    os.makedirs(css_dir)
-                
+                css_dir = css_file.parent
+                if not css_dir.exists():
+                    css_dir.mkdir(parents=True)
+
                 # Compile the SCSS file to CSS
                 compile_scss(scss_file, css_file)
 
+
 if __name__ == "__main__":
     # Define the input SCSS file and the output CSS file
-    scss_dir = "static/scss"
-    css_dir = "static/css"
-    base_scss = os.path.join(scss_dir, "layout.scss")
-    base_css = os.path.join(css_dir, "layout.css")
-    
+    scss_dir = Path("static/scss")
+    css_dir = Path("static/css")
+    base_scss = scss_dir / "layout.scss"
+    base_css = css_dir / "layout.css"
+
     # Create the output directory if it doesn't exist
-    if not os.path.exists(css_dir):
-        os.makedirs(css_dir)
+    if not css_dir.exists():
+        css_dir.mkdir(parents=True)
 
     # Compile the SCSS file to CSS
     compile_scss(base_scss, base_css)
-    
-     # Compile all SCSS files in the input directory
-    compile_all_scss_in_dir(os.path.join(scss_dir, "pages"), os.path.join(css_dir, "pages"))
+
+    # Compile all SCSS files in the input directory
+    compile_all_scss_in_dir(scss_dir / "pages", css_dir / "pages")
