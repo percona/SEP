@@ -43,53 +43,42 @@ async def build_alters_task_payload(
         f"--recursion-method={form.recursion_method}",
     ]
 
-    if form.pause_file:
-        args.append(f'--pause-file={form.pause_file}')
+    # Mapping form fields to their respective arguments
+    optional_args = {
+        'pause_file': f'--pause-file={form.pause_file}',
+        'new_table_name': f'--new-table-name={form.new_table_name}',
+        'tries': f'--tries={form.tries}',
+        'set_vars': f'--set-vars={form.set_vars}',
+        'critical_load': f'--critical-load={form.critical_load}',
+        'max_load': f'--max-load={form.max_load}',
+        'chunk_time': f'--chunk-time={form.chunk_time}',
+        'max_lag': f'--max-lag={form.max_lag}',
+    }
 
-    if form.new_table_name:
-        args.append(f'--new-table-name={form.new_table_name}')
+    # Adding optional arguments if their values exist
+    args.extend(arg for key, arg in optional_args.items() if getattr(form, key))
 
+    # Adding flag arguments (no value needed, just presence)
+    flag_args = {
+        'print_arg': '--print',
+        'no_swap_tables': '--no-swap-tables',
+        'no_drop_old_table': '--no-drop-old-table',
+        'no_drop_new_table': '--no-drop-new-table',
+        'no_drop_triggers': '--no-drop-triggers',
+    }
+
+    # Adding flag arguments if set to True
+    args.extend(arg for key, arg in flag_args.items() if getattr(form, key))
+
+    # Adding '--progress' argument if 'print_arg' is set
     if form.print_arg:
-        args.append('--print')
         args.append(f'--progress={form.progress}')
-
-    if form.no_swap_tables:
-        args.append('--no-swap-tables')
-
-    if form.no_drop_old_table:
-        args.append('--no-drop-old-table')
-
-    if form.no_drop_new_table:
-        args.append('--no-drop-new-table')
-
-    if form.no_drop_triggers:
-        args.append('--no-drop-triggers')
-
-    if form.tries:
-        args.append(f'--tries={form.tries}')
-
-    if form.set_vars:
-        args.append(f'--set-vars={form.set_vars}')
-
-    if form.critical_load:
-        args.append(f'--critical-load={form.critical_load}')
-
-    if form.max_load:
-        args.append(f'--max-load={form.max_load}')
-
-    if form.chunk_time:
-        args.append(f'--chunk-time={form.chunk_time}')
-
-    if form.max_lag:
-        args.append(f'--max-lag={form.max_lag}')
 
     return GeneratedTask(
         app="alters",
         commands=[
             {
-                "args": args + [
-                    "--execute",
-                ],
+                "args": [*args, "--execute"],
                 "command": "pt-online-schema-change",
                 "meta": {
                     "schema_name": form.schema_name,

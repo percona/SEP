@@ -88,7 +88,7 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
-    """Creates an alter task"""
+    """Create an alter task."""
     logger.debug("Create alters task: %s", task)
     # TODO: validate response
     await task_api.post(
