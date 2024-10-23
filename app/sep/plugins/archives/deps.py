@@ -37,7 +37,7 @@ async def build_archives_task_payload(
         purge_list=[form.model_dump(by_alias=True)],
         alias=form.alias,
     )
-    payload_path = Path(__file__).parent / "payload.py"
+    payload_path = Path(__file__).parent / "payload"
     return TaskWrite(
         name=form.alias,
         backend=TaskBackendEnum.PROXY,
