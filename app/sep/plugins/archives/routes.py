@@ -2,6 +2,7 @@
 
 import logging
 
+import yaml
 from fastapi import APIRouter, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -27,10 +28,15 @@ async def archives_index(
     tasks = []
     for task in await tasks_api.get("/", params={"owner": "archiver"}):
         data = task["data"]
+        meta = data["meta"]
+        task_config = yaml.safe_load(meta["config"])
+        purge_item = task_config["PURGE_LIST"][0]
         taskinfo = {
-            "hostname": data["Constraints"][0]["RTarget"],
+            "hostname": meta["target"],
             "name": task["name"],
             "id": task["id"],
+            "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
+            "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
         }
         tasks.append(taskinfo)
     mysql_hosts = []
@@ -82,7 +88,7 @@ async def archives_create(
     logger.debug("Create archives task: %s", task)
     # TODO: validate response  # noqa: TD002, TD003
     await task_api.post(
-        "/generate/",
+        "/",
         json=task.model_dump(),
     )  # TODO: Proper error for unique constraint  # noqa: TD002, TD003
     return RedirectResponse(
@@ -100,15 +106,17 @@ async def archives_detail(
 ) -> HTMLResponse:
     """Retrieve archives task."""
     data = task["data"]
-    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    purge_item = task_config["PURGE_LIST"][0]
     task_data = {
         "name": task["name"],
         "created_at": task["created_at"],
         "updated_at": task["updated_at"],
-        "hostname": data["Constraints"][0]["RTarget"],
-        "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
+        "hostname": meta["target"],
         "meta": meta,
+        "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
+        "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
     }
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/history/{task['name']}")

@@ -1,6 +1,7 @@
 """Define dependencies for the Archives plugin."""
 
 import logging
+from pathlib import Path
 from typing import Annotated
 
 import yaml
@@ -11,16 +12,15 @@ from app.sep.plugins.archives.models import (
     ArchivesCreate,
     PurgeConfig,
     PurgeConfigAll,
-    PurgeConfigItem,
 )
-from app.tasks.models import GeneratedTask
+from app.tasks.models import TaskBackendEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
 
 
 async def build_archives_task_payload(
     form: Annotated[ArchivesCreate, Form()],
-) -> GeneratedTask:
+) -> TaskWrite:
     """Build the archive task payload from form.
 
     Build the payload for an Archives task to be executed, including the
@@ -28,50 +28,33 @@ async def build_archives_task_payload(
 
     :param form: The form data for the Archives creation.
     :type form: ArchivesCreate
-    :return: A fully constructed `GeneratedTask` object containing all the necessary
-        commands and parameters for the Archives task execution.
-    :rtype: GeneratedTask
+    :return: A fully constructed `TaskWrite` object containing all the necessary
+        configuration to create the Archives task.
+    :rtype: TaskWrite
     """
     purge_config = PurgeConfig(
         all=PurgeConfigAll(source_host=form.connect_to, source_port=3306),
-        purge_list=[
-            PurgeConfigItem(
-                alias=form.alias,
-                source_db=form.source_db,
-                source_table=form.source_table,
-                where=form.where,
-                dest_table=form.dest_table,
-            )
-        ],
+        purge_list=[form.model_dump(by_alias=True)],
+        alias=form.alias,
     )
-
-    purge_config_yaml = yaml.dump(purge_config.model_dump())
-
-    return GeneratedTask(
-        app="archiver",
-        commands=[
-            {
-                "args": [
-                    f"--alias={form.task_name}",
-                    "--config=${NOMAD_TASK_DIR}/purge_tables.yaml",
-                ],
-                "command": "/home/percona/bin/purge-tables.py",
-                "config": [
-                    {
-                        "content": purge_config_yaml,
-                        "path": "${NOMAD_TASK_DIR}/purge_tables.yaml",
-                    }
-                ],
-            }
-        ],
-        persist=True,
-        schedule={"save_only": True},
-        name=form.task_name,
-        target=form.hostname,
+    payload_path = Path(__file__).parent / "payload.py"
+    return TaskWrite(
+        name=form.alias,
+        backend=TaskBackendEnum.PROXY,
+        owner="archiver",
+        data={
+            "task": "run-python",
+            "meta": {
+                "config": yaml.dump(purge_config.model_dump(by_alias=True)),
+                "target": form.hostname,
+                "requirements": "PyMySQL\nfilelock\nPyYAML",
+            },
+            "payload": f"file://{payload_path}",
+        },
     )
 
 
-ArchivesGeneratedTask = Annotated[GeneratedTask, Depends(build_archives_task_payload)]
+ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
 
 
 async def get_archives_task(

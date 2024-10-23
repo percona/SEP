@@ -200,13 +200,16 @@ async def execute_task_name(
     """Send a task for execution."""
     # TODO: optional arg (if possible), else a structured one  # noqa: TD002, TD003
     #           so that tasks can be executed with arbitrary parameters
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)
     if config.is_template:
         raise HTTPForbiddenException(
             f"Task {task_name} is a template and cannot be executed",
         )
+    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
+    if config.backend == TaskBackendEnum.PROXY:
+        execution_data.meta |= config.data.get("meta", {})
+        execution_data.payload = config.data.get("payload", execution_data.payload)
     # Record the task execution request
     task_history = TaskHistory(
         task_id=config.id,
@@ -364,10 +367,15 @@ async def _process_queue_item(queue_id: int) -> None:
         if queue_item.status != TaskHistoryStatusEnum.PENDING:
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
 
+        if task.backend == TaskBackendEnum.PROXY:
+            task = await TaskManager.retrieve_by_name(
+                session=session, name=task.data["task"]
+            )
+
         match task.backend:
             case TaskBackendEnum.NOMAD:
                 executor = get_executor()
             case _:
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
-        await executor.run(session, queue_item)
+        await executor.run(session, queue_item, task)
