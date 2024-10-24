@@ -278,7 +278,7 @@ class TaskBase(SQLModel):
     data: dict = SQLField(sa_column=Column(JSON, nullable=False))
     backend: TaskBackendEnum = SQLField(
         default=TaskBackendEnum.NOMAD,
-        sa_column=Column(EnumField(TaskBackendEnum), nullable=False),
+        sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
     )
     owner: str | None = SQLField(default=None, index=True)
     is_template: bool = SQLField(default=False, index=True)
