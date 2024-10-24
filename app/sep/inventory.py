@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.core.db import BaseSQLModel
 from app.core.fields import EmptyStrToNone, RequiredStr
 from app.inventory.models import ServiceTypeEnum, SourceEnum
+from app.sep.models import SyncInventoryEntityTypeEnum
 
 
 class BaseInventoryModel(BaseModel):
@@ -353,3 +354,10 @@ class CreatedTable(CreatedEntityBase, Table):
 
 
 CreatedEntity = CreatedNode | CreatedService | CreatedSchema | CreatedTable
+
+ENTITY_MAPPING = {
+    SyncInventoryEntityTypeEnum.NODE: ("", CreatedNode),
+    SyncInventoryEntityTypeEnum.SERVICE: ("/services", CreatedService),
+    SyncInventoryEntityTypeEnum.SCHEMA: ("/schemas", CreatedSchema),
+    SyncInventoryEntityTypeEnum.TABLE: ("/tables", CreatedTable),
+}

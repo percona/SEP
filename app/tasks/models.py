@@ -140,20 +140,6 @@ class TaskGroupTaskTemplate(BaseModel):
         },
     }
 
-    def transform(self, system: str) -> dict:
-        """Transform task template fields based on the provided system.
-
-        Map the fields of the task template to system-specific field names
-            using `_transform_fields`.
-
-        :param system: The name of the system for field mapping (e.g., "nomad").
-        :type system: str
-        :return: A dictionary with the transformed field names.
-        :rtype: dict
-        """
-        field_mapping = self._transform_fields.get(system, {})
-        return {field_mapping.get(k, k): v for k, v in self.model_dump().items()}
-
 
 class TaskGroupTask(BaseModel):
     """Represent a task that belongs to a job task group.
@@ -221,14 +207,7 @@ class TaskGroup(BaseModel):
                         data["TaskGroups"].append(
                             {
                                 "Name": f"{self.name}{i+1}",
-                                "Tasks": [
-                                    {
-                                        **task.model_dump(by_alias=True),
-                                        "templates": [
-                                            t.transform("nomad") for t in task.templates
-                                        ],
-                                    }
-                                ],
+                                "Tasks": [task.model_dump(by_alias=True)],
                             },
                         )
                 else:
@@ -236,13 +215,7 @@ class TaskGroup(BaseModel):
                         {
                             "Name": self.name,
                             "Tasks": [
-                                {
-                                    **task.model_dump(by_alias=True),
-                                    "templates": [
-                                        t.transform("nomad") for t in task.templates
-                                    ],
-                                }
-                                for task in self.tasks
+                                task.model_dump(by_alias=True) for task in self.tasks
                             ],
                         },
                     )
@@ -344,7 +317,6 @@ class TaskBase(SQLModel):
         return v
 
 
-# TODO: Create Base/Write/Response models  # noqa: TD002, TD003
 class Task(TaskBase, BaseSQLModel, table=True):
     """Represent a task stored in the database.
 

@@ -7,7 +7,9 @@ from typing import Annotated
 import yaml
 from fastapi import Depends, Form, HTTPException
 
-from app.sep.deps import TaskAPI
+from app.inventory.models import ServiceTypeEnum
+from app.sep.deps import get_created_entity, InventoryAPI, TaskAPI
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
     PurgeConfig,
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 async def build_archives_task_payload(
     form: Annotated[ArchivesCreate, Form()],
+    inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build the archive task payload from form.
 
@@ -28,13 +31,47 @@ async def build_archives_task_payload(
 
     :param form: The form data for the Archives creation.
     :type form: ArchivesCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
     :return: A fully constructed `TaskWrite` object containing all the necessary
         configuration to create the Archives task.
     :rtype: TaskWrite
     """
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        form.service_id,
+        type=ServiceTypeEnum.MYSQL,
+    )
+    schema = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SCHEMA,
+        form.source_db_id,
+        service_id=service.id,
+    )
+    source_table = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.TABLE,
+        form.source_table_id,
+        schema_id=schema.id,
+    )
+    dest_table = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.TABLE,
+        form.dest_table_id,
+        schema_id=schema.id,
+    )
+    purge_item_data = {
+        **form.model_dump(include={"alias", "where"}, by_alias=True),
+        "source_db": schema.name,
+        "source_table": source_table.name,
+        "dest_table": dest_table.name,
+    }
     purge_config = PurgeConfig(
-        all=PurgeConfigAll(source_host=form.connect_to, source_port=3306),
-        purge_list=[form.model_dump(by_alias=True)],
+        all=PurgeConfigAll(
+            source_host=service.node.address, source_port=service.port or 3306
+        ),
+        purge_list=[purge_item_data],
         alias=form.alias,
     )
     payload_path = Path(__file__).parent / "payload"

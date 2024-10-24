@@ -8,6 +8,7 @@ from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
+from jinja2 import Environment, FileSystemLoader
 from pydantic import (
     AfterValidator,
     AliasGenerator,
@@ -218,7 +219,13 @@ class SEPSettings(BaseYamlExtraSettings):
         :return: The Jinja2 templates object for rendering templates.
         :rtype: Jinja2Templates
         """
-        return Jinja2Templates(directory=sep_settings.TEMPLATES_DIR)
+        return Jinja2Templates(
+            env=Environment(
+                loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
+                autoescape=True,
+                extensions=["jinja2.ext.do"],
+            )
+        )
 
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:

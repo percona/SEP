@@ -1,5 +1,9 @@
 """Define models for the Archives plugin."""
 
+from typing import Self
+
+from pydantic import model_validator
+
 from app.core.config import BaseCaseInsensitiveModel
 from app.core.fields import RequiredStr
 
@@ -12,27 +16,39 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type alias: RequiredStr
     :param hostname: The source hostname where the task will be executed.
     :type hostname: RequiredStr
-    :param connect_to: The connection type, which could be a hostname or `localhost`.
-    :type connect_to: RequiredStr
-    :param source_db: The source database schema from which data will be purged.
-    :type source_db: RequiredStr
-    :param source_table: The source table within the specified schema from which
+    :param service_id: The Inventory ID of the database service to connect to.
+    :type service_id: int
+    :param source_db_id: The source database schema ID from which data will be purged.
+    :type source_db_id: int
+    :param source_table_id: The source table ID within the specified schema from which
         data will be purged.
-    :type source_table: RequiredStr
+    :type source_table_id: int
     :param where: The WHERE condition that defines which data will be purged from
         the source table.
     :type where: RequiredStr
-    :param dest_table: The destination table where purged data can be archived.
-    :type dest_table: RequiredStr
+    :param dest_table_id: The destination table ID where purged data can be archived.
+    :type dest_table_id: int
     """
 
     alias: RequiredStr
     hostname: RequiredStr
-    connect_to: RequiredStr
-    source_db: RequiredStr
-    source_table: RequiredStr
+    service_id: int
+    source_db_id: int
+    source_table_id: int
     where: RequiredStr
-    dest_table: RequiredStr
+    dest_table_id: int
+
+    @model_validator(mode="after")
+    def validate_tables_are_different(self) -> Self:
+        """Validate that the source_table_id and dest_table_id are not the same.
+
+        :return: The validated instance
+        :rtype: ArchivesCreate
+        :raises ValueError: If the source_table_id is the same as the dest_table_id.
+        """
+        if self.source_table_id == self.dest_table_id:
+            raise ValueError("Source and Destination tables cannot be the same.")
+        return self
 
 
 class PurgeConfigAll(BaseCaseInsensitiveModel):

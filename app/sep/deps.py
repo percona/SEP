@@ -20,6 +20,15 @@ from app.core.security import crypto_timestamp_serializer
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
+from app.sep.inventory import (
+    CreatedEntity,
+    CreatedNode,
+    CreatedSchema,
+    CreatedService,
+    CreatedTable,
+    ENTITY_MAPPING,
+)
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
@@ -218,3 +227,127 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: SyncInventoryEntityTypeEnum,
+    entity_id: int,
+    **filters: Any,
+) -> CreatedEntity:
+    """Retrieve a created entity instance based on the given entity type and ID.
+
+    Fetches the entity data from the Inventory API and validates it into a
+    `CreatedEntityBase` model. Additional filters might be passed for extra validation.
+
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param entity_type: The type of the entity to retrieve.
+    :type entity_type: SyncInventoryEntityTypeEnum
+    :param entity_id: The ID of the entity to retrieve.
+    :type entity_id: int
+    :param filters: Fields filters to check for the retrieved entity.
+    :type filters: Any
+    :return: The validated `CreatedEntity` instance.
+    :rtype: CreatedEntity
+    :raises ValueError: If one of the optional filters fail.
+    """
+    entity_path, entity_model = ENTITY_MAPPING[entity_type]
+    entity_data = await inventory_api.get(f"{entity_path}/{entity_id}")
+    entity = entity_model.model_validate(entity_data)
+    for field, expected_value in filters.items():
+        if (value := entity_data.get(field)) != expected_value:
+            raise ValueError(
+                f"{field} is not valid for {entity_type.name.lower()} {entity_id} ({value})"
+            )
+    return entity
+
+
+async def get_created_node(inventory_api: InventoryAPI, node_id: int) -> CreatedNode:
+    """Retrieve a CreatedNode instance based on the given node ID.
+
+    Fetches the node data from the Inventory API and validates it into a `CreatedNode`
+    model.
+
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param node_id: The ID of the node to retrieve.
+    :type node_id: int
+    :return: The validated `CreatedNode` instance.
+    :rtype: CreatedNode
+    """
+    return await get_created_entity(
+        inventory_api, SyncInventoryEntityTypeEnum.NODE, node_id
+    )
+
+
+CreatedNodeDep = Annotated[CreatedNode, Depends(get_created_node)]
+
+
+async def get_created_service(
+    inventory_api: InventoryAPI,
+    service_id: int,
+) -> CreatedService:
+    """Retrieve a CreatedService instance based on the given service ID.
+
+    Fetches the service data from the Inventory API and validates it into a
+    `CreatedService` model.
+
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param service_id: The ID of the service to retrieve.
+    :type service_id: int
+    :return: The validated `CreatedService` instance.
+    :rtype: CreatedService
+    """
+    return await get_created_entity(
+        inventory_api, SyncInventoryEntityTypeEnum.SERVICE, service_id
+    )
+
+
+CreatedServiceDep = Annotated[CreatedService, Depends(get_created_service)]
+
+
+async def get_created_schema(
+    inventory_api: InventoryAPI,
+    schema_id: int,
+) -> CreatedSchema:
+    """Retrieve a CreatedSchema instance based on the given schema ID.
+
+    Fetches the schema data from the Inventory API and validates it into a
+    `CreatedSchema` model.
+
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param schema_id: The ID of the schema to retrieve.
+    :type schema_id: int
+    :return: The validated `CreatedSchema` instance.
+    :rtype: CreatedSchema
+    """
+    return await get_created_entity(
+        inventory_api, SyncInventoryEntityTypeEnum.SCHEMA, schema_id
+    )
+
+
+CreatedSchemaDep = Annotated[CreatedSchema, Depends(get_created_schema)]
+
+
+async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> CreatedTable:
+    """Retrieve a CreatedTable instance based on the given table ID.
+
+    Fetches the table data from the Inventory API and validates it into a `CreatedTable`
+    model.
+
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: InventoryAPI
+    :param table_id: The ID of the table to retrieve.
+    :type table_id: int
+    :return: The validated `CreatedTable` instance.
+    :rtype: CreatedTable
+    """
+    return await get_created_entity(
+        inventory_api, SyncInventoryEntityTypeEnum.TABLE, table_id
+    )
+
+
+CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]

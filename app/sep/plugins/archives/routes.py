@@ -39,14 +39,14 @@ async def archives_index(
             "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
         }
         tasks.append(taskinfo)
-    mysql_hosts = []
+    mysql_services = []
     for host in all_hosts:
         for service in host["services"]:
             if service["type"] == "mysql":
                 host["schemas"] = await inventory_api.get(
                     f"/services/{service['id']}/schemas/"
                 )
-                mysql_hosts.append(host)
+                mysql_services.append(host)
                 break
     history_tasks = []
     scheduled_tasks = []
@@ -65,7 +65,7 @@ async def archives_index(
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
-            "mysql_hosts": mysql_hosts,
+            "mysql_services": mysql_services,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,

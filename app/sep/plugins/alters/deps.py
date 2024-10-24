@@ -5,7 +5,13 @@ from typing import Annotated
 
 from fastapi import Depends, Form, HTTPException
 
-from app.sep.deps import TaskAPI
+from app.inventory.models import ServiceTypeEnum
+from app.sep.deps import (
+    get_created_entity,
+    InventoryAPI,
+    TaskAPI,
+)
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
 from app.tasks.models import GeneratedTask
 
@@ -14,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 async def build_alters_task_payload(
     form: Annotated[AltersCreate, Form()],
+    inventory_api: InventoryAPI,
 ) -> GeneratedTask:
     """Build the alter task payload from form.
 
@@ -22,15 +29,35 @@ async def build_alters_task_payload(
 
     :param form: The form data for the Alters creation.
     :type form: AltersCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
     :return: A fully constructed `GeneratedTask` object containing all the necessary
         commands and parameters for the Alters task execution.
     :rtype: GeneratedTask
     """
-    # TODO: port from Service  # noqa: TD002, TD003
-    if form.connect_to == "localhost":
-        dsn = f"D={form.schema_name},t={form.table_name}"
-    else:
-        dsn = f"h={form.connect_to},D={form.schema_name},t={form.table_name}"
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        form.service_id,
+        type=ServiceTypeEnum.MYSQL,
+    )
+    schema = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SCHEMA,
+        form.schema_id,
+        service_id=service.id,
+    )
+    table = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.TABLE,
+        form.table_id,
+        schema_id=schema.id,
+    )
+    dsn = f"D={schema.name},t={table.name}"
+    if service.port is not None:
+        dsn = f"P={service.port},{dsn}"
+    if service.node.address != "localhost":
+        dsn = f"h={service.node.address},{dsn}"
 
     if form.recursion_method == "dsn":
         form.recursion_method = f"dsn={form.dsn_table}"
@@ -79,8 +106,8 @@ async def build_alters_task_payload(
                 "args": [*args, "--execute"],
                 "command": "pt-online-schema-change",
                 "meta": {
-                    "schema_name": form.schema_name,
-                    "table_name": form.table_name,
+                    "schema_name": schema.name,
+                    "table_name": table.name,
                 },
             },
         ],

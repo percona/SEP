@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, TaskAPI
 from app.sep.plugins.alters.deps import AltersGeneratedTask, AltersTask
@@ -23,16 +24,13 @@ async def alters_index(
     inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """Homepage of alters plugin."""
-    all_hosts = await inventory_api.get("/")
-    mysql_hosts = []
-    for host in all_hosts:
-        for service in host["services"]:
-            if service["type"] == "mysql":
-                host["schemas"] = await inventory_api.get(
-                    f"/services/{service['id']}/schemas/",
-                )
-                mysql_hosts.append(host)
-                break
+    mysql_services = await inventory_api.get(
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    )
+    for service in mysql_services:
+        service["schemas"] = await inventory_api.get(
+            f"/services/{service['id']}/schemas/",
+        )
     tasks = []
     for task in await tasks_api.get("/", params={"owner": "alters"}):
         data = task["data"]
@@ -61,7 +59,7 @@ async def alters_index(
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
-            "mysql_hosts": mysql_hosts,
+            "mysql_services": mysql_services,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
