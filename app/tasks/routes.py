@@ -335,6 +335,33 @@ async def transform_payload(
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
 
+async def _prepare_task_history(
+    session: SessionDep,
+    task_name: str,
+    execution_data: TaskExecuteRequest = None
+):
+    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
+    logger.debug("Executing task %s", task_name)
+    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
+    if config.is_template:
+        raise HTTPForbiddenException(
+            f"Task {task_name} is a template and cannot be executed",
+        )
+    # Record the task execution request
+    task_history = TaskHistory(
+        task_id=config.id,
+        execution_request=TaskExecutionRequest(
+            task=task_name,
+            target=execution_data.meta.get("target", "all"),
+            meta=execution_data.meta,
+            payload=execution_data.payload,
+            tracking={"evaluation_id": ""},
+        ),
+        status=TaskHistoryStatusEnum.PENDING,
+    )
+    history_recorded = await TaskHistoryManager.save(session, task_history)
+    return history_recorded
+
 
 async def _prepare_task_history(
     session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
