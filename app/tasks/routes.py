@@ -1,6 +1,5 @@
 """Define routes for the Tasks API."""
 
-from datetime import datetime, timedelta
 import logging
 from collections.abc import Awaitable
 from http import HTTPStatus
@@ -336,11 +335,10 @@ async def transform_payload(
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
 
+
 async def _prepare_task_history(
-    session: SessionDep,
-    task_name: str,
-    execution_data: TaskExecuteRequest = None
-):
+    session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
+) -> Awaitable[TaskHistory]:
     execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)
@@ -360,8 +358,7 @@ async def _prepare_task_history(
         ),
         status=TaskHistoryStatusEnum.PENDING,
     )
-    history_recorded = await TaskHistoryManager.save(session, task_history)
-    return history_recorded
+    return await TaskHistoryManager.save(session, task_history)
 
 
 async def _prepare_task_history(

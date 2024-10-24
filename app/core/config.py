@@ -4,7 +4,6 @@ import re
 import secrets
 from collections.abc import Sequence
 from functools import cached_property
-from kombu import Queue
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
 
@@ -359,7 +358,6 @@ class Settings(BaseYamlSettings):
     LOGGING_EXTRA: dict[str, LogLevel] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
-    
 
     @computed_field
     @property
