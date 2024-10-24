@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.main import api_router
 from app.core.celery import create_celery
 from app.core.config import settings
+from app.core.celery import create_celery
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app

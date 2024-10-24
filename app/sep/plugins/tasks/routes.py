@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.celery import get_task_info
 from app.core.fields import URIPath
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
@@ -97,7 +98,6 @@ async def tasks_delete(
     """Delete task."""
     await tasks_api.delete(f"/{task_name}")
     return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
-
 
 @router.post(
     "/{task_name}/trigger",
