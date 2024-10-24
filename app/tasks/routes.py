@@ -1,5 +1,6 @@
 """Define routes for the Tasks API."""
 
+from datetime import datetime, timedelta
 import logging
 from http import HTTPStatus
 from os import getenv
@@ -29,6 +30,7 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
     TaskStats,
     TransformPayloadRequest,
+    TriggerRequest,
 )
 from app.tasks.utils import process_queue_item
 
@@ -216,17 +218,17 @@ async def execute_task_name(
 async def trigger_task_name(
     session: SessionDep,
     task_name: str,
-    execution_data: TaskExecuteRequest = None,
+    trigger_data: TriggerRequest = None,
 ) -> JSONResponse:
     """Send a task for execution."""
 
     history_recorded = await _prepare_task_history(
-        session=session, task_name=task_name, execution_data=execution_data
+        session=session, task_name=task_name
     )
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-
-    task = trigger_task.apply_async(args=[history_recorded.id], countdown=1)
+    
+    task = trigger_task.apply_async(args=[history_recorded.id], countdown=trigger_data.countdown)
     return JSONResponse({"task_id": task.id})
 
 

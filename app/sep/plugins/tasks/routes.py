@@ -1,5 +1,6 @@
 """Define routes for the Tasks Plugin."""
 
+from datetime import datetime
 import logging
 from typing import Annotated
 
@@ -12,7 +13,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
 from app.sep.plugins.tasks.models import TaskCreateRequest
 from app.tasks.main import AVAILABLE_OWNERS
-from app.tasks.models import TaskBackendEnum, TaskExecuteRequest
+from app.tasks.models import TaskBackendEnum, TaskExecuteRequest, TriggerRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -106,11 +107,10 @@ async def tasks_delete(
 async def trigger_task_name(
    task_name: str,
    tasks_api: TaskAPI,
-   execute_data: Annotated[TaskExecuteRequest, Form()],
+   trigger_data: Annotated[TriggerRequest, Form()],
 ) -> dict[str, str]:
     
     logger.debug("triggering task %s", task_name)
-    
-    await tasks_api.post(f"/trigger/{task_name}", json=execute_data.model_dump())
+    await tasks_api.post(f"/trigger/{task_name}", json=trigger_data.model_dump())
 
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)

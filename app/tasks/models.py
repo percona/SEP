@@ -13,6 +13,7 @@ Todo:
 from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
+import math
 from pathlib import Path
 from statistics import mean
 from typing import Any, Literal, Self
@@ -600,3 +601,33 @@ class TransformPayloadRequest(BaseModel):
 
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
+
+class TriggerRequest(BaseModel):
+    
+    trigger_time: str
+    countdown: int
+
+    @model_validator(mode="before")
+    def convert_trigger_datetime(cls, values):
+        trigger_time_str = values.get('trigger_time')
+
+        try:
+            trigger_time_dt = datetime.strptime(trigger_time_str, '%Y-%m-%dT%H:%M')
+        except ValueError:
+            raise ValueError(f"Invalid trigger_time format: {trigger_time_str}. Expected "
+                "'YYYY-MM-DDTHH:MM'.")
+            
+        current_time = datetime.now()
+        if trigger_time_dt <= current_time:
+            raise ValueError("Trigger time must be in the future.")
+
+        time_difference = trigger_time_dt - current_time
+
+        # Get the remaining seconds
+        remaining_seconds = time_difference.total_seconds()
+
+        # Ceil the remaining seconds
+        remaining_seconds_ceil = math.ceil(remaining_seconds)
+
+        values['countdown'] = remaining_seconds_ceil
+        return values
