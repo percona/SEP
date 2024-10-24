@@ -1,10 +1,16 @@
 {% if tasks %}
+<style>
+    .form-elements {
+        display: none;
+    }
+</style>
 <table>
     <thead>
     <tr>
         <th>Name</th>
         <th>Host</th>
         <th>Table</th>
+        <th>Trigger</th>
         <th>Actions</th>
     </tr>
     </thead>
@@ -14,6 +20,17 @@
         <td>{{ mytask['name'] }}</td>
         <td>{{ mytask['hostname'] }}</td>
         <td>{{ mytask['table'] }}</td>
+        <td>
+            <form class="form-group" method="post" action="{{ mytask['name'] }}/trigger">
+                <label>
+                    <input type="checkbox" class="toggleCheckbox" onchange="toggleVisibility(event)"> Show Trigger
+                </label>
+                <div class="form-elements">
+                    <button class="icons">alarm</button>
+                    <input type="datetime-local" id="trigger_time" name="trigger_time">
+                </div>
+            </form>
+        </td>
         <td class="flex">
             <form id="{{ mytask['name'] }}-send" method="post" action="{{ mytask['name'] }}">
                 <button name="location" class="icons">send</button>
@@ -30,6 +47,20 @@
     {% endfor %}
     </tbody>
 </table>
+<script>
+    function toggleVisibility(event) {
+        console.log(event)
+        var checkBox = event.target;
+        var parentDiv = checkBox.closest('.form-group');
+        var formElements = parentDiv.querySelector('.form-elements');
+        // Toggle visibility based on checkbox state
+        if (checkBox.checked) {
+            formElements.style.display = "block";
+        } else {
+            formElements.style.display = "none";
+        }
+    }
+</script>
 {% else %}
 <p>No data</p>
 {% endif %}

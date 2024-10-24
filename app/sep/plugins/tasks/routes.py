@@ -108,7 +108,7 @@ async def trigger_task_name(
    task_name: str,
    tasks_api: TaskAPI,
    trigger_data: Annotated[TriggerRequest, Form()],
-) -> dict[str, str]:
+) -> RedirectResponse:
     
     logger.debug("triggering task %s", task_name)
     await tasks_api.post(f"/trigger/{task_name}", json=trigger_data.model_dump())

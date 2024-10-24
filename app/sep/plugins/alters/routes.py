@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
@@ -13,6 +13,8 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
+
+from app.tasks.models import TriggerRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -93,6 +95,22 @@ async def alters_execute(
     await tasks_api.post(
         f"/execute/{task['name']}"
     )  # TODO: send meta form fields  # noqa: TD002, TD003
+    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/trigger",
+    dependencies=[IsAuthenticated],
+    response_class=RedirectResponse,
+)
+async def alters_trigger(
+    task: AltersTask,
+    tasks_api: TaskAPI,
+    trigger_data: Annotated[TriggerRequest, Form()],
+) -> RedirectResponse:
+    logger.debug("triggering task %s", task['name'])
+    await tasks_api.post(f"/trigger/{task['name']}", json=trigger_data.model_dump())
+
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
 
