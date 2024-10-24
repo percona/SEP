@@ -14,7 +14,6 @@ def create_celery():
     celery_app.conf.update(result_persistent=True)
     celery_app.conf.update(worker_send_task_events=False)
     celery_app.conf.update(worker_prefetch_multiplier=1)
-    celery_app.conf.update(result_backend='rpc://')
 
     return celery_app
 

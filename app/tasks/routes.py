@@ -226,7 +226,7 @@ async def trigger_task_name(
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
 
-    task = trigger_task.apply_async(args=[history_recorded.id], countdown=30)
+    task = trigger_task.apply_async(args=[history_recorded.id], countdown=1)
     return JSONResponse({"task_id": task.id})
 
 

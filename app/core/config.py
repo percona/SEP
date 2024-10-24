@@ -1,5 +1,6 @@
 """Define the application settings."""
 
+import os
 import re
 import secrets
 from collections.abc import Sequence
@@ -290,7 +291,7 @@ class CeleryConfig(BaseModel):
     """Configuration for Celery."""
     
     CELERY_BROKER_URL: str
-    CELERY_BACKEND_URL: str = "rpc://" # Optional field
+    CELERY_RESULT_BACKEND: str | None = None  # Optional field
     CELERY_TASK_QUEUES: list = (
         # default queue
         Queue("celery"),
@@ -301,13 +302,14 @@ class CeleryConfig(BaseModel):
     @model_validator(mode="before")
     def handle_backend_url(cls, values: dict) -> dict:
         if values.get("CELERY_BROKER_URL") == "filesystem://":
+
             values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {
-                "data_folder_in": "/tmp/celery_broker/input",
-                "data_folder_out": "/tmp/celery_broker/output",
-                "data_folder_processed": "/tmp/celery_broker/processed",
+                "data_folder_in": os.path.join(BASE_DIR, ".celery"),
+                "data_folder_out": os.path.join(BASE_DIR, ".celery"),
+                "control_folder": os.path.join(BASE_DIR, ".celery"),
             }
+            
         else:
-            # Ensure CELERY_BROKER_TRANSPORT_OPTIONS is empty if not using filesystem
             values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {}
         return values
 
