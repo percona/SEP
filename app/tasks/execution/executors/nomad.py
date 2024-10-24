@@ -73,7 +73,7 @@ class NomadExecutor(BaseExecutor):
         )
 
     @staticmethod
-    def prepare_task(queue_item: TaskHistory) -> Task:
+    def prepare_task(queue_item: TaskHistory, task: Task | None = None) -> Task:
         """Prepare a Task instance for execution.
 
         Modify the task data based on the execution request's metadata, such as setting
@@ -82,10 +82,13 @@ class NomadExecutor(BaseExecutor):
 
         :param queue_item: The task history record containing the task to prepare.
         :type queue_item: TaskHistory
+        :param task: The task to be executed. If None, the queue_item's task will be
+            used.
+        :type task: Task | None
         :return: The prepared `Task` instance ready for execution.
         :rtype: Task
         """
-        task = queue_item.task
+        task = queue_item.task if task is None else task
         # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD002, TD003
         task.data["ID"] += f"-{queue_item.execution_request.target}"
         if queue_item.execution_request.meta:
@@ -123,14 +126,20 @@ class NomadExecutor(BaseExecutor):
             raise ValueError("The job status could not be determined")
         return job_status
 
-    def dispatch_job(self, queue_item: TaskHistory) -> dict[str, Any]:
+    def dispatch_job(
+        self, queue_item: TaskHistory, task: Task | None = None
+    ) -> dict[str, Any]:
         """Dispatch a parameterized job for execution.
 
         :param queue_item: The task history containing information about the execution.
         :type queue_item: TaskHistory
+        :param task: The task to be executed. If None, the queue_item's task will be
+            used.
+        :type task: Task | None
         :return: The status response from Nomad after dispatching the job.
         :rtype: dict[str, Any]
         """
+        task = queue_item.task if task is None else task
         logger.debug("Dispatching job: %s", queue_item)
         payload = queue_item.execution_request.payload_content
         if payload is not None:
@@ -138,12 +147,12 @@ class NomadExecutor(BaseExecutor):
                 payload = minify_file_content(payload)
             payload = b64encode_str(payload)
         job_status = self.backend.job.dispatch_job(
-            queue_item.task.data["ID"],
+            task.data["ID"],
             payload=payload,
             meta=queue_item.execution_request.meta,
         )
         if not job_status:
-            logger.error("Unable to dispatch task %s", queue_item.task.id)
+            logger.error("Unable to dispatch task %s", task.id)
             raise ValueError("The job status could not be determined")
         return job_status
 
@@ -169,6 +178,7 @@ class NomadExecutor(BaseExecutor):
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
+        task: Task | None = None,
     ) -> TaskHistory:
         """Run a task on the Nomad backend and update task history.
 
@@ -181,13 +191,16 @@ class NomadExecutor(BaseExecutor):
         :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
+        :param task: The task to be executed. If None, the queue_item's task will be
+            used.
+        :type task: Task | None
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         :raises ValueError: If the job or job status cannot be determined.
         :raises NotImplementedError: If the job type or certain Nomad features are not
             yet supported.
         """
-        task = self.prepare_task(queue_item)
+        task = self.prepare_task(queue_item, task)
 
         start_ts, stop_ts = time.time_ns(), None
         job_status = {}
@@ -205,7 +218,7 @@ class NomadExecutor(BaseExecutor):
             job = self.get_job(task.data["ID"])
             logger.debug("Job: %s", job)
         if task.data.get("ParameterizedJob"):
-            job_status = self.dispatch_job(queue_item)
+            job_status = self.dispatch_job(queue_item, task)
             job = self.get_job(job_status["DispatchedJobID"])
 
         queue_item.execution_request.tracking.update(evaluation_id=job_status["EvalID"])

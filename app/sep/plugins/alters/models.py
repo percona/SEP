@@ -12,12 +12,12 @@ class AltersCreate(BaseModel):
     :type task_name: RequiredStr
     :param hostname: The target hostname for the task execution.
     :type hostname: RequiredStr
-    :param connect_to: The connection type, which could be a hostname or `localhost`.
-    :type connect_to: RequiredStr
-    :param schema_name: The database schema name on which the task will operate.
-    :type schema_name: RequiredStr
-    :param table_name: The table name within the schema to be altered.
-    :type table_name: RequiredStr
+    :param service_id: The Inventory ID of the database service to connect to.
+    :type service_id: int
+    :param schema_id: The database schema ID on which the task will operate.
+    :type schema_id: int
+    :param table_id: The table ID within the schema to be altered.
+    :type table_id: int
     :param recursion_method: The method for handling recursion.
     :type recursion_method: RequiredStr
     :param alter: The specific alter command to be executed.
@@ -58,9 +58,9 @@ class AltersCreate(BaseModel):
 
     task_name: RequiredStr
     hostname: RequiredStr
-    connect_to: RequiredStr
-    schema_name: RequiredStr
-    table_name: RequiredStr
+    service_id: int
+    schema_id: int
+    table_id: int
     recursion_method: RequiredStr
     alter: RequiredStr
     dsn_table: str = ""

@@ -107,10 +107,12 @@ extend-exclude = [
     "data",
     "docs",
     "etc",
-    "app/*/migrations/*"
+    "app/*/migrations/*",
+    "payload.py",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"
+force-exclude = true
 
 [tool.ruff.lint]
 select = [
@@ -193,7 +195,6 @@ order-by-type = false
     "N802",
 ]
 "app/core/config.py" = ["ARG003"]
-"payload.py" = ["T201"]
 
 [tool.ruff.format]
 quote-style = "double"

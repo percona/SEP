@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseLowercaseModel
 from app.core.utils import async_run
-from app.tasks.models import TaskHistory
+from app.tasks.models import Task, TaskHistory
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
+        task: Task | None = None,
     ) -> TaskHistory:
         """Run a task and update the related task history.
 
@@ -72,6 +73,9 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
+        :param task: The task to be executed. If None, the queue_item's task will be
+            used.
+        :type task: Task | None
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """

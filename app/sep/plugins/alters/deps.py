@@ -1,11 +1,19 @@
 """Define dependencies for the Alters plugin."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Form, HTTPException
 
-from app.sep.deps import TaskAPI
+from app.inventory.models import ServiceTypeEnum
+from app.sep.deps import (
+    DefaultContext,
+    get_created_entity,
+    get_tasks_context,
+    InventoryAPI,
+    TaskAPI,
+)
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
 from app.tasks.models import GeneratedTask
 
@@ -14,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 async def build_alters_task_payload(
     form: Annotated[AltersCreate, Form()],
+    inventory_api: InventoryAPI,
 ) -> GeneratedTask:
     """Build the alter task payload from form.
 
@@ -22,15 +31,35 @@ async def build_alters_task_payload(
 
     :param form: The form data for the Alters creation.
     :type form: AltersCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
     :return: A fully constructed `GeneratedTask` object containing all the necessary
         commands and parameters for the Alters task execution.
     :rtype: GeneratedTask
     """
-    # TODO: port from Service  # noqa: TD002, TD003
-    if form.connect_to == "localhost":
-        dsn = f"D={form.schema_name},t={form.table_name}"
-    else:
-        dsn = f"h={form.connect_to},D={form.schema_name},t={form.table_name}"
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        form.service_id,
+        type=ServiceTypeEnum.MYSQL,
+    )
+    schema = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SCHEMA,
+        form.schema_id,
+        service_id=service.id,
+    )
+    table = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.TABLE,
+        form.table_id,
+        schema_id=schema.id,
+    )
+    dsn = f"D={schema.name},t={table.name}"
+    if service.port is not None:
+        dsn = f"P={service.port},{dsn}"
+    if service.node.address != "localhost":
+        dsn = f"h={service.node.address},{dsn}"
 
     if form.recursion_method == "dsn":
         form.recursion_method = f"dsn={form.dsn_table}"
@@ -79,8 +108,8 @@ async def build_alters_task_payload(
                 "args": [*args, "--execute"],
                 "command": "pt-online-schema-change",
                 "meta": {
-                    "schema_name": form.schema_name,
-                    "table_name": form.table_name,
+                    "schema_name": schema.name,
+                    "table_name": table.name,
                 },
             },
         ],
@@ -122,3 +151,44 @@ async def get_alters_task(
 
 
 AltersTask = Annotated[dict, Depends(get_alters_task)]
+
+
+def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
+    """Extract relevant information from a task for the Alters plugin.
+
+    Processes the task data to extract hostname and table information.
+
+    :param task: The task data retrieved from the Tasks API.
+    :type task: dict[str, Any]
+    :return: A dictionary containing hostname and table information.
+    :rtype: dict[str, Any]
+    """
+    data = task["data"]
+    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    return {
+        "hostname": data["Constraints"][0]["RTarget"],
+        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+    }
+
+
+async def get_alters_index_context(
+    inventory_api: InventoryAPI, tasks_api: TaskAPI, context: DefaultContext
+) -> dict[str, Any]:
+    """Assemble the context for the Alters plugin index view.
+
+    Retrieves MySQL services and associated tasks, organizing them based on their
+    execution status. Integrates this information into the default context for
+    rendering in templates.
+
+    :param inventory_api: The Inventory API client for fetching service and schema data.
+    :type inventory_api: InventoryAPI
+    :param tasks_api: The TaskAPI client for fetching task data.
+    :type tasks_api: TaskAPI
+    :param context: The default context to be updated with Alters-specific information.
+    :type context: DefaultContext
+    :return: An updated context dictionary containing Alters-related data.
+    :rtype: dict[str, Any]
+    """
+    return await get_tasks_context(
+        inventory_api, tasks_api, get_alters_task_info, context, "alters"
+    )

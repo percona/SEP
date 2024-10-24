@@ -1,40 +1,39 @@
-{% from tornado.escape import xhtml_unescape %}
-{% if saved_tasks %}
+{% if tasks %}
 <table>
     <thead>
-    <tr>
-        <th>Name</th>
-        <th>Host</th>
-        <th>Table</th>
-        <th>Actions</th>
-    </tr>
+        <tr>
+            <th>Name</th>
+            <th>Host</th>
+            <th>Source Table</th>
+            <th>Destination Table</th>
+            <th>Actions</th>
+        </tr>
     </thead>
     <tbody>
-    {% for archive in saved_tasks %}
-    <tr>
-        <td>{{ archive['name'] }}</td>
-        <td>{{ archive['hostname'] }}</td>
-        <td>{{ archive['table'] }}</td>
-        <td class="flex">
-            <form id="{{ archive['name'] }}-send" method="post" action="execute/{{ archive['name'] }}">
-                <button name="location" class="icons">send</button>
-                <input type="hidden" name="task" value="{{ archive['name'] }}">
-                <input type="hidden" name="host" value="{{ archive['hostname'] }}">
-                {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
-            </form>
-            <form id="{{ archive['name'] }}-info" method="get" action="details/{{ archive['name'] }}">
-                <button class="icons">info</button>
-            </form>
-            <form id="{{ archive['name'] }}-delete" method="post" action="delete/{{ archive['name'] }}">
-                <button name="location" class="icons">delete forever</button>
-                <input type="hidden" name="task" value="{{ archive['name'] }}">
-                {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
-            </form>
-        </td>
-    </tr>
-    {% end %}
+        {% for archive in tasks %}
+        <tr>
+            <td>{{ archive['name'] }}</td>
+            <td>{{ archive['hostname'] }}</td>
+            <td>{{ archive['source_table'] }}</td>
+            <td>{{ archive['dest_table'] }}</td>
+            <td class="flex">
+                <form id="{{ archive['name'] }}-send" method="post" action="{{ archive['name'] }}">
+                    <button name="location" class="icons">send</button>
+                    <input type="hidden" name="task" value="{{ archive['name'] }}">
+                    <input type="hidden" name="host" value="{{ archive['hostname'] }}">
+                </form>
+                <form id="{{ archive['name'] }}-info" method="get" action="{{ archive['name'] }}">
+                    <button class="icons">info</button>
+                </form>
+                <form id="{{ archive['name'] }}-delete" method="post" action="{{ archive['name'] }}/delete">
+                    <button name="location" class="icons">delete forever</button>
+                    <input type="hidden" name="task" value="{{ archive['name'] }}">
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
     </tbody>
 </table>
 {% else %}
 <p>No data</p>
-{% end %}
+{% endif %}

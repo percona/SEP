@@ -8,15 +8,18 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
-from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, SessionDep
-from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.inventory.deps import (
+from app.sep.deps import (
     CreatedNodeDep,
     CreatedSchemaDep,
     CreatedServiceDep,
-    SyncersDep,
+    DefaultContext,
+    InventoryAPI,
+    IsAuthenticated,
+    SessionDep,
 )
+from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
+from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.inventory.deps import SyncersDep
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
     run_node_sync,

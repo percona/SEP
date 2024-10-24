@@ -24,6 +24,10 @@ default:
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
+      - NAME: Archive
+        MODULE_NAME: archives
+        URI_PATH: /archives
+        CSS_CLASS: archive
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
