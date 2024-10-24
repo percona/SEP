@@ -1,5 +1,9 @@
+"""Module contains utility functions for processing task queue items."""
+
 from http import HTTPStatus
+
 from fastapi import HTTPException
+
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executor

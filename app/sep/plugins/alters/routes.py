@@ -108,7 +108,15 @@ async def alters_trigger(
     tasks_api: TaskAPI,
     trigger_data: Annotated[TriggerRequest, Form()],
 ) -> RedirectResponse:
-    logger.debug("triggering task %s", task['name'])
+    """Route the task to the appropriate queue based on the task name.
+
+    :param task: The AltersTask object containing the task details.
+    :param tasks_api: The TaskAPI instance for interacting with the task API.
+    :param trigger_data: The form data containing the parameters required to trigger
+        the task.
+    :return: A redirection response to the alters list page after triggering the task.
+    """
+    logger.debug("triggering task %s", task["name"])
     await tasks_api.post(f"/trigger/{task['name']}", json=trigger_data.model_dump())
 
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

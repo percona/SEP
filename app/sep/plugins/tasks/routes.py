@@ -1,13 +1,11 @@
 """Define routes for the Tasks Plugin."""
 
-from datetime import datetime
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.core.celery import get_task_info
 from app.core.fields import URIPath
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
@@ -100,16 +98,17 @@ async def tasks_delete(
     await tasks_api.delete(f"/{task_name}")
     return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
 
+
 @router.post(
     "/{task_name}/trigger",
     dependencies=[IsAuthenticated],
 )
 async def trigger_task_name(
-   task_name: str,
-   tasks_api: TaskAPI,
-   trigger_data: Annotated[TriggerRequest, Form()],
+    task_name: str,
+    tasks_api: TaskAPI,
+    trigger_data: Annotated[TriggerRequest, Form()],
 ) -> RedirectResponse:
-    
+    """Route the task to the appropriate queue based on the task name."""
     logger.debug("triggering task %s", task_name)
     await tasks_api.post(f"/trigger/{task_name}", json=trigger_data.model_dump())
 

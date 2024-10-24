@@ -1,7 +1,7 @@
 """Define routes for the Tasks API."""
 
-from datetime import datetime, timedelta
 import logging
+from collections.abc import Awaitable
 from http import HTTPStatus
 from os import getenv
 from typing import Any
@@ -14,8 +14,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.tasks.celery_task import trigger_task
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.db import get_async_session_maker
-from app.tasks.deps import get_executor, SessionDep, TaskExecutor
+from app.tasks.deps import SessionDep, TaskExecutor
 from app.tasks.models import (
     GeneratedTask,
     Task,
@@ -202,13 +201,13 @@ async def execute_task_name(
     execution_data: TaskExecuteRequest = None,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
-
     history_recorded = await _prepare_task_history(
         session=session, task_name=task_name, execution_data=execution_data
     )
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
     return await _schedule_queue_item(history_recorded, background_tasks)
+
 
 @router.post(
     "/trigger/{task_name}",
@@ -221,16 +220,14 @@ async def trigger_task_name(
     trigger_data: TriggerRequest = None,
 ) -> JSONResponse:
     """Send a task for execution."""
-
-    history_recorded = await _prepare_task_history(
-        session=session, task_name=task_name
-    )
+    history_recorded = await _prepare_task_history(session=session, task_name=task_name)
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-    
-    task = trigger_task.apply_async(args=[history_recorded.id], countdown=trigger_data.countdown)
-    return JSONResponse({"task_id": task.id})
 
+    task = trigger_task.apply_async(
+        args=[history_recorded.id], countdown=trigger_data.countdown
+    )
+    return JSONResponse({"task_id": task.id})
 
 
 @router.post(
@@ -338,11 +335,10 @@ async def transform_payload(
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
 
+
 async def _prepare_task_history(
-    session: SessionDep,
-    task_name: str,
-    execution_data: TaskExecuteRequest = None
-):
+    session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
+) -> Awaitable[TaskHistory]:
     execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)
@@ -362,8 +358,7 @@ async def _prepare_task_history(
         ),
         status=TaskHistoryStatusEnum.PENDING,
     )
-    history_recorded = await TaskHistoryManager.save(session, task_history)
-    return history_recorded
+    return await TaskHistoryManager.save(session, task_history)
 
 
 async def _schedule_queue_item(

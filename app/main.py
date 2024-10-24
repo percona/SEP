@@ -6,12 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
-from app.core.config import settings
 from app.core.celery import create_celery
+from app.core.config import settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app
 from app.tasks.main import initial_tasks_setup, tasks_app
+
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI app."""
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
 
     return current_app
 
+
 app = create_app()
 celery = app.celery_app
 
@@ -44,7 +46,7 @@ if __name__ == "__main__":
         level=settings.LOGGING,
         format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",
     )
-    logging.debug('CELERY_Config, %s', settings.CELERY)
+    logging.debug("CELERY_Config, %s", settings.CELERY)
     for name, level in settings.LOGGING_EXTRA.items():
         logging.getLogger(name).setLevel(level)
 

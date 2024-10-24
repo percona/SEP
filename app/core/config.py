@@ -1,14 +1,13 @@
 """Define the application settings."""
 
-import os
 import re
 import secrets
 from collections.abc import Sequence
 from functools import cached_property
-from kombu import Queue
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
 
+from kombu import Queue
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -281,37 +280,54 @@ class CasdoorOptions(BaseModel):
         return self
 
 
-def route_task(name, args, kwargs, options, task=None, **kw):
-        if ":" in name:
-            queue, _ = name.split(":")
-            return {"queue": queue}
-        return {"queue": "celery"}
+def route_task(name: str, args, kwargs, options, task, **kw) -> dict:  # noqa: ARG001, ANN001, ANN003
+    """Route the task to the appropriate queue based on the task name.
+
+    :param name: The name of the task, potentially containing a queue identifier.
+    :param args: Arguments for the task (unused).
+    :param kwargs: Keyword arguments for the task (unused).
+    :param options: Options for the task (unused).
+    :param task: The task object (optional, unused).
+    :param kw: Additional keyword arguments (unused).
+    :return: A dictionary with the queue name.
+    """
+    if ":" in name:
+        queue, _ = name.split(":")
+        return {"queue": queue}
+    return {"queue": "celery"}
+
 
 class CeleryConfig(BaseModel):
     """Configuration for Celery."""
-    
+
     CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str | None = None  # Optional field
+    CELERY_RESULT_BACKEND: str | None = None
     CELERY_TASK_QUEUES: list = (
         # default queue
         Queue("celery"),
     )
     CELERY_TASK_ROUTES: Any = (route_task,)
-    CELERY_BROKER_TRANSPORT_OPTIONS: dict | None = None
+    CELERY_BROKER_TRANSPORT_OPTIONS: dict[str, Any] | None = None
 
     @model_validator(mode="before")
+    @classmethod
     def handle_backend_url(cls, values: dict) -> dict:
-        if values.get("CELERY_BROKER_URL") == "filesystem://":
+        """Handle the backend URL and set transport options if using a filesystem broker.
 
+        :param values: Dictionary of configuration values.
+        :return: Updated dictionary of values.
+        """
+        if values.get("CELERY_BROKER_URL") == "filesystem://":
+            base_dir = Path(BASE_DIR)
             values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {
-                "data_folder_in": os.path.join(BASE_DIR, ".celery"),
-                "data_folder_out": os.path.join(BASE_DIR, ".celery"),
-                "control_folder": os.path.join(BASE_DIR, ".celery"),
+                "data_folder_in": base_dir / ".celery",
+                "data_folder_out": base_dir / ".celery",
+                "control_folder": base_dir / ".celery",
             }
-            
         else:
             values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {}
         return values
+
 
 class Settings(BaseYamlSettings):
     """Main application settings class.
@@ -342,7 +358,6 @@ class Settings(BaseYamlSettings):
     LOGGING_EXTRA: dict[str, LogLevel] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
-    
 
     @computed_field
     @property

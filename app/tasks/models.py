@@ -10,10 +10,10 @@ Todo:
 
 """
 
-from datetime import datetime
+import math
+from datetime import datetime, UTC
 from enum import auto, StrEnum
 from functools import cached_property
-import math
 from pathlib import Path
 from statistics import mean
 from typing import Any, Literal, Self
@@ -602,32 +602,41 @@ class TransformPayloadRequest(BaseModel):
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
 
+
 class TriggerRequest(BaseModel):
-    
+    """Model to handle trigger requests with trigger_time and countdown."""
+
     trigger_time: str
     countdown: int
 
     @model_validator(mode="before")
-    def convert_trigger_datetime(cls, values):
-        trigger_time_str = values.get('trigger_time')
+    def convert_trigger_datetime(cls, values: dict) -> dict:  # noqa: N805
+        """Convert trigger_time to countdown and validate the input time.
+
+        :param values: Dictionary of input values.
+        :return: Dictionary with updated countdown value.
+        :raises ValueError: If trigger_time is in an incorrect format or in the past.
+        """
+        trigger_time_str = values.get("trigger_time")
 
         try:
-            trigger_time_dt = datetime.strptime(trigger_time_str, '%Y-%m-%dT%H:%M')
+            trigger_time_dt = datetime.strptime(
+                trigger_time_str, "%Y-%m-%dT%H:%M"
+            ).replace(tzinfo=UTC)
         except ValueError:
-            raise ValueError(f"Invalid trigger_time format: {trigger_time_str}. Expected "
-                "'YYYY-MM-DDTHH:MM'.")
-            
-        current_time = datetime.now()
+            raise ValueError(
+                f"Invalid trigger_time format: {trigger_time_str}. Expected 'YYYY-MM-DDTHH:MM'."
+            ) from None
+
+        current_time = datetime.now(UTC)
         if trigger_time_dt <= current_time:
             raise ValueError("Trigger time must be in the future.")
 
         time_difference = trigger_time_dt - current_time
-
-        # Get the remaining seconds
         remaining_seconds = time_difference.total_seconds()
 
         # Ceil the remaining seconds
         remaining_seconds_ceil = math.ceil(remaining_seconds)
 
-        values['countdown'] = remaining_seconds_ceil
+        values["countdown"] = remaining_seconds_ceil
         return values
