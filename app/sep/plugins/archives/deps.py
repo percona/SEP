@@ -2,13 +2,19 @@
 
 import logging
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, HTTPException
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.deps import get_created_entity, InventoryAPI, TaskAPI
+from app.sep.deps import (
+    DefaultContext,
+    get_created_entity,
+    get_tasks_context,
+    InventoryAPI,
+    TaskAPI,
+)
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
@@ -124,3 +130,47 @@ async def get_archives_task(
 
 
 ArchivesTask = Annotated[dict, Depends(get_archives_task)]
+
+
+def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
+    """Extract relevant information from a task for the Archives plugin.
+
+    Processes the task data to extract hostname and tables information.
+
+    :param task: The task data retrieved from the Tasks API.
+    :type task: dict[str, Any]
+    :return: A dictionary containing hostname and tables information.
+    :rtype: dict[str, Any]
+    """
+    data = task["data"]
+    meta = data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    purge_item = task_config["PURGE_LIST"][0]
+    return {
+        "hostname": meta["target"],
+        "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
+        "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
+    }
+
+
+async def get_archives_index_context(
+    inventory_api: InventoryAPI, tasks_api: TaskAPI, context: DefaultContext
+) -> dict[str, Any]:
+    """Assemble the context for the Archives plugin index view.
+
+    Retrieves MySQL services and associated tasks, organizing them based on their
+    execution status. Integrates this information into the default context for
+    rendering in templates.
+
+    :param inventory_api: The Inventory API client for fetching service and schema data.
+    :type inventory_api: InventoryAPI
+    :param tasks_api: The TaskAPI client for fetching task data.
+    :type tasks_api: TaskAPI
+    :param context: The default context to be updated with Archives-specific information.
+    :type context: DefaultContext
+    :return: An updated context dictionary containing Archives-related data.
+    :rtype: dict[str, Any]
+    """
+    return await get_tasks_context(
+        inventory_api, tasks_api, get_archives_task_info, context, "archiver"
+    )

@@ -1,15 +1,19 @@
 """Define routes for the archivers plugin."""
 
 import logging
+from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, TaskAPI
-from app.sep.plugins.archives.deps import ArchivesGeneratedTask, ArchivesTask
-from app.tasks.models import TaskHistoryStatusEnum
+from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
+from app.sep.plugins.archives.deps import (
+    ArchivesGeneratedTask,
+    ArchivesTask,
+    get_archives_index_context,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,59 +23,9 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def archives_index(
     request: Request,
-    context: DefaultContext,
-    tasks_api: TaskAPI,
-    inventory_api: InventoryAPI,
+    context: Annotated[dict[str, Any], Depends(get_archives_index_context)],
 ) -> HTMLResponse:
     """Homepage of archives plugin."""
-    all_hosts = await inventory_api.get("/")
-    tasks = []
-    for task in await tasks_api.get("/", params={"owner": "archiver"}):
-        data = task["data"]
-        meta = data["meta"]
-        task_config = yaml.safe_load(meta["config"])
-        purge_item = task_config["PURGE_LIST"][0]
-        taskinfo = {
-            "hostname": meta["target"],
-            "name": task["name"],
-            "id": task["id"],
-            "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
-            "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
-        }
-        tasks.append(taskinfo)
-    mysql_services = []
-    for host in all_hosts:
-        for service in host["services"]:
-            if service["type"] == "mysql":
-                host["schemas"] = await inventory_api.get(
-                    f"/services/{service['id']}/schemas/"
-                )
-                mysql_services.append(host)
-                break
-    history_tasks = []
-    scheduled_tasks = []
-    running_tasks = []
-    for task in tasks:
-        history = await tasks_api.get(f"/{task['name']}/history/")
-        for hist in history:
-            match TaskHistoryStatusEnum(hist["status"]):
-                case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
-                    history_tasks.append(hist)
-                case TaskHistoryStatusEnum.PENDING:
-                    scheduled_tasks.append(hist)
-                case TaskHistoryStatusEnum.RUNNING:
-                    running_tasks.append(hist)
-    executor_hosts = await tasks_api.get("/hosts/")
-    context.update(
-        {
-            "executor_hosts": list(executor_hosts.values()),
-            "mysql_services": mysql_services,
-            "tasks": tasks,
-            "pending_tasks": scheduled_tasks,
-            "running_tasks": running_tasks,
-            "history_tasks": history_tasks,
-        },
-    )
     return templates.TemplateResponse(
         request=request,
         name="archiver/index.html",

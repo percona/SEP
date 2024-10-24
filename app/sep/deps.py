@@ -1,7 +1,7 @@
 """Define SEP dependencies."""
 
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from http.cookies import SimpleCookie
 from typing import Annotated, Any
 
@@ -18,6 +18,7 @@ from app.core.fields import URL
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.inventory.config import inventory_settings
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
 from app.sep.inventory import (
@@ -30,6 +31,7 @@ from app.sep.inventory import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -351,3 +353,73 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
 
 
 CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
+
+
+async def get_tasks_context(
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+    get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
+    default_context: DefaultContext | None = None,
+    owner: str | None = None,
+) -> dict[str, Any]:
+    """Assemble the template context for task-dependent plugins.
+
+    This function retrieves MySQL services, tasks, and their histories from the
+    Inventory and Tasks APIs. It organizes tasks based on their status and integrates
+    them into the provided context.
+
+    :param inventory_api: The API client used to interact with the inventory service.
+    :type inventory_api: RemoteAPI
+    :param tasks_api: The API client used to interact with the tasks service.
+    :type tasks_api: RemoteAPI
+    :param get_task_info_func: A callable that receives a task and returns
+        the processed task information.
+    :type get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]]
+    :param default_context: The base context dictionary to update. If None (default),
+        initializes an empty dictionary.
+    :type default_context: dict[str, Any] | None
+    :param owner: The owner filter for retrieving tasks. Defaults to `None`.
+    :type owner: str | None
+    :return: The assembled context dictionary containing tasks and services information.
+    :rtype: dict[str, Any]
+    """
+    mysql_services = await inventory_api.get(
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    )
+    for service in mysql_services:
+        service["schemas"] = await inventory_api.get(
+            f"/services/{service['id']}/schemas/",
+        )
+    tasks = []
+    history_tasks = []
+    scheduled_tasks = []
+    running_tasks = []
+    for task in await tasks_api.get("/", params={"owner": owner}):
+        task_info = {
+            "name": task["name"],
+            "id": task["id"],
+        }
+        task_info |= get_task_info_func(task)
+        tasks.append(task_info)
+        history = await tasks_api.get(f"/{task['name']}/history/")
+        for hist in history:
+            match TaskHistoryStatusEnum(hist["status"]):
+                case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
+                    history_tasks.append(hist)
+                case TaskHistoryStatusEnum.PENDING:
+                    scheduled_tasks.append(hist)
+                case TaskHistoryStatusEnum.RUNNING:
+                    running_tasks.append(hist)
+    executor_hosts = await tasks_api.get("/hosts/")
+    context = default_context or {}
+    context.update(
+        {
+            "executor_hosts": list(executor_hosts.values()),
+            "mysql_services": mysql_services,
+            "tasks": tasks,
+            "pending_tasks": scheduled_tasks,
+            "running_tasks": running_tasks,
+            "history_tasks": history_tasks,
+        },
+    )
+    return context

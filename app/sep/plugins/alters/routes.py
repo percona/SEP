@@ -1,15 +1,18 @@
 """Define routes for the alters plugin."""
 
 import logging
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, TaskAPI
-from app.sep.plugins.alters.deps import AltersGeneratedTask, AltersTask
-from app.tasks.models import TaskHistoryStatusEnum
+from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
+from app.sep.plugins.alters.deps import (
+    AltersGeneratedTask,
+    AltersTask,
+    get_alters_index_context,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,54 +22,9 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def alters_index(
     request: Request,
-    context: DefaultContext,
-    tasks_api: TaskAPI,
-    inventory_api: InventoryAPI,
+    context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
 ) -> HTMLResponse:
     """Homepage of alters plugin."""
-    mysql_services = await inventory_api.get(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
-    )
-    for service in mysql_services:
-        service["schemas"] = await inventory_api.get(
-            f"/services/{service['id']}/schemas/",
-        )
-    tasks = []
-    for task in await tasks_api.get("/", params={"owner": "alters"}):
-        data = task["data"]
-        meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
-        taskinfo = {
-            "hostname": data["Constraints"][0]["RTarget"],
-            "name": task["name"],
-            "table": f'{meta["schema_name"]}.{meta["table_name"]}',
-            "id": task["id"],
-        }
-        tasks.append(taskinfo)
-    history_tasks = []
-    scheduled_tasks = []
-    running_tasks = []
-    for task in tasks:
-        history = await tasks_api.get(f"/{task['name']}/history/")
-        for hist in history:
-            match TaskHistoryStatusEnum(hist["status"]):
-                case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
-                    history_tasks.append(hist)
-                case TaskHistoryStatusEnum.PENDING:
-                    scheduled_tasks.append(hist)
-                case TaskHistoryStatusEnum.RUNNING:
-                    running_tasks.append(hist)
-    executor_hosts = await tasks_api.get("/hosts/")
-    context.update(
-        {
-            "executor_hosts": list(executor_hosts.values()),
-            "mysql_services": mysql_services,
-            "tasks": tasks,
-            "pending_tasks": scheduled_tasks,
-            "running_tasks": running_tasks,
-            "history_tasks": history_tasks,
-        },
-    )
-    logger.info("CONTEXT: %s", context)
     return templates.TemplateResponse(
         request=request,
         name="alters/index.html",
