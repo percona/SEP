@@ -6,7 +6,7 @@ from app.tasks.deps import get_executor
 from app.tasks.models import TaskBackendEnum, TaskHistory, TaskHistoryStatusEnum
 
 
-async def _process_queue_item(queue_id: int) -> None:
+async def process_queue_item(queue_id: int) -> None:
     """Process an item from the history table."""
     async_session = get_async_session_maker()
     async with async_session() as session:

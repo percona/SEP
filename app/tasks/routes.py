@@ -30,7 +30,7 @@ from app.tasks.models import (
     TaskStats,
     TransformPayloadRequest,
 )
-from app.tasks.utils import _process_queue_item
+from app.tasks.utils import process_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ async def execute_task_name(
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
 
-    history_recorded = await prepare_task_history(
+    history_recorded = await _prepare_task_history(
         session=session, task_name=task_name, execution_data=execution_data
     )
     if not history_recorded:
@@ -220,7 +220,7 @@ async def trigger_task_name(
 ) -> JSONResponse:
     """Send a task for execution."""
 
-    history_recorded = await prepare_task_history(
+    history_recorded = await _prepare_task_history(
         session=session, task_name=task_name, execution_data=execution_data
     )
     if not history_recorded:
@@ -230,36 +230,6 @@ async def trigger_task_name(
     return JSONResponse({"task_id": task.id})
 
 
-async def prepare_task_history(
-    session: SessionDep,
-    task_name: str,
-    execution_data: TaskExecuteRequest = None
-):
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
-    logger.debug("Executing task %s", task_name)
-    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
-    if config.is_template:
-        raise HTTPForbiddenException(
-            f"Task {task_name} is a template and cannot be executed",
-        )
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
-    if config.backend == TaskBackendEnum.PROXY:
-        execution_data.meta |= config.data.get("meta", {})
-        execution_data.payload = config.data.get("payload", execution_data.payload)
-    # Record the task execution request
-    task_history = TaskHistory(
-        task_id=config.id,
-        execution_request=TaskExecutionRequest(
-            task=task_name,
-            target=execution_data.meta.get("target", "all"),
-            meta=execution_data.meta,
-            payload=execution_data.payload,
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-    history_recorded = await TaskHistoryManager.save(session, task_history)
-    return history_recorded
 
 @router.post(
     "/run/{history_id}",
@@ -366,6 +336,33 @@ async def transform_payload(
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
 
+async def _prepare_task_history(
+    session: SessionDep,
+    task_name: str,
+    execution_data: TaskExecuteRequest = None
+):
+    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
+    logger.debug("Executing task %s", task_name)
+    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
+    if config.is_template:
+        raise HTTPForbiddenException(
+            f"Task {task_name} is a template and cannot be executed",
+        )
+    # Record the task execution request
+    task_history = TaskHistory(
+        task_id=config.id,
+        execution_request=TaskExecutionRequest(
+            task=task_name,
+            target=execution_data.meta.get("target", "all"),
+            meta=execution_data.meta,
+            payload=execution_data.payload,
+            tracking={"evaluation_id": ""},
+        ),
+        status=TaskHistoryStatusEnum.PENDING,
+    )
+    history_recorded = await TaskHistoryManager.save(session, task_history)
+    return history_recorded
+
 
 async def _schedule_queue_item(
     history_recorded: TaskHistory,
@@ -377,7 +374,7 @@ async def _schedule_queue_item(
     match mode:
         case "background":
             background_tasks.add_task(
-                _process_queue_item,
+                process_queue_item,
                 queue_id=history_recorded.id,
             )
         case _:

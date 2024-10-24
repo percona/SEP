@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any
 import logging
-from app.tasks.utils import _process_queue_item
+from app.tasks.utils import process_queue_item
 from asgiref.sync import async_to_sync
 
 from celery import shared_task
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_task(queue_id: int):
-    await _process_queue_item(queue_id)
+    await process_queue_item(queue_id)
     
 @shared_task(
     bind=True,autoretry_for=(Exception,),

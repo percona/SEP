@@ -82,9 +82,15 @@
     {% endif %}
     <button type="submit">Execute</button>
 </form>
+
 {% endif %}
 
 {% if not task["protected"] %}
+<form method="post" action="/tasks/{{ task['name'] }}/trigger">
+    <button type="submit">Trigger</button>
+    <input type="datetime-local" id="trigger_time" name="trigger_time">
+
+</form>
 <form method="post" action="/tasks/{{ task['name'] }}/delete">
     <button type="submit">Delete</button>
 </form>
@@ -118,4 +124,19 @@
     </tbody>
 </table>
 {% endif %}
+<script>
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+
+    // Format the date and time as yyyy-MM-ddTHH:mm (required format for datetime-local)
+    const currentDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+    // Set the min attribute to prevent selecting a past date/time
+    document.getElementById('trigger_time').setAttribute('min', currentDateTime);
+
+</script>
 {% endblock %}
