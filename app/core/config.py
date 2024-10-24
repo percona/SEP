@@ -4,6 +4,7 @@ import re
 import secrets
 from collections.abc import Sequence
 from functools import cached_property
+from kombu import Queue
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
 
@@ -279,6 +280,37 @@ class CasdoorOptions(BaseModel):
         return self
 
 
+def route_task(name, args, kwargs, options, task=None, **kw):
+        if ":" in name:
+            queue, _ = name.split(":")
+            return {"queue": queue}
+        return {"queue": "celery"}
+
+class CeleryConfig(BaseModel):
+    """Configuration for Celery."""
+    
+    CELERY_BROKER_URL: str
+    CELERY_BACKEND_URL: str = "rpc://" # Optional field
+    CELERY_TASK_QUEUES: list = (
+        # default queue
+        Queue("celery"),
+    )
+    CELERY_TASK_ROUTES: Any = (route_task,)
+    CELERY_BROKER_TRANSPORT_OPTIONS: dict | None = None
+
+    @model_validator(mode="before")
+    def handle_backend_url(cls, values: dict) -> dict:
+        if values.get("CELERY_BROKER_URL") == "filesystem://":
+            values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {
+                "data_folder_in": "/tmp/celery_broker/input",
+                "data_folder_out": "/tmp/celery_broker/output",
+                "data_folder_processed": "/tmp/celery_broker/processed",
+            }
+        else:
+            # Ensure CELERY_BROKER_TRANSPORT_OPTIONS is empty if not using filesystem
+            values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {}
+        return values
+
 class Settings(BaseYamlSettings):
     """Main application settings class.
 
@@ -301,12 +333,14 @@ class Settings(BaseYamlSettings):
     """
 
     CASDOOR: CasdoorOptions
+    CELERY: CeleryConfig
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_EXTRA: dict[str, LogLevel] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
+    
 
     @computed_field
     @property

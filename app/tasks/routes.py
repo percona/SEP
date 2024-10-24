@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.tasks.celery_task import trigger_task
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -29,6 +30,7 @@ from app.tasks.models import (
     TaskStats,
     TransformPayloadRequest,
 )
+from app.tasks.utils import _process_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -198,8 +200,42 @@ async def execute_task_name(
     execution_data: TaskExecuteRequest = None,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
-    # TODO: optional arg (if possible), else a structured one  # noqa: TD002, TD003
-    #           so that tasks can be executed with arbitrary parameters
+
+    history_recorded = await prepare_task_history(
+        session=session, task_name=task_name, execution_data=execution_data
+    )
+    if not history_recorded:
+        raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
+    return await _schedule_queue_item(history_recorded, background_tasks)
+
+@router.post(
+    "/trigger/{task_name}",
+    dependencies=[IsAuthenticatedDep],
+    response_class=JSONResponse,
+)
+async def trigger_task_name(
+    session: SessionDep,
+    task_name: str,
+    execution_data: TaskExecuteRequest = None,
+) -> JSONResponse:
+    """Send a task for execution."""
+
+    history_recorded = await prepare_task_history(
+        session=session, task_name=task_name, execution_data=execution_data
+    )
+    if not history_recorded:
+        raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
+
+    task = trigger_task.apply_async(args=[history_recorded.id], countdown=30)
+    return JSONResponse({"task_id": task.id})
+
+
+async def prepare_task_history(
+    session: SessionDep,
+    task_name: str,
+    execution_data: TaskExecuteRequest = None
+):
+    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)
     if config.is_template:
@@ -223,10 +259,7 @@ async def execute_task_name(
         status=TaskHistoryStatusEnum.PENDING,
     )
     history_recorded = await TaskHistoryManager.save(session, task_history)
-    if not history_recorded:
-        raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-    return await _schedule_queue_item(history_recorded, background_tasks)
-
+    return history_recorded
 
 @router.post(
     "/run/{history_id}",
@@ -351,31 +384,3 @@ async def _schedule_queue_item(
             logger.critical("Unknown execution mode '%s'", mode)
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
     return {"task_history_id": history_recorded}
-
-
-async def _process_queue_item(queue_id: int) -> None:
-    """Process an item from the history table."""
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        queue_item = await TaskHistoryManager.get_or_404(
-            session,
-            select_related=[TaskHistory.task],
-            id=queue_id,
-        )
-        task = queue_item.task
-
-        if queue_item.status != TaskHistoryStatusEnum.PENDING:
-            raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
-
-        if task.backend == TaskBackendEnum.PROXY:
-            task = await TaskManager.retrieve_by_name(
-                session=session, name=task.data["task"]
-            )
-
-        match task.backend:
-            case TaskBackendEnum.NOMAD:
-                executor = get_executor()
-            case _:
-                raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
-
-        await executor.run(session, queue_item, task)

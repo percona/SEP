@@ -31,6 +31,9 @@ default:
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
+  CELERY:
+    CELERY_BROKER_URL: "amqp://guest:guest@rabbitmq:5672//"
+    CELERY_BACKEND_URL: "rpc://"
 
 development:
   SEP:
@@ -52,7 +55,9 @@ development:
           - performance_schema
           - mysql
           - information_schema
-
+  CELERY:
+    CELERY_BROKER_URL: "amqp://guest:guest@localhost:5672//"
+    CELERY_BACKEND_URL: "rpc://"
 production_docker:
   CASDOOR:
     ENDPOINT: http://casdoor:8000
@@ -97,3 +102,6 @@ production_docker:
     - https://localhost:8003
     - https://127.0.0.1:8003
   SSL_CAFILE: data/certs/sep-ca.pem
+  CELERY:
+    CELERY_BROKER_URL: "amqp://user:password@localhost:5672//"
+    CELERY_BACKEND_URL: "rpc://"
