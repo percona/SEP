@@ -622,7 +622,7 @@ class TriggerRequest(BaseModel):
         try:
             trigger_time_dt = datetime.strptime(
                 trigger_time_str, "%Y-%m-%dT%H:%M"
-            ).replace(tzinfo=UTC)
+            ).astimezone(UTC)
         except ValueError:
             raise ValueError(
                 f"Invalid trigger_time format: {trigger_time_str}. Expected 'YYYY-MM-DDTHH:MM'."

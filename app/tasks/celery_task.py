@@ -30,14 +30,14 @@ async def execute_task(queue_id: int) -> None:
     retry_kwargs={"max_retries": 5},
     name="celery:trigger_task",
 )
-def trigger_task(self: Task, queue_id: int | None = None) -> dict:
+def trigger_task(self: Task, queue_id: int | None = None) -> dict:  # noqa: ARG001
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.
     :param queue_id: The ID of the queue item to trigger (optional).
     :return: A dictionary containing the status and queue ID.
     """
-    self.logger.info("Executing task with queue_id: %s", queue_id)
+    logger.info("Executing task with queue_id: %s", queue_id)
 
     async_to_sync(execute_task)(queue_id)
-    return {"status": "Task completed successfully", "queue_id": "queue_id"}
+    return {"status": "Task completed successfully", "queue_id": queue_id}
