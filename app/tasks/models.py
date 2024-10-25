@@ -10,7 +10,10 @@ Todo:
 
 """
 
+from __future__ import annotations
+
 import math
+import re
 from datetime import datetime, UTC
 from enum import auto, StrEnum
 from functools import cached_property
@@ -26,8 +29,9 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    ValidationError,
 )
-from sqlalchemy import Column, Index, JSON
+from sqlalchemy import Column, Dialect, Index, JSON, String, TypeDecorator
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -640,3 +644,131 @@ class TriggerRequest(BaseModel):
 
         values["countdown"] = remaining_seconds_ceil
         return values
+
+
+class CrontabPeriod(BaseModel):
+    """Represents a cron-like schedule for periodic tasks.
+
+    Contains fields for minute, hour, day of week, day of month, and month of year.
+    Provides methods to convert to and from cron string format.
+    """
+
+    minute: str = "*"
+    hour: str = "*"
+    day_of_week: str = "*"
+    day_of_month: str = "*"
+    month_of_year: str = "*"
+
+    CRON_PARTS: ClassVar = {
+        "minute": r"^([0-5]?\d|\*)$",
+        "hour": r"^([01]?\d|2[0-3]|\*)$",
+        "day_of_month": r"^([12]?\d|3[01]|\*|[1-9])$",
+        "month_of_year": r"^(1[0-2]|[1-9]|\*)$",
+        "day_of_week": r"^[0-6|\*]$",  # 0 = Sunday, 6 = Saturday
+    }
+
+    def to_str(self) -> str:
+        """Convert the CrontabPeriod object into a cron string.
+
+        Format: 'minute hour day_of_month month_of_year day_of_week'
+        """
+        return (
+            f"{self.minute} {self.hour} "
+            f"{self.day_of_month} {self.month_of_year} "
+            f"{self.day_of_week}"
+        )
+
+    @classmethod
+    def from_str(cls, cron_str: str) -> CrontabPeriod:
+        """Parse a cron string into a CrontabPeriod object."""
+        try:
+            minute, hour, day_of_month, month_of_year, day_of_week = cron_str.split()
+
+            # Validate each part
+            cls._validate_cron_part("minute", minute)
+            cls._validate_cron_part("hour", hour)
+            cls._validate_cron_part("day_of_month", day_of_month)
+            cls._validate_cron_part("month_of_year", month_of_year)
+            cls._validate_cron_part("day_of_week", day_of_week)
+
+            return cls(
+                minute=minute,
+                hour=hour,
+                day_of_month=day_of_month,
+                month_of_year=month_of_year,
+                day_of_week=day_of_week,
+            )
+        except ValueError as err:
+            raise ValueError(f"Invalid cron string format: {cron_str}") from err
+        except ValidationError as e:
+            raise ValueError(f"Validation error: {e}") from e
+
+    @classmethod
+    def _validate_cron_part(cls, name: str, value: str) -> None:
+        """Validate a cron part against its allowed pattern.
+
+        Checks if the given part (e.g., `minute`, `hour`) matches
+            the required format.
+        """
+        pattern = cls.CRON_PARTS[name]
+        if not re.match(pattern, value):
+            raise ValueError(f"Invalid value for {name}: {value}")
+
+
+class CrontabPeriodType(TypeDecorator):
+    """SQLAlchemy type for storing CrontabPeriod objects as strings.
+
+    Converts CrontabPeriod to a string for storage and back upon retrieval.
+    """
+
+    impl = String
+
+    def process_bind_param(
+        self,
+        value: CrontabPeriod | None,
+        dialect: Dialect,  # noqa: ARG002
+    ) -> str:
+        """Save the CrontabPeriod object to the database.
+
+        Converts the CrontabPeriod object to a string before storage.
+        """
+        if value is None:
+            return None
+        return value.to_str()
+
+    def process_result_value(
+        self,
+        value: str | None,
+        dialect: Dialect,  # noqa: ARG002
+    ) -> CrontabPeriod | None:
+        """Read the CrontabPeriod object from the database.
+
+        Converts the stored string back to a CrontabPeriod object.
+        """
+        if value is None:
+            return None
+        return CrontabPeriod.from_str(value)
+
+
+class PeriodicTask(BaseSQLModel, table=True):
+    """Represent a periodic task stored in the database.
+
+    :param task_id: Unique identifier and primary key for the periodic task.
+    :type task_id: int
+    :param task: The associated task linked through a foreign key relationship.
+    :type task: Task
+    :param period: Cron-like schedule that specifies when the task should run.
+    :type period: CrontabPeriod
+    :param execute_request: JSON-serializable field containing the execution
+        request details.
+    :type execute_request: dict
+    """
+
+    task_id: int = SQLField(foreign_key="task.id", index=True)
+    task: Task = Relationship(back_populates="history")
+    period: str = Field(sa_column=Column(CrontabPeriodType))
+    execute_request: dict = SQLField(sa_column=Column(JSON, nullable=True))
+
+    __table_args__ = (
+        Index("ix_period", "period"),  # Adds an index for faster filtering on `period`
+    )

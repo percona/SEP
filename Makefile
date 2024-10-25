@@ -40,7 +40,7 @@ bandit: venv
 
 makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py
 	@for app in $(APPS); do \
-		capitalized=$${app^}; \
+		capitalized=$$(echo $$app | sed 's/^./\U&/'); \
 		echo "Checking migrations for $$capitalized"; \
 		"${VENV_BIN}"/alembic --name $$app check > alembic_check.log 2>&1 || { \
 			if grep -q "Target database is not up to date" alembic_check.log; then \
