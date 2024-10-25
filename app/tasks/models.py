@@ -10,8 +10,6 @@ Todo:
 
 """
 
-from __future__ import annotations
-
 import math
 import re
 from datetime import datetime, UTC
@@ -679,7 +677,7 @@ class CrontabPeriod(BaseModel):
         )
 
     @classmethod
-    def from_str(cls, cron_str: str) -> CrontabPeriod:
+    def from_str(cls, cron_str: str) -> "CrontabPeriod":
         """Parse a cron string into a CrontabPeriod object."""
         try:
             minute, hour, day_of_month, month_of_year, day_of_week = cron_str.split()
@@ -765,10 +763,6 @@ class PeriodicTask(BaseSQLModel, table=True):
     """
 
     task_id: int = SQLField(foreign_key="task.id", index=True)
-    task: Task = Relationship(back_populates="history")
+    task: Task = Relationship(back_populates="periodic_tasks")
     period: str = Field(sa_column=Column(CrontabPeriodType))
     execute_request: dict = SQLField(sa_column=Column(JSON, nullable=True))
-
-    __table_args__ = (
-        Index("ix_period", "period"),  # Adds an index for faster filtering on `period`
-    )
