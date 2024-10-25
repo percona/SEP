@@ -96,10 +96,6 @@
 </form>
 {% endif %}
 
-<form method="post" action="/tasks/{{ task['name'] }}/trigger">
-    <button type="submit">Trigger</button>
-</form>
-
 {% if history is defined and history|length > 0 %}
 <table>
     <caption>History</caption>
