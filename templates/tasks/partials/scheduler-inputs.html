@@ -1,0 +1,170 @@
+<div>
+    <input name="meta" type="hidden"/>
+    <input name="payload" type="hidden"/>
+    <div id="scheduler">
+        <!-- Basic Mode (Default) -->
+        <div id="BasicContainer">
+            <label for="frequencyNumber">Repeat every:</label>
+            <input type="number" id="frequencyNumber" min="1" 
+                placeholder="Enter a number" />
+
+            <label for="frequencyUnit">Select unit:</label>
+            <select id="frequencyUnit">
+                <option value="minute">Minute</option>
+                <option value="hour">Hour</option>
+                <option value="day">Day</option>
+            </select>
+
+            <button type="button" id="toAdvancedMode">
+                Switch to Advanced Mode
+            </button>
+
+            <!-- Validation Message for Basic Mode -->
+            <div id="validationMessageBasic" style="color: red; display: none;">
+            </div>
+        </div>
+
+        <!-- Advanced Mode -->
+        <div id="AdvancedContainer" style="display: none;">
+            <label for="cronExpression">Enter cron expression:</label>
+            <input type="text" id="cronExpression" placeholder="e.g., * * * * *" 
+                name="period" />
+
+            <!-- Validation Message for Advanced Mode -->
+            <div id="validationMessageCron" style="color: red; display: none;">
+            </div>
+
+            <button type="button" id="toBasicMode">Switch to Basic Mode</button>
+        </div>
+
+        <!-- Schedule Button -->
+        <button type="submit" id="scheduleButton">Schedule</button>
+    </div>
+</div>
+
+<script>
+
+    const frequencyInput = document.getElementById("frequencyNumber");
+    const unitSelect = document.getElementById("frequencyUnit");
+    const cronInput = document.getElementById("cronExpression");
+    const validationMessageBasic =
+        document.getElementById("validationMessageBasic");
+    const validationMessageCron =
+        document.getElementById("validationMessageCron");
+
+    const maxValues = { minute: 525600, hour: 8760, day: 365 };
+
+    function validateBasicInput() {
+        const unit = unitSelect.value;
+        const value = parseInt(frequencyInput.value, 10);
+
+        if (value > maxValues[unit]) {
+            validationMessageBasic.style.display = "block";
+            validationMessageBasic.innerText = 
+                `Value exceeds the maximum allowed for 
+                ${unit}s: ${maxValues[unit]}.`;
+            frequencyInput.setCustomValidity("Invalid value.");
+        } else {
+            validationMessageBasic.style.display = "none";
+            frequencyInput.setCustomValidity("");
+            updateCronExpression();
+        }
+    }
+
+    function updateCronExpression() {
+        const value = parseInt(frequencyInput.value, 10);
+        const unit = unitSelect.value;
+        let cronExpression = "";
+
+        if (!isNaN(value) && value > 0) {
+            switch (unit) {
+                case "minute":
+                    cronExpression = value < 60 ? `*/${value} * * * *` :
+                        `${value % 60} */${Math.floor(value / 60)} * * *`;
+                    break;
+                case "hour":
+                    cronExpression = value < 24 ? `0 */${value} * * *` :
+                        `0 ${value % 24} */${Math.floor(value / 24)} * *`;
+                    break;
+                case "day":
+                    cronExpression = `0 0 */${value} * *`;
+                    break;
+            }
+            cronInput.value = cronExpression;
+        }
+    }
+
+    function validateCronExpression() {
+        const cronValue = cronInput.value.trim();
+        const cronParts = cronValue.split(" ");
+        let errorMessage = "";
+
+        if (cronParts.length !== 5) {
+            errorMessage = `Cron expression must have exactly 5 fields 
+                            (minute, hour, day of month, month, day of week).`;
+        } else {
+            const [minute, hour, dayOfMonth, month, dayOfWeek] = cronParts;
+            const minutePattern =
+                /^(\*|([0-5]?\d)(,\s*[0-5]?\d)*|\*\/[1-5]?\d)$/;
+            const hourPattern =
+                /^(\*|([01]?\d|2[0-3])(,\s*([01]?\d|2[0-3]))*|\*\/([1-9]|1[0-9]|2[0-3])|([01]?\d|2[0-3])-([01]?\d|2[0-3]))$/;
+            const dayOfMonthPattern =
+                /^(\*|([1-9]|[12]\d|3[01])(,\s*([1-9]|[12]\d|3[01]))*|\*\/([1-9]|[12]\d|3[01])|([1-9]|[12]\d|3[01])-([1-9]|[12]\d|3[01]))$/;
+            const monthPattern =
+                /^(\*|([1-9]|1[0-2])(,\s*([1-9]|1[0-2]))*|\*\/([1-9]|1[0-2])|([1-9]|1[0-2])-([1-9]|1[0-2]))$/;
+            const dayOfWeekPattern =
+                /^(\*|([0-6])(,\s*([0-6]))*|\*\/[1-6]|([0-6])-([0-6]))$/;
+
+            // Validate each part of the cron expression and set specific error messages
+            if (!minutePattern.test(minute)) {
+                errorMessage += `Minute must be *, a number between 0 and 59,
+                    an interval (e.g., */5), or a list (e.g., 1,5,10). `;
+            }
+            if (!hourPattern.test(hour)) {
+                errorMessage += `Hour must be *, a number between 0 and 23, 
+                    a range (e.g., 1-5), an interval (e.g., */2), 
+                    or a list (e.g., 1,5,10). `;
+            }
+            if (!dayOfMonthPattern.test(dayOfMonth)) {
+                errorMessage += `Day of month must be *, a number between 1 
+                    and 31, a range (e.g., 1-15), an interval (e.g., */3), 
+                    or  a list (e.g., 1,15,31). `;
+            }
+            if (!monthPattern.test(month)) {
+                errorMessage += `Month must be *, a number between 1 and 12,
+                    a range (e.g., 1-6), an interval (e.g., */2), 
+                    or a list (e.g., 1,6,12). `;
+            }
+            if (!dayOfWeekPattern.test(dayOfWeek)) {
+                errorMessage += `Day of week must be *, a number between 0 
+                    and 6, a range (e.g., 1-5), an interval (e.g., */2), 
+                    or a list (e.g., 1,5). `;
+            }
+        }
+
+        if (errorMessage) {
+            validationMessageCron.style.display = "block";
+            validationMessageCron.innerText = errorMessage;
+            cronInput.setCustomValidity("Invalid cron expression.");
+        } else {
+            validationMessageCron.style.display = "none";
+            cronInput.setCustomValidity("");
+        }
+    }
+
+    frequencyInput.addEventListener("input", validateBasicInput);
+    unitSelect.addEventListener("change", validateBasicInput);
+    cronInput.addEventListener("input", validateCronExpression);
+
+    document.getElementById("toAdvancedMode").addEventListener("click", () => {
+        document.getElementById("BasicContainer").style.display = "none";
+        document.getElementById("AdvancedContainer").style.display = "block";
+    });
+
+    document.getElementById("toBasicMode").addEventListener("click", () => {
+        document.getElementById("AdvancedContainer").style.display = "none";
+        document.getElementById("BasicContainer").style.display = "block";
+        updateCronExpression();
+        validateCronExpression();
+    });
+</script>

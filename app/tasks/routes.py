@@ -6,17 +6,20 @@ from http import HTTPStatus
 from os import getenv
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.tasks.celery_task import trigger_task
 from app.tasks.config import tasks_settings
-from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import SessionDep, TaskExecutor
 from app.tasks.models import (
+    CrontabPeriod,
     GeneratedTask,
+    PeriodicTask,
+    ScheduleRequest,
     Task,
     TaskBackendEnum,
     TaskExecuteRequest,
@@ -403,3 +406,42 @@ async def _schedule_queue_item(
             logger.critical("Unknown execution mode '%s'", mode)
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
     return {"task_history_id": history_recorded}
+
+
+@router.post("/schedule/{task_name}", dependencies=[IsAuthenticatedDep])
+async def create_periodic_task(
+    session: SessionDep, task_name: str, request: ScheduleRequest = None
+) -> PeriodicTask:
+    """Create a new PeriodicTask."""
+    logger.debug("Creating periodic Task %s", task_name)
+    period = request.period
+
+    execution_data = (
+        TaskExecuteRequest() if request.execute_data is None else request.execute_data
+    )
+
+    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
+    if config.is_template:
+        raise HTTPForbiddenException(
+            f"Task {task_name} is a template and cannot be executed",
+        )
+
+    try:
+        crontab_period = CrontabPeriod.from_str(period)
+    except ValueError as e:
+        logger.debug("Crontab Error %s", e)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST) from None
+
+    periodic_task = PeriodicTask(
+        task_id=config.id,
+        execute_request=TaskExecutionRequest(
+            task=task_name,
+            target=execution_data.meta.get("target", "all"),
+            meta=execution_data.meta,
+            payload=execution_data.payload,
+            tracking={"evaluation_id": ""},
+        ),
+        period=crontab_period.to_str(),
+    )
+
+    return await PeriodicTaskManager.save(session, periodic_task)

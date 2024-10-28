@@ -645,6 +645,13 @@ class TriggerRequest(BaseModel):
         return values
 
 
+class ScheduleRequest(BaseModel):
+    """Model to handle schedule requests with period and execute_data."""
+
+    period: str
+    execute_data: TaskExecuteRequest | None = None
+
+
 class CrontabPeriod(BaseModel):
     """Represents a cron-like schedule for periodic tasks.
 
@@ -659,11 +666,11 @@ class CrontabPeriod(BaseModel):
     month_of_year: str = "*"
 
     CRON_PARTS: ClassVar = {
-        "minute": r"^([0-5]?\d|\*)$",
-        "hour": r"^([01]?\d|2[0-3]|\*)$",
-        "day_of_month": r"^([12]?\d|3[01]|\*|[1-9])$",
-        "month_of_year": r"^(1[0-2]|[1-9]|\*)$",
-        "day_of_week": r"^[0-6|\*]$",  # 0 = Sunday, 6 = Saturday
+        "minute": r"^(\*|([0-5]?\d)(,\s*[0-5]?\d)*|\*/[1-5]?\d)$",
+        "hour": r"^(\*|([01]?\d|2[0-3])(,\s*([01]?\d|2[0-3]))*|\*/([1-9]|1[0-9]|2[0-3])|([01]?\d|2[0-3])-([01]?\d|2[0-3]))$",
+        "day_of_month": r"^(\*|([1-9]|[12]\d|3[01])(,\s*([1-9]|[12]\d|3[01]))*|\*/([1-9]|[12]\d|3[01])|([1-9]|[12]\d|3[01])-([1-9]|[12]\d|3[01]))$",
+        "month_of_year": r"^(\*|([1-9]|1[0-2])(,\s*([1-9]|1[0-2]))*|\*/([1-9]|1[0-2])|([1-9]|1[0-2])-([1-9]|1[0-2]))$",
+        "day_of_week": r"^(\*|([0-6])(,\s*([0-6]))*|\*/[1-6]|([0-6])-([0-6]))$",
     }
 
     def to_str(self) -> str:
@@ -766,4 +773,6 @@ class PeriodicTask(BaseSQLModel, table=True):
     task_id: int = SQLField(foreign_key="task.id", index=True)
     task: Task = Relationship(back_populates="periodic_tasks")
     period: str = Field(sa_column=Column(CrontabPeriodType))
-    execute_request: dict = SQLField(sa_column=Column(JSON, nullable=True))
+    execute_request: TaskExecutionRequest = SQLField(
+        sa_column=Column(JSON, nullable=True)
+    )

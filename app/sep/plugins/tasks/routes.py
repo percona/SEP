@@ -108,8 +108,29 @@ async def trigger_task_name(
     tasks_api: TaskAPI,
     trigger_data: Annotated[TriggerRequest, Form()],
 ) -> RedirectResponse:
-    """Route the task to the appropriate queue based on the task name."""
+    """Trigger task."""
     logger.debug("triggering task %s", task_name)
     await tasks_api.post(f"/trigger/{task_name}", json=trigger_data.model_dump())
 
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/schdule",
+    dependencies=[IsAuthenticated],
+)
+async def schedule_task_name(
+    task_name: str,
+    tasks_api: TaskAPI,
+    period: Annotated[str, Form()],
+    execute_data: Annotated[TaskExecuteRequest, Form()] | None = None,
+) -> RedirectResponse:
+    """Schdule task."""
+    logger.debug("scheduling task %s, %s, %s", task_name, period, execute_data)
+
+    payload = {
+        "period": period,
+        "execute_data": execute_data.model_dump() if execute_data else None,
+    }
+
+    await tasks_api.post(f"/schedule/{task_name}", json=payload)

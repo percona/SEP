@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseManager
-from app.tasks.models import Task, TaskHistory
+from app.tasks.models import PeriodicTask, Task, TaskHistory
 
 
 class TaskManager(BaseManager):
@@ -131,3 +131,13 @@ class TaskHistoryManager(BaseManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
+
+
+class PeriodicTaskManager(BaseManager):
+    """Manage periodicTask operations, including listing periodic Tasks by period.
+
+    :ivar Model: The SQLModel class this manager is responsible for (`PeriodicTask`).
+    :vartype Model: type[PeriodicTask]
+    """
+
+    Model = PeriodicTask
