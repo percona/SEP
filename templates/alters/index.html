@@ -3,16 +3,19 @@
 {% block title %}Schema Change{% endblock %}
 
 {% block style %}
-<link rel="stylesheet" href="/static/datatables/dataTables.min.css" media="screen,projection" />
 <style>
     label + input[type=text]{display: block}
-    /*label:has(+ select){display: none}*/
     table form{display:inline-block}
     table button{width:2.2rem;height:2.2rem}
 </style>
+<link rel="stylesheet" href="/static/task_history.css">
 {% endblock %}
 
-{% block behaviours_optimized_extra %}{% endblock %}
+{% block behaviours_optimized_extra %}
+    {% if history_tasks %}
+<script src="/static/task_history.js"></script>
+    {% endif %}
+{% endblock %}
 
 {% block main %}
 <p>Perform a schema change, currently only supporting MySQL with <a href="https://docs.percona.com/percona-toolkit/pt-online-schema-change.html">pt-online-schema-change</a>.</p>
@@ -48,7 +51,7 @@
 
 <section id="completed-tasks">
     <h2>History</h2>
-    {% include "alters/partials/completed-tasks.html" %}
+    {% include "tasks/partials/completed-tasks.html" %}
 </section>
 {% endif %}
 

@@ -4,16 +4,19 @@
 {% block title %}Schema Change - {{ task["name"] }}{% endblock %}
 
 {% block style %}
-<link rel="stylesheet" href="/static/datatables/dataTables.min.css" media="screen,projection" />
 <style>
   label + input[type=text]{display: block}
-  /*label:has(+ select){display: none}*/
   table form{display:inline-block}
   table button{width:2.2rem;height:2.2rem}
 </style>
+<link rel="stylesheet" href="/static/task_history.css">
 {% endblock %}
 
-{% block behaviours_optimized_extra %}{% endblock %}
+{% block behaviours_optimized_extra %}
+    {% if history %}
+<script src="/static/task_history.js"></script>
+    {% endif %}
+{% endblock %}
 
 {% block main %}
 
@@ -109,6 +112,6 @@
 <section>
   <h2>History</h2>
   {% set history_tasks = history %}
-  {% include "alters/partials/completed-tasks.html" %}
+  {% include "tasks/partials/completed-tasks.html" %}
 </section>
 {% endblock %}
