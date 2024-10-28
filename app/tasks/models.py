@@ -17,7 +17,7 @@ from enum import auto, StrEnum
 from functools import cached_property
 from pathlib import Path
 from statistics import mean
-from typing import Any, Literal, Self
+from typing import Any, ClassVar, Literal, Self
 
 from pydantic import (
     AliasGenerator,
@@ -352,6 +352,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
         ),
     )
     history: list["TaskHistory"] = Relationship(back_populates="task")
+    periodic_tasks: list["PeriodicTask"] = Relationship(back_populates="task")
     deleted_at: datetime | None = SQLField(
         sa_type=DateTimeWithTimezone,
         default=None,

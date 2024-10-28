@@ -1,8 +1,8 @@
 """create_periodictask_table
 
-Revision ID: be7cfcae6a76
-Revises: 04f50684d5d7
-Create Date: 2024-10-25 17:32:37.713913
+Revision ID: dde1296cb2ae
+Revises: 7920c0e4aa23
+Create Date: 2024-10-25 23:46:33.402279
 
 """
 from typing import Sequence, Union
@@ -13,8 +13,8 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'be7cfcae6a76'
-down_revision: Union[str, None] = '04f50684d5d7'
+revision: str = 'dde1296cb2ae'
+down_revision: Union[str, None] = '7920c0e4aa23'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
