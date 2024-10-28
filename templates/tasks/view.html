@@ -89,16 +89,14 @@
 <form method="post" action="/tasks/{{ task['name'] }}/trigger">
     <button type="submit">Trigger</button>
     <input type="datetime-local" id="trigger_time" name="trigger_time">
-
 </form>
+
+{% include "tasks/partials/scheduler-form.html" %}
+
 <form method="post" action="/tasks/{{ task['name'] }}/delete">
     <button type="submit">Delete</button>
 </form>
 {% endif %}
-
-<form method="post" action="/tasks/{{ task['name'] }}/trigger">
-    <button type="submit">Trigger</button>
-</form>
 
 {% if history is defined and history|length > 0 %}
 <table>
