@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
 from types import TracebackType
@@ -289,7 +289,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         self,
         entity_type: SyncInventoryEntityTypeEnum,
         created_entity: CreatedEntity | None,
-    ) -> SyncItem:
+    ) -> AsyncGenerator[SyncItem, None]:
         """Manage the synchronization lifecycle of a SyncItem.
 
         This asynchronous context manager handles the synchronization lifecycle of a
@@ -303,7 +303,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             (inventory) synchronization.
         :type created_entity: CreatedEntity | None
         :yield: The `SyncItem` instance being managed during the synchronization process.
-        :rtype: SyncItem
+        :rtype: AsyncGenerator[SyncItem, None]
         :raises SyncFailError: If an exception occurs during synchronization.
         """
         entity_id = None if created_entity is None else created_entity.id
