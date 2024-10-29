@@ -298,6 +298,8 @@ class Settings(BaseYamlSettings):
     :type BACKEND_CORS_ORIGINS: list[AnyUrl]
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
     :type SSL_CAFILE: RelativeFilePath | None
+    :param BASE_URL: The application's base URL.
+    :type BASE_URL: URL | None
     """
 
     CASDOOR: CasdoorOptions
@@ -307,6 +309,7 @@ class Settings(BaseYamlSettings):
     LOGGING_EXTRA: dict[str, LogLevel] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
+    BASE_URL: URL | None = None
 
     @computed_field
     @property
