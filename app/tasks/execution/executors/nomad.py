@@ -1,14 +1,23 @@
 """Provide task execution management for Nomad jobs."""
 
+import asyncio
 import json
 import logging
 import time
-from asyncio import sleep
+from collections.abc import AsyncGenerator, Iterable
 from datetime import datetime, UTC
 from functools import cached_property
+from pathlib import Path
+from ssl import SSLContext
 from typing import Any
 from uuid import uuid1
 
+from aiohttp import (
+    ClientError,
+    ClientSession,
+    ClientTimeout,
+    SocketTimeoutError,
+)
 from fastapi import HTTPException, status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
@@ -17,10 +26,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.exceptions import HTTPBadRequestException
 from app.core.fields import RelativeFilePath
+from app.core.requests import RemoteAPI
 from app.core.utils import async_run, b64encode_str, minify_file_content, sort_dict
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
-from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum
+from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +57,9 @@ class NomadExecutor(BaseExecutor):
     :param minify_payload: Whether to minify payloads before dispatching Parameterized
         Jobs. Defaults to True.
     :type minify_payload: bool
+    :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
+            Defaults to 10.
+    :type log_socket_read_timeout: int
     """
 
     endpoint: HttpUrl
@@ -55,6 +68,7 @@ class NomadExecutor(BaseExecutor):
     verify: bool | RelativeFilePath = False
     cert: tuple[RelativeFilePath, RelativeFilePath] | RelativeFilePath = ()
     minify_payload: bool = True
+    log_socket_read_timeout: int = 10
 
     @cached_property
     def backend(self) -> Nomad:
@@ -251,6 +265,7 @@ class NomadExecutor(BaseExecutor):
 
         start_ts, stop_ts = time.time_ns(), None
         job_status = {}
+        job = None
         if self.task_needs_new_job(task):
             if not task.data.get("ParameterizedJob"):
                 match task.data.get("Type"):
@@ -267,8 +282,12 @@ class NomadExecutor(BaseExecutor):
         if task.data.get("ParameterizedJob"):
             job_status = self.dispatch_job(queue_item, task)
             job = self.get_job(job_status["DispatchedJobID"])
+        if job is None:
+            raise ValueError("The job could not be determined")
 
-        queue_item.execution_request.tracking.update(evaluation_id=job_status["EvalID"])
+        queue_item.execution_request.tracking.update(
+            evaluation_id=job_status["EvalID"], job_id=job["ID"]
+        )
         queue_item = await TaskHistoryManager.save(
             session,
             queue_item,
@@ -367,7 +386,7 @@ class NomadExecutor(BaseExecutor):
                     alloc = self.get_allocation(job["ID"], eval_id)
             attempts += 1
             logger.debug("Attempt %d found status %s", attempts, alloc["ClientStatus"])
-            await sleep(self.wait_interval)
+            await asyncio.sleep(self.wait_interval)
 
         match alloc["ClientStatus"]:
             case "complete":
@@ -413,7 +432,6 @@ class NomadExecutor(BaseExecutor):
                 )
 
     # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
-
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Validate a Nomad job specification.
 
@@ -435,3 +453,147 @@ class NomadExecutor(BaseExecutor):
             return job
         logger.error(valid[0].text)
         raise HTTPBadRequestException("Invalid job specification")
+
+    @cached_property
+    def ssl_context(self) -> SSLContext:
+        """Initialize and return the SSL context for secure connections.
+
+        Configures the SSL context based on the provided SSL certificate files
+        and verification settings.
+
+        :return: The configured SSL context for HTTPS connections.
+        :rtype: SSLContext
+        """
+        cafile = self.verify if isinstance(self.verify, Path) else None
+        if isinstance(self.cert, Iterable):
+            certfile, keyfile = self.cert
+        else:
+            certfile = self.cert
+            keyfile = None
+        return RemoteAPI.create_ssl_context(cafile, certfile, keyfile)
+
+    async def _push_logs_to_queue(
+        self,
+        session: ClientSession,
+        alloc: dict[str, Any],
+        step: str,
+        log_type: str,
+        queue: asyncio.Queue,
+    ) -> None:
+        """Push logs to the asynchronous queue for processing.
+
+        :param session: The aiohttp client session for making HTTP requests.
+        :type session: ClientSession
+        :param alloc: The allocation details containing the task states.
+        :type alloc: dict[str, Any]
+        :param step: The task step name.
+        :type step: str
+        :param log_type: The type of log to stream ('stdout' or 'stderr').
+        :type log_type: str
+        :param queue: The asyncio queue to push log lines into.
+        :type queue: asyncio.Queue
+        """
+        params = {
+            "task": step,
+            "type": log_type,
+            "plain": "true",
+            "follow": "true",
+        }
+        state = "running"
+        while state == "running":
+            alloc_id = alloc["ID"]
+            try:
+                logger.debug("Requesting logs for %s with params %s", alloc_id, params)
+                async with session.get(
+                    f"/v1/client/fs/logs/{alloc_id}",
+                    params=params,
+                    ssl=self.ssl_context,
+                ) as response:
+                    logger.debug("Log response status: %s", response.status)
+                    if (
+                        response.status == status.HTTP_404_NOT_FOUND
+                        and alloc["TaskStates"][step]["StartedAt"] is None
+                    ):
+                        logger.info(
+                            "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
+                            step,
+                            alloc_id,
+                            self.wait_interval,
+                        )
+                        await asyncio.sleep(self.wait_interval)
+                        continue
+                    response.raise_for_status()
+                    async for line in response.content:
+                        await queue.put(
+                            TaskLog(step=step, type=log_type, msg=line.decode("utf-8"))
+                        )
+            except SocketTimeoutError:
+                logger.info(
+                    "Timeout occurred while fetching %s logs for %s (%s)",
+                    log_type,
+                    step,
+                    alloc_id,
+                )
+                alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
+                state = alloc["TaskStates"][step]["State"]
+            except ClientError:
+                logger.exception(
+                    "An error occurred while fetching %s logs for %s (%s)",
+                    log_type,
+                    step,
+                    alloc_id,
+                )
+                break
+        await queue.put(TaskLog(step=step, type=log_type, msg=None))
+
+    async def stream_logs(
+        self, queue_item: TaskHistory
+    ) -> AsyncGenerator[TaskLog, None]:
+        """Stream logs from a task history record.
+
+        Retrieves the allocation details and concurrently streams stdout and stderr logs
+        for each task step. Yields `TaskLog` instances as log lines are received.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :yield: `TaskLog` instances containing log messages.
+        :rtype: TaskLog
+        """
+        job_id = queue_item.execution_request.tracking["job_id"]
+        eval_id = queue_item.execution_request.tracking["evaluation_id"]
+        alloc = self.get_allocation(job_id, eval_id)
+        active_streams = set()
+        timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
+        queue = asyncio.Queue()
+        push_logs_tasks = []
+        async with ClientSession(
+            base_url=str(self.endpoint), timeout=timeout
+        ) as session:
+            for step in set(alloc["TaskStates"]):
+                for log_type in ("stdout", "stderr"):
+                    stream = (step, log_type)
+                    logger.debug("Adding %s to active_streams", stream)
+                    active_streams.add(stream)
+                    push_logs_tasks.append(
+                        asyncio.create_task(
+                            self._push_logs_to_queue(
+                                session, alloc, step, log_type, queue
+                            )
+                        )
+                    )
+
+            while active_streams:
+                logger.debug("Waiting for log line for streams %s", active_streams)
+                log_line = await queue.get()
+                logger.debug("Received log line %s", log_line)
+                if log_line.msg is None:
+                    stream = (log_line.step, log_line.type)
+                    logger.info(
+                        "Log stream %s is over, removing it from active_streams", stream
+                    )
+                    active_streams.remove(stream)
+                    continue
+                yield log_line
+                queue.task_done()
+
+            await asyncio.gather(*push_logs_tasks)

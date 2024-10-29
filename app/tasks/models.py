@@ -599,3 +599,19 @@ class TransformPayloadRequest(BaseModel):
 
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
+
+
+class TaskLog(BaseModel):
+    """Define a task log line.
+
+    :param step: The task step name.
+    :type step: str
+    :param type: The type of log to stream ('stdout' or 'stderr').
+    :type type: Literal["stdout", "stderr"]
+    :param msg: The log message. If None, represents the end of the log for that step.
+    :type msg: str | None
+    """
+
+    step: str
+    type: Literal["stdout", "stderr"]
+    msg: str | None

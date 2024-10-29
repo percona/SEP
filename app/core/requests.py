@@ -60,13 +60,9 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         :return: The configured SSL context for HTTPS connections.
         :rtype: SSLContext
         """
-        context = create_default_context(cafile=self.ssl_cafile)
-        if self.ssl_certfile:
-            context.load_cert_chain(
-                certfile=self.ssl_certfile,
-                keyfile=self.ssl_keyfile,
-            )
-        return context
+        return self.create_ssl_context(
+            self.ssl_cafile, self.ssl_certfile, self.ssl_keyfile
+        )
 
     @computed_field
     @property
@@ -240,3 +236,31 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         :rtype: dict[str, Any] | list[dict[str, Any]]
         """
         return await self.request("DELETE", path, **kwargs)
+
+    @staticmethod
+    def create_ssl_context(
+        cafile: RelativeFilePath | None = None,
+        certfile: RelativeFilePath | None = None,
+        keyfile: RelativeFilePath | None = None,
+    ) -> SSLContext:
+        """Initialize and return the SSL context for secure connections.
+
+        Configures the SSL context based on the provided SSL certificate files
+        parameters.
+
+        :param cafile: The path to the CA certificate file.
+        :type cafile: RelativeFilePath | None
+        :param certfile: The path to the certificate file.
+        :type certfile: RelativeFilePath | None
+        :param keyfile: The path to the certificate key file.
+        :type keyfile: RelativeFilePath | None
+        :return: The configured SSL context for HTTPS connections.
+        :rtype: SSLContext
+        """
+        context = create_default_context(cafile=cafile)
+        if certfile:
+            context.load_cert_chain(
+                certfile=certfile,
+                keyfile=keyfile,
+            )
+        return context
