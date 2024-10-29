@@ -155,6 +155,7 @@ NOMAD_RUN_PYTHON = {
                     "Config": {
                         "command": "${NOMAD_ALLOC_DIR}/venv/bin/python3",
                         "args": [
+                            "-u",
                             "${NOMAD_TASK_DIR}/script.py",
                             "--config",
                             "script_config",
