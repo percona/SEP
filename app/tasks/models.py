@@ -449,12 +449,11 @@ class TaskHistory(BaseSQLModel, table=True):
         ] or not self.execution_request.tracking.get("task_states"):
             return []
         errors = set()
-        for tasks in self.execution_request.tracking["task_states"].values():
-            for state in tasks.values():
-                for event in state["Events"]:
-                    match event["Type"]:
-                        case "Driver Failure":
-                            errors.add(event["DisplayMessage"])
+        for state in self.execution_request.tracking["task_states"].values():
+            for event in state["Events"]:
+                match event["Type"]:
+                    case "Driver Failure":
+                        errors.add(event["DisplayMessage"])
         return list(errors)
 
 

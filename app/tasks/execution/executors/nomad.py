@@ -293,12 +293,11 @@ class NomadExecutor(BaseExecutor):
                     raise NotImplementedError("Service job support is TBD")
                 case "batch" | "system" | "sysbatch":
                     alloc = allocations[0]
-                    task_states[alloc["EvalID"]] = alloc["TaskStates"]
-                    task_logs.setdefault(alloc["EvalID"], {})
+                    task_states = alloc["TaskStates"]
                     if alloc["TaskStates"]:
                         for step in alloc["TaskStates"]:
                             try:
-                                task_logs[alloc["EvalID"]][step] = {
+                                task_logs[step] = {
                                     "allocation_id": alloc["ID"],
                                     "stdout": self.backend.client.stream_logs.stream(
                                         alloc["ID"],
@@ -314,7 +313,7 @@ class NomadExecutor(BaseExecutor):
                                     ),
                                 }
                             except BaseNomadException:
-                                task_logs[alloc["EvalID"]][step] = {
+                                task_logs[step] = {
                                     "allocation_id": alloc["ID"],
                                     "stdout": None,
                                     "stderr": None,

@@ -228,28 +228,6 @@ async def execute_task_name(
     return await _schedule_queue_item(history_recorded, background_tasks)
 
 
-@router.post(
-    "/run/{history_id}",
-    dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
-)
-async def execute_history_id(
-    session: SessionDep,
-    history_id: int,
-    background_tasks: BackgroundTasks,
-) -> dict[str, TaskHistory]:
-    """Trigger a history item for processing."""
-    history_record = await TaskHistoryManager.get_or_404(
-        session,
-        id=history_id,
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-    return await _schedule_queue_item(
-        history_recorded=history_record,
-        background_tasks=background_tasks,
-    )
-
-
 @router.get("/history/", dependencies=[IsAuthenticatedDep])
 async def list_task_history(
     session: SessionDep,
