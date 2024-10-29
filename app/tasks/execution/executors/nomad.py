@@ -17,7 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.exceptions import HTTPBadRequestException
 from app.core.fields import RelativeFilePath
-from app.core.utils import async_run, b64encode_str, minify_file_content
+from app.core.utils import async_run, b64encode_str, minify_file_content, sort_dict
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum
@@ -174,6 +174,53 @@ class NomadExecutor(BaseExecutor):
             raise ValueError("The job could not be determined")
         return job
 
+    def get_hosts(self) -> dict[str, str]:
+        """Get healthy node names from Nomad backend.
+
+        :return: A dictionary with node addresses as key and the respective node names
+            as values.
+        :rtype: dict[str, str]
+        """
+        filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
+        return {
+            node["Address"]: node["Name"]
+            for node in self.backend.nodes.get_nodes(filter_=filter_expression)
+        }
+
+    def get_allocation(self, job_id: str, eval_id: str) -> dict[str, Any]:
+        """Retrieve a specific allocation for a job evaluation.
+
+        Fetches allocation details based on the job ID and evaluation ID.
+        Sorts task states for consistency.
+
+        :param job_id: The ID of the job.
+        :type job_id: str
+        :param eval_id: The evaluation ID associated with the job.
+        :type eval_id: str
+        :return: The allocation details from Nomad.
+        :rtype: dict[str, Any]
+        :raises IndexError: If no allocations are found.
+        """
+        allocation_filters = [
+            f'JobID == "{job_id}"',
+            f'EvalID == "{eval_id}"',
+        ]
+        allocations = self.backend.allocations.get_allocations(
+            filter_=" and ".join(allocation_filters),
+        )
+        logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
+        alloc = allocations[0]
+        if alloc["TaskStates"]:
+            alloc["TaskStates"] = sort_dict(
+                alloc["TaskStates"],
+                lambda item: (
+                    item[1]["StartedAt"] or "9",
+                    item[1]["FinishedAt"] or "9",
+                    item[0],
+                ),
+            )
+        return alloc
+
     async def run(
         self,
         session: AsyncSession,
@@ -274,28 +321,18 @@ class NomadExecutor(BaseExecutor):
         :rtype: TaskHistory
         :raises NotImplementedError: If the job type is not supported.
         """
-        allocation_filters = [
-            f'JobID == "{job["ID"]}"',
-            f'EvalID == "{eval_id}"',
-        ]
-        allocations = self.backend.allocations.get_allocations(
-            filter_=" and ".join(allocation_filters),
-        )
-        logger.debug("Allocations: %r", [x["JobID"] for x in allocations])
-
-        alloc = {}
         task_logs = {}
         task_states = {}
         attempts = 0
-        while allocations:
+        alloc = self.get_allocation(job["ID"], eval_id)
+        while alloc:
             match job["Type"]:
                 case "service":
                     raise NotImplementedError("Service job support is TBD")
                 case "batch" | "system" | "sysbatch":
-                    alloc = allocations[0]
                     task_states = alloc["TaskStates"]
-                    if alloc["TaskStates"]:
-                        for step in alloc["TaskStates"]:
+                    if task_states:
+                        for step in task_states:
                             try:
                                 task_logs[step] = {
                                     "allocation_id": alloc["ID"],
@@ -323,15 +360,11 @@ class NomadExecutor(BaseExecutor):
             match alloc["ClientStatus"]:
                 case "complete" | "failed":
                     if alloc["FollowupEvalID"]:
-                        allocations = self.backend.allocations.get_allocations(
-                            filter_=f'EvalID == "{alloc["FollowupEvalID"]}"',
-                        )
+                        alloc = self.get_allocation(job["ID"], alloc["FollowupEvalID"])
                         continue
                     break
                 case _:
-                    allocations = self.backend.allocations.get_allocations(
-                        filter_=" and ".join(allocation_filters),
-                    )
+                    alloc = self.get_allocation(job["ID"], eval_id)
             attempts += 1
             logger.debug("Attempt %d found status %s", attempts, alloc["ClientStatus"])
             await sleep(self.wait_interval)
@@ -344,7 +377,9 @@ class NomadExecutor(BaseExecutor):
 
         queue_item.execution_request.tracking.update(
             task_states=task_states,
-            task_logs=task_logs,
+            task_logs=sort_dict(
+                task_logs, lambda item: list(task_states.keys()).index(item[0])
+            ),
             duration=attempts * self.wait_interval,
         )
         return queue_item
@@ -378,6 +413,7 @@ class NomadExecutor(BaseExecutor):
                 )
 
     # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
+
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Validate a Nomad job specification.
 
@@ -399,16 +435,3 @@ class NomadExecutor(BaseExecutor):
             return job
         logger.error(valid[0].text)
         raise HTTPBadRequestException("Invalid job specification")
-
-    def get_hosts(self) -> dict[str, str]:
-        """Get healthy node names from Nomad backend.
-
-        :return: A dictionary with node addresses as key and the respective node names
-            as values.
-        :rtype: dict[str, str]
-        """
-        filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
-        return {
-            node["Address"]: node["Name"]
-            for node in self.backend.nodes.get_nodes(filter_=filter_expression)
-        }
