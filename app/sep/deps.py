@@ -14,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
+from app.core.exceptions import HTTPNotFoundException
 from app.core.fields import URL
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
@@ -31,7 +32,7 @@ from app.sep.inventory import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -174,7 +175,8 @@ def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
 DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
 
 
-# TODO: Proper SDK  # noqa: TD002, TD003
+# TODO(yan): Proper SDK
+# SEP-130
 def get_inventory_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Inventory API.
 
@@ -428,3 +430,35 @@ async def get_tasks_context(
         },
     )
     return context
+
+
+# TODO(yan): Put get_task in a proper TasksAPI SDK class
+# SEP-130
+async def get_task_by_name(
+    tasks_api: TaskAPI, task_name: str, owner: str | None = None
+) -> Task:
+    """Fetch and validate a task by name.
+
+    This function retrieves a task by its name from the Tasks API and validates
+    that it is owned by the specified owner (if any). If the task does not exist or is
+    not owned by the specified owner, it raises a 404 HTTP exception.
+
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :param task_name: The name of the task to retrieve.
+    :type task_name: str
+    :param owner: The owner filter for retrieving tasks. Defaults to `None`, meaning
+        no filter.
+    :type owner: str | None
+    :return: The retrieved task.
+    :rtype: Task
+    :raises HTTPNotFoundException: If the task is not found or is not owned by the
+        specified owner.
+    """
+    try:
+        task = Task.model_validate(await tasks_api.get(f"/{task_name}"))
+    except ValidationError:
+        raise HTTPNotFoundException from None
+    if owner is not None and Task.validate_owner(owner) != task.owner:
+        raise HTTPNotFoundException
+    return task

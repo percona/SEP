@@ -24,7 +24,7 @@ from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 from pydantic import HttpUrl
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException
 from app.core.fields import RelativeFilePath
 from app.core.requests import RemoteAPI
 from app.core.utils import async_run, b64encode_str, minify_file_content, sort_dict

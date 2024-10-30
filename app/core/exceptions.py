@@ -1,4 +1,4 @@
-"""Define reusable API exceptions."""
+"""Define reusable exceptions."""
 
 from fastapi import HTTPException, status
 

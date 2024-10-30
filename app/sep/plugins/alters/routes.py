@@ -58,21 +58,21 @@ async def alters_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve alters task."""
-    data = task["data"]
+    data = task.data
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
     task_data = {
-        "name": task["name"],
-        "created_at": task["created_at"],
-        "updated_at": task["updated_at"],
+        "name": task.name,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
         "hostname": data["Constraints"][0]["RTarget"],
         "table": f"{meta['schema_name']}.{meta['table_name']}",
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task['name']}/history/")
-    context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
+    context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
         name="alters/details.html",
@@ -91,7 +91,7 @@ async def alters_execute(
 ) -> RedirectResponse:
     """Execute alters task."""
     await tasks_api.post(
-        f"/execute/{task['name']}"
+        f"/execute/{task.name}"
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -106,5 +106,5 @@ async def alters_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete alters task."""
-    await tasks_api.delete(f"/{task['name']}")
+    await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

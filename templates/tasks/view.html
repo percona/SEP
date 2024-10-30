@@ -25,7 +25,7 @@
 {% endblock %}
 
 
-{% block title %}Task: {{ task.get("name") }}{% endblock %}
+{% block title %}Task: {{ task.name }}{% endblock %}
 
 {## TODO: the template is currently Nomad-specific#}
 {# TODO: Adjust indentation of all templates #}
@@ -33,7 +33,7 @@
 
 <dl>
     <dt>Engine</dt> <dd>{{ Nomad }}</dd>
-    <dt>Created</dt> <dd>{{ task["created_at"] }}</dd>
+    <dt>Created</dt> <dd>{{ task.created_at }}</dd>
     <dt>Specification</dt> <dd>
     <code>
         {{ task }}
@@ -44,14 +44,14 @@
   </ul></dd>
 </dl>
 
-{% if not task["is_template"] %}
+{% if not task.is_template %}
 <form method="post" action="" style="padding: 20px;">
     {% if task_data.get("ParameterizedJob") %}
     <fieldset>
         <legend style="font-size: 1.5em; font-weight: bold; color: #333;">Configuration</legend>
-        {% if task_data["ParameterizedJob"] %}
-            {% set optional = task_data["ParameterizedJob"].get("MetaOptional", []) %}
-            {% set required = task_data["ParameterizedJob"].get("MetaRequired", []) %}
+        {% if task_data.ParameterizedJob %}
+            {% set optional = task_data.ParameterizedJob.get("MetaOptional", []) %}
+            {% set required = task_data.ParameterizedJob.get("MetaRequired", []) %}
         {% else %}
             {% set optional = [] %}
             {% set required = [] %}
@@ -77,7 +77,7 @@
             {% endif %}
         </div>
         {% endfor %}
-        {% set nomad_payload_rule = task_data["ParameterizedJob"].get("Payload", "optional") %}
+        {% set nomad_payload_rule = task_data.ParameterizedJob.get("Payload", "optional") %}
         {% if nomad_payload_rule in ["optional", "required"] %}
         <div style="margin-bottom: 20px;">
             <label for="payload" class="form-label">Payload{% if nomad_payload_rule == "required" %} (required){% endif %}</label>
@@ -90,8 +90,8 @@
 </form>
 {% endif %}
 
-{% if not task["protected"] %}
-<form method="post" action="/tasks/{{ task['name'] }}/delete">
+{% if not task.protected %}
+<form method="post" action="/tasks/{{ task.name }}/delete">
     <button type="submit">Delete</button>
 </form>
 {% endif %}
