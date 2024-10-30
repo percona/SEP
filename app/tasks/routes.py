@@ -185,7 +185,7 @@ async def generate_task(
     #       Scheduling will require a periodic job for Nomad if using directly, else the
     #       ability to schedule generically from with the app
     if not generated_task.schedule:
-        await _schedule_queue_item(
+        await schedule_queue_item(
             history_recorded=history_record,
             background_tasks=background_tasks,
         )
@@ -204,12 +204,12 @@ async def execute_task_name(
     execution_data: TaskExecuteRequest = None,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
-    history_recorded = await _prepare_task_history(
-        session=session, task_name=task_name, execution_data=execution_data
+    history_recorded = await prepare_task_history(
+        task_name=task_name, execution_data=execution_data
     )
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-    return await _schedule_queue_item(history_recorded, background_tasks)
+    return await schedule_queue_item(history_recorded, background_tasks)
 
 
 @router.post(
@@ -223,7 +223,7 @@ async def trigger_task_name(
     trigger_data: TriggerRequest = None,
 ) -> JSONResponse:
     """Send a task for execution."""
-    history_recorded = await _prepare_task_history(session=session, task_name=task_name)
+    history_recorded = await prepare_task_history(task_name=task_name)
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
 
@@ -231,28 +231,6 @@ async def trigger_task_name(
         args=[history_recorded.id], countdown=trigger_data.countdown
     )
     return JSONResponse({"task_id": task.id})
-
-
-@router.post(
-    "/run/{history_id}",
-    dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
-)
-async def execute_history_id(
-    session: SessionDep,
-    history_id: int,
-    background_tasks: BackgroundTasks,
-) -> dict[str, TaskHistory]:
-    """Trigger a history item for processing."""
-    history_record = await TaskHistoryManager.get_or_404(
-        session,
-        id=history_id,
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-    return await _schedule_queue_item(
-        history_recorded=history_record,
-        background_tasks=background_tasks,
-    )
 
 
 @router.get("/history/", dependencies=[IsAuthenticatedDep])
@@ -339,29 +317,6 @@ async def transform_payload(
     return await executor.transform_payload(data.payload, data.fmt)
 
 
-async def _prepare_task_history(
-    session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
-) -> Awaitable[TaskHistory]:
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
-    logger.debug("Executing task %s", task_name)
-    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
-    if config.is_template:
-        raise HTTPForbiddenException(
-            f"Task {task_name} is a template and cannot be executed",
-        )
-    # Record the task execution request
-    task_history = TaskHistory(
-        task_id=config.id,
-        execution_request=TaskExecutionRequest(
-            task=task_name,
-            target=execution_data.meta.get("target", "all"),
-            meta=execution_data.meta,
-            payload=execution_data.payload,
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-    return await TaskHistoryManager.save(session, task_history)
 
 
 @router.post("/schedule/{task_name}", dependencies=[IsAuthenticatedDep])
@@ -412,46 +367,12 @@ async def get_periodic_tasks(session: SessionDep, task: str) -> list[PeriodicTas
         select_related_task=True,
     )
 
+@router.get(
+    "/{task}/periods",
+    dependencies=[IsAuthenticatedDep],
+    response_class=JSONResponse,
+)
+async def get_periodic_tasks_with_period(session: SessionDep,  task: str) -> JSONResponse:
+    await process_tasks_with_period("*/4 * * * *")
+    return {"" : ""}
 
-async def _prepare_task_history(
-    session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
-) -> Awaitable[TaskHistory]:
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
-    logger.debug("Executing task %s", task_name)
-    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
-    if config.is_template:
-        raise HTTPForbiddenException(
-            f"Task {task_name} is a template and cannot be executed",
-        )
-    # Record the task execution request
-    task_history = TaskHistory(
-        task_id=config.id,
-        execution_request=TaskExecutionRequest(
-            task=task_name,
-            target=execution_data.meta.get("target", "all"),
-            meta=execution_data.meta,
-            payload=execution_data.payload,
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-    return await TaskHistoryManager.save(session, task_history)
-
-
-async def _schedule_queue_item(
-    history_recorded: TaskHistory,
-    background_tasks: BackgroundTasks,
-) -> dict[str, TaskHistory]:
-    """Schedule queue item to execution."""
-    # Check how to proceed with execution
-    mode = tasks_settings.EXECUTE_MODE
-    match mode:
-        case "background":
-            background_tasks.add_task(
-                process_queue_item,
-                queue_id=history_recorded.id,
-            )
-        case _:
-            logger.critical("Unknown execution mode '%s'", mode)
-            raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
-    return {"task_history_id": history_recorded}
