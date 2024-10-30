@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
+from app.api.exceptions import HTTPBadRequestException
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -26,6 +27,7 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
+    TaskLog,
     TaskStats,
     TransformPayloadRequest,
 )
@@ -287,11 +289,23 @@ async def stream_task_history_logs(
         session=session,
         id=task_history_id,
     )
-    return StreamingResponse(
-        (
+    if task_history.status == TaskHistoryStatusEnum.PENDING:
+        raise HTTPBadRequestException("Task history is pending.")
+    if task_history.status == TaskHistoryStatusEnum.RUNNING:
+        stream_logs_generator = (
             f"{log_line.model_dump_json()}\n"
             async for log_line in executor.stream_logs(task_history)
-        ),
+        )
+    else:
+        stream_logs_generator = (
+            f"{TaskLog(step=step, type=log_type, msg=log[log_type]).model_dump_json()}\n"
+            for step, log in task_history.execution_request.tracking.get(
+                "task_logs", {}
+            ).items()
+            for log_type in ("stdout", "stderr")
+        )
+    return StreamingResponse(
+        stream_logs_generator,
         media_type="application/json",
     )
 

@@ -475,6 +475,8 @@ class NomadExecutor(BaseExecutor):
     async def _push_logs_to_queue(
         self,
         session: ClientSession,
+        # TODO(yan): Use Pydantic model for alloc
+        # SEP-154
         alloc: dict[str, Any],
         step: str,
         log_type: str,
