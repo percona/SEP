@@ -32,7 +32,11 @@ from app.sep.inventory import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
-from app.tasks.models import Task, TaskHistoryStatusEnum
+from app.tasks.models import (
+    Task,
+    TaskHistoryResponse,
+    TaskHistoryStatusEnum,
+)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -462,3 +466,61 @@ async def get_task_by_name(
     if owner is not None and Task.validate_owner(owner) != task.owner:
         raise HTTPNotFoundException
     return task
+
+
+# TODO(yan): Put get_task_history in a proper TasksAPI SDK class
+# SEP-130
+async def get_task_history(
+    tasks_api: TaskAPI, task_history_id: int, owner: str | None = None
+) -> TaskHistoryResponse:
+    """Fetch and validate a task history by ID.
+
+    This function retrieves a task history by its ID from the Tasks API and optionally
+    validates that it is owned by a specific owner. If the task history does not exist
+    or the validation fails, it raises a 404 HTTP exception.
+
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :param task_history_id: The ID of the task history to retrieve.
+    :type task_history_id: str
+    :param owner: The owner filter for the task history's task. Defaults to `None`,
+        meaning no filter.
+    :type owner: str | None
+    :return: The retrieved task history.
+    :rtype: TaskHistoryResponse
+    :raises HTTPNotFoundException: If the task history is not found or the validation
+        fails.
+    """
+    try:
+        task_history = TaskHistoryResponse.model_validate(
+            await tasks_api.get(f"/history/{task_history_id}")
+        )
+    except ValidationError:
+        logger.debug("ValidationError retrieving task history.", exc_info=True)
+        raise HTTPNotFoundException from None
+    logger.debug("TASK IS %s", task_history)
+    if owner is not None and Task.validate_owner(owner) != task_history.task.owner:
+        raise HTTPNotFoundException
+    return task_history
+
+
+# TODO(yan): Put stream_task_history_logs in a proper TasksAPI SDK class
+# SEP-130
+async def task_history_logs_event_stream(
+    tasks_api: TaskAPI, task_history_id: int
+) -> AsyncGenerator[str, None]:
+    """Stream logs from a task history as server-sent events.
+
+    Streams log lines for a given task history ID from the Tasks API and yields them
+    formatted as server-sent events.
+
+    :param tasks_api: The TaskAPI client for interacting with the Tasks service.
+    :type tasks_api: RemoteAPI
+    :param task_history_id: The ID of the task history whose logs to stream.
+    :type task_history_id: int
+    :yield: Log entries formatted as server-sent events.
+    :rtype: str
+    """
+    async for line in tasks_api.stream(f"/history/{task_history_id}/logs/"):
+        log_entry = line.decode("utf-8")
+        yield f"data: {log_entry}\n\n"

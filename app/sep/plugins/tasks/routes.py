@@ -3,15 +3,25 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
+from app.sep.deps import (
+    DefaultContext,
+    get_task_history,
+    IsAuthenticated,
+    task_history_logs_event_stream,
+    TaskAPI,
+)
 from app.sep.plugins.tasks.deps import TaskDep
 from app.sep.plugins.tasks.models import TaskCreateRequest
 from app.tasks.main import AVAILABLE_OWNERS
-from app.tasks.models import TaskBackendEnum, TaskExecuteRequest
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskHistoryResponse,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -94,3 +104,15 @@ async def tasks_delete(
     """Delete task."""
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/logs/{task_history_id}", dependencies=[IsAuthenticated])
+async def archives_logs_event_stream(
+    task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
+    tasks_api: TaskAPI,
+) -> StreamingResponse:
+    """Stream a task history's logs as server-sent events."""
+    return StreamingResponse(
+        task_history_logs_event_stream(tasks_api, task_history.id),
+        media_type="text/event-stream",
+    )

@@ -270,11 +270,12 @@ async def get_task_history(session: SessionDep, task: str) -> list[TaskHistory]:
 async def retrieve_task_history(
     session: SessionDep,
     task_history_id: int,
-) -> TaskHistory:
+) -> TaskHistoryResponse:
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history_id)
     return await TaskHistoryManager.get_or_404(
         session=session,
+        select_related=(TaskHistory.task,),
         id=task_history_id,
     )
 
@@ -283,7 +284,7 @@ async def retrieve_task_history(
 async def stream_task_history_logs(
     session: SessionDep, executor: TaskExecutor, task_history_id: int
 ) -> StreamingResponse:
-    """Stream a task history logs."""
+    """Stream a task history's logs."""
     logger.debug("Requesting logs for task history %s", task_history_id)
     task_history = await TaskHistoryManager.get_or_404(
         session=session,
