@@ -6,7 +6,7 @@ from os import getenv
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
@@ -274,6 +274,25 @@ async def retrieve_task_history(
     return await TaskHistoryManager.get_or_404(
         session=session,
         id=task_history_id,
+    )
+
+
+@router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
+async def stream_task_history_logs(
+    session: SessionDep, executor: TaskExecutor, task_history_id: int
+) -> StreamingResponse:
+    """Stream a task history logs."""
+    logger.debug("Requesting logs for task history %s", task_history_id)
+    task_history = await TaskHistoryManager.get_or_404(
+        session=session,
+        id=task_history_id,
+    )
+    return StreamingResponse(
+        (
+            f"{log_line.model_dump_json()}\n"
+            async for log_line in executor.stream_logs(task_history)
+        ),
+        media_type="application/json",
     )
 
 
