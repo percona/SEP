@@ -34,7 +34,7 @@ from app.tasks.models import (
     TransformPayloadRequest,
     TriggerRequest,
 )
-from app.tasks.utils import process_queue_item
+from app.tasks.utils import process_queue_item, process_tasks_with_period
 
 logger = logging.getLogger(__name__)
 

@@ -41,3 +41,4 @@ def trigger_task(self: Task, queue_id: int | None = None) -> dict:  # noqa: ARG0
 
     async_to_sync(execute_task)(queue_id)
     return {"status": "Task completed successfully", "queue_id": queue_id}
+

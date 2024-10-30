@@ -1,13 +1,13 @@
 """Module contains utility functions for processing task queue items."""
 
 from http import HTTPStatus
-
 from fastapi import HTTPException
 
-from app.tasks.crud import TaskHistoryManager
+from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executor
 from app.tasks.models import TaskBackendEnum, TaskHistory, TaskHistoryStatusEnum
+import pdb
 
 
 async def process_queue_item(queue_id: int) -> None:
@@ -31,3 +31,16 @@ async def process_queue_item(queue_id: int) -> None:
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
         await executor.run(session, queue_item)
+
+async def process_tasks_with_period(period: str) -> None:
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        queue_items = await PeriodicTaskManager.list_by_period(
+            session=session,
+            period=period,
+            select_related_task=True,
+        )
+        
+        
+        
+        breakpoint()

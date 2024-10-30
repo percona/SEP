@@ -171,3 +171,33 @@ class PeriodicTaskManager(BaseManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
+    
+    @classmethod
+    async def list_by_period(
+        cls,
+        *,
+        session: AsyncSession,
+        period: str,
+        select_related_task: bool = False,
+    ) -> list[PeriodicTask]:
+        """List periodic tasks by their scheduled period.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param period: The period (cron expression) to filter tasks by.
+        :type period: str
+        :param select_related_task: Whether to include the related task data in the
+            result. Defaults to False.
+        :type select_related_task: bool
+        :return: A list of periodic tasks that match the specified period.
+        :rtype: list[PeriodicTask]
+        """
+        query = select(PeriodicTask).join(Task)
+        select_related = (PeriodicTask.task,) if select_related_task else ()
+        query = cls._filter_query(
+            query,
+            col(PeriodicTask.period) == period,
+            select_related=select_related,
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
