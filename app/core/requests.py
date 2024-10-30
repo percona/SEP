@@ -1,6 +1,7 @@
 """Manage remote API interactions."""
 
 import logging
+from collections.abc import AsyncGenerator
 from functools import cached_property
 from ssl import create_default_context, SSLContext
 from typing import Any
@@ -109,22 +110,99 @@ class RemoteAPI(BaseCaseInsensitiveModel):
             headers["Authorization"] = f"{self.auth_scheme} {self.api_key}"
         return headers
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> ClientResponse:
+    def prepare_path(self, path: str) -> str:
+        """Prepare and return the full endpoint path.
+
+        Constructs the full URL path by combining the base path with the provided path.
+
+        :param path: The API endpoint path to request.
+        :type path: str
+        :return: The full API path.
+        :rtype: str
+        """
         if self.base_path == "/":
-            path = urljoin(self.base_path, path)
-        else:
-            trailing_slash = path.endswith("/")
-            path = path.strip("/")
-            base_path = (
-                self.base_path + "/" if path and self.base_path else self.base_path
-            )
-            path = urljoin(base_path, path)
-            path = path + "/" if trailing_slash else path
+            return urljoin(self.base_path, path)
+        trailing_slash = path.endswith("/")
+        path = path.strip("/")
+        base_path = self.base_path + "/" if path and self.base_path else self.base_path
+        path = urljoin(base_path, path)
+        return path + "/" if trailing_slash else path
+
+    def prepare_headers(self, headers: dict[str, str] | None = None) -> dict[str, str]:
+        """Prepare and merge headers for the API request.
+
+        Combines default headers with any additional (optional) headers provided.
+
+        :param headers: Additional headers to include in the request.
+        :type headers: Optional[Dict[str, str]]
+        :return: The merged headers dictionary.
+        :rtype: dict[str, str]
+        """
+        headers = headers or {}
+        return self.headers | headers
+
+    def prepare_ssl(self) -> SSLContext | bool:
+        """Prepare the SSL configuration for the API request.
+
+        Returns the SSL context if SSL verification is enabled, otherwise returns False.
+
+        :return: The SSL context or False.
+        :rtype: Union[SSLContext, bool]
+        """
         if self.verify_ssl:
-            kwargs["ssl"] = self.ssl_context
-        else:
-            kwargs["ssl"] = False
-        headers = self.headers | kwargs.pop("headers", {})
+            return self.ssl_context
+        return False
+
+    async def stream(
+        self, path: str, method: str = "get", **kwargs: Any
+    ) -> AsyncGenerator[bytes, None]:
+        """Perform a streaming HTTP request and yield response content.
+
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param method: The HTTP method to use for the request. Defaults to "GET".
+        :type method: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :yield: Lines of response content as bytes.
+        :rtype: bytes
+        """
+        path = self.prepare_path(path)
+        kwargs["ssl"] = self.prepare_ssl()
+        headers = self.prepare_headers(kwargs.get("headers"))
+        logger.debug(
+            "Sending %s streaming request to %s%s with kwargs %s and headers %s",
+            method,
+            self.base_url,
+            path,
+            kwargs,
+            headers,
+        )
+        async with (
+            ClientSession(
+                base_url=self.base_url,
+                headers=headers,
+            ) as session,
+            session.request(method, path, **kwargs) as response,
+        ):
+            async for line in response.content:
+                yield line
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> ClientResponse:
+        """Define internal method to perform an HTTP request.
+
+        :param method: The HTTP method to use for the request.
+        :type method: str
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :return: The aiohttp ClientResponse object.
+        :rtype: ClientResponse
+        """
+        path = self.prepare_path(path)
+        kwargs["ssl"] = self.prepare_ssl()
+        headers = self.prepare_headers(kwargs.get("headers"))
         logger.debug(
             "Sending %s request to %s%s with kwargs %s and headers %s",
             method,
