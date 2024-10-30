@@ -1,6 +1,8 @@
 <form id="schedulerForm" method="post" action="/tasks/{{ task['name'] }}/schdule">
-    <input name="meta" type="hidden"/>
+    {% if not required %}
+    <input name="meta_" type="hidden"/>
     <input name="payload" type="hidden"/>
+    {% endif %}
     {% include "tasks/partials/scheduler-inputs.html" %}
 </form>
 

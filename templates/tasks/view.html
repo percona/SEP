@@ -78,6 +78,32 @@
     </tbody>
 </table>
 {% endif %}
+
+{% if schedule is defined and schedule|length > 0 %}
+<table>
+    <caption>Periodic Tasks</caption>
+    <thead>
+        <tr>
+            <th>Created</th>
+            <th>Period</th>
+            <th>Execute Request</th>
+        </tr>
+    </thead>
+    <tfoot>
+        <tr><td colspan="3">&nbsp;</td></tr>
+    </tfoot>
+    <tbody>
+        {% for item in schedule %}
+        <tr>
+            <th scope="row">{{ item["created_at"] }}</th>
+            <td>{{ item["period"] }}</td>
+            <th scope="row">{{ item["execute_request"] }}</th>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
 <script>
     const now = new Date();
     const year = now.getFullYear();

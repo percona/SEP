@@ -11,7 +11,12 @@ from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
 from app.sep.plugins.tasks.models import TaskCreateRequest
 from app.tasks.main import AVAILABLE_OWNERS
-from app.tasks.models import TaskBackendEnum, TaskExecuteRequest, TriggerRequest
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskScheduleRequest,
+    TriggerRequest,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -66,6 +71,7 @@ async def tasks_detail(
         f"/{task_name}",
     )  # TODO: Use Pydantic/SQLModel models  # noqa: TD002, TD003
     context["history"] = await tasks_api.get(f"/{task_name}/history/")
+    context["schedule"] = await tasks_api.get(f"/{task_name}/schedule/")
     context["available_owners"] = AVAILABLE_OWNERS
     context["task_data"] = context["task"]["data"]
     executor_hosts = await tasks_api.get("/hosts/")
@@ -122,15 +128,11 @@ async def trigger_task_name(
 async def schedule_task_name(
     task_name: str,
     tasks_api: TaskAPI,
-    period: Annotated[str, Form()],
-    execute_data: Annotated[TaskExecuteRequest, Form()] | None = None,
+    schedule_data: Annotated[TaskScheduleRequest, Form()],
 ) -> RedirectResponse:
     """Schdule task."""
-    logger.debug("scheduling task %s, %s, %s", task_name, period, execute_data)
+    logger.debug("scheduling task %s, %s,", task_name, schedule_data)
 
-    payload = {
-        "period": period,
-        "execute_data": execute_data.model_dump() if execute_data else None,
-    }
+    await tasks_api.post(f"/schedule/{task_name}", json=schedule_data.model_dump())
 
-    await tasks_api.post(f"/schedule/{task_name}", json=payload)
+    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)

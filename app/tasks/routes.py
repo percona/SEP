@@ -19,7 +19,6 @@ from app.tasks.models import (
     CrontabPeriod,
     GeneratedTask,
     PeriodicTask,
-    ScheduleRequest,
     Task,
     TaskBackendEnum,
     TaskExecuteRequest,
@@ -30,6 +29,7 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
+    TaskScheduleRequest,
     TaskStats,
     TransformPayloadRequest,
     TriggerRequest,
@@ -364,6 +364,55 @@ async def _prepare_task_history(
     return await TaskHistoryManager.save(session, task_history)
 
 
+@router.post("/schedule/{task_name}", dependencies=[IsAuthenticatedDep])
+async def create_periodic_task(
+    session: SessionDep, task_name: str, schedule_data: TaskScheduleRequest = None
+) -> PeriodicTask:
+    """Create a new PeriodicTask."""
+    logger.debug("Creating periodic Task %s", schedule_data)
+
+    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
+    if config.is_template:
+        raise HTTPForbiddenException(
+            f"Task {task_name} is a template and cannot be executed",
+        )
+
+    try:
+        crontab_period = CrontabPeriod.from_str(schedule_data.period)
+    except ValueError as e:
+        logger.debug("Crontab Error %s", e)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST) from None
+
+    periodic_task = PeriodicTask(
+        task_id=config.id,
+        execute_request=TaskExecutionRequest(
+            task=task_name,
+            target=schedule_data.meta.get("target", "all"),
+            meta=schedule_data.meta,
+            payload=schedule_data.payload,
+            tracking={"evaluation_id": ""},
+        ),
+        period=crontab_period.to_str(),
+    )
+
+    return await PeriodicTaskManager.save(session, periodic_task)
+
+
+@router.get(
+    "/{task}/schedule/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=list[PeriodicTask],
+)
+async def get_periodic_tasks(session: SessionDep, task: str) -> list[PeriodicTask]:
+    """Retrieve a periodic tasks by task name."""
+    logger.debug("Requesting periodic tasks for %s", task)
+    return await PeriodicTaskManager.list_by_task_name(
+        session=session,
+        task_name=task,
+        select_related_task=True,
+    )
+
+
 async def _prepare_task_history(
     session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
 ) -> Awaitable[TaskHistory]:
@@ -406,42 +455,3 @@ async def _schedule_queue_item(
             logger.critical("Unknown execution mode '%s'", mode)
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
     return {"task_history_id": history_recorded}
-
-
-@router.post("/schedule/{task_name}", dependencies=[IsAuthenticatedDep])
-async def create_periodic_task(
-    session: SessionDep, task_name: str, request: ScheduleRequest = None
-) -> PeriodicTask:
-    """Create a new PeriodicTask."""
-    logger.debug("Creating periodic Task %s", task_name)
-    period = request.period
-
-    execution_data = (
-        TaskExecuteRequest() if request.execute_data is None else request.execute_data
-    )
-
-    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
-    if config.is_template:
-        raise HTTPForbiddenException(
-            f"Task {task_name} is a template and cannot be executed",
-        )
-
-    try:
-        crontab_period = CrontabPeriod.from_str(period)
-    except ValueError as e:
-        logger.debug("Crontab Error %s", e)
-        raise HTTPException(status.HTTP_400_BAD_REQUEST) from None
-
-    periodic_task = PeriodicTask(
-        task_id=config.id,
-        execute_request=TaskExecutionRequest(
-            task=task_name,
-            target=execution_data.meta.get("target", "all"),
-            meta=execution_data.meta,
-            payload=execution_data.payload,
-            tracking={"evaluation_id": ""},
-        ),
-        period=crontab_period.to_str(),
-    )
-
-    return await PeriodicTaskManager.save(session, periodic_task)

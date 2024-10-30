@@ -414,6 +414,27 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
+class TaskScheduleRequest(TaskExecuteRequest):
+    """Represent a request to schedule a task with execution metadata and scheduling details.
+
+    Inherits from `TaskExecuteRequest` and adds scheduling capabilities.
+
+    :param meta: A dictionary of meta variables for the task execution.
+        Defaults to an empty dictionary.
+    :type meta: dict[str, Any]
+    :param payload: Optional payload data or file path for the task execution.
+        Defaults to None.
+    :type payload: str | None
+    :param period: A cron expression representing the schedule for task execution.
+        This specifies the timing of the task, determining when it should run based
+        on the specified cron format (minute, hour, day of month, month, day of week).
+        Defaults to None, meaning the task will not be scheduled.
+    :type period: str | None
+    """
+
+    period: str | None = None
+
+
 # TODO: Create Base/Write models  # noqa: TD002, TD003
 class TaskHistory(BaseSQLModel, table=True):
     """Represent a task execution history.

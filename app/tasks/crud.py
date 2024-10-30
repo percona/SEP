@@ -134,10 +134,40 @@ class TaskHistoryManager(BaseManager):
 
 
 class PeriodicTaskManager(BaseManager):
-    """Manage periodicTask operations, including listing periodic Tasks by period.
+    """Manage periodicTask operations, including listing periodic Tasks by period or task name.
 
     :ivar Model: The SQLModel class this manager is responsible for (`PeriodicTask`).
     :vartype Model: type[PeriodicTask]
     """
 
     Model = PeriodicTask
+
+    @classmethod
+    async def list_by_task_name(
+        cls,
+        *,
+        session: AsyncSession,
+        task_name: str,
+        select_related_task: bool = False,
+    ) -> list[PeriodicTask]:
+        """List periodic tasks by the task's name.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param task_name: The name of the task to list histories for.
+        :type task_name: str
+        :param select_related_task: Whether to include the related task data in the
+            result. Defaults to False.
+        :type select_related_task: bool
+        :return: A list of periodic tasks for the specified task.
+        :rtype: list[PeriodicTask]
+        """
+        query = select(PeriodicTask).join(Task)
+        select_related = (PeriodicTask.task,) if select_related_task else ()
+        query = cls._filter_query(
+            query,
+            col(Task.name) == task_name,
+            select_related=select_related,
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
