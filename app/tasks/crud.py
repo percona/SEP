@@ -2,12 +2,12 @@
 
 from datetime import datetime, UTC
 
-from sqlmodel import col, select
+from sqlmodel import col, distinct, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseManager
-from app.tasks.models import PeriodicTask, Task, TaskHistory
+from app.tasks.models import CrontabPeriod, PeriodicTask, Task, TaskHistory
 
 
 class TaskManager(BaseManager):
@@ -201,3 +201,24 @@ class PeriodicTaskManager(BaseManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
+
+    @classmethod
+    async def list_distinct_crontab_periods(
+        cls,
+        *,
+        session: AsyncSession
+    ) -> list[CrontabPeriod]:
+        """List distinct crontab periods from periodic tasks.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :return: A list of distinct CrontabPeriod objects.
+        :rtype: list[CrontabPeriod]
+        """
+        query = select(distinct(PeriodicTask.period))
+        result = await cls._exec(session, query)
+        
+        # Convert each result to a CrontabPeriod instance if needed
+        distinct_periods = [CrontabPeriod.from_str(row) for row in result.all()]
+        
+        return distinct_periods

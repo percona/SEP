@@ -9,7 +9,9 @@ import logging
 from asgiref.sync import async_to_sync
 from celery import shared_task, Task
 
-from app.tasks.utils import process_queue_item
+from app.tasks.crud import PeriodicTaskManager
+from app.tasks.db import get_async_session_maker
+from app.tasks.utils import prepare_task_history, process_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -42,3 +44,27 @@ def trigger_task(self: Task, queue_id: int | None = None) -> dict:  # noqa: ARG0
     async_to_sync(execute_task)(queue_id)
     return {"status": "Task completed successfully", "queue_id": queue_id}
 
+@shared_task()
+def beat_task(period: str) -> str:
+    logger.debug("Period: %s", period)
+    async_to_sync(process_tasks_with_period)(period)
+    return {"status": "Task completed successfully", "period": period}
+
+async def process_tasks_with_period(period: str) -> None:
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        periodic_tasks = await PeriodicTaskManager.list_by_period(
+            session=session,
+            period=period,
+            select_related_task=True,
+        )
+        
+        for periodic_task in periodic_tasks:
+            history_recorded = await prepare_task_history(
+                task_name=periodic_task.task.name,
+                execution_data=periodic_task.execute_request
+            )
+            if not history_recorded:
+                logger.error("Failed to record task history.")
+            
+            trigger_task.apply_async(kwargs={"queue_id": history_recorded.id})

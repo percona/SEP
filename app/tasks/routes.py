@@ -34,7 +34,7 @@ from app.tasks.models import (
     TransformPayloadRequest,
     TriggerRequest,
 )
-from app.tasks.utils import process_queue_item, process_tasks_with_period
+from app.tasks.utils import prepare_task_history, schedule_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -366,13 +366,3 @@ async def get_periodic_tasks(session: SessionDep, task: str) -> list[PeriodicTas
         task_name=task,
         select_related_task=True,
     )
-
-@router.get(
-    "/{task}/periods",
-    dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
-)
-async def get_periodic_tasks_with_period(session: SessionDep,  task: str) -> JSONResponse:
-    await process_tasks_with_period("*/4 * * * *")
-    return {"" : ""}
-

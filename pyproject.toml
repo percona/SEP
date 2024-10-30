@@ -61,6 +61,7 @@ python-minifier = "^2.11.2"
 starlette = "^0.40.0"
 celery = "^5.4.0"
 asgiref = "^3.8.1"
+celery-redbeat = "^2.2.0"
 
 [tool.poetry.group.audit]
 optional = true

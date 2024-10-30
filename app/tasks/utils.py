@@ -37,25 +37,6 @@ async def process_queue_item(queue_id: int) -> None:
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
         await executor.run(session, queue_item)
-
-async def process_tasks_with_period(period: str) -> None:
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        periodic_tasks = await PeriodicTaskManager.list_by_period(
-            session=session,
-            period=period,
-            select_related_task=True,
-        )
-        
-        for periodic_task in periodic_tasks:
-            history_recorded = await prepare_task_history(
-                task_name=periodic_task.task.name,
-                execution_data=periodic_task.execute_request
-            )
-            if not history_recorded:
-                raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-            
-            await process_queue_item(history_recorded.id)
          
 
 async def prepare_task_history(

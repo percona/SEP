@@ -1,5 +1,6 @@
 """Define routes for the Tasks API."""
 
+from datetime import datetime
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -10,10 +11,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.tasks.config import tasks_settings
+from app.tasks.crud import PeriodicTaskManager
 from app.tasks.db import get_async_session_maker, init_db
 from app.tasks.routes import router
-
+from celery.utils.log import get_task_logger
+from redbeat import RedBeatSchedulerEntry
+from redbeat.schedules import rrule
+from celery.schedules import crontab
+from app.core.celery import create_celery
 logger = logging.getLogger(__name__)
+celery_logger = get_task_logger(__name__)
 
 
 DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
@@ -36,6 +43,32 @@ async def initial_tasks_setup(app: FastAPI) -> AsyncGenerator[None, None]:  # no
     async_session = get_async_session_maker()
     async with async_session() as session:
         await init_db(session)
+        
+        crontab_periods = await PeriodicTaskManager.list_distinct_crontab_periods(
+            session=session
+        )
+        
+        logger.debug("REDBEAT: %s", crontab_periods)
+    
+        try:    
+            celery_logger.info("Setting up periodic tasks in RedBeat")
+            
+            for i, crontab_period in enumerate(crontab_periods, start=1):
+                entry = RedBeatSchedulerEntry(
+                    f"task_{i}", 
+                    "app.tasks.celery_task.beat_task",
+                    crontab(
+                        minute=crontab_period.minute
+                    ),
+                    args=[crontab_period.to_str()],
+                    app=create_celery()
+                )
+                entry.save()
+            celery_logger.info("Periodic tasks have been set up successfully.")
+
+        except Exception as e:
+            celery_logger.error(f"An exception occurred while setting up periodic tasks: {e}")
+
     yield
 
 
