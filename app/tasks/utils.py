@@ -1,17 +1,23 @@
 """Module contains utility functions for processing task queue items."""
 
+import logging
 from collections.abc import Awaitable
 from http import HTTPStatus
-import logging
+
 from fastapi import BackgroundTasks, HTTPException
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
+from app.tasks.config import tasks_settings
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executor
-from app.tasks.config import tasks_settings
-from app.tasks.models import TaskBackendEnum, TaskExecuteRequest, TaskExecutionRequest, TaskHistory, TaskHistoryStatusEnum
-import pdb
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskExecutionRequest,
+    TaskHistory,
+    TaskHistoryStatusEnum,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +43,17 @@ async def process_queue_item(queue_id: int) -> None:
                 raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
         await executor.run(session, queue_item)
-         
+
 
 async def prepare_task_history(
     task_name: str, execution_data: TaskExecuteRequest = None
 ) -> Awaitable[TaskHistory]:
+    """Prepare and record the history of a task execution request."""
     async_session = get_async_session_maker()
     async with async_session() as session:
-        execution_data = TaskExecuteRequest() if execution_data is None else execution_data
+        execution_data = (
+            TaskExecuteRequest() if execution_data is None else execution_data
+        )
         logger.debug("Executing task %s", task_name)
         config = await TaskManager.retrieve_by_name(session=session, name=task_name)
         if config.is_template:
@@ -64,7 +73,8 @@ async def prepare_task_history(
             status=TaskHistoryStatusEnum.PENDING,
         )
         return await TaskHistoryManager.save(session, task_history)
-    
+
+
 async def schedule_queue_item(
     history_recorded: TaskHistory,
     background_tasks: BackgroundTasks,

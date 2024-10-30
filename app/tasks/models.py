@@ -710,7 +710,7 @@ class CrontabPeriod(BaseModel):
         """Parse a cron string into a CrontabPeriod object."""
         try:
             minute, hour, day_of_month, month_of_year, day_of_week = cron_str.split()
-            
+
             # Validate each part
             cls._validate_cron_part("minute", minute)
             cls._validate_cron_part("hour", hour)

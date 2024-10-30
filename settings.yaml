@@ -58,6 +58,7 @@ development:
   CELERY:
     CELERY_BROKER_URL: "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: "redis://localhost:6379/0"
+    CELERY_REDBEAT_LOCK_TIMEOUT: 100
 production_docker:
   CASDOOR:
     ENDPOINT: http://casdoor:8000

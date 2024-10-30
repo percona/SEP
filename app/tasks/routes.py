@@ -1,7 +1,6 @@
 """Define routes for the Tasks API."""
 
 import logging
-from collections.abc import Awaitable
 from http import HTTPStatus
 from os import getenv
 from typing import Any
@@ -11,8 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.tasks.celery_task import trigger_task
-from app.tasks.config import tasks_settings
+from app.tasks.celery.celery_task import trigger_task
 from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import SessionDep, TaskExecutor
 from app.tasks.models import (
@@ -198,7 +196,6 @@ async def generate_task(
     response_class=JSONResponse,
 )
 async def execute_task_name(
-    session: SessionDep,
     task_name: str,
     background_tasks: BackgroundTasks,
     execution_data: TaskExecuteRequest = None,
@@ -218,7 +215,6 @@ async def execute_task_name(
     response_class=JSONResponse,
 )
 async def trigger_task_name(
-    session: SessionDep,
     task_name: str,
     trigger_data: TriggerRequest = None,
 ) -> JSONResponse:
@@ -315,8 +311,6 @@ async def transform_payload(
 ) -> dict[str, Any]:
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
-
-
 
 
 @router.post("/schedule/{task_name}", dependencies=[IsAuthenticatedDep])

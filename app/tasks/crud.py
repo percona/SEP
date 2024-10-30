@@ -171,7 +171,7 @@ class PeriodicTaskManager(BaseManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
-    
+
     @classmethod
     async def list_by_period(
         cls,
@@ -204,9 +204,7 @@ class PeriodicTaskManager(BaseManager):
 
     @classmethod
     async def list_distinct_crontab_periods(
-        cls,
-        *,
-        session: AsyncSession
+        cls, *, session: AsyncSession
     ) -> list[CrontabPeriod]:
         """List distinct crontab periods from periodic tasks.
 
@@ -217,8 +215,6 @@ class PeriodicTaskManager(BaseManager):
         """
         query = select(distinct(PeriodicTask.period))
         result = await cls._exec(session, query)
-        
+
         # Convert each result to a CrontabPeriod instance if needed
-        distinct_periods = [CrontabPeriod.from_str(row) for row in result.all()]
-        
-        return distinct_periods
+        return [CrontabPeriod.from_str(row) for row in result.all()]
