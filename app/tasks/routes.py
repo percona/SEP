@@ -288,7 +288,7 @@ async def stream_task_history_logs(
         raise HTTPBadRequestException("Task history is pending.")
     if task_history.status == TaskHistoryStatusEnum.RUNNING:
         stream_logs_generator = (
-            f"{log_line.model_dump_json()}\n"
+            f"{log_line.model_dump_json()}\n" if log_line else ""
             async for log_line in executor.stream_logs(task_history)
         )
     else:

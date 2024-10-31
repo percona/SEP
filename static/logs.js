@@ -70,17 +70,22 @@ $(document).ready(function () {
         };
 
         eventSource.addEventListener('finish', function (event) {
-            console.log(`Log stream for ${taskId} finished`);
             eventSource.close();
-            const completedIcon = $('<i class="icons unselectable" style="color: #8ACE00; margin-left: auto;" title="Task completed">check_circle</i>');
-            $logConsole.find('.log-bottom-bar').append(completedIcon);
-            $logConsole.addClass('completed');
-            delete lastMessagesIds[taskId];
+            if (lastMessagesIds[taskId] === 0) {
+                window.location.reload();
+            } else {
+                console.log(`Log stream for ${taskId} finished`);
+                const completedIcon = $('<i class="icons unselectable" style="color: #8ACE00; margin-left: auto;" title="Task completed">check_circle</i>');
+                $logConsole.find('.log-bottom-bar').append(completedIcon);
+                $logConsole.addClass('completed');
+                delete lastMessagesIds[taskId];
+            }
         });
 
         eventSource.onerror = function (e) {
             console.error(`Error receiving SSE for task ${taskId}: ${e}`);
             if (lastMessagesIds[taskId] === 0) {
+                eventSource.close();
                 window.location.reload();
             }
         };

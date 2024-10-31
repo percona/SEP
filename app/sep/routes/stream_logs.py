@@ -44,10 +44,11 @@ async def task_history_logs_event_stream(
     """
     i = 1
     async for log_entry in tasks_api.stream(f"/history/{task_history_id}/logs/"):
-        log_data = json.loads(log_entry)
-        for line in log_data["msg"].splitlines():
-            log_data["msg"] = f"{line}\n"
-            log_data["id"] = i
-            yield f"data: {json.dumps(log_data)}\n\n"
-            i += 1
+        if log_entry:
+            log_data = json.loads(log_entry)
+            for line in log_data["msg"].splitlines():
+                log_data["msg"] = f"{line}\n"
+                log_data["id"] = i
+                yield f"data: {json.dumps(log_data)}\n\n"
+                i += 1
     yield "event: finish\ndata: true\n\n"

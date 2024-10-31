@@ -550,7 +550,7 @@ class NomadExecutor(BaseExecutor):
 
     async def stream_logs(
         self, queue_item: TaskHistory
-    ) -> AsyncGenerator[TaskLog, None]:
+    ) -> AsyncGenerator[TaskLog | None, None]:
         """Stream logs from a task history record.
 
         Retrieves the allocation details and concurrently streams stdout and stderr logs
@@ -559,7 +559,7 @@ class NomadExecutor(BaseExecutor):
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
         :yield: `TaskLog` instances containing log messages.
-        :rtype: TaskLog
+        :rtype: TaskLog | None
         """
         job_id = queue_item.execution_request.tracking["job_id"]
         eval_id = queue_item.execution_request.tracking["evaluation_id"]
@@ -568,34 +568,39 @@ class NomadExecutor(BaseExecutor):
         timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
         queue = asyncio.Queue()
         push_logs_tasks = []
-        async with ClientSession(
-            base_url=str(self.endpoint), timeout=timeout
-        ) as session:
-            for step in set(alloc["TaskStates"] or {}):
-                for log_type in ("stdout", "stderr"):
-                    stream = (step, log_type)
-                    logger.debug("Adding %s to active_streams", stream)
-                    active_streams.add(stream)
-                    push_logs_tasks.append(
-                        asyncio.create_task(
-                            self._push_logs_to_queue(
-                                session, alloc, step, log_type, queue
+        task_states = alloc["TaskStates"]
+        if task_states:
+            async with ClientSession(
+                base_url=str(self.endpoint), timeout=timeout
+            ) as session:
+                for step in set(task_states):
+                    for log_type in ("stdout", "stderr"):
+                        stream = (step, log_type)
+                        logger.debug("Adding %s to active_streams", stream)
+                        active_streams.add(stream)
+                        push_logs_tasks.append(
+                            asyncio.create_task(
+                                self._push_logs_to_queue(
+                                    session, alloc, step, log_type, queue
+                                )
                             )
                         )
-                    )
 
-            while active_streams:
-                logger.debug("Waiting for log line for streams %s", active_streams)
-                log_line = await queue.get()
-                logger.debug("Received log line %s", log_line)
-                if log_line.msg is None:
-                    stream = (log_line.step, log_line.type)
-                    logger.info(
-                        "Log stream %s is over, removing it from active_streams", stream
-                    )
-                    active_streams.remove(stream)
-                    continue
-                yield log_line
-                queue.task_done()
+                while active_streams:
+                    logger.debug("Waiting for log line for streams %s", active_streams)
+                    log_line = await queue.get()
+                    logger.debug("Received log line %s", log_line)
+                    if log_line.msg is None:
+                        stream = (log_line.step, log_line.type)
+                        logger.info(
+                            "Log stream %s is over, removing it from active_streams",
+                            stream,
+                        )
+                        active_streams.remove(stream)
+                        continue
+                    yield log_line
+                    queue.task_done()
 
-            await asyncio.gather(*push_logs_tasks)
+                await asyncio.gather(*push_logs_tasks)
+        else:
+            yield None
