@@ -15,7 +15,15 @@
         border-radius: 4px;
     }
 </style>
+<link rel="stylesheet" href="/static/task_history.css">
 {% endblock %}
+
+{% block behaviours_optimized_extra %}
+    {% if history %}
+<script src="/static/task_history.js"></script>
+    {% endif %}
+{% endblock %}
+
 
 {% block title %}Task: {{ task.get("name") }}{% endblock %}
 
@@ -38,8 +46,6 @@
 
 {% if not task["is_template"] %}
 <form method="post" action="" style="padding: 20px;">
-    <input type="hidden" name="location" value="{{ base_uri }}/api/execute/{{ task['name'] }}">
-    <input name="task" type="hidden" value="{{ task['name'] }}">
     {% if task_data.get("ParameterizedJob") %}
     <fieldset>
         <legend style="font-size: 1.5em; font-weight: bold; color: #333;">Configuration</legend>
@@ -96,30 +102,11 @@
 </form>
 {% endif %}
 
-{% if history is defined and history|length > 0 %}
-<table>
-    <caption>History</caption>
-    <thead>
-        <tr>
-            <th>Submitted</th>
-            <th>Last updated</th>
-            <th>Status</th>
-        </tr>
-    </thead>
-    <tfoot>
-        <tr><td colspan="3">&nbsp;</td></tr>
-    </tfoot>
-    <tbody>
-        {% for item in history %}
-        <tr>
-            <th scope="row">{{ item["created_at"] }}</th>
-            <th scope="row">{{ item["updated_at"] }}</th>
-            <td>{{ item["status"] }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endif %}
+<section>
+    <h2>History</h2>
+    {% set history_tasks = history %}
+    {% include "tasks/partials/completed-tasks.html" %}
+</section>
 <script>
     const now = new Date();
     const year = now.getFullYear();

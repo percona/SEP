@@ -1157,7 +1157,7 @@ class BaseTaskSyncer(BaseSyncer):
             and time_waiting < self.task_execution_timeout
         ):
             await asyncio.sleep(self.tasks_execution_wait_interval)
-            time_waiting += 5
+            time_waiting += self.tasks_execution_wait_interval
             try:
                 task_history = await self.tasks_api.get(f"/history/{task_history_id}")
                 status = task_history["status"]
@@ -1168,10 +1168,9 @@ class BaseTaskSyncer(BaseSyncer):
             raise TimeoutError(f"Task {task_name} timed out")
 
         # TODO: Avoid keeping duplicate logs  # noqa: TD002, TD003
-        evaluation_id = task_history["execution_request"]["tracking"]["evaluation_id"]
         task_logs = task_history["execution_request"]["tracking"]["task_logs"][
-            evaluation_id
-        ][stdout_step]
+            stdout_step
+        ]
         output = task_logs.get("stdout", "")
         error_output = task_logs.get("stderr", "")
         exc_detail = f"Task {task_name} failed"

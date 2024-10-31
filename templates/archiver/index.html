@@ -3,16 +3,14 @@
 {% block title %}Data Archiver{% endblock %}
 
 {% block style %}
-<link rel="stylesheet" href="/static/datatables/dataTables.min.css" media="screen,projection" />
+<link rel="stylesheet" href="/static/task_history.css">
 {% endblock %}
 
-{% block behaviours_optimized_extra %}{% endblock %}
-<script src="/static/datatables/dataTables.min.js"></script>
-<script>
-    $(document).ready(function () {
-        $("select").formSelect();
-    });
-</script>
+{% block behaviours_optimized_extra %}
+    {% if history_tasks %}
+<script src="/static/task_history.js"></script>
+    {% endif %}
+{% endblock %}
 
 {% block main %}
 
@@ -49,7 +47,7 @@
 
 <section id="completed-tasks">
     <h2>History</h2>
-    {% include "archiver/partials/completed-tasks.html" %}
+    {% include "tasks/partials/completed-tasks.html" %}
 </section>
 {% endif %}
 
