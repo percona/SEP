@@ -14,7 +14,7 @@ from async_lru import _LRUCacheWrapper, alru_cache
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import BaseCaseInsensitiveModel
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker

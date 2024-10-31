@@ -6,7 +6,6 @@ from pydantic import AliasChoices, computed_field, ConfigDict, Field, field_vali
 from pydantic.alias_generators import to_camel
 
 from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
-from app.core.auth.providers.casdoor import casdoor_sdk
 from app.core.config import settings
 
 CasdoorUsernameField = Annotated[
@@ -45,7 +44,7 @@ class CasdoorTokenPayload(BaseTokenPayload):
     @field_validator("iss")
     @classmethod
     def validate_iss(cls, v: str) -> str:
-        """Validate if the token's iss is the same as `settings.CASDOOR.ENDPOINT`.
+        """Validate if the token's iss is the same as `settings.CASDOOR.endpoint`.
 
         :param v: The issuer value to validate.
         :type v: str
@@ -53,8 +52,8 @@ class CasdoorTokenPayload(BaseTokenPayload):
         :rtype: str
         """
         if (
-            settings.CASDOOR.ALLOWED_ISSUERS != "*"
-            and v not in settings.CASDOOR.ALLOWED_ISSUERS
+            settings.CASDOOR.allowed_issuers != "*"
+            and v not in settings.CASDOOR.allowed_issuers
         ):
             raise ValueError(f"Unknown token issuer: {v}")
         return v
@@ -62,14 +61,14 @@ class CasdoorTokenPayload(BaseTokenPayload):
     @field_validator("aud")
     @classmethod
     def validate_aud(cls, v: list[str]) -> list[str]:
-        """Validate if `settings.CASDOOR.CLIENT_ID` is part of the token's audience.
+        """Validate if `settings.CASDOOR.client_id` is part of the token's audience.
 
         :param v: The audience list to validate.
         :type v: list[str]
         :return: The validated audience list.
         :rtype: list[str]
         """
-        if settings.CASDOOR.CLIENT_ID not in v:
+        if settings.CASDOOR.client_id not in v:
             raise ValueError(f"Client ID not part of audience: {v}")
         return v
 
@@ -85,7 +84,7 @@ class CasdoorTokenPayload(BaseTokenPayload):
         :return: An instance of `CasdoorTokenPayload` populated with the decoded data.
         :rtype: CasdoorTokenPayload
         """
-        return cls.model_validate(await casdoor_sdk.introspect_token(token))
+        return cls.model_validate(await settings.CASDOOR.introspect_token(token))
 
 
 class CasdoorUser(BaseUser):
@@ -159,9 +158,11 @@ class CasdoorUser(BaseUser):
         :rtype: OAuthToken
         """
         if refresh_token:
-            oauth_data = await casdoor_sdk.refresh_token_request(refresh_token)
+            oauth_data = await settings.CASDOOR.refresh_token_request(refresh_token)
         else:
-            oauth_data = await casdoor_sdk.get_access_token(code, username, password)
+            oauth_data = await settings.CASDOOR.get_access_token(
+                code, username, password
+            )
         return OAuthToken(**oauth_data)
 
     @staticmethod
@@ -174,7 +175,7 @@ class CasdoorUser(BaseUser):
         :type access_token: str
         """
         token_payload = await CasdoorTokenPayload.from_jwt(access_token)
-        token_data = await casdoor_sdk.get_token(token_payload.jti)
+        token_data = await settings.CASDOOR.get_token(token_payload.jti)
         await CasdoorUser.get_oauth_token(
             refresh_token=token_data["data"]["refreshToken"],
         )
@@ -188,7 +189,7 @@ class CasdoorUser(BaseUser):
         :return: An instance of `CasdoorUser`.
         :rtype: CasdoorUser
         """
-        user_data = await casdoor_sdk.get_user(username)
+        user_data = await settings.CASDOOR.get_user(username)
         return cls(**user_data)
 
     @classmethod
@@ -198,7 +199,7 @@ class CasdoorUser(BaseUser):
         :return: The list of users.
         :rtype: list[CasdoorUser]
         """
-        users_data = await casdoor_sdk.get_users()
+        users_data = await settings.CASDOOR.get_users()
         return [cls(**user_data) for user_data in users_data]
 
     @classmethod

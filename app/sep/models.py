@@ -9,9 +9,9 @@ from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
-from app.core.config import BaseCaseInsensitiveModel
 from app.core.db.models import BaseUUIDSQLModel
 from app.core.fields import RequiredStr, StrImportableModule, URIPath
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import slugify
 
 

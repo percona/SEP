@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import BaseLowercaseModel
+from app.core.models import BaseLowercaseModel
 from app.core.utils import async_run
 from app.tasks.models import Task, TaskHistory, TaskLog
 

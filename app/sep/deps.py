@@ -181,7 +181,7 @@ DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
 
 # TODO(yan): Proper SDK
 # SEP-130
-def get_inventory_api(user: CurrentUser) -> RemoteAPI:
+async def get_inventory_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Inventory API.
 
     :param user: The current authenticated user, from which the access token is
@@ -191,19 +191,21 @@ def get_inventory_api(user: CurrentUser) -> RemoteAPI:
         the endpoint, API key, and SSL settings.
     :rtype: RemoteAPI
     """
-    return RemoteAPI(
+    api = RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
         api_key=user.access_token,
         ssl_cafile=settings.SSL_CAFILE,
         ssl_keyfile=inventory_settings.SSL_KEYFILE,
         ssl_certfile=inventory_settings.SSL_CERTFILE,
     )
+    api.session = await settings.get_extra_client_session(api.endpoint, api.api_key)
+    return api
 
 
 InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 
 
-def get_tasks_api(user: CurrentUser) -> RemoteAPI:
+async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Tasks API.
 
     :param user: The current authenticated user, from which the access token is
@@ -213,13 +215,15 @@ def get_tasks_api(user: CurrentUser) -> RemoteAPI:
         the endpoint, API key, and SSL settings.
     :rtype: RemoteAPI
     """
-    return RemoteAPI(
+    api = RemoteAPI(
         endpoint=sep_settings.TASKS_ENDPOINT,
         api_key=user.access_token,
         ssl_cafile=settings.SSL_CAFILE,
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
+    api.session = await settings.get_extra_client_session(api.endpoint, api.api_key)
+    return api
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]

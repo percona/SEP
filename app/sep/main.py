@@ -10,7 +10,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
-from app.core.config import settings
+from app.core.config import default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var
 from app.sep.config import sep_settings
@@ -25,7 +25,7 @@ from app.sep.deps import (
 
 logger = logging.getLogger(__name__)
 
-sep_app = FastAPI()
+sep_app = FastAPI(lifespan=default_lifespan) if __name__ == "__main__" else FastAPI()
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 imported_plugins = set()
