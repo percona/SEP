@@ -6,10 +6,11 @@ from os import getenv
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.exceptions import HTTPBadRequestException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -26,6 +27,7 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
+    TaskLog,
     TaskStats,
     TransformPayloadRequest,
 )
@@ -231,22 +233,13 @@ async def execute_task_name(
 @router.get("/history/", dependencies=[IsAuthenticatedDep])
 async def list_task_history(
     session: SessionDep,
-    status: str | None = None,
-) -> list[TaskHistory]:
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[TaskHistoryResponse]:
     """Create a new task."""
     logger.debug("Listing task history")
-    try:
-        history_status = (
-            TaskHistoryStatusEnum[status.upper()] if status is not None else None
-        )
-    except KeyError:
-        logger.debug(
-            "Status not found in TaskHistoryStatusEnum: %s",
-            status,
-            exc_info=True,
-        )
-        history_status = None
-    return await TaskHistoryManager.list(session, status=history_status)
+    return await TaskHistoryManager.list(
+        session, select_related=(TaskHistory.task,), status=status
+    )
 
 
 @router.get(
@@ -254,12 +247,15 @@ async def list_task_history(
     dependencies=[IsAuthenticatedDep],
     response_model=list[TaskHistoryResponse],
 )
-async def get_task_history(session: SessionDep, task: str) -> list[TaskHistory]:
+async def get_task_history(
+    session: SessionDep, task: str, status: TaskHistoryStatusEnum | None = None
+) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
     return await TaskHistoryManager.list_by_task_name(
         session=session,
         task_name=task,
+        status=status,
         select_related_task=True,
     )
 
@@ -268,12 +264,44 @@ async def get_task_history(session: SessionDep, task: str) -> list[TaskHistory]:
 async def retrieve_task_history(
     session: SessionDep,
     task_history_id: int,
-) -> TaskHistory:
+) -> TaskHistoryResponse:
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history_id)
     return await TaskHistoryManager.get_or_404(
         session=session,
+        select_related=(TaskHistory.task,),
         id=task_history_id,
+    )
+
+
+@router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
+async def stream_task_history_logs(
+    session: SessionDep, executor: TaskExecutor, task_history_id: int
+) -> StreamingResponse:
+    """Stream a task history's logs."""
+    logger.debug("Requesting logs for task history %s", task_history_id)
+    task_history = await TaskHistoryManager.get_or_404(
+        session=session,
+        id=task_history_id,
+    )
+    if task_history.status == TaskHistoryStatusEnum.PENDING:
+        raise HTTPBadRequestException("Task history is pending.")
+    if task_history.status == TaskHistoryStatusEnum.RUNNING:
+        stream_logs_generator = (
+            f"{log_line.model_dump_json()}\n" if log_line else ""
+            async for log_line in executor.stream_logs(task_history)
+        )
+    else:
+        stream_logs_generator = (
+            f"{TaskLog(step=step, type=log_type, msg=log[log_type]).model_dump_json()}\n"
+            for step, log in task_history.execution_request.tracking.get(
+                "task_logs", {}
+            ).items()
+            for log_type in ("stdout", "stderr")
+        )
+    return StreamingResponse(
+        stream_logs_generator,
+        media_type="application/json",
     )
 
 

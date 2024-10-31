@@ -8,9 +8,9 @@ from os import getenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings
+from app.core.config import default_lifespan, settings
 from app.tasks.config import tasks_settings
-from app.tasks.db import get_async_session_maker, init_db
+from app.tasks.db import init_tasks_db
 from app.tasks.routes import router
 
 logger = logging.getLogger(__name__)
@@ -31,17 +31,24 @@ AVAILABLE_OWNERS = {
 
 
 @asynccontextmanager
-async def initial_tasks_setup(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
-    """Initialize Tasks database data."""
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        await init_db(session)
-    yield
+async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage the Tasks API's lifespan.
+
+    Initializes the Tasks database data and ensures that the CasdoorSDK, the
+    NomadExecutor, and any extra client sessions are properly managed during the
+    application's startup and shutdown phases.
+
+    :param app: The FastAPI application instance.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    await init_tasks_db()
+    async with default_lifespan(app), tasks_settings.NOMAD:
+        yield
 
 
-tasks_app = (
-    FastAPI(lifespan=initial_tasks_setup) if __name__ == "__main__" else FastAPI()
-)
+tasks_app = FastAPI(lifespan=tasks_lifespan) if __name__ == "__main__" else FastAPI()
 tasks_app.include_router(router)
 tasks_app.log = logger
 

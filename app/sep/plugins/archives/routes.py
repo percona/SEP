@@ -8,12 +8,17 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
+from app.sep.deps import (
+    DefaultContext,
+    IsAuthenticated,
+    TaskAPI,
+)
 from app.sep.plugins.archives.deps import (
     ArchivesGeneratedTask,
     ArchivesTask,
     get_archives_index_context,
 )
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -59,22 +64,25 @@ async def archives_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve archives task."""
-    data = task["data"]
+    data = task.data
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
     purge_item = task_config["PURGE_LIST"][0]
     task_data = {
-        "name": task["name"],
-        "created_at": task["created_at"],
-        "updated_at": task["updated_at"],
+        "name": task.name,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
         "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
         "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task['name']}/history/")
-    context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
+    context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["running_tasks"] = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
         name="archiver/details.html",
@@ -93,7 +101,7 @@ async def archives_execute(
 ) -> RedirectResponse:
     """Execute archives task."""
     await tasks_api.post(
-        f"/execute/{task['name']}"
+        f"/execute/{task.name}"
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -108,5 +116,5 @@ async def archives_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete archives task."""
-    await tasks_api.delete(f"/{task['name']}")
+    await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)

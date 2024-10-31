@@ -10,9 +10,9 @@ from app.core.config import settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app
-from app.tasks.main import initial_tasks_setup, tasks_app
+from app.tasks.main import tasks_app, tasks_lifespan
 
-app = FastAPI(lifespan=initial_tasks_setup)
+app = FastAPI(lifespan=tasks_lifespan)
 
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(

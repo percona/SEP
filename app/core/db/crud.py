@@ -14,12 +14,12 @@ from sqlmodel import select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
-from app.api.exceptions import (
+from app.core.db import BaseSQLModel
+from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
     HTTPNotFoundException,
 )
-from app.core.db import BaseSQLModel
 
 logger = logging.getLogger(__name__)
 

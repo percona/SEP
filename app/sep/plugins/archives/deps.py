@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form, HTTPException
+from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
     get_created_entity,
+    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -21,7 +22,11 @@ from app.sep.plugins.archives.models import (
     PurgeConfig,
     PurgeConfigAll,
 )
-from app.tasks.models import TaskBackendEnum, TaskWrite
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskWrite,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +108,7 @@ ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload
 async def get_archives_task(
     task_name: str,
     tasks_api: TaskAPI,
-) -> dict:  # TODO: refactor - (ab)use pydantic models  # noqa: TD002, TD003
+) -> Task:
     """Fetch and validate a task for the Archives plugin.
 
     This function retrieves a task by its name from the Tasks API and validates
@@ -114,19 +119,12 @@ async def get_archives_task(
     :type task_name: str
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
     :type tasks_api: TaskAPI
-    :return: The task data as a dictionary.
-    :rtype: dict[str, Any]
-    :raises HTTPException: If the task is not found or is not owned by Archives
-        (HTTP status 404).
+    :return: The retrieved task.
+    :rtype: Task
+    :raises HTTPNotFoundException: If the task is not found or is not owned by Archives.
     """
-    task = await tasks_api.get(
-        f"/{task_name}",
-    )  # TODO: refactor - (ab)use pydantic models  # noqa: TD002, TD003
-    if (
-        task.get("owner") != "archiver"
-    ):  # TODO: Consider getting owner name from plugin MODULE_NAME  # noqa: TD002, TD003
-        raise HTTPException(404)
-    return task
+    # TODO: Consider getting owner name from plugin MODULE_NAME  # noqa: TD002, TD003
+    return await get_task_by_name(tasks_api, task_name, "archiver")
 
 
 ArchivesTask = Annotated[dict, Depends(get_archives_task)]

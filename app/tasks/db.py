@@ -8,7 +8,6 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import get_async_session_maker_from_engine, json_serializer
 from app.tasks.config import tasks_settings
@@ -155,6 +154,7 @@ NOMAD_RUN_PYTHON = {
                     "Config": {
                         "command": "${NOMAD_ALLOC_DIR}/venv/bin/python3",
                         "args": [
+                            "-u",
                             "${NOMAD_TASK_DIR}/script.py",
                             "--config",
                             "script_config",
@@ -209,28 +209,6 @@ SYSTEM_TASKS = [
 ]
 
 
-async def init_db(session: AsyncSession) -> None:
-    """Initialize the database with generic Nomad task templates.
-
-    If the generic task templates for 'batch' or 'sysbatch' do not exist in the
-    database, this function will add them.
-
-    :param session: The SQLAlchemy asynchronous session to use for database operations.
-    :type session: AsyncSession
-    """
-    for task in SYSTEM_TASKS:
-        result = await session.exec(
-            select(Task).where(Task.name == task.name),
-        )
-        if result.first() is None:
-            logger.debug(
-                "Creating task %s",
-                task.name,
-            )
-            session.add(task)
-    await session.commit()
-
-
 def get_async_session_maker() -> sessionmaker:
     """Return a new asynchronous session maker for database operations.
 
@@ -241,3 +219,24 @@ def get_async_session_maker() -> sessionmaker:
     :rtype: sessionmaker
     """
     return get_async_session_maker_from_engine(engine)
+
+
+async def init_tasks_db() -> None:
+    """Initialize the database with generic Nomad task templates.
+
+    If the generic task templates for 'batch' or 'sysbatch' do not exist in the
+    database, this function will add them.
+    """
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        for task in SYSTEM_TASKS:
+            result = await session.exec(
+                select(Task).where(Task.name == task.name),
+            )
+            if result.first() is None:
+                logger.debug(
+                    "Creating task %s",
+                    task.name,
+                )
+                session.add(task)
+        await session.commit()

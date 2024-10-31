@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter
 
 from app.api.deps import IsAuthenticatedDep
-from app.api.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException
 from app.core.fields import RequiredStr
 from app.inventory.crud import NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep

@@ -3,14 +3,15 @@
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import yaml
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import BaseLowercaseModel
+from app.core.models import BaseLowercaseModel
 from app.core.utils import async_run
-from app.tasks.models import Task, TaskHistory
+from app.tasks.models import Task, TaskHistory, TaskLog
 
 logger = logging.getLogger(__name__)
 
@@ -98,4 +99,19 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         :return: A dictionary with host addresses as key and the respective hostnames
             as values.
         :rtype: list[str]
+        """
+
+    @abstractmethod
+    async def stream_logs(
+        self, queue_item: TaskHistory
+    ) -> AsyncGenerator[TaskLog, None]:
+        """Stream logs from a task history record.
+
+        Retrieves the allocation details and concurrently streams stdout and stderr logs
+        for each task step. Yields `TaskLog` instances as log lines are received.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :yield: `TaskLog` instances containing log messages.
+        :rtype: TaskLog
         """

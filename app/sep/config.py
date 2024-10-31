@@ -22,8 +22,6 @@ from pydantic import (
 )
 
 from app.core.config import (
-    BaseCaseInsensitiveModel,
-    BaseLowercaseModel,
     BaseYamlExtraSettings,
     settings,
 )
@@ -36,6 +34,7 @@ from app.core.fields import (
     URIPath,
     URL,
 )
+from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.utils import deep_dict_update
 from app.sep.models import Plugin
 
@@ -77,11 +76,11 @@ class OAuthOptions(BaseModel):
             redirect_uri = base_url.replace(path=redirect_uri)
 
         params = {
-            "client_id": settings.CASDOOR.CLIENT_ID,
+            "client_id": settings.CASDOOR.client_id,
             "response_type": "code",
             "redirect_uri": redirect_uri,
             "scope": "read",
-            "state": settings.CASDOOR.APPLICATION_NAME,
+            "state": settings.CASDOOR.application_name,
         }
         url = settings.CASDOOR.get_frontend_url(base_url).replace(
             path="/login/oauth/authorize",

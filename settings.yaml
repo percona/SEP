@@ -87,10 +87,9 @@ production_docker:
     NOMAD:
       ENDPOINT: https://host.docker.internal:4646
       SECURE: true
-      VERIFY: data/certs/sep-ca.pem
-      CERT:
-        - data/certs/nomad/global-client-nomad.pem
-        - data/certs/nomad/global-client-nomad-key.pem
+      SSL_KEYFILE: data/certs/nomad/global-client-nomad-key.pem
+      SSL_CERTFILE: data/certs/nomad/global-client-nomad.pem
+      SSL_CAFILE: data/certs/sep-ca.pem
     SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
   BACKEND_CORS_ORIGINS:
