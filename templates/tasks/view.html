@@ -16,7 +16,15 @@
         border-radius: 4px;
     }
 </style>
+<link rel="stylesheet" href="/static/task_history.css">
 {% endblock %}
+
+{% block behaviours_optimized_extra %}
+    {% if history %}
+<script src="/static/task_history.js"></script>
+    {% endif %}
+{% endblock %}
+
 
 {% block title %}Task: {{ task.get("name") }}{% endblock %}
 
@@ -60,67 +68,11 @@
 </form>
 {% endif %}
 
-{% if history is defined and history|length > 0 %}
-<br />
-<table>
-    <caption>History</caption>
-    <thead>
-        <tr>
-            <th>Submitted</th>
-            <th>Last updated</th>
-            <th>Status</th>
-        </tr>
-    </thead>
-    <tfoot>
-        <tr>
-            <td colspan="3">&nbsp;</td>
-        </tr>
-    </tfoot>
-    <tbody>
-        {% for item in history %}
-        <tr>
-            <th scope="row">{{ item["created_at"] }}</th>
-            <th scope="row">{{ item["updated_at"] }}</th>
-            <td>{{ item["status"] }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endif %}
-
-{% if schedule is defined and schedule|length > 0 %}
-<table>
-    <caption>Periodic Tasks</caption>
-    <thead>
-        <tr>
-            <th>Created</th>
-            <th>Period</th>
-            <th>Execute Request</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tfoot>
-        <tr>
-            <td colspan="3">&nbsp;</td>
-        </tr>
-    </tfoot>
-    <tbody>
-        {% for item in schedule %}
-            <tr>
-                <th scope="row">{{ item["created_at"] }}</th>
-                <td>{{ item["period"] }}</td>
-                <th scope="row">{{ item["execute_request"] }}</th>
-                <td>
-                    <form action="/tasks/cancel/{{ item['id'] }}" method="post">
-                        <button type="submit"><i class="icons">delete</i></button>
-                    </form>
-                </td>
-            </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endif %}
-
+<section>
+  <h2>History</h2>
+  {% set history_tasks = history %}
+  {% include "tasks/partials/completed-tasks.html" %}
+</section>
 <script>
     const now = new Date();
     const year = now.getFullYear();

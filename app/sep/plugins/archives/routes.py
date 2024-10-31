@@ -73,7 +73,7 @@ async def archives_detail(
         "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/history/{task['name']}")
+    context["history"] = await tasks_api.get(f"/{task['name']}/history/")
     context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
     return templates.TemplateResponse(
         request=request,

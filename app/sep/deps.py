@@ -38,13 +38,18 @@ User = get_user_model()
 
 
 def get_base_url(request: Request) -> URL:
-    """Extract the base URL from an incoming request by removing the path.
+    """Return the application's base URL.
+
+    If the `BASE_URL` setting is defined, returns it. Otherwise, the function extracts
+    the base URL from an incoming request by removing the path.
 
     :param request: The HTTP request object from which the base URL is derived.
     :type request: Request
     :return: The base URL with the path removed.
     :rtype: Any
     """
+    if settings.BASE_URL is not None:
+        return settings.BASE_URL
     return request.url.replace(path="")
 
 
