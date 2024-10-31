@@ -121,6 +121,8 @@ These are the possible settings you can have, per app:
 | AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                         |
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                            |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000] |
+| CELERY__CELERY_BROKER_URL  | all       | yes      | static                                              | "redis://localhost:6379/0"                     |
+| CELERY_RESULT_BACKEND      | all       | yes      | static                                              | "redis://localhost:6379/0"                     |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                          |
 | TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                            |
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | N/A                                            |
@@ -251,6 +253,39 @@ be in https://localhost/graph/org/apikeys.
 4. Copy the generated API Key and replace the respective `YOUR_PMM_API_KEY` in your .env file.
 
 ![image](https://github.com/user-attachments/assets/a6879771-6350-4505-944a-a5be8183f54c)
+
+### Celery and Celery RedBeat Scheduler
+1. Docker setup
+
+```yaml
+services:
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+      
+  redis-commander:
+    container_name: redis-commander
+    hostname: redis-commander
+    image: rediscommander/redis-commander:latest
+    restart: always
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8080:8081"
+```
+
+- **Redis**: This service runs the Redis server on port `6379`, which is the default port used by Celery for the broker and result backend.
+- **Redis Commander**: This service provides a web interface to interact with Redis, accessible at `http://localhost:8080`. It allows you to view and manage your Redis data easily.
+2. Running Celery Worker
+```shell
+celery -A app.main.celery worker --loglevel=info
+```
+
+3. Running the Celery Beat Scheduler
+```shell
+celery -A app.main.celery beat -S redbeat.RedBeatScheduler --loglevel=info
+```
 
 ## Usage
 
