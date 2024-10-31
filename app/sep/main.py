@@ -28,10 +28,16 @@ logger = logging.getLogger(__name__)
 sep_app = FastAPI()
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
+imported_plugins = set()
 for plugin in sep_settings.PLUGINS:
     router = import_var(plugin.router_path)
     sep_app.include_router(router, prefix=plugin.uri_path)
+    imported_plugins.add(plugin.module_name.split(".")[-1])
 
+if {"alters", "archives", "tasks"} & imported_plugins:
+    from app.sep.routes.stream_logs import router as stream_logs_router
+
+    sep_app.include_router(stream_logs_router, prefix="/stream-logs")
 
 User = get_user_model()
 templates = sep_settings.TEMPLATES

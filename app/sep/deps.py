@@ -502,25 +502,3 @@ async def get_task_history(
     if owner is not None and Task.validate_owner(owner) != task_history.task.owner:
         raise HTTPNotFoundException
     return task_history
-
-
-# TODO(yan): Put stream_task_history_logs in a proper TasksAPI SDK class
-# SEP-130
-async def task_history_logs_event_stream(
-    tasks_api: TaskAPI, task_history_id: int
-) -> AsyncGenerator[str, None]:
-    """Stream logs from a task history as server-sent events.
-
-    Streams log lines for a given task history ID from the Tasks API and yields them
-    formatted as server-sent events.
-
-    :param tasks_api: The TaskAPI client for interacting with the Tasks service.
-    :type tasks_api: RemoteAPI
-    :param task_history_id: The ID of the task history whose logs to stream.
-    :type task_history_id: int
-    :yield: Log entries formatted as server-sent events.
-    :rtype: str
-    """
-    async for line in tasks_api.stream(f"/history/{task_history_id}/logs/"):
-        log_entry = line.decode("utf-8")
-        yield f"data: {log_entry}\n\n"

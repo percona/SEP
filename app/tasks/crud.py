@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseManager
-from app.tasks.models import Task, TaskHistory
+from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum
 
 
 class TaskManager(BaseManager):
@@ -108,6 +108,7 @@ class TaskHistoryManager(BaseManager):
         *,
         session: AsyncSession,
         task_name: str,
+        status: TaskHistoryStatusEnum | None = None,
         select_related_task: bool = False,
     ) -> list[TaskHistory]:
         """List task histories by the task's name.
@@ -116,6 +117,9 @@ class TaskHistoryManager(BaseManager):
         :type session: AsyncSession
         :param task_name: The name of the task to list histories for.
         :type task_name: str
+        :param status: The status of the task history. If provided, only histories
+            with this status will be listed.
+        :type status: TaskHistoryStatusEnum | None
         :param select_related_task: Whether to include the related task data in the
             result. Defaults to False.
         :type select_related_task: bool
@@ -128,6 +132,7 @@ class TaskHistoryManager(BaseManager):
             query,
             col(Task.name) == task_name,
             select_related=select_related,
+            status=status,
         )
         result = await cls._exec(session, query)
         return list(result.all())

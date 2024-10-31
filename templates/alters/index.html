@@ -3,56 +3,73 @@
 {% block title %}Schema Change{% endblock %}
 
 {% block style %}
-<style>
-    label + input[type=text]{display: block}
-    table form{display:inline-block}
-    table button{width:2.2rem;height:2.2rem}
-</style>
-<link rel="stylesheet" href="/static/task_history.css">
+    <style>
+        label + input[type=text] {
+            display: block
+        }
+
+        table form {
+            display: inline-block
+        }
+
+        table button {
+            width: 2.2rem;
+            height: 2.2rem
+        }
+    </style>
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="/static/logs.css">
+    {% endif %}
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
-    {% if history_tasks %}
-<script src="/static/task_history.js"></script>
+    {% if history_tasks or running_tasks %}
+        <script>const logsPath = "/alters/logs/";</script>
+        <script src="/static/logs.js"></script>
     {% endif %}
 {% endblock %}
 
 {% block main %}
-<p>Perform a schema change, currently only supporting MySQL with <a href="https://docs.percona.com/percona-toolkit/pt-online-schema-change.html">pt-online-schema-change</a>.</p>
+    <p>Perform a schema change, currently only supporting MySQL with <a
+            href="https://docs.percona.com/percona-toolkit/pt-online-schema-change.html">pt-online-schema-change</a>.
+    </p>
 
-{% if not tasks and not history_tasks %}
-    {% set modal_required = False %}
-<h2>Configure a schema change</h2>
-    {% if mysql_services|length < 1 %}
-    <p>Unable to find suitable database instances.</p>
-    {% elif executor_hosts|length < 1 %}
-    <p>Unable to find suitable executor hosts.</p>
+    {% if not tasks and not history_tasks %}
+        {% set modal_required = False %}
+        <h2>Configure a schema change</h2>
+        {% if mysql_services|length < 1 %}
+            <p>Unable to find suitable database instances.</p>
+        {% elif executor_hosts|length < 1 %}
+            <p>Unable to find suitable executor hosts.</p>
+        {% else %}
+            {% include "alters/partials/create-form.html" %}
+        {% endif %}
     {% else %}
-        {% include "alters/partials/create-form.html" %}
+        {% set modal_required = True %}
+
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html" %}
+            </section>
+        {% endif %}
+
+        <section id="saved-tasks">
+            <h2>Saved</h2>
+            {% include "alters/partials/saved-tasks.html" %}
+            <h3>Configure a schema change</h3>
+            {% include "alters/partials/create-form.html" %}
+        </section>
+
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "alters/partials/pending-tasks.html" %}
+        </section>
+
+        <section id="completed-tasks">
+            <h2>History</h2>
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
     {% endif %}
-{% else %}
-    {% set modal_required = True %}
-<section id="saved-tasks">
-    <h2>Saved</h2>
-    {% include "alters/partials/saved-tasks.html" %}
-    <h3>Configure a schema change</h3>
-    {% include "alters/partials/create-form.html" %}
-</section>
-
-<section id="running-tasks">
-    <h2>Running</h2>
-    {% include "alters/partials/running-tasks.html" %}
-</section>
-
-<section id="pending-tasks">
-    <h2>Pending</h2>
-    {% include "alters/partials/pending-tasks.html" %}
-</section>
-
-<section id="completed-tasks">
-    <h2>History</h2>
-    {% include "tasks/partials/completed-tasks.html" %}
-</section>
-{% endif %}
 
 {% endblock %}

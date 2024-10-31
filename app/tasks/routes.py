@@ -233,22 +233,13 @@ async def execute_task_name(
 @router.get("/history/", dependencies=[IsAuthenticatedDep])
 async def list_task_history(
     session: SessionDep,
-    status: str | None = None,
-) -> list[TaskHistory]:
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[TaskHistoryResponse]:
     """Create a new task."""
     logger.debug("Listing task history")
-    try:
-        history_status = (
-            TaskHistoryStatusEnum[status.upper()] if status is not None else None
-        )
-    except KeyError:
-        logger.debug(
-            "Status not found in TaskHistoryStatusEnum: %s",
-            status,
-            exc_info=True,
-        )
-        history_status = None
-    return await TaskHistoryManager.list(session, status=history_status)
+    return await TaskHistoryManager.list(
+        session, select_related=(TaskHistory.task,), status=status
+    )
 
 
 @router.get(
@@ -256,12 +247,15 @@ async def list_task_history(
     dependencies=[IsAuthenticatedDep],
     response_model=list[TaskHistoryResponse],
 )
-async def get_task_history(session: SessionDep, task: str) -> list[TaskHistory]:
+async def get_task_history(
+    session: SessionDep, task: str, status: TaskHistoryStatusEnum | None = None
+) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
     return await TaskHistoryManager.list_by_task_name(
         session=session,
         task_name=task,
+        status=status,
         select_related_task=True,
     )
 

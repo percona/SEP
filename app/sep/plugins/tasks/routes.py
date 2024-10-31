@@ -3,15 +3,13 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi import APIRouter, Form, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
-    get_task_history,
     IsAuthenticated,
-    task_history_logs_event_stream,
     TaskAPI,
 )
 from app.sep.plugins.tasks.deps import TaskDep
@@ -20,7 +18,7 @@ from app.tasks.main import AVAILABLE_OWNERS
 from app.tasks.models import (
     TaskBackendEnum,
     TaskExecuteRequest,
-    TaskHistoryResponse,
+    TaskHistoryStatusEnum,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,8 +34,12 @@ async def tasks_list(
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
     context["tasks"] = await tasks_api.get("/")
+    context["running_tasks"] = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
     context["available_backends"] = TaskBackendEnum
     context["available_owners"] = AVAILABLE_OWNERS
+    logger.info("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
         name="tasks/list.html",
@@ -74,6 +76,9 @@ async def tasks_detail(
     """Retrieve task."""
     context["task"] = task
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["running_tasks"] = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
     context["available_owners"] = AVAILABLE_OWNERS
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
@@ -104,15 +109,3 @@ async def tasks_delete(
     """Delete task."""
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.get("/logs/{task_history_id}", dependencies=[IsAuthenticated])
-async def archives_logs_event_stream(
-    task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
-    tasks_api: TaskAPI,
-) -> StreamingResponse:
-    """Stream a task history's logs as server-sent events."""
-    return StreamingResponse(
-        task_history_logs_event_stream(tasks_api, task_history.id),
-        media_type="text/event-stream",
-    )

@@ -2,30 +2,50 @@
 
 {% block title %}Tasks{% endblock %}
 
+{% block style %}
+    {% if running_tasks %}
+        <link rel="stylesheet" href="/static/logs.css">
+    {% endif %}
+{% endblock %}
+
+{% block behaviours_optimized_extra %}
+    {% if running_tasks %}
+        <script src="/static/logs.js"></script>
+    {% endif %}
+{% endblock %}
+
 {% block main %}
-<p>Manage the configuration, execution and reporting with the task manager.</p>
-<h2>Available tasks</h2>
-<table>
-  <caption>Tasks available for reuse</caption>
-  <thead>
-    <tr>
-        <th>Task</th>
-        <th>Engine</th>
-        <th>Created</th>
-    </tr>
-  </thead>
-  <tfoot>
-    <tr><td colspan="3"></td></tr>
-  </tfoot>
-  <tbody>
-  {% for task in tasks %}
-  <tr>
-    <th><a href="/tasks/{{ task['name'] }}">{{ task["name"] }}</a></th>
-    <td>{{ task["backend"].capitalize() }}</td>
-    <td>{{ task["created_at"] }}</td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+    <p>Manage the configuration, execution and reporting with the task manager.</p>
+    {% if running_tasks %}
+        <section id="running-tasks">
+            <h2>Running</h2>
+            {% include "tasks/partials/running-tasks.html" %}
+        </section>
+    {% endif %}
+    <h2>Available tasks</h2>
+    <table>
+        <caption>Tasks available for reuse</caption>
+        <thead>
+        <tr>
+            <th>Task</th>
+            <th>Engine</th>
+            <th>Created</th>
+        </tr>
+        </thead>
+        <tfoot>
+        <tr>
+            <td colspan="3"></td>
+        </tr>
+        </tfoot>
+        <tbody>
+        {% for task in tasks %}
+            <tr>
+                <th><a href="/tasks/{{ task['name'] }}">{{ task["name"] }}</a></th>
+                <td>{{ task["backend"].capitalize() }}</td>
+                <td>{{ task["created_at"] }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
     {% include "tasks/partials/create-form.html" %}
 {% endblock %}

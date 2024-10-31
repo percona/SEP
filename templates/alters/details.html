@@ -17,17 +17,19 @@
             height: 2.2rem
         }
     </style>
-    <link rel="stylesheet" href="/static/task_history.css">
+    {% if history or running_tasks %}
+        <link rel="stylesheet" href="/static/logs.css">
+    {% endif %}
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
-    {% if history %}
-        <script src="/static/task_history.js"></script>
+    {% if history or running_tasks %}
+        <script>const logsPath = "/alters/logs/";</script>
+        <script src="/static/logs.js"></script>
     {% endif %}
 {% endblock %}
 
 {% block main %}
-
     <table class="row section">
         <caption>Overview</caption>
         <thead>
@@ -52,6 +54,13 @@
         </tr>
         </tfoot>
     </table>
+
+    {% if running_tasks %}
+        <section id="running-tasks">
+            <h2>Running</h2>
+            {% include "tasks/partials/running-tasks.html" %}
+        </section>
+    {% endif %}
 
     <section>
         <h2>Execution</h2>

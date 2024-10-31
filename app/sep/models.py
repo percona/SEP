@@ -35,12 +35,15 @@ class Plugin(BaseCaseInsensitiveModel):
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
     :type css_class: str
+    :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
+    :type sidebar: bool
     """
 
     name: str
     module_name: StrImportableModule
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
+    sidebar: bool = True
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Plugin):

@@ -465,7 +465,7 @@ class NomadExecutor(BaseExecutor):
         :rtype: SSLContext
         """
         cafile = self.verify if isinstance(self.verify, Path) else None
-        if isinstance(self.cert, Iterable):
+        if self.cert and isinstance(self.cert, Iterable):
             certfile, keyfile = self.cert
         else:
             certfile = self.cert
@@ -571,7 +571,7 @@ class NomadExecutor(BaseExecutor):
         async with ClientSession(
             base_url=str(self.endpoint), timeout=timeout
         ) as session:
-            for step in set(alloc["TaskStates"]):
+            for step in set(alloc["TaskStates"] or {}):
                 for log_type in ("stdout", "stderr"):
                     stream = (step, log_type)
                     logger.debug("Adding %s to active_streams", stream)

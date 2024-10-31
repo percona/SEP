@@ -5,22 +5,20 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import APIRouter, Depends, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     IsAuthenticated,
-    task_history_logs_event_stream,
     TaskAPI,
 )
 from app.sep.plugins.archives.deps import (
     ArchivesGeneratedTask,
     ArchivesTask,
     get_archives_index_context,
-    get_archives_task_history,
 )
-from app.tasks.models import TaskHistory
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -81,6 +79,9 @@ async def archives_detail(
     }
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["running_tasks"] = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
@@ -117,15 +118,3 @@ async def archives_delete(
     """Delete archives task."""
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.get("/logs/{task_history_id}", dependencies=[IsAuthenticated])
-async def archives_logs_event_stream(
-    task_history: Annotated[TaskHistory, Depends(get_archives_task_history)],
-    tasks_api: TaskAPI,
-) -> StreamingResponse:
-    """Stream an archives task history's logs as server-sent events."""
-    return StreamingResponse(
-        task_history_logs_event_stream(tasks_api, task_history.id),
-        media_type="text/event-stream",
-    )

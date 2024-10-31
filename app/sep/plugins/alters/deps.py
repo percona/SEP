@@ -10,14 +10,13 @@ from app.sep.deps import (
     DefaultContext,
     get_created_entity,
     get_task_by_name,
-    get_task_history,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task, TaskHistoryResponse
+from app.tasks.models import GeneratedTask, Task
 
 logger = logging.getLogger(__name__)
 
@@ -146,27 +145,6 @@ async def get_alters_task(
 
 
 AltersTask = Annotated[dict, Depends(get_alters_task)]
-
-
-async def get_alters_task_history(
-    task_history_id: int, tasks_api: TaskAPI
-) -> TaskHistoryResponse:
-    """Fetch and validate a task history for the Alters plugin.
-
-    This function retrieves a task history by its ID from the Tasks API and optionally
-    validates that it is owned by the Alters plugin. If the task history does not exist
-    or the validation fails, it raises a 404 HTTP exception.
-
-    :param task_history_id: The ID of the task history to retrieve.
-    :type task_history_id: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task history.
-    :rtype: TaskHistoryResponse
-    :raises HTTPNotFoundException: If the task history is not found or the validation
-        fails.
-    """
-    return await get_task_history(tasks_api, task_history_id, "alters")
 
 
 def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
