@@ -218,3 +218,39 @@ class PeriodicTaskManager(BaseManager):
 
         # Convert each result to a CrontabPeriod instance if needed
         return [CrontabPeriod.from_str(row) for row in result.all()]
+
+    @classmethod
+    async def list_active(
+        cls,
+        *,
+        session: AsyncSession,
+        owner: str | None = None,
+    ) -> list[PeriodicTask]:
+        """List all periodc tasks.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param owner: The owner of the tasks. If provided, only tasks for this owner
+            will be listed.
+        :type owner: str | None
+        :return: A list of periodic tasks.
+        :rtype: list[PeriodicTask]
+        """
+        query = select(PeriodicTask).join(Task)
+
+        if owner == "*":
+            query = cls._filter_query(
+                query,
+                select_related=(PeriodicTask.task,),
+            )
+            result = await cls._exec(session, query)
+            return list(result.all())
+
+        query = cls._filter_query(
+            query,
+            col(Task.owner) == owner,
+            select_related=(PeriodicTask.task,),
+        )
+
+        result = await cls._exec(session, query)
+        return list(result.all())

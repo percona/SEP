@@ -1,0 +1,31 @@
+{% if periodic_tasks %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Period</th>
+            <th>Actions</th>
+
+        </tr>
+    </thead>
+    <tbody>
+        {% for periodic_task in periodic_tasks %}
+        <tr>
+            <td>{{ periodic_task['task']['name'] }}</td>
+            <td>{{ periodic_task['period'] }}</td>
+            <td class="flex">
+                <form id="{{ periodic_task['task']['name'] }}-info" method="get" action="{{ periodic_task['task']['name'] }}">
+                    <button class="icons">info</button>
+                </form>
+                <form id="{{ periodic_task['task']['name'] }}-delete" method="post" action="/tasks/cancel/{{ periodic_task['id'] }}">
+                    <button name="location" class="icons">delete forever</button>
+                    <input type="hidden" name="task" value="{{ periodic_task['task']['name'] }}">
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No data</p>
+{% endif %}

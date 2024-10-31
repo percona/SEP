@@ -797,3 +797,19 @@ class PeriodicTask(BaseSQLModel, table=True):
     execute_request: TaskExecutionRequest = SQLField(
         sa_column=Column(JSON, nullable=True)
     )
+
+
+class PeriodicTaskResponse(BaseSQLModel):
+    """Response schema for periodic task details.
+
+    :param execute_request: Execution request details for the task.
+    :type execute_request: TaskExecutionRequest
+    :param task: Task associated with this periodic execution.
+    :type task: Task
+    :param period: Schedule specifying when the task should run.
+    :type period: str
+    """
+
+    execute_request: TaskExecutionRequest
+    task: Task
+    period: str

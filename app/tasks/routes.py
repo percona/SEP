@@ -18,6 +18,7 @@ from app.tasks.models import (
     CrontabPeriod,
     GeneratedTask,
     PeriodicTask,
+    PeriodicTaskResponse,
     Task,
     TaskBackendEnum,
     TaskExecuteRequest,
@@ -364,6 +365,22 @@ async def get_periodic_tasks(session: SessionDep, task: str) -> list[PeriodicTas
         session=session,
         task_name=task,
         select_related_task=True,
+    )
+
+
+@router.get(
+    "/schedule/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=list[PeriodicTaskResponse],
+)
+async def get_periodic_tasks_with_owner(
+    session: SessionDep, owner: str | None = None
+) -> list[PeriodicTask]:
+    """Retrieve a periodic tasks by task name."""
+    logger.debug("Requesting periodic tasks for %s", owner)
+    return await PeriodicTaskManager.list_active(
+        session=session,
+        owner=owner,
     )
 
 
