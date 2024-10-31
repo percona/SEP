@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.tasks.celery.celery_scheduler import remove_periodic_task, setup_periodic_task
 from app.tasks.celery.celery_task import trigger_task
 from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import SessionDep, TaskExecutor
@@ -344,7 +345,11 @@ async def create_periodic_task(
         period=crontab_period.to_str(),
     )
 
-    return await PeriodicTaskManager.save(session, periodic_task)
+    saved_periodic_task = await PeriodicTaskManager.save(session, periodic_task)
+
+    await setup_periodic_task(saved_periodic_task)
+
+    return saved_periodic_task
 
 
 @router.get(
@@ -360,3 +365,20 @@ async def get_periodic_tasks(session: SessionDep, task: str) -> list[PeriodicTas
         task_name=task,
         select_related_task=True,
     )
+
+
+@router.delete(
+    "/cancel/{periodic_task_id}",
+    dependencies=[IsAuthenticatedDep],
+    response_class=JSONResponse,
+)
+async def delete_periodic_task(session: SessionDep, periodic_task_id: str) -> dict:
+    """Delete periodic task from DB and ReadBeat."""
+    periodic_task = await PeriodicTaskManager.get_or_404(session, id=periodic_task_id)
+
+    logger.debug("Canceling periodic task %s", periodic_task)
+    canceled_periodic_task = await PeriodicTaskManager.delete(session, periodic_task)
+
+    await remove_periodic_task(session=session, periodic_task=canceled_periodic_task)
+
+    return {"id": canceled_periodic_task.id, "deleted": True}

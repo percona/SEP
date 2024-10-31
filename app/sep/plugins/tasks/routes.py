@@ -54,7 +54,6 @@ async def task_create(
         json=create_task_form.model_dump(include={"payload", "fmt"}),
         params={"backend": create_task_form.backend},
     )
-    logger.debug(task_data)
     await tasks_api.post("/", json=task_data)
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -134,5 +133,21 @@ async def schedule_task_name(
     logger.debug("scheduling task %s, %s,", task_name, schedule_data)
 
     await tasks_api.post(f"/schedule/{task_name}", json=schedule_data.model_dump())
+
+    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/cancel/{periodic_task_id}",
+    dependencies=[IsAuthenticated],
+    response_class=RedirectResponse,
+)
+async def cancel_periodic_task(
+    periodic_task_id: str,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Cancel Periodic task."""
+    logger.debug("Canceling Periodic task %s", periodic_task_id)
+    await tasks_api.delete(f"/cancel/{periodic_task_id}")
 
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)

@@ -8,6 +8,7 @@
         color: #555;
         margin-bottom: 5px;
     }
+
     .form-input {
         width: 90%;
         padding: 10px;
@@ -24,20 +25,26 @@
 {% block main %}
 
 <dl>
-    <dt>Engine</dt> <dd>{{ Nomad }}</dd>
-    <dt>Created</dt> <dd>{{ task["created_at"] }}</dd>
-    <dt>Specification</dt> <dd>
-    <code>
+    <dt>Engine</dt>
+    <dd>{{ Nomad }}</dd>
+    <dt>Created</dt>
+    <dd>{{ task["created_at"] }}</dd>
+    <dt>Specification</dt>
+    <dd>
+        <code>
         {{ task }}
     </code>
     </dd>
-    <dt>Available to</dt> <dd><ul>
-    <li>{{ available_owners.get(task.owner or "*", task.owner)}}</li>
-  </ul></dd>
+    <dt>Available to</dt>
+    <dd>
+        <ul>
+            <li>{{ available_owners.get(task.owner or "*", task.owner)}}</li>
+        </ul>
+    </dd>
 </dl>
 
 {% if not task["is_template"] %}
-    {% include "tasks/partials/run-python-form.html" %}
+{% include "tasks/partials/run-python-form.html" %}
 {% endif %}
 
 {% if not task["protected"] %}
@@ -54,7 +61,7 @@
 {% endif %}
 
 {% if history is defined and history|length > 0 %}
-<br/>
+<br />
 <table>
     <caption>History</caption>
     <thead>
@@ -65,7 +72,9 @@
         </tr>
     </thead>
     <tfoot>
-        <tr><td colspan="3">&nbsp;</td></tr>
+        <tr>
+            <td colspan="3">&nbsp;</td>
+        </tr>
     </tfoot>
     <tbody>
         {% for item in history %}
@@ -87,18 +96,26 @@
             <th>Created</th>
             <th>Period</th>
             <th>Execute Request</th>
+            <th>Actions</th>
         </tr>
     </thead>
     <tfoot>
-        <tr><td colspan="3">&nbsp;</td></tr>
+        <tr>
+            <td colspan="3">&nbsp;</td>
+        </tr>
     </tfoot>
     <tbody>
         {% for item in schedule %}
-        <tr>
-            <th scope="row">{{ item["created_at"] }}</th>
-            <td>{{ item["period"] }}</td>
-            <th scope="row">{{ item["execute_request"] }}</th>
-        </tr>
+            <tr>
+                <th scope="row">{{ item["created_at"] }}</th>
+                <td>{{ item["period"] }}</td>
+                <th scope="row">{{ item["execute_request"] }}</th>
+                <td>
+                    <form action="/tasks/cancel/{{ item['id'] }}" method="post">
+                        <button type="submit"><i class="icons">delete</i></button>
+                    </form>
+                </td>
+            </tr>
         {% endfor %}
     </tbody>
 </table>
@@ -118,7 +135,7 @@
     // Set the min attribute to prevent selecting a past date/time
     const trigger = document.getElementById('trigger_time');
 
-    if(trigger) trigger.setAttribute('min', currentDateTime);
- 
+    if (trigger) trigger.setAttribute('min', currentDateTime);
+
 </script>
 {% endblock %}
