@@ -15,7 +15,11 @@ from app.tasks.main import initial_tasks_setup, tasks_app
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI app."""
+    """Create and configure the FastAPI app.
+
+    :return: An instance of the FastAPI application with an attached Celery app.
+    :rtype: FastAPI
+    """
     current_app = FastAPI(lifespan=initial_tasks_setup)
     current_app.celery_app = create_celery()
 

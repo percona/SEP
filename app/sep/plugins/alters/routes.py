@@ -110,10 +110,14 @@ async def alters_trigger(
     """Route the task to the appropriate queue based on the task name.
 
     :param task: The AltersTask object containing the task details.
+    :type task: AltersTask
     :param tasks_api: The TaskAPI instance for interacting with the task API.
+    :type tasks_api: TaskAPI
     :param trigger_data: The form data containing the parameters required to trigger
         the task.
+    :type trigger_data: TriggerRequest
     :return: A redirection response to the alters list page after triggering the task.
+    :rtype: RedirectResponse
     """
     logger.debug("triggering task %s", task["name"])
     await tasks_api.post(f"/trigger/{task['name']}", json=trigger_data.model_dump())

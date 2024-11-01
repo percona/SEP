@@ -280,16 +280,30 @@ class CasdoorOptions(BaseModel):
         return self
 
 
-def route_task(name: str, args, kwargs, options, task, **kw) -> dict:  # noqa: ARG001, ANN001, ANN003
+def route_task(
+    name: str,
+    args: tuple,  # noqa: ARG001
+    kwargs: dict,  # noqa: ARG001
+    options: dict,  # noqa: ARG001
+    task: object = None,  # noqa: ARG001
+    **kw: dict,  # noqa: ARG001
+) -> dict:
     """Route the task to the appropriate queue based on the task name.
 
     :param name: The name of the task, potentially containing a queue identifier.
-    :param args: Arguments for the task (unused).
+    :type name: str
+    :param args: Positional arguments for the task (unused).
+    :type args: tuple
     :param kwargs: Keyword arguments for the task (unused).
+    :type kwargs: dict
     :param options: Options for the task (unused).
+    :type options: dict
     :param task: The task object (optional, unused).
+    :type task: object, optional
     :param kw: Additional keyword arguments (unused).
-    :return: A dictionary with the queue name.
+    :type kw: dict
+    :return: A dictionary specifying the queue name.
+    :rtype: dict
     """
     if ":" in name:
         queue, _ = name.split(":")
@@ -298,7 +312,7 @@ def route_task(name: str, args, kwargs, options, task, **kw) -> dict:  # noqa: A
 
 
 class CeleryConfig(BaseModel):
-    """Configuration for Celery."""
+    """Define configuration settings for Celery."""
 
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str | None = None
@@ -311,22 +325,23 @@ class CeleryConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def handle_backend_url(cls, values: dict) -> dict:
+    def handle_backend_url(cls, data: Any) -> Any:
         """Handle the backend URL and set transport options if using a filesystem broker.
 
-        :param values: Dictionary of configuration values.
-        :return: Updated dictionary of values.
+        :param data: Dictionary of configuration data.
+        :return: Updated dictionary of data.
         """
-        if values.get("CELERY_BROKER_URL") == "filesystem://":
-            base_dir = Path(BASE_DIR)
-            values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {
-                "data_folder_in": base_dir / ".celery",
-                "data_folder_out": base_dir / ".celery",
-                "control_folder": base_dir / ".celery",
-            }
-        else:
-            values["CELERY_BROKER_TRANSPORT_OPTIONS"] = {}
-        return values
+        if isinstance(data, dict):
+            if data.get("CELERY_BROKER_URL") == "filesystem://":
+                base_dir = Path(BASE_DIR)
+                data["CELERY_BROKER_TRANSPORT_OPTIONS"] = {
+                    "data_folder_in": base_dir / ".celery",
+                    "data_folder_out": base_dir / ".celery",
+                    "control_folder": base_dir / ".celery",
+                }
+            else:
+                data["CELERY_BROKER_TRANSPORT_OPTIONS"] = {}
+        return data
 
 
 class Settings(BaseYamlSettings):

@@ -1,7 +1,6 @@
 """Define routes for the Tasks API."""
 
 import logging
-from collections.abc import Awaitable
 from http import HTTPStatus
 from os import getenv
 from typing import Any
@@ -316,7 +315,7 @@ async def transform_payload(
 
 async def _prepare_task_history(
     session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
-) -> Awaitable[TaskHistory]:
+) -> TaskHistory:
     execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)

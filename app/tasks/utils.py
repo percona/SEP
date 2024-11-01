@@ -1,4 +1,4 @@
-"""Module contains utility functions for processing task queue items."""
+"""Provide utility functions for processing task queue items."""
 
 from http import HTTPStatus
 
@@ -11,7 +11,13 @@ from app.tasks.models import TaskBackendEnum, TaskHistory, TaskHistoryStatusEnum
 
 
 async def process_queue_item(queue_id: int) -> None:
-    """Process an item from the history table."""
+    """Process an item from the history table.
+
+    :param queue_id: The unique identifier of the queue item to process.
+    :type queue_id: int
+    :raises ValueError: If the `queue_id` does not correspond to a valid item.
+    :raises DatabaseError: If there is an issue accessing the history table.
+    """
     async_session = get_async_session_maker()
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(

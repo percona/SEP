@@ -603,20 +603,23 @@ class TransformPayloadRequest(BaseModel):
 
 
 class TriggerRequest(BaseModel):
-    """Model to handle trigger requests with trigger_time and countdown."""
+    """Represent a request to trigger an action with specified timing."""
 
     trigger_time: str
     countdown: int
 
+    @classmethod
     @model_validator(mode="before")
-    def convert_trigger_datetime(cls, values: dict) -> dict:  # noqa: N805
+    def convert_trigger_datetime(cls, data: dict) -> dict:
         """Convert trigger_time to countdown and validate the input time.
 
-        :param values: Dictionary of input values.
+        :param data: Dictionary of input data.
+        :type data: dict
         :return: Dictionary with updated countdown value.
+        :rtype: dict
         :raises ValueError: If trigger_time is in an incorrect format or in the past.
         """
-        trigger_time_str = values.get("trigger_time")
+        trigger_time_str = data.get("trigger_time")
 
         try:
             trigger_time_dt = datetime.strptime(
@@ -637,5 +640,5 @@ class TriggerRequest(BaseModel):
         # Ceil the remaining seconds
         remaining_seconds_ceil = math.ceil(remaining_seconds)
 
-        values["countdown"] = remaining_seconds_ceil
-        return values
+        data["countdown"] = remaining_seconds_ceil
+        return data

@@ -93,7 +93,7 @@
 
 {% if not task["protected"] %}
 <form method="post" action="/tasks/{{ task['name'] }}/trigger">
-    <button type="submit">Trigger</button>
+    <button type="submit">Schedule</button>
     <input type="datetime-local" id="trigger_time" name="trigger_time">
 
 </form>
