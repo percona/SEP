@@ -344,13 +344,16 @@ async def transform_payload(
 async def _prepare_task_history(
     session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
 ) -> TaskHistory:
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     logger.debug("Executing task %s", task_name)
     config = await TaskManager.retrieve_by_name(session=session, name=task_name)
     if config.is_template:
         raise HTTPForbiddenException(
             f"Task {task_name} is a template and cannot be executed",
         )
+    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
+    if config.backend == TaskBackendEnum.PROXY:
+        execution_data.meta |= config.data.get("meta", {})
+        execution_data.payload = config.data.get("payload", execution_data.payload)
     # Record the task execution request
     task_history = TaskHistory(
         task_id=config.id,
