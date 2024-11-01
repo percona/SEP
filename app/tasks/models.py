@@ -608,8 +608,8 @@ class TriggerRequest(BaseModel):
     trigger_time: str
     countdown: int
 
-    @classmethod
     @model_validator(mode="before")
+    @classmethod
     def convert_trigger_datetime(cls, data: dict) -> dict:
         """Convert trigger_time to countdown and validate the input time.
 
