@@ -642,6 +642,8 @@ class TriggerRequest(BaseModel):
 
         data["countdown"] = remaining_seconds_ceil
         return data
+
+
 class TaskLog(BaseModel):
     """Define a task log line.
 

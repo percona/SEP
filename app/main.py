@@ -13,7 +13,6 @@ from app.sep.config import sep_settings
 from app.sep.main import sep_app
 from app.tasks.main import tasks_app, tasks_lifespan
 
-app = FastAPI(lifespan=tasks_lifespan)
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI app.
@@ -21,7 +20,7 @@ def create_app() -> FastAPI:
     :return: An instance of the FastAPI application with an attached Celery app.
     :rtype: FastAPI
     """
-    current_app = FastAPI(lifespan=initial_tasks_setup)
+    current_app = FastAPI(lifespan=tasks_lifespan)
     current_app.celery_app = create_celery()
 
     if settings.BACKEND_CORS_ORIGINS:

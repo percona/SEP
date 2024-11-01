@@ -6,16 +6,17 @@ import secrets
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from kombu import Queue
 from aiohttp import ClientSession
 from fastapi import FastAPI
+from kombu import Queue
 from pydantic import (
     AnyUrl,
     computed_field,
     DirectoryPath,
     HttpUrl,
+    model_validator,
     validate_call,
 )
 from pydantic_settings import (
@@ -176,83 +177,6 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         )
 
 
-# TODO: Make Casdoor optional, custom auth backend model selectable in settings  # noqa: TD002, TD003
-# TODO: Build our own Casdoor SDK for better methods and logging  # noqa: TD002, TD003
-class CasdoorOptions(BaseModel):
-    """Configuration options for Casdoor integration.
-
-    :param ENDPOINT: The Casdoor API endpoint.
-    :type ENDPOINT: StrHttpUrl
-    :param CLIENT_ID: The client ID for Casdoor authentication.
-    :type CLIENT_ID: str
-    :param CLIENT_SECRET: The client secret for Casdoor authentication.
-    :type CLIENT_SECRET: str
-    :param CERTIFICATE_PATH: The file path to the Casdoor certificate.
-    :type CERTIFICATE_PATH: RelativeFilePath
-    :param ORGANIZATION_NAME: The name of the organization in Casdoor. Defaults to
-        "built-in".
-    :type ORGANIZATION_NAME: str
-    :param APPLICATION_NAME: The name of the application in Casdoor. Defaults to
-        "app-built-in"
-    :type APPLICATION_NAME: str
-    :param FRONT_ENDPOINT: The front-end endpoint for the Casdoor integration.
-    :type FRONT_ENDPOINT: URL
-    :param ALLOWED_ISSUERS: The allowed token issuers (iss) for JWT validation.
-        Defaults to an empty list.
-    :type ALLOWED_ISSUERS: list[StrHttpUrl] | Literal["*"]
-    """
-
-    ENDPOINT: StrHttpUrl
-    CLIENT_ID: str
-    CLIENT_SECRET: str
-    CERTIFICATE_PATH: RelativeFilePath
-    ORGANIZATION_NAME: str = "built-in"
-    APPLICATION_NAME: str = "app-built-in"
-    FRONT_ENDPOINT: URL = URL()
-    ALLOWED_ISSUERS: list[StrHttpUrl] | Literal["*"] = []
-
-    def get_frontend_url(self, base_url: URL | None = None) -> URL:
-        """Get Casdoor's front-end URL from a base URL.
-
-        Construct the frontend URL for Casdoor integration by replacing any missing
-        parts (scheme, hostname, port, path) from the `FRONT_ENDPOINT` with
-        corresponding parts from the `base_url`.
-
-        :param base_url: The base URL to be used when constructing the frontend
-            URL. If not provided, the Casdoor API endpoint (`ENDPOINT`) is used
-            as the base.
-        :type base_url: URL | None
-        :return: The constructed front-end URL.
-        :rtype: URL
-        """
-        frontend_url = self.FRONT_ENDPOINT
-        base_url = URL(self.ENDPOINT) if base_url is None else base_url
-        url_data = {
-            "scheme": frontend_url.scheme or base_url.scheme,
-            "hostname": frontend_url.hostname or base_url.hostname,
-            "port": frontend_url.port or base_url.port,
-            "path": frontend_url.path or base_url.path,
-        }
-        return frontend_url.replace(**url_data)
-
-    @computed_field
-    @cached_property
-    def CERTIFICATE(self) -> bytes:
-        """The contents of the certificate file.
-
-        :return: The certificate file contents.
-        :rtype: bytes
-        """
-        with self.CERTIFICATE_PATH.open("rb") as certificate_file:
-            return certificate_file.read()
-
-    @model_validator(mode="after")
-    def _set_default_allowed_issuers(self) -> Self:
-        if self.ALLOWED_ISSUERS != "*" and self.ENDPOINT not in self.ALLOWED_ISSUERS:
-            self.ALLOWED_ISSUERS.append(self.ENDPOINT)
-        return self
-
-
 def route_task(
     name: str,
     args: tuple,  # noqa: ARG001
@@ -284,7 +208,7 @@ def route_task(
     return {"queue": "celery"}
 
 
-class CeleryConfig(BaseModel):
+class CeleryConfig(BaseYamlSettings):
     """Define configuration settings for Celery."""
 
     CELERY_BROKER_URL: str
@@ -340,7 +264,7 @@ class Settings(BaseYamlSettings):
     :type BASE_URL: URL | None
     """
 
-    CASDOOR: CasdoorOptions
+    CASDOOR: CasdoorSDK
     CELERY: CeleryConfig
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     SECRET_KEY: str = secrets.token_urlsafe(32)

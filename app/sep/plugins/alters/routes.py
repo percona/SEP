@@ -17,7 +17,7 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
-from app.tasks.models import TriggerRequest, TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum, TriggerRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

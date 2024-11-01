@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.tasks.celery_task import trigger_task
 from app.core.exceptions import HTTPBadRequestException
+from app.tasks.celery_task import trigger_task
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import SessionDep, TaskExecutor
