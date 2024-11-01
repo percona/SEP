@@ -7,10 +7,10 @@ from fastapi import APIRouter, Body, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 
-from app.api.exceptions import InactiveUserException
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.models import OAuthToken
 from app.core.auth.utils import get_user_model
+from app.core.exceptions import InactiveUserException
 
 logger = logging.getLogger(__name__)
 

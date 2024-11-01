@@ -268,3 +268,20 @@ def b64encode_str(value: str, encoding: str = "utf-8") -> str:
     :rtype: str
     """
     return b64encode(value.encode(encoding)).decode(encoding)
+
+
+def sort_dict(unsorted_dict: dict, key: Callable[[Any], Any]) -> dict:
+    """Sort a dictionary based on a specified key function.
+
+    This function returns a new dictionary with its items sorted according to the
+    provided key function. The sorting is performed on the dictionary's items, and the
+    resulting dictionary maintains the sorted order.
+
+    :param unsorted_dict: The dictionary to be sorted.
+    :type unsorted_dict: dict
+    :param key: A function that extracts a comparison key from each dictionary item.
+    :type key: Callable[[Any], Any]
+    :return: A new dictionary sorted by the specified key function.
+    :rtype: dict
+    """
+    return dict(sorted(unsorted_dict.items(), key=key))

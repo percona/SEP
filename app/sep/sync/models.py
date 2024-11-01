@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
 from types import TracebackType
@@ -14,7 +14,7 @@ from async_lru import _LRUCacheWrapper, alru_cache
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import BaseCaseInsensitiveModel
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
@@ -289,7 +289,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         self,
         entity_type: SyncInventoryEntityTypeEnum,
         created_entity: CreatedEntity | None,
-    ) -> SyncItem:
+    ) -> AsyncGenerator[SyncItem, None]:
         """Manage the synchronization lifecycle of a SyncItem.
 
         This asynchronous context manager handles the synchronization lifecycle of a
@@ -303,7 +303,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             (inventory) synchronization.
         :type created_entity: CreatedEntity | None
         :yield: The `SyncItem` instance being managed during the synchronization process.
-        :rtype: SyncItem
+        :rtype: AsyncGenerator[SyncItem, None]
         :raises SyncFailError: If an exception occurs during synchronization.
         """
         entity_id = None if created_entity is None else created_entity.id

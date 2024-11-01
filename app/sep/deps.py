@@ -14,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
+from app.core.exceptions import HTTPNotFoundException
 from app.core.fields import URL
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
@@ -31,7 +32,11 @@ from app.sep.inventory import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import (
+    Task,
+    TaskHistoryResponse,
+    TaskHistoryStatusEnum,
+)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -174,8 +179,9 @@ def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
 DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
 
 
-# TODO: Proper SDK  # noqa: TD002, TD003
-def get_inventory_api(user: CurrentUser) -> RemoteAPI:
+# TODO(yan): Proper SDK
+# SEP-130
+async def get_inventory_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Inventory API.
 
     :param user: The current authenticated user, from which the access token is
@@ -185,19 +191,21 @@ def get_inventory_api(user: CurrentUser) -> RemoteAPI:
         the endpoint, API key, and SSL settings.
     :rtype: RemoteAPI
     """
-    return RemoteAPI(
+    api = RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
         api_key=user.access_token,
         ssl_cafile=settings.SSL_CAFILE,
         ssl_keyfile=inventory_settings.SSL_KEYFILE,
         ssl_certfile=inventory_settings.SSL_CERTFILE,
     )
+    api.session = await settings.get_extra_client_session(api.endpoint, api.api_key)
+    return api
 
 
 InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 
 
-def get_tasks_api(user: CurrentUser) -> RemoteAPI:
+async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Tasks API.
 
     :param user: The current authenticated user, from which the access token is
@@ -207,13 +215,15 @@ def get_tasks_api(user: CurrentUser) -> RemoteAPI:
         the endpoint, API key, and SSL settings.
     :rtype: RemoteAPI
     """
-    return RemoteAPI(
+    api = RemoteAPI(
         endpoint=sep_settings.TASKS_ENDPOINT,
         api_key=user.access_token,
         ssl_cafile=settings.SSL_CAFILE,
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
+    api.session = await settings.get_extra_client_session(api.endpoint, api.api_key)
+    return api
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
@@ -428,3 +438,71 @@ async def get_tasks_context(
         },
     )
     return context
+
+
+# TODO(yan): Put get_task in a proper TasksAPI SDK class
+# SEP-130
+async def get_task_by_name(
+    tasks_api: TaskAPI, task_name: str, owner: str | None = None
+) -> Task:
+    """Fetch and validate a task by name.
+
+    This function retrieves a task by its name from the Tasks API and validates
+    that it is owned by the specified owner (if any). If the task does not exist or is
+    not owned by the specified owner, it raises a 404 HTTP exception.
+
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :param task_name: The name of the task to retrieve.
+    :type task_name: str
+    :param owner: The owner filter for retrieving tasks. Defaults to `None`, meaning
+        no filter.
+    :type owner: str | None
+    :return: The retrieved task.
+    :rtype: Task
+    :raises HTTPNotFoundException: If the task is not found or is not owned by the
+        specified owner.
+    """
+    try:
+        task = Task.model_validate(await tasks_api.get(f"/{task_name}"))
+    except ValidationError:
+        raise HTTPNotFoundException from None
+    if owner is not None and Task.validate_owner(owner) != task.owner:
+        raise HTTPNotFoundException
+    return task
+
+
+# TODO(yan): Put get_task_history in a proper TasksAPI SDK class
+# SEP-130
+async def get_task_history(
+    tasks_api: TaskAPI, task_history_id: int, owner: str | None = None
+) -> TaskHistoryResponse:
+    """Fetch and validate a task history by ID.
+
+    This function retrieves a task history by its ID from the Tasks API and optionally
+    validates that it is owned by a specific owner. If the task history does not exist
+    or the validation fails, it raises a 404 HTTP exception.
+
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :param task_history_id: The ID of the task history to retrieve.
+    :type task_history_id: str
+    :param owner: The owner filter for the task history's task. Defaults to `None`,
+        meaning no filter.
+    :type owner: str | None
+    :return: The retrieved task history.
+    :rtype: TaskHistoryResponse
+    :raises HTTPNotFoundException: If the task history is not found or the validation
+        fails.
+    """
+    try:
+        task_history = TaskHistoryResponse.model_validate(
+            await tasks_api.get(f"/history/{task_history_id}")
+        )
+    except ValidationError:
+        logger.debug("ValidationError retrieving task history.", exc_info=True)
+        raise HTTPNotFoundException from None
+    logger.debug("TASK IS %s", task_history)
+    if owner is not None and Task.validate_owner(owner) != task_history.task.owner:
+        raise HTTPNotFoundException
+    return task_history

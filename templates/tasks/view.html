@@ -1,112 +1,141 @@
 {% extends "base.html" %}
 
 {% block style %}
-<style>
-    .form-label {
-        display: block;
-        font-weight: bold;
-        color: #555;
-        margin-bottom: 5px;
-    }
-    .form-input {
-        width: 90%;
-        padding: 10px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-    }
-</style>
-<link rel="stylesheet" href="/static/task_history.css">
+    <style>
+        .form-label {
+            display: block;
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 5px;
+        }
+
+        .form-input {
+            width: 90%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="/static/logs.css">
+    {% endif %}
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
-    {% if history %}
-<script src="/static/task_history.js"></script>
+    {% if history or running_tasks %}
+        <script src="/static/logs.js"></script>
     {% endif %}
 {% endblock %}
 
 
-{% block title %}Task: {{ task.get("name") }}{% endblock %}
+{% block title %}Task: {{ task.name }}{% endblock %}
 
 {## TODO: the template is currently Nomad-specific#}
 {# TODO: Adjust indentation of all templates #}
 {% block main %}
 
-<dl>
-    <dt>Engine</dt> <dd>{{ Nomad }}</dd>
-    <dt>Created</dt> <dd>{{ task["created_at"] }}</dd>
-    <dt>Specification</dt> <dd>
-    <code>
-        {{ task }}
-    </code>
-    </dd>
-    <dt>Available to</dt> <dd><ul>
-    <li>{{ available_owners.get(task.owner or "*", task.owner)}}</li>
-  </ul></dd>
-</dl>
+    <dl>
+        <dt>Engine</dt>
+        <dd>{{ Nomad }}</dd>
+        <dt>Created</dt>
+        <dd>{{ task.created_at }}</dd>
+        <dt>Specification</dt>
+        <dd>
+            <code>
+                {{ task }}
+            </code>
+        </dd>
+        <dt>Available to</dt>
+        <dd>
+            <ul>
+                <li>{{ available_owners.get(task.owner or "*", task.owner) }}</li>
+            </ul>
+        </dd>
+    </dl>
 
-{% if not task["is_template"] %}
-<form method="post" action="" style="padding: 20px;">
-    {% if task_data.get("ParameterizedJob") %}
-    <fieldset>
-        <legend style="font-size: 1.5em; font-weight: bold; color: #333;">Configuration</legend>
-        {% if task_data["ParameterizedJob"] %}
-            {% set optional = task_data["ParameterizedJob"].get("MetaOptional", []) %}
-            {% set required = task_data["ParameterizedJob"].get("MetaRequired", []) %}
-        {% else %}
-            {% set optional = [] %}
-            {% set required = [] %}
-        {% endif %}
-        {% set meta_defaults = task_data.get("Meta",{}) %}
-        {% for item in required %}
-        <div style="margin-bottom: 15px;">
-            <label for="meta_{{ item }}" class="form-label">{{ item.capitalize() }} (required)</label>
-            {% if item == "target" %}
-            {% include "tasks/partials/select-host.html" %}
-            {% else %}
-            <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" required class="form-input">
-            {% endif %}
-        </div>
-        {% endfor %}
-        {% for item in optional %}
-        <div style="margin-bottom: 15px;">
-            <label for="meta_{{ item }}" class="form-label">{{ item.capitalize() }}</label>
-            {% if item == "target" %}
-            {% include "tasks/partials/select-host.html" %}
-            {% else %}
-            <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults.get(item, '') }}" class="form-input">
-            {% endif %}
-        </div>
-        {% endfor %}
-        {% set nomad_payload_rule = task_data["ParameterizedJob"].get("Payload", "optional") %}
-        {% if nomad_payload_rule in ["optional", "required"] %}
-        <div style="margin-bottom: 20px;">
-            <label for="payload" class="form-label">Payload{% if nomad_payload_rule == "required" %} (required){% endif %}</label>
-            <textarea name="payload" id="payload" cols="80" rows="30"{% if nomad_payload_rule == "required" %} required{% endif %} class="form-input"></textarea>
-        </div>
-        {% endif %}
-    </fieldset>
+    {% if running_tasks %}
+        <section id="running-tasks">
+            <h2>Running</h2>
+            {% include "tasks/partials/running-tasks.html" %}
+        </section>
     {% endif %}
-    <button type="submit">Execute</button>
-</form>
+    {% if not task.is_template %}
+        <form method="post" action="" style="padding: 20px;">
+            {% if task_data.get("ParameterizedJob") %}
+                <fieldset>
+                    <legend style="font-size: 1.5em; font-weight: bold; color: #333;">
+                        Configuration
+                    </legend>
+                    {% if task_data.ParameterizedJob %}
+                        {% set optional = task_data.ParameterizedJob.get("MetaOptional", []) %}
+                        {% set required = task_data.ParameterizedJob.get("MetaRequired", []) %}
+                    {% else %}
+                        {% set optional = [] %}
+                        {% set required = [] %}
+                    {% endif %}
+                    {% set meta_defaults = task_data.get("Meta",{}) %}
+                    {% for item in required %}
+                        <div style="margin-bottom: 15px;">
+                            <label for="meta_{{ item }}"
+                                class="form-label">{{ item.capitalize() }}
+                                (required)</label>
+                            {% if item == "target" %}
+                                {% include "tasks/partials/select-host.html" %}
+                            {% else %}
+                                <input type="text" name="meta_{{ item }}"
+                                    id="meta_{{ item }}"
+                                    value="{{ meta_defaults[item] }}" required
+                                    class="form-input">
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    {% for item in optional %}
+                        <div style="margin-bottom: 15px;">
+                            <label for="meta_{{ item }}"
+                                class="form-label">{{ item.capitalize() }}</label>
+                            {% if item == "target" %}
+                                {% include "tasks/partials/select-host.html" %}
+                            {% else %}
+                                <input type="text" name="meta_{{ item }}"
+                                    id="meta_{{ item }}"
+                                    value="{{ meta_defaults.get(item, '') }}"
+                                    class="form-input">
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    {% set nomad_payload_rule = task_data.ParameterizedJob.get("Payload", "optional") %}
+                    {% if nomad_payload_rule in ["optional", "required"] %}
+                        <div style="margin-bottom: 20px;">
+                            <label for="payload" class="form-label">Payload
+                                {% if nomad_payload_rule == "required" %}
+                                    (required){% endif %}</label>
+                            <textarea name="payload" id="payload" cols="80" rows="30"
+                                    {% if nomad_payload_rule == "required" %}
+                                    required{% endif %} class="form-input"></textarea>
+                        </div>
+                    {% endif %}
+                </fieldset>
+            {% endif %}
+            <button type="submit">Execute</button>
+        </form>
+    {% endif %}
 
-{% endif %}
+    {% if not task.protected %}
+        <form method="post" action="/tasks/{{ task['name'] }}/trigger">
+            <button type="submit">Schedule</button>
+            <input type="datetime-local" id="trigger_time" name="trigger_time">
+        
+        </form>
+        <form method="post" action="/tasks/{{ task['name'] }}/delete">
+            <button type="submit">Delete</button>
+        </form>
+    {% endif %}
 
-{% if not task["protected"] %}
-<form method="post" action="/tasks/{{ task['name'] }}/trigger">
-    <button type="submit">Schedule</button>
-    <input type="datetime-local" id="trigger_time" name="trigger_time">
-
-</form>
-<form method="post" action="/tasks/{{ task['name'] }}/delete">
-    <button type="submit">Delete</button>
-</form>
-{% endif %}
-
-<section>
-    <h2>History</h2>
-    {% set history_tasks = history %}
-    {% include "tasks/partials/completed-tasks.html" %}
-</section>
+    <section>
+        <h2>History</h2>
+        {% set history_tasks = history %}
+        {% include "tasks/partials/completed-tasks.html" %}
+    </section>
 <script>
     const now = new Date();
     const year = now.getFullYear();

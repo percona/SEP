@@ -1,35 +1,31 @@
 """Manage remote API interactions."""
 
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from functools import cached_property
 from ssl import create_default_context, SSLContext
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from urllib.parse import urljoin
 
 from aiohttp import ClientResponse, ClientSession
 from pydantic import computed_field, HttpUrl
 
-from app.core.config import BaseCaseInsensitiveModel
 from app.core.fields import RelativeFilePath, RequiredStr
+from app.core.models import BaseCaseInsensitiveModel
 
 logger = logging.getLogger(__name__)
 
 
-class RemoteAPI(BaseCaseInsensitiveModel):
-    """Interact with external services via HTTP requests.
+class BaseRemoteAPI(BaseCaseInsensitiveModel):
+    """Base class for interacting with external APIs.
 
-    The `RemoteAPI` class provides methods to perform HTTP requests to external
-    APIs, handling authentication, SSL verification, and request formatting. It
-    supports standard HTTP methods and manages session headers and SSL contexts
-    based on configuration.
+    Provides foundational functionality for making HTTP requests, handling SSL
+    configurations, and managing request paths and headers.
 
     :param endpoint: The base URL for the external API endpoint.
     :type endpoint: HttpUrl
-    :param api_key: The API key for authentication. Defaults to None.
-    :type api_key: str | None
-    :param auth_scheme: The authentication scheme to use (e.g., "Bearer", "Basic").
-        Defaults to "Bearer".
-    :type auth_scheme: RequiredStr
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
@@ -41,14 +37,59 @@ class RemoteAPI(BaseCaseInsensitiveModel):
     """
 
     endpoint: HttpUrl
-    api_key: str | None = None
-    auth_scheme: RequiredStr = "Bearer"
     verify_ssl: bool = True
     ssl_cafile: RelativeFilePath | None = None
-    ssl_keyfile: RelativeFilePath | None = (
-        None  # TODO: make this single tuple like with nomad  # noqa: TD002, TD003
-    )
+    ssl_keyfile: RelativeFilePath | None = None
     ssl_certfile: RelativeFilePath | None = None
+    _session: ClientSession
+
+    async def __aenter__(self) -> Self:
+        """Enter the asynchronous context manager.
+
+        Initializes the aiohttp `ClientSession` if not already present.
+
+        :return: The `BaseRemoteAPI` instance.
+        :rtype: BaseRemoteAPI
+        """
+        if getattr(self, "_session", None) is None:
+            logger.debug("Opening ClientSession for %s", self.base_url)
+            headers = self.headers or None
+            self._session = ClientSession(base_url=self.base_url, headers=headers)
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException],
+        exc_val: BaseException,
+        exc_tb: TracebackType,
+    ) -> None:
+        """Exit the asynchronous context manager.
+
+        Closes the aiohttp `ClientSession` if it was initialized.
+
+        :param exc_type: The exception type, if any.
+        :type exc_type: type[BaseException]
+        :param exc_val: The exception value, if any.
+        :type exc_val: BaseException
+        :param exc_tb: The traceback, if any.
+        :type exc_tb: Any
+        """
+        logger.debug("Closing ClientSession for %s", self.base_url)
+        await self._session.close()
+
+    @property
+    def session(self) -> ClientSession:
+        """Get the ClientSession used in requests.
+
+        :return: The ClientSession used in requests.
+        :rtype: ClientSession
+        """
+        return self._session
+
+    @session.setter
+    def session(self, session: ClientSession) -> None:
+        """Set the ClientSession used in requests."""
+        self._session = session
 
     @cached_property
     def ssl_context(self) -> SSLContext:
@@ -60,13 +101,9 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         :return: The configured SSL context for HTTPS connections.
         :rtype: SSLContext
         """
-        context = create_default_context(cafile=self.ssl_cafile)
-        if self.ssl_certfile:
-            context.load_cert_chain(
-                certfile=self.ssl_certfile,
-                keyfile=self.ssl_keyfile,
-            )
-        return context
+        return self.create_ssl_context(
+            self.ssl_cafile, self.ssl_certfile, self.ssl_keyfile
+        )
 
     @computed_field
     @property
@@ -99,6 +136,135 @@ class RemoteAPI(BaseCaseInsensitiveModel):
     def headers(self) -> dict[str, str]:
         """Return the headers to be used in API requests.
 
+        By default, an empty dict is returned.
+
+        :return: A dictionary containing the headers for API requests.
+        :rtype: dict[str, str]
+        """
+        return {}
+
+    def prepare_path(self, path: str) -> str:
+        """Prepare and return the full endpoint path.
+
+        Constructs the full URL path by combining the base path with the provided path.
+
+        :param path: The API endpoint path to request.
+        :type path: str
+        :return: The full API path.
+        :rtype: str
+        """
+        if self.base_path == "/":
+            return urljoin(self.base_path, path)
+        trailing_slash = path.endswith("/")
+        path = path.strip("/")
+        base_path = self.base_path + "/" if path and self.base_path else self.base_path
+        path = urljoin(base_path, path)
+        return path + "/" if trailing_slash else path
+
+    @asynccontextmanager
+    async def _request(self, method: str, path: str, **kwargs: Any) -> ClientResponse:
+        """Define internal method to perform an HTTP request.
+
+        Yields the aiohttp `ClientResponse` object for further processing.
+
+        :param method: The HTTP method to use for the request.
+        :type method: str
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :yield: The aiohttp `ClientResponse` object.
+        :rtype: AsyncGenerator[ClientResponse, None]
+        """
+        path = self.prepare_path(path)
+        kwargs["ssl"] = self.ssl_context if self.verify_ssl else False
+        logger.debug(
+            "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
+            self.base_url,
+            method,
+            path,
+            kwargs,
+        )
+        async with self._session.request(method, path, **kwargs) as response:
+            yield response
+
+    async def stream(
+        self, path: str, method: str = "GET", **kwargs: Any
+    ) -> AsyncGenerator[bytes, None]:
+        """Perform a streaming HTTP request and yield response content.
+
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param method: The HTTP method to use for the request. Defaults to "GET".
+        :type method: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :yield: Lines of response content as bytes.
+        :rtype: AsyncGenerator[bytes, None]
+        """
+        async with self._request(method, path, **kwargs) as response:
+            async for line in response.content:
+                yield line
+
+    @staticmethod
+    def create_ssl_context(
+        cafile: RelativeFilePath | None = None,
+        certfile: RelativeFilePath | None = None,
+        keyfile: RelativeFilePath | None = None,
+    ) -> SSLContext:
+        """Initialize and return the SSL context for secure connections.
+
+        Configures the SSL context based on the provided SSL certificate files
+        parameters.
+
+        :param cafile: The path to the CA certificate file.
+        :type cafile: RelativeFilePath | None
+        :param certfile: The path to the certificate file.
+        :type certfile: RelativeFilePath | None
+        :param keyfile: The path to the certificate key file.
+        :type keyfile: RelativeFilePath | None
+        :return: The configured SSL context for HTTPS connections.
+        :rtype: SSLContext
+        """
+        context = create_default_context(cafile=cafile)
+        if certfile:
+            context.load_cert_chain(
+                certfile=certfile,
+                keyfile=keyfile,
+            )
+        return context
+
+
+class RemoteAPI(BaseRemoteAPI):
+    """Interact with external services via HTTP requests.
+
+    Extends `BaseRemoteAPI` to include authentication mechanisms and provides
+    methods for standard HTTP operations (GET, POST, PUT, PATCH, DELETE) returning JSON.
+
+    :param endpoint: The base URL for the external API endpoint.
+    :type endpoint: HttpUrl
+    :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
+    :type verify_ssl: bool
+    :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
+    :type ssl_cafile: RelativeFilePath | None
+    :param ssl_keyfile: Path to the SSL key file. Defaults to None.
+    :type ssl_keyfile: RelativeFilePath | None
+    :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
+    :type ssl_certfile: RelativeFilePath | None
+    :param api_key: The API key for authentication. Defaults to None.
+    :type api_key: str | None
+    :param auth_scheme: The authentication scheme to use (e.g., "Bearer", "Basic").
+        Defaults to "Bearer".
+    :type auth_scheme: RequiredStr
+    """
+
+    api_key: str | None = None
+    auth_scheme: RequiredStr = "Bearer"
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the headers to be used in API requests.
+
         Includes content type, accept headers, and authorization with the API key.
 
         :return: A dictionary containing the headers for API requests.
@@ -107,41 +273,10 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"{self.auth_scheme} {self.api_key}",
         }
         if self.api_key:
             headers["Authorization"] = f"{self.auth_scheme} {self.api_key}"
         return headers
-
-    async def _request(self, method: str, path: str, **kwargs: Any) -> ClientResponse:
-        if self.base_path == "/":
-            path = urljoin(self.base_path, path)
-        else:
-            trailing_slash = path.endswith("/")
-            path = path.strip("/")
-            base_path = (
-                self.base_path + "/" if path and self.base_path else self.base_path
-            )
-            path = urljoin(base_path, path)
-            path = path + "/" if trailing_slash else path
-        if self.verify_ssl:
-            kwargs["ssl"] = self.ssl_context
-        else:
-            kwargs["ssl"] = False
-        headers = self.headers | kwargs.pop("headers", {})
-        logger.debug(
-            "Sending %s request to %s%s with kwargs %s and headers %s",
-            method,
-            self.base_url,
-            path,
-            kwargs,
-            headers,
-        )
-        async with ClientSession(
-            base_url=self.base_url,
-            headers=headers,
-        ) as session:
-            return await session.request(method, path, **kwargs)
 
     async def request(
         self,
@@ -160,16 +295,16 @@ class RemoteAPI(BaseCaseInsensitiveModel):
         :return: The JSON response as a Python object.
         :rtype: dict[str, Any] | list[dict[str, Any]]
         """
-        response = await self._request(method, path, **kwargs)
-        response_data = await response.json()
-        logger.debug(
-            "%s request to %s%s response: %s",
-            method,
-            self.base_url,
-            path,
-            response_data,
-        )
-        return response_data
+        async with self._request(method, path, **kwargs) as response:
+            response_data = await response.json()
+            logger.debug(
+                "%s request to %s%s response: %s",
+                method,
+                self.base_url,
+                path,
+                response_data,
+            )
+            return response_data
 
     async def get(
         self, path: str, **kwargs: Any

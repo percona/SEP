@@ -1,20 +1,22 @@
 """Define the application settings."""
 
+import logging
 import re
 import secrets
-from collections.abc import Sequence
-from functools import cached_property
+from collections.abc import AsyncGenerator, Sequence
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self
+from typing import ClassVar
 
 from kombu import Queue
+from aiohttp import ClientSession
+from fastapi import FastAPI
 from pydantic import (
     AnyUrl,
-    BaseModel,
     computed_field,
-    ConfigDict,
     DirectoryPath,
-    model_validator,
+    HttpUrl,
+    validate_call,
 )
 from pydantic_settings import (
     BaseSettings,
@@ -24,51 +26,22 @@ from pydantic_settings import (
 )
 from pydantic_settings.sources import PathType
 
+from app.core.auth.providers.casdoor import CasdoorSDK
 from app.core.fields import (
     LogLevel,
     RelativeFilePath,
     RequiredStr,
-    StrHttpUrl,
     StrImportableAttribute,
     URL,
 )
-from app.core.utils import deep_dict_update, deep_lowercase_dict_keys, to_uppercase
+from app.core.requests import RemoteAPI
+from app.core.utils import deep_dict_update
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
 
 
-class BaseCaseInsensitiveModel(BaseModel):
-    """A base model with case-insensitive alias generation.
-
-    This model uses a custom alias generator that converts field names to uppercase.
-    It also allows population of fields by their name, making it case-insensitive
-    when handling data.
-    """
-
-    model_config = ConfigDict(alias_generator=to_uppercase, populate_by_name=True)
-
-
-class BaseLowercaseModel(BaseCaseInsensitiveModel):
-    """Define a base model that ensures all dictionary keys are lowercase.
-
-    Inherits from `BaseCaseInsensitiveModel` and applies a transformation to convert
-    all string keys in input data to lowercase before validation.
-    """
-
-    @model_validator(mode="before")
-    @classmethod
-    def force_lowercase_fields(cls, data: Any) -> Any:
-        """Convert all string keys in input data to lowercase before validation.
-
-        :param data: The input data to be validated, typically a dictionary.
-        :type data: Any
-        :return: The transformed data with all string keys in lowercase.
-        :rtype: Any
-        """
-        if isinstance(data, dict):
-            data = deep_lowercase_dict_keys(data)
-        return data
+logger = logging.getLogger(__name__)
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
@@ -348,7 +321,7 @@ class Settings(BaseYamlSettings):
     """Main application settings class.
 
     :param CASDOOR: Casdoor configuration options.
-    :type CASDOOR: CasdoorOptions
+    :type CASDOOR: CasdoorSDK
     :param AUTH_USER_MODEL: The full import path of the user model class.
         Defaults to "app.models.CasdoorUser".
     :type AUTH_USER_MODEL: StrImportableAttribute
@@ -376,6 +349,7 @@ class Settings(BaseYamlSettings):
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
     BASE_URL: URL | None = None
+    _EXTRA_CLIENT_SESSIONS: dict[tuple[str, str | None], ClientSession] = {}
 
     @computed_field
     @property
@@ -387,5 +361,66 @@ class Settings(BaseYamlSettings):
         """
         return BASE_DIR
 
+    @validate_call
+    async def get_extra_client_session(
+        self,
+        endpoint: HttpUrl,
+        api_key: str | None = None,
+        *,
+        include_headers: bool = True,
+    ) -> ClientSession:
+        """Retrieve or create an extra client session for a given endpoint.
+
+        Manages additional `ClientSession` instances for interacting with external APIs
+        that are not created at startup. Ensures that each unique combination of
+        endpoint and API key has its own session.
+
+        :param endpoint: The base URL of the external API.
+        :type endpoint: HttpUrl
+        :param api_key: The API key for authentication. Defaults to None.
+        :type api_key: str | None
+        :param include_headers: Whether to include default headers. Defaults to True.
+        :type include_headers: bool
+        :return: An aiohttp `ClientSession` instance.
+        :rtype: ClientSession
+        :raises ClientError: If the session creation fails.
+        """
+        remote_api = RemoteAPI(endpoint=endpoint, api_key=api_key)
+        key = (remote_api.base_url, api_key)
+        if key not in self._EXTRA_CLIENT_SESSIONS:
+            headers = remote_api.headers if include_headers else None
+            logger.debug("Opening ClientSession for %s", remote_api.base_url)
+            self._EXTRA_CLIENT_SESSIONS[key] = ClientSession(
+                base_url=remote_api.base_url, headers=headers
+            )
+        return self._EXTRA_CLIENT_SESSIONS[key]
+
+    async def close_extra_client_sessions(self) -> None:
+        """Close all extra client sessions.
+
+        Ensures that all additional `ClientSession` instances are properly closed
+        when the application shuts down.
+        """
+        for (endpoint, _), client_session in self._EXTRA_CLIENT_SESSIONS.items():
+            logger.debug("Closing ClientSession for %s", endpoint)
+            await client_session.close()
+
 
 settings = Settings()
+
+
+@asynccontextmanager
+async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
+    """Define the default manager for the application's lifespan.
+
+    Ensures that the CasdoorSDK and any extra client sessions are properly managed
+    during the application's startup and shutdown phases.
+
+    :param app: The FastAPI application instance.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    async with settings.CASDOOR:
+        yield
+    await settings.close_extra_client_sessions()

@@ -5,13 +5,13 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings
+from app.core.config import default_lifespan, settings
 from app.inventory.config import inventory_settings
 from app.inventory.routes import nodes, schemas, services, tables
 
-logger = logging.getLogger(__name__)
-
-inventory_app = FastAPI()
+inventory_app = (
+    FastAPI(lifespan=default_lifespan) if __name__ == "__main__" else FastAPI()
+)
 inventory_app.include_router(nodes.router, tags=["nodes"])
 inventory_app.include_router(services.router, prefix="/services", tags=["services"])
 inventory_app.include_router(schemas.router, prefix="/schemas", tags=["schemas"])
