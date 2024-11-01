@@ -5,6 +5,7 @@ along with utility functions to process queue items.
 """
 
 import logging
+from typing import Any
 
 from asgiref.sync import async_to_sync
 from celery import shared_task, Task
@@ -30,7 +31,7 @@ async def execute_task(queue_id: int) -> None:
     retry_kwargs={"max_retries": 5},
     name="celery:trigger_task",
 )
-def trigger_task(self: Task, queue_id: int | None = None) -> dict:  # noqa: ARG001
+def trigger_task(self: Task, queue_id: int | None = None) -> dict[str, Any]:  # noqa: ARG001
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.
@@ -38,7 +39,7 @@ def trigger_task(self: Task, queue_id: int | None = None) -> dict:  # noqa: ARG0
     :param queue_id: The ID of the queue item to trigger (optional).
     :type queue_id: int, optional
     :return: A dictionary containing the status and queue ID.
-    :rtype: dict
+    :rtype: dict[str, Any]
     """
     logger.info("Executing task with queue_id: %s", queue_id)
 

@@ -4,6 +4,8 @@ This module defines functions to create and configure a Celery app instance,
 and retrieve task information by task ID.
 """
 
+from typing import Any
+
 from celery import current_app as current_celery_app
 from celery.local import Proxy
 from celery.result import AsyncResult
@@ -26,14 +28,14 @@ def create_celery() -> Proxy:
     return celery_app
 
 
-def get_task_info(task_id: str) -> dict:
+def get_task_info(task_id: str) -> dict[str, Any]:
     """Return task info for the given task_id.
 
     :param task_id: The unique identifier of the Celery task.
     :type task_id: str
     :return: Task information with 'task_id' (str), 'task_status' (str),
         and 'task_result' (Any).
-    :rtype: dict
+    :rtype: dict[str, Any]
     """
     task_result = AsyncResult(task_id)
     return {

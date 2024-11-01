@@ -213,20 +213,22 @@ class CeleryConfig(BaseYamlSettings):
 
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str | None = None
-    CELERY_TASK_QUEUES: list = (
+    CELERY_TASK_QUEUES: list[Queue] = [
         # default queue
         Queue("celery"),
-    )
+    ]
     CELERY_TASK_ROUTES: Any = (route_task,)
     CELERY_BROKER_TRANSPORT_OPTIONS: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
-    def handle_backend_url(cls, data: Any) -> Any:
+    def handle_backend_url(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Handle the backend URL and set transport options if using a filesystem broker.
 
         :param data: Dictionary of configuration data.
+        :type data: dict[str, Any]
         :return: Updated dictionary of data.
+        :rtype: dict[str, Any]
         """
         if isinstance(data, dict):
             if data.get("CELERY_BROKER_URL") == "filesystem://":
@@ -246,6 +248,8 @@ class Settings(BaseYamlSettings):
 
     :param CASDOOR: Casdoor configuration options.
     :type CASDOOR: CasdoorSDK
+    :param CELERY: Celery configuration options.
+    :type CELERY: CeleryConfig
     :param AUTH_USER_MODEL: The full import path of the user model class.
         Defaults to "app.models.CasdoorUser".
     :type AUTH_USER_MODEL: StrImportableAttribute
