@@ -25,6 +25,7 @@ from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    FutureDatetime,
     model_validator,
 )
 from sqlalchemy import Column, Index, JSON
@@ -606,48 +607,27 @@ class TriggerRequest(BaseModel):
     """Represent a request to trigger an action with specified timing.
 
     :param trigger_time: The desired trigger time in 'YYYY-MM-DDTHH:MM' format.
-    :type trigger_time: str
-    :param countdown: The number of seconds until the trigger time.
+    :type trigger_time: FutureDatetime
+    :param countdown: Countdown in seconds until `trigger_time`.
     :type countdown: int
     """
 
-    trigger_time: str
-    countdown: int
+    trigger_time: FutureDatetime
 
-    @model_validator(mode="before")
-    @classmethod
-    def convert_trigger_datetime(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Convert trigger_time to countdown and validate the input time.
-
-        :param data: Dictionary of input data.
-        :type data: dict[str, Any]
-        :return: Dictionary with updated countdown value.
-        :rtype: dict[str, Any]
-        :raises ValueError: If trigger_time is in an incorrect format or in the past.
-        """
-        trigger_time_str = data.get("trigger_time")
-
-        try:
-            trigger_time_dt = datetime.strptime(
-                trigger_time_str, "%Y-%m-%dT%H:%M"
-            ).astimezone(UTC)
-        except ValueError:
-            raise ValueError(
-                f"Invalid trigger_time format: {trigger_time_str}. Expected 'YYYY-MM-DDTHH:MM'."
-            ) from None
+    @computed_field
+    @property
+    def countdown(self) -> int:
+        """Calculates the countdown in seconds until `trigger_time`."""
+        trigger_time_utc = self.trigger_time.astimezone(UTC)
 
         current_time = datetime.now(UTC)
-        if trigger_time_dt <= current_time:
-            raise ValueError("Trigger time must be in the future.")
 
-        time_difference = trigger_time_dt - current_time
-        remaining_seconds = time_difference.total_seconds()
+        time_difference = trigger_time_utc - current_time
+        return max(0, math.ceil(time_difference.total_seconds()))
 
-        # Ceil the remaining seconds
-        remaining_seconds_ceil = math.ceil(remaining_seconds)
-
-        data["countdown"] = remaining_seconds_ceil
-        return data
+    class Config:
+        # JSON encoder to format `FutureDatetime` as ISO 8601 string
+        json_encoders = {FutureDatetime: lambda v: v.isoformat()}
 
 
 class TaskLog(BaseModel):
