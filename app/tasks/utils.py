@@ -9,7 +9,6 @@ from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executor
 from app.tasks.models import TaskBackendEnum, TaskHistory, TaskHistoryStatusEnum
-from app.core.exceptions import HTTPBadRequestException
 
 
 async def process_queue_item(queue_id: int) -> None:
