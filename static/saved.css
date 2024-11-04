@@ -1,0 +1,36 @@
+.actions-cell {
+    align-items: center;
+}
+
+.schedule-button.toggled-on {
+    background-color: #93C7FF;
+    color: #2C323E;
+}
+
+.send-form {
+    display: flex;
+    align-items: center;
+}
+
+.eta-input {
+    width: 0;
+    padding: 0;
+    margin-right: 0;
+    opacity: 0;
+    border: 0.2em solid #F0F1F4;
+    border-radius: 2em;
+    overflow: hidden;
+    font-size: 1em;
+}
+
+.send-form.expanded .eta-input {
+    width: 210px;
+    padding: 0.5em;
+    margin-right: 0.5em;
+    opacity: 1;
+    transition: width 0.5s ease, padding 0.5s ease, margin-right 0.5s ease, opacity 0.5s ease;
+}
+
+table form {
+    display: inline-block;
+}

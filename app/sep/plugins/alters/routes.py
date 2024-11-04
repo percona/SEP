@@ -5,6 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -17,7 +18,7 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
-from app.tasks.models import TaskHistoryStatusEnum, TriggerRequest
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -97,39 +98,13 @@ async def alters_detail(
 async def alters_execute(
     task: AltersTask,
     tasks_api: TaskAPI,
+    eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute alters task."""
     await tasks_api.post(
-        f"/execute/{task.name}"
+        f"/execute/{task.name}",
+        json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post(
-    "/{task_name}/trigger",
-    dependencies=[IsAuthenticated],
-    response_class=RedirectResponse,
-)
-async def alters_trigger(
-    task: AltersTask,
-    tasks_api: TaskAPI,
-    trigger_data: Annotated[TriggerRequest, Form()],
-) -> RedirectResponse:
-    """Route the task to the appropriate queue based on the task name.
-
-    :param task: The AltersTask object containing the task details.
-    :type task: AltersTask
-    :param tasks_api: The TaskAPI instance for interacting with the task API.
-    :type tasks_api: TaskAPI
-    :param trigger_data: The form data containing the parameters required to trigger
-        the task.
-    :type trigger_data: TriggerRequest
-    :return: A redirection response to the alters list page after triggering the task.
-    :rtype: RedirectResponse
-    """
-    logger.debug("Triggering task %s", task.name)
-    await tasks_api.post(f"/trigger/{task.name}", json=trigger_data.model_dump())
-
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
 

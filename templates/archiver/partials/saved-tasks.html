@@ -2,34 +2,21 @@
 <table>
     <thead>
         <tr>
-            <th>Name</th>
-            <th>Host</th>
+            <th style="width: 200px;">Name</th>
+            <th style="width: 200px;">Host</th>
             <th>Source Table</th>
             <th>Destination Table</th>
             <th>Actions</th>
         </tr>
     </thead>
     <tbody>
-        {% for archive in tasks %}
+        {% for task in tasks %}
         <tr>
-            <td>{{ archive['name'] }}</td>
-            <td>{{ archive['hostname'] }}</td>
-            <td>{{ archive['source_table'] }}</td>
-            <td>{{ archive['dest_table'] }}</td>
-            <td class="flex">
-                <form id="{{ archive['name'] }}-send" method="post" action="{{ archive['name'] }}">
-                    <button name="location" class="icons">send</button>
-                    <input type="hidden" name="task" value="{{ archive['name'] }}">
-                    <input type="hidden" name="host" value="{{ archive['hostname'] }}">
-                </form>
-                <form id="{{ archive['name'] }}-info" method="get" action="{{ archive['name'] }}">
-                    <button class="icons">info</button>
-                </form>
-                <form id="{{ archive['name'] }}-delete" method="post" action="{{ archive['name'] }}/delete">
-                    <button name="location" class="icons">delete forever</button>
-                    <input type="hidden" name="task" value="{{ archive['name'] }}">
-                </form>
-            </td>
+            <td>{{ task.name }}</td>
+            <td>{{ task.hostname }}</td>
+            <td>{{ task.source_table }}</td>
+            <td>{{ task.dest_table }}</td>
+            {% include "tasks/partials/saved-tasks-actions-column.html" %}
         </tr>
         {% endfor %}
     </tbody>

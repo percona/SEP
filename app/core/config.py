@@ -6,16 +6,17 @@ import secrets
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from aiohttp import ClientSession
 from fastapi import FastAPI
 from pydantic import (
+    AliasGenerator,
     AnyUrl,
     computed_field,
+    ConfigDict,
     DirectoryPath,
     HttpUrl,
-    model_validator,
     validate_call,
 )
 from pydantic_settings import (
@@ -31,17 +32,43 @@ from app.core.fields import (
     LogLevel,
     RelativeFilePath,
     RequiredStr,
+    StrAnyUrl,
     StrImportableAttribute,
     URL,
 )
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
-from app.core.utils import deep_dict_update
+from app.core.utils import deep_dict_update, json_serializer
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
 
 
 logger = logging.getLogger(__name__)
+
+
+class CeleryOptions(BaseCaseInsensitiveModel):
+    """Define configuration settings for Celery.
+
+    Any extra fields passed to this model will be used for configuring Celery.
+
+    :param BROKER_URL: The URL of the message broker.
+    :type BROKER_URL: StrAnyUrl
+    :param TASK_TRACK_STARTED: Whether to track when tasks start. Defaults to True.
+    :type TASK_TRACK_STARTED: bool
+    :param RESULT_BACKEND: The URL of the result backend. Defaults to None.
+    :type RESULT_BACKEND: StrAnyUrl | None
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+        alias_generator=AliasGenerator(
+            serialization_alias=lambda field_name: field_name.lower(),
+        ),
+    )
+    BROKER_URL: StrAnyUrl
+    TASK_TRACK_STARTED: bool = True
+    RESULT_BACKEND: StrAnyUrl | None = None
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
@@ -176,53 +203,13 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         )
 
 
-class CeleryConfig(BaseYamlSettings):
-    """Define configuration settings for Celery."""
-
-    BROKER_URL: str
-    RESULT_BACKEND: str | None = None
-    BROKER_TRANSPORT_OPTIONS: dict[str, Any] | None = None
-    TASK_TRACK_STARTED: bool = True
-    TASK_SERIALIZER: str = "json"
-    RESULT_SERIALIZER: str = "json"
-    ACCEPT_CONTENT: list = [
-        "json",
-    ]
-    RESULT_EXPIRES: int = 200
-    RESULT_PERSISTENT: bool = True
-    WORKER_SEND_TASK_EVENTS: bool = False
-    WORKER_PREFETCH_MULTIPLIER: int = 1
-
-    @model_validator(mode="before")
-    @classmethod
-    def handle_backend_url(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Handle the backend URL and set transport options if using a filesystem broker.
-
-        :param data: Dictionary of configuration data.
-        :type data: dict[str, Any]
-        :return: Updated dictionary of data.
-        :rtype: dict[str, Any]
-        """
-        if isinstance(data, dict):
-            if data.get("BROKER_URL") == "filesystem://":
-                base_dir = Path(BASE_DIR)
-                data["BROKER_TRANSPORT_OPTIONS"] = {
-                    "data_folder_in": base_dir / ".celery",
-                    "data_folder_out": base_dir / ".celery",
-                    "control_folder": base_dir / ".celery",
-                }
-            else:
-                data["BROKER_TRANSPORT_OPTIONS"] = {}
-        return data
-
-
 class Settings(BaseYamlSettings):
     """Main application settings class.
 
     :param CASDOOR: Casdoor configuration options.
     :type CASDOOR: CasdoorSDK
     :param CELERY: Celery configuration options.
-    :type CELERY: CeleryConfig
+    :type CELERY: CeleryOptions
     :param AUTH_USER_MODEL: The full import path of the user model class.
         Defaults to "app.models.CasdoorUser".
     :type AUTH_USER_MODEL: StrImportableAttribute
@@ -242,7 +229,7 @@ class Settings(BaseYamlSettings):
     """
 
     CASDOOR: CasdoorSDK
-    CELERY: CeleryConfig
+    CELERY: CeleryOptions
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
@@ -292,7 +279,9 @@ class Settings(BaseYamlSettings):
             headers = remote_api.headers if include_headers else None
             logger.debug("Opening ClientSession for %s", remote_api.base_url)
             self._EXTRA_CLIENT_SESSIONS[key] = ClientSession(
-                base_url=remote_api.base_url, headers=headers
+                base_url=remote_api.base_url,
+                headers=headers,
+                json_serialize=json_serializer,
             )
         return self._EXTRA_CLIENT_SESSIONS[key]
 

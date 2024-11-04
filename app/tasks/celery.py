@@ -23,7 +23,12 @@ async def execute_task(queue_id: int) -> None:
     await process_queue_item(queue_id)
 
 
-@celery.task(bind=True)
+@celery.task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 5},
+)
 def trigger_task(self: Task, queue_id: int | None = None) -> dict[str, Any]:
     """Trigger a Celery task by executing a queue item.
 

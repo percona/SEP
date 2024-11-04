@@ -1,0 +1,31 @@
+<td class="actions-cell flex">
+    <button title="Toggle scheduler mode" type="button"
+            class="schedule-button icons" data-task="{{ task.name }}"
+            aria-expanded="false">schedule
+    </button>
+
+    <form id="{{ task.name }}-send" class="send-form" method="post"
+          action="{{ task.name }}">
+        <input type="datetime-local" class="eta-input"
+               disabled>
+        <input type="hidden" name="eta" class="eta-value" disabled>
+        <button title="Execute" type="submit"
+                class="icons send-button">send
+        </button>
+    </form>
+
+    <div class="info-delete-container">
+        <form id="{{ task.name }}-info" method="get"
+              action="{{ task.name }}">
+            <button title="Detail" class="icons info-button">info
+            </button>
+        </form>
+        <form id="{{ task.name }}-delete" method="post"
+              action="{{ task.name }}/delete">
+            <button title="Delete" type="submit"
+                    class="icons delete-button">delete forever
+            </button>
+            {#                TODO: confirm dialog #}
+        </form>
+    </div>
+</td>

@@ -4,8 +4,9 @@ import logging
 from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -98,10 +99,12 @@ async def archives_detail(
 async def archives_execute(
     task: ArchivesTask,
     tasks_api: TaskAPI,
+    eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute archives task."""
     await tasks_api.post(
-        f"/execute/{task.name}"
+        f"/execute/{task.name}",
+        json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
 

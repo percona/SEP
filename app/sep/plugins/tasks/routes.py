@@ -19,7 +19,6 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskExecuteRequest,
     TaskHistoryStatusEnum,
-    TriggerRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,21 +109,3 @@ async def tasks_delete(
     """Delete task."""
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post(
-    "/{task_name}/trigger",
-    dependencies=[IsAuthenticated],
-)
-async def trigger_task_name(
-    task: TaskDep,
-    tasks_api: TaskAPI,
-    trigger_data: Annotated[TriggerRequest, Form()],
-) -> RedirectResponse:
-    """Route the task to the appropriate queue based on the task name."""
-    logger.debug("triggering task %s", task.name)
-    payload = trigger_data.model_dump(mode="json")
-    await tasks_api.post(f"/trigger/{task.name}", json={"trigger_data": payload})
-    return RedirectResponse(
-        f"/tasks/{task.name}", status_code=status.HTTP_303_SEE_OTHER
-    )

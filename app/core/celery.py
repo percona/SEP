@@ -16,6 +16,4 @@ def create_celery(name: str) -> Celery:
     :return: Configured Celery app instance.
     :rtype: Celery
     """
-    celery_app = Celery(name)
-    celery_app.config_from_object(settings.CELERY)
-    return celery_app
+    return Celery(name, **settings.CELERY.model_dump(by_alias=True))

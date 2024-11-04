@@ -19,12 +19,22 @@
     {% if history_tasks or running_tasks %}
         <link rel="stylesheet" href="/static/logs.css">
     {% endif %}
+    <link rel="stylesheet" href="/static/saved.css">
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
     {% if history or running_tasks %}
         <script src="/static/logs.js"></script>
     {% endif %}
+    <script src="/static/saved.js"></script>
+    <script>
+        $(document).ready(function () {
+            $('.delete-button').click(function (e) {
+                e.preventDefault();
+                $('.delete-form').submit();
+            });
+        });
+    </script>
 {% endblock %}
 
 
@@ -60,7 +70,8 @@
         </section>
     {% endif %}
     {% if not task.is_template %}
-        <form method="post" action="" style="padding: 20px;">
+        <form method="post" action="" style="padding: 20px; display: block;" id="{{ task.name }}-send"
+              class="send-form">
             {% if task_data.get("ParameterizedJob") %}
                 <fieldset>
                     <legend style="font-size: 1.5em; font-weight: bold; color: #333;">
@@ -77,29 +88,29 @@
                     {% for item in required %}
                         <div style="margin-bottom: 15px;">
                             <label for="meta_{{ item }}"
-                                class="form-label">{{ item.capitalize() }}
+                                   class="form-label">{{ item.capitalize() }}
                                 (required)</label>
                             {% if item == "target" %}
                                 {% include "tasks/partials/select-host.html" %}
                             {% else %}
                                 <input type="text" name="meta_{{ item }}"
-                                    id="meta_{{ item }}"
-                                    value="{{ meta_defaults[item] }}" required
-                                    class="form-input">
+                                       id="meta_{{ item }}"
+                                       value="{{ meta_defaults[item] }}" required
+                                       class="form-input">
                             {% endif %}
                         </div>
                     {% endfor %}
                     {% for item in optional %}
                         <div style="margin-bottom: 15px;">
                             <label for="meta_{{ item }}"
-                                class="form-label">{{ item.capitalize() }}</label>
+                                   class="form-label">{{ item.capitalize() }}</label>
                             {% if item == "target" %}
                                 {% include "tasks/partials/select-host.html" %}
                             {% else %}
                                 <input type="text" name="meta_{{ item }}"
-                                    id="meta_{{ item }}"
-                                    value="{{ meta_defaults.get(item, '') }}"
-                                    class="form-input">
+                                       id="meta_{{ item }}"
+                                       value="{{ meta_defaults.get(item, '') }}"
+                                       class="form-input">
                             {% endif %}
                         </div>
                     {% endfor %}
@@ -111,23 +122,29 @@
                                     (required){% endif %}</label>
                             <textarea name="payload" id="payload" cols="80" rows="30"
                                     {% if nomad_payload_rule == "required" %}
-                                    required{% endif %} class="form-input"></textarea>
+                                      required{% endif %} class="form-input"></textarea>
                         </div>
                     {% endif %}
                 </fieldset>
             {% endif %}
-            <button type="submit">Execute</button>
+            <div class="actions-cell">
+                <button title="Toggle scheduler mode" type="button"
+                        class="icons schedule-button" data-task="{{ task.name }}"
+                        aria-expanded="false">schedule
+                </button>
+                <input type="datetime-local" class="eta-input"
+                       disabled>
+                <input type="hidden" name="eta" class="eta-value" disabled>
+                <button type="submit" class="icons send-button">send</button>
+                {% if not task.protected %}
+                <button class="icons delete-button">delete forever</button>
+                {% endif %}
+            </div>
         </form>
     {% endif %}
 
     {% if not task.protected %}
-        <form method="post" action="/tasks/{{ task['name'] }}/trigger">
-            <button type="submit">Schedule</button>
-            <input type="datetime-local" id="trigger_time" name="trigger_time">
-        
-        </form>
-        <form method="post" action="/tasks/{{ task['name'] }}/delete">
-            <button type="submit">Delete</button>
+        <form class="delete-form" method="post" action="/tasks/{{ task['name'] }}/delete">
         </form>
     {% endif %}
 
@@ -136,19 +153,4 @@
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html" %}
     </section>
-<script>
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-based
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-
-    // Format the date and time as yyyy-MM-ddTHH:mm (required format for datetime-local)
-    const currentDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
-
-    // Set the min attribute to prevent selecting a past date/time
-    document.getElementById('trigger_time').setAttribute('min', currentDateTime);
-
-</script>
 {% endblock %}
