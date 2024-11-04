@@ -31,6 +31,8 @@ class CasdoorSDK(RemoteAPI):
     :type ssl_certfile: RelativeFilePath | None
     :param api_key: The API key for authentication. Defaults to None.
     :type api_key: str | None
+    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :type logger_name: str
     :param auth_scheme: The authentication scheme to use. Defaults to "Basic".
     :type auth_scheme: str
     :param client_id: The client ID for Casdoor authentication.
@@ -54,6 +56,7 @@ class CasdoorSDK(RemoteAPI):
     :type allowed_issuers: list[StrHttpUrl] | Literal["*"]
     """
 
+    logger_name: str = __name__
     auth_scheme: RequiredStr = "Basic"
     client_id: str
     client_secret: str

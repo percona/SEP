@@ -46,6 +46,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :type ssl_keyfile: RelativeFilePath | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :type ssl_certfile: RelativeFilePath | None
+    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
     :type secure: bool
     :param timeout: The timeout in seconds for requests to the Nomad API.

@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import select
 
-from app.core.db.utils import get_async_session_maker_from_engine, json_serializer
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.utils import json_serializer
 from app.tasks.config import tasks_settings
 from app.tasks.models import Task, TaskExecutionRequest
 
