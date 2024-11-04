@@ -105,6 +105,3 @@ production_docker:
     - https://localhost:8003
     - https://127.0.0.1:8003
   SSL_CAFILE: data/certs/sep-ca.pem
-  CELERY:
-    BROKER_URL: "amqp://guest:guest@localhost:5672//"
-    RESULT_BACKEND: "rpc://"
