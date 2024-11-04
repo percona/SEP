@@ -127,7 +127,7 @@ async def get_archives_task(
     return await get_task_by_name(tasks_api, task_name, "archiver")
 
 
-ArchivesTask = Annotated[dict, Depends(get_archives_task)]
+ArchivesTask = Annotated[Task, Depends(get_archives_task)]
 
 
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:

@@ -127,8 +127,8 @@ async def alters_trigger(
     :return: A redirection response to the alters list page after triggering the task.
     :rtype: RedirectResponse
     """
-    logger.debug("triggering task %s", task["name"])
-    await tasks_api.post(f"/trigger/{task['name']}", json=trigger_data.model_dump())
+    logger.debug("Triggering task %s", task.name)
+    await tasks_api.post(f"/trigger/{task.name}", json=trigger_data.model_dump())
 
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 

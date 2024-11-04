@@ -144,7 +144,7 @@ async def get_alters_task(
     return await get_task_by_name(tasks_api, task_name, "alters")
 
 
-AltersTask = Annotated[dict, Depends(get_alters_task)]
+AltersTask = Annotated[Task, Depends(get_alters_task)]
 
 
 def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
