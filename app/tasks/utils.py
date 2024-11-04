@@ -8,6 +8,7 @@ from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executor
 from app.tasks.models import TaskBackendEnum, TaskHistory, TaskHistoryStatusEnum
+from app.core.exceptions import HTTPBadRequestException
 
 
 async def process_queue_item(queue_id: int) -> None:
@@ -15,8 +16,10 @@ async def process_queue_item(queue_id: int) -> None:
 
     :param queue_id: The unique identifier of the queue item to process.
     :type queue_id: int
-    :raises ValueError: If the `queue_id` does not correspond to a valid item.
-    :raises DatabaseError: If there is an issue accessing the history table.
+    :raises HTTPException: If the queue item status is not PENDING,
+        raises a 409 Conflict error.
+    :raises HTTPBadRequestException: If the task backend is unsupported,
+        raises a 400 Bad Request error.
     """
     async_session = get_async_session_maker()
     async with async_session() as session:
@@ -28,7 +31,10 @@ async def process_queue_item(queue_id: int) -> None:
         task = queue_item.task
 
         if queue_item.status != TaskHistoryStatusEnum.PENDING:
-            raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail="Queue item is not in a pending state."
+            )
 
         if task.backend == TaskBackendEnum.PROXY:
             task = await TaskManager.retrieve_by_name(
@@ -39,5 +45,5 @@ async def process_queue_item(queue_id: int) -> None:
             case TaskBackendEnum.NOMAD:
                 executor = get_executor()
             case _:
-                raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+                raise HTTPBadRequestException("Unsupported task backend.")
         await executor.run(session, queue_item, task)
