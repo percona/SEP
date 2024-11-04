@@ -124,7 +124,7 @@ async def trigger_task_name(
     """Route the task to the appropriate queue based on the task name."""
     logger.debug("triggering task %s", task.name)
     payload = trigger_data.model_dump(mode="json")
-    await tasks_api.post(f"/trigger/{task.name}", json=payload)
+    await tasks_api.post(f"/trigger/{task.name}", json={"trigger_data": payload})
     return RedirectResponse(
         f"/tasks/{task.name}", status_code=status.HTTP_303_SEE_OTHER
     )

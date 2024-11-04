@@ -1,18 +1,17 @@
-"""Execute and Trigger Celery tasks.
-
-This module defines functions for executing tasks asynchronously via Celery,
-along with utility functions to process queue items.
-"""
+"""Configure Celery and execute tasks for processing queue items."""
 
 import logging
 from typing import Any
 
 from asgiref.sync import async_to_sync
-from celery import shared_task, Task
+from celery import Task
 
+from app.core.celery import create_celery
 from app.tasks.utils import process_queue_item
 
 logger = logging.getLogger(__name__)
+
+celery = create_celery("tasks")
 
 
 async def execute_task(queue_id: int) -> None:
@@ -24,14 +23,8 @@ async def execute_task(queue_id: int) -> None:
     await process_queue_item(queue_id)
 
 
-@shared_task(
-    bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_kwargs={"max_retries": 5},
-    name="celery:trigger_task",
-)
-def trigger_task(self: Task, queue_id: int | None = None) -> dict[str, Any]:  # noqa: ARG001
+@celery.task(bind=True)
+def trigger_task(self: Task, queue_id: int | None = None) -> dict[str, Any]:
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.

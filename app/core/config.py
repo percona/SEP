@@ -10,7 +10,6 @@ from typing import Any, ClassVar
 
 from aiohttp import ClientSession
 from fastapi import FastAPI
-from kombu import Queue
 from pydantic import (
     AnyUrl,
     computed_field,
@@ -177,48 +176,22 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         )
 
 
-def route_task(
-    name: str,
-    args: tuple,  # noqa: ARG001
-    kwargs: dict,  # noqa: ARG001
-    options: dict,  # noqa: ARG001
-    task: object = None,  # noqa: ARG001
-    **kw: dict,  # noqa: ARG001
-) -> dict:
-    """Route the task to the appropriate queue based on the task name.
-
-    :param name: The name of the task, potentially containing a queue identifier.
-    :type name: str
-    :param args: Positional arguments for the task (unused).
-    :type args: tuple
-    :param kwargs: Keyword arguments for the task (unused).
-    :type kwargs: dict
-    :param options: Options for the task (unused).
-    :type options: dict
-    :param task: The task object (optional, unused).
-    :type task: object, optional
-    :param kw: Additional keyword arguments (unused).
-    :type kw: dict
-    :return: A dictionary specifying the queue name.
-    :rtype: dict
-    """
-    if ":" in name:
-        queue, _ = name.split(":")
-        return {"queue": queue}
-    return {"queue": "celery"}
-
-
 class CeleryConfig(BaseYamlSettings):
     """Define configuration settings for Celery."""
 
-    CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str | None = None
-    CELERY_TASK_QUEUES: list[Queue] = [
-        # default queue
-        Queue("celery"),
+    BROKER_URL: str
+    RESULT_BACKEND: str | None = None
+    BROKER_TRANSPORT_OPTIONS: dict[str, Any] | None = None
+    TASK_TRACK_STARTED: bool = True
+    TASK_SERIALIZER: str = "json"
+    RESULT_SERIALIZER: str = "json"
+    ACCEPT_CONTENT: list = [
+        "json",
     ]
-    CELERY_TASK_ROUTES: Any = (route_task,)
-    CELERY_BROKER_TRANSPORT_OPTIONS: dict[str, Any] | None = None
+    RESULT_EXPIRES: int = 200
+    RESULT_PERSISTENT: bool = True
+    WORKER_SEND_TASK_EVENTS: bool = False
+    WORKER_PREFETCH_MULTIPLIER: int = 1
 
     @model_validator(mode="before")
     @classmethod
@@ -231,15 +204,15 @@ class CeleryConfig(BaseYamlSettings):
         :rtype: dict[str, Any]
         """
         if isinstance(data, dict):
-            if data.get("CELERY_BROKER_URL") == "filesystem://":
+            if data.get("BROKER_URL") == "filesystem://":
                 base_dir = Path(BASE_DIR)
-                data["CELERY_BROKER_TRANSPORT_OPTIONS"] = {
+                data["BROKER_TRANSPORT_OPTIONS"] = {
                     "data_folder_in": base_dir / ".celery",
                     "data_folder_out": base_dir / ".celery",
                     "control_folder": base_dir / ".celery",
                 }
             else:
-                data["CELERY_BROKER_TRANSPORT_OPTIONS"] = {}
+                data["BROKER_TRANSPORT_OPTIONS"] = {}
         return data
 
 

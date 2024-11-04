@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPBadRequestException
-from app.tasks.celery_task import trigger_task
+from app.tasks.celery import trigger_task
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import SessionDep, TaskExecutor, TaskHistoryDep
@@ -219,7 +219,6 @@ async def trigger_task_name(
     logger.debug("Executing task %s", task_name)
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-
     task = trigger_task.apply_async(
         args=[history_recorded.id], countdown=trigger_data.countdown
     )

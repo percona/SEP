@@ -4,6 +4,7 @@ from http import HTTPStatus
 
 from fastapi import HTTPException
 
+from app.core.exceptions import HTTPBadRequestException
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executor
@@ -33,7 +34,7 @@ async def process_queue_item(queue_id: int) -> None:
         if queue_item.status != TaskHistoryStatusEnum.PENDING:
             raise HTTPException(
                 status_code=HTTPStatus.CONFLICT,
-                detail="Queue item is not in a pending state."
+                detail="Queue item is not in a pending state.",
             )
 
         if task.backend == TaskBackendEnum.PROXY:

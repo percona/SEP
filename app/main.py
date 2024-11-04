@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
-from app.core.celery import create_celery
 from app.core.config import settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
@@ -21,7 +20,6 @@ def create_app() -> FastAPI:
     :rtype: FastAPI
     """
     current_app = FastAPI(lifespan=tasks_lifespan)
-    current_app.celery_app = create_celery()
 
     if settings.BACKEND_CORS_ORIGINS:
         current_app.add_middleware(
@@ -42,7 +40,6 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-celery = app.celery_app
 
 if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003
