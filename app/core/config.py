@@ -9,10 +9,14 @@ from pathlib import Path
 from typing import ClassVar
 
 from aiohttp import ClientSession
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
+from fastapi.applications import AppType
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import (
+    AliasGenerator,
     AnyUrl,
     computed_field,
+    ConfigDict,
     DirectoryPath,
     HttpUrl,
     validate_call,
@@ -24,23 +28,50 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 from pydantic_settings.sources import PathType
+from starlette.types import Lifespan
 
 from app.core.auth.providers.casdoor import CasdoorSDK
 from app.core.fields import (
     LogLevel,
     RelativeFilePath,
     RequiredStr,
+    StrAnyUrl,
     StrImportableAttribute,
     URL,
 )
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
-from app.core.utils import deep_dict_update
+from app.core.utils import deep_dict_update, json_serializer
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
 
 
 logger = logging.getLogger(__name__)
+
+
+class CeleryOptions(BaseCaseInsensitiveModel):
+    """Define configuration settings for Celery.
+
+    Any extra fields passed to this model will be used for configuring Celery.
+
+    :param BROKER_URL: The URL of the message broker.
+    :type BROKER_URL: StrAnyUrl
+    :param TASK_TRACK_STARTED: Whether to track when tasks start. Defaults to True.
+    :type TASK_TRACK_STARTED: bool
+    :param RESULT_BACKEND: The URL of the result backend. Defaults to None.
+    :type RESULT_BACKEND: StrAnyUrl | None
+    """
+
+    model_config = ConfigDict(
+        extra="allow",
+        alias_generator=AliasGenerator(
+            serialization_alias=lambda field_name: field_name.lower(),
+        ),
+    )
+    BROKER_URL: StrAnyUrl
+    TASK_TRACK_STARTED: bool = True
+    RESULT_BACKEND: StrAnyUrl | None = None
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
@@ -180,6 +211,8 @@ class Settings(BaseYamlSettings):
 
     :param CASDOOR: Casdoor configuration options.
     :type CASDOOR: CasdoorSDK
+    :param CELERY: Celery configuration options.
+    :type CELERY: CeleryOptions
     :param AUTH_USER_MODEL: The full import path of the user model class.
         Defaults to "app.models.CasdoorUser".
     :type AUTH_USER_MODEL: StrImportableAttribute
@@ -199,6 +232,7 @@ class Settings(BaseYamlSettings):
     """
 
     CASDOOR: CasdoorSDK
+    CELERY: CeleryOptions
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
@@ -248,7 +282,9 @@ class Settings(BaseYamlSettings):
             headers = remote_api.headers if include_headers else None
             logger.debug("Opening ClientSession for %s", remote_api.base_url)
             self._EXTRA_CLIENT_SESSIONS[key] = ClientSession(
-                base_url=remote_api.base_url, headers=headers
+                base_url=remote_api.base_url,
+                headers=headers,
+                json_serialize=json_serializer,
             )
         return self._EXTRA_CLIENT_SESSIONS[key]
 
@@ -281,3 +317,37 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa:
     async with settings.CASDOOR:
         yield
     await settings.close_extra_client_sessions()
+
+
+def create_app(
+    *routers: APIRouter,
+    lifespan: Lifespan[AppType] | None = None,
+    add_cors_middleware: bool = False,
+) -> FastAPI:
+    """Create and configure the FastAPI app.
+
+    :param routers: Routers to include to created app.
+    :type routers: APIRouter
+    :param lifespan: Lifespan context manager for the FastAPI app, if any. Defaults to
+        None.
+    :type lifespan: Lifespan[AppType] | None
+    :param add_cors_middleware: Whether to add CORS middleware to the FastAPI app.
+        Defaults to False.
+    :type add_cors_middleware: bool
+    :return: An instance of the FastAPI application with an attached Celery app.
+    :rtype: FastAPI
+    """
+    app = FastAPI(lifespan=lifespan)
+    if add_cors_middleware and settings.BACKEND_CORS_ORIGINS:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[
+                str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
+            ],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    for router in routers:
+        app.include_router(router)
+    return app

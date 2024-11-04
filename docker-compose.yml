@@ -1,7 +1,7 @@
 x-api-environment:
   environment: &api-environment
     FASTAPI_ENV: production_docker
-    LOGGING: debug
+    LOGGING: info
 
 x-api-db-environment:
   environment: &api-db-environment
@@ -33,6 +33,25 @@ services:
     expose:
       - 5432
 
+  redis:
+    image: docker.io/library/redis:7-alpine
+    expose:
+      - 6379
+
+  celery_worker:
+    image: sep-image:latest
+    user: 1001:1001
+    entrypoint: /home/sep/app/entrypoint_celery.sh
+    depends_on:
+      - sep-db
+      - redis
+      - casdoor
+    environment:
+      <<: *api-db-environment
+      CELERY__BROKER_URL: redis://redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:${HOST_IP:-host-gateway}"
+
   inventory_api:
     image: sep-image:latest
     user: 1001:1001
@@ -41,6 +60,7 @@ services:
       - 9001
     depends_on:
       - casdoor
+      - sep-db
     environment:
       <<: *api-db-environment
       UVICORN_HOST: inventory_api
@@ -57,10 +77,12 @@ services:
     depends_on:
       - casdoor
       - sep-db
+      - redis
     environment:
       <<: *api-db-environment
       UVICORN_HOST: tasks_api
       UVICORN_PORT: 9002
+      CELERY__BROKER_URL: redis://redis:6379/0
     extra_hosts:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
@@ -77,6 +99,7 @@ services:
       - inventory_api
       - tasks_api
       - casdoor
+      - sep-db
     environment:
       <<: *api-db-environment
       UVICORN_HOST: 0.0.0.0

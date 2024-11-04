@@ -2,32 +2,20 @@
 
 import logging
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-from app.core.config import default_lifespan, settings
+from app.core.config import create_app, default_lifespan, settings
 from app.inventory.config import inventory_settings
 from app.inventory.routes import nodes, schemas, services, tables
 
-inventory_app = (
-    FastAPI(lifespan=default_lifespan) if __name__ == "__main__" else FastAPI()
+lifespan = default_lifespan if __name__ == "__main__" else None
+inventory_app = create_app(
+    nodes.router,
+    services.router,
+    schemas.router,
+    tables.router,
+    lifespan=lifespan,
+    add_cors_middleware=True,
 )
-inventory_app.include_router(nodes.router, tags=["nodes"])
-inventory_app.include_router(services.router, prefix="/services", tags=["services"])
-inventory_app.include_router(schemas.router, prefix="/schemas", tags=["schemas"])
-inventory_app.include_router(tables.router, prefix="/tables", tags=["tables"])
 
-
-if settings.BACKEND_CORS_ORIGINS:
-    inventory_app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
-        ],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
 if __name__ == "__main__":
     # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003

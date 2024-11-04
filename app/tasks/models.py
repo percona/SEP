@@ -33,6 +33,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.fields import EmptyStrToNone
 
 TASK_ALIAS_LENGTH = 100
 
@@ -383,10 +384,14 @@ class TaskExecuteRequest(BaseModel):
     :param payload: Optional payload data or file path for the task execution.
         Defaults to None.
     :type payload: str | None
+    :param eta: The earliest time the task can be executed. Defaults to None, meaning
+        it will be executed as soon as possible.
+    :type eta: datetime | None
     """
 
     meta: dict[str, Any] = {}
     payload: str | None = None
+    eta: datetime | EmptyStrToNone = None
 
     @model_validator(mode="before")
     @classmethod

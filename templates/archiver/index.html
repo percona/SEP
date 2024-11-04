@@ -6,11 +6,17 @@
     {% if history_tasks or running_tasks %}
         <link rel="stylesheet" href="/static/logs.css">
     {% endif %}
+    {% if tasks %}
+        <link rel="stylesheet" href="/static/saved.css">
+    {% endif %}
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
     {% if history_tasks or running_tasks %}
         <script src="/static/logs.js"></script>
+    {% endif %}
+    {% if tasks %}
+        <script src="/static/saved.js"></script>
     {% endif %}
 {% endblock %}
 
@@ -30,10 +36,12 @@
         {% endif %}
     {% else %}
         {% set modal_required = True %}
+        {% if running_tasks  %}
         <section id="running-tasks">
             <h2>Running</h2>
             {% include "tasks/partials/running-tasks.html" %}
         </section>
+        {% endif %}
 
         <section id="saved-tasks">
             <h2>Saved</h2>

@@ -389,3 +389,4 @@ MigrationBackup/
 static/sep-db.sql.txt
 data/nomad.hcl
 data/casdoor_init_data.json
+.celery

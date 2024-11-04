@@ -14,8 +14,7 @@ from pydantic import computed_field, HttpUrl
 
 from app.core.fields import RelativeFilePath, RequiredStr
 from app.core.models import BaseCaseInsensitiveModel
-
-logger = logging.getLogger(__name__)
+from app.core.utils import json_serializer
 
 
 class BaseRemoteAPI(BaseCaseInsensitiveModel):
@@ -34,6 +33,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :type ssl_keyfile: RelativeFilePath | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :type ssl_certfile: RelativeFilePath | None
+    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :type logger_name: str
     """
 
     endpoint: HttpUrl
@@ -41,6 +42,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     ssl_cafile: RelativeFilePath | None = None
     ssl_keyfile: RelativeFilePath | None = None
     ssl_certfile: RelativeFilePath | None = None
+    logger_name: str = __name__
     _session: ClientSession
 
     async def __aenter__(self) -> Self:
@@ -52,9 +54,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :rtype: BaseRemoteAPI
         """
         if getattr(self, "_session", None) is None:
-            logger.debug("Opening ClientSession for %s", self.base_url)
+            self.logger.debug("Opening ClientSession for %s", self.base_url)
             headers = self.headers or None
-            self._session = ClientSession(base_url=self.base_url, headers=headers)
+            self._session = ClientSession(
+                base_url=self.base_url, headers=headers, json_serialize=json_serializer
+            )
         return self
 
     async def __aexit__(
@@ -74,8 +78,18 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :param exc_tb: The traceback, if any.
         :type exc_tb: Any
         """
-        logger.debug("Closing ClientSession for %s", self.base_url)
+        self.logger.debug("Closing ClientSession for %s", self.base_url)
         await self._session.close()
+
+    @cached_property
+    def logger(self) -> logging.Logger:
+        """Return logger object to use.
+
+        :return: The logger object to use, created with the name set in
+            `self.logger_name`.
+        :rtype: logging.Logger
+        """
+        return logging.getLogger(self.logger_name)
 
     @property
     def session(self) -> ClientSession:
@@ -178,7 +192,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """
         path = self.prepare_path(path)
         kwargs["ssl"] = self.ssl_context if self.verify_ssl else False
-        logger.debug(
+        self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
             self.base_url,
             method,
@@ -251,6 +265,8 @@ class RemoteAPI(BaseRemoteAPI):
     :type ssl_keyfile: RelativeFilePath | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :type ssl_certfile: RelativeFilePath | None
+    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :type logger_name: str
     :param api_key: The API key for authentication. Defaults to None.
     :type api_key: str | None
     :param auth_scheme: The authentication scheme to use (e.g., "Bearer", "Basic").
@@ -297,7 +313,7 @@ class RemoteAPI(BaseRemoteAPI):
         """
         async with self._request(method, path, **kwargs) as response:
             response_data = await response.json()
-            logger.debug(
+            self.logger.debug(
                 "%s request to %s%s response: %s",
                 method,
                 self.base_url,

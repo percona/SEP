@@ -59,6 +59,8 @@ sqlmodel = "^0.0.22"
 async-lru = "^2.0.4"
 python-minifier = "^2.11.2"
 starlette = "^0.40.0"
+celery = "^5.4.0"
+asgiref = "^3.8.1"
 
 [tool.poetry.group.audit]
 optional = true
@@ -82,6 +84,11 @@ optional = true
 [tool.poetry.group.postgresql.dependencies]
 asyncpg = "^0.29.0"
 
+[tool.poetry.group.redis]
+optional = true
+
+[tool.poetry.group.redis.dependencies]
+redis = ">=4.5.2,<4.5.5 || >4.5.5,<6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
@@ -195,6 +202,7 @@ order-by-type = false
     "N802",
 ]
 "app/core/config.py" = ["ARG003"]
+"app/tasks/celery.py" = ["ARG001"]
 
 [tool.ruff.format]
 quote-style = "double"

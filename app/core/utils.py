@@ -1,6 +1,7 @@
 """Define core utility functions."""
 
 import asyncio
+import json
 import re
 import unicodedata
 from base64 import b64encode
@@ -10,6 +11,7 @@ from http import HTTPStatus
 from importlib import import_module
 from typing import Any, ClassVar
 
+from fastapi.encoders import jsonable_encoder
 from python_minifier import minify
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
@@ -285,3 +287,19 @@ def sort_dict(unsorted_dict: dict, key: Callable[[Any], Any]) -> dict:
     :rtype: dict
     """
     return dict(sorted(unsorted_dict.items(), key=key))
+
+
+def json_serializer(data: Any) -> str:
+    """Serialize a Python object into a JSON-formatted string.
+
+    This function encodes a given Python object using `jsonable_encoder`
+    to ensure it is serializable, then converts it to a JSON string using `json.dumps`.
+
+    :param data: The Python object to be serialized. This can be any JSON-serializable
+        data type, such as dictionaries, lists, or primitive data types like
+        integers, strings, and booleans.
+    :type data: Any
+    :return: A JSON-formatted string representing the serialized form of the input data.
+    :rtype: str
+    """
+    return json.dumps(jsonable_encoder(data))
