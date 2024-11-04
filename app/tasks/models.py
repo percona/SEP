@@ -10,8 +10,7 @@ Todo:
 
 """
 
-import math
-from datetime import datetime, UTC
+from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
 from pathlib import Path
@@ -604,26 +603,30 @@ class TransformPayloadRequest(BaseModel):
 
 
 class TriggerRequest(BaseModel):
-    """Represent a request to trigger an action with specified timing.
+    """Represent a request to trigger an action at a specified trigger time.
 
     :param trigger_time: The desired trigger time in 'YYYY-MM-DDTHH:MM' format.
     :type trigger_time: FutureDatetime
-    :param countdown: Countdown in seconds until `trigger_time`.
-    :type countdown: int
     """
 
     trigger_time: FutureDatetime
 
-    @computed_field
-    @property
-    def countdown(self) -> int:
-        """Calculates the countdown in seconds until `trigger_time`."""
-        trigger_time_utc = self.trigger_time.astimezone(UTC)
+    @field_validator("trigger_time")
+    @classmethod
+    def validate_trigger_time(cls, data: FutureDatetime) -> FutureDatetime:
+        """Validate that `trigger_time` is in the future.
 
-        current_time = datetime.now(UTC)
-
-        time_difference = trigger_time_utc - current_time
-        return max(0, math.ceil(time_difference.total_seconds()))
+        :param data: The datetime value to be validated.
+        :type data: FutureDatetime
+        :return: The validated `trigger_time` in the local timezone.
+        :rtype: FutureDatetime
+        """
+        local_timezone = datetime.now().astimezone().tzinfo
+        current_time = datetime.now(local_timezone)
+        trigger_time_local = data.astimezone(local_timezone)
+        if trigger_time_local <= current_time:
+            raise ValueError("trigger_time must be in the future.")
+        return trigger_time_local
 
     class Config:
         # JSON encoder to format `FutureDatetime` as ISO 8601 string

@@ -177,7 +177,32 @@ class BaseYamlExtraSettings(BaseYamlSettings):
 
 
 class CeleryConfig(BaseYamlSettings):
-    """Define configuration settings for Celery."""
+    """Define configuration settings for Celery.
+
+    :param BROKER_URL: URL for the message broker.
+    :type BROKER_URL: str
+    :param RESULT_BACKEND: URL for storing task results, optional.
+    :type RESULT_BACKEND: str | None
+    :param BROKER_TRANSPORT_OPTIONS: Options for broker transport
+        configuration, optional.
+    :type BROKER_TRANSPORT_OPTIONS: dict[str, Any] | None
+    :param TASK_TRACK_STARTED: Enables task tracking after start.
+    :type TASK_TRACK_STARTED: bool
+    :param TASK_SERIALIZER: Serializer format for tasks.
+    :type TASK_SERIALIZER: str
+    :param RESULT_SERIALIZER: Serializer format for results.
+    :type RESULT_SERIALIZER: str
+    :param ACCEPT_CONTENT: List of acceptable serialization formats.
+    :type ACCEPT_CONTENT: list
+    :param RESULT_EXPIRES: Expiration time for results in seconds.
+    :type RESULT_EXPIRES: int
+    :param RESULT_PERSISTENT: Specifies result peristence.
+    :type RESULT_PERSISTENT: bool
+    :param WORKER_SEND_TASK_EVENTS: Specifies if worker events are sent.
+    :type WORKER_SEND_TASK_EVENTS: bool
+    :param WORKER_PREFETCH_MULTIPLIER: Number of tasks prefetched by workers.
+    :type WORKER_PREFETCH_MULTIPLIER: int
+    """
 
     BROKER_URL: str
     RESULT_BACKEND: str | None = None

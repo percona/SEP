@@ -52,7 +52,7 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
 TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
 
 
-async def get_task_history(
+async def prepare_task_history(
     session: SessionDep,
     task_name: str,
     execution_data: TaskExecuteRequest = None,
@@ -89,4 +89,4 @@ async def get_task_history(
     return await TaskHistoryManager.save(session, task_history)
 
 
-TaskHistoryDep = Annotated[TaskHistory, Depends(get_task_history)]
+TaskHistoryDep = Annotated[TaskHistory, Depends(prepare_task_history)]
