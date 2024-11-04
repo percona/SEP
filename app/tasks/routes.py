@@ -9,17 +9,15 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import HTTPBadRequestException
 from app.tasks.celery_task import trigger_task
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.deps import SessionDep, TaskExecutor
+from app.tasks.deps import SessionDep, TaskExecutor, TaskHistoryDep
 from app.tasks.models import (
     GeneratedTask,
     Task,
     TaskBackendEnum,
-    TaskExecuteRequest,
     TaskExecutionRequest,
     TaskGroup,
     TaskGroupTask,
@@ -196,15 +194,12 @@ async def generate_task(
     response_class=JSONResponse,
 )
 async def execute_task_name(
-    session: SessionDep,
     task_name: str,
     background_tasks: BackgroundTasks,
-    execution_data: TaskExecuteRequest = None,
+    history_recorded: TaskHistoryDep,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
-    history_recorded = await _prepare_task_history(
-        session=session, task_name=task_name, execution_data=execution_data
-    )
+    logger.debug("Executing task %s", task_name)
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
     return await _schedule_queue_item(history_recorded, background_tasks)
@@ -216,12 +211,12 @@ async def execute_task_name(
     response_class=JSONResponse,
 )
 async def trigger_task_name(
-    session: SessionDep,
     task_name: str,
-    trigger_data: TriggerRequest = None,
+    trigger_data: TriggerRequest,
+    history_recorded: TaskHistoryDep = None,
 ) -> JSONResponse:
     """Send a task for execution."""
-    history_recorded = await _prepare_task_history(session=session, task_name=task_name)
+    logger.debug("Executing task %s", task_name)
     if not history_recorded:
         raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
 
@@ -339,34 +334,6 @@ async def transform_payload(
 ) -> dict[str, Any]:
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
-
-
-async def _prepare_task_history(
-    session: SessionDep, task_name: str, execution_data: TaskExecuteRequest = None
-) -> TaskHistory:
-    logger.debug("Executing task %s", task_name)
-    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
-    if config.is_template:
-        raise HTTPForbiddenException(
-            f"Task {task_name} is a template and cannot be executed",
-        )
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
-    if config.backend == TaskBackendEnum.PROXY:
-        execution_data.meta |= config.data.get("meta", {})
-        execution_data.payload = config.data.get("payload", execution_data.payload)
-    # Record the task execution request
-    task_history = TaskHistory(
-        task_id=config.id,
-        execution_request=TaskExecutionRequest(
-            task=task_name,
-            target=execution_data.meta.get("target", "all"),
-            meta=execution_data.meta,
-            payload=execution_data.payload,
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-    return await TaskHistoryManager.save(session, task_history)
 
 
 async def _schedule_queue_item(
