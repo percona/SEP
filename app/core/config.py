@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import ClassVar
 
 from aiohttp import ClientSession
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
+from fastapi.applications import AppType
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import (
     AliasGenerator,
     AnyUrl,
@@ -26,6 +28,7 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 from pydantic_settings.sources import PathType
+from starlette.types import Lifespan
 
 from app.core.auth.providers.casdoor import CasdoorSDK
 from app.core.fields import (
@@ -314,3 +317,37 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa:
     async with settings.CASDOOR:
         yield
     await settings.close_extra_client_sessions()
+
+
+def create_app(
+    *routers: APIRouter,
+    lifespan: Lifespan[AppType] | None = None,
+    add_cors_middleware: bool = False,
+) -> FastAPI:
+    """Create and configure the FastAPI app.
+
+    :param routers: Routers to include to created app.
+    :type routers: APIRouter
+    :param lifespan: Lifespan context manager for the FastAPI app, if any. Defaults to
+        None.
+    :type lifespan: Lifespan[AppType] | None
+    :param add_cors_middleware: Whether to add CORS middleware to the FastAPI app.
+        Defaults to False.
+    :type add_cors_middleware: bool
+    :return: An instance of the FastAPI application with an attached Celery app.
+    :rtype: FastAPI
+    """
+    app = FastAPI(lifespan=lifespan)
+    if add_cors_middleware and settings.BACKEND_CORS_ORIGINS:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[
+                str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
+            ],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    for router in routers:
+        app.include_router(router)
+    return app

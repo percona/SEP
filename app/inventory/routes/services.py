@@ -20,7 +20,7 @@ from app.inventory.models import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(prefix="/services", tags=["services"])
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])

@@ -11,7 +11,7 @@ from app.inventory.models import Table, TableDetailResponse, TableResponse, Tabl
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(prefix="/tables", tags=["tables"])
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])

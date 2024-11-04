@@ -6,9 +6,8 @@ from contextlib import asynccontextmanager
 from os import getenv
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import default_lifespan, settings
+from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
 from app.tasks.db import init_tasks_db
 from app.tasks.routes import router
@@ -48,20 +47,8 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
 
-tasks_app = FastAPI(lifespan=tasks_lifespan) if __name__ == "__main__" else FastAPI()
-tasks_app.include_router(router)
-tasks_app.log = logger
-
-if settings.BACKEND_CORS_ORIGINS:
-    tasks_app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
-        ],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+lifespan = tasks_lifespan if __name__ == "__main__" else None
+tasks_app = create_app(router, lifespan=lifespan, add_cors_middleware=True)
 
 
 if __name__ == "__main__":
