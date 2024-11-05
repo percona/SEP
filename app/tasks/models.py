@@ -36,6 +36,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.fields import EmptyStrToNone
 
 TASK_ALIAS_LENGTH = 100
 
@@ -387,10 +388,14 @@ class TaskExecuteRequest(BaseModel):
     :param payload: Optional payload data or file path for the task execution.
         Defaults to None.
     :type payload: str | None
+    :param eta: The earliest time the task can be executed. Defaults to None, meaning
+        it will be executed as soon as possible.
+    :type eta: datetime | None
     """
 
     meta: dict[str, Any] = {}
     payload: str | None = None
+    eta: datetime | EmptyStrToNone = None
 
     @model_validator(mode="before")
     @classmethod
@@ -626,44 +631,6 @@ class TransformPayloadRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
 
 
-class TriggerRequest(BaseModel):
-    """Model to handle trigger requests with trigger_time and countdown."""
-
-    trigger_time: str
-    countdown: int
-
-    @model_validator(mode="before")
-    def convert_trigger_datetime(cls, values: dict) -> dict:  # noqa: N805
-        """Convert trigger_time to countdown and validate the input time.
-
-        :param values: Dictionary of input values.
-        :return: Dictionary with updated countdown value.
-        :raises ValueError: If trigger_time is in an incorrect format or in the past.
-        """
-        trigger_time_str = values.get("trigger_time")
-
-        try:
-            trigger_time_dt = datetime.strptime(
-                trigger_time_str, "%Y-%m-%dT%H:%M"
-            ).astimezone(UTC)
-        except ValueError:
-            raise ValueError(
-                f"Invalid trigger_time format: {trigger_time_str}. Expected 'YYYY-MM-DDTHH:MM'."
-            ) from None
-
-        current_time = datetime.now(UTC)
-        if trigger_time_dt <= current_time:
-            raise ValueError("Trigger time must be in the future.")
-
-        time_difference = trigger_time_dt - current_time
-        remaining_seconds = time_difference.total_seconds()
-
-        # Ceil the remaining seconds
-        remaining_seconds_ceil = math.ceil(remaining_seconds)
-
-        values["countdown"] = remaining_seconds_ceil
-        return values
-
 
 class ScheduleRequest(BaseModel):
     """Model to handle schedule requests with period and execute_data."""
@@ -812,3 +779,17 @@ class PeriodicTaskResponse(BaseSQLModel):
     execute_request: TaskExecutionRequest
     task: Task
     period: str
+class TaskLog(BaseModel):
+    """Define a task log line.
+
+    :param step: The task step name.
+    :type step: str
+    :param type: The type of log to stream ('stdout' or 'stderr').
+    :type type: Literal["stdout", "stderr"]
+    :param msg: The log message. If None, represents the end of the log for that step.
+    :type msg: str | None
+    """
+
+    step: str
+    type: Literal["stdout", "stderr"]
+    msg: str | None

@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import FastAPI, Request, status
+from fastapi import Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from jwt import InvalidTokenError
 from pydantic import ValidationError
@@ -10,7 +10,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
-from app.core.config import settings
+from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var
 from app.sep.config import sep_settings
@@ -25,13 +25,20 @@ from app.sep.deps import (
 
 logger = logging.getLogger(__name__)
 
-sep_app = FastAPI()
+lifespan = default_lifespan if __name__ == "__main__" else None
+sep_app = create_app(lifespan=lifespan)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
+imported_plugins = set()
 for plugin in sep_settings.PLUGINS:
     router = import_var(plugin.router_path)
     sep_app.include_router(router, prefix=plugin.uri_path)
+    imported_plugins.add(plugin.module_name.split(".")[-1])
 
+if {"alters", "archives", "tasks"} & imported_plugins:
+    from app.sep.routes.stream_logs import router as stream_logs_router
+
+    sep_app.include_router(stream_logs_router, prefix="/stream-logs")
 
 User = get_user_model()
 templates = sep_settings.TEMPLATES

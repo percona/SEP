@@ -1,4 +1,4 @@
-"""Module contains utility functions for processing task queue items."""
+"""Provide utility functions for processing task queue items."""
 
 import logging
 from collections.abc import Awaitable
@@ -23,7 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 async def process_queue_item(queue_id: int) -> None:
-    """Process an item from the history table."""
+    """Process an item from the history table.
+
+    :param queue_id: The unique identifier of the queue item to process.
+    :type queue_id: int
+    :raises HTTPException: If the queue item status is not PENDING,
+        raises a 409 Conflict error.
+    :raises HTTPBadRequestException: If the task backend is unsupported,
+        raises a 400 Bad Request error.
+    """
+
     async_session = get_async_session_maker()
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(
@@ -34,7 +43,10 @@ async def process_queue_item(queue_id: int) -> None:
         task = queue_item.task
 
         if queue_item.status != TaskHistoryStatusEnum.PENDING:
-            raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail="Queue item is not in a pending state.",
+            )
 
         if task.backend == TaskBackendEnum.PROXY:
             task = await TaskManager.retrieve_by_name(
@@ -45,10 +57,8 @@ async def process_queue_item(queue_id: int) -> None:
             case TaskBackendEnum.NOMAD:
                 executor = get_executor()
             case _:
-                raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
-
+                raise HTTPBadRequestException("Unsupported task backend.")
         await executor.run(session, queue_item, task)
-
 
 async def prepare_task_history(
     task_name: str, execution_data: TaskExecuteRequest = None
@@ -97,3 +107,4 @@ async def schedule_queue_item(
             logger.critical("Unknown execution mode '%s'", mode)
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
     return {"task_history_id": history_recorded}
+

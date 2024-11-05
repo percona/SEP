@@ -10,6 +10,7 @@ from typing import Annotated, Self
 
 from pydantic import (
     AfterValidator,
+    AnyUrl,
     BeforeValidator,
     DirectoryPath,
     Field,
@@ -115,6 +116,19 @@ def validate_http_url(v: str) -> str:
     return str(url).strip("/")
 
 
+def validate_any_url(v: str) -> str:
+    """Validate URL as string.
+
+    :param v: The URL string to validate.
+    :type v: str
+    :return: The validated URL string without trailing slashes.
+    :rtype: str
+    :raises ValueError: If the URL is invalid.
+    """
+    url = AnyUrl(v)
+    return str(url)
+
+
 def validate_module_is_importable(v: str) -> str:
     """Validate importable module as string.
 
@@ -207,6 +221,7 @@ RelativeDirectoryPath = Annotated[
     Field(validate_default=True),
 ]
 StrHttpUrl = Annotated[str, AfterValidator(validate_http_url)]
+StrAnyUrl = Annotated[str, AfterValidator(validate_any_url)]
 StrImportableModule = Annotated[str, AfterValidator(validate_module_is_importable)]
 StrImportableAttribute = Annotated[
     str,

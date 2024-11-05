@@ -5,15 +5,20 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
+from app.sep.deps import (
+    DefaultContext,
+    IsAuthenticated,
+    TaskAPI,
+)
 from app.sep.plugins.alters.deps import (
     AltersGeneratedTask,
     AltersTask,
     get_alters_index_context,
 )
-from app.tasks.models import TriggerRequest
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -59,21 +64,25 @@ async def alters_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve alters task."""
-    data = task["data"]
+    data = task.data
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
     task_data = {
-        "name": task["name"],
-        "created_at": task["created_at"],
-        "updated_at": task["updated_at"],
+        "name": task.name,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
         "hostname": data["Constraints"][0]["RTarget"],
         "table": f"{meta['schema_name']}.{meta['table_name']}",
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task['name']}/history/")
-    context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
+    # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
+    context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["running_tasks"] = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
         name="alters/details.html",
@@ -89,37 +98,14 @@ async def alters_detail(
 async def alters_execute(
     task: AltersTask,
     tasks_api: TaskAPI,
+    eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute alters task."""
     await tasks_api.post(
-        f"/execute/{task['name']}"
+        f"/execute/{task.name}",
+        json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post(
-    "/{task_name}/trigger",
-    dependencies=[IsAuthenticated],
-    response_class=RedirectResponse,
-)
-async def alters_trigger(
-    task: AltersTask,
-    tasks_api: TaskAPI,
-    trigger_data: Annotated[TriggerRequest, Form()],
-) -> RedirectResponse:
-    """Route the task to the appropriate queue based on the task name.
-
-    :param task: The AltersTask object containing the task details.
-    :param tasks_api: The TaskAPI instance for interacting with the task API.
-    :param trigger_data: The form data containing the parameters required to trigger
-        the task.
-    :return: A redirection response to the alters list page after triggering the task.
-    """
-    logger.debug("triggering task %s", task["name"])
-    await tasks_api.post(f"/trigger/{task['name']}", json=trigger_data.model_dump())
-
-    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
-
 
 @router.post(
     "/{task_name}/delete",
@@ -131,5 +117,5 @@ async def alters_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete alters task."""
-    await tasks_api.delete(f"/{task['name']}")
+    await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

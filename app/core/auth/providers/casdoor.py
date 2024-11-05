@@ -1,14 +1,16 @@
 """Provide the CasdoorSDK for interacting with Casdoor services."""
 
 from base64 import b64encode
+from functools import cached_property
 from typing import Any, Literal, Self
 
-from pydantic import model_validator
+from pydantic import computed_field, model_validator
 
-from app.core.config import settings
+from app.core.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
 from app.core.requests import RemoteAPI
 
 
+# TODO: Make Casdoor optional, custom auth backend model selectable in settings  # noqa: TD002, TD003
 class CasdoorSDK(RemoteAPI):
     """Interact with Casdoor's authentication and user management APIs.
 
@@ -19,8 +21,6 @@ class CasdoorSDK(RemoteAPI):
 
     :param endpoint: The base URL for the external API endpoint.
     :type endpoint: HttpUrl
-    :param api_key: The API key for authentication. Defaults to None.
-    :type api_key: str | None
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
@@ -29,23 +29,80 @@ class CasdoorSDK(RemoteAPI):
     :type ssl_keyfile: RelativeFilePath | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :type ssl_certfile: RelativeFilePath | None
+    :param api_key: The API key for authentication. Defaults to None.
+    :type api_key: str | None
+    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :type logger_name: str
     :param auth_scheme: The authentication scheme to use. Defaults to "Basic".
     :type auth_scheme: str
     :param client_id: The client ID for Casdoor authentication.
     :type client_id: str
     :param client_secret: The client secret for Casdoor authentication.
     :type client_secret: str
-    :param org_name: The organization name in Casdoor.
-    :type org_name: str
+    :param organization_name: The organization name in Casdoor.
+    :type organization_name: str
+    :param organization_name: The name of the organization in Casdoor. Defaults to
+        "built-in".
+    :type organization_name: str
+    :param application_name: The name of the application in Casdoor. Defaults to
+        "app-built-in"
+    :type application_name: str
+    :param front_endpoint: The front-end endpoint for the Casdoor integration.
+    :type front_endpoint: URL
+    :param certificate_path: The file path to the Casdoor certificate.
+    :type certificate_path: RelativeFilePath
+    :param allowed_issuers: The allowed token issuers (iss) for JWT validation.
+        Defaults to an empty list.
+    :type allowed_issuers: list[StrHttpUrl] | Literal["*"]
     """
 
-    auth_scheme: str = "Basic"
+    logger_name: str = __name__
+    auth_scheme: RequiredStr = "Basic"
     client_id: str
     client_secret: str
-    org_name: str
+    organization_name: str = "built-in"
+    application_name: str = "app-built-in"
+    front_endpoint: URL = URL()
+    certificate_path: RelativeFilePath
+    allowed_issuers: list[StrHttpUrl] | Literal["*"] = []
+
+    @computed_field
+    @cached_property
+    def certificate(self) -> bytes:
+        """The contents of the certificate file.
+
+        :return: The certificate file contents.
+        :rtype: bytes
+        """
+        with self.certificate_path.open("rb") as certificate_file:
+            return certificate_file.read()
 
     @model_validator(mode="after")
-    def set_api_key_from_credentials(self) -> Self:
+    def _set_auth_scheme_to_basic(self) -> Self:
+        """Ensure the authentication scheme is set to 'Basic'.
+
+        :return: The updated instance with `auth_scheme` set to 'Basic'.
+        :rtype: Self
+        """
+        self.auth_scheme = "Basic"
+        return self
+
+    @model_validator(mode="after")
+    def _set_default_allowed_issuers(self) -> Self:
+        """Set default allowed issuers if not already set.
+
+        If `allowed_issuers` is not set to "*", ensure that the API endpoint is
+        included in it.
+
+        :return: The updated instance with `allowed_issuers` set.
+        :rtype: Self
+        """
+        if self.allowed_issuers != "*" and self.endpoint not in self.allowed_issuers:
+            self.allowed_issuers.append(self.endpoint)
+        return self
+
+    @model_validator(mode="after")
+    def _set_api_key_from_credentials(self) -> Self:
         """Set the API key by encoding client credentials.
 
         Encodes the `client_id` and `client_secret` into a Base64 string and sets it
@@ -58,6 +115,30 @@ class CasdoorSDK(RemoteAPI):
             f"{self.client_id}:{self.client_secret}".encode(),
         ).decode("utf-8")
         return self
+
+    def get_frontend_url(self, base_url: URL | None = None) -> URL:
+        """Get Casdoor's front-end URL from a base URL.
+
+        Construct the frontend URL for Casdoor integration by replacing any missing
+        parts (scheme, hostname, port, path) from the `front_endpoint` with
+        corresponding parts from the `base_url`.
+
+        :param base_url: The base URL to be used when constructing the frontend
+            URL. If not provided, the Casdoor API endpoint (`endpoint`) is used
+            as the base.
+        :type base_url: URL | None
+        :return: The constructed front-end URL.
+        :rtype: URL
+        """
+        frontend_url = self.front_endpoint
+        base_url = URL(self.endpoint) if base_url is None else base_url
+        url_data = {
+            "scheme": frontend_url.scheme or base_url.scheme,
+            "hostname": frontend_url.hostname or base_url.hostname,
+            "port": frontend_url.port or base_url.port,
+            "path": frontend_url.path or base_url.path,
+        }
+        return frontend_url.replace(**url_data)
 
     async def refresh_token_request(
         self,
@@ -166,7 +247,9 @@ class CasdoorSDK(RemoteAPI):
         :return: A dictionary containing a list of user information.
         :rtype: dict[str, Any]
         """
-        users = await self.get("/api/get-users", params={"owner": self.org_name})
+        users = await self.get(
+            "/api/get-users", params={"owner": self.organization_name}
+        )
         return users["data"]
 
     async def get_user(self, user_id: str) -> dict[str, Any]:
@@ -181,14 +264,6 @@ class CasdoorSDK(RemoteAPI):
         """
         user = await self.get(
             "/api/get-user",
-            params={"id": f"{self.org_name}/{user_id}"},
+            params={"id": f"{self.organization_name}/{user_id}"},
         )
         return user["data"]
-
-
-casdoor_sdk = CasdoorSDK(
-    endpoint=settings.CASDOOR.ENDPOINT,
-    client_id=settings.CASDOOR.CLIENT_ID,
-    client_secret=settings.CASDOOR.CLIENT_SECRET,
-    org_name=settings.CASDOOR.ORGANIZATION_NAME,
-)

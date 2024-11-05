@@ -7,12 +7,11 @@ from os import getenv
 
 from celery.utils.log import get_task_logger
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings
+from app.core.config import create_app, default_lifespan, settings
 from app.tasks.celery.celery_scheduler import setup_periodic_tasks
 from app.tasks.config import tasks_settings
-from app.tasks.db import get_async_session_maker, init_db
+from app.tasks.db import init_tasks_db
 from app.tasks.routes import router
 
 logger = logging.getLogger(__name__)
@@ -34,32 +33,27 @@ AVAILABLE_OWNERS = {
 
 
 @asynccontextmanager
-async def initial_tasks_setup(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
-    """Initialize Tasks database data."""
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        await init_db(session)
-        await setup_periodic_tasks(session)
+async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage the Tasks API's lifespan.
 
-    yield
+    Initializes the Tasks database data and ensures that the CasdoorSDK, the
+    NomadExecutor, and any extra client sessions are properly managed during the
+    application's startup and shutdown phases.
+
+    :param app: The FastAPI application instance.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    await init_tasks_db()
+    await setup_periodic_tasks()
+    
+    async with default_lifespan(app), tasks_settings.NOMAD:
+        yield
 
 
-tasks_app = (
-    FastAPI(lifespan=initial_tasks_setup) if __name__ == "__main__" else FastAPI()
-)
-tasks_app.include_router(router)
-tasks_app.log = logger
-
-if settings.BACKEND_CORS_ORIGINS:
-    tasks_app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
-        ],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+lifespan = tasks_lifespan if __name__ == "__main__" else None
+tasks_app = create_app(router, lifespan=lifespan, add_cors_middleware=True)
 
 
 if __name__ == "__main__":

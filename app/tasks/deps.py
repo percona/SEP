@@ -9,7 +9,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.tasks.config import tasks_settings
 from app.tasks.db import get_async_session_maker
 from app.tasks.execution.models import BaseExecutor
-from app.tasks.models import TaskBackendEnum
+from app.tasks.models import (
+    TaskBackendEnum,
+)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

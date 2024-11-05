@@ -53,8 +53,15 @@ development:
           - mysql
           - information_schema
   CELERY:
-    CELERY_BROKER_URL: "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: "redis://localhost:6379/0"
+    BROKER_URL: "filesystem://"
+    BROKER_TRANSPORT_OPTIONS:
+      data_folder_in: data/celery/broker
+      data_folder_out: data/celery/broker
+      processed_folder: data/celery/processed
+      control_folder: data/celery/control
+    RESULT_BACKEND: file://data/celery/results
+    RESULT_PERSISTENT: true
+
 production_docker:
   CASDOOR:
     ENDPOINT: http://casdoor:8000
@@ -89,10 +96,9 @@ production_docker:
     NOMAD:
       ENDPOINT: https://host.docker.internal:4646
       SECURE: true
-      VERIFY: data/certs/sep-ca.pem
-      CERT:
-        - data/certs/nomad/global-client-nomad.pem
-        - data/certs/nomad/global-client-nomad-key.pem
+      SSL_KEYFILE: data/certs/nomad/global-client-nomad-key.pem
+      SSL_CERTFILE: data/certs/nomad/global-client-nomad.pem
+      SSL_CAFILE: data/certs/sep-ca.pem
     SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
   BACKEND_CORS_ORIGINS:

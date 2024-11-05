@@ -85,6 +85,11 @@ optional = true
 [tool.poetry.group.postgresql.dependencies]
 asyncpg = "^0.29.0"
 
+[tool.poetry.group.redis]
+optional = true
+
+[tool.poetry.group.redis.dependencies]
+redis = ">=4.5.2,<4.5.5 || >4.5.5,<6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
@@ -198,6 +203,7 @@ order-by-type = false
     "N802",
 ]
 "app/core/config.py" = ["ARG003"]
+"app/tasks/celery.py" = ["ARG001"]
 
 [tool.ruff.format]
 quote-style = "double"
