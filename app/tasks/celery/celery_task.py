@@ -7,7 +7,7 @@ along with utility functions to process queue items.
 import logging
 
 from asgiref.sync import async_to_sync
-from celery import shared_task, Task
+from celery import Task
 from redbeat import RedBeatSchedulerEntry
 
 from app.core.celery import create_celery
@@ -16,6 +16,8 @@ from app.tasks.db import get_async_session_maker
 from app.tasks.utils import prepare_task_history, process_queue_item
 
 logger = logging.getLogger(__name__)
+
+celery = create_celery("tasks")
 
 
 async def execute_task(queue_id: int) -> None:
@@ -27,14 +29,13 @@ async def execute_task(queue_id: int) -> None:
     await process_queue_item(queue_id)
 
 
-@shared_task(
+@celery.task(
     bind=True,
     autoretry_for=(Exception,),
     retry_backoff=True,
     retry_kwargs={"max_retries": 5},
-    name="celery:trigger_task",
 )
-def trigger_task(self: Task, queue_id: int | None = None) -> dict:  # noqa: ARG001
+def trigger_task(self: Task, queue_id: int | None = None) -> dict:
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.
@@ -47,8 +48,13 @@ def trigger_task(self: Task, queue_id: int | None = None) -> dict:  # noqa: ARG0
     return {"status": "Task completed successfully", "queue_id": queue_id}
 
 
-@shared_task()
-def beat_task(period: str, schedule_name: str) -> str:
+@celery.task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 5},
+)
+def beat_task(self: Task, period: str, schedule_name: str) -> str:
     """Trigger a periodic task execution based on the specified time period."""
     logger.debug("Period: %s", period)
 

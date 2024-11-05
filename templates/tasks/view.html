@@ -70,82 +70,13 @@
         </section>
     {% endif %}
     {% if not task.is_template %}
-        <form method="post" action="" style="padding: 20px; display: block;" id="{{ task.name }}-send"
-              class="send-form">
-            {% if task_data.get("ParameterizedJob") %}
-                <fieldset>
-                    <legend style="font-size: 1.5em; font-weight: bold; color: #333;">
-                        Configuration
-                    </legend>
-                    {% if task_data.ParameterizedJob %}
-                        {% set optional = task_data.ParameterizedJob.get("MetaOptional", []) %}
-                        {% set required = task_data.ParameterizedJob.get("MetaRequired", []) %}
-                    {% else %}
-                        {% set optional = [] %}
-                        {% set required = [] %}
-                    {% endif %}
-                    {% set meta_defaults = task_data.get("Meta",{}) %}
-                    {% for item in required %}
-                        <div style="margin-bottom: 15px;">
-                            <label for="meta_{{ item }}"
-                                   class="form-label">{{ item.capitalize() }}
-                                (required)</label>
-                            {% if item == "target" %}
-                                {% include "tasks/partials/select-host.html" %}
-                            {% else %}
-                                <input type="text" name="meta_{{ item }}"
-                                       id="meta_{{ item }}"
-                                       value="{{ meta_defaults[item] }}" required
-                                       class="form-input">
-                            {% endif %}
-                        </div>
-                    {% endfor %}
-                    {% for item in optional %}
-                        <div style="margin-bottom: 15px;">
-                            <label for="meta_{{ item }}"
-                                   class="form-label">{{ item.capitalize() }}</label>
-                            {% if item == "target" %}
-                                {% include "tasks/partials/select-host.html" %}
-                            {% else %}
-                                <input type="text" name="meta_{{ item }}"
-                                       id="meta_{{ item }}"
-                                       value="{{ meta_defaults.get(item, '') }}"
-                                       class="form-input">
-                            {% endif %}
-                        </div>
-                    {% endfor %}
-                    {% set nomad_payload_rule = task_data.ParameterizedJob.get("Payload", "optional") %}
-                    {% if nomad_payload_rule in ["optional", "required"] %}
-                        <div style="margin-bottom: 20px;">
-                            <label for="payload" class="form-label">Payload
-                                {% if nomad_payload_rule == "required" %}
-                                    (required){% endif %}</label>
-                            <textarea name="payload" id="payload" cols="80" rows="30"
-                                    {% if nomad_payload_rule == "required" %}
-                                      required{% endif %} class="form-input"></textarea>
-                        </div>
-                    {% endif %}
-                </fieldset>
-            {% endif %}
-            <div class="actions-cell">
-                <button title="Toggle scheduler mode" type="button"
-                        class="icons schedule-button" data-task="{{ task.name }}"
-                        aria-expanded="false">schedule
-                </button>
-                <input type="datetime-local" class="eta-input"
-                       disabled>
-                <input type="hidden" name="eta" class="eta-value" disabled>
-                <button type="submit" class="icons send-button">send</button>
-                {% if not task.protected %}
-                <button class="icons delete-button">delete forever</button>
-                {% endif %}
-            </div>
-        </form>
+        {% include "tasks/partials/run-python-form.html" %}
     {% endif %}
 
     {% if not task.protected %}
         <form class="delete-form" method="post" action="/tasks/{{ task['name'] }}/delete">
         </form>
+        {% include "tasks/partials/scheduler-form.html" %}
     {% endif %}
 
     <section>
@@ -153,4 +84,37 @@
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html" %}
     </section>
+
+    {% if schedule is defined and schedule|length > 0 %}
+    <table>
+        <caption>Periodic Tasks</caption>
+        <thead>
+            <tr>
+                <th>Created</th>
+                <th>Period</th>
+                <th>Execute Request</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tfoot>
+            <tr>
+                <td colspan="3">&nbsp;</td>
+            </tr>
+        </tfoot>
+        <tbody>
+            {% for item in schedule %}
+                <tr>
+                    <th scope="row">{{ item["created_at"] }}</th>
+                    <td>{{ item["period"] }}</td>
+                    <th scope="row">{{ item["execute_request"] }}</th>
+                    <td>
+                        <form action="/tasks/cancel/{{ item['id'] }}" method="post">
+                            <button type="submit"><i class="icons">delete</i></button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
 {% endblock %}

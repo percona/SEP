@@ -107,6 +107,7 @@ async def alters_execute(
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
+
 @router.post(
     "/{task_name}/delete",
     dependencies=[IsAuthenticated],

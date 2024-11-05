@@ -7,65 +7,62 @@ from celery.schedules import crontab
 from celery.utils.log import get_task_logger
 from redbeat import RedBeatSchedulerEntry
 
-from app.core.celery import create_celery
+from app.tasks.celery.celery_task import celery
 from app.tasks.crud import PeriodicTaskManager
+from app.tasks.db import get_async_session_maker
 from app.tasks.deps import SessionDep
 from app.tasks.models import CrontabPeriod, PeriodicTask
 
 celery_logger = get_task_logger(__name__)
 
 
-async def setup_periodic_tasks(session: SessionDep) -> None:
-    """Set up periodic tasks in RedBeat based on distinct crontab periods.
-
-    :param session: Database session to use for querying crontab periods.
-    :return: None
-    """
-    crontab_periods = await PeriodicTaskManager.list_distinct_crontab_periods(
-        session=session
-    )
-
-    try:
-        celery_logger.info("Setting up periodic tasks in RedBeat")
-
-        for crontab_period in crontab_periods:
-            schedule_name = f"task_{crontab_period.to_str()}"
-
-            try:
-                existed_entry = RedBeatSchedulerEntry.from_key(
-                    "redbeat:" + schedule_name, app=create_celery()
-                )
-            except KeyError:
-                existed_entry = None
-
-            if not existed_entry:
-                entry = RedBeatSchedulerEntry(
-                    schedule_name,
-                    "app.tasks.celery.celery_task.beat_task",
-                    crontab(minute=crontab_period.minute),
-                    args=[crontab_period.to_str(), schedule_name],
-                    app=create_celery(),
-                )
-                entry.save()
-
-        celery_logger.info("Periodic tasks have been set up successfully.")
-
-    except Exception:
-        celery_logger.exception(
-            "An exception occurred while setting up periodic tasks."
+async def setup_periodic_tasks() -> None:
+    """Set up periodic tasks in RedBeat based on distinct crontab periods."""
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        crontab_periods = await PeriodicTaskManager.list_distinct_crontab_periods(
+            session=session
         )
+
+        try:
+            celery_logger.info("Setting up periodic tasks in RedBeat")
+            for crontab_period in crontab_periods:
+                schedule_name = f"task_{crontab_period.to_str()}"
+
+                try:
+                    existed_entry = RedBeatSchedulerEntry.from_key(
+                        "redbeat:" + schedule_name, app=celery
+                    )
+                except KeyError:
+                    existed_entry = None
+
+                if not existed_entry:
+                    entry = RedBeatSchedulerEntry(
+                        schedule_name,
+                        "app.tasks.celery.celery_task.beat_task",
+                        crontab(minute=crontab_period.minute),
+                        args=[crontab_period.to_str(), schedule_name],
+                        app=celery,
+                    )
+                    entry.save()
+
+            celery_logger.info("Periodic tasks have been set up successfully.")
+
+        except Exception:
+            celery_logger.exception(
+                "An exception occurred while setting up periodic tasks."
+            )
 
 
 async def setup_periodic_task(periodic_task: PeriodicTask) -> None:
     """Set up a single periodic task in RedBeat."""
     crontab_period = CrontabPeriod.from_str(periodic_task.period)
-
     try:
         schedule_name = f"task_{crontab_period.to_str()}"
 
         try:
             existed_entry = RedBeatSchedulerEntry.from_key(
-                "redbeat:" + schedule_name, app=create_celery()
+                "redbeat:" + schedule_name, app=celery
             )
         except KeyError:
             existed_entry = None
@@ -76,7 +73,7 @@ async def setup_periodic_task(periodic_task: PeriodicTask) -> None:
                 "app.tasks.celery.celery_task.beat_task",
                 crontab(minute=crontab_period.minute),
                 args=[crontab_period.to_str(), schedule_name],
-                app=create_celery(),
+                app=celery,
             )
             entry.save()
             celery_logger.info("Periodic task have been set up successfully.")
@@ -100,7 +97,7 @@ async def remove_periodic_task(
     if not periodic_tasks:
         try:
             entry = RedBeatSchedulerEntry.from_key(
-                "redbeat:task_" + periodic_task.period, app=create_celery()
+                "redbeat:task_" + periodic_task.period, app=celery
             )
         except KeyError:
             entry = None

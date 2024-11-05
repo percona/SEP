@@ -47,7 +47,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     await init_tasks_db()
     await setup_periodic_tasks()
-    
+
     async with default_lifespan(app), tasks_settings.NOMAD:
         yield
 

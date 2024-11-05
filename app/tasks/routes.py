@@ -12,7 +12,7 @@ from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import HTTPBadRequestException
 from app.tasks.celery.celery_scheduler import remove_periodic_task, setup_periodic_task
-from app.tasks.celery import trigger_task
+from app.tasks.celery.celery_task import trigger_task
 from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import SessionDep, TaskExecutor
 from app.tasks.models import (
@@ -30,13 +30,11 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
-    TaskScheduleRequest,
     TaskLog,
+    TaskScheduleRequest,
     TaskStats,
     TransformPayloadRequest,
-    TriggerRequest,
 )
-from app.tasks.utils import prepare_task_history, schedule_queue_item
 
 logger = logging.getLogger(__name__)
 

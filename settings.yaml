@@ -53,14 +53,8 @@ development:
           - mysql
           - information_schema
   CELERY:
-    BROKER_URL: "filesystem://"
-    BROKER_TRANSPORT_OPTIONS:
-      data_folder_in: data/celery/broker
-      data_folder_out: data/celery/broker
-      processed_folder: data/celery/processed
-      control_folder: data/celery/control
-    RESULT_BACKEND: file://data/celery/results
-    RESULT_PERSISTENT: true
+    BROKER_URL: "redis://localhost:6379/0"
+    RESULT_BACKEND: "redis://localhost:6379/0"
 
 production_docker:
   CASDOOR:

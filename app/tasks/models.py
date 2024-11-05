@@ -10,9 +10,8 @@ Todo:
 
 """
 
-import math
 import re
-from datetime import datetime, UTC
+from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
 from pathlib import Path
@@ -631,7 +630,6 @@ class TransformPayloadRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
 
 
-
 class ScheduleRequest(BaseModel):
     """Model to handle schedule requests with period and execute_data."""
 
@@ -779,6 +777,8 @@ class PeriodicTaskResponse(BaseSQLModel):
     execute_request: TaskExecutionRequest
     task: Task
     period: str
+
+
 class TaskLog(BaseModel):
     """Define a task log line.
 

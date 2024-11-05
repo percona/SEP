@@ -18,8 +18,8 @@ from app.tasks.main import AVAILABLE_OWNERS
 from app.tasks.models import (
     TaskBackendEnum,
     TaskExecuteRequest,
-    TaskScheduleRequest,
     TaskHistoryStatusEnum,
+    TaskScheduleRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,7 @@ async def tasks_delete(
     """Delete task."""
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+
 
 @router.post(
     "/{task_name}/schdule",

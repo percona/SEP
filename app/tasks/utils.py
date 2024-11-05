@@ -7,6 +7,7 @@ from http import HTTPStatus
 from fastapi import BackgroundTasks, HTTPException
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.exceptions import HTTPBadRequestException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -32,7 +33,6 @@ async def process_queue_item(queue_id: int) -> None:
     :raises HTTPBadRequestException: If the task backend is unsupported,
         raises a 400 Bad Request error.
     """
-
     async_session = get_async_session_maker()
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(
@@ -59,6 +59,7 @@ async def process_queue_item(queue_id: int) -> None:
             case _:
                 raise HTTPBadRequestException("Unsupported task backend.")
         await executor.run(session, queue_item, task)
+
 
 async def prepare_task_history(
     task_name: str, execution_data: TaskExecuteRequest = None
@@ -107,4 +108,3 @@ async def schedule_queue_item(
             logger.critical("Unknown execution mode '%s'", mode)
             raise HTTPException(status_code=HTTPStatus.EXPECTATION_FAILED)
     return {"task_history_id": history_recorded}
-

@@ -7,7 +7,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseManager
-from app.tasks.models import CrontabPeriod, PeriodicTask, Task, TaskHistory, TaskHistoryStatusEnum
+from app.tasks.models import (
+    CrontabPeriod,
+    PeriodicTask,
+    Task,
+    TaskHistory,
+    TaskHistoryStatusEnum,
+)
 
 
 class TaskManager(BaseManager):

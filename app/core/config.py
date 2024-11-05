@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import ClassVar
 
-from kombu import Queue
 from aiohttp import ClientSession
 from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
