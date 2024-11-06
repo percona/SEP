@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.tasks.celery.celery_scheduler import remove_periodic_task, setup_periodic_task
+from app.tasks.celery.scheduler import remove_periodic_task, setup_periodic_task
 from app.tasks.crud import PeriodicTaskManager
 from app.tasks.deps import SessionDep, TaskConfig
 from app.tasks.models import (
@@ -16,19 +16,20 @@ from app.tasks.models import (
     PeriodicTaskResponse,
     TaskExecutionRequest,
     TaskScheduleRequest,
-
 )
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
 
 logger = logging.getLogger(__name__)
+
+
 @router.post("/{task_name}", dependencies=[IsAuthenticatedDep])
 async def create_periodic_task(
     session: SessionDep,
     task_name: str,
     config: TaskConfig,
-    schedule_data: TaskScheduleRequest = None
+    schedule_data: TaskScheduleRequest = None,
 ) -> PeriodicTask:
     """Create a new PeriodicTask."""
     logger.debug("Creating periodic Task %s", schedule_data)

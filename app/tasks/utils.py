@@ -62,9 +62,7 @@ async def process_queue_item(queue_id: int) -> None:
 
 
 async def prepare_task_history(
-    task_name: str,
-    config: TaskConfig,
-    execution_data: TaskExecuteRequest = None
+    task_name: str, config: TaskConfig, execution_data: TaskExecuteRequest = None
 ) -> Awaitable[TaskHistory]:
     """Prepare and record the history of a task execution request."""
     async_session = get_async_session_maker()

@@ -203,7 +203,7 @@ order-by-type = false
     "N802",
 ]
 "app/core/config.py" = ["ARG003"]
-"app/tasks/celery/celery_task.py" = ["ARG001"]
+"app/tasks/celery/task.py" = ["ARG001"]
 
 [tool.ruff.format]
 quote-style = "double"

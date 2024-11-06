@@ -27,6 +27,7 @@ router = APIRouter()
 
 templates = sep_settings.TEMPLATES
 
+
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def tasks_list(
     request: Request,

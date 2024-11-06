@@ -20,31 +20,25 @@ logger = logging.getLogger(__name__)
 celery = create_celery("tasks")
 
 
-async def execute_task(queue_id: int) -> None:
-    """Execute a task asynchronously by processing the given queue item.
-
-    :param queue_id: The ID of the queue item to process.
-    :return: None
-    """
-    await process_queue_item(queue_id)
-
-
 @celery.task(
     bind=True,
     autoretry_for=(Exception,),
     retry_backoff=True,
     retry_kwargs={"max_retries": 5},
 )
-def trigger_task(self: Task, queue_id: int | None = None) -> dict:
+def trigger_task(self: Task, queue_id: int | None = None) -> dict[str, int]:
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.
+    :type self: Task
     :param queue_id: The ID of the queue item to trigger (optional).
+    :type queue_id: int | None
     :return: A dictionary containing the status and queue ID.
+    :rtype: dict[str, int]
     """
     logger.info("Executing task with queue_id: %s", queue_id)
 
-    async_to_sync(execute_task)(queue_id)
+    async_to_sync(process_queue_item)(queue_id)
     return {"status": "Task completed successfully", "queue_id": queue_id}
 
 
@@ -54,8 +48,18 @@ def trigger_task(self: Task, queue_id: int | None = None) -> dict:
     retry_backoff=True,
     retry_kwargs={"max_retries": 5},
 )
-def beat_task(self: Task, period: str, schedule_name: str) -> str:
-    """Trigger a periodic task execution based on the specified time period."""
+def beat_task(self: Task, period: str, schedule_name: str) -> dict[str, str]:
+    """Trigger a periodic task execution based on the specified time period.
+
+    :param self: The Celery task instance.
+    :type self: Task
+    :param period: The time period for which to retrieve and process tasks.
+    :type period: str
+    :param schedule_name: The name of the schedule entry in RedBeat.
+    :type schedule_name: str
+    :return: A dictionary containing the status and period.
+    :rtype: dict[str, str]
+    """
     logger.debug("Period: %s", period)
 
     async_to_sync(process_tasks_with_period)(period, schedule_name)
@@ -69,7 +73,9 @@ async def process_tasks_with_period(period: str, schedule_name: str) -> None:
         for asynchronous execution.
 
     :param period: The time period for which to retrieve and process tasks.
-    :return: None
+    :type period: str
+    :param schedule_name: The name of the schedule entry in RedBeat.
+    :type schedule_name: str
     """
     async_session = get_async_session_maker()
     async with async_session() as session:

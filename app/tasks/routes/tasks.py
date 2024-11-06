@@ -5,16 +5,15 @@ from http import HTTPStatus
 from os import getenv
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import HTTPBadRequestException
-from app.tasks.celery.celery_scheduler import remove_periodic_task, setup_periodic_task
-from app.tasks.celery.celery_task import trigger_task
+from app.tasks.celery.task import trigger_task
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.deps import SessionDep, TaskExecutor, TaskConfig
+from app.tasks.deps import SessionDep, TaskConfig, TaskExecutor
 from app.tasks.models import (
     GeneratedTask,
     Task,

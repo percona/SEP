@@ -1,15 +1,18 @@
-"""Define routes for scheduling tasks"""
-import pdb
+"""Define routes for scheduling tasks."""
+
 import logging
 from typing import Annotated
-from fastapi import APIRouter, Form, status
 
+from fastapi import APIRouter, Form, status
 from fastapi.responses import RedirectResponse
+
 from app.sep.deps import IsAuthenticated, TaskAPI
 from app.tasks.models import TaskScheduleRequest
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 @router.post(
     "/{task_name}",

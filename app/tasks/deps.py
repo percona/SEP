@@ -47,9 +47,18 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
 
 TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
 
+
 async def get_config(task_name: str) -> Task:
+    """Get Task object by task name for checking it is template or not.
+
+    :param task_name: The name of the task to retrieve.
+    :type task_name: str
+    :return: The Task object associated with the provided name.
+    :rtype: Task
+    """
     async_session = get_async_session_maker()
     async with async_session() as session:
         return await TaskManager.retrieve_by_name(session=session, name=task_name)
+
 
 TaskConfig = Annotated[Task, Depends(get_config)]
