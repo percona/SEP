@@ -3,12 +3,20 @@
 using unique crontab periods from the database.
 """
 
-from celery.exceptions import NotRegistered
-from celery.schedules import crontab
-from celery.utils.log import get_task_logger
-from redbeat import RedBeatSchedulerEntry
+import json
+from typing import Any
 
-from app.tasks.celery.task import celery
+from celery.utils.log import get_task_logger
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy_celery_beat.models import (
+    CrontabSchedule,
+)
+from sqlalchemy_celery_beat.models import (
+    PeriodicTask as PeriodicTaskScheduler,
+)
+from sqlalchemy_celery_beat.session import SessionManager
+
+from app.core.config import settings
 from app.tasks.crud import PeriodicTaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import SessionDep
@@ -18,7 +26,7 @@ celery_logger = get_task_logger(__name__)
 
 
 async def get_or_create_redbeat_entry(
-    schedule_name: str, crontab_period: CrontabPeriod
+    schedule_name: str, crontab_period: CrontabPeriod, session: Any
 ) -> None:
     """Get an existing RedBeat entry or create a new one if it doesn't exist.
 
@@ -28,29 +36,51 @@ async def get_or_create_redbeat_entry(
     :type crontab_period: CrontabPeriod
     """
     try:
-        existed_entry = RedBeatSchedulerEntry.from_key(
-            "redbeat:" + schedule_name, app=celery
+        schedule = (
+            session.query(CrontabSchedule)
+            .filter_by(
+                minute=crontab_period.minute,
+                hour=crontab_period.hour,
+                day_of_week=crontab_period.day_of_week,
+                day_of_month=crontab_period.day_of_month,
+                month_of_year=crontab_period.month_of_year,
+            )
+            .first()
         )
-    except KeyError:
-        existed_entry = None
+        if not schedule:
+            schedule = CrontabSchedule(
+                minute=crontab_period.minute,
+                hour=crontab_period.hour,
+                day_of_week=crontab_period.day_of_week,
+                day_of_month=crontab_period.day_of_month,
+                month_of_year=crontab_period.month_of_year,
+                timezone="UTC",
+            )
+            session.add(schedule)
+            session.commit()
 
-    if not existed_entry:
-        entry = RedBeatSchedulerEntry(
-            schedule_name,
-            "app.tasks.celery.task.beat_task",
-            crontab(minute=crontab_period.minute),
-            args=[crontab_period.to_str(), schedule_name],
-            app=celery,
+        periodic_task = (
+            session.query(PeriodicTaskScheduler).filter_by(name=schedule_name).first()
         )
-        entry.save()
-        celery_logger.info(
-            "Periodic task '%s' has been set up successfully.", schedule_name
-        )
-    return existed_entry
+        if not periodic_task:
+            periodic_task = PeriodicTaskScheduler(
+                schedule_model=schedule,
+                name=schedule_name,
+                task="app.tasks.celery.task.beat_task",
+                args=json.dumps([crontab_period.to_str(), schedule_name]),
+            )
+            session.add(periodic_task)
+            session.commit()
+    except SQLAlchemyError:
+        celery_logger.exception("Error setting up RedBeat entry for %s", schedule_name)
+        session.rollback()
+        raise
 
 
 async def setup_periodic_tasks() -> None:
     """Set up periodic tasks in RedBeat based on distinct crontab periods."""
+    session_manager = SessionManager()
+    scheduler_session = session_manager.session_factory(settings.CELERY.BEAT_DBURI)
     async_session = get_async_session_maker()
     async with async_session() as session:
         crontab_periods = await PeriodicTaskManager.list_distinct_crontab_periods(
@@ -61,20 +91,13 @@ async def setup_periodic_tasks() -> None:
         for crontab_period in crontab_periods:
             schedule_name = f"task_{crontab_period.to_str()}"
             try:
-                await get_or_create_redbeat_entry(schedule_name, crontab_period)
-            except NotRegistered:
-                celery_logger.exception(
-                    "An exception occurred while setting up \
-                    periodic task '%s'.",
-                    schedule_name,
+                await get_or_create_redbeat_entry(
+                    schedule_name, crontab_period, scheduler_session
                 )
-            except Exception:
+            except SQLAlchemyError:
                 celery_logger.exception(
-                    "An unexpected error occurred while setting up \
-                    periodic task '%s'.",
-                    schedule_name,
+                    "Failed to set up periodic task %s", schedule_name
                 )
-
         celery_logger.info("Periodic tasks have been set up successfully.")
 
 
@@ -84,20 +107,16 @@ async def setup_periodic_task(periodic_task: PeriodicTask) -> None:
     :param periodic_task: The periodic task to set up.
     :type periodic_task: PeriodicTask
     """
+    session_manager = SessionManager()
+    scheduler_session = session_manager.session_factory(settings.CELERY.BEAT_DBURI)
     crontab_period = CrontabPeriod.from_str(periodic_task.period)
     schedule_name = f"task_{crontab_period.to_str()}"
     try:
-        await get_or_create_redbeat_entry(schedule_name, crontab_period)
-    except NotRegistered:
-        celery_logger.exception(
-            "An exception occurred while setting up periodic task '%s'.",
-            schedule_name,
+        await get_or_create_redbeat_entry(
+            schedule_name, crontab_period, scheduler_session
         )
-    except Exception:
-        celery_logger.exception(
-            "An unexpected error occurred while setting up periodic task '%s'.",
-            schedule_name,
-        )
+    except SQLAlchemyError:
+        celery_logger.exception("Failed to set up periodic task %s", schedule_name)
 
 
 async def remove_periodic_task(
@@ -110,6 +129,8 @@ async def remove_periodic_task(
     :param periodic_task: The periodic task to remove.
     :type periodic_task: PeriodicTask
     """
+    session_manager = SessionManager()
+    scheduler_session = session_manager.session_factory(settings.CELERY.BEAT_DBURI)
     periodic_tasks = await PeriodicTaskManager.list_by_period(
         session=session,
         period=periodic_task.period,
@@ -118,21 +139,41 @@ async def remove_periodic_task(
 
     if not periodic_tasks:
         schedule_name = f"task_{periodic_task.period}"
+
         try:
-            entry = RedBeatSchedulerEntry.from_key(
-                "redbeat:" + schedule_name, app=celery
+            # Find and delete the related periodic task scheduler entry
+            periodic_task_entry = (
+                scheduler_session.query(PeriodicTaskScheduler)
+                .filter_by(name=schedule_name)
+                .first()
             )
-            if entry:
-                entry.delete()
-                celery_logger.info(
-                    "Periodic task '%s' has been removed successfully.", schedule_name
+            if periodic_task_entry:
+                scheduler_session.delete(periodic_task_entry)
+                scheduler_session.commit()
+
+            crontab_period = CrontabPeriod.from_str(periodic_task.period)
+            # Find and delete the related crontab schedule entry
+            crontab_schedule = (
+                scheduler_session.query(CrontabSchedule)
+                .filter_by(
+                    minute=crontab_period.minute,
+                    hour=crontab_period.hour,
+                    day_of_week=crontab_period.day_of_week,
+                    day_of_month=crontab_period.day_of_month,
+                    month_of_year=crontab_period.month_of_year,
                 )
-        except KeyError:
-            celery_logger.warning(
-                "Periodic task '%s' not found, nothing to remove.", schedule_name
+                .first()
             )
-        except Exception:
-            celery_logger.exception(
-                "An unexpected error occurred while removing periodic task '%s'.",
+            if crontab_schedule:
+                scheduler_session.delete(crontab_schedule)
+                scheduler_session.commit()
+
+            celery_logger.info(
+                "Removed periodic task %s and associated schedule.",
                 schedule_name,
             )
+
+        except SQLAlchemyError:
+            celery_logger.exception("Failed to set up periodic task %s", schedule_name)
+            session.rollback()  # Roll back in case of error
+            raise

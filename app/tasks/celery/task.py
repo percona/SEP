@@ -8,7 +8,6 @@ import logging
 
 from asgiref.sync import async_to_sync
 from celery import Task
-from redbeat import RedBeatSchedulerEntry
 
 from app.core.celery import create_celery
 from app.tasks.crud import PeriodicTaskManager
@@ -84,18 +83,6 @@ async def process_tasks_with_period(period: str, schedule_name: str) -> None:
             period=period,
             select_related_task=True,
         )
-
-        if not periodic_tasks:
-            try:
-                entry = RedBeatSchedulerEntry.from_key(
-                    "redbeat:" + schedule_name, app=create_celery()
-                )
-            except KeyError:
-                entry = None
-
-            logger.debug("Remove entry, %s", entry)
-            if entry:
-                entry.delete()
 
         for periodic_task in periodic_tasks:
             history_recorded = await prepare_task_history(

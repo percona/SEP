@@ -72,6 +72,7 @@ class CeleryOptions(BaseCaseInsensitiveModel):
     BROKER_URL: StrAnyUrl
     TASK_TRACK_STARTED: bool = True
     RESULT_BACKEND: StrAnyUrl | None = None
+    BEAT_DBURI: str | None = None
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
