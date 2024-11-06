@@ -22,7 +22,7 @@ async def schedule_task(
 ) -> RedirectResponse:
     """Schdule task."""
     logger.debug("scheduling task %s, %s,", task_name, schedule_data)
-    await tasks_api.post(f"/schedule/{task_name}", json=schedule_data.model_dump())
+    await tasks_api.post(f"/schedules/{task_name}", json=schedule_data.model_dump())
 
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -38,6 +38,5 @@ async def cancel_periodic_task(
 ) -> RedirectResponse:
     """Cancel Periodic task."""
     logger.debug("Canceling Periodic task %s", periodic_task_id)
-    breakpoint()
-    await tasks_api.delete(f"/cancel/{periodic_task_id}")
+    await tasks_api.delete(f"/schedules/{periodic_task_id}")
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)

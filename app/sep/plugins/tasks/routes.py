@@ -75,7 +75,7 @@ async def tasks_detail(
 ) -> HTMLResponse:
     """Retrieve task."""
     context["task"] = task
-    context["schedule"] = await tasks_api.get(f"/{task.name}/schedule/")
+    context["schedule"] = await tasks_api.get(f"/schedules/{task.name}/")
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}

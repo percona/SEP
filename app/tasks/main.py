@@ -12,7 +12,7 @@ from app.core.config import create_app, default_lifespan, settings
 from app.tasks.celery.celery_scheduler import setup_periodic_tasks
 from app.tasks.config import tasks_settings
 from app.tasks.db import init_tasks_db
-from app.tasks.routes import router
+from app.tasks.routes import schedules, tasks
 
 logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
@@ -53,7 +53,12 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 lifespan = tasks_lifespan if __name__ == "__main__" else None
-tasks_app = create_app(router, lifespan=lifespan, add_cors_middleware=True)
+tasks_app = create_app(
+    tasks.router,
+    schedules.router,
+    lifespan=lifespan, 
+    add_cors_middleware=True
+)
 
 
 if __name__ == "__main__":
