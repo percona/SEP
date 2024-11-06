@@ -14,7 +14,7 @@ from app.core.exceptions import HTTPBadRequestException
 from app.tasks.celery.celery_scheduler import remove_periodic_task, setup_periodic_task
 from app.tasks.celery.celery_task import trigger_task
 from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
-from app.tasks.deps import SessionDep, TaskExecutor
+from app.tasks.deps import SessionDep, TaskExecutor, TaskConfig
 from app.tasks.models import (
     CrontabPeriod,
     GeneratedTask,
@@ -187,11 +187,11 @@ async def generate_task(
 async def execute_task_name(
     session: SessionDep,
     task_name: str,
+    config: TaskConfig,
     execution_data: TaskExecuteRequest | None = None,
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
     logger.debug("Executing task %s", task_name)
-    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
     if config.is_template:
         raise HTTPForbiddenException(
             f"Task {task_name} is a template and cannot be executed",
@@ -332,12 +332,14 @@ async def transform_payload(
 
 @router.post("/schedule/{task_name}", dependencies=[IsAuthenticatedDep])
 async def create_periodic_task(
-    session: SessionDep, task_name: str, schedule_data: TaskScheduleRequest = None
+    session: SessionDep,
+    task_name: str,
+    config: TaskConfig,
+    schedule_data: TaskScheduleRequest = None
 ) -> PeriodicTask:
     """Create a new PeriodicTask."""
     logger.debug("Creating periodic Task %s", schedule_data)
 
-    config = await TaskManager.retrieve_by_name(session=session, name=task_name)
     if config.is_template:
         raise HTTPForbiddenException(
             f"Task {task_name} is a template and cannot be executed",

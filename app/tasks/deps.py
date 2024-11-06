@@ -7,9 +7,11 @@ from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.config import tasks_settings
+from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
+    Task,
     TaskBackendEnum,
 )
 
@@ -44,3 +46,10 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
 
 
 TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
+
+async def get_config(task_name: str) -> Task:
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        return await TaskManager.retrieve_by_name(session=session, name=task_name)
+
+TaskConfig = Annotated[Task, Depends(get_config)]
