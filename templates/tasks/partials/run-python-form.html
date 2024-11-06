@@ -70,7 +70,7 @@
 </form>
 
 {% if required %}
-<form id="schedulerForm" method="post" action="/tasks/{{ task['name'] }}/schdule">
+<form id="schedulerForm" method="post" action="/schedule/{{ task['name'] }}">
 
     {% for item in required + optional %}
         <input type="hidden" name="meta_{{ item }}" id="scheduler_meta_{{ item }}">

@@ -1,4 +1,4 @@
-<form id="schedulerForm" method="post" action="/tasks/{{ task['name'] }}/schdule">
+<form id="schedulerForm" method="post" action="/schedule/{{ task['name'] }}">
     {% if not required %}
     <input name="meta_" type="hidden"/>
     <input name="payload" type="hidden"/>

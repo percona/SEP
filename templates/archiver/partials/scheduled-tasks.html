@@ -17,7 +17,7 @@
                 <form id="{{ periodic_task['task']['name'] }}-info" method="get" action="{{ periodic_task['task']['name'] }}">
                     <button class="icons">info</button>
                 </form>
-                <form id="{{ periodic_task['task']['name'] }}-delete" method="post" action="/tasks/cancel/{{ periodic_task['id'] }}">
+                <form id="{{ periodic_task['task']['name'] }}-delete" method="post" action="/schedule/cancel/{{ periodic_task['id'] }}">
                     <button name="location" class="icons">delete forever</button>
                     <input type="hidden" name="task" value="{{ periodic_task['task']['name'] }}">
                 </form>

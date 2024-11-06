@@ -19,13 +19,13 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskExecuteRequest,
     TaskHistoryStatusEnum,
-    TaskScheduleRequest,
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
-templates = sep_settings.TEMPLATES
 
+router = APIRouter()
+
+templates = sep_settings.TEMPLATES
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def tasks_list(
@@ -110,34 +110,3 @@ async def tasks_delete(
     """Delete task."""
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post(
-    "/{task_name}/schdule",
-    dependencies=[IsAuthenticated],
-)
-async def schedule_task_name(
-    task_name: str,
-    tasks_api: TaskAPI,
-    schedule_data: Annotated[TaskScheduleRequest, Form()],
-) -> RedirectResponse:
-    """Schdule task."""
-    logger.debug("scheduling task %s, %s,", task_name, schedule_data)
-
-    await tasks_api.post(f"/schedule/{task_name}", json=schedule_data.model_dump())
-
-    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post(
-    "/cancel/{periodic_task_id}",
-    dependencies=[IsAuthenticated],
-    response_class=RedirectResponse,
-)
-async def cancel_periodic_task(
-    periodic_task_id: str,
-    tasks_api: TaskAPI,
-) -> RedirectResponse:
-    """Cancel Periodic task."""
-    logger.debug("Canceling Periodic task %s", periodic_task_id)
-    await tasks_api.delete(f"/cancel/{periodic_task_id}")
