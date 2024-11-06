@@ -755,6 +755,7 @@ class PeriodicTask(BaseSQLModel, table=True):
     :type execute_request: dict
     """
 
+    __table_args__ = (Index("ix_period_task", "period", "task_id"),)
     task_id: int = SQLField(foreign_key="task.id", index=True)
     task: Task = Relationship(back_populates="periodic_tasks")
     period: str = Field(sa_column=Column(CrontabPeriodType))

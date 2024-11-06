@@ -1,7 +1,6 @@
 """Provide utility functions for processing task queue items."""
 
 import logging
-from collections.abc import Awaitable
 from http import HTTPStatus
 
 from fastapi import BackgroundTasks, HTTPException
@@ -64,8 +63,17 @@ async def process_queue_item(queue_id: int) -> None:
 async def prepare_task_history(
     task_name: str,
     execution_data: TaskExecuteRequest = None,
-) -> Awaitable[TaskHistory]:
-    """Prepare and record the history of a task execution request."""
+) -> TaskHistory:
+    """Prepare and record the history of a task execution request.
+
+    :param task_name: Name of the task to execute.
+    :type task_name: str
+    :param execution_data: Execution details, defaults to a new TaskExecuteRequest.
+    :type execution_data: TaskExecuteRequest, optional
+    :return: The logged TaskHistory entry.
+    :rtype: TaskHistory
+    :raises HTTPForbiddenException: If the task is a template.
+    """
     async_session = get_async_session_maker()
     async with async_session() as session:
         execution_data = (
