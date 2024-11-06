@@ -3,7 +3,7 @@
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.config import tasks_settings
@@ -48,17 +48,24 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
 TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
 
 
-async def get_config(task_name: str) -> Task:
+async def validate_task_is_not_template(task_name: str) -> Task:
     """Get Task object by task name for checking it is template or not.
 
     :param task_name: The name of the task to retrieve.
     :type task_name: str
-    :return: The Task object associated with the provided name.
+    :return: The Task object if valid.
     :rtype: Task
     """
     async_session = get_async_session_maker()
     async with async_session() as session:
-        return await TaskManager.retrieve_by_name(session=session, name=task_name)
+        config = await TaskManager.retrieve_by_name(session=session, name=task_name)
+        if config.is_template:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Task {task_name} is a template and cannot be executed",
+            )
+
+        return config
 
 
-TaskConfig = Annotated[Task, Depends(get_config)]
+TaskConfig = Annotated[Task, Depends(validate_task_is_not_template)]

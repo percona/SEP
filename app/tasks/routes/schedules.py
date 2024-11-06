@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.auth.exceptions import HTTPForbiddenException
 from app.tasks.celery.scheduler import remove_periodic_task, setup_periodic_task
 from app.tasks.crud import PeriodicTaskManager
 from app.tasks.deps import SessionDep, TaskConfig
@@ -33,11 +32,6 @@ async def create_periodic_task(
 ) -> PeriodicTask:
     """Create a new PeriodicTask."""
     logger.debug("Creating periodic Task %s", schedule_data)
-
-    if config.is_template:
-        raise HTTPForbiddenException(
-            f"Task {task_name} is a template and cannot be executed",
-        )
 
     try:
         crontab_period = CrontabPeriod.from_str(schedule_data.period)

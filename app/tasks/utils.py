@@ -11,7 +11,7 @@ from app.core.exceptions import HTTPBadRequestException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.deps import get_executor, TaskConfig
+from app.tasks.deps import get_executor
 from app.tasks.models import (
     TaskBackendEnum,
     TaskExecuteRequest,
@@ -62,7 +62,8 @@ async def process_queue_item(queue_id: int) -> None:
 
 
 async def prepare_task_history(
-    task_name: str, config: TaskConfig, execution_data: TaskExecuteRequest = None
+    task_name: str,
+    execution_data: TaskExecuteRequest = None,
 ) -> Awaitable[TaskHistory]:
     """Prepare and record the history of a task execution request."""
     async_session = get_async_session_maker()

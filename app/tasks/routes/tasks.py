@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import HTTPBadRequestException
 from app.tasks.celery.task import trigger_task
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -187,10 +186,6 @@ async def execute_task_name(
 ) -> dict[str, TaskHistory]:
     """Send a task for execution."""
     logger.debug("Executing task %s", task_name)
-    if config.is_template:
-        raise HTTPForbiddenException(
-            f"Task {task_name} is a template and cannot be executed",
-        )
     execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     if config.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= config.data.get("meta", {})
