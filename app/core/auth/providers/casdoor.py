@@ -130,15 +130,16 @@ class CasdoorSDK(RemoteAPI):
         :return: The constructed front-end URL.
         :rtype: URL
         """
-        frontend_url = self.front_endpoint
+        if self.front_endpoint.scheme:
+            return self.front_endpoint
         base_url = URL(self.endpoint) if base_url is None else base_url
         url_data = {
-            "scheme": frontend_url.scheme or base_url.scheme,
-            "hostname": frontend_url.hostname or base_url.hostname,
-            "port": frontend_url.port or base_url.port,
-            "path": frontend_url.path or base_url.path,
+            "scheme": self.front_endpoint.scheme or base_url.scheme,
+            "hostname": self.front_endpoint.hostname or base_url.hostname,
+            "port": self.front_endpoint.port or base_url.port,
+            "path": self.front_endpoint.path or base_url.path,
         }
-        return frontend_url.replace(**url_data)
+        return self.front_endpoint.replace(**url_data)
 
     async def refresh_token_request(
         self,
