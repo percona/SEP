@@ -92,6 +92,12 @@ redis = ">=4.5.2,<4.5.5 || >4.5.5,<6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
+pytest = "^8.3.3"
+pytest-cov = "^6.0.0"
+pytest-mock = "^3.14.0"
+faker = "^30.8.2"
+polyfactory = "^2.18.0"
+pytest-asyncio = "^0.24.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -203,9 +209,22 @@ order-by-type = false
 ]
 "app/core/config.py" = ["ARG003"]
 "app/tasks/celery.py" = ["ARG001"]
+"test_*.py" = ["S", "ARG002", "PLR0913", "ANN"]
+"conftest.py" = ["S", "ARG002", "PLR0913"]
+
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+addopts = "--cov=app --cov-report term-missing"
+
+[tool.coverage.run]
+omit = [
+    "app/tests/*",
+    "__init__.py",
+]

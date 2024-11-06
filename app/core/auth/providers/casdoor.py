@@ -240,12 +240,12 @@ class CasdoorSDK(RemoteAPI):
         """
         return await self.get("/api/get-token", params={"id": token_id})
 
-    async def get_users(self) -> dict[str, Any]:
+    async def get_users(self) -> list[dict[str, Any]]:
         """Retrieve a list of users from Casdoor.
 
         Fetches all users associated with the configured organization from Casdoor.
 
-        :return: A dictionary containing a list of user information.
+        :return: A list of user data.
         :rtype: dict[str, Any]
         """
         users = await self.get(
