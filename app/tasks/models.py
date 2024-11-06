@@ -434,9 +434,38 @@ class TaskScheduleRequest(TaskExecuteRequest):
         on the specified cron format (minute, hour, day of month, month, day of week).
         Defaults to None, meaning the task will not be scheduled.
     :type period: str | None
+        :param minute: Represents the minute component in cron format.
+    :type minute: str
+    :param hour: Represents the hour component in cron format.
+    :type hour: str
+    :param day_of_week: Represents the day of the week component in cron format.
+    :type day_of_week: str
+    :param day_of_month: Represents the day of the month component in cron format.
+    :type day_of_month: str
+    :param month_of_year: Represents the month component in cron format.
+    :type month_of_year: str
     """
 
-    period: str | None = None
+    period: str
+    minute: str = "*"
+    hour: str = "*"
+    day_of_week: str = "*"
+    day_of_month: str = "*"
+    month_of_year: str = "*"
+
+    @model_validator(mode="after")
+    @classmethod
+    def update_period(cls, data: Any) -> Any:
+        """Update the period field based on cron parts after model instantiation or modification."""
+        crontab = CrontabPeriod(
+            minute=data.get("minute", "*"),
+            hour=data.get("hour", "*"),
+            day_of_week=data.get("day_of_week", "*"),
+            day_of_month=data.get("day_of_month", "*"),
+            month_of_year=data.get("month_of_year", "*"),
+        )
+        data["period"] = crontab.to_str()
+        return data
 
 
 # TODO: Create Base/Write models  # noqa: TD002, TD003
@@ -628,13 +657,6 @@ class TransformPayloadRequest(BaseModel):
 
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
-
-
-class ScheduleRequest(BaseModel):
-    """Model to handle schedule requests with period and execute_data."""
-
-    period: str
-    execute_data: TaskExecuteRequest | None = None
 
 
 class CrontabPeriod(BaseModel):

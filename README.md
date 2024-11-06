@@ -254,37 +254,15 @@ be in https://localhost/graph/org/apikeys.
 
 ![image](https://github.com/user-attachments/assets/a6879771-6350-4505-944a-a5be8183f54c)
 
-### Celery and Celery RedBeat Scheduler
-1. Docker setup
-
-```yaml
-services:
-  redis:
-    image: redis
-    ports:
-      - "6379:6379"
-      
-  redis-commander:
-    container_name: redis-commander
-    hostname: redis-commander
-    image: rediscommander/redis-commander:latest
-    restart: always
-    environment:
-      - REDIS_HOSTS=local:redis:6379
-    ports:
-      - "8080:8081"
+### Celery and sqlalchemy-celery-beat
+1. Running Celery Worker
+```shell
+celery -A app.tasks.celery.task.celery worker --loglevel=info 
 ```
 
-- **Redis**: This service runs the Redis server on port `6379`, which is the default port used by Celery for the broker and result backend.
-- **Redis Commander**: This service provides a web interface to interact with Redis, accessible at `http://localhost:8080`. It allows you to view and manage your Redis data easily.
-2. Running Celery Worker
+3. Running the sqlalchemy-celery-beat
 ```shell
-celery -A app.main.celery worker --loglevel=info
-```
-
-3. Running the Celery Beat Scheduler
-```shell
-celery -A app.main.celery beat -S redbeat.RedBeatScheduler --loglevel=info
+celery -A app.tasks.celery.task.celery beat -S sqlalchemy_celery_beat.schedulers:DatabaseScheduler -l info
 ```
 
 ## Usage
