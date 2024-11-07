@@ -8,8 +8,16 @@ from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
-from app.core.auth.providers.casdoor import CasdoorSDK
-from app.tests.factories import CasdoorSDKFactory, OAuthTokenFactory
+from app.tests.factories import OAuthTokenFactory
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Set environment variables for testing."""
+    import os
+
+    os.environ["CASDOOR__CLIENT_ID"] = "test-client-id"
+    os.environ["CASDOOR__CLIENT_SECRET"] = "test-client-secret"
+    os.environ["CASDOOR__ALLOWED_ISSUERS"] = '["https://allowed-issuer.com"]'
 
 
 @pytest.fixture(scope="session")
@@ -33,7 +41,7 @@ def casdoor_disallowed_issuer() -> str:
 @pytest.fixture
 def casdoor_client_id() -> str:
     """Provide a fake Casdoor client ID."""
-    return "fakeClientId"
+    return "test-client-id"
 
 
 @pytest.fixture
@@ -93,18 +101,7 @@ def refresh_token() -> str:
 
 
 @pytest.fixture
-def casdoor_settings(casdoor_allowed_issuer: str, casdoor_client_id: str) -> CasdoorSDK:
-    """Provide a configured CasdoorSDK instance."""
-    return CasdoorSDKFactory.build(
-        allowed_issuers=[casdoor_allowed_issuer],
-        client_id=casdoor_client_id,
-        front_endpoint=casdoor_allowed_issuer,
-    )
-
-
-@pytest.fixture
 def casdoor_mock(
-    casdoor_settings: CasdoorSDK,
     casdoor_token_payload_data: dict[str, Any],
     oauth_token: OAuthToken,
     refresh_token: str,
@@ -138,4 +135,4 @@ def casdoor_mock(
     )
     from app.core.config import settings
 
-    return mocker.patch.object(settings, "CASDOOR", casdoor_settings)
+    return mocker.patch.object(settings, "CASDOOR", settings.CASDOOR)
