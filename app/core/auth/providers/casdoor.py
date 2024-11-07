@@ -49,8 +49,8 @@ class CasdoorSDK(RemoteAPI):
     :type application_name: str
     :param front_endpoint: The front-end endpoint for the Casdoor integration.
     :type front_endpoint: URL
-    :param certificate_path: The file path to the Casdoor certificate.
-    :type certificate_path: RelativeFilePath
+    :param certificate_path: The file path to the Casdoor certificate. Defaults to None.
+    :type certificate_path: RelativeFilePath | None
     :param allowed_issuers: The allowed token issuers (iss) for JWT validation.
         Defaults to an empty list.
     :type allowed_issuers: list[StrHttpUrl] | Literal["*"]
@@ -63,19 +63,22 @@ class CasdoorSDK(RemoteAPI):
     organization_name: str = "built-in"
     application_name: str = "app-built-in"
     front_endpoint: URL = URL()
-    certificate_path: RelativeFilePath
+    certificate_path: RelativeFilePath | None = None
     allowed_issuers: list[StrHttpUrl] | Literal["*"] = []
 
     @computed_field
     @cached_property
-    def certificate(self) -> bytes:
+    def certificate(self) -> bytes | None:
         """The contents of the certificate file.
 
-        :return: The certificate file contents.
-        :rtype: bytes
+        :return: The certificate file contents or None if certificate_path is not
+            defined.
+        :rtype: bytes | None
         """
-        with self.certificate_path.open("rb") as certificate_file:
-            return certificate_file.read()
+        if self.certificate_path is not None:
+            with self.certificate_path.open("rb") as certificate_file:
+                return certificate_file.read()
+        return None
 
     @model_validator(mode="after")
     def _set_auth_scheme_to_basic(self) -> Self:

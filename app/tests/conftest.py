@@ -1,7 +1,6 @@
 """Define test fixtures."""
 
 from typing import Any
-from unittest.mock import Mock
 
 import pytest
 from faker import Faker
@@ -9,7 +8,6 @@ from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor import CasdoorSDK
-from app.core.config import settings
 from app.tests.factories import CasdoorSDKFactory, OAuthTokenFactory
 
 
@@ -111,7 +109,7 @@ def casdoor_mock(
     refresh_token: str,
     casdoor_user_data: dict[str, Any],
     mocker: MockerFixture,
-) -> Mock:
+) -> CasdoorSDK:
     """Mock CasdoorSDK methods to simulate Casdoor service interactions."""
     mocker.patch(
         "app.core.auth.providers.casdoor.CasdoorSDK.introspect_token",
@@ -137,4 +135,4 @@ def casdoor_mock(
         "app.core.auth.providers.casdoor.CasdoorSDK.get_users",
         new=mocker.AsyncMock(return_value=[casdoor_user_data]),
     )
-    return mocker.patch.object(settings, "CASDOOR", casdoor_settings)
+    return mocker.patch("app.core.config.settings.CASDOOR", new=casdoor_settings)
