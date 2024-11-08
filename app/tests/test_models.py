@@ -18,12 +18,8 @@ class TestCasdoorTokenPayload:
         assert token_payload.iss == casdoor_token_payload_data["iss"]
         assert token_payload.sub == casdoor_token_payload_data["sub"]
         assert token_payload.aud == casdoor_token_payload_data["aud"]
-        assert token_payload.exp == datetime.fromisoformat(
-            casdoor_token_payload_data["exp"]
-        )
-        assert token_payload.nbf == datetime.fromisoformat(
-            casdoor_token_payload_data["nbf"]
-        )
+        assert token_payload.exp.timestamp() == casdoor_token_payload_data["exp"]
+        assert token_payload.nbf.timestamp() == casdoor_token_payload_data["nbf"]
         assert token_payload.jti == casdoor_token_payload_data["jti"]
         assert token_payload.username == casdoor_token_payload_data["username"]
         assert token_payload.active == casdoor_token_payload_data["active"]
@@ -80,12 +76,8 @@ class TestCasdoorTokenPayload:
         assert token_payload.iss == casdoor_token_payload_data["iss"]
         assert token_payload.sub == casdoor_token_payload_data["sub"]
         assert token_payload.aud == casdoor_token_payload_data["aud"]
-        assert token_payload.exp == datetime.fromisoformat(
-            casdoor_token_payload_data["exp"]
-        )
-        assert token_payload.nbf == datetime.fromisoformat(
-            casdoor_token_payload_data["nbf"]
-        )
+        assert token_payload.exp.timestamp() == casdoor_token_payload_data["exp"]
+        assert token_payload.nbf.timestamp() == casdoor_token_payload_data["nbf"]
         assert token_payload.jti == casdoor_token_payload_data["jti"]
         assert token_payload.username == casdoor_token_payload_data["username"]
         assert token_payload.active == casdoor_token_payload_data["active"]
