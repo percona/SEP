@@ -108,7 +108,7 @@
                     <td>{{ item["period"] }}</td>
                     <th scope="row">{{ item["execute_request"] }}</th>
                     <td>
-                        <form action="/schedule/cancel/{{ item['id'] }}" method="post">
+                        <form action="/schedule/{{ item['id'] }}/cancel" method="post">
                             <button type="submit"><i class="icons">delete</i></button>
                         </form>
                     </td>

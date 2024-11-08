@@ -54,7 +54,8 @@ def beat_task(self: Task, period: str, schedule_name: str) -> dict[str, str]:
     :type self: Task
     :param period: The time period for which to retrieve and process tasks.
     :type period: str
-    :param schedule_name: The name of the schedule entry in RedBeat.
+    :param schedule_name: The name of the schedule entry
+        in SQLAlchemy-Celery-Beat.
     :type schedule_name: str
     :return: A dictionary containing the status and period.
     :rtype: dict[str, str]
@@ -73,7 +74,8 @@ async def process_tasks_with_period(period: str, schedule_name: str) -> None:
 
     :param period: The time period for which to retrieve and process tasks.
     :type period: str
-    :param schedule_name: The name of the schedule entry in RedBeat.
+    :param schedule_name: The name of the schedule entry
+        in SQLAlchemy-Celery-Beat.
     :type schedule_name: str
     """
     async_session = get_async_session_maker()

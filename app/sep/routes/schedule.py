@@ -23,7 +23,7 @@ async def schedule_task(
     tasks_api: TaskAPI,
     schedule_data: Annotated[TaskScheduleRequest, Form()],
 ) -> RedirectResponse:
-    """Schdule task."""
+    """Schedule task."""
     logger.debug("scheduling task %s, %s,", task_name, schedule_data)
     await tasks_api.post(f"/schedules/{task_name}", json=schedule_data.model_dump())
 
@@ -31,7 +31,7 @@ async def schedule_task(
 
 
 @router.post(
-    "/cancel/{periodic_task_id}",
+    "/{periodic_task_id}/cancel",
     dependencies=[IsAuthenticated],
     response_class=RedirectResponse,
 )
