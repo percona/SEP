@@ -9,6 +9,19 @@
     fieldset div>label:nth-child(n+2) {
         margin-left: 1.5em;
     }
+
+    #src_query_container {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 100px; /* Adjust based on actual content */
+    }
+
+    #src_query_container.hidden {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
 </style>
 <form action="" method="post" class="{{ form_class }}">
     <legend>Main options</legend>
@@ -64,7 +77,7 @@
                 {% endif %}
             </label>
         </div>
-        <div>
+        <div style="display: flex;">
             <label for="source_db_id">Schema
                 <select id="source_db_id" name="source_db_id" class="validate" required>
                     <option value="">Select a schema</option>
@@ -75,10 +88,12 @@
                     <option value="">Select a table</option>
                 </select>
             </label>
+            <div id="src_query_container" style="width: fit-content; margin-left: 1em;">
             <label>/</label>
-            <label for="src_query">Source Query
-                <input type="text" id="src_query" name="src_query" class="validate" required />
-            </label>
+                <label for="src_query">Source Query
+                    <input type="text" id="src_query" name="src_query" class="validate" required />
+                </label>
+            </div>
         </div>
         <div>
             <label for="where">Where condition
@@ -132,13 +147,15 @@
     const schemaSelect = document.getElementById('source_db_id');
     const sourceTableSelect = document.getElementById('source_table_id');
     const destTableSelect = document.getElementById('dest_table_id');
+    const swapDropSelect = document.getElementById('swap_drop');
+    const destinationFieldset = document.getElementById('destination_fieldset');
+    const dstFileInput = document.getElementById('dst_file');
+    const srcQueryInput = document.getElementById('src_query');
+    const srcQueryContainer = document.getElementById('src_query_container');
 
     function populateSchemas(selectedService) {
-        // schemaSelect.disabled = true;
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
-        // sourceTableSelect.disabled = true;
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        // destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedService && serviceSchemas[selectedService]) {
@@ -154,7 +171,6 @@
                 if (schemas.length === 1) {
                     const [singleSchemaId, _] = schemas[0]
                     schemaSelect.value = singleSchemaId;
-                    // schemaSelect.disabled = true;
                     addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, singleSchemaId);
                 }
@@ -174,18 +190,15 @@
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0]
                 tableSelect.value = singleTableId;
-                // tableSelect.disabled = true;
                 if (swapDropSelect.value !== '1' || tableSelect.id !== 'dest_table_id') {
                     addHiddenInput(tableSelect);
-                }            
+                }
             }
         }
     }
 
     function populateSourceTables(selectedService, selectedSchema) {
-        // sourceTableSelect.disabled = true;
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        // destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
@@ -194,7 +207,6 @@
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0]
                 sourceTableSelect.value = singleTableId;
-                // sourceTableSelect.disabled = true;
                 addHiddenInput(sourceTableSelect);
                 populateDestTables(selectedService, selectedSchema, singleTableId);
             }
@@ -202,7 +214,6 @@
     }
 
     function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
-        // destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedSchema && selectedSourceTable && serviceSchemas[selectedService][selectedSchema]) {
@@ -213,8 +224,6 @@
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0];
                 destTableSelect.value = singleTableId;
-                // destTableSelect.disabled = true;
-                // Only add hidden input if swap_drop is not '1'
                 if (swapDropSelect.value !== '1') {
                     addHiddenInput(destTableSelect);
                 }
@@ -236,16 +245,10 @@
         const hiddenTableInput = document.getElementById("source_table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         populateSourceTables(connectToSelect.value, this.value);
-    updateDestinationFieldset();
-    });
-
-    window.addEventListener('DOMContentLoaded', function () {
-        if (connectToSelect.options.length === 1) {
-            const singleHost = connectToSelect.options[0].value;
-            populateSchemas(singleHost);
-        }
         updateDestinationFieldset();
     });
+
+
 
     sourceTableSelect.addEventListener('change', function () {
         const selectedService = connectToSelect.value;
@@ -256,67 +259,118 @@
         populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
         updateDestinationFieldset();
     });
-</script>
-<script type="text/javascript">
-    // Get references to the swap_drop select element and the destination fieldset
-const swapDropSelect = document.getElementById('swap_drop');
-const destinationFieldset = document.getElementById('destination_fieldset');
-const dstFileInput = document.getElementById('dst_file');
 
-// Function to update the visibility and submission of the destination fieldset
-function updateDestinationFieldset() {
-    if (swapDropSelect.value === '1') {
-        // Hide the destination fieldset
-        destinationFieldset.style.display = 'none';
-        // Disable the inputs
-        destTableSelect.disabled = true;
-        dstFileInput.disabled = true;
-        // Remove name attributes to prevent submission
-        removeHiddenInput('dest_table_id');
-        removeHiddenInput('dst_file');
-    } else {
-        // Show the destination fieldset
-        destinationFieldset.style.display = '';
-        // Enable the inputs
-        destTableSelect.disabled = false;
-        dstFileInput.disabled = false;
-        // Restore name attributes for submission
-        destTableSelect.setAttribute('name', 'dest_table_id');
-        dstFileInput.setAttribute('name', 'dst_file');
 
-        if (destTableSelect.disabled && destTableSelect.value) {
+
+    function updateDestinationFieldset() {
+        if (swapDropSelect.value === '1') {
+            destinationFieldset.style.display = 'none';
+            destTableSelect.disabled = true;
+            dstFileInput.disabled = true;
+            removeHiddenInput('dest_table_id');
+            removeHiddenInput('dst_file');
+        } else {
+            destinationFieldset.style.display = '';
+            destTableSelect.disabled = false;
+            dstFileInput.disabled = false;
+            destTableSelect.setAttribute('name', 'dest_table_id');
+            dstFileInput.setAttribute('name', 'dst_file');
+
+            if (destTableSelect.disabled && destTableSelect.value) {
+                addHiddenInput(destTableSelect);
+            }
+            if (dstFileInput.disabled && dstFileInput.value) {
+                addHiddenInput(dstFileInput);
+            }
+        }
+    }
+
+    function removeHiddenInput(inputName) {
+        const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
+        if (hiddenInput) {
+            hiddenInput.parentNode.removeChild(hiddenInput);
+        }
+    }
+
+    function addHiddenInput(inputElement) {
+        removeHiddenInput(inputElement.name);
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = inputElement.name;
+        hiddenInput.value = inputElement.value;
+        hiddenInput.id = `${inputElement.id}_hidden`;
+        inputElement.insertAdjacentElement('afterend', hiddenInput);
+    }
+
+    swapDropSelect.addEventListener('change', function () {
+        updateDestinationFieldset();
+        if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
             addHiddenInput(destTableSelect);
         }
-        if (dstFileInput.disabled && dstFileInput.value) {
-            addHiddenInput(dstFileInput);
+    });
+
+    srcQueryInput.addEventListener('input', toggleSchemaAndTable);
+
+    function toggleSchemaAndTable() {
+        if (srcQueryInput.value.trim() !== '') {
+            // "Source Query" is filled; disable schema and table selects
+            schemaSelect.disabled = true;
+            sourceTableSelect.disabled = true;
+            schemaSelect.removeAttribute('required');
+            sourceTableSelect.removeAttribute('required');
+            // Clear their values
+            schemaSelect.value = '';
+            sourceTableSelect.value = '';
+            // Remove their names so they are not submitted
+            schemaSelect.removeAttribute('name');
+            sourceTableSelect.removeAttribute('name');
+        } else {
+            // "Source Query" is empty; enable schema and table selects
+            schemaSelect.disabled = false;
+            sourceTableSelect.disabled = false;
+            schemaSelect.setAttribute('required', 'required');
+            sourceTableSelect.setAttribute('required', 'required');
+            // Restore their names
+            schemaSelect.name = 'source_db_id';
+            sourceTableSelect.name = 'source_table_id';
         }
     }
-}
 
-function removeHiddenInput(inputName) {
-    const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
-    if (hiddenInput) {
-        hiddenInput.parentNode.removeChild(hiddenInput);
+    function toggleSourceQueryInput() {
+        if (schemaSelect.value !== '' && sourceTableSelect.value !== '') {
+            // Both schema and table are selected; hide source query input
+            srcQueryInput.disabled = true;
+            srcQueryInput.removeAttribute('required');
+            srcQueryInput.value = '';
+            srcQueryInput.removeAttribute('name');
+            srcQueryContainer.classList.add('hidden');
+        } else {
+            // Schema and table are not fully selected; show source query input
+            srcQueryInput.disabled = false;
+            srcQueryInput.setAttribute('required', 'required');
+            srcQueryInput.name = 'src_query';
+            srcQueryContainer.classList.remove('hidden');
+        }
     }
-}
 
-function addHiddenInput(inputElement) {
-    removeHiddenInput(inputElement.name); // Remove existing hidden input if any
-    const hiddenInput = document.createElement('input');
-    hiddenInput.type = 'hidden';
-    hiddenInput.name = inputElement.name;
-    hiddenInput.value = inputElement.value;
-    hiddenInput.id = `${inputElement.id}_hidden`;
-    inputElement.insertAdjacentElement('afterend', hiddenInput);
-}
+    srcQueryInput.addEventListener('input', function() {
+        toggleSchemaAndTable();
+    });
 
-// Add event listener to swap_drop select element
-swapDropSelect.addEventListener('change', function () {
-    updateDestinationFieldset();
-    // If dest_table_id is disabled and swap_drop is not '1', ensure hidden input is added
-    if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
-        addHiddenInput(destTableSelect);
-    }
-});
+    schemaSelect.addEventListener('change', function() {
+        toggleSourceQueryInput();
+    });
 
+    sourceTableSelect.addEventListener('change', function() {
+        toggleSourceQueryInput();
+    });
+    window.addEventListener('DOMContentLoaded', function () {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            populateSchemas(singleHost);
+        }
+        updateDestinationFieldset();
+        toggleSchemaAndTable();
+        toggleSourceQueryInput();
+    });
 </script>
