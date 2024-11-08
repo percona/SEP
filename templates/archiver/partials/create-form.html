@@ -1,68 +1,113 @@
+-----------
 {% set form_class = "modal" if modal_required else "" %}
+<style>
+    fieldset input,
+    select {
+        margin-top: 1em;
+    }
+
+    fieldset div>label:nth-child(n+2) {
+        margin-left: 1.5em;
+    }
+</style>
 <form action="" method="post" class="{{ form_class }}">
     <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
         <label for="hostname">Select host</label>
         {% if executor_hosts|length == 1 %}
-            {% set single_service = executor_hosts[0] %}
-            <select id="hostname" name="hostname" disabled>
-                <option value="{{ single_service }}" selected>{{ single_service }}</option>
-            </select>
-            <input type="hidden" name="hostname" value="{{ single_service }}">
+        {% set single_service = executor_hosts[0] %}
+        <select id="hostname" name="hostname" disabled>
+            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+        </select>
+        <input type="hidden" name="hostname" value="{{ single_service }}">
         {% else %}
-            <select id="hostname" name="hostname">
-                {% for executor_host in executor_hosts %}
-                <option value="{{ executor_host }}">{{ executor_host }}</option>
-                {% endfor %}
-            </select>
+        <select id="hostname" name="hostname">
+            {% for executor_host in executor_hosts %}
+            <option value="{{ executor_host }}">{{ executor_host }}</option>
+            {% endfor %}
+        </select>
         {% endif %}
+    </fieldset>
+    <fieldset style="display: flex; flex-flow: column;">
+        <legend>Archive Type</legend>
+        <div>
+            <label for="alias">Task name
+                <input type="text" id="alias" name="alias" class="validate" required />
+            </label>
+            <label for="swap_drop">Swap Drop
+                <select id="swap_drop" name="swap_drop">
+                    <option value="0">Standard purge</option>
+                    <option value="1">Swap and drop</option>
+                    <option value="2">Swap-archive-drop</option>
+                </select>
+            </label>
+        </div>
     </fieldset>
     <fieldset>
         <legend>Source details</legend>
-        <label for="alias">Task name
-            <input type="text" id="alias" name="alias" class="validate" required/>
-        </label>
-        <label for="service_id">Select a database host
-        {% if mysql_services|length == 1 %}
-            {% set single_service = mysql_services[0] %}
-            <select id="service_id" name="service_id" disabled>
-                <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-            </select>
-            <input type="hidden" name="service_id" value="{{ single_service.id }}">
-        {% else %}
-            <select id="service_id" name="service_id">
-                <option value="" selected>Select a database host</option>
-                {% for service in mysql_services %}
-                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                {% endfor %}
-            </select>
-        {% endif %}
-        </label>
-        <fieldset>
-            <legend>Data</legend>
+        <div>
+            <label for="service_id">Select a database host
+                {% if mysql_services|length == 1 %}
+                {% set single_service = mysql_services[0] %}
+                <select id="service_id" name="service_id" disabled>
+                    <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                </select>
+                <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                {% else %}
+                <select id="service_id" name="service_id">
+                    <option value="" selected>Select a database host</option>
+                    {% for service in mysql_services %}
+                    <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
+            </label>
+        </div>
+        <div>
             <label for="source_db_id">Schema
-                <select id="source_db_id" name="source_db_id" class="validate" disabled required>
+                <select id="source_db_id" name="source_db_id" class="validate" required>
                     <option value="">Select a schema</option>
                 </select>
             </label>
             <label for="source_table_id">Table
-                <select id="source_table_id" name="source_table_id" class="validate" disabled required>
+                <select id="source_table_id" name="source_table_id" class="validate" required>
                     <option value="">Select a table</option>
                 </select>
             </label>
-            <label for="where">Where condition
-                <input type="text" id="where" name="where" class="validate" required/>
+            <label>/</label>
+            <label for="src_query">Source Query
+                <input type="text" id="src_query" name="src_query" class="validate" required />
             </label>
-        </fieldset>
-    </fieldset>
-    <fieldset>
-        <legend>Destination details</legend>
-        <label for="dest_table_id">Name
-            <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
-                <option value="">Select a table</option>
-            </select>
+        </div>
+        <div>
+            <label for="where">Where condition
+                <input type="text" id="where" name="where" class="validate" required />
+            </label>
+            <label for="prg_use_index">Use_Index
+                <input type="text" id="prg_use_index" name="prg_use_index" class="validate" required />
+            </label>
+            <label for="prg_limit">Limit
+                <input type="number" id="prg_limit" name="prg_limit" class="validate" required />
+            </label>
+            <br />
+        </div>
+        <label for="prg_purge">DELETE_DATA
+            <input type="checkbox" id="prg_purge" name="prg_purge" class="validate" value="0" />
         </label>
+    </fieldset>
+    <fieldset id="destination_fieldset">
+        <legend>Destination details</legend>
+        <div>
+            <label for="dest_table_id">Destination Database
+                <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
+                    <option value="">Select a table</option>
+                </select>
+            </label>
+            <label for="dst_file">Destination File
+                <input type="text" id="dst_file" name="dst_file" class="validate" required />
+            </label>
+        </div>
     </fieldset>
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
@@ -70,15 +115,15 @@
 
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% set tables = {} %}
-        {% for table in schema.tables %}
-            {% do tables.update({table.id: table.name}) %}
-        {% endfor %}
-        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
+{% set schemas = {} %}
+{% for schema in service.schemas %}
+{% set tables = {} %}
+{% for table in schema.tables %}
+{% do tables.update({table.id: table.name}) %}
+{% endfor %}
+{% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
+{% endfor %}
+{% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
 
 <script type="text/javascript">
@@ -89,11 +134,11 @@
     const destTableSelect = document.getElementById('dest_table_id');
 
     function populateSchemas(selectedService) {
-        schemaSelect.disabled = true;
+        // schemaSelect.disabled = true;
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
-        sourceTableSelect.disabled = true;
+        // sourceTableSelect.disabled = true;
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.disabled = true;
+        // destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedService && serviceSchemas[selectedService]) {
@@ -109,8 +154,8 @@
                 if (schemas.length === 1) {
                     const [singleSchemaId, _] = schemas[0]
                     schemaSelect.value = singleSchemaId;
-                    schemaSelect.disabled = true;
-                    schemaSelect.insertAdjacentHTML("afterend", `<input id="source_db_id_hidden" type="hidden" name="source_db_id" value="${schemaSelect.value}">`)
+                    // schemaSelect.disabled = true;
+                    addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, singleSchemaId);
                 }
             }
@@ -129,16 +174,18 @@
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0]
                 tableSelect.value = singleTableId;
-                tableSelect.disabled = true;
-                tableSelect.insertAdjacentHTML("afterend", `<input id="${tableSelect.id}_hidden" type="hidden" name="${tableSelect.name}" value="${tableSelect.value}">`)
+                // tableSelect.disabled = true;
+                if (swapDropSelect.value !== '1' || tableSelect.id !== 'dest_table_id') {
+                    addHiddenInput(tableSelect);
+                }            
             }
         }
     }
 
     function populateSourceTables(selectedService, selectedSchema) {
-        sourceTableSelect.disabled = true;
+        // sourceTableSelect.disabled = true;
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.disabled = true;
+        // destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
@@ -146,42 +193,58 @@
             populateTables(sourceTableSelect, tables);
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0]
+                sourceTableSelect.value = singleTableId;
+                // sourceTableSelect.disabled = true;
+                addHiddenInput(sourceTableSelect);
                 populateDestTables(selectedService, selectedSchema, singleTableId);
             }
         }
     }
 
     function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
-        destTableSelect.disabled = true;
+        // destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedSchema && selectedSourceTable && serviceSchemas[selectedService][selectedSchema]) {
             let tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
             tables = tables.filter(table => table[0] !== selectedSourceTable)
             populateTables(destTableSelect, tables);
+
+            if (tables.length === 1) {
+                const [singleTableId, _] = tables[0];
+                destTableSelect.value = singleTableId;
+                // destTableSelect.disabled = true;
+                // Only add hidden input if swap_drop is not '1'
+                if (swapDropSelect.value !== '1') {
+                    addHiddenInput(destTableSelect);
+                }
+            }
         }
     }
 
-    connectToSelect.addEventListener('change', function() {
+    connectToSelect.addEventListener('change', function () {
         const selectedService = this.value;
         const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
-        populateSchemas(selectedService);
+        populateSchemas(this.value);
+        updateDestinationFieldset();
     });
 
-    schemaSelect.addEventListener('change', function() {
+    schemaSelect.addEventListener('change', function () {
         const selectedService = connectToSelect.value;
         const selectedSchema = this.value;
         const hiddenTableInput = document.getElementById("source_table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateSourceTables(selectedService, selectedSchema);
+        populateSourceTables(connectToSelect.value, this.value);
+    updateDestinationFieldset();
     });
 
-    window.addEventListener('DOMContentLoaded', function() {
+    window.addEventListener('DOMContentLoaded', function () {
         if (connectToSelect.options.length === 1) {
             const singleHost = connectToSelect.options[0].value;
             populateSchemas(singleHost);
         }
+        updateDestinationFieldset();
     });
 
     sourceTableSelect.addEventListener('change', function () {
@@ -190,6 +253,70 @@
         const selectedTable = this.value;
         const hiddenTableInput = document.getElementById("dest_table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateDestTables(selectedService, selectedSchema, selectedTable);
+        populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
+        updateDestinationFieldset();
     });
+</script>
+<script type="text/javascript">
+    // Get references to the swap_drop select element and the destination fieldset
+const swapDropSelect = document.getElementById('swap_drop');
+const destinationFieldset = document.getElementById('destination_fieldset');
+const dstFileInput = document.getElementById('dst_file');
+
+// Function to update the visibility and submission of the destination fieldset
+function updateDestinationFieldset() {
+    if (swapDropSelect.value === '1') {
+        // Hide the destination fieldset
+        destinationFieldset.style.display = 'none';
+        // Disable the inputs
+        destTableSelect.disabled = true;
+        dstFileInput.disabled = true;
+        // Remove name attributes to prevent submission
+        removeHiddenInput('dest_table_id');
+        removeHiddenInput('dst_file');
+    } else {
+        // Show the destination fieldset
+        destinationFieldset.style.display = '';
+        // Enable the inputs
+        destTableSelect.disabled = false;
+        dstFileInput.disabled = false;
+        // Restore name attributes for submission
+        destTableSelect.setAttribute('name', 'dest_table_id');
+        dstFileInput.setAttribute('name', 'dst_file');
+
+        if (destTableSelect.disabled && destTableSelect.value) {
+            addHiddenInput(destTableSelect);
+        }
+        if (dstFileInput.disabled && dstFileInput.value) {
+            addHiddenInput(dstFileInput);
+        }
+    }
+}
+
+function removeHiddenInput(inputName) {
+    const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
+    if (hiddenInput) {
+        hiddenInput.parentNode.removeChild(hiddenInput);
+    }
+}
+
+function addHiddenInput(inputElement) {
+    removeHiddenInput(inputElement.name); // Remove existing hidden input if any
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = inputElement.name;
+    hiddenInput.value = inputElement.value;
+    hiddenInput.id = `${inputElement.id}_hidden`;
+    inputElement.insertAdjacentElement('afterend', hiddenInput);
+}
+
+// Add event listener to swap_drop select element
+swapDropSelect.addEventListener('change', function () {
+    updateDestinationFieldset();
+    // If dest_table_id is disabled and swap_drop is not '1', ensure hidden input is added
+    if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
+        addHiddenInput(destTableSelect);
+    }
+});
+
 </script>
