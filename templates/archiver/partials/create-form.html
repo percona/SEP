@@ -1,4 +1,3 @@
------------
 {% set form_class = "modal" if modal_required else "" %}
 <style>
     fieldset input,
@@ -10,14 +9,29 @@
         margin-left: 1.5em;
     }
 
-    #src_query_container {
+    #src_query_container,
+    #dst_file_container {
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 1;
         max-height: 100px; /* Adjust based on actual content */
     }
 
-    #src_query_container.hidden {
+    #src_query_container.hidden,
+    #dst_file_container.hidden {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    #destination_container {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 500px; /* Adjust based on actual content height */
+    }
+
+    #destination_container.hidden {
         opacity: 0;
         max-height: 0;
         pointer-events: none;
@@ -68,7 +82,7 @@
                 </select>
                 <input type="hidden" name="service_id" value="{{ single_service.id }}">
                 {% else %}
-                <select id="service_id" name="service_id">
+                <select id="service_id" name="service_id" required>
                     <option value="" selected>Select a database host</option>
                     {% for service in mysql_services %}
                     <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
@@ -89,7 +103,7 @@
                 </select>
             </label>
             <div id="src_query_container" style="width: fit-content; margin-left: 1em;">
-            <label>/</label>
+            <label>OR</label>
                 <label for="src_query">Source Query
                     <input type="text" id="src_query" name="src_query" class="validate" required />
                 </label>
@@ -100,28 +114,31 @@
                 <input type="text" id="where" name="where" class="validate" required />
             </label>
             <label for="prg_use_index">Use_Index
-                <input type="text" id="prg_use_index" name="prg_use_index" class="validate" required />
+                <input type="text" id="prg_use_index" name="prg_use_index" class="validate"/>
             </label>
             <label for="prg_limit">Limit
-                <input type="number" id="prg_limit" name="prg_limit" class="validate" required />
+                <input type="number" id="prg_limit" name="prg_limit" class="validate" value="1000"/>
             </label>
             <br />
         </div>
         <label for="prg_purge">DELETE_DATA
-            <input type="checkbox" id="prg_purge" name="prg_purge" class="validate" value="0" />
+            <input type="checkbox" id="prg_purge" name="prg_purge" class="validate" value="1" />
         </label>
     </fieldset>
     <fieldset id="destination_fieldset">
         <legend>Destination details</legend>
-        <div>
+        <div id="destination_container" style="display: flex;">
             <label for="dest_table_id">Destination Database
                 <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
                     <option value="">Select a table</option>
                 </select>
             </label>
-            <label for="dst_file">Destination File
-                <input type="text" id="dst_file" name="dst_file" class="validate" required />
-            </label>
+            <div id="dst_file_container" style="width: fit-content; margin-left: 1em;">
+                <label>OR</label>
+                <label for="dst_file" >Destination File
+                    <input type="text" id="dst_file" name="dst_file" class="validate" required />
+                </label>
+            </div>
         </div>
     </fieldset>
     <button type="submit">Create</button>
@@ -147,11 +164,14 @@
     const schemaSelect = document.getElementById('source_db_id');
     const sourceTableSelect = document.getElementById('source_table_id');
     const destTableSelect = document.getElementById('dest_table_id');
+    const dstFileInput = document.getElementById('dst_file');
     const swapDropSelect = document.getElementById('swap_drop');
     const destinationFieldset = document.getElementById('destination_fieldset');
-    const dstFileInput = document.getElementById('dst_file');
+    const dstFileContainer = document.getElementById('dst_file_container');
     const srcQueryInput = document.getElementById('src_query');
     const srcQueryContainer = document.getElementById('src_query_container');
+    const destinationContainer = document.getElementById('destination_container');
+    const prgPurgeCheckbox = document.getElementById('prg_purge');
 
     function populateSchemas(selectedService) {
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
@@ -166,7 +186,8 @@
                     option.value = schemaId;
                     option.textContent = schema.name;
                     schemaSelect.appendChild(option);
-                    schemaSelect.disabled = false;
+                    if (srcQueryInput.value === '')
+                        schemaSelect.disabled = false;
                 }
                 if (schemas.length === 1) {
                     const [singleSchemaId, _] = schemas[0]
@@ -237,6 +258,9 @@
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
         populateSchemas(this.value);
         updateDestinationFieldset();
+        toggleSourceQueryInput();
+        toggleDstFileContainer();
+        toggleDestTableSelect()
     });
 
     schemaSelect.addEventListener('change', function () {
@@ -258,6 +282,164 @@
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
         updateDestinationFieldset();
+        toggleDstFileContainer();
+        toggleDestTableSelect()
+    });
+
+    function updateDestinationFieldset() {
+        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1') {
+            destinationContainer.classList.add('hidden');
+            destTableSelect.disabled = true;
+            dstFileInput.disabled = true;
+            removeHiddenInput('dest_table_id');
+            removeHiddenInput('dst_file');
+        } else {
+            destinationContainer.classList.remove('hidden');
+            destTableSelect.disabled = false;
+            dstFileInput.disabled = false;
+            destTableSelect.setAttribute('name', 'dest_table_id');
+            dstFileInput.setAttribute('name', 'dst_file');
+
+            if (destTableSelect.disabled && destTableSelect.value) {
+                addHiddenInput(destTableSelect);
+            }
+            if (dstFileInput.disabled && dstFileInput.value) {
+                addHiddenInput(dstFileInput);
+            }
+        }
+    }
+
+    function removeHiddenInput(inputName) {
+        const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
+        if (hiddenInput) {
+            hiddenInput.parentNode.removeChild(hiddenInput);
+        }
+    }
+
+    function addHiddenInput(inputElement) {
+        removeHiddenInput(inputElement.name);
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = inputElement.name;
+        hiddenInput.value = inputElement.value;
+        hiddenInput.id = `${inputElement.id}_hidden`;
+        inputElement.insertAdjacentElement('afterend', hiddenInput);
+    }
+
+    
+    function toggleSchemaAndTable() {
+        if (srcQueryInput.value.trim() !== '') {
+            schemaSelect.disabled = true;
+            sourceTableSelect.disabled = true;
+            schemaSelect.removeAttribute('required');
+            sourceTableSelect.removeAttribute('required');
+            schemaSelect.value = '';
+            sourceTableSelect.value = '';
+            schemaSelect.removeAttribute('name');
+            sourceTableSelect.removeAttribute('name');
+        } else {
+            schemaSelect.disabled = false;
+            sourceTableSelect.disabled = false;
+            schemaSelect.setAttribute('required', 'required');
+            sourceTableSelect.setAttribute('required', 'required');
+            schemaSelect.name = 'source_db_id';
+            sourceTableSelect.name = 'source_table_id';
+        }
+    }
+    
+    function toggleSourceQueryInput() {
+        if (schemaSelect.value !== '' && sourceTableSelect.value !== '') {
+            srcQueryInput.disabled = true;
+            srcQueryInput.removeAttribute('required');
+            srcQueryInput.value = '';
+            srcQueryInput.removeAttribute('name');
+            srcQueryContainer.classList.add('hidden');
+        } else {
+            srcQueryInput.disabled = false;
+            srcQueryInput.setAttribute('required', 'required');
+            srcQueryInput.name = 'src_query';
+            srcQueryContainer.classList.remove('hidden');
+        }
+    }
+
+    function togglePrgPurgeCheckbox() {
+        if (swapDropSelect.value !== '1') {
+            prgPurgeCheckbox.disabled = false
+            return;
+        }
+        prgPurgeCheckbox.disabled = true;
+    }
+
+
+    function toggleDstFileContainer() {
+        if (destTableSelect.value !== '') {
+            dstFileContainer.classList.add('hidden');
+            dstFileInput.disabled = true;
+            dstFileInput.value = '';
+            dstFileInput.removeAttribute('name');
+        } else {
+            dstFileContainer.classList.remove('hidden');
+            dstFileInput.disabled = false;
+            dstFileInput.setAttribute('name', 'dst_file');
+        }
+    }
+
+    function toggleDestTableSelect() {
+        if (dstFileInput.value.trim() !== '') {
+            destTableSelect.disabled = true;
+            destTableSelect.value = '';
+            destTableSelect.removeAttribute('name');
+        } else {
+            destTableSelect.disabled = false;
+            destTableSelect.setAttribute('name', 'dest_table_id');
+        }
+    }
+
+
+    swapDropSelect.addEventListener('change', function () {
+        togglePrgPurgeCheckbox()
+        updateDestinationFieldset();
+        if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
+            addHiddenInput(destTableSelect);
+        }
+    });
+
+    srcQueryInput.addEventListener('input', toggleSchemaAndTable);
+    
+    srcQueryInput.addEventListener('input', function() {
+        toggleSchemaAndTable();
+    });
+    
+    schemaSelect.addEventListener('change', function() {
+        toggleSourceQueryInput();
+    });
+
+    sourceTableSelect.addEventListener('change', function() {
+        toggleSourceQueryInput();
+    });
+
+    prgPurgeCheckbox.addEventListener('change', function () {
+        updateDestinationFieldset();
+    });
+
+    destTableSelect.addEventListener('change', function () {
+        toggleDstFileContainer();
+    });
+
+    dstFileInput.addEventListener('input', function () {
+        toggleDestTableSelect();
+    });
+
+    window.addEventListener('DOMContentLoaded', function () {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            populateSchemas(singleHost);
+        }
+        updateDestinationFieldset();
+        toggleSchemaAndTable();
+        toggleSourceQueryInput();
+        toggleDstFileContainer();
+        toggleDestTableSelect();
     });
 
 
