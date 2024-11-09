@@ -78,12 +78,14 @@ optional = true
 
 [tool.poetry.group.mysql.dependencies]
 aiomysql = "^0.2.0"
+pymysql = "^1.1.1"
 
 [tool.poetry.group.postgresql]
 optional = true
 
 [tool.poetry.group.postgresql.dependencies]
 asyncpg = "^0.29.0"
+psycopg2 = "^2.9.10"
 
 [tool.poetry.group.redis]
 optional = true
