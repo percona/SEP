@@ -327,8 +327,8 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
         :type v: Any
         :return: The {enum_class} found.
         :rtype: {enum_class}
-        :raises ValueError: If `v` is not a value in {enum_class} and `v` is not a
-            valid name for an Enum (not a string).
+        :raises ExceptionGroup[ValueError, TypeError]: If `v` is not a value in
+            {enum_class} and `v` is not a valid name for an Enum (not a string).
         :raises ExceptionGroup[ValueError, KeyError]: If `v` is neither a value nor a
             name in {enum_class}.
         """
@@ -399,6 +399,7 @@ def validate_as_type_factory(
         :type v: T
         :return: {return_description}
         :rtype: {return_class}
+        :raises ValidationError: If the validation fails.
         """
         validated_value = TypeAdapter(validate_class).validate_python(v)
         if post_processing is None:
