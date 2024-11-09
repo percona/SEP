@@ -55,10 +55,10 @@ development:
   CELERY:
     BROKER_URL: "filesystem://"
     BROKER_TRANSPORT_OPTIONS:
-      data_folder_in: data/celery/broker
-      data_folder_out: data/celery/broker
-      processed_folder: data/celery/processed
-      control_folder: data/celery/control
+      DATA_FOLDER_IN: data/celery/broker
+      DATA_FOLDER_OUT: data/celery/broker
+      PROCESSED_FOLDER: data/celery/processed
+      CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
     RESULT_PERSISTENT: true
     BEAT_SCHEDULER : 'sqlalchemy_celery_beat.schedulers:DatabaseScheduler'

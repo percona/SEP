@@ -34,7 +34,7 @@ from app.core.fields import (
     URIPath,
     URL,
 )
-from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
+from app.core.models import BaseLowercaseModel
 from app.core.utils import deep_dict_update
 from app.sep.models import Plugin
 
@@ -89,7 +89,7 @@ class OAuthOptions(BaseModel):
         return str(url)
 
 
-class SessionOptions(BaseCaseInsensitiveModel):
+class SessionOptions(BaseModel):
     """Configuration options for a SEP session.
 
     :param COOKIE_NAME: The key of the authentication cookie. Defaults to "authToken".
@@ -156,9 +156,9 @@ class SyncOptions(BaseLowercaseModel):
 class SEPSettings(BaseYamlExtraSettings):
     """Settings for SEP.
 
-    :param SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
+    :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
-    :type SETTINGS_PREFIXES: ClassVar[list[str]]
+    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
     :type UVICORN_PORT: int
     :param OAUTH: OAuth configuration options.

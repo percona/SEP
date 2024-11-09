@@ -13,10 +13,8 @@ from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import (
-    AliasGenerator,
     AnyUrl,
     computed_field,
-    ConfigDict,
     DirectoryPath,
     HttpUrl,
     validate_call,
@@ -31,15 +29,14 @@ from pydantic_settings.sources import PathType
 from starlette.types import Lifespan
 
 from app.core.auth.providers.casdoor import CasdoorSDK
+from app.core.celery.config import CeleryOptions
 from app.core.fields import (
     LogLevel,
     RelativeFilePath,
     RequiredStr,
-    StrAnyUrl,
     StrImportableAttribute,
     URL,
 )
-from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
 from app.core.utils import deep_dict_update, json_serializer
 
@@ -48,31 +45,6 @@ DEFAULT_FASTAPI_ENV = "development"
 
 
 logger = logging.getLogger(__name__)
-
-
-class CeleryOptions(BaseCaseInsensitiveModel):
-    """Define configuration settings for Celery.
-
-    Any extra fields passed to this model will be used for configuring Celery.
-
-    :param BROKER_URL: The URL of the message broker.
-    :type BROKER_URL: StrAnyUrl
-    :param TASK_TRACK_STARTED: Whether to track when tasks start. Defaults to True.
-    :type TASK_TRACK_STARTED: bool
-    :param RESULT_BACKEND: The URL of the result backend. Defaults to None.
-    :type RESULT_BACKEND: StrAnyUrl | None
-    """
-
-    model_config = ConfigDict(
-        extra="allow",
-        alias_generator=AliasGenerator(
-            serialization_alias=lambda field_name: field_name.lower(),
-        ),
-    )
-    BROKER_URL: StrAnyUrl
-    TASK_TRACK_STARTED: bool = True
-    RESULT_BACKEND: StrAnyUrl | None = None
-    BEAT_DBURI: str | None = None
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):

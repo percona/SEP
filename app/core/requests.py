@@ -13,11 +13,11 @@ from aiohttp import ClientResponse, ClientSession
 from pydantic import computed_field, HttpUrl
 
 from app.core.fields import RelativeFilePath, RequiredStr
-from app.core.models import BaseLowercaseModel
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
 
 
-class BaseRemoteAPI(BaseLowercaseModel):
+class BaseRemoteAPI(BaseCaseInsensitiveModel):
     """Base class for interacting with external APIs.
 
     Provides foundational functionality for making HTTP requests, handling SSL

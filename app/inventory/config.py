@@ -9,9 +9,9 @@ from app.core.db.config import DatabaseOptions
 class InventorySettings(BaseYamlExtraSettings):
     """Settings for the Inventory API.
 
-    :param SETTINGS_PREFIXES: The prefixes for task-related settings in the
+    :cvar SETTINGS_PREFIXES: The prefixes for task-related settings in the
         configuration file. Set to ["INVENTORY"].
-    :type SETTINGS_PREFIXES: ClassVar[list[str]]
+    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port to be used by Uvicorn for running the server.
         Defaults to 8001.
     :type UVICORN_PORT: int

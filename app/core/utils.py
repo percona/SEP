@@ -162,25 +162,34 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
             main_dict[key] = value
 
 
-def deep_lowercase_dict_keys(data: dict[Any, Any]) -> dict[Any, Any]:
-    """Recursively convert all string keys in a dictionary to lowercase.
+def transform_dict_keys(
+    data: dict[Any, Any], transform: Callable[[Any], Any], *, deep: bool = False
+) -> dict[Any, Any]:
+    """Transform all keys in a dictionary using a specified function.
 
-    Traverse the input dictionary and convert all keys that are strings to
-    lowercase. If a value is a dictionary, apply the conversion recursively.
+    Traverse the input dictionary and transform all keys using the specified `transform`
+    function. If a value is a dictionary and `deep` is True, apply the conversion
+    recursively.
 
-    :param data: The dictionary whose keys are to be converted to lowercase.
+    :param data: The dictionary whose keys are to be transformed.
     :type data: dict[Any, Any]
-    :return: A new dictionary with all string keys converted to lowercase.
+    :param transform: The transform function to use.
+    :type transform: Callable[[Any], Any]
+    :param deep: If `True`, apply the transform function recursively to all sub-dicts.
+        Defaults to False.
+    :type deep: bool
+    :return: A new dictionary with all keys transformed.
     :rtype: dict[Any, Any]
     """
-    lowercase_dict = {}
+    transformed_dict = {}
     for key, value in data.items():
-        new_key = key.lower() if isinstance(key, str) else key
         new_value = (
-            deep_lowercase_dict_keys(value) if isinstance(value, dict) else value
+            transform_dict_keys(value, transform, deep=deep)
+            if deep and isinstance(value, dict)
+            else value
         )
-        lowercase_dict[new_key] = new_value
-    return lowercase_dict
+        transformed_dict[transform(key)] = new_value
+    return transformed_dict
 
 
 def slugify(text: str) -> str:

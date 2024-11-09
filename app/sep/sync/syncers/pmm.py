@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import ClassVar, Self
 
 from async_lru import alru_cache
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from app.core.config import settings
 from app.core.fields import RequiredStr
@@ -191,7 +191,7 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm_api: PMMRemoteAPI = Field(validation_alias="pmm")
+    pmm_api: PMMRemoteAPI = Field(validation_alias=AliasChoices("pmm", "PMM"))
 
     async def __aenter__(self) -> Self:
         """Enter the asynchronous context manager.

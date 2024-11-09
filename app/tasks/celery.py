@@ -9,7 +9,7 @@ import logging
 from asgiref.sync import async_to_sync
 from celery import Task
 
-from app.core.celery import create_celery
+from app.core.celery.utils import create_celery
 from app.tasks.crud import PeriodicTaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.utils import prepare_task_history, process_queue_item
@@ -25,7 +25,7 @@ celery = create_celery("tasks")
     retry_backoff=True,
     retry_kwargs={"max_retries": 5},
 )
-def trigger_task(self: Task, queue_id: int | None = None) -> dict[str, int]:
+def execute_task_queue(self: Task, queue_id: int | None = None) -> dict[str, int]:
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.
@@ -94,4 +94,4 @@ async def process_tasks_with_period(period: str, schedule_name: str) -> None:
             if not history_recorded:
                 logger.error("Failed to record task history.")
 
-            trigger_task.apply_async(kwargs={"queue_id": history_recorded.id})
+            execute_task_queue.apply_async(kwargs={"queue_id": history_recorded.id})
