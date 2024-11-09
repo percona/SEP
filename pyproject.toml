@@ -119,6 +119,7 @@ extend-exclude = [
     "etc",
     "app/*/migrations/*",
     "payload.py",
+    "payload",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"
