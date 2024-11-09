@@ -1,24 +1,8 @@
 """Define database settings."""
 
-from enum import StrEnum
+from pydantic import AnyUrl, BaseModel, computed_field
 
-from pydantic import AnyUrl, BaseModel, computed_field, field_validator
-
-
-class DBEngine(StrEnum):
-    """Enum representing supported database engines.
-
-    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
-    :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
-    :vartype MYSQL: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
-    :vartype POSTGRESQL: str
-    """
-
-    SQLITE = "sqlite+aiosqlite"
-    MYSQL = "mysql+aiomysql"
-    POSTGRESQL = "postgresql+asyncpg"
+from app.core.fields import AsyncDatabaseEngine
 
 
 class DatabaseOptions(BaseModel):
@@ -26,7 +10,7 @@ class DatabaseOptions(BaseModel):
 
     :param ENGINE: The database engine to use (e.g., SQLite, MySQL, PostgreSQL).
         Defaults to SQLite.
-    :type ENGINE: DBEngine
+    :type ENGINE: AsyncDatabaseEngine
     :param USER: The username for the database connection.
     :type USER: str | None
     :param PASSWORD: The password for the database connection.
@@ -39,7 +23,7 @@ class DatabaseOptions(BaseModel):
     :type NAME: str
     """
 
-    ENGINE: DBEngine = DBEngine.SQLITE
+    ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE
     USER: str | None = None
     PASSWORD: str | None = None
     HOST: str | None = None
@@ -69,24 +53,3 @@ class DatabaseOptions(BaseModel):
                 path=name,
             ),
         )
-
-    @field_validator("ENGINE", mode="before")
-    @classmethod
-    def validate_engine(cls, v: DBEngine | str) -> DBEngine:
-        """Validate the database engine.
-
-        Convert a string to a `DBEngine` enum if necessary, raising an error
-        if the value is not valid.
-
-        :param v: The database engine value to validate.
-        :type v: DBEngine | str
-        :return: The validated and converted `DBEngine` enum value.
-        :rtype: DBEngine
-        :raises ValueError: If the provided value is not a valid database engine.
-        """
-        if isinstance(v, DBEngine):
-            return v
-        try:
-            return DBEngine[v.upper()]
-        except KeyError as exc:
-            raise ValueError(f"Invalid engine: '{v}'") from exc

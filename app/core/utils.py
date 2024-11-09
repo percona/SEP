@@ -7,11 +7,13 @@ import unicodedata
 from base64 import b64encode
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
+from enum import Enum
 from http import HTTPStatus
 from importlib import import_module
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeVar
 
 from fastapi.encoders import jsonable_encoder
+from pydantic import TypeAdapter
 from python_minifier import minify
 
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s"
@@ -303,3 +305,109 @@ def json_serializer(data: Any) -> str:
     :rtype: str
     """
     return json.dumps(jsonable_encoder(data))
+
+
+E = TypeVar("E", bound=Enum)
+
+
+def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], E]:
+    """Generate and return a function that returns the Enum from its value or name.
+
+    :param enum_class: The Enum subclass to use.
+    :type enum_class: type[E]
+    :return: A function that returns the Enum value by name.
+    :rtype: Callable[[Any], E]
+    """
+    enum_class_name = enum_class.__name__
+
+    def get_enum_from_value_or_name(v: Any) -> enum_class:
+        """Return the {enum_class} from its value or name.
+
+        :param v: The value or name of the {enum_class} to return.
+        :type v: Any
+        :return: The {enum_class} found.
+        :rtype: {enum_class}
+        :raises ValueError: If `v` is not a value in {enum_class} and `v` is not a
+            valid name for an Enum (not a string).
+        :raises ExceptionGroup[ValueError, KeyError]: If `v` is neither a value nor a
+            name in {enum_class}.
+        """
+        try:
+            return enum_class(v)
+        except ValueError as exc_enum_value:
+            if not isinstance(v, str):
+                raise ExceptionGroup(
+                    f"Value not found and is not a valid name for {enum_class_name}: {v!r}",
+                    [
+                        exc_enum_value,
+                        TypeError(f"{v!r} is not a valid name for {enum_class_name}"),
+                    ],
+                ) from None
+            enum_dict = {enum_obj.name.upper(): enum_obj for enum_obj in enum_class}
+            try:
+                return enum_dict[v.upper()]
+            except KeyError as exc_enum_name:
+                raise ExceptionGroup(
+                    f"Value and name not found for {enum_class_name}: {v!r}",
+                    [exc_enum_value, exc_enum_name],
+                ) from None
+
+    get_enum_from_value_or_name.__doc__ = get_enum_from_value_or_name.__doc__.format(
+        enum_class=enum_class_name
+    )
+    return get_enum_from_value_or_name
+
+
+T = TypeVar("T")
+R = TypeVar("R")
+V = TypeVar("V")
+
+
+def validate_as_type_factory(
+    validate_class: type[V], post_processing: Callable[[V], R] | None = None
+) -> Callable[[T], T | R]:
+    """Generate and return a function that validates an object as a different type.
+
+    :param validate_class: The class to use for validation.
+    :type validate_class: type[V]
+    :param post_processing: The post-processing callable to apply to the validated
+        value, if any. Defaults to None, meaning the generated function will return the
+        initial object as is.
+    :type post_processing: V
+    :return: A function that validates an object as a different type.
+    :rtype: Callable[[T], T | R]
+    """
+    validate_class_name = str(validate_class)
+    if post_processing is None:
+        return_type = T
+        doc_return_description = "`v`."
+        doc_first_line = (
+            f"Validate an object as a {validate_class_name} and return it if valid"
+        )
+    else:
+        return_type = R
+        doc_return_description = (
+            f"The return of `{post_processing.__name__}(validated_object)`"
+        )
+        doc_first_line = f"Validate an object as a {validate_class_name} and return `{post_processing.__name__}(validated_object)` if valid"
+    return_class_name = return_type.__name__
+
+    def validate_as_type(v: T) -> return_type:
+        """{first_line}.
+
+        :param v: The object to validate.
+        :type v: T
+        :return: {return_description}
+        :rtype: {return_class}
+        """
+        validated_value = TypeAdapter(validate_class).validate_python(v)
+        if post_processing is None:
+            return v
+        return post_processing(validated_value)
+
+    validate_as_type.__doc__ = validate_as_type.__doc__.format(
+        first_line=doc_first_line,
+        return_class=return_class_name,
+        return_description=doc_return_description,
+    )
+    return validate_as_type

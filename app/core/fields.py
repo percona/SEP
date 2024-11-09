@@ -3,7 +3,7 @@
 import importlib.util
 import logging
 from datetime import timedelta
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from os import PathLike
 from pathlib import Path
 from typing import Annotated, Self
@@ -18,10 +18,13 @@ from pydantic import (
     GetCoreSchemaHandler,
     HttpUrl,
     PlainSerializer,
+    UrlConstraints,
 )
 from pydantic.json_schema import JsonSchemaValue
-from pydantic_core import core_schema
+from pydantic_core import core_schema, Url
 from starlette.datastructures import URL as StarletteURL  # noqa: N811
+
+from app.core.utils import get_enum_from_value_or_name_factory, validate_as_type_factory
 
 
 class URL(StarletteURL):
@@ -88,6 +91,38 @@ class LogLevelEnum(IntEnum):
     DISABLED = logging.NOTSET
 
 
+class AsyncDatabaseEngineEnum(StrEnum):
+    """Enum representing supported async database engines.
+
+    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
+    :vartype SQLITE: str
+    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
+    :vartype MYSQL: str
+    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
+    :vartype POSTGRESQL: str
+    """
+
+    SQLITE = "sqlite+aiosqlite"
+    MYSQL = "mysql+aiomysql"
+    POSTGRESQL = "postgresql+asyncpg"
+
+
+class DatabaseEngineEnum(StrEnum):
+    """Enum representing supported database engines.
+
+    :cvar SQLITE: SQLite engine string.
+    :vartype SQLITE: str
+    :cvar MYSQL: MySQL engine string, using the `pymysql` driver.
+    :vartype MYSQL: str
+    :cvar POSTGRESQL: PostgreSQL engine string, using the `psycopg2` driver.
+    :vartype POSTGRESQL: str
+    """
+
+    SQLITE = "sqlite"
+    MYSQL = "mysql+pymysql"
+    POSTGRESQL = "postgresql+psycopg2"
+
+
 def resolve_relative_path(v: PathLike | str) -> Path:
     """Resolve relative paths with BASE_DIR.
 
@@ -101,32 +136,6 @@ def resolve_relative_path(v: PathLike | str) -> Path:
         return Path(__file__).resolve().parent.parent.parent / v
     except TypeError as exc:
         raise ValueError from exc
-
-
-def validate_http_url(v: str) -> str:
-    """Validate HTTP URL as string.
-
-    :param v: The URL string to validate.
-    :type v: str
-    :return: The validated URL string without trailing slashes.
-    :rtype: str
-    :raises ValueError: If the URL is invalid.
-    """
-    url = HttpUrl(v)
-    return str(url).strip("/")
-
-
-def validate_any_url(v: str) -> str:
-    """Validate URL as string.
-
-    :param v: The URL string to validate.
-    :type v: str
-    :return: The validated URL string without trailing slashes.
-    :rtype: str
-    :raises ValueError: If the URL is invalid.
-    """
-    url = AnyUrl(v)
-    return str(url)
 
 
 def validate_module_is_importable(v: str) -> str:
@@ -193,22 +202,8 @@ def remove_duplicates(v: list) -> list:
     return unique_list
 
 
-def validate_log_level(v: LogLevelEnum | str) -> LogLevelEnum:
-    """Validate and return the logging level.
-
-    :param v: The logging level to validate.
-    :type v: LogLevelEnum | str
-    :return: The validated logging level as LogLevelEnum.
-    :rtype: LogLevelEnum
-    :raises ValueError: If the logging level is invalid.
-    """
-    if isinstance(v, LogLevelEnum):
-        return v
-    try:
-        return LogLevelEnum[v.upper()]
-    except KeyError as exc:
-        raise ValueError(f"Invalid log level: '{v}'") from exc
-
+RequiredStr = Annotated[str, Field(min_length=1)]
+EmptyStrToNone = Annotated[None, BeforeValidator(empty_str_to_none)]
 
 RelativeFilePath = Annotated[
     FilePath,
@@ -220,18 +215,43 @@ RelativeDirectoryPath = Annotated[
     BeforeValidator(resolve_relative_path),
     Field(validate_default=True),
 ]
-StrHttpUrl = Annotated[str, AfterValidator(validate_http_url)]
-StrAnyUrl = Annotated[str, AfterValidator(validate_any_url)]
+
+DatabaseUrl = Annotated[
+    Url,
+    UrlConstraints(allowed_schemes=list(DatabaseEngineEnum)),
+]
+AsyncDatabaseUrl = Annotated[
+    Url,
+    UrlConstraints(allowed_schemes=list(AsyncDatabaseEngineEnum)),
+]
+StrDatabaseUrl = Annotated[
+    str, AfterValidator(validate_as_type_factory(DatabaseUrl, str))
+]
+StrAsyncDatabaseUrl = Annotated[
+    str, AfterValidator(validate_as_type_factory(AsyncDatabaseUrl, str))
+]
+StrHttpUrl = Annotated[
+    str, AfterValidator(validate_as_type_factory(HttpUrl, lambda v: str(v).rstrip("/")))
+]
+StrAnyUrl = Annotated[str, AfterValidator(validate_as_type_factory(AnyUrl, str))]
+URIPath = Annotated[str, Field(pattern=r"^\/[^\s]*$")]
 StrImportableModule = Annotated[str, AfterValidator(validate_module_is_importable)]
 StrImportableAttribute = Annotated[
     str,
     AfterValidator(validate_attribute_is_importable),
 ]
-RequiredStr = Annotated[str, Field(min_length=1)]
-EmptyStrToNone = Annotated[None, BeforeValidator(empty_str_to_none)]
-URIPath = Annotated[str, Field(pattern=r"^\/[^\s]*$")]
 TimedeltaSeconds = Annotated[
     timedelta,
     PlainSerializer(lambda v: round(v.total_seconds()), return_type=int),
 ]
-LogLevel = Annotated[LogLevelEnum, BeforeValidator(validate_log_level)]
+LogLevel = Annotated[
+    LogLevelEnum, BeforeValidator(get_enum_from_value_or_name_factory(LogLevelEnum))
+]
+DatabaseEngine = Annotated[
+    DatabaseEngineEnum,
+    BeforeValidator(get_enum_from_value_or_name_factory(DatabaseEngineEnum)),
+]
+AsyncDatabaseEngine = Annotated[
+    AsyncDatabaseEngineEnum,
+    BeforeValidator(get_enum_from_value_or_name_factory(AsyncDatabaseEngineEnum)),
+]
