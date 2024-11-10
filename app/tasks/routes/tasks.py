@@ -1,23 +1,21 @@
 """Define routes for the Tasks API."""
 
 import logging
-from http import HTTPStatus
 from os import getenv
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPBadRequestException
-from app.tasks.celery.task import trigger_task
+from app.tasks.celery import execute_task_queue
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.deps import SessionDep, TaskConfig, TaskExecutor
+from app.tasks.deps import CreatedTaskHistory, SessionDep, TaskDep, TaskExecutor
 from app.tasks.models import (
     GeneratedTask,
     Task,
     TaskBackendEnum,
-    TaskExecuteRequest,
     TaskExecutionRequest,
     TaskGroup,
     TaskGroupTask,
@@ -53,27 +51,19 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
 @router.delete(
     "/{task}",
     dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
 )
-async def delete_task(session: SessionDep, task: str) -> dict[str, int | bool]:
+async def delete_task(session: SessionDep, task: str) -> Task:
     """Delete a task."""
     logger.debug("Deleting task %s", task)
     # TODO(yan): Delete for real
     # SEP-170
-    deleted_task = await TaskManager.delete_by_name(session=session, name=task)
-    # TODO: Use Pydantic models  # noqa: TD002, TD003
-    # TODO: Return deleted model  # noqa: TD002, TD003
-    return {"id": deleted_task.id, "deleted": True}
+    return await TaskManager.delete_by_name(session=session, name=task)
 
 
-@router.get("/{task}", dependencies=[IsAuthenticatedDep])
-async def get_task(session: SessionDep, task: str) -> Task:
+@router.get("/{task_name}", dependencies=[IsAuthenticatedDep])
+async def get_task(task: TaskDep) -> Task:
     """Retrieve a task by its name."""
-    logger.debug("Requesting task %s", task)
-    result = await TaskManager.retrieve_by_name(session=session, name=task)
-    if not result:
-        raise HTTPException(404, "Task not found")
-    return result
+    return task
 
 
 @router.post("/", dependencies=[IsAuthenticatedDep])
@@ -179,35 +169,17 @@ async def generate_task(
     response_class=JSONResponse,
 )
 async def execute_task_name(
-    session: SessionDep,
     task_name: str,
-    config: TaskConfig,
-    execution_data: TaskExecuteRequest | None = None,
-) -> dict[str, TaskHistory]:
+    history_recorded: CreatedTaskHistory,
+) -> TaskHistoryResponse:
     """Send a task for execution."""
-    logger.debug("Executing task %s", task_name)
-    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
-    if config.backend == TaskBackendEnum.PROXY:
-        execution_data.meta |= config.data.get("meta", {})
-        execution_data.payload = config.data.get("payload", execution_data.payload)
-    # Record the task execution request
-    task_history = TaskHistory(
-        task_id=config.id,
-        execution_request=TaskExecutionRequest(
-            task=task_name,
-            target=execution_data.meta.get("target", "all"),
-            meta=execution_data.meta,
-            payload=execution_data.payload,
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
+    logger.debug(
+        "Executing task %s at %s", task_name, history_recorded.execution_request.eta
     )
-    history_recorded = await TaskHistoryManager.save(session, task_history)
-    if not history_recorded:
-        raise HTTPException(status_code=HTTPStatus.FAILED_DEPENDENCY)
-    logger.debug("Executing task %s at %s", task_name, execution_data.eta)
-    trigger_task.apply_async(args=[history_recorded.id], eta=execution_data.eta)
-    return {"task_history_id": history_recorded}
+    execute_task_queue.apply_async(
+        args=[history_recorded.id], eta=history_recorded.execution_request.eta
+    )
+    return history_recorded
 
 
 @router.get("/history/", dependencies=[IsAuthenticatedDep])

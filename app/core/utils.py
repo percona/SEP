@@ -329,35 +329,38 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
     """
     enum_class_name = enum_class.__name__
 
-    def get_enum_from_value_or_name(v: Any) -> enum_class:
+    def get_enum_from_value_or_name(value_or_name: Any) -> enum_class:
         """Return the {enum_class} from its value or name.
 
-        :param v: The value or name of the {enum_class} to return.
-        :type v: Any
+        :param value_or_name: The value or name of the {enum_class} to return.
+        :type value_or_name: Any
         :return: The {enum_class} found.
         :rtype: {enum_class}
-        :raises ExceptionGroup[ValueError, TypeError]: If `v` is not a value in
-            {enum_class} and `v` is not a valid name for an Enum (not a string).
-        :raises ExceptionGroup[ValueError, KeyError]: If `v` is neither a value nor a
-            name in {enum_class}.
+        :raises ExceptionGroup[ValueError, TypeError]: If `value_or_name` is not a value
+            in {enum_class} and `value_or_name` is not a valid name for an Enum (not a
+            string).
+        :raises ExceptionGroup[ValueError, KeyError]: If `value_or_name` is neither a
+            value nor a name in {enum_class}.
         """
         try:
-            return enum_class(v)
+            return enum_class(value_or_name)
         except ValueError as exc_enum_value:
-            if not isinstance(v, str):
+            if not isinstance(value_or_name, str):
                 raise ExceptionGroup(
-                    f"Value not found and is not a valid name for {enum_class_name}: {v!r}",
+                    f"Value not found and is not a valid name for {enum_class_name}: {value_or_name!r}",
                     [
                         exc_enum_value,
-                        TypeError(f"{v!r} is not a valid name for {enum_class_name}"),
+                        TypeError(
+                            f"{value_or_name!r} is not a valid name for {enum_class_name}"
+                        ),
                     ],
                 ) from None
             enum_dict = {enum_obj.name.upper(): enum_obj for enum_obj in enum_class}
             try:
-                return enum_dict[v.upper()]
+                return enum_dict[value_or_name.upper()]
             except KeyError as exc_enum_name:
                 raise ExceptionGroup(
-                    f"Value and name not found for {enum_class_name}: {v!r}",
+                    f"Value and name not found for {enum_class_name}: {value_or_name!r}",
                     [exc_enum_value, exc_enum_name],
                 ) from None
 
@@ -367,9 +370,27 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
     return get_enum_from_value_or_name
 
 
+V = TypeVar("V")
+
+
+def run_pydantic_type_validator(validate_class: type[V], obj: Any) -> V:
+    """Perform Pydantic validation for the specified type with the specified object.
+
+    This function validates a Python object against a Pydantic type and returns the
+    validated object.
+
+    :param: validate_class: The class to use for validation.
+    :type validate_class: type[V]
+    :param: obj: The Python object to validate.
+    :type obj: Any
+    :return: The validated object.
+    :rtype: V
+    """
+    return TypeAdapter(validate_class).validate_python(obj)
+
+
 T = TypeVar("T")
 R = TypeVar("R")
-V = TypeVar("V")
 
 
 def validate_as_type_factory(
@@ -389,7 +410,7 @@ def validate_as_type_factory(
     validate_class_name = str(validate_class)
     if post_processing is None:
         return_type = T
-        doc_return_description = "`v`."
+        doc_return_description = "`obj`"
         doc_first_line = (
             f"Validate an object as a {validate_class_name} and return it if valid"
         )
@@ -401,18 +422,18 @@ def validate_as_type_factory(
         doc_first_line = f"Validate an object as a {validate_class_name} and return `{post_processing.__name__}(validated_object)` if valid"
     return_class_name = return_type.__name__
 
-    def validate_as_type(v: T) -> return_type:
+    def validate_as_type(obj: T) -> return_type:
         """{first_line}.
 
-        :param v: The object to validate.
-        :type v: T
-        :return: {return_description}
+        :param obj: The object to validate.
+        :type obj: T
+        :return: {return_description}.
         :rtype: {return_class}
         :raises ValidationError: If the validation fails.
         """
-        validated_value = TypeAdapter(validate_class).validate_python(v)
+        validated_value = run_pydantic_type_validator(validate_class, obj)
         if post_processing is None:
-            return v
+            return obj
         return post_processing(validated_value)
 
     validate_as_type.__doc__ = validate_as_type.__doc__.format(

@@ -95,6 +95,7 @@ class TaskExecutionRequest(BaseModel):
     meta: dict | None = {}
     payload: str | None = None
     tracking: dict | None = {"allocation_id": None, "evaluation_id": None}
+    eta: datetime | None = None
 
     @cached_property
     def payload_content(self) -> str | None:

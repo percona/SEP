@@ -1,19 +1,26 @@
 """Define dependencies for the Tasks API."""
 
+import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.config import tasks_settings
-from app.tasks.crud import TaskManager
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskExecutionRequest,
+    TaskHistory,
+    TaskHistoryStatusEnum,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -48,24 +55,76 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
 TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
 
 
-async def validate_task_is_not_template(task_name: str) -> Task:
-    """Get Task object by task name for checking it is template or not.
+async def get_task_by_name(session: SessionDep, task_name: str) -> Task:
+    """Get Task object by task name.
 
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param task_name: The name of the task to retrieve.
+    :type task_name: str
+    :return: The retrieved Task object.
+    :rtype: Task
+    """
+    logger.debug("Requesting task %s", task_name)
+    return await TaskManager.retrieve_by_name(session=session, name=task_name)
+
+
+TaskDep = Annotated[Task, Depends(get_task_by_name)]
+
+
+async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Task:
+    """Get non-template Task object by task name.
+
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
     :param task_name: The name of the task to retrieve.
     :type task_name: str
     :return: The Task object if valid.
     :rtype: Task
     """
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        config = await TaskManager.retrieve_by_name(session=session, name=task_name)
-        if config.is_template:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Task {task_name} is a template and cannot be executed",
-            )
-
-        return config
+    logger.debug("Requesting executable task %s", task_name)
+    return await TaskManager.retrieve_by_name(
+        session=session, name=task_name, is_template=False
+    )
 
 
-TaskConfig = Annotated[Task, Depends(validate_task_is_not_template)]
+ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
+
+
+async def create_task_history(
+    session: SessionDep,
+    task: ExecutableTaskDep,
+    execution_data: TaskExecuteRequest | None = None,
+) -> TaskHistory:
+    """Prepare and record the history of a task execution request.
+
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param task: The task to execute.
+    :type task: Task
+    :param execution_data: Execution details and parameters, if any.
+    :type execution_data: TaskExecuteRequest | None
+    :return: The logged TaskHistory entry.
+    :rtype: TaskHistory
+    """
+    logger.debug("Creating TaskHistory for  %s", task.name)
+    execution_data = TaskExecuteRequest() if execution_data is None else execution_data
+    if task.backend == TaskBackendEnum.PROXY:
+        execution_data.meta |= task.data.get("meta", {})
+        execution_data.payload = task.data.get("payload", execution_data.payload)
+    task_history = TaskHistory(
+        task_id=task.id,
+        execution_request=TaskExecutionRequest(
+            task=task.name,
+            target=execution_data.meta.get("target", "all"),
+            meta=execution_data.meta,
+            payload=execution_data.payload,
+            tracking={"evaluation_id": ""},
+            eta=execution_data.eta,
+        ),
+        status=TaskHistoryStatusEnum.PENDING,
+    )
+    return await TaskHistoryManager.save(session, task_history)
+
+
+CreatedTaskHistory = Annotated[TaskHistory, Depends(create_task_history)]
