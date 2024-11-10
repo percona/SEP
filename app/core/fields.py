@@ -2,11 +2,13 @@
 
 import importlib.util
 import logging
+import re
+from collections.abc import Callable
 from datetime import timedelta
 from enum import IntEnum, StrEnum
 from os import PathLike
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 
 from pydantic import (
     AfterValidator,
@@ -91,22 +93,6 @@ class LogLevelEnum(IntEnum):
     DISABLED = logging.NOTSET
 
 
-class AsyncDatabaseEngineEnum(StrEnum):
-    """Enum representing supported async database engines.
-
-    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
-    :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
-    :vartype MYSQL: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
-    :vartype POSTGRESQL: str
-    """
-
-    SQLITE = "sqlite+aiosqlite"
-    MYSQL = "mysql+aiomysql"
-    POSTGRESQL = "postgresql+asyncpg"
-
-
 class DatabaseEngineEnum(StrEnum):
     """Enum representing supported database engines.
 
@@ -121,6 +107,22 @@ class DatabaseEngineEnum(StrEnum):
     SQLITE = "sqlite"
     MYSQL = "mysql+pymysql"
     POSTGRESQL = "postgresql+psycopg2"
+
+
+class AsyncDatabaseEngineEnum(StrEnum):
+    """Enum representing supported async database engines.
+
+    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
+    :vartype SQLITE: str
+    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
+    :vartype MYSQL: str
+    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
+    :vartype POSTGRESQL: str
+    """
+
+    SQLITE = "sqlite+aiosqlite"
+    MYSQL = "mysql+aiomysql"
+    POSTGRESQL = "postgresql+asyncpg"
 
 
 def resolve_relative_path(v: PathLike | str) -> Path:
@@ -202,6 +204,46 @@ def remove_duplicates(v: list) -> list:
     return unique_list
 
 
+def normalize_database_url_scheme_factory(
+    engine_enum_class: type[DatabaseEngineEnum] | type[AsyncDatabaseEngineEnum],
+) -> Callable[[Any], Any]:
+    """Generate and return a function that normalizes the scheme of a database URL.
+
+    This factory function generates a validator that normalizes the scheme of a database
+    URL according to the `engine_enum_class` specified.
+
+    :param engine_enum_class: The database engine enum type to use. Either
+        `DatabaseEngineEnum` or `AsyncDatabaseEngineEnum`.
+    :type engine_enum_class: type[DatabaseEngineEnum] | type[AsyncDatabaseEngineEnum]
+    :return: A function that normalizes the scheme of a database URL.
+    :rtype: Callable[[Any], E]
+    """
+    get_database_engine_enum = get_enum_from_value_or_name_factory(engine_enum_class)
+    enum_class_name = engine_enum_class.__name__
+
+    def normalize_database_url_scheme(v: Any) -> Any:
+        """Normalize the scheme of a database URL according to {enum_class}.
+
+        :param v: The database URL to normalize the scheme.
+        :type v: Any
+        :return: The normalized database URL.
+        :rtype: Any
+        """
+        if not isinstance(v, str):
+            return v
+        pattern = re.compile(r"^(([a-zA-Z]+)(?:\+[a-zA-Z0-9]+)?)://")
+        match = pattern.match(v)
+        if not match:
+            return v
+        base_scheme = match.group(2)
+        return pattern.sub(f"{get_database_engine_enum(base_scheme)}://", v)
+
+    normalize_database_url_scheme.__doc__ = (
+        normalize_database_url_scheme.__doc__.format(enum_class=enum_class_name)
+    )
+    return normalize_database_url_scheme
+
+
 RequiredStr = Annotated[str, Field(min_length=1)]
 EmptyStrToNone = Annotated[None, BeforeValidator(empty_str_to_none)]
 
@@ -219,10 +261,12 @@ RelativeDirectoryPath = Annotated[
 DatabaseUrl = Annotated[
     Url,
     UrlConstraints(allowed_schemes=list(DatabaseEngineEnum)),
+    BeforeValidator(normalize_database_url_scheme_factory(DatabaseEngineEnum)),
 ]
 AsyncDatabaseUrl = Annotated[
     Url,
     UrlConstraints(allowed_schemes=list(AsyncDatabaseEngineEnum)),
+    BeforeValidator(normalize_database_url_scheme_factory(AsyncDatabaseEngineEnum)),
 ]
 StrDatabaseUrl = Annotated[
     str, AfterValidator(validate_as_type_factory(DatabaseUrl, str))
