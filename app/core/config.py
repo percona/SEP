@@ -1,12 +1,14 @@
 """Define the application settings."""
 
 import logging
+import logging.config
 import re
 import secrets
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, Self
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, FastAPI
@@ -16,7 +18,9 @@ from pydantic import (
     AnyUrl,
     computed_field,
     DirectoryPath,
+    field_validator,
     HttpUrl,
+    model_validator,
     validate_call,
 )
 from pydantic_settings import (
@@ -42,9 +46,48 @@ from app.core.utils import deep_dict_update, json_serializer
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
-
-
-logger = logging.getLogger(__name__)
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(name)s: %(message)s <%(process)d>",
+        },
+        "uvicorn": {
+            "format": "uvicorn: %(message)s <%(process)d>",
+        },
+    },
+    "handlers": {
+        "default": {
+            "formatter": "default",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+        },
+        "uvicorn": {
+            "formatter": "uvicorn",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+            "show_path": False,
+        },
+        "celery": {
+            "formatter": "default",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+            "show_path": False,
+        },
+    },
+    "loggers": {
+        "": {"handlers": ["default"], "level": "INFO"},
+        "celery": {"handlers": ["celery"], "level": "INFO", "propagate": False},
+        "uvicorn": {"handlers": ["uvicorn"], "level": "INFO", "propagate": False},
+        "uvicorn.error": {"handlers": ["uvicorn"], "level": "INFO", "propagate": False},
+        "uvicorn.access": {
+            "handlers": ["uvicorn"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
@@ -194,8 +237,8 @@ class Settings(BaseYamlSettings):
     :type SECRET_KEY: str
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
-    :param LOGGING_EXTRA: Extra log levels to set for the application.
-    :type LOGGING_EXTRA: dict[str, LogLevel]
+    :param LOGGING_CONFIG: dictConfig logging configuration.
+    :type LOGGING_CONFIG: dict[str, Any]
     :param BACKEND_CORS_ORIGINS: A list of allowed CORS origins.
     :type BACKEND_CORS_ORIGINS: list[AnyUrl]
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
@@ -209,7 +252,7 @@ class Settings(BaseYamlSettings):
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
-    LOGGING_EXTRA: dict[str, LogLevel] = {}
+    LOGGING_CONFIG: dict[str, Any] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
     BASE_URL: URL | None = None
@@ -224,6 +267,33 @@ class Settings(BaseYamlSettings):
         :rtype: DirectoryPath
         """
         return BASE_DIR
+
+    @field_validator("LOGGING_CONFIG")
+    @classmethod
+    def _set_default_logging_config(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """Return the default configuration updated with the provided data.
+
+        :param v: The new logging configuration.
+        :type v: dict[str, Any]
+        :return: The updated configuration.
+        :rtype: dict[str, Any]
+        """
+        logging_config = deepcopy(LOGGING_CONFIG)
+        deep_dict_update(logging_config, v)
+        return logging_config
+
+    @model_validator(mode="after")
+    def set_log_level(self) -> Self:
+        """Set the logging level for the application.
+
+        Set the default log level in `self.LOGGING_CONFIG` according to the `LOGGING`
+        setting.
+
+        :return: Validated settings with default logging level set.
+        :rtype: Settings
+        """
+        self.LOGGING_CONFIG["loggers"][""]["level"] = self.LOGGING
+        return self
 
     @validate_call
     async def get_extra_client_session(
@@ -273,6 +343,8 @@ class Settings(BaseYamlSettings):
 
 
 settings = Settings()
+logging.config.dictConfig(settings.LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
