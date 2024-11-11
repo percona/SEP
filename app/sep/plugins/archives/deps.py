@@ -67,18 +67,26 @@ async def build_archives_task_payload(
         form.source_table_id,
         schema_id=schema.id,
     )
-    dest_table = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.TABLE,
-        form.dest_table_id,
-        schema_id=schema.id,
-    )
+
     purge_item_data = {
-        **form.model_dump(include={"alias", "where"}, by_alias=True),
+        **form.model_dump(
+            include={"alias", "where", "swap_drop", "swp_table_suffix"}, by_alias=True
+        ),
         "source_db": schema.name,
         "source_table": source_table.name,
-        "dest_table": dest_table.name,
     }
+
+    if form.dest_table_id is not None:
+        dest_table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.dest_table_id,
+            schema_id=schema.id,
+        )
+        purge_item_data["dest_table"] = dest_table.name
+    elif form.dest_file is not None:
+        purge_item_data["dest_file"] = form.dest_file
+
     purge_config = PurgeConfig(
         all=PurgeConfigAll(
             source_host=service.node.address, source_port=service.port or 3306
@@ -86,8 +94,8 @@ async def build_archives_task_payload(
         purge_list=[purge_item_data],
         alias=form.alias,
     )
-    breakpoint()
     payload_path = Path(__file__).parent / "payload"
+
     return TaskWrite(
         name=form.alias,
         backend=TaskBackendEnum.PROXY,
@@ -95,7 +103,9 @@ async def build_archives_task_payload(
         data={
             "task": "run-python",
             "meta": {
-                "config": yaml.dump(purge_config.model_dump(by_alias=True)),
+                "config": yaml.dump(
+                    purge_config.model_dump(by_alias=True, exclude_none=True)
+                ),
                 "target": form.hostname,
                 "requirements": "PyMySQL\nfilelock\nPyYAML",
             },
