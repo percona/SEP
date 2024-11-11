@@ -1,3 +1,4 @@
+-----------
 {% set form_class = "modal" if modal_required else "" %}
 <style>
     fieldset input,
@@ -32,6 +33,19 @@
     }
 
     #destination_container.hidden {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    #swp_table_suffix_container {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 100px; /* Adjust based on actual content */
+    }
+    
+    #swp_table_suffix_container.hidden {
         opacity: 0;
         max-height: 0;
         pointer-events: none;
@@ -109,6 +123,11 @@
                 </label>
             </div>
         </div>
+        <div id="swp_table_suffix_container">
+            <label for="swp_table_suffix">Swap Table Suffix
+                <input type="text" id="swp_table_suffix" name="swp_table_suffix" class="validate" required />
+            </label>
+        </div>
         <div>
             <label for="where">Where condition
                 <input type="text" id="where" name="where" class="validate" required />
@@ -119,7 +138,15 @@
             <label for="prg_limit">Limit
                 <input type="number" id="prg_limit" name="prg_limit" class="validate" value="1000"/>
             </label>
-            <br />
+            <label for="prg_sleep">Sleep
+                <input type="number" id="prg_sleep" name="prg_sleep" class="validate" value="1"/>
+            </label>
+            <label for="prg_extra_args">Extra args
+                <input type="text" id="prg_extra_args" name="prg_extra_args" class="validate" required />
+            </label>
+            <label for="prg_disable_binlog">Disable Binlog
+                <input type="checkbox" id="prg_disable_binlog" name="prg_disable_binlog" class="validate" value="1" />
+            </label>
         </div>
         <label for="prg_purge">DELETE_DATA
             <input type="checkbox" id="prg_purge" name="prg_purge" class="validate" value="1" />
@@ -133,7 +160,7 @@
                     <option value="">Select a table</option>
                 </select>
             </label>
-            <div id="dst_file_container" style="width: fit-content; margin-left: 1em;">
+            <div id="dst_file_container" style="width: fit-content;">
                 <label>OR</label>
                 <label for="dst_file" >Destination File
                     <input type="text" id="dst_file" name="dst_file" class="validate" required />
@@ -172,6 +199,8 @@
     const srcQueryContainer = document.getElementById('src_query_container');
     const destinationContainer = document.getElementById('destination_container');
     const prgPurgeCheckbox = document.getElementById('prg_purge');
+    const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
+    const swpTableSuffixInput = document.getElementById('swp_table_suffix');
 
     function populateSchemas(selectedService) {
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
@@ -286,6 +315,8 @@
         toggleDestTableSelect()
     });
 
+
+
     function updateDestinationFieldset() {
         if (prgPurgeCheckbox.checked || swapDropSelect.value === '1') {
             destinationContainer.classList.add('hidden');
@@ -370,7 +401,17 @@
         prgPurgeCheckbox.disabled = true;
     }
 
-
+    function toggleSwpTableSuffix() {
+        if (swapDropSelect.value === '2') {
+            swpTableSuffixContainer.classList.remove('hidden');
+            swpTableSuffixInput.disabled = false;
+            swpTableSuffixInput.setAttribute('name', 'swp_table_suffix');
+        } else {
+            swpTableSuffixContainer.classList.add('hidden');
+            swpTableSuffixInput.disabled = true;
+            swpTableSuffixInput.removeAttribute('name');
+        }
+    }
     function toggleDstFileContainer() {
         if (destTableSelect.value !== '') {
             dstFileContainer.classList.add('hidden');
@@ -389,9 +430,11 @@
             destTableSelect.disabled = true;
             destTableSelect.value = '';
             destTableSelect.removeAttribute('name');
+            removeHiddenInput('dest_table_id')
         } else {
             destTableSelect.disabled = false;
             destTableSelect.setAttribute('name', 'dest_table_id');
+            addHiddenInput(destTableSelect)
         }
     }
 
@@ -399,12 +442,12 @@
     swapDropSelect.addEventListener('change', function () {
         togglePrgPurgeCheckbox()
         updateDestinationFieldset();
+        toggleSwpTableSuffix();
         if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
             addHiddenInput(destTableSelect);
         }
     });
 
-    srcQueryInput.addEventListener('input', toggleSchemaAndTable);
     
     srcQueryInput.addEventListener('input', function() {
         toggleSchemaAndTable();
@@ -440,119 +483,6 @@
         toggleSourceQueryInput();
         toggleDstFileContainer();
         toggleDestTableSelect();
-    });
-
-
-
-    function updateDestinationFieldset() {
-        if (swapDropSelect.value === '1') {
-            destinationFieldset.style.display = 'none';
-            destTableSelect.disabled = true;
-            dstFileInput.disabled = true;
-            removeHiddenInput('dest_table_id');
-            removeHiddenInput('dst_file');
-        } else {
-            destinationFieldset.style.display = '';
-            destTableSelect.disabled = false;
-            dstFileInput.disabled = false;
-            destTableSelect.setAttribute('name', 'dest_table_id');
-            dstFileInput.setAttribute('name', 'dst_file');
-
-            if (destTableSelect.disabled && destTableSelect.value) {
-                addHiddenInput(destTableSelect);
-            }
-            if (dstFileInput.disabled && dstFileInput.value) {
-                addHiddenInput(dstFileInput);
-            }
-        }
-    }
-
-    function removeHiddenInput(inputName) {
-        const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
-        if (hiddenInput) {
-            hiddenInput.parentNode.removeChild(hiddenInput);
-        }
-    }
-
-    function addHiddenInput(inputElement) {
-        removeHiddenInput(inputElement.name);
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = inputElement.name;
-        hiddenInput.value = inputElement.value;
-        hiddenInput.id = `${inputElement.id}_hidden`;
-        inputElement.insertAdjacentElement('afterend', hiddenInput);
-    }
-
-    swapDropSelect.addEventListener('change', function () {
-        updateDestinationFieldset();
-        if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
-            addHiddenInput(destTableSelect);
-        }
-    });
-
-    srcQueryInput.addEventListener('input', toggleSchemaAndTable);
-
-    function toggleSchemaAndTable() {
-        if (srcQueryInput.value.trim() !== '') {
-            // "Source Query" is filled; disable schema and table selects
-            schemaSelect.disabled = true;
-            sourceTableSelect.disabled = true;
-            schemaSelect.removeAttribute('required');
-            sourceTableSelect.removeAttribute('required');
-            // Clear their values
-            schemaSelect.value = '';
-            sourceTableSelect.value = '';
-            // Remove their names so they are not submitted
-            schemaSelect.removeAttribute('name');
-            sourceTableSelect.removeAttribute('name');
-        } else {
-            // "Source Query" is empty; enable schema and table selects
-            schemaSelect.disabled = false;
-            sourceTableSelect.disabled = false;
-            schemaSelect.setAttribute('required', 'required');
-            sourceTableSelect.setAttribute('required', 'required');
-            // Restore their names
-            schemaSelect.name = 'source_db_id';
-            sourceTableSelect.name = 'source_table_id';
-        }
-    }
-
-    function toggleSourceQueryInput() {
-        if (schemaSelect.value !== '' && sourceTableSelect.value !== '') {
-            // Both schema and table are selected; hide source query input
-            srcQueryInput.disabled = true;
-            srcQueryInput.removeAttribute('required');
-            srcQueryInput.value = '';
-            srcQueryInput.removeAttribute('name');
-            srcQueryContainer.classList.add('hidden');
-        } else {
-            // Schema and table are not fully selected; show source query input
-            srcQueryInput.disabled = false;
-            srcQueryInput.setAttribute('required', 'required');
-            srcQueryInput.name = 'src_query';
-            srcQueryContainer.classList.remove('hidden');
-        }
-    }
-
-    srcQueryInput.addEventListener('input', function() {
-        toggleSchemaAndTable();
-    });
-
-    schemaSelect.addEventListener('change', function() {
-        toggleSourceQueryInput();
-    });
-
-    sourceTableSelect.addEventListener('change', function() {
-        toggleSourceQueryInput();
-    });
-    window.addEventListener('DOMContentLoaded', function () {
-        if (connectToSelect.options.length === 1) {
-            const singleHost = connectToSelect.options[0].value;
-            populateSchemas(singleHost);
-        }
-        updateDestinationFieldset();
-        toggleSchemaAndTable();
-        toggleSourceQueryInput();
+        toggleSwpTableSuffix();
     });
 </script>

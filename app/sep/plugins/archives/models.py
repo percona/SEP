@@ -1,6 +1,6 @@
 """Define models for the Archives plugin."""
 
-from typing import Self
+from typing import Optional, Self
 
 from pydantic import model_validator
 
@@ -88,7 +88,14 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     source_db: RequiredStr
     source_table: RequiredStr
     where: RequiredStr
-    dest_table: RequiredStr
+    dest_table: Optional[RequiredStr] = None
+    dest_file: Optional[RequiredStr] = None
+
+    @model_validator(mode='after')
+    def check_dest_fields(cls, data):
+        if (data.dest_table is None) == (data.dest_file is None):
+            raise ValueError('Exactly one of dest_table or dest_file must be set.')
+        return data
 
 
 class PurgeConfig(BaseCaseInsensitiveModel):

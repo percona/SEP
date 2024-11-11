@@ -1,5 +1,5 @@
 """Define dependencies for the Archives plugin."""
-
+import pdb
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -86,6 +86,7 @@ async def build_archives_task_payload(
         purge_list=[purge_item_data],
         alias=form.alias,
     )
+    breakpoint()
     payload_path = Path(__file__).parent / "payload"
     return TaskWrite(
         name=form.alias,
