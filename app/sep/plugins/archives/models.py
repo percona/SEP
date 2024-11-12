@@ -1,6 +1,7 @@
 """Define models for the Archives plugin."""
+
 from datetime import date
-from typing import Optional, Self
+from typing import Self
 
 from pydantic import Field, model_validator
 
@@ -23,7 +24,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type source_db_id: Optional[int]
     :param source_table_id: The source table ID within the specified schema from which
         data will be purged. Must be None if source_query is set.
-    :type source_table_id: Optional[int]    
+    :type source_table_id: Optional[int]
     :param source_query: Optional; a query defining the source data to be purged.
         Must be None if both source_db_id and source_table_id are set.
     :type source_query: Optional[RequiredStr]
@@ -60,21 +61,24 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     alias: RequiredStr
     hostname: RequiredStr
     service_id: int
-    source_db_id: Optional[int] = None
-    source_table_id: Optional[int] = None
-    source_query: Optional[RequiredStr] = None
+    source_db_id: int | None = None
+    source_table_id: int | None = None
+    source_query: RequiredStr | None = None
     where: RequiredStr
-    dest_table_id: Optional[int] = None
-    dest_file: Optional[RequiredStr] = None
+    dest_table_id: int | None = None
+    dest_file: RequiredStr | None = None
     swap_drop: int = Field(..., ge=0, le=2, description="Must be between 0 and 2.")
-    swp_table_suffix: Optional[date] = None
-    use_index: Optional[RequiredStr] = None
-    extra_args: Optional[RequiredStr] = None
-    limit: Optional[int] = None
-    sleep: Optional[int] = None
-    disable_binlog: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to disable binary logging.")
-    delete_data: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to delete data.")
-
+    swp_table_suffix: date | None = None
+    use_index: RequiredStr | None = None
+    extra_args: RequiredStr | None = None
+    limit: int | None = None
+    sleep: int | None = None
+    disable_binlog: int | None = Field(
+        None, ge=0, le=1, description="Optional flag to disable binary logging."
+    )
+    delete_data: int | None = Field(
+        None, ge=0, le=1, description="Optional flag to delete data."
+    )
 
     @model_validator(mode="after")
     def validate_tables_are_different(self) -> Self:
@@ -84,7 +88,10 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         :rtype: ArchivesCreate
         :raises ValueError: If the source_table_id is the same as the dest_table_id.
         """
-        if self.source_table_id == self.dest_table_id and self.dest_table_id != None:
+        if (
+            self.source_table_id == self.dest_table_id
+            and self.dest_table_id is not None
+        ):
             raise ValueError("Source and Destination tables cannot be the same.")
         return self
 
@@ -131,6 +138,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
                 "When source_query is not set, both source_db_id and source_table_id must be provided."
             )
         return self
+
 
 class PurgeConfigAll(BaseCaseInsensitiveModel):
     """Represents the general configuration for the archive task.
@@ -184,20 +192,28 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     """
 
     alias: RequiredStr
-    source_db: Optional[RequiredStr] = None
-    source_table: Optional[RequiredStr] = None
-    source_query: Optional[RequiredStr] = None
+    source_db: RequiredStr | None = None
+    source_table: RequiredStr | None = None
+    source_query: RequiredStr | None = None
     where: RequiredStr
-    dest_table: Optional[RequiredStr] = None
-    dest_file: Optional[RequiredStr] = None
+    dest_table: RequiredStr | None = None
+    dest_file: RequiredStr | None = None
     swap_drop: int = Field(..., ge=0, le=2, description="Must be between 0 and 2.")
-    swp_table_suffix: Optional[date] = None
-    use_index: Optional[RequiredStr] = None
-    extra_args: Optional[RequiredStr] = None
-    limit: Optional[int] = None
-    sleep: Optional[int] = None
-    disable_binlog: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to disable binary logging; set to 0 or 1")
-    delete_data: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to delete data.")
+    swp_table_suffix: date | None = None
+    use_index: RequiredStr | None = None
+    extra_args: RequiredStr | None = None
+    limit: int | None = None
+    sleep: int | None = None
+    disable_binlog: int | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Optional flag to disable binary logging; set to 0 or 1",
+    )
+    delete_data: int | None = Field(
+        None, ge=0, le=1, description="Optional flag to delete data."
+    )
+
 
 class PurgeConfig(BaseCaseInsensitiveModel):
     """Represents the overall purge configuration.
