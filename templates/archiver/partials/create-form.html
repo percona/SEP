@@ -26,18 +26,21 @@
         pointer-events: none;
     }
 
-    #destination_container {
+    #destination_container, 
+    #purge_options_container{
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 1;
         max-height: 500px; /* Adjust based on actual content height */
     }
 
-    #destination_container.hidden {
+    #destination_container.hidden,
+    #purge_options_container.hidden {
         opacity: 0;
         max-height: 0;
         pointer-events: none;
     }
+    
 
     #swp_table_suffix_container {
         overflow: hidden;
@@ -129,7 +132,7 @@
                 <input type="date" id="swp_table_suffix" name="swp_table_suffix" class="validate" required />
             </label>
         </div>
-        <div>
+        <div id="purge_options_container">
             <label for="where">Where condition
                 <input type="text" id="where" name="where" class="validate" required />
             </label>
@@ -203,6 +206,12 @@
     const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
     const swpTableSuffixInput = document.getElementById('swp_table_suffix');
+    const useIndexInput = document.getElementById('use_index');
+    const limitInput = document.getElementById('limit');
+    const sleepInput = document.getElementById('sleep');
+    const extraArgsInput = document.getElementById('extra_args');
+    const whereInput = document.getElementById('where');
+    const purgeConfigOptionsContainer = document.getElementById('purge_options_container');
 
     function populateSchemas(selectedService) {
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
@@ -444,11 +453,48 @@
         }
     }
 
+    function toggleOptionalInputName(inputElement) {
+        if (inputElement.value.trim() === '') {
+            inputElement.removeAttribute('name');
+        } else {
+            inputElement.setAttribute('name', inputElement.id);
+        }
+    }
+
+    function toggleWhereInput() {
+        if (swapDropSelect.value === '1') {
+            whereInput.classList.add('hidden');
+            whereInput.removeAttribute('name');
+            useIndexInput.removeAttribute('name');
+            limitInput.removeAttribute('name');
+            sleepInput.removeAttribute('name');
+            extraArgsInput.removeAttribute('name');
+            whereInput.removeAttribute('required');
+        } else {
+            whereInput.classList.remove('hidden');
+            whereInput.setAttribute('name', 'where');
+            useIndexInput.setAttribute('name', 'use_index');
+            limitInput.setAttribute('name', 'limit');
+            sleepInput.setAttribute('name', 'sleep');
+            extraArgsInput.setAttribute('name', 'extra_args');
+            whereInput.setAttribute('required')
+        }
+    }
+
+    function togglePurgeOptionsContainer() {
+        if (swapDropSelect.value === '1') { 
+            purgeConfigOptionsContainer.classList.add('hidden');
+        } else {
+            purgeConfigOptionsContainer.classList.remove('hidden');
+        }
+    }
 
     swapDropSelect.addEventListener('change', function () {
         togglePrgPurgeCheckbox()
         updateDestinationFieldset();
         toggleSwpTableSuffix();
+        toggleWhereInput();
+        togglePurgeOptionsContainer();
         if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
             addHiddenInput(destTableSelect);
         }
@@ -479,6 +525,19 @@
         toggleDestTableSelect();
     });
 
+    useIndexInput.addEventListener('input', function () {
+        toggleOptionalInputName(useIndexInput);
+    });
+    limitInput.addEventListener('input', function () {
+        toggleOptionalInputName(limitInput);
+    });
+    sleepInput.addEventListener('input', function () {
+        toggleOptionalInputName(sleepInput);
+    });
+    extraArgsInput.addEventListener('input', function () {
+        toggleOptionalInputName(extraArgsInput);
+    });
+
     window.addEventListener('DOMContentLoaded', function () {
         if (connectToSelect.options.length === 1) {
             const singleHost = connectToSelect.options[0].value;
@@ -490,5 +549,11 @@
         toggleDstFileContainer();
         toggleDestTableSelect();
         toggleSwpTableSuffix();
+        toggleWhereInput();
+        togglePurgeOptionsContainer();
+        toggleOptionalInputName(useIndexInput);
+        toggleOptionalInputName(limitInput);
+        toggleOptionalInputName(sleepInput);
+        toggleOptionalInputName(extraArgsInput);
     });
 </script>

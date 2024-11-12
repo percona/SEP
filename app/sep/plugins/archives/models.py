@@ -28,9 +28,9 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param source_query: Optional; a query defining the source data to be purged.
         Must be None if both source_db_id and source_table_id are set.
     :type source_query: Optional[RequiredStr]
-    :param where: The WHERE condition that defines which data will be purged from
-        the source table.
-    :type where: RequiredStr
+    :param where: Optional; The WHERE condition that defines which data will be purged
+        from the source table. Must be None when swap_drop is 1.
+    :type where: Optional[RequiredStr]
     :param dest_table_id: Optional; The destination table ID.
         Must be None if dest_file is set.
     :type dest_table_id: Optional[int]
@@ -64,7 +64,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     source_db_id: int | None = None
     source_table_id: int | None = None
     source_query: RequiredStr | None = None
-    where: RequiredStr
+    where: RequiredStr | None = None
     dest_table_id: int | None = None
     dest_file: RequiredStr | None = None
     swap_drop: int = Field(..., ge=0, le=2, description="Must be between 0 and 2.")
@@ -108,6 +108,8 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
                 raise ValueError(
                     "When swap_drop is 1, both dest_table_id and dest_file must be None."
                 )
+            if self.where is not None:
+                raise ValueError("When swap_drop is 1, 'where' must be None.")
         elif self.delete_data is not None:
             if self.dest_table_id is not None or self.dest_file is not None:
                 raise ValueError(
@@ -167,9 +169,9 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :type source_table: Optional[RequiredStr]
     :param source_query: Optional; a query defining the source data to be purged.
     :type source_query: Optional[RequiredStr]
-    :param where: A WHERE condition that determines which data will be purged
-        from the source table.
-    :type where: RequiredStr
+    :param where: Optional; The WHERE condition that defines which data will be purged
+        from the source table. Must be None when swap_drop is 1.
+    :type where: Optional[RequiredStr]
     :param dest_table: The name of the destination table where the purged data
         will be archived.
     :type dest_table: RequiredStr
@@ -195,7 +197,7 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     source_db: RequiredStr | None = None
     source_table: RequiredStr | None = None
     source_query: RequiredStr | None = None
-    where: RequiredStr
+    where: RequiredStr | None = None
     dest_table: RequiredStr | None = None
     dest_file: RequiredStr | None = None
     swap_drop: int = Field(..., ge=0, le=2, description="Must be between 0 and 2.")
