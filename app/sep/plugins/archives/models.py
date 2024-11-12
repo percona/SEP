@@ -1,7 +1,6 @@
 """Define models for the Archives plugin."""
-
 from datetime import date
-from typing import Self
+from typing import Optional, Self
 
 from pydantic import Field, model_validator
 
@@ -20,36 +19,62 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param service_id: The Inventory ID of the database service to connect to.
     :type service_id: int
     :param source_db_id: The source database schema ID from which data will be purged.
-    :type source_db_id: int
+        Must be None if source_query is set.
+    :type source_db_id: Optional[int]
     :param source_table_id: The source table ID within the specified schema from which
-        data will be purged.
-    :type source_table_id: int
+        data will be purged. Must be None if source_query is set.
+    :type source_table_id: Optional[int]    
+    :param source_query: Optional; a query defining the source data to be purged.
+        Must be None if both source_db_id and source_table_id are set.
+    :type source_query: Optional[RequiredStr]
     :param where: The WHERE condition that defines which data will be purged from
         the source table.
     :type where: RequiredStr
-    :param dest_table_id: Optional; The destination table ID where purged data can be archived.
+    :param dest_table_id: Optional; The destination table ID.
         Must be None if dest_file is set.
     :type dest_table_id: Optional[int]
-    :param dest_file: Optional; The destination file path where purged data can be archived.
+    :param dest_file: Optional; The destination file path.
         Must be None if dest_table_id is set.
     :type dest_file: Optional[RequiredStr]
     :param swap_drop: Integer field (0-2) indicating the drop behavior.
         If 1, both dest_table_id and dest_file must be None.
     :type swap_drop: int
-    :param swp_table_suffix: Optional; Date suffix for the swap table. Must be provided if swap_drop is 2.
+    :param swp_table_suffix: Optional; Date suffix for the swap table.
     :type swp_table_suffix: Optional[date]
+    :param use_index: Optional; The index to be used for optimizing the query.
+    :type use_index: Optional[RequiredStr]
+    :param extra_args: Optional; Additional arguments for the archive task.
+    :type extra_args: Optional[RequiredStr]
+    :param limit: Optional; The maximum number of records to be processed.
+    :type limit: Optional[int]
+    :param sleep: Optional; Sleep duration between operations for rate limiting.
+    :type sleep: Optional[int]
+    :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
+    Default is 0 (binary logging enabled).
+    :type disable_binlog: int
+    :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
+        If set, dest_table and dest_file must not be set, and vice versa.
+    :type delete_data: Optional[int]
     """
 
     alias: RequiredStr
     hostname: RequiredStr
     service_id: int
-    source_db_id: int
-    source_table_id: int
+    source_db_id: Optional[int] = None
+    source_table_id: Optional[int] = None
+    source_query: Optional[RequiredStr] = None
     where: RequiredStr
-    dest_table_id: int | None = None
-    dest_file: RequiredStr | None = None
+    dest_table_id: Optional[int] = None
+    dest_file: Optional[RequiredStr] = None
     swap_drop: int = Field(..., ge=0, le=2, description="Must be between 0 and 2.")
-    swp_table_suffix: date | None = None
+    swp_table_suffix: Optional[date] = None
+    use_index: Optional[RequiredStr] = None
+    extra_args: Optional[RequiredStr] = None
+    limit: Optional[int] = None
+    sleep: Optional[int] = None
+    disable_binlog: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to disable binary logging.")
+    delete_data: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to delete data.")
+
 
     @model_validator(mode="after")
     def validate_tables_are_different(self) -> Self:
@@ -59,7 +84,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         :rtype: ArchivesCreate
         :raises ValueError: If the source_table_id is the same as the dest_table_id.
         """
-        if self.source_table_id == self.dest_table_id:
+        if self.source_table_id == self.dest_table_id and self.dest_table_id != None:
             raise ValueError("Source and Destination tables cannot be the same.")
         return self
 
@@ -76,8 +101,14 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
                 raise ValueError(
                     "When swap_drop is 1, both dest_table_id and dest_file must be None."
                 )
+        elif self.delete_data is not None:
+            if self.dest_table_id is not None or self.dest_file is not None:
+                raise ValueError(
+                    "When delete_data is set, dest_table and dest_file must not be set."
+                )
         elif (self.dest_file is not None) == (self.dest_table_id is not None):
             raise ValueError("Exactly one of dest_file or dest_table_id must be set.")
+
         return self
 
     @model_validator(mode="after")
@@ -87,6 +118,19 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
             raise ValueError("swp_table_suffix must be provided when swap_drop is 2.")
         return self
 
+    @model_validator(mode="after")
+    def validate_source_query_exclusivity(self) -> Self:
+        """Validate that source_query is mutually exclusive with source_db_id and source_table_id."""
+        if self.source_query is not None:
+            if self.source_db_id is not None or self.source_table_id is not None:
+                raise ValueError(
+                    "source_query is set, so source_db_id and source_table_id must be None."
+                )
+        elif self.source_db_id is None or self.source_table_id is None:
+            raise ValueError(
+                "When source_query is not set, both source_db_id and source_table_id must be provided."
+            )
+        return self
 
 class PurgeConfigAll(BaseCaseInsensitiveModel):
     """Represents the general configuration for the archive task.
@@ -110,9 +154,11 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :type alias: RequiredStr
     :param source_db: The name of the source database schema from which the data
         will be archived.
-    :type source_db: RequiredStr
+    :type source_db: Optional[RequiredStr]
     :param source_table: The name of the source table within the specified schema.
-    :type source_table: RequiredStr
+    :type source_table: Optional[RequiredStr]
+    :param source_query: Optional; a query defining the source data to be purged.
+    :type source_query: Optional[RequiredStr]
     :param where: A WHERE condition that determines which data will be purged
         from the source table.
     :type where: RequiredStr
@@ -121,17 +167,37 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :type dest_table: RequiredStr
     :param swp_table_suffix: Optional; Date suffix for the swap table.
     :type swp_table_suffix: Optional[date]
+    :param use_index: Optional; The index to be used for optimizing the query.
+    :type use_index: Optional[RequiredStr]
+    :param extra_args: Optional; Additional arguments for the archive task.
+    :type extra_args: Optional[RequiredStr]
+    :param limit: Optional; The maximum number of records to be processed.
+    :type limit: Optional[int]
+    :param sleep: Optional; Sleep duration between operations for rate limiting.
+    :type sleep: Optional[int]
+    :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
+        Default is 0 (binary logging enabled).
+    :type disable_binlog: int
+    :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
+        If set, dest_table and dest_file must not be set, and vice versa.
+    :type delete_data: Optional[int]
     """
 
     alias: RequiredStr
-    source_db: RequiredStr
-    source_table: RequiredStr
+    source_db: Optional[RequiredStr] = None
+    source_table: Optional[RequiredStr] = None
+    source_query: Optional[RequiredStr] = None
     where: RequiredStr
-    dest_table: RequiredStr | None = None
-    dest_file: RequiredStr | None = None
+    dest_table: Optional[RequiredStr] = None
+    dest_file: Optional[RequiredStr] = None
     swap_drop: int = Field(..., ge=0, le=2, description="Must be between 0 and 2.")
-    swp_table_suffix: date | None = None
-
+    swp_table_suffix: Optional[date] = None
+    use_index: Optional[RequiredStr] = None
+    extra_args: Optional[RequiredStr] = None
+    limit: Optional[int] = None
+    sleep: Optional[int] = None
+    disable_binlog: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to disable binary logging; set to 0 or 1")
+    delete_data: Optional[int] = Field(None, ge=0, le=1, description="Optional flag to delete data.")
 
 class PurgeConfig(BaseCaseInsensitiveModel):
     """Represents the overall purge configuration.

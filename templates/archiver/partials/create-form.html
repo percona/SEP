@@ -1,4 +1,3 @@
------------
 {% set form_class = "modal" if modal_required else "" %}
 <style>
     fieldset input,
@@ -10,7 +9,7 @@
         margin-left: 1.5em;
     }
 
-    #src_query_container,
+    #source_query_container,
     #dest_file_container {
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
@@ -18,7 +17,7 @@
         max-height: 100px; /* Adjust based on actual content */
     }
 
-    #src_query_container.hidden,
+    #source_query_container.hidden,
     #dest_file_container.hidden {
         opacity: 0;
         max-height: 0;
@@ -116,10 +115,10 @@
                     <option value="">Select a table</option>
                 </select>
             </label>
-            <div id="src_query_container" style="width: fit-content; margin-left: 1em;">
+            <div id="source_query_container" style="width: fit-content; margin-left: 1em;">
             <label>OR</label>
-                <label for="src_query">Source Query
-                    <input type="text" id="src_query" name="src_query" class="validate" required />
+                <label for="source_query">Source Query
+                    <input type="text" id="source_query" name="source_query" class="validate" required />
                 </label>
             </div>
         </div>
@@ -132,24 +131,24 @@
             <label for="where">Where condition
                 <input type="text" id="where" name="where" class="validate" required />
             </label>
-            <label for="prg_use_index">Use_Index
-                <input type="text" id="prg_use_index" name="prg_use_index" class="validate"/>
+            <label for="use_index">Use Index
+                <input type="text" id="use_index" name="use_index" class="validate"/>
             </label>
-            <label for="prg_limit">Limit
-                <input type="number" id="prg_limit" name="prg_limit" class="validate" value="1000"/>
+            <label for="limit">Limit
+                <input type="number" id="limit" name="limit" class="validate" value="1000"/>
             </label>
-            <label for="prg_sleep">Sleep
-                <input type="number" id="prg_sleep" name="prg_sleep" class="validate" value="1"/>
+            <label for="sleep">Sleep
+                <input type="number" id="sleep" name="sleep" class="validate" value="1"/>
             </label>
-            <label for="prg_extra_args">Extra args
-                <input type="text" id="prg_extra_args" name="prg_extra_args" class="validate" required />
+            <label for="extra_args">Extra args
+                <input type="text" id="extra_args" name="extra_args" class="validate" required />
             </label>
-            <label for="prg_disable_binlog">Disable Binlog
-                <input type="checkbox" id="prg_disable_binlog" name="prg_disable_binlog" class="validate" value="1" />
+            <label for="disable_binlog">Disable Binlog
+                <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1" />
             </label>
         </div>
-        <label for="prg_purge">DELETE_DATA
-            <input type="checkbox" id="prg_purge" name="prg_purge" class="validate" value="1" />
+        <label for="delete_data">DELETE_DATA
+            <input type="checkbox" id="delete_data" name="delete_data" class="validate" value="1" />
         </label>
     </fieldset>
     <fieldset id="destination_fieldset">
@@ -195,10 +194,10 @@
     const swapDropSelect = document.getElementById('swap_drop');
     const destinationFieldset = document.getElementById('destination_fieldset');
     const dstFileContainer = document.getElementById('dest_file_container');
-    const srcQueryInput = document.getElementById('src_query');
-    const srcQueryContainer = document.getElementById('src_query_container');
+    const srcQueryInput = document.getElementById('source_query');
+    const srcQueryContainer = document.getElementById('source_query_container');
     const destinationContainer = document.getElementById('destination_container');
-    const prgPurgeCheckbox = document.getElementById('prg_purge');
+    const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
     const swpTableSuffixInput = document.getElementById('swp_table_suffix');
 
@@ -326,13 +325,13 @@
             removeHiddenInput('dest_file');
         } else {
             destinationContainer.classList.remove('hidden');
-            destTableSelect.disabled = false;
-            dstFileInput.disabled = false;
+            if(!dstFileInput.value)
+                destTableSelect.disabled = false;
+            if(!destTableSelect.value)
+                dstFileInput.disabled = false;
             
             destTableSelect.setAttribute('name', 'dest_table_id');
-            destTableSelect.value = '';
             dstFileInput.setAttribute('name', 'dest_file');
-            dstFileContainer.classList.remove('hidden');
             if (destTableSelect.disabled && destTableSelect.value) {
                 addHiddenInput(destTableSelect);
             }
@@ -390,7 +389,7 @@
         } else {
             srcQueryInput.disabled = false;
             srcQueryInput.setAttribute('required', 'required');
-            srcQueryInput.name = 'src_query';
+            srcQueryInput.name = 'source_query';
             srcQueryContainer.classList.remove('hidden');
         }
     }

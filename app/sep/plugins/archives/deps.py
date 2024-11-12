@@ -1,5 +1,4 @@
 """Define dependencies for the Archives plugin."""
-import pdb
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -55,26 +54,43 @@ async def build_archives_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    schema = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SCHEMA,
-        form.source_db_id,
-        service_id=service.id,
-    )
-    source_table = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.TABLE,
-        form.source_table_id,
-        schema_id=schema.id,
-    )
-
+    
     purge_item_data = {
         **form.model_dump(
-            include={"alias", "where", "swap_drop", "swp_table_suffix"}, by_alias=True
+            include={
+                "alias",
+                "source_query",
+                "where", 
+                "swap_drop", 
+                "swp_table_suffix",
+                "use_index",
+                "extra_args",
+                "limit",
+                "sleep",
+                "disable_binlog",
+                "delete_data",
+            }, by_alias=True
         ),
-        "source_db": schema.name,
-        "source_table": source_table.name,
-    }
+    }   
+        
+    if form.source_db_id is not None:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            form.source_db_id,
+            service_id=service.id,
+        )
+        purge_item_data["source_db"] = schema.name
+    
+    if form.source_table_id is not None:
+        source_table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.source_table_id,
+            schema_id=schema.id,
+        )
+        purge_item_data["source_table"] = source_table.name
+
 
     if form.dest_table_id is not None:
         dest_table = await get_created_entity(
@@ -95,7 +111,6 @@ async def build_archives_task_payload(
         alias=form.alias,
     )
     payload_path = Path(__file__).parent / "payload"
-
     return TaskWrite(
         name=form.alias,
         backend=TaskBackendEnum.PROXY,
@@ -103,9 +118,7 @@ async def build_archives_task_payload(
         data={
             "task": "run-python",
             "meta": {
-                "config": yaml.dump(
-                    purge_config.model_dump(by_alias=True, exclude_none=True)
-                ),
+                "config": yaml.dump(purge_config.model_dump(by_alias=True, exclude_none=True)),
                 "target": form.hostname,
                 "requirements": "PyMySQL\nfilelock\nPyYAML",
             },
