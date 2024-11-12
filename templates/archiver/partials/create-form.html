@@ -10,7 +10,8 @@
     }
 
     #source_query_container,
-    #dest_file_container {
+    #dest_file_container,
+    #delete_data_container {
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 1;
@@ -18,7 +19,8 @@
     }
 
     #source_query_container.hidden,
-    #dest_file_container.hidden {
+    #dest_file_container.hidden,
+    #delete_data_container.hidden {
         opacity: 0;
         max-height: 0;
         pointer-events: none;
@@ -147,7 +149,7 @@
                 <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1" />
             </label>
         </div>
-        <label for="delete_data">DELETE_DATA
+        <label for="delete_data" id="delete_data_container">DELETE_DATA
             <input type="checkbox" id="delete_data" name="delete_data" class="validate" value="1" />
         </label>
     </fieldset>
@@ -197,6 +199,7 @@
     const srcQueryInput = document.getElementById('source_query');
     const srcQueryContainer = document.getElementById('source_query_container');
     const destinationContainer = document.getElementById('destination_container');
+    const deleteDataContainer = document.getElementById('delete_data_container');
     const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
     const swpTableSuffixInput = document.getElementById('swp_table_suffix');
@@ -285,10 +288,10 @@
         const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
         populateSchemas(this.value);
-        updateDestinationFieldset();
         toggleSourceQueryInput();
         toggleDstFileContainer();
         toggleDestTableSelect()
+        updateDestinationFieldset();
     });
 
     schemaSelect.addEventListener('change', function () {
@@ -317,7 +320,7 @@
 
 
     function updateDestinationFieldset() {
-        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1') {
+        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
             destinationContainer.classList.add('hidden');
             destTableSelect.disabled = true;
             dstFileInput.disabled = true;
@@ -397,9 +400,11 @@
     function togglePrgPurgeCheckbox() {
         if (swapDropSelect.value !== '1') {
             prgPurgeCheckbox.disabled = false
+            deleteDataContainer.classList.remove('hidden');
             return;
         }
         prgPurgeCheckbox.disabled = true;
+        deleteDataContainer.classList.add('hidden');
     }
 
     function toggleSwpTableSuffix() {
@@ -427,7 +432,7 @@
     }
 
     function toggleDestTableSelect() {
-        if (dstFileInput.value.trim() !== '') {
+        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1') {
             destTableSelect.disabled = true;
             destTableSelect.value = '';
             destTableSelect.removeAttribute('name');

@@ -1,4 +1,5 @@
 """Define dependencies for the Archives plugin."""
+
 import logging
 from pathlib import Path
 from typing import Annotated, Any
