@@ -171,11 +171,25 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
     purge_item = task_config["PURGE_LIST"][0]
-    return {
-        "hostname": meta["target"],
-        "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
-        "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
-    }
+
+    source_db = purge_item.get("SOURCE_DB")
+    source_table = purge_item.get("SOURCE_TABLE")
+    dest_table = purge_item.get("DEST_TABLE")
+    source_query = purge_item.get("SOURCE_QUERY")
+    dest_file = purge_item.get("DEST_FILE")
+
+    result = {"hostname": meta["target"]}
+
+    if source_db and source_table:
+        result["source_table"] = f"{source_db}.{source_table}"
+    if source_db and dest_table:
+        result["dest_table"] = f"{source_db}.{dest_table}"
+    if source_query:
+        result["source_query"] = source_query
+    if dest_file:
+        result["dest_file"] = dest_file
+
+    return result
 
 
 async def get_archives_index_context(

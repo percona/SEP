@@ -75,9 +75,22 @@ async def archives_detail(
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
-        "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
-        "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
     }
+
+    source_db = purge_item.get("SOURCE_DB")
+    source_table = purge_item.get("SOURCE_TABLE")
+    dest_table = purge_item.get("DEST_TABLE")
+    source_query = purge_item.get("SOURCE_QUERY")
+    dest_file = purge_item.get("DEST_FILE")
+
+    if source_db and source_table:
+        task_data["source_table"] = f"{source_db}.{source_table}"
+    if source_db and dest_table:
+        task_data["dest_table"] = f"{source_db}.{dest_table}"
+    if source_query:
+        task_data["source_query"] = source_query
+    if dest_file:
+        task_data["dest_file"] = dest_file
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["running_tasks"] = await tasks_api.get(
