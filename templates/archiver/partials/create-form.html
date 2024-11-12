@@ -80,7 +80,7 @@
             <label for="alias">Task name
                 <input type="text" id="alias" name="alias" class="validate" required />
             </label>
-            <label for="swap_drop">Swap Drop
+            <label for="swap_drop">Type
                 <select id="swap_drop" name="swap_drop">
                     <option value="0">Standard purge</option>
                     <option value="1">Swap and drop</option>
@@ -109,7 +109,7 @@
                 {% endif %}
             </label>
         </div>
-        <div style="display: flex;">
+        <div>
             <label for="source_db_id">Schema
                 <select id="source_db_id" name="source_db_id" class="validate" required>
                     <option value="">Select a schema</option>
@@ -120,11 +120,12 @@
                     <option value="">Select a table</option>
                 </select>
             </label>
+            <br/>
             <div id="source_query_container" style="width: fit-content; margin-left: 1em;">
             <label>OR</label>
-                <label for="source_query">Source Query
-                    <input type="text" id="source_query" name="source_query" class="validate" required />
-                </label>
+            <label for="source_query">Source Query
+                <input type="text" id="source_query" name="source_query" class="validate" required style="width: 25em;"/>
+            </label>
             </div>
         </div>
         <div id="swp_table_suffix_container">
@@ -134,20 +135,23 @@
         </div>
         <div id="purge_options_container">
             <label for="where">Where condition
-                <input type="text" id="where" name="where" class="validate" required />
+                <input type="text" id="where" name="where" class="validate" required style="width: 25em;"/>
             </label>
+            <br/>
             <label for="use_index">Use Index
                 <input type="text" id="use_index" name="use_index" class="validate"/>
             </label>
             <label for="limit">Limit
-                <input type="number" id="limit" name="limit" class="validate" value="1000"/>
+                <input type="number" id="limit" name="limit" class="validate" value="1000"  style="width:5em;"/>
             </label>
             <label for="sleep">Sleep
-                <input type="number" id="sleep" name="sleep" class="validate" value="1"/>
+                <input type="number" id="sleep" name="sleep" class="validate" value="1"  style="width: 3em;"/>
             </label>
+            <br/>
             <label for="extra_args">Extra args
-                <input type="text" id="extra_args" name="extra_args" class="validate"/>
+                <input type="text" id="extra_args" name="extra_args" class="validate" style="width: 25em;"/>
             </label>
+            <br/>
             <label for="disable_binlog">Disable Binlog
                 <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1" />
             </label>
@@ -158,16 +162,17 @@
     </fieldset>
     <fieldset id="destination_fieldset">
         <legend>Destination details</legend>
-        <div id="destination_container" style="display: flex;">
+        <div id="destination_container">
             <label for="dest_table_id">Destination Database
                 <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
                     <option value="">Select a table</option>
                 </select>
             </label>
+            <br/>
             <div id="dest_file_container" style="width: fit-content;">
                 <label>OR</label>
                 <label for="dest_file" >Destination File
-                    <input type="text" id="dest_file" name="dest_file" class="validate" required />
+                    <input type="text" id="dest_file" name="dest_file" class="validate" required style="width: 25em;"/>
                 </label>
             </div>
         </div>
@@ -477,7 +482,7 @@
             limitInput.setAttribute('name', 'limit');
             sleepInput.setAttribute('name', 'sleep');
             extraArgsInput.setAttribute('name', 'extra_args');
-            whereInput.setAttribute('required')
+            whereInput.setAttribute('required', 'required')
         }
     }
 
