@@ -1,4 +1,4 @@
-"""Module for executing and triggering Celery tasks.
+"""Define Celery tasks and utilities for the Tasks app.
 
 This module defines functions for executing tasks asynchronously via Celery,
 along with utility functions to process queue items.
