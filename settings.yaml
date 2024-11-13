@@ -3,7 +3,6 @@ default:
   CASDOOR:
     ENDPOINT: http://localhost:9999
     FRONT_ENDPOINT: //:9999
-    CERTIFICATE_PATH: data/certs/casdoor/token_jwt_key.pem
     ALLOWED_ISSUERS:
       - http://localhost:9999
       - http://127.0.0.1:9999

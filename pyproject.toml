@@ -67,10 +67,10 @@ sqlalchemy-celery-beat = "0.8.0"
 optional = true
 
 [tool.poetry.group.audit.dependencies]
-ruff = "^0.7.0"
 pip-audit = "^2.7.3"
 bandit = {extras = ["toml"], version = "^1.7.9"}
 poetry-plugin-export = "^1.8.0"
+ruff = "^0.7.2"
 
 
 [tool.poetry.group.mysql]
@@ -95,6 +95,12 @@ redis = ">=4.5.2,<4.5.5 || >4.5.5,<6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
+pytest = "^8.3.3"
+pytest-cov = "^6.0.0"
+pytest-mock = "^3.14.0"
+faker = "^30.8.2"
+polyfactory = "^2.18.0"
+pytest-asyncio = "^0.24.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -105,7 +111,8 @@ exclude_dirs = [
     ".git",
     ".github",
     "build",
-    "venv"
+    "venv",
+    "app/tests/",
 ]
 
 [tool.ruff]
@@ -207,9 +214,33 @@ order-by-type = false
 ]
 "app/core/config.py" = ["ARG003"]
 "app/tasks/celery.py" = ["ARG001"]
+"test_*.py" = ["S", "ARG001", "ARG002", "PLR0913", "ANN"]
+"conftest.py" = ["S", "ARG001", "ARG002", "PLR0913"]
+
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/tests/*",
+    "__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.tox]
+env_list = ["3.11", "3.12", "3.13"]
+
+[tool.tox.env_run_base]
+allowlist_externals = ["make"]
+commands = [["make", "test"]]

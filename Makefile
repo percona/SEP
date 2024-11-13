@@ -10,13 +10,21 @@ else
     VENV?=venv
 endif
 VENV_BIN?="${VENV}/bin"
+ifdef POETRY
+	START_PKGS=pip wheel
+	VIRTUAL_ENV=$$("${POETRY}" env info --path)
+	VENV=${VIRTUAL_ENV}
+	VENV_BIN="${VENV}/bin"
+else
+	START_PKGS=pip wheel poetry
+	POETRY="${VENV_BIN}/poetry"
+endif
 PIP?="${VENV_BIN}/pip"
-POETRY?="${VENV_BIN}/poetry"
 APPS=tasks inventory sep
 
 venv: pyproject.toml poetry.lock
 	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
-	@"${PIP}" install --no-cache -U pip wheel poetry;
+	@"${PIP}" install --no-cache ${START_PKGS};
 	@source "${VENV_BIN}"/activate; "${POETRY}" install --with audit
 
 build: venv app/
@@ -29,7 +37,10 @@ lint: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
-audit: lint bandit pip-audit
+audit: run-pre-commit bandit pip-audit
+
+run-pre-commit: venv
+	@"${VENV_BIN}"/pre-commit run --all-files
 
 pip-audit: venv
 	@"${POETRY}" export -f requirements.txt --output requirements.txt
@@ -68,3 +79,6 @@ migrate: venv alembic.ini app/tasks/migrations/versions
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade head; \
 	done
+
+test: venv
+	@"${VENV_BIN}"/pytest -v --cov=app app/tests/
