@@ -3,7 +3,7 @@
         <!-- Basic Mode (Default) -->
         <div id="BasicContainer">
             <label for="frequencyNumber">Repeat every:</label>
-            <input type="number" id="frequencyNumber" min="1" 
+            <input type="number" id="frequencyNumber" min="1"
                 placeholder="Enter a number" />
 
             <label for="frequencyUnit">Select unit:</label>
@@ -25,7 +25,7 @@
         <!-- Advanced Mode -->
         <div id="AdvancedContainer" style="display: none;">
             <label for="cronExpression">Enter cron expression:</label>
-            <input type="text" id="cronExpression" placeholder="e.g., * * * * *" 
+            <input type="text" id="cronExpression" placeholder="e.g., * * * * *"
                 name="period" />
 
             <!-- Validation Message for Advanced Mode -->
@@ -58,8 +58,8 @@
 
         if (value > maxValues[unit]) {
             validationMessageBasic.style.display = "block";
-            validationMessageBasic.innerText = 
-                `Value exceeds the maximum allowed for 
+            validationMessageBasic.innerText =
+                `Value exceeds the maximum allowed for
                 ${unit}s: ${maxValues[unit]}.`;
             frequencyInput.setCustomValidity("Invalid value.");
         } else {
@@ -98,7 +98,7 @@
         let errorMessage = "";
 
         if (cronParts.length !== 5) {
-            errorMessage = `Cron expression must have exactly 5 fields 
+            errorMessage = `Cron expression must have exactly 5 fields
                             (minute, hour, day of month, month, day of week).`;
         } else {
             const [minute, hour, dayOfMonth, month, dayOfWeek] = cronParts;
@@ -119,23 +119,23 @@
                     an interval (e.g., */5), or a list (e.g., 1,5,10). `;
             }
             if (!hourPattern.test(hour)) {
-                errorMessage += `Hour must be *, a number between 0 and 23, 
-                    a range (e.g., 1-5), an interval (e.g., */2), 
+                errorMessage += `Hour must be *, a number between 0 and 23,
+                    a range (e.g., 1-5), an interval (e.g., */2),
                     or a list (e.g., 1,5,10). `;
             }
             if (!dayOfMonthPattern.test(dayOfMonth)) {
-                errorMessage += `Day of month must be *, a number between 1 
-                    and 31, a range (e.g., 1-15), an interval (e.g., */3), 
+                errorMessage += `Day of month must be *, a number between 1
+                    and 31, a range (e.g., 1-15), an interval (e.g., */3),
                     or  a list (e.g., 1,15,31). `;
             }
             if (!monthPattern.test(month)) {
                 errorMessage += `Month must be *, a number between 1 and 12,
-                    a range (e.g., 1-6), an interval (e.g., */2), 
+                    a range (e.g., 1-6), an interval (e.g., */2),
                     or a list (e.g., 1,6,12). `;
             }
             if (!dayOfWeekPattern.test(dayOfWeek)) {
-                errorMessage += `Day of week must be *, a number between 0 
-                    and 6, a range (e.g., 1-5), an interval (e.g., */2), 
+                errorMessage += `Day of week must be *, a number between 0
+                    and 6, a range (e.g., 1-5), an interval (e.g., */2),
                     or a list (e.g., 1,5). `;
             }
         }

@@ -15,21 +15,21 @@
         {% for item in required %}
             <div style="margin-bottom: 15px;">
                 <label for="meta_{{ item }}"
-                    class="form-label">{{ item.capitalize() }} 
+                    class="form-label">{{ item.capitalize() }}
                     (required)</label>
                 {% if item == "target" %}
                     {% include "tasks/partials/select-host.html" %}
                 {% else %}
                     <input type="text" name="meta_{{ item }}"
                     id="meta_{{ item }}"
-                    value="{{ meta_defaults[item] }}" required 
+                    value="{{ meta_defaults[item] }}" required
                     class="form-input">
                 {% endif %}
             </div>
         {% endfor %}
         {% for item in optional %}
             <div style="margin-bottom: 15px;">
-                <label for="meta_{{ item }}" 
+                <label for="meta_{{ item }}"
                     class="form-label">{{ item.capitalize() }}</label>
                 {% if item == "target" %}
                     {% include "tasks/partials/select-host.html" %}
@@ -104,7 +104,7 @@
                 () => syncMetaInput('{{ item }}')
             ); // Sync on input change
         {% endfor %}
-        
+
         syncPayload(); // Initial sync for payload
         document.getElementById('payload').addEventListener('input', syncPayload); // Sync on input change for payload
     });

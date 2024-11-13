@@ -257,7 +257,7 @@ be in https://localhost/graph/org/apikeys.
 ### Celery and sqlalchemy-celery-beat
 1. Running Celery Worker
 ```shell
-celery -A app.tasks.celery.task.celery worker --loglevel=info 
+celery -A app.tasks.celery.task.celery worker --loglevel=info
 ```
 
 3. Running the sqlalchemy-celery-beat
