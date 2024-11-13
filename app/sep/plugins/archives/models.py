@@ -38,7 +38,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         Must be None if both source_db_id and source_table_id are set.
     :type source_query: RequiredStr | None
     :param where: Optional; The WHERE condition that defines which data will be purged
-        from the source table. Must be None when swap_drop is 1.
+        from the source table. Must be None when swap_drop is SWAP_DROP.
     :type where: RequiredStr | None
     :param dest_table_id: Optional; The destination table ID.
         Must be None if dest_file is set.
@@ -76,7 +76,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     where: RequiredStr | None = None
     dest_table_id: int | None = None
     dest_file: RequiredStr | None = None
-    swap_drop: int = Field(0, ge=0, le=2)
+    swap_drop: int = Field(..., ge=0, le=2)
     swp_table_suffix: date | None = None
     use_index: RequiredStr | None = None
     extra_args: RequiredStr | None = None
@@ -110,20 +110,22 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
 
         :return: The validated instance
         :rtype: ArchivesCreate
-        :raises ValueError: If swap_drop is 1 or delete_data is set, and either
+        :raises ValueError: If swap_drop is SWAP_DROP or delete_data is set, and either
             dest_file or dest_table_id is provided.
         :raises ValueError: If neither swap_drop nor delete_data is set, and
             neither dest_file nor dest_table_id is provided.
         """
-        if (
-            dest_is_set := self.dest_table_id is not None or self.dest_file is not None
-        ) and (self.swap_drop == 1 or self.delete_data):
-            raise ValueError(
-                "When swap_drop is 1 or delete_data is set, both dest_table_id and "
-                "dest_file must be None."
-            )
-        if not dest_is_set:
+        if dest_is_set := self.dest_table_id is not None or self.dest_file is not None:
+            if (
+                self.swap_drop == SwapDropEnum.SWAP_DROP or self.delete_data
+            ) and dest_is_set:
+                raise ValueError(
+                    "When swap_drop is SWAP_DROP or delete_data is set, both dest_table_id and "
+                    "dest_file must be None."
+                )
+        elif not self.delete_data and self.swap_drop != SwapDropEnum.SWAP_DROP:
             raise ValueError("At least one of dest_file or dest_table_id must be set.")
+
         return self
 
     @model_validator(mode="after")
@@ -167,13 +169,13 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
 
         :return: The validated instance.
         :rtype: ArchivesCreate
-        :raises ValueError: If swap_drop is 1 and where is set,
-            or if swap_drop is not 1 and where is None.
+        :raises ValueError: If swap_drop is SWAP_DROP and where is set,
+            or if swap_drop is not SWAP_DROP and where is None.
         """
-        if self.swap_drop == 1 and self.where is not None:
-            raise ValueError("When swap_drop is 1, 'where' must be None.")
-        if self.swap_drop != 1 and self.where is None:
-            raise ValueError("When swap_drop is not 1, 'where' must be set.")
+        if self.swap_drop == SwapDropEnum.SWAP_DROP and self.where is not None:
+            raise ValueError("When swap_drop is SWAP_DROP, 'where' must be None.")
+        if self.swap_drop != SwapDropEnum.SWAP_DROP and self.where is None:
+            raise ValueError("When swap_drop is not SWAP_DROP, 'where' must be set.")
 
         return self
 
@@ -206,7 +208,7 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :param source_query: Optional; a query defining the source data to be purged.
     :type source_query: RequiredStr | None
     :param where: Optional; The WHERE condition that defines which data will be purged
-        from the source table. Must be None when swap_drop is 1.
+        from the source table. Must be None when swap_drop is SWAP_DROP.
     :type where: RequiredStr | None
     :param dest_table: Optional; The name of the destination table where the purged data
         will be archived. Must be None if dest_file is set.
@@ -241,7 +243,7 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     where: RequiredStr | None = None
     dest_table: RequiredStr | None = None
     dest_file: RequiredStr | None = None
-    swap_drop: int = Field(0, ge=0, le=2)
+    swap_drop: int = Field(..., ge=0, le=2)
     swp_table_suffix: date | None = None
     use_index: RequiredStr | None = None
     extra_args: RequiredStr | None = None
