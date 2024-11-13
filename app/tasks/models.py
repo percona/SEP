@@ -10,13 +10,14 @@ Todo:
 
 """
 
-import re
+import json
 from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
 from pathlib import Path
 from statistics import mean
-from typing import Any, ClassVar, Literal, Self
+from typing import Any, Literal, Self
+from zoneinfo import available_timezones
 
 from pydantic import (
     AliasGenerator,
@@ -26,10 +27,11 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
-    ValidationError,
 )
-from sqlalchemy import Column, Dialect, Index, JSON, String, TypeDecorator
+from sqlalchemy import Column, Index, JSON
 from sqlalchemy import Enum as EnumField
+from sqlalchemy_celery_beat.models import CrontabSchedule as BaseCrontabSchedule
+from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
@@ -353,7 +355,6 @@ class Task(TaskBase, BaseSQLModel, table=True):
         ),
     )
     history: list["TaskHistory"] = Relationship(back_populates="task")
-    periodic_tasks: list["PeriodicTask"] = Relationship(back_populates="task")
     deleted_at: datetime | None = SQLField(
         sa_type=DateTimeWithTimezone,
         default=None,
@@ -419,6 +420,393 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
+class IntervalSchedule(BaseModel):
+    """Represent an interval schedule.
+
+    :param every: The number of periods between each execution.
+    :type every: int
+    :param period: The period unit for the interval (e.g., seconds, minutes).
+    :type period: Period
+    """
+
+    every: int
+    period: Period
+
+    def __str__(self) -> str:
+        """Return a string representation of the interval schedule.
+
+        Formats the schedule as "every {every} {period}", handling singular forms
+        appropriately.
+
+        :return: A formatted string representing the interval schedule.
+        :rtype: str
+        """
+        str_schedule = f"every {self.every} {self.period.value}"
+        if self.every == 1:
+            return str_schedule[:-1]
+        return str_schedule
+
+
+class CrontabSchedule(BaseModel):
+    """Representing a crontab schedule.
+
+    :param minute: Represents the minute component in cron format. Defaults to `"*"`.
+    :type minute: str
+    :param hour: Represents the hour component in cron format. Defaults to `"*"`.
+    :type hour: str
+    :param day_of_week: Represents the day of the week component in cron format.
+        Defaults to `"*"`.
+    :type day_of_week: str
+    :param day_of_month: Represents the day of the month component in cron format.
+        Defaults to `"*"`.
+    :type day_of_month: str
+    :param month_of_year: Represents the month component in cron format.
+        Defaults to `"*"`.
+    :type month_of_year: str
+    :param timezone: The timezone for the cron schedule. Defaults to "UTC". Must be a
+        valid timezone as returned in `available_timezones()`
+    :type timezone: str
+    """
+
+    minute: str = "*"
+    hour: str = "*"
+    day_of_week: str = "*"
+    day_of_month: str = "*"
+    month_of_year: str = "*"
+    timezone: str = "UTC"
+
+    def __str__(self) -> str:
+        """Return a string representation of the crontab schedule.
+
+        Formats the schedule according to cron expression standards and includes the
+        timezone.
+
+        :return: A formatted string representing the crontab schedule.
+        :rtype: str
+        """
+        fmt_kwargs = {
+            field: BaseCrontabSchedule.cronexp(value)
+            for field, value in self.model_dump(exclude={"timezone"}).items()
+        }
+        fmt_kwargs["timezone"] = self.timezone or "UTC"
+        return (
+            "{minute} {hour} {day_of_month} {month_of_year} {day_of_week} "
+            "({timezone})"
+        ).format(**fmt_kwargs)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        """Validate the timezone field.
+
+        Ensures that the provided timezone is among the available timezones.
+
+        :param v: The timezone string to validate.
+        :type v: str
+        :return: The validated timezone string.
+        :rtype: str
+        :raises ValueError: If the timezone is not valid.
+        """
+        if v not in available_timezones():
+            raise ValueError(f"{v} is not a valid timezone")
+        return v
+
+
+class BasePeriodicTask(BaseModel):
+    """Define the base model for periodic tasks.
+
+    :param name: The name of the periodic task.
+    :type name: str
+    :param task: The task identifier.
+    :type task: str
+    :param start_time: The start time for the task execution.
+    :type start_time: datetime | None
+    :param expires: The expiration time for the task execution.
+    :type expires: datetime | None
+    :param enabled: Whether the task is enabled.
+    :type enabled: bool
+    :param description: A description of the task.
+    :type description: str
+    :param execute_request: The execution request details for the task.
+    :type execute_request: TaskExecutionRequest | None
+    :param interval: The interval schedule for the task. Defaults to None.
+    :type interval: IntervalSchedule | None
+    :param crontab: The crontab schedule for the task. Defaults to None.
+    :type crontab: CrontabSchedule | None
+    """
+
+    name: str
+    task: str
+    start_time: datetime | None
+    expires: datetime | None
+    enabled: bool
+    description: str
+    execute_request: TaskExecuteRequest | None = None
+    interval: IntervalSchedule | None = None
+    crontab: CrontabSchedule | None = None
+
+    @model_validator(mode="after")
+    def validate_one_schedule_is_set(self) -> Self:
+        """Ensure that exactly one scheduling method is set.
+
+        Validates that either `interval` or `crontab` is set, but not both.
+
+        :return: The validated BasePeriodicTask instance.
+        :rtype: Self
+        :raises ValueError: If both or neither scheduling methods are set.
+        """
+        if self.interval is None and self.crontab is None:
+            raise ValueError("Either `interval` or `crontab` must be set.")
+        if self.interval is not None and self.crontab is not None:
+            raise ValueError("Only one of `interval` or `crontab` can be set.")
+        return self
+
+
+class PeriodicTaskResponse(BasePeriodicTask):
+    """Representing a response for a periodic task API call.
+
+    This model extends `BasePeriodicTask` and includes additional fields such as ID,
+    last run time, total run count, and date changed.
+
+    :param name: The name of the periodic task.
+    :type name: str
+    :param task: The Celery task name.
+    :type task: str
+    :param start_time: The start time for the task execution.
+    :type start_time: datetime | None
+    :param expires: The expiration time for the task execution.
+    :type expires: datetime | None
+    :param enabled: Whether the task is enabled.
+    :type enabled: bool
+    :param description: A description of the task.
+    :type description: str
+    :param execute_request: The execution request details for the task.
+    :type execute_request: TaskExecutionRequest | None
+    :param id: The unique identifier of the periodic task.
+    :type id: int
+    :param last_run_at: The datetime of the last run.
+    :type last_run_at: datetime | None
+    :param total_run_count: The total number of times the task has run.
+    :type total_run_count: int
+    :param date_changed: The datetime when the task was last changed.
+    :type date_changed: datetime | None
+    :param interval: The interval schedule for the task. Defaults to None. This field
+        is populated with the alias "model_intervalschedule".
+    :type interval: IntervalSchedule | None
+    :param crontab: The crontab schedule for the task. Defaults to None. This field
+        is populated with the alias "model_crontabschedule".
+    :type crontab: CrontabSchedule | None
+    """
+
+    id: int
+    last_run_at: datetime | None
+    total_run_count: int = 0
+    date_changed: datetime | None
+    interval: IntervalSchedule | None = Field(
+        None, validation_alias="model_intervalschedule"
+    )
+    crontab: CrontabSchedule | None = Field(
+        None, validation_alias="model_crontabschedule"
+    )
+
+    @computed_field
+    @property
+    def period(self) -> str:
+        """Get the period string for the periodic task.
+
+        Returns a string representation of the task's schedule based on whether it uses
+        an interval or crontab schedule.
+
+        :return: A string representing the task's period.
+        :rtype: str
+        """
+        if self.interval is not None:
+            return str(self.interval)
+        return str(self.crontab)
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_task_data(cls, data: Any) -> Any:
+        """Populate task data from a PeriodicTask instance or dictionary.
+
+        Extracts task execution details from the provided data, which can be a
+        `PeriodicTask` instance or a dictionary, and sets the `task` and
+        `execute_request` fields.
+
+        :param data: The input data containing task execution details.
+        :type data: Any
+        :return: The modified data with populated task fields.
+        :rtype: Any
+        """
+        if isinstance(data, PeriodicTask):
+            data = data.__dict__
+        if isinstance(data, dict):
+            data["task"] = None
+            data["execute_request"] = None
+            if (raw_args := data.get("args")) and (args := json.loads(raw_args)):
+                data["task"] = args[0]
+                if len(args) > 1:
+                    data["execute_request"] = args[1]
+            if (raw_kwargs := data.get("kwargs")) and (
+                kwargs := json.loads(raw_kwargs)
+            ):
+                data["task"] = kwargs.get("task_name", data["task"])
+                data["execute_request"] = kwargs.get(
+                    "execution_data", data["execute_request"]
+                )
+        return data
+
+
+class PeriodicTaskWrite(BasePeriodicTask):
+    """Define the model for writing periodic tasks.
+
+    This model extends `BasePeriodicTask` and includes additional fields required for
+    creating or updating periodic tasks in the database.
+
+    :param name: The name of the periodic task.
+    :type name: str
+    :param task: The SEP task name.
+    :type task: str
+    :param start_time: The start time for the task execution.
+    :type start_time: datetime | None
+    :param expires: The expiration time for the task execution.
+    :type expires: datetime | None
+    :param enabled: Whether the task is enabled.
+    :type enabled: bool
+    :param description: A description of the task.
+    :type description: str
+    :param execute_request: The execution request details for the task.
+    :type execute_request: TaskExecutionRequest | None
+    :param interval: The interval schedule for the task. Defaults to None.
+    :type interval: IntervalSchedule | None
+    :param crontab: The crontab schedule for the task. Defaults to None.
+    :type crontab: CrontabSchedule | None
+    :param kwargs: A JSON string representing additional keyword arguments for the task.
+    :type kwargs: str
+    """
+
+    kwargs: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_celery_task_data(cls, data: Any) -> Any:
+        """Populate Celery task data before validation.
+
+        Transforms the input data to include the Celery task name and execution data.
+
+        :param data: The input data containing task details.
+        :type data: Any
+        :return: The modified data with Celery task information.
+        :rtype: Any
+        """
+        if isinstance(data, dict):
+            kwargs = {
+                "task_name": data.get("task"),
+                "execution_data": data.get("execute_request"),
+            }
+            data["task"] = "app.tasks.celery.execute_task_by_name"
+            data["kwargs"] = kwargs
+        return data
+
+    @field_validator("kwargs", mode="before")
+    @classmethod
+    def encode_kwargs(cls, v: Any) -> Any:
+        """Encode the kwargs field to a JSON string.
+
+        Converts the `kwargs` dictionary to a JSON string if it is a dictionary.
+
+        :param v: The kwargs value to encode.
+        :type v: Any
+        :return: The encoded kwargs as a JSON string.
+        :rtype: Any
+        """
+        if isinstance(v, dict):
+            return json.dumps(v)
+        return v
+
+
+class PeriodicTaskUpdate(PeriodicTaskWrite):
+    """Define the model for updating periodic tasks.
+
+    Extends `PeriodicTaskWrite` and adds validations specific to updating tasks.
+
+    :param name: The name of the periodic task.
+    :type name: str
+    :param task: The SEP task name.
+    :type task: str
+    :param start_time: The start time for the task execution.
+    :type start_time: datetime | None
+    :param expires: The expiration time for the task execution.
+    :type expires: datetime | None
+    :param enabled: Whether the task is enabled.
+    :type enabled: bool
+    :param description: A description of the task.
+    :type description: str
+    :param execute_request: The execution request details for the task.
+    :type execute_request: TaskExecutionRequest | None
+    :param interval: The interval schedule for the task. Defaults to None.
+    :type interval: IntervalSchedule | None
+    :param crontab: The crontab schedule for the task. Defaults to None.
+    :type crontab: CrontabSchedule | None
+    :param kwargs: A JSON string representing additional keyword arguments for the task.
+    :type kwargs: str
+    """
+
+    @field_validator("kwargs", mode="before")
+    @classmethod
+    def encode_kwargs(cls, v: Any) -> Any:
+        """Encode the kwargs field and ensure required fields are present.
+
+        Converts the `kwargs` dictionary to a JSON string and validates the presence
+        of the 'task_name' field.
+
+        :param v: The kwargs value to encode.
+        :type v: Any
+        :return: The encoded kwargs as a JSON string.
+        :rtype: Any
+        :raises ValueError: If 'task_name' is missing in kwargs.
+        """
+        if isinstance(v, dict):
+            if v.get("task_name") is None:
+                raise ValueError("Missing required field 'task_name'")
+            return json.dumps(v)
+        return v
+
+
+class PeriodicTaskCreate(PeriodicTaskWrite):
+    """Define the model for creating periodic tasks.
+
+    Extends `PeriodicTaskWrite` and includes additional fields required for creating
+    new periodic tasks.
+
+    :param name: The name of the periodic task.
+    :type name: str
+    :param task: The SEP task name.
+    :type task: str
+    :param execute_request: The execution request details for the task.
+    :type execute_request: TaskExecutionRequest | None
+    :param interval: The interval schedule for the task. Defaults to None.
+    :type interval: IntervalSchedule | None
+    :param crontab: The crontab schedule for the task. Defaults to None.
+    :type crontab: CrontabSchedule | None
+    :param kwargs: A JSON string representing additional keyword arguments for the task.
+    :type kwargs: str
+    :param start_time: The start time for the task execution. Defaults to None.
+    :type start_time: datetime | None
+    :param expires: The expiration time for the task execution. Defaults to None.
+    :type expires: datetime | None
+    :param enabled: Whether the task is enabled. Defaults to True.
+    :type enabled: bool
+    :param description: A description of the task. Defaults to an empty string.
+    :type description: str
+    """
+
+    start_time: datetime | None = None
+    expires: datetime | None = None
+    enabled: bool = True
+    description: str = ""
+
+
 class TaskScheduleRequest(TaskExecuteRequest):
     """Represent a request to schedule a task with execution metadata and scheduling details.
 
@@ -453,20 +841,6 @@ class TaskScheduleRequest(TaskExecuteRequest):
     day_of_week: str = "*"
     day_of_month: str = "*"
     month_of_year: str = "*"
-
-    @model_validator(mode="after")
-    @classmethod
-    def update_period(cls, data: Any) -> Any:
-        """Update the period field based on cron parts after model instantiation or modification."""
-        crontab = CrontabPeriod(
-            minute=data.get("minute", "*"),
-            hour=data.get("hour", "*"),
-            day_of_week=data.get("day_of_week", "*"),
-            day_of_month=data.get("day_of_month", "*"),
-            month_of_year=data.get("month_of_year", "*"),
-        )
-        data["period"] = crontab.to_str()
-        return data
 
 
 # TODO: Create Base/Write models  # noqa: TD002, TD003
@@ -658,149 +1032,6 @@ class TransformPayloadRequest(BaseModel):
 
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
-
-
-class CrontabPeriod(BaseModel):
-    """Represents a cron-like schedule for periodic tasks.
-
-    Contains fields for minute, hour, day of week, day of month, and month of year.
-    Provides methods to convert to and from cron string format.
-    """
-
-    minute: str = "*"
-    hour: str = "*"
-    day_of_week: str = "*"
-    day_of_month: str = "*"
-    month_of_year: str = "*"
-
-    CRON_PARTS: ClassVar = {
-        "minute": r"^(\*|([0-5]?\d)(,\s*[0-5]?\d)*|\*/[1-5]?\d)$",
-        "hour": r"^(\*|([01]?\d|2[0-3])(,\s*([01]?\d|2[0-3]))*|\*/([1-9]|1[0-9]|2[0-3])|([01]?\d|2[0-3])-([01]?\d|2[0-3]))$",
-        "day_of_month": r"^(\*|([1-9]|[12]\d|3[01])(,\s*([1-9]|[12]\d|3[01]))*|\*/([1-9]|[12]\d|3[01])|([1-9]|[12]\d|3[01])-([1-9]|[12]\d|3[01]))$",
-        "month_of_year": r"^(\*|([1-9]|1[0-2])(,\s*([1-9]|1[0-2]))*|\*/([1-9]|1[0-2])|([1-9]|1[0-2])-([1-9]|1[0-2]))$",
-        "day_of_week": r"^(\*|([0-6])(,\s*([0-6]))*|\*/[1-6]|([0-6])-([0-6]))$",
-    }
-
-    def to_str(self) -> str:
-        """Convert the CrontabPeriod object into a cron string.
-
-        Format: 'minute hour day_of_month month_of_year day_of_week'
-        """
-        return (
-            f"{self.minute} {self.hour} "
-            f"{self.day_of_month} {self.month_of_year} "
-            f"{self.day_of_week}"
-        )
-
-    @classmethod
-    def from_str(cls, cron_str: str) -> "CrontabPeriod":
-        """Parse a cron string into a CrontabPeriod object."""
-        try:
-            minute, hour, day_of_month, month_of_year, day_of_week = cron_str.split()
-
-            # Validate each part
-            cls._validate_cron_part("minute", minute)
-            cls._validate_cron_part("hour", hour)
-            cls._validate_cron_part("day_of_month", day_of_month)
-            cls._validate_cron_part("month_of_year", month_of_year)
-            cls._validate_cron_part("day_of_week", day_of_week)
-
-            return cls(
-                minute=minute,
-                hour=hour,
-                day_of_month=day_of_month,
-                month_of_year=month_of_year,
-                day_of_week=day_of_week,
-            )
-        except ValueError as err:
-            raise ValueError(f"Invalid cron string format: {cron_str}") from err
-        except ValidationError as e:
-            raise ValueError(f"Validation error: {e}") from e
-
-    @classmethod
-    def _validate_cron_part(cls, name: str, value: str) -> None:
-        """Validate a cron part against its allowed pattern.
-
-        Checks if the given part (e.g., `minute`, `hour`) matches
-            the required format.
-        """
-        pattern = cls.CRON_PARTS[name]
-        if not re.match(pattern, value):
-            raise ValueError(f"Invalid value for {name}: {value}")
-
-
-class CrontabPeriodType(TypeDecorator):
-    """SQLAlchemy type for storing CrontabPeriod objects as strings.
-
-    Converts CrontabPeriod to a string for storage and back upon retrieval.
-    """
-
-    impl = String
-
-    def process_bind_param(
-        self,
-        value: CrontabPeriod | None,
-        dialect: Dialect,  # noqa: ARG002
-    ) -> str:
-        """Save the CrontabPeriod object to the database.
-
-        Converts the CrontabPeriod object to a string before storage.
-        """
-        if value is None:
-            return None
-        return value.to_str()
-
-    def process_result_value(
-        self,
-        value: str | None,
-        dialect: Dialect,  # noqa: ARG002
-    ) -> CrontabPeriod | None:
-        """Read the CrontabPeriod object from the database.
-
-        Converts the stored string back to a CrontabPeriod object.
-        """
-        if value is None:
-            return None
-        return CrontabPeriod.from_str(value)
-
-
-class PeriodicTask(BaseSQLModel, table=True):
-    """Represent a periodic task stored in the database.
-
-    :param task_id: Unique identifier and primary key for the periodic task.
-    :type task_id: int
-    :param task: The associated task linked through a foreign key relationship.
-    :type task: Task
-    :param period: Cron-like schedule that specifies when the task should run.
-    :type period: CrontabPeriod
-    :param execute_request: JSON-serializable field containing the execution
-        request details.
-    :type execute_request: dict
-    """
-
-    __table_args__ = (Index("ix_period_task", "period", "task_id"),)
-    task_id: int = SQLField(foreign_key="task.id", index=True)
-    task: Task = Relationship(back_populates="periodic_tasks")
-    period: str = Field(sa_column=Column(CrontabPeriodType))
-    execute_request: TaskExecutionRequest = SQLField(
-        sa_column=Column(JSON, nullable=True)
-    )
-
-
-class PeriodicTaskResponse(BaseSQLModel):
-    """Response schema for periodic task details.
-
-    :param execute_request: Execution request details for the task.
-    :type execute_request: TaskExecutionRequest
-    :param task: Task associated with this periodic execution.
-    :type task: Task
-    :param period: Schedule specifying when the task should run.
-    :type period: str
-    """
-
-    execute_request: TaskExecutionRequest
-    task: Task
-    period: str
 
 
 class TaskLog(BaseModel):

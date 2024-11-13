@@ -1,6 +1,5 @@
 """Define SEP routes."""
 
-import logging
 import logging.config
 
 from fastapi import Request, status

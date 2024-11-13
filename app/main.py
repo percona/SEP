@@ -1,6 +1,5 @@
 """Define the main FastAPI app."""
 
-import logging
 import logging.config
 from multiprocessing import Process
 

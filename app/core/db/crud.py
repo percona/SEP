@@ -4,6 +4,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any, TypeVar
 
+from pydantic import BaseModel
 from sqlalchemy import inspect, ScalarResult
 from sqlalchemy.engine import TupleResult
 from sqlalchemy.exc import IntegrityError, NoResultFound
@@ -23,18 +24,29 @@ from app.core.exceptions import (
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=BaseSQLModel)
+T = TypeVar("T")
+B = TypeVar("B", bound=BaseSQLModel)
 S = TypeVar("S", bound=SQLModel)
+P = TypeVar("P", bound=BaseModel)
+M = TypeVar("M", bound="BaseSQLModelManager")
 
 
 class BaseManager:
-    """Manage database operations for a BaseSQLModel-based model.
+    """Manage database operations for a SQLAlchemy model.
 
-    :param Model: The BaseSQLModel class for which this manager handles operations.
+    :param Model: The SQLAlchemy class for which this manager handles operations.
     :type Model: type[T]
     """
 
     Model: type[T]
+
+    @classmethod
+    def _construct_instance(cls, instance_create: P, **extra_fields: Any) -> T:
+        instance_data = {
+            **instance_create.model_dump(include=cls.Model.__table__.columns.keys()),
+            **extra_fields,
+        }
+        return cls.Model(**instance_data)
 
     @classmethod
     def _filter_query(
@@ -282,10 +294,12 @@ class BaseManager:
         try:
             await session.commit()
         except IntegrityError as exc:
-            logger.debug("IntegrityError saving instance %s", instance, exc_info=True)
+            logger.info("IntegrityError saving instance %s", instance, exc_info=True)
             raise HTTPConflictException(
                 exc.args[0],
             ) from None  # TODO: Improve error message  # noqa: TD002, TD003
+        else:
+            logger.debug("Saved instance of %s: %s", cls.Model.__name__, instance)
         await session.refresh(instance)
         return instance
 
@@ -293,7 +307,7 @@ class BaseManager:
     async def create(
         cls,
         session: AsyncSession,
-        instance_create: S,
+        instance_create: P,
         **extra_fields: Any,
     ) -> T:
         """Create and save a new model instance in the database.
@@ -302,46 +316,83 @@ class BaseManager:
             operations.
         :type session: AsyncSession
         :param instance_create: The data used to create the new model instance.
-        :type instance_create: S
+        :type instance_create: P
         :param extra_fields: Additional fields to be set on the model instance.
         :type extra_fields: Any
         :return: The newly created and saved instance.
         :rtype: T
         """
-        pk_column = inspect(cls.Model).primary_key[0]
-        if pk_column.autoincrement and isinstance(
-            None,
-            cls.Model.model_fields[pk_column.name].annotation,
-        ):
-            extra_fields[pk_column.name] = None
-        instance = cls.Model.model_validate(instance_create, update=extra_fields)
+        instance = cls._construct_instance(instance_create, **extra_fields)
+        logger.debug("Creating new instance of %s: %s", cls.Model.__name__, instance)
         return await cls.save(session, instance)
+
+    @classmethod
+    async def get_or_create(
+        cls,
+        session: AsyncSession,
+        instance_create: P,
+        filter_include: set[str] | None = None,
+        **extra_fields: Any,
+    ) -> tuple[T, bool]:
+        """Retrieve an existing model instance or create a new one if none exists.
+
+        This method attempts to find an instance of `cls.Model` with the fields defined
+        in `instance_create` and (optionally) specified in `filter_include`. If such an
+        instance exists, it returns it. Otherwise, it creates and saves a new one.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance_create: The data used to filter and possibly create the
+            instance.
+        :type instance_create: P
+        :param filter_include: The set of fields of `instance_create` to be included in
+            the search filter. Use None (default) for all fields.
+        :param extra_fields: Additional fields to be set on the created instance.
+        :type extra_fields: Any
+        :return: The existing or newly created instance of `cls.Model`, and a bool
+            specifying whether a new instance was created.
+        :rtype: tuple[T, bool]
+        """
+        existent_instance = await cls.first(
+            session, **instance_create.model_dump(include=filter_include)
+        )
+        if existent_instance:
+            return existent_instance, False
+        return await cls.create(session, instance_create, **extra_fields), True
 
     @classmethod
     async def update(
         cls,
         session: AsyncSession,
         existing_instance: T,
-        updated_instance: S,
+        updated_instance: P,
         *,
         flag_modified_fields: Sequence[str] = (),
     ) -> T:
         """Update an existing model instance with new data and save it.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
+        :param session: The SQLAlchemy asynchronous session to use for database operations.
         :type session: AsyncSession
         :param existing_instance: The existing model instance to be updated.
         :type existing_instance: T
         :param updated_instance: The new data to update the model instance with.
-        :type updated_instance: S
+        :type updated_instance: P
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
         :return: The updated and saved instance.
         :rtype: T
         """
-        updated_instance_data = updated_instance.model_dump(exclude_unset=True)
-        existing_instance.sqlmodel_update(updated_instance_data)
+        logger.debug(
+            "Updating existing instance of %s (%s): %s",
+            cls.Model.__name__,
+            existing_instance.id,
+            updated_instance,
+        )
+        for key, value in updated_instance.model_dump(
+            include=cls.Model.__table__.columns.keys()
+        ).items():
+            setattr(existing_instance, key, value)
         return await cls.save(
             session,
             existing_instance,
@@ -365,10 +416,64 @@ class BaseManager:
         return instance
 
 
-M = TypeVar("M", bound="BaseManager")
+class BaseSQLModelManager(BaseManager):
+    """Manage database operations for a BaseSQLModel-based model.
+
+    :param Model: The BaseSQLModel class for which this manager handles operations.
+    :type Model: type[B]
+    """
+
+    Model: type[B]
+
+    @classmethod
+    def _construct_instance(cls, instance_create: S, **extra_fields: Any) -> B:
+        pk_column = inspect(cls.Model).primary_key[0]
+        if pk_column.autoincrement and isinstance(
+            None,
+            cls.Model.model_fields[pk_column.name].annotation,
+        ):
+            extra_fields[pk_column.name] = None
+        return cls.Model.model_validate(instance_create, update=extra_fields)
+
+    @classmethod
+    async def update(
+        cls,
+        session: AsyncSession,
+        existing_instance: B,
+        updated_instance: S,
+        *,
+        flag_modified_fields: Sequence[str] = (),
+    ) -> B:
+        """Update an existing model instance with new data and save it.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param existing_instance: The existing model instance to be updated.
+        :type existing_instance: B
+        :param updated_instance: The new data to update the model instance with.
+        :type updated_instance: S
+        :param flag_modified_fields: Fields to be flagged as modified before saving.
+        :type flag_modified_fields: Sequence[str]
+        :return: The updated and saved instance.
+        :rtype: B
+        """
+        logger.debug(
+            "Updating existing instance of %s (%s): %s",
+            cls.Model.__name__,
+            existing_instance.id,
+            updated_instance,
+        )
+        updated_instance_data = updated_instance.model_dump(exclude_unset=True)
+        existing_instance.sqlmodel_update(updated_instance_data)
+        return await cls.save(
+            session,
+            existing_instance,
+            flag_modified_fields=flag_modified_fields,
+        )
 
 
-class BaseChildManager(BaseManager):
+class BaseSQLModelChildManager(BaseSQLModelManager):
     """Manage database operations for child models with a parent association.
 
     :param ParentManager: The manager class responsible for handling the parent model.
@@ -386,7 +491,7 @@ class BaseChildManager(BaseManager):
         cls,
         session: AsyncSession,
         existing_instance: T,
-        updated_instance: S,
+        updated_instance: P,
         *,
         flag_modified_fields: Sequence[str] = (),
     ) -> T:
@@ -398,7 +503,7 @@ class BaseChildManager(BaseManager):
         :param existing_instance: The existing child model instance to be updated.
         :type existing_instance: T
         :param updated_instance: The new data to update the child model instance with.
-        :type updated_instance: S
+        :type updated_instance: P
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
         :return: The updated and saved child instance.

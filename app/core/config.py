@@ -1,6 +1,5 @@
 """Define the application settings."""
 
-import logging
 import logging.config
 import re
 import secrets

@@ -1,6 +1,5 @@
 """Define Inventory routes."""
 
-import logging
 import logging.config
 
 from app.core.config import create_app, default_lifespan, settings

@@ -1,19 +1,30 @@
 """Define routes for the Tasks API."""
 
+import json
 import logging
 from os import getenv
 from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.exceptions import HTTPBadRequestException
 from app.tasks.celery import execute_task_queue
-from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.deps import CreatedTaskHistory, SessionDep, TaskDep, TaskExecutor
+from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
+from app.tasks.deps import (
+    CreatedTaskHistory,
+    ExecutableTaskDep,
+    SessionDep,
+    TaskDep,
+    TaskExecutor,
+)
 from app.tasks.models import (
     GeneratedTask,
+    PeriodicTaskCreate,
+    PeriodicTaskResponse,
     Task,
     TaskBackendEnum,
     TaskExecutionRequest,
@@ -25,6 +36,7 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
     TaskLog,
     TaskStats,
+    TaskWrite,
     TransformPayloadRequest,
 )
 
@@ -67,10 +79,41 @@ async def get_task(task: TaskDep) -> Task:
 
 
 @router.post("/", dependencies=[IsAuthenticatedDep])
-async def create_task(session: SessionDep, task: Task) -> Task:
+async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
-    return await TaskManager.save(session, task)
+    return await TaskManager.create(session, task)
+
+
+@router.get(
+    "/{task_name}/periodic/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=list[PeriodicTaskResponse],
+)
+async def list_periodic_tasks_by_task_name(
+    session: CeleryBeatSessionDep, task: ExecutableTaskDep
+) -> list[PeriodicTask]:
+    """List periodic tasks by task name."""
+    return await PeriodicTaskManager.list_by_task_names(session, task.name)
+
+
+@router.post(
+    "/{task_name}/periodic/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PeriodicTaskResponse,
+)
+async def create_periodic_task_for_task_name(
+    session: CeleryBeatSessionDep,
+    task: ExecutableTaskDep,
+    periodic_task: PeriodicTaskCreate,
+) -> PeriodicTask:
+    """Create a new periodic task for the specified task name."""
+    logger.debug("Creating periodic task %s", periodic_task)
+    kwargs = json.loads(periodic_task.kwargs)
+    kwargs["task_name"] = task.name
+    return await PeriodicTaskManager.create(
+        session, periodic_task, kwargs=json.dumps(kwargs)
+    )
 
 
 @router.post("/generate/", dependencies=[IsAuthenticatedDep])

@@ -9,12 +9,11 @@ from typing import Any
 
 from asgiref.sync import async_to_sync
 from celery import Task
-from fastapi import HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from pydantic import validate_call
 
 from app.core.celery.utils import create_celery
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import create_task_history, get_executor, get_task_by_name
@@ -70,8 +69,6 @@ def execute_task_by_name(
     :return: The data of the processed TaskHistory.
     :rtype: dict[str, Any]
     """
-    if execution_data is not None:
-        execution_data.eta = None
     task_history = async_to_sync(prepare_task_history)(task_name, execution_data)
     return jsonable_encoder(async_to_sync(process_queue_item)(task_history.id))
 
@@ -89,6 +86,8 @@ async def prepare_task_history(
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
     """
+    if execution_data is not None:
+        execution_data.eta = None
     async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_task_by_name(session, task_name)
@@ -117,10 +116,7 @@ async def process_queue_item(queue_id: int) -> TaskHistory:
         task = queue_item.task
 
         if queue_item.status != TaskHistoryStatusEnum.PENDING:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Queue item is not in a pending state.",
-            )
+            raise HTTPConflictException("Queue item is not in a pending state.")
 
         if task.backend == TaskBackendEnum.PROXY:
             task = await TaskManager.retrieve_by_name(

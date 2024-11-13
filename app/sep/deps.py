@@ -425,7 +425,7 @@ async def get_tasks_context(
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
-    periodic_tasks = await tasks_api.get("/schedules/", params={"owner": owner})
+    periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
     executor_hosts = await tasks_api.get("/hosts/")
     context = default_context or {}
     context.update(

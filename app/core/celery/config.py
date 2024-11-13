@@ -1,6 +1,8 @@
 """Define Celery settings."""
 
-from pydantic import ConfigDict
+from typing import Self
+
+from pydantic import ConfigDict, model_validator
 
 from app.core.fields import StrAnyUrl, StrDatabaseUrl
 from app.core.models import BaseLowercaseModel
@@ -20,6 +22,8 @@ class CeleryOptions(BaseLowercaseModel):
     :param beat_dburi: The database URI for storing scheduled tasks. Defaults to
         `"sqlite:///schedule.db"`.
     :type beat_dburi: StrDatabaseUrl
+    :param beat_schema: The schema to store the beat tables in the database.
+    :type beat_schema: str | None
     """
 
     model_config = ConfigDict(extra="allow")
@@ -27,3 +31,15 @@ class CeleryOptions(BaseLowercaseModel):
     task_track_started: bool = True
     result_backend: StrAnyUrl | None = None
     beat_dburi: StrDatabaseUrl = "sqlite:///schedule.db"
+    beat_schema: str | None = None
+
+    @model_validator(mode="after")
+    def set_default_beat_schema(self) -> Self:
+        """Ensure beat_schema is None for SQLite.
+
+        :return: Validated options.
+        :rtype: CeleryOptions
+        """
+        if self.beat_dburi.startswith("sqlite://"):
+            self.beat_schema = None
+        return self

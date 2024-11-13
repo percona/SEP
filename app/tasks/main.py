@@ -1,6 +1,5 @@
 """Define routes for the Tasks API."""
 
-import logging
 import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
