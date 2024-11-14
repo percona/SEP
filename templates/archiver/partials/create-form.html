@@ -256,9 +256,6 @@
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0]
                 tableSelect.value = singleTableId;
-                if (swapDropSelect.value !== '1' || tableSelect.id !== 'dest_table_id') {
-                    addHiddenInput(tableSelect);
-                }
             }
         }
     }
@@ -290,9 +287,6 @@
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0];
                 destTableSelect.value = singleTableId;
-                if (swapDropSelect.value !== '1') {
-                    addHiddenInput(destTableSelect);
-                }
             }
         }
     }
@@ -349,12 +343,6 @@
 
             destTableSelect.setAttribute('name', 'dest_table_id');
             dstFileInput.setAttribute('name', 'dest_file');
-            if (destTableSelect.disabled && destTableSelect.value) {
-                addHiddenInput(destTableSelect);
-            }
-            if (dstFileInput.disabled && dstFileInput.value) {
-                addHiddenInput(dstFileInput);
-            }
         }
     }
 
@@ -454,7 +442,6 @@
         } else {
             destTableSelect.disabled = false;
             destTableSelect.setAttribute('name', 'dest_table_id');
-            addHiddenInput(destTableSelect)
         }
     }
 
@@ -500,9 +487,6 @@
         toggleSwpTableSuffix();
         toggleWhereInput();
         togglePurgeOptionsContainer();
-        if (swapDropSelect.value !== '1' && destTableSelect.disabled && destTableSelect.value) {
-            addHiddenInput(destTableSelect);
-        }
     });
 
 
