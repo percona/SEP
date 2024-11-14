@@ -1,5 +1,6 @@
 """Define tests for the app.api.routes.oauth module."""
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,10 +12,6 @@ from app.core.auth.utils import get_user_model
 from app.main import app
 
 User = get_user_model()
-
-HTTP_STATUS_OK = 200
-HTTP_STATUS_UNAUTHORIZED = 401
-HTTP_STATUS_FORBIDDEN = 403
 
 
 @pytest.fixture
@@ -50,7 +47,7 @@ def test_create_oauth_token_success(
         "password": "valid_password",
     }
     response = test_client.post("/api/oauth/token", data=data)
-    assert response.status_code == HTTP_STATUS_OK
+    assert response.status_code == HTTPStatus.OK
     assert response.json() == oauth_token.model_dump()
 
 
@@ -77,7 +74,7 @@ def test_create_oauth_token_invalid_credentials(
     }
 
     response = test_client.post("/api/oauth/token", data=data)
-    assert response.status_code == HTTP_STATUS_UNAUTHORIZED
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json()["detail"] == "Incorrect username or password"
 
 
@@ -108,7 +105,7 @@ def test_create_oauth_token_inactive_user(
         "password": "valid_password",
     }
     response = test_client.post("/api/oauth/token", data=data)
-    assert response.status_code == HTTP_STATUS_FORBIDDEN
+    assert response.status_code == HTTPStatus.FORBIDDEN
     assert response.json()["detail"] == "User is not active"
 
 
@@ -137,7 +134,7 @@ def test_refresh_token_success(test_client, oauth_token, mocker, faker: Faker):
         data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert response.status_code == HTTP_STATUS_OK
+    assert response.status_code == HTTPStatus.OK
     assert response.json() == oauth_token.model_dump()
 
 
@@ -159,7 +156,7 @@ def test_refresh_token_invalid_token(test_client, mocker):
         json=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert response.status_code == HTTP_STATUS_UNAUTHORIZED
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json()["detail"] == "Refresh token is invalid, expired, or revoked"
 
 
@@ -189,5 +186,5 @@ def test_refresh_token_inactive_user(test_client, oauth_token, mocker, faker: Fa
         json=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert response.status_code == HTTP_STATUS_FORBIDDEN
+    assert response.status_code == HTTPStatus.FORBIDDEN
     assert response.json()["detail"] == "User is not active"
