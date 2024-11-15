@@ -3,9 +3,9 @@
 import json
 import logging
 from os import getenv
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
@@ -78,7 +78,9 @@ async def get_task(task: TaskDep) -> Task:
     return task
 
 
-@router.post("/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
+)
 async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
@@ -101,6 +103,7 @@ async def list_periodic_tasks_by_task_name(
     "/{task_name}/periodic/",
     dependencies=[IsAuthenticatedDep],
     response_model=PeriodicTaskResponse,
+    status_code=status.HTTP_201_CREATED,
 )
 async def create_periodic_task_for_task_name(
     session: CeleryBeatSessionDep,
@@ -111,12 +114,18 @@ async def create_periodic_task_for_task_name(
     logger.debug("Creating periodic task %s", periodic_task)
     kwargs = json.loads(periodic_task.kwargs)
     kwargs["task_name"] = task.name
+    if not periodic_task.name:
+        periodic_task.name = f"run_{task.name}_{periodic_task.period}_{hash(periodic_task.kwargs)}".replace(
+            " ", "_"
+        )
     return await PeriodicTaskManager.create(
         session, periodic_task, kwargs=json.dumps(kwargs)
     )
 
 
-@router.post("/generate/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/generate/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
+)
 async def generate_task(
     session: SessionDep,
     generated_task: GeneratedTask,
@@ -228,12 +237,12 @@ async def execute_task_name(
 @router.get("/history/", dependencies=[IsAuthenticatedDep])
 async def list_task_history(
     session: SessionDep,
-    status: TaskHistoryStatusEnum | None = None,
+    task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
 ) -> list[TaskHistoryResponse]:
     """Create a new task."""
     logger.debug("Listing task history")
     return await TaskHistoryManager.list(
-        session, select_related=(TaskHistory.task,), status=status
+        session, select_related=(TaskHistory.task,), status=task_status
     )
 
 
@@ -243,14 +252,16 @@ async def list_task_history(
     response_model=list[TaskHistoryResponse],
 )
 async def get_task_history(
-    session: SessionDep, task: str, status: TaskHistoryStatusEnum | None = None
+    session: SessionDep,
+    task: str,
+    task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
 ) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
     return await TaskHistoryManager.list_by_task_name(
         session=session,
         task_name=task,
-        status=status,
+        status=task_status,
         select_related_task=True,
     )
 
@@ -300,7 +311,9 @@ async def stream_task_history_logs(
     )
 
 
-@router.post("/history/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/history/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
+)
 async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
     """Create a new task history."""
     logger.debug("Creating task history %s", task.name)

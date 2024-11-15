@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.inventory.crud import TableManager
@@ -43,8 +43,12 @@ async def update_table(
     return await TableManager.update(session, existing_table, updated_table)
 
 
-@router.delete("/{table_id}", dependencies=[IsAuthenticatedDep])
-async def delete_table(session: SessionDep, table: TableDep) -> TableResponse:
+@router.delete(
+    "/{table_id}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_table(session: SessionDep, table: TableDep) -> None:
     """Delete Table."""
     logger.debug("Deleting table %s", table.id)
-    return await TableManager.delete(session, table)
+    await TableManager.delete(session, table)

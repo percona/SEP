@@ -18,8 +18,8 @@ from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import create_task_history, get_executor, get_task_by_name
 from app.tasks.models import (
+    PeriodicTaskExecuteRequest,
     TaskBackendEnum,
-    TaskExecuteRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
 )
@@ -56,7 +56,7 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     retry_kwargs={"max_retries": 5},
 )
 def execute_task_by_name(
-    self: Task, task_name: str, execution_data: TaskExecuteRequest | None = None
+    self: Task, task_name: str, execution_data: PeriodicTaskExecuteRequest | None = None
 ) -> dict[str, Any]:
     """Define Celery task to execute a SEP task by name.
 
@@ -65,29 +65,29 @@ def execute_task_by_name(
     :param task_name: The name of the task to execute.
     :type task_name: int | None
     :param execution_data: Execution details and parameters, if any.
-    :type execution_data: TaskExecuteRequest | None
+    :type execution_data: PeriodicTaskExecuteRequest | None
     :return: The data of the processed TaskHistory.
     :rtype: dict[str, Any]
     """
-    task_history = async_to_sync(prepare_task_history)(task_name, execution_data)
+    task_history = async_to_sync(prepare_periodic_task_history)(
+        task_name, execution_data
+    )
     return jsonable_encoder(async_to_sync(process_queue_item)(task_history.id))
 
 
 @validate_call
-async def prepare_task_history(
-    task_name: str, execution_data: TaskExecuteRequest | None = None
+async def prepare_periodic_task_history(
+    task_name: str, execution_data: PeriodicTaskExecuteRequest | None = None
 ) -> TaskHistory:
-    """Prepare and record the history of a task execution request.
+    """Prepare and record the history of a periodic task execution request.
 
     :param task_name: The name of the task to execute.
     :type task_name: str
     :param execution_data: Execution details and parameters, if any.
-    :type execution_data: TaskExecuteRequest | None
+    :type execution_data: PeriodicTaskExecuteRequest | None
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
     """
-    if execution_data is not None:
-        execution_data.eta = None
     async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_task_by_name(session, task_name)

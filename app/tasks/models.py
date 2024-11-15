@@ -27,7 +27,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
-from app.core.utils.fields import EmptyStrToNone
+from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 
 TASK_ALIAS_LENGTH = 100
 
@@ -410,6 +410,27 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
+class PeriodicTaskExecuteRequest(TaskExecuteRequest):
+    """Represent the execute request the periodic task will use for executions.
+
+    :param meta: A dictionary of meta variables for the task execution.
+        Defaults to an empty dictionary.
+    :type meta: dict[str, Any]
+    :param payload: Optional payload data or file path for the task execution.
+        Defaults to None.
+    :type payload: str | None
+    :param eta: The earliest time the task can be executed. Forced to None, as periodic
+        tasks are always executed on the defined schedule.
+    :type eta: datetime | None
+    """
+
+    @field_validator("eta")
+    @classmethod
+    def _force_eta_to_none(cls, _: datetime | EmptyStrToNone) -> None:
+        """Force field eta to None."""
+        return
+
+
 class IntervalSchedule(BaseModel):
     """Represent an interval schedule.
 
@@ -478,11 +499,9 @@ class CrontabSchedule(BaseModel):
             field: BaseCrontabSchedule.cronexp(value)
             for field, value in self.model_dump(exclude={"timezone"}).items()
         }
-        fmt_kwargs["timezone"] = self.timezone or "UTC"
-        return (
-            "{minute} {hour} {day_of_month} {month_of_year} {day_of_week} "
-            "({timezone})"
-        ).format(**fmt_kwargs)
+        return ("{minute} {hour} {day_of_month} {month_of_year} {day_of_week}").format(
+            **fmt_kwargs
+        )
 
     @field_validator("timezone")
     @classmethod
@@ -510,9 +529,9 @@ class BasePeriodicTask(BaseModel):
     :param task: The task identifier.
     :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: datetime | None
+    :type start_time: UTCDatetime | None
     :param expires: The expiration time for the task execution.
-    :type expires: datetime | None
+    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -527,13 +546,28 @@ class BasePeriodicTask(BaseModel):
 
     name: str
     task: str
-    start_time: datetime | None
-    expires: datetime | None
+    start_time: UTCDatetime | None
+    expires: UTCDatetime | None
     enabled: bool
     description: str
-    execute_request: TaskExecuteRequest | None = None
+    execute_request: PeriodicTaskExecuteRequest | None = None
     interval: IntervalSchedule | None = None
     crontab: CrontabSchedule | None = None
+
+    @computed_field
+    @property
+    def period(self) -> str:
+        """Get the period string for the periodic task.
+
+        Returns a string representation of the task's schedule based on whether it uses
+        an interval or crontab schedule.
+
+        :return: A string representing the task's period.
+        :rtype: str
+        """
+        if self.interval is not None:
+            return str(self.interval)
+        return str(self.crontab)
 
     @model_validator(mode="after")
     def validate_one_schedule_is_set(self) -> Self:
@@ -560,12 +594,12 @@ class PeriodicTaskResponse(BasePeriodicTask):
 
     :param name: The name of the periodic task.
     :type name: str
-    :param task: The Celery task name.
+    :param task: The SEP task name.
     :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: datetime | None
+    :type start_time: UTCDatetime | None
     :param expires: The expiration time for the task execution.
-    :type expires: datetime | None
+    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -575,11 +609,11 @@ class PeriodicTaskResponse(BasePeriodicTask):
     :param id: The unique identifier of the periodic task.
     :type id: int
     :param last_run_at: The datetime of the last run.
-    :type last_run_at: datetime | None
+    :type last_run_at: UTCDatetime | None
     :param total_run_count: The total number of times the task has run.
     :type total_run_count: int
     :param date_changed: The datetime when the task was last changed.
-    :type date_changed: datetime | None
+    :type date_changed: UTCDatetime | None
     :param interval: The interval schedule for the task. Defaults to None. This field
         is populated with the alias "model_intervalschedule".
     :type interval: IntervalSchedule | None
@@ -589,30 +623,15 @@ class PeriodicTaskResponse(BasePeriodicTask):
     """
 
     id: int
-    last_run_at: datetime | None
+    last_run_at: UTCDatetime | None
     total_run_count: int = 0
-    date_changed: datetime | None
+    date_changed: UTCDatetime | None
     interval: IntervalSchedule | None = Field(
         None, validation_alias="model_intervalschedule"
     )
     crontab: CrontabSchedule | None = Field(
         None, validation_alias="model_crontabschedule"
     )
-
-    @computed_field
-    @property
-    def period(self) -> str:
-        """Get the period string for the periodic task.
-
-        Returns a string representation of the task's schedule based on whether it uses
-        an interval or crontab schedule.
-
-        :return: A string representing the task's period.
-        :rtype: str
-        """
-        if self.interval is not None:
-            return str(self.interval)
-        return str(self.crontab)
 
     @model_validator(mode="before")
     @classmethod
@@ -631,19 +650,22 @@ class PeriodicTaskResponse(BasePeriodicTask):
         if isinstance(data, PeriodicTask):
             data = data.__dict__
         if isinstance(data, dict):
-            data["task"] = None
-            data["execute_request"] = None
+            extra_kwargs = {
+                "task": None,
+                "execute_request": None,
+            }
             if (raw_args := data.get("args")) and (args := json.loads(raw_args)):
-                data["task"] = args[0]
+                extra_kwargs["task"] = args[0]
                 if len(args) > 1:
-                    data["execute_request"] = args[1]
+                    extra_kwargs["execute_request"] = args[1]
             if (raw_kwargs := data.get("kwargs")) and (
                 kwargs := json.loads(raw_kwargs)
             ):
-                data["task"] = kwargs.get("task_name", data["task"])
-                data["execute_request"] = kwargs.get(
-                    "execution_data", data["execute_request"]
+                extra_kwargs["task"] = kwargs.get("task_name", extra_kwargs["task"])
+                extra_kwargs["execute_request"] = kwargs.get(
+                    "execution_data", extra_kwargs["execute_request"]
                 )
+            return data | extra_kwargs
         return data
 
 
@@ -655,12 +677,12 @@ class PeriodicTaskWrite(BasePeriodicTask):
 
     :param name: The name of the periodic task.
     :type name: str
-    :param task: The SEP task name.
+    :param task: The Celery task name.
     :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: datetime | None
+    :type start_time: UTCDatetime | None
     :param expires: The expiration time for the task execution.
-    :type expires: datetime | None
+    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -690,12 +712,14 @@ class PeriodicTaskWrite(BasePeriodicTask):
         :rtype: Any
         """
         if isinstance(data, dict):
-            kwargs = {
-                "task_name": data.get("task"),
-                "execution_data": data.get("execute_request"),
+            extra_data = {
+                "task": "app.tasks.celery.execute_task_by_name",
+                "kwargs": {
+                    "task_name": data.get("task"),
+                    "execution_data": data.get("execute_request"),
+                },
             }
-            data["task"] = "app.tasks.celery.execute_task_by_name"
-            data["kwargs"] = kwargs
+            return data | extra_data
         return data
 
     @field_validator("kwargs", mode="before")
@@ -722,12 +746,12 @@ class PeriodicTaskUpdate(PeriodicTaskWrite):
 
     :param name: The name of the periodic task.
     :type name: str
-    :param task: The SEP task name.
+    :param task: The Celery task name.
     :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: datetime | None
+    :type start_time: UTCDatetime | None
     :param expires: The expiration time for the task execution.
-    :type expires: datetime | None
+    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -769,9 +793,10 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     Extends `PeriodicTaskWrite` and includes additional fields required for creating
     new periodic tasks.
 
-    :param name: The name of the periodic task.
+    :param name: The name of the periodic task. Defaults to an empty string, meaning
+        the value will be automatically generated on create.
     :type name: str
-    :param task: The SEP task name.
+    :param task: The Celery task name.
     :type task: str
     :param execute_request: The execution request details for the task.
     :type execute_request: TaskExecutionRequest | None
@@ -782,17 +807,18 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     :param kwargs: A JSON string representing additional keyword arguments for the task.
     :type kwargs: str
     :param start_time: The start time for the task execution. Defaults to None.
-    :type start_time: datetime | None
+    :type start_time: UTCDatetime | None
     :param expires: The expiration time for the task execution. Defaults to None.
-    :type expires: datetime | None
+    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled. Defaults to True.
     :type enabled: bool
     :param description: A description of the task. Defaults to an empty string.
     :type description: str
     """
 
-    start_time: datetime | None = None
-    expires: datetime | None = None
+    name: str = ""
+    start_time: UTCDatetime | None = None
+    expires: UTCDatetime | None = None
     enabled: bool = True
     description: str = ""
 

@@ -1,20 +1,21 @@
 """Define routes for the Tasks API."""
 
+import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.tasks.crud import PeriodicTaskManager, TaskManager
-from app.tasks.deps import PeriodicTaskDep, SessionDep
+from app.tasks.deps import get_executable_task_by_name, PeriodicTaskDep, SessionDep
 from app.tasks.models import (
     PeriodicTaskResponse,
     PeriodicTaskUpdate,
 )
 
-router = APIRouter(prefix="/periodic", tags=["schedules"])
+router = APIRouter(prefix="/periodic", tags=["periodic", "schedule", "tasks"])
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +52,15 @@ async def retrieve_periodic_task(
 )
 async def update_periodic_task(
     session: CeleryBeatSessionDep,
+    tasks_session: SessionDep,
     existing_task: PeriodicTaskDep,
     updated_task: PeriodicTaskUpdate,
 ) -> PeriodicTask:
     """Update a periodic task."""
+    updated_kwargs = json.loads(updated_task.kwargs)
+    existing_kwargs = json.loads(existing_task.kwargs)
+    if (task_name := updated_kwargs.get("task_name")) != existing_kwargs["task_name"]:
+        await get_executable_task_by_name(tasks_session, task_name)
     logger.debug("Updating periodic task %s", existing_task.id)
     return await PeriodicTaskManager.update(session, existing_task, updated_task)
 
@@ -62,10 +68,11 @@ async def update_periodic_task(
 @router.delete(
     "/{periodic_task_id}",
     dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_periodic_task(
     session: CeleryBeatSessionDep, periodic_task: PeriodicTaskDep
-) -> PeriodicTaskResponse:
+) -> None:
     """Delete a periodic task."""
     logger.debug("Deleting periodic task %s", periodic_task)
-    return await PeriodicTaskManager.delete(session, periodic_task)
+    await PeriodicTaskManager.delete(session, periodic_task)
