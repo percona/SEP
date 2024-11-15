@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
@@ -46,15 +47,26 @@ async def archives_create(
 ) -> RedirectResponse:
     """Create new archives task."""
     logger.debug("Create archives task: %s", task)
-    # TODO: validate response  # noqa: TD002, TD003
-    await task_api.post(
+    response = await task_api.post(
         "/",
         json=task.model_dump(),
-    )  # TODO: Proper error for unique constraint  # noqa: TD002, TD003
+    )
+
+    if isinstance(response, dict) and "detail" in response:
+        error_detail = response["detail"]
+        if "UNIQUE constraint failed" in error_detail:
+            logger.error("Conflict error when creating task: %s", error_detail)
+            raise HTTPConflictException(
+                detail="Task already exists.",
+            )
+        logger.error("Error when creating task: %s", error_detail)
+        raise HTTPBadRequestException(
+            detail=error_detail,
+        )
     return RedirectResponse(
         "/archives",
         status_code=status.HTTP_303_SEE_OTHER,
-    )  # TODO: Custom redirect class  # noqa: TD002, TD003
+    )
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)

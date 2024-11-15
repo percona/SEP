@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
@@ -56,14 +57,26 @@ async def task_create(
 ) -> RedirectResponse:
     """Create task."""
     logger.debug("Create task: %s", create_task_form)
-    # TODO: name should be unique  # noqa: TD002, TD003
     task_data = create_task_form.model_dump(exclude={"payload", "fmt"})
     task_data["data"] = await tasks_api.post(
         "/transform/",
         json=create_task_form.model_dump(include={"payload", "fmt"}),
         params={"backend": create_task_form.backend},
     )
-    await tasks_api.post("/", json=task_data)
+    # TODO: Exception for invalid job specification # noqa: TD002, TD003
+    logger.debug(task_data)
+    response = await tasks_api.post("/", json=task_data)
+    if isinstance(response, dict) and "detail" in response:
+        error_detail = response["detail"]
+        if "UNIQUE constraint failed" in error_detail:
+            logger.error("Conflict error when creating task: %s", error_detail)
+            raise HTTPConflictException(
+                detail="Task already exists.",
+            )
+        logger.error("Error when creating task: %s", error_detail)
+        raise HTTPBadRequestException(
+            detail=error_detail,
+        )
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
 
