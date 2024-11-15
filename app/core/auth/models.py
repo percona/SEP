@@ -14,7 +14,7 @@ from pydantic import (
     UUID4,
 )
 
-from app.core.fields import EmptyStrToNone, RequiredStr, TimedeltaSeconds
+from app.core.utils.fields import EmptyStrToNone, RequiredStr, TimedeltaSeconds
 
 
 class OAuthToken(BaseModel):

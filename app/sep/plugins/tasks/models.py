@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.core.fields import RequiredStr
+from app.core.utils.fields import RequiredStr
 from app.tasks.models import TaskBackendEnum
 
 

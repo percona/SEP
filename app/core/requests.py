@@ -12,9 +12,9 @@ from urllib.parse import urljoin
 from aiohttp import ClientResponse, ClientSession
 from pydantic import computed_field, HttpUrl
 
-from app.core.fields import RelativeFilePath, RequiredStr
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
+from app.core.utils.fields import RelativeFilePath, RequiredStr
 
 
 class BaseRemoteAPI(BaseCaseInsensitiveModel):

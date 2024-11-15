@@ -31,19 +31,19 @@ from pydantic_settings import (
 from pydantic_settings.sources import PathType
 from starlette.types import Lifespan
 
+from app import BASE_DIR
 from app.core.auth.providers.casdoor import CasdoorSDK
 from app.core.celery.config import CeleryOptions
-from app.core.fields import (
+from app.core.requests import RemoteAPI
+from app.core.utils import deep_dict_update, json_serializer
+from app.core.utils.fields import (
     LogLevel,
     RelativeFilePath,
     RequiredStr,
     StrImportableAttribute,
     URL,
 )
-from app.core.requests import RemoteAPI
-from app.core.utils import deep_dict_update, json_serializer
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_FASTAPI_ENV = "development"
 LOGGING_CONFIG = {
     "version": 1,

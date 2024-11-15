@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPBadRequestException
-from app.core.fields import RequiredStr
+from app.core.utils.fields import RequiredStr
 from app.inventory.crud import NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
 from app.inventory.models import (

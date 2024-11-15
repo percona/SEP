@@ -5,8 +5,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.fields import StrAsyncDatabaseUrl
 from app.core.utils import json_serializer, run_pydantic_type_validator
+from app.core.utils.fields import StrAsyncDatabaseUrl
 
 engine = create_async_engine(
     run_pydantic_type_validator(StrAsyncDatabaseUrl, settings.CELERY.beat_dburi),

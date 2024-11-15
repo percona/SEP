@@ -2,7 +2,7 @@
 
 from pydantic import AnyUrl, BaseModel, computed_field
 
-from app.core.fields import AsyncDatabaseEngine
+from app.core.utils.fields import AsyncDatabaseEngine
 
 
 class DatabaseOptions(BaseModel):

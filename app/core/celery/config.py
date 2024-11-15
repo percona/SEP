@@ -4,8 +4,8 @@ from typing import Self
 
 from pydantic import ConfigDict, model_validator
 
-from app.core.fields import StrAnyUrl, StrDatabaseUrl
 from app.core.models import BaseLowercaseModel
+from app.core.utils.fields import StrAnyUrl, StrDatabaseUrl
 
 
 class CeleryOptions(BaseLowercaseModel):

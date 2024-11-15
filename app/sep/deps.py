@@ -15,9 +15,9 @@ from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import HTTPNotFoundException
-from app.core.fields import URL
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
+from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings

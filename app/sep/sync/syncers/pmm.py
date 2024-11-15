@@ -8,8 +8,8 @@ from async_lru import alru_cache
 from pydantic import AliasChoices, Field
 
 from app.core.config import settings
-from app.core.fields import RequiredStr
 from app.core.requests import RemoteAPI
+from app.core.utils.fields import RequiredStr
 from app.inventory.models import SourceEnum
 from app.sep.inventory import CreatedNode, CreatedService, Node, Service
 from app.sep.models import SyncInventoryEntityTypeEnum

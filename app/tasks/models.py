@@ -1,14 +1,4 @@
-"""Define models for the Task API.
-
-Todo:
-----
-  - ensure that we can handle arbitrary parameters for invocation, which should allow mapping
-    to HTML form fields to allow for dynamic rendering when executing a task via the UI
-  - owner of a task, allowing app-only, general use, etc (Casdoor potentially)
-    e.g. owner = tasks, owner = alters, owner = *
-  - scheduled task, which can run at a specific time, or require manual invocation
-
-"""
+"""Define models for the Task API."""
 
 import json
 from datetime import datetime
@@ -37,7 +27,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
-from app.core.fields import EmptyStrToNone
+from app.core.utils.fields import EmptyStrToNone
 
 TASK_ALIAS_LENGTH = 100
 

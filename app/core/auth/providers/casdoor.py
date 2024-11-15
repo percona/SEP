@@ -6,8 +6,8 @@ from typing import Any, Literal, Self
 
 from pydantic import computed_field, model_validator
 
-from app.core.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
 from app.core.requests import RemoteAPI
+from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
 
 
 # TODO: Make Casdoor optional, custom auth backend model selectable in settings  # noqa: TD002, TD003

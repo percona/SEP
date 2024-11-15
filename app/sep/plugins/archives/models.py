@@ -4,8 +4,8 @@ from typing import Self
 
 from pydantic import model_validator
 
-from app.core.fields import RequiredStr
 from app.core.models import BaseCaseInsensitiveModel
+from app.core.utils.fields import RequiredStr
 
 
 class ArchivesCreate(BaseCaseInsensitiveModel):
