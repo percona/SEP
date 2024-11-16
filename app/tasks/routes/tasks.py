@@ -2,7 +2,6 @@
 
 import json
 import logging
-from os import getenv
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
@@ -41,13 +40,6 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
-# TODO: Make all these getenv proper settings  # noqa: TD002, TD003
-BACKEND_POLL_INTERVAL_SECONDS = getenv(
-    "TASKS_BACKEND_POLL_INTERVAL_SECONDS",
-    DEFAULT_BACKEND_POLL_INTERVAL_SECONDS,
-)
 
 router = APIRouter(tags=["tasks"])
 

@@ -19,6 +19,7 @@ from app.tasks.models import (
     Task,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskOwner,
 )
 
 
@@ -39,7 +40,7 @@ class TaskManager(BaseSQLModelManager):
         cls,
         *,
         session: AsyncSession,
-        owner: str | None = None,
+        owner: TaskOwner | None = None,
     ) -> list[Task]:
         """List all active (non-deleted) tasks.
 
@@ -47,16 +48,10 @@ class TaskManager(BaseSQLModelManager):
         :type session: AsyncSession
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
-        :type owner: str | None
+        :type owner: TaskOwner | None
         :return: A list of active tasks.
         :rtype: list[Task]
         """
-        if owner == "*":
-            return await cls.list(
-                session,
-                col(Task.deleted_at).is_(None),
-                col(Task.owner).is_(None),
-            )
         return await cls.list(session, col(Task.deleted_at).is_(None), owner=owner)
 
     @classmethod

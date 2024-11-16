@@ -14,11 +14,11 @@ from app.sep.deps import (
 )
 from app.sep.plugins.tasks.deps import TaskDep
 from app.sep.plugins.tasks.models import TaskCreateRequest
-from app.tasks.main import AVAILABLE_OWNERS
 from app.tasks.models import (
     TaskBackendEnum,
     TaskExecuteRequest,
     TaskHistoryStatusEnum,
+    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,8 +40,8 @@ async def tasks_list(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     context["available_backends"] = TaskBackendEnum
-    context["available_owners"] = AVAILABLE_OWNERS
-    logger.info("context: %s", context["running_tasks"])
+    context["available_owners"] = TaskOwner
+    logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
         name="tasks/list.html",
@@ -81,7 +81,7 @@ async def tasks_detail(
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    context["available_owners"] = AVAILABLE_OWNERS
+    context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
     context["executor_hosts"] = list(executor_hosts.values())

@@ -3,7 +3,6 @@
 import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from os import getenv
 
 from celery.utils.log import get_task_logger
 from fastapi import FastAPI
@@ -15,20 +14,6 @@ from app.tasks.routes import periodic, tasks
 
 logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
-
-
-DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
-# TODO: Make all these getenv proper settings  # noqa: TD002, TD003
-BACKEND_POLL_INTERVAL_SECONDS = getenv(
-    "TASKS_BACKEND_POLL_INTERVAL_SECONDS",
-    DEFAULT_BACKEND_POLL_INTERVAL_SECONDS,
-)
-
-AVAILABLE_OWNERS = {
-    "*": "Any",
-    "archiver": "Data Archiver",
-    "alters": "Schema Change",
-}
 
 
 @asynccontextmanager

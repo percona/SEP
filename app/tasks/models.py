@@ -27,7 +27,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
-from app.core.utils.fields import EmptyStrToNone, UTCDatetime
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, UTCDatetime
 
 TASK_ALIAS_LENGTH = 100
 
@@ -62,6 +62,22 @@ class TaskHistoryStatusEnum(StrEnum):
     PENDING = auto()
     RUNNING = auto()
     SUCCESS = auto()
+
+
+class TaskOwner(EnumFieldMixin, StrEnum):
+    """Control the choice of task owners.
+
+    :cvar ANY: Value for tasks without owner restrictions.
+    :vartype ANY: str
+    :cvar ALTERS: Value for schema change tasks.
+    :vartype ALTERS: str
+    :cvar ARCHIVER: Value for data archiver tasks.
+    :vartype ARCHIVER: str
+    """
+
+    ANY = "*"
+    ALTERS = auto()
+    ARCHIVER = auto()
 
 
 class TaskExecutionRequest(BaseModel):
@@ -222,7 +238,7 @@ class GeneratedTask(BaseModel):
     """Represent a generated task.
 
     :param app: The application name associated with the task.
-    :type app: str
+    :type app: TaskOwner
     :param commands: A list of commands to execute the task.
     :type commands: list
     :param name: The task name.
@@ -242,7 +258,7 @@ class GeneratedTask(BaseModel):
     :type template: str
     """
 
-    app: str
+    app: TaskOwner
     commands: list
     name: str
     target: str
@@ -262,8 +278,8 @@ class TaskBase(SQLModel):
     :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to None.
-    :type owner: str | None
+    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+    :type owner: TaskOwner
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
@@ -276,7 +292,12 @@ class TaskBase(SQLModel):
         default=TaskBackendEnum.NOMAD,
         sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
     )
-    owner: str | None = SQLField(default=None, index=True)
+    owner: TaskOwner = SQLField(
+        default=TaskOwner.ANY,
+        sa_column=Column(
+            EnumField(TaskOwner, native_enum=False), nullable=False, index=True
+        ),
+    )
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
 
@@ -295,23 +316,6 @@ class TaskBase(SQLModel):
             raise ValueError("data must contain 'task' for Proxy backend")
         return self
 
-    @field_validator("owner")
-    @classmethod
-    def validate_owner(cls, v: str | None) -> str | None:
-        """Validate the owner field.
-
-        If the owner is set to "*", it is considered as no specific owner and returns
-        None.
-
-        :param v: The owner value to validate.
-        :type v: str | None
-        :return: The validated owner value.
-        :rtype: str | None
-        """
-        if v == "*":
-            return None
-        return v
-
 
 class Task(TaskBase, BaseSQLModel, table=True):
     """Represent a task stored in the database.
@@ -322,8 +326,8 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to None.
-    :type owner: str | None
+    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+    :type owner: TaskOwner
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
@@ -361,8 +365,8 @@ class TaskWrite(TaskBase):
     :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to None.
-    :type owner: str | None
+    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+    :type owner: TaskOwner
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.

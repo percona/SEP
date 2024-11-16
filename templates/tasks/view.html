@@ -58,7 +58,7 @@
         <dt>Available to</dt>
         <dd>
             <ul>
-                <li>{{ available_owners.get(task.owner or "*", task.owner) }}</li>
+                <li>{{ task.owner.name.capitalize() }}</li>
             </ul>
         </dd>
     </dl>

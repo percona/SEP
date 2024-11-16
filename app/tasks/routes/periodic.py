@@ -13,6 +13,7 @@ from app.tasks.deps import get_executable_task_by_name, PeriodicTaskDep, Session
 from app.tasks.models import (
     PeriodicTaskResponse,
     PeriodicTaskUpdate,
+    TaskOwner,
 )
 
 router = APIRouter(prefix="/periodic", tags=["periodic", "schedule", "tasks"])
@@ -25,7 +26,9 @@ logger = logging.getLogger(__name__)
     "/", dependencies=[IsAuthenticatedDep], response_model=list[PeriodicTaskResponse]
 )
 async def list_periodic_tasks(
-    session: CeleryBeatSessionDep, tasks_session: SessionDep, owner: str | None = None
+    session: CeleryBeatSessionDep,
+    tasks_session: SessionDep,
+    owner: TaskOwner | None = None,
 ) -> list[PeriodicTask]:
     """List all periodic tasks."""
     if owner is None:

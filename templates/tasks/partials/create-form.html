@@ -31,8 +31,8 @@
         </label>
         <label>Owner
             <select id="owner" name="owner" required>
-                {% for owner, label in available_owners.items() %}
-                <option value="{{ owner }}" {% if loop.first %}selected{% endif %}>{{ label }}</option>
+                {% for owner in available_owners %}
+                <option value="{{ owner }}" {% if loop.first %}selected{% endif %}>{{ owner.name.capitalize() }}</option>
                 {% endfor %}
             </select>
         </label>

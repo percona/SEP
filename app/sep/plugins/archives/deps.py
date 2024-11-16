@@ -25,6 +25,7 @@ from app.sep.plugins.archives.models import (
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskOwner,
     TaskWrite,
 )
 
@@ -89,7 +90,7 @@ async def build_archives_task_payload(
     return TaskWrite(
         name=form.alias,
         backend=TaskBackendEnum.PROXY,
-        owner="archiver",
+        owner=TaskOwner.ARCHIVER,
         data={
             "task": "run-python",
             "meta": {
@@ -121,10 +122,9 @@ async def get_archives_task(
     :type tasks_api: TaskAPI
     :return: The retrieved task.
     :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Archives.
+    :raises HTTPNotFoundException: If the task is not found or is not owned by Archiver.
     """
-    # TODO: Consider getting owner name from plugin MODULE_NAME  # noqa: TD002, TD003
-    return await get_task_by_name(tasks_api, task_name, "archiver")
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.ARCHIVER)
 
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
@@ -170,5 +170,5 @@ async def get_archives_index_context(
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        inventory_api, tasks_api, get_archives_task_info, context, "archiver"
+        inventory_api, tasks_api, get_archives_task_info, context, TaskOwner.ARCHIVER
     )
