@@ -106,6 +106,3 @@ production_docker:
     - https://localhost:8003
     - https://127.0.0.1:8003
   SSL_CAFILE: data/certs/sep-ca.pem
-  CELERY:
-    CELERY_BROKER_URL: "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: "redis://localhost:6379/0"

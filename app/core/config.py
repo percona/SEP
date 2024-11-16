@@ -28,7 +28,7 @@ from pydantic_settings import (
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
-from pydantic_settings.sources import PathType
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource, PathType
 from starlette.types import Lifespan
 
 from app import BASE_DIR
@@ -44,7 +44,6 @@ from app.core.utils.fields import (
     URL,
 )
 
-DEFAULT_FASTAPI_ENV = "development"
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -61,6 +60,13 @@ LOGGING_CONFIG = {
             "formatter": "default",
             "class": "rich.logging.RichHandler",
             "omit_repeated_times": False,
+            "show_path": False,
+        },
+        "app": {
+            "formatter": "default",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+            "show_path": True,
         },
         "uvicorn": {
             "formatter": "uvicorn",
@@ -77,7 +83,14 @@ LOGGING_CONFIG = {
     },
     "loggers": {
         "": {"handlers": ["default"], "level": "INFO"},
+        "app": {"handlers": ["app"], "level": "INFO"},
         "celery": {"handlers": ["celery"], "level": "INFO", "propagate": False},
+        "celery.beat": {"handlers": ["celery"], "level": "INFO", "propagate": False},
+        "sqlalchemy_celery_beat": {
+            "handlers": ["celery"],
+            "level": "INFO",
+            "propagate": False,
+        },
         "uvicorn": {"handlers": ["uvicorn"], "level": "INFO", "propagate": False},
         "uvicorn.error": {"handlers": ["uvicorn"], "level": "INFO", "propagate": False},
         "uvicorn.access": {
@@ -87,6 +100,29 @@ LOGGING_CONFIG = {
         },
     },
 }
+
+
+class PreEnvSettings(BaseSettings):
+    """Define meta environment settings read that need to be read before the others.
+
+    :param FASTAPI_ENV: The environment used (e.g. development, production).
+        Defaults to "development".
+    :type FASTAPI_ENV: str
+    :param ENV_FILE: The dot env file used to populate the applications settings.
+        Defaults to ".env" in the current directory.
+    :type ENV_FILE: Path
+    :param SETTINGS_FILE: The YAML file used to populate the applications settings.
+        Defaults to "settings.yaml" in the current directory.
+    :type SETTINGS_FILE: Path
+    """
+
+    model_config = SettingsConfigDict(extra="ignore")
+    FASTAPI_ENV: str = "development"
+    ENV_FILE: Path = Path(".env")
+    SETTINGS_FILE: Path = Path("settings.yaml")
+
+
+pre_env_settings = PreEnvSettings()
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
@@ -112,7 +148,7 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
     def __init__(
         self,
         settings_cls: type[BaseSettings],
-        yaml_file: PathType | None = Path("settings.yaml"),
+        yaml_file: PathType | None = pre_env_settings.SETTINGS_FILE,
         yaml_file_encoding: str | None = None,
         prefixes: Sequence[RequiredStr] = (),
         base_prefix: RequiredStr | None = "default",
@@ -142,30 +178,32 @@ class BaseYamlSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=pre_env_settings.ENV_FILE,
         env_nested_delimiter="__",
-        yaml_file="settings.yaml",
+        yaml_file=pre_env_settings.SETTINGS_FILE,
         extra="ignore",
     )
-    FASTAPI_ENV: str = DEFAULT_FASTAPI_ENV
+    FASTAPI_ENV: str = pre_env_settings.FASTAPI_ENV
 
     @classmethod
     def settings_customise_sources(
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Load settings from Yaml file."""
         yaml_prefix = env_settings.env_vars.get(
             "fastapi_env",
-        ) or dotenv_settings.env_vars.get("fastapi_env", DEFAULT_FASTAPI_ENV)
+        ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
         return (
             env_settings,
             dotenv_settings,
-            YamlPrefixConfigSettingsSource(settings_cls, prefixes=(yaml_prefix,)),
+            YamlPrefixConfigSettingsSource(
+                settings_cls, pre_env_settings.SETTINGS_FILE, prefixes=(yaml_prefix,)
+            ),
         )
 
 
@@ -195,14 +233,14 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Load settings from Yaml file."""
         yaml_prefix = env_settings.env_vars.get(
             "fastapi_env",
-        ) or dotenv_settings.env_vars.get("fastapi_env", DEFAULT_FASTAPI_ENV)
+        ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
         env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
         for env_source in [env_settings, dotenv_settings]:
             env_vars = {}
