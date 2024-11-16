@@ -2,11 +2,11 @@
 
 import logging
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
-from typing import Annotated, Any, Generic, Self, TypeVar
+from typing import Annotated, Any, Self, TypeVar
 
 from pydantic import (
     AfterValidator,
@@ -30,6 +30,7 @@ from app.core.utils.imports import (
     validate_attribute_is_importable,
     validate_module_is_importable,
 )
+from app.core.utils.list import remove_duplicates
 from app.core.utils.path import resolve_relative_path
 
 E = TypeVar("E", bound=Enum)
@@ -220,93 +221,6 @@ class URL(StarletteURL):
             },
         )
         return json_schema
-
-
-class UniqueList(list[T], Generic[T]):
-    """A list subclass that ensures all elements are unique.
-
-    This class can be used with type parameters (e.g., `UniqueList[int]`) to create
-    a list type where duplicates are automatically removed.
-    """
-
-    def __init__(self, iterable: Iterable[T] = ()) -> None:
-        """Initialize the UniqueList, removing duplicates from the provided iterable.
-
-        :param iterable: The iterable to remove duplicates from.
-        :type iterable: Iterable[T]
-        """
-        unique_list = []
-        for item in iterable:
-            if item not in unique_list:
-                unique_list.append(item)
-        super().__init__(unique_list)
-
-    def __setitem__(self, index: int, value: T) -> None:
-        """Set an item at a specific index, ensuring uniqueness.
-
-        If the value already exists in the list at a different index, it removes the
-        existing occurrence before setting the new value.
-
-        :param index: The index at which to set the value.
-        :type index: int
-        :param value: The value to set.
-        :type value: T
-        """
-        if value in self and index != (current_index := self.index(value)):
-            super().__setitem__(index, value)
-            self.pop(current_index)
-        else:
-            super().__setitem__(index, value)
-
-    def __add__(self, other: list[T]) -> "UniqueList[T]":
-        """Concatenate two lists into a new UniqueList.
-
-        :param other: The list to concatenate.
-        :type other: list[T]
-        :return: A new `UniqueList` containing elements from both lists without
-            duplicates.
-        :rtype: UniqueList[T]
-        """
-        return UniqueList(list(self) + list(other))
-
-    def __iadd__(self, other: list[T]) -> Self:
-        """Extend the UniqueList in-place with elements from another list.
-
-        :param other: The list of elements to add.
-        :type other: list[T]
-        :return: The updated `UniqueList` instance.
-        :rtype: Self
-        """
-        self.extend(other)
-        return self
-
-    def append(self, value: T) -> None:
-        """Append a value to the UniqueList if it's not already present.
-
-        :param value: The value to append.
-        :type value: T
-        """
-        if value not in self:
-            super().append(value)
-
-    def extend(self, iterable: Iterable[T]) -> None:
-        """Extend the UniqueList with elements from an iterable, ensuring uniqueness.
-
-        :param iterable: The iterable of elements to add.
-        :type iterable: Iterable[T]
-        """
-        super().extend(value for value in iterable if value not in self)
-
-    def insert(self, index: int, value: T) -> None:
-        """Insert a value at a specific index if it's not already present.
-
-        :param index: The index at which to insert the value.
-        :type index: int
-        :param value: The value to insert.
-        :type value: T
-        """
-        if value not in self:
-            super().insert(index, value)
 
 
 class EnumFieldMixin:
@@ -560,4 +474,11 @@ UTCDatetime = Annotated[datetime, AfterValidator(make_datetime_utc)]
 """Define a datetime field converted to UTC.
 
 This annotated type ensures that the `datetime` object is converted to UTC timezone.
+"""
+
+UniqueList = Annotated[list[T], AfterValidator(remove_duplicates)]
+"""A list subclass that ensures all elements are unique.
+
+This class can be used with type parameters (e.g., `UniqueList[int]`) to create
+a list type where duplicates are automatically removed.
 """
