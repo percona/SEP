@@ -7,4 +7,4 @@ while ! nc -z redis 6379; do
 done
 echo "Redis started"
 
-celery -A app.tasks.celery worker --loglevel=info
+celery -A app.tasks.celery "$@"

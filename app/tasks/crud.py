@@ -4,10 +4,10 @@ from collections.abc import Sequence
 from datetime import datetime, UTC
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, JSON
 from sqlalchemy.sql._typing import _ColumnExpressionArgument
 from sqlalchemy_celery_beat import PeriodicTask
-from sqlmodel import col, select
+from sqlmodel import cast, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
@@ -212,7 +212,7 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
         """
         if settings.CELERY.beat_dburi.startswith("postgresql"):
             where = func.json_extract_path_text(
-                col(PeriodicTask.kwargs), "task_name"
+                cast(col(PeriodicTask.kwargs), JSON), "task_name"
             ).in_(task_names)
         else:
             where = func.json_extract(col(PeriodicTask.kwargs), "$.task_name").in_(
