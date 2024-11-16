@@ -20,10 +20,19 @@ if __name__ == "__main__":
     worker = celery_app.Worker(
         include=["app.tasks.celery"],
     )
+    beat = celery_app.Beat(
+        scheduler="sqlalchemy",
+        loglevel=settings.LOGGING_CONFIG["loggers"]["celery.beat"]["level"],
+    )
     logging.config.dictConfig(settings.LOGGING_CONFIG)
-    celery_process = Process(target=worker.start)
+    celery_worker_process = Process(target=worker.start)
     logging.info("Starting Celery worker...")
-    celery_process.start()
+    celery_worker_process.start()
+
+    celery_beat_process = Process(target=beat.run)
+    logging.info("Starting Celery beat for periodic tasks...")
+    celery_beat_process.start()
+
     import uvicorn
 
     try:
@@ -35,6 +44,9 @@ if __name__ == "__main__":
         )
     except KeyboardInterrupt:
         logging.info("Shutting down Celery worker...")
+        logging.info("Shutting down Celery beat...")
     finally:
-        celery_process.terminate()
-        celery_process.join()
+        celery_worker_process.terminate()
+        celery_worker_process.join()
+        celery_beat_process.terminate()
+        celery_beat_process.join()
