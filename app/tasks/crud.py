@@ -1,26 +1,21 @@
 """Define database operations for the Tasks API."""
 
-from collections.abc import Sequence
-from datetime import datetime, UTC
-from typing import Any
+import logging
 
-from sqlalchemy import func, JSON
-from sqlalchemy.sql._typing import _ColumnExpressionArgument
-from sqlalchemy_celery_beat import PeriodicTask
-from sqlmodel import cast, col, select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.celery.crud import BasePeriodicTaskManager
-from app.core.config import settings
 from app.core.db.crud import BaseSQLModelManager
+from app.core.utils.datetime import utc_now
 from app.tasks.models import (
     Task,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskOwner,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TaskManager(BaseSQLModelManager):
@@ -38,7 +33,6 @@ class TaskManager(BaseSQLModelManager):
     @classmethod
     async def list_active(
         cls,
-        *,
         session: AsyncSession,
         owner: TaskOwner | None = None,
     ) -> list[Task]:
@@ -57,7 +51,6 @@ class TaskManager(BaseSQLModelManager):
     @classmethod
     async def retrieve_by_name(
         cls,
-        *,
         session: AsyncSession,
         name: str,
         is_template: bool | None = None,
@@ -78,7 +71,7 @@ class TaskManager(BaseSQLModelManager):
         return await cls.get_or_404(session, name=name, is_template=is_template)
 
     @classmethod
-    async def delete_by_name(cls, *, session: AsyncSession, name: str) -> Task:
+    async def delete_by_name(cls, session: AsyncSession, name: str) -> Task:
         """Delete a task by its name, marking it as deleted.
 
         If the task is protected, a forbidden exception will be raised.
@@ -96,7 +89,7 @@ class TaskManager(BaseSQLModelManager):
             raise HTTPForbiddenException(
                 f"Task {name} is protected and cannot be deleted.",
             )
-        task.deleted_at = datetime.now(UTC)
+        task.deleted_at = utc_now()
         return await cls.save(session, task)
 
 
@@ -143,79 +136,3 @@ class TaskHistoryManager(BaseSQLModelManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
-
-
-class PeriodicTaskManager(BasePeriodicTaskManager):
-    """Manage periodic tasks operations for "execute_task_by_name" tasks.
-
-    This class overrides `BasePeriodicTaskManager` to make sure the `task` is always
-    `"app.tasks.celery.execute_task_by_name"` on save and select.
-
-    :ivar Model: The SQLAlchemy class this manager is responsible for (`PeriodicTask`).
-    :vartype Model: type[PeriodicTask]
-    """
-
-    @classmethod
-    def _filter_query(
-        cls,
-        query: Select | SelectOfScalar,
-        *whereclause: _ColumnExpressionArgument[bool],
-        select_related: Sequence = (),
-        **equal_filters: Any,
-    ) -> Select | SelectOfScalar:
-        equal_filters["task"] = "app.tasks.celery.execute_task_by_name"
-        return super()._filter_query(
-            query, *whereclause, select_related=select_related, **equal_filters
-        )
-
-    @classmethod
-    async def save(
-        cls,
-        session: AsyncSession,
-        instance: PeriodicTask,
-        *,
-        flag_modified_fields: Sequence[str] = (),
-    ) -> PeriodicTask:
-        """Save a PeriodicTask instance to the database.
-
-        This method overrides `BasePeriodicTaskManager.save()` to make sure the
-        associated `task` is always `"app.tasks.celery.execute_task_by_name"`.
-
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
-        :param instance: The model instance to be saved.
-        :type instance: PeriodicTask
-        :param flag_modified_fields: Fields to be flagged as modified before saving.
-        :type flag_modified_fields: Sequence[str]
-        :return: The saved instance.
-        :rtype: PeriodicTask
-        :raises HTTPConflictException: If an integrity error occurs during commit.
-        """
-        instance.task = "app.tasks.celery.execute_task_by_name"
-        return await super().save(
-            session, instance, flag_modified_fields=flag_modified_fields
-        )
-
-    @classmethod
-    async def list_by_task_names(
-        cls, session: AsyncSession, *task_names: str
-    ) -> list[PeriodicTask]:
-        """List periodic tasks by the tasks names.
-
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
-        :param task_names: The names of the tasks to list periodic tasks for.
-        :type task_names: str
-        :return: A list of periodic tasks for the specified task.
-        :rtype: list[PeriodicTask]
-        """
-        if settings.CELERY.beat_dburi.startswith("postgresql"):
-            where = func.json_extract_path_text(
-                cast(col(PeriodicTask.kwargs), JSON), "task_name"
-            ).in_(task_names)
-        else:
-            where = func.json_extract(col(PeriodicTask.kwargs), "$.task_name").in_(
-                task_names
-            )
-        return await super().list(session, where)

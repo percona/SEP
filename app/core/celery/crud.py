@@ -3,11 +3,11 @@
 from collections.abc import Sequence
 from typing import Any
 
+from pydantic import BaseModel
 from sqlalchemy_celery_beat import CrontabSchedule, IntervalSchedule, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseManager
-from app.tasks.models import PeriodicTaskCreate, PeriodicTaskUpdate
 
 
 class IntervalScheduleManager(BaseManager):
@@ -46,7 +46,7 @@ class BasePeriodicTaskManager(BaseManager):
     async def create(
         cls,
         session: AsyncSession,
-        instance_create: PeriodicTaskCreate,
+        instance_create: BaseModel,
         **extra_fields: Any,
     ) -> PeriodicTask:
         """Create and save a new PeriodicTask, creating the necessary scheduler with it.
@@ -58,7 +58,7 @@ class BasePeriodicTaskManager(BaseManager):
             operations.
         :type session: AsyncSession
         :param instance_create: The data used to create the new model instance.
-        :type instance_create: PeriodicTaskCreate
+        :type instance_create: BaseModel
         :param extra_fields: Additional fields to be set on the model instance.
         :type extra_fields: Any
         :return: The newly created and saved instance.
@@ -85,7 +85,7 @@ class BasePeriodicTaskManager(BaseManager):
         cls,
         session: AsyncSession,
         existing_instance: PeriodicTask,
-        updated_instance: PeriodicTaskUpdate,
+        updated_instance: BaseModel,
         *,
         flag_modified_fields: Sequence[str] = (),
     ) -> PeriodicTask:
@@ -99,7 +99,7 @@ class BasePeriodicTaskManager(BaseManager):
         :param existing_instance: The existing model instance to be updated.
         :type existing_instance: PeriodicTask
         :param updated_instance: The new data to update the model instance with.
-        :type updated_instance: PeriodicTaskUpdate
+        :type updated_instance: BaseModel
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
         :return: The updated and saved instance.

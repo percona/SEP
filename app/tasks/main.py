@@ -9,8 +9,9 @@ from fastapi import FastAPI
 
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
-from app.tasks.db import init_tasks_db
-from app.tasks.routes import periodic, tasks
+from app.tasks.periodic.routes import router as periodic_router
+from app.tasks.routes import router as tasks_router
+from app.tasks.utils import init_periodic_tasks_db, init_tasks_db
 
 logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
@@ -30,13 +31,14 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :rtype: AsyncGenerator[None, None]
     """
     await init_tasks_db()
+    await init_periodic_tasks_db()
     async with default_lifespan(app), tasks_settings.NOMAD:
         yield
 
 
 lifespan = tasks_lifespan if __name__ == "__main__" else None
 tasks_app = create_app(
-    tasks.router, periodic.router, lifespan=lifespan, add_cors_middleware=True
+    tasks_router, periodic_router, lifespan=lifespan, add_cors_middleware=True
 )
 
 

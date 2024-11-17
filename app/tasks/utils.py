@@ -1,44 +1,16 @@
-"""Define database initialization and utility functions for the Tasks API."""
+"""Define utilities for the tasks app."""
 
-import json
-from typing import Any
+from sqlalchemy_celery_beat import PeriodicTask
+from sqlalchemy_celery_beat.models import Period
 
-from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.utils import json_serializer
-from app.tasks.config import tasks_settings
-from app.tasks.models import Task, TaskExecutionRequest
-
-
-def json_deserialize(raw_data: str) -> Any:
-    """Deserialize a JSON string into a Python object.
-
-    Attempts to deserialize the input string into a `TaskExecutionRequest` model.
-    If validation fails, the raw JSON data is returned as a dictionary.
-
-    :param raw_data: The JSON string to deserialize.
-    :type raw_data: str
-    :return: A `TaskExecutionRequest` object if deserialization is successful,
-        otherwise the raw data.
-    :rtype: Any
-    """
-    data = json.loads(raw_data)
-    try:
-        return TaskExecutionRequest(**data)
-    except ValidationError:
-        return data
-
-
-engine = create_async_engine(
-    tasks_settings.DATABASE.URL,
-    echo=False,
-    json_serializer=json_serializer,
-    json_deserializer=json_deserialize,
+from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManager
+from app.core.celery.db import (
+    get_async_session_maker as get_celery_beat_async_session_maker,
 )
-
+from app.tasks.crud import TaskManager
+from app.tasks.db import get_async_session_maker
+from app.tasks.models import Task
+from app.tasks.periodic.models import IntervalSchedule
 
 GENERIC_NOMAD_BATCH_TEMPLATE = {
     "ID": "generic-nomad-batch",
@@ -206,13 +178,32 @@ SYSTEM_TASKS = [
 ]
 
 
-def get_async_session_maker() -> sessionmaker:
-    """Return a new asynchronous session maker for database operations.
+async def init_tasks_db() -> None:
+    """Initialize the database with generic Nomad task templates."""
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        for task in SYSTEM_TASKS:
+            await TaskManager.get_or_create(session, task, {"name"})
 
-    This function creates a new SQLAlchemy asynchronous session maker using the
-    predefined engine configuration.
 
-    :return: A new asynchronous session maker.
-    :rtype: sessionmaker
-    """
-    return get_async_session_maker_from_engine(engine)
+async def init_periodic_tasks_db() -> None:
+    """Initialize the database with required periodic tasks."""
+    celery_beat_async_session = get_celery_beat_async_session_maker()
+    periodic_task_name = "process_expired_and_orphaned_periodic_tasks_every_30_seconds"
+    async with celery_beat_async_session() as celery_beat_session:
+        if (
+            await BasePeriodicTaskManager.first(
+                celery_beat_session, name=periodic_task_name
+            )
+            is None
+        ):
+            schedule, _ = await IntervalScheduleManager.get_or_create(
+                celery_beat_session, IntervalSchedule(every=30, period=Period.SECONDS)
+            )
+            periodic_task = PeriodicTask(
+                name=periodic_task_name,
+                task="app.tasks.celery.process_expired_and_orphaned_periodic_tasks",
+                schedule_model=schedule,
+            )
+            celery_beat_session.add(periodic_task)
+            await celery_beat_session.commit()

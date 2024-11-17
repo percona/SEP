@@ -3,6 +3,15 @@
 from datetime import datetime, UTC
 
 
+def utc_now() -> datetime:
+    """Get current UTC datetime.
+
+    :return: Current aware datetime with timezone set to UTC.
+    :rtype: datetime
+    """
+    return datetime.now(UTC)
+
+
 def make_datetime_utc(dt: datetime) -> datetime:
     """Convert a datetime to UTC.
 

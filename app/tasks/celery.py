@@ -12,17 +12,25 @@ from celery import Task
 from fastapi.encoders import jsonable_encoder
 from pydantic import validate_call
 
+from app.core.celery.db import (
+    get_async_session_maker as get_celery_beat_async_session_maker,
+)
 from app.core.celery.utils import create_celery
-from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPConflictException,
+)
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import create_task_history, get_executor, get_task_by_name
 from app.tasks.models import (
-    PeriodicTaskExecuteRequest,
     TaskBackendEnum,
     TaskHistory,
     TaskHistoryStatusEnum,
 )
+from app.tasks.periodic.config import periodic_tasks_settings, PeriodicTaskAction
+from app.tasks.periodic.crud import PeriodicTaskManager
+from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +81,48 @@ def execute_task_by_name(
         task_name, execution_data
     )
     return jsonable_encoder(async_to_sync(process_queue_item)(task_history.id))
+
+
+@celery.task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 5},
+)
+def process_expired_and_orphaned_periodic_tasks(self: Task) -> None:
+    """Define Celery task to process expired and orphaned periodic tasks.
+
+    :param self: The Celery task instance.
+    :type self: Task
+    """
+    async_to_sync(process_expired_periodic_tasks)()
+    async_to_sync(process_orphaned_periodic_tasks)()
+
+
+async def process_expired_periodic_tasks() -> None:
+    """Find and process expired periodic tasks."""
+    logger.debug("Processing expired tasks...")
+    celery_beat_async_session = get_celery_beat_async_session_maker()
+    async with celery_beat_async_session() as celery_beat_session:
+        await PeriodicTaskManager.process_expired(celery_beat_session)
+
+
+async def process_orphaned_periodic_tasks() -> None:
+    """Find and process orphaned periodic tasks."""
+    action = periodic_tasks_settings.ON_ORPHAN
+    if action == PeriodicTaskAction.NOTHING:
+        logger.debug("ON_ORPHAN is NOTHING, ignoring orphaned periodic tasks")
+        return
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        task_names = [task.name for task in await TaskManager.list_active(session)]
+    celery_beat_async_session = get_celery_beat_async_session_maker()
+    async with celery_beat_async_session() as celery_beat_session:
+        await PeriodicTaskManager.perform_action_where(
+            celery_beat_session,
+            action,
+            ~PeriodicTaskManager.build_where_clause_by_task_names(*task_names),
+        )
 
 
 @validate_call

@@ -1,7 +1,7 @@
 """Define the base auth models."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime, UTC
+from datetime import datetime
 from functools import cached_property
 from typing import Literal, Self
 
@@ -9,11 +9,13 @@ from pydantic import (
     BaseModel,
     computed_field,
     EmailStr,
+    Field,
     FutureDatetime,
     PastDatetime,
     UUID4,
 )
 
+from app.core.utils.datetime import utc_now
 from app.core.utils.fields import EmptyStrToNone, RequiredStr, TimedeltaSeconds
 
 
@@ -110,8 +112,8 @@ class BaseUser(BaseModel, ABC):
     first_name: str = ""
     last_name: str = ""
     is_admin: bool = False
-    created_time: datetime | EmptyStrToNone = datetime.now(tz=UTC)
-    updated_time: datetime | EmptyStrToNone = datetime.now(tz=UTC)
+    created_time: datetime | EmptyStrToNone = Field(default_factory=utc_now)
+    updated_time: datetime | EmptyStrToNone = Field(default_factory=utc_now)
     _access_token: str = ""
 
     @computed_field

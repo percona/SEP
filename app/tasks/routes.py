@@ -12,7 +12,7 @@ from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.exceptions import HTTPBadRequestException
 from app.tasks.celery import execute_task_queue
-from app.tasks.crud import PeriodicTaskManager, TaskHistoryManager, TaskManager
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     CreatedTaskHistory,
     ExecutableTaskDep,
@@ -22,8 +22,6 @@ from app.tasks.deps import (
 )
 from app.tasks.models import (
     GeneratedTask,
-    PeriodicTaskCreate,
-    PeriodicTaskResponse,
     Task,
     TaskBackendEnum,
     TaskExecutionRequest,
@@ -38,6 +36,9 @@ from app.tasks.models import (
     TaskWrite,
     TransformPayloadRequest,
 )
+from app.tasks.periodic.config import periodic_tasks_settings
+from app.tasks.periodic.crud import PeriodicTaskManager
+from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +54,21 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
 
 
 @router.delete(
-    "/{task}",
+    "/{task_name}",
     dependencies=[IsAuthenticatedDep],
 )
-async def delete_task(session: SessionDep, task: str) -> Task:
+async def delete_task(
+    session: SessionDep, celery_beat_session: CeleryBeatSessionDep, task_name: str
+) -> Task:
     """Delete a task."""
-    logger.debug("Deleting task %s", task)
+    logger.debug("Deleting task %s", task_name)
     # TODO(yan): Delete for real
     # SEP-170
-    return await TaskManager.delete_by_name(session=session, name=task)
+    task = await TaskManager.delete_by_name(session=session, name=task_name)
+    await PeriodicTaskManager.perform_action_by_task_names(
+        celery_beat_session, periodic_tasks_settings.ON_ORPHAN, task_name
+    )
+    return task
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticatedDep])
@@ -85,10 +92,10 @@ async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     response_model=list[PeriodicTaskResponse],
 )
 async def list_periodic_tasks_by_task_name(
-    session: CeleryBeatSessionDep, task: ExecutableTaskDep
+    celery_beat_session: CeleryBeatSessionDep, task: ExecutableTaskDep
 ) -> list[PeriodicTask]:
     """List periodic tasks by task name."""
-    return await PeriodicTaskManager.list_by_task_names(session, task.name)
+    return await PeriodicTaskManager.list_by_task_names(celery_beat_session, task.name)
 
 
 @router.post(
@@ -98,7 +105,7 @@ async def list_periodic_tasks_by_task_name(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_periodic_task_for_task_name(
-    session: CeleryBeatSessionDep,
+    celery_beat_session: CeleryBeatSessionDep,
     task: ExecutableTaskDep,
     periodic_task: PeriodicTaskCreate,
 ) -> PeriodicTask:
@@ -111,7 +118,7 @@ async def create_periodic_task_for_task_name(
             " ", "_"
         )
     return await PeriodicTaskManager.create(
-        session, periodic_task, kwargs=json.dumps(kwargs)
+        celery_beat_session, periodic_task, kwargs=json.dumps(kwargs)
     )
 
 

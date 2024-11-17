@@ -5,15 +5,15 @@ from collections.abc import Sequence
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import inspect, ScalarResult
+from sqlalchemy import CursorResult, delete, inspect, ScalarResult, Select
 from sqlalchemy.engine import TupleResult
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy.sql._typing import _ColumnExpressionArgument
-from sqlmodel import select, SQLModel
+from sqlalchemy.sql import ColumnExpressionArgument
+from sqlalchemy.sql.dml import DMLWhereBase
+from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
 from app.core.db import BaseSQLModel
 from app.core.exceptions import (
@@ -24,6 +24,8 @@ from app.core.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+Whereable = Select | DMLWhereBase
+W = TypeVar("W", bound=Whereable)
 T = TypeVar("T")
 B = TypeVar("B", bound=BaseSQLModel)
 S = TypeVar("S", bound=SQLModel)
@@ -51,11 +53,11 @@ class BaseManager:
     @classmethod
     def _filter_query(
         cls,
-        query: Select | SelectOfScalar,
-        *whereclause: _ColumnExpressionArgument[bool],
+        query: W,
+        *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         **equal_filters: Any,
-    ) -> Select | SelectOfScalar:
+    ) -> W:
         for clause in whereclause:
             query = query.where(clause)
         for field_name, value in equal_filters.items():
@@ -67,7 +69,7 @@ class BaseManager:
                     field_name,
                 )
                 continue
-            query = query.where(getattr(cls.Model, field_name) == value)
+            query = query.where(col(getattr(cls.Model, field_name)) == value)
         if select_related:
             query = query.options(*[joinedload(attr) for attr in select_related])
         return query
@@ -75,10 +77,10 @@ class BaseManager:
     @classmethod
     def _build_query(
         cls,
-        *whereclause: _ColumnExpressionArgument[bool],
+        *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         **equal_filters: Any,
-    ) -> Select | SelectOfScalar:
+    ) -> W:
         query = select(cls.Model)
         return cls._filter_query(
             query,
@@ -91,16 +93,16 @@ class BaseManager:
     async def _exec(
         cls,
         session: AsyncSession,
-        query: Select | SelectOfScalar,
-    ) -> TupleResult | ScalarResult:
-        logger.debug("Executing select query: %s", query)
+        query: W,
+    ) -> TupleResult | ScalarResult | CursorResult:
+        logger.debug("Executing query: %s", query)
         return await session.exec(query)
 
     @classmethod
     async def _select(
         cls,
         session: AsyncSession,
-        *whereclause: _ColumnExpressionArgument[bool],
+        *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
@@ -116,7 +118,7 @@ class BaseManager:
     async def list(
         cls,
         session: AsyncSession,
-        *whereclause: _ColumnExpressionArgument[bool],
+        *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         **equal_filters: Any,
     ) -> list[T]:
@@ -125,7 +127,7 @@ class BaseManager:
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: _ColumnExpressionArgument[bool]
+        :type whereclause: ColumnExpressionArgument[bool]
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
@@ -148,7 +150,7 @@ class BaseManager:
     async def first(
         cls,
         session: AsyncSession,
-        *whereclause: _ColumnExpressionArgument[bool],
+        *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         **equal_filters: Any,
     ) -> T | None:
@@ -157,7 +159,7 @@ class BaseManager:
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: _ColumnExpressionArgument[bool]
+        :type whereclause: ColumnExpressionArgument[bool]
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
@@ -179,7 +181,7 @@ class BaseManager:
     async def get(
         cls,
         session: AsyncSession,
-        *whereclause: _ColumnExpressionArgument[bool],
+        *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         **equal_filters: Any,
     ) -> T:
@@ -188,7 +190,7 @@ class BaseManager:
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: _ColumnExpressionArgument[bool]
+        :type whereclause: ColumnExpressionArgument[bool]
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
@@ -211,7 +213,7 @@ class BaseManager:
     async def get_or_404(
         cls,
         session: AsyncSession,
-        *whereclause: _ColumnExpressionArgument[bool],
+        *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         **equal_filters: Any,
     ) -> T:
@@ -220,7 +222,7 @@ class BaseManager:
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: _ColumnExpressionArgument[bool]
+        :type whereclause: ColumnExpressionArgument[bool]
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
@@ -372,7 +374,8 @@ class BaseManager:
     ) -> T:
         """Update an existing model instance with new data and save it.
 
-        :param session: The SQLAlchemy asynchronous session to use for database operations.
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
         :type session: AsyncSession
         :param existing_instance: The existing model instance to be updated.
         :type existing_instance: T
@@ -400,6 +403,49 @@ class BaseManager:
         )
 
     @classmethod
+    async def update_where(
+        cls,
+        session: AsyncSession,
+        values: dict[str, Any],
+        *whereclause: ColumnExpressionArgument[bool],
+        **equal_filters: Any,
+    ) -> CursorResult:
+        """Execute an UPDATE statement.
+
+        This method executes an UPDATE statement to update specific values for rows
+        matching the specified filters.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param values: A dict with column names as keys and values as values.
+        :type values: dict[str, Any]
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The result of the UPDATE statement execution.
+        :rtype: CursorResult
+        """
+        if not whereclause and not equal_filters:
+            raise ValueError(
+                "You must specify at least one filter in *whereclause or **equal_filters"
+            )
+        query = cls._filter_query(
+            update(cls.Model), *whereclause, **equal_filters
+        ).values(**values)
+        result = await cls._exec(session, query)
+        await session.commit()
+        logger.debug(
+            "Updated %s instances of %s with values %s",
+            result.rowcount,
+            cls.Model.__name__,
+            values,
+        )
+        return result
+
+    @classmethod
     async def delete(cls, session: AsyncSession, instance: T) -> T:
         """Delete a model instance from the database.
 
@@ -414,6 +460,43 @@ class BaseManager:
         await session.delete(instance)
         await session.commit()
         return instance
+
+    @classmethod
+    async def delete_where(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        **equal_filters: Any,
+    ) -> CursorResult:
+        """Execute a DELETE statement.
+
+        This method executes a DELETE statement to delete specific rows matching the
+        specified filters.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The result of the DELETE statement execution.
+        :rtype: CursorResult
+        """
+        if not whereclause and not equal_filters:
+            raise ValueError(
+                "You must specify at least one filter in *whereclause or **equal_filters"
+            )
+        query = cls._filter_query(delete(cls.Model), *whereclause, **equal_filters)
+        result = await cls._exec(session, query)
+        await session.commit()
+        logger.debug(
+            "Deleted %s instances of %s",
+            result.rowcount,
+            cls.Model.__name__,
+        )
+        return result
 
 
 class BaseSQLModelManager(BaseManager):
