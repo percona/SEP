@@ -10,7 +10,7 @@
         </thead>
         <tbody>
         {% for task in tasks %}
-            <tr>
+            <tr id="{{ task.name }}">
                 <td>{{ task.name }}</td>
                 <td>{{ task.hostname }}</td>
                 <td>{{ task.table }}</td>

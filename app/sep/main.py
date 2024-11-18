@@ -40,7 +40,7 @@ if {"alters", "archives", "tasks"} & imported_plugins:
     from app.sep.routes.stream_logs import router as stream_logs_router
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
-    sep_app.include_router(periodic_tasks_router, prefix="/schedule")
+    sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
 User = get_user_model()
 templates = sep_settings.TEMPLATES

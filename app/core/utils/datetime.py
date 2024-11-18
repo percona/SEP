@@ -4,12 +4,12 @@ from datetime import datetime, UTC
 
 
 def utc_now() -> datetime:
-    """Get current UTC datetime.
+    """Get current UTC datetime with microsecond set to 0.
 
     :return: Current aware datetime with timezone set to UTC.
     :rtype: datetime
     """
-    return datetime.now(UTC)
+    return datetime.now(UTC).replace(microsecond=0)
 
 
 def make_datetime_utc(dt: datetime) -> datetime:

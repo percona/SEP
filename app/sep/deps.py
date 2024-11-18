@@ -4,6 +4,7 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from http.cookies import SimpleCookie
 from typing import Annotated, Any
+from zoneinfo import available_timezones
 
 from fastapi import Depends, Request
 from itsdangerous import BadSignature
@@ -438,6 +439,7 @@ async def get_tasks_context(
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
+            "AVAILABLE_TIMEZONES": list(available_timezones()),
         },
     )
     return context

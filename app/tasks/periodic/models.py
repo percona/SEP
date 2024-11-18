@@ -148,7 +148,7 @@ class BasePeriodicTask(BaseModel):
     :param description: A description of the task.
     :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: TaskExecutionRequest | None
+    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
     :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
@@ -216,7 +216,7 @@ class PeriodicTaskResponse(BasePeriodicTask):
     :param description: A description of the task.
     :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: TaskExecutionRequest | None
+    :type execute_request: PeriodicTaskExecuteRequest | None
     :param id: The unique identifier of the periodic task.
     :type id: int
     :param last_run_at: The datetime of the last run.
@@ -299,7 +299,7 @@ class PeriodicTaskWrite(BasePeriodicTask):
     :param description: A description of the task.
     :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: TaskExecutionRequest | None
+    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
     :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
@@ -351,15 +351,21 @@ class PeriodicTaskWrite(BasePeriodicTask):
 
     @field_validator("interval")
     @classmethod
-    def validate_min_interval(cls, v: IntervalSchedule) -> IntervalSchedule:
+    def validate_min_interval(
+        cls, v: IntervalSchedule | None
+    ) -> IntervalSchedule | None:
         """Ensure the interval is not lower than 1 minute.
 
         :param v: The interval schedule to validate.
-        :type v: IntervalSchedule
+        :type v: IntervalSchedule | None
         :return: The validated interval schedule.
-        :rtype: IntervalSchedule
+        :rtype: IntervalSchedule | None
         """
-        if v.period not in {Period.DAYS, Period.HOURS, Period.MINUTES}:
+        if v is not None and v.period not in {
+            Period.DAYS,
+            Period.HOURS,
+            Period.MINUTES,
+        }:
             raise ValueError(
                 f"Invalid period '{v.period}' for IntervalSchedule. Valid periods are: "
                 f"'days', 'hours', 'minutes'."
@@ -385,7 +391,7 @@ class PeriodicTaskUpdate(PeriodicTaskWrite):
     :param description: A description of the task.
     :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: TaskExecutionRequest | None
+    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
     :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
@@ -424,7 +430,7 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     :param task: The Celery task name.
     :type task: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: TaskExecutionRequest | None
+    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
     :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
@@ -449,39 +455,3 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     expires: UTCDatetime | None = None
     enabled: bool = True
     description: str = ""
-
-
-class TaskScheduleRequest(TaskExecuteRequest):
-    """Represent a request to schedule a task with execution metadata.
-
-    Inherits from `TaskExecuteRequest` and adds scheduling capabilities.
-
-    :param meta: A dictionary of meta variables for the task execution.
-        Defaults to an empty dictionary.
-    :type meta: dict[str, Any]
-    :param payload: Optional payload data or file path for the task execution.
-        Defaults to None.
-    :type payload: str | None
-    :param period: A cron expression representing the schedule for task execution.
-        This specifies the timing of the task, determining when it should run based
-        on the specified cron format (minute, hour, day of month, month, day of week).
-        Defaults to None, meaning the task will not be scheduled.
-    :type period: str | None
-        :param minute: Represents the minute component in cron format.
-    :type minute: str
-    :param hour: Represents the hour component in cron format.
-    :type hour: str
-    :param day_of_week: Represents the day of the week component in cron format.
-    :type day_of_week: str
-    :param day_of_month: Represents the day of the month component in cron format.
-    :type day_of_month: str
-    :param month_of_year: Represents the month component in cron format.
-    :type month_of_year: str
-    """
-
-    period: str
-    minute: str = "*"
-    hour: str = "*"
-    day_of_week: str = "*"
-    day_of_month: str = "*"
-    month_of_year: str = "*"

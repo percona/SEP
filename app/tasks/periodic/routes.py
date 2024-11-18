@@ -8,13 +8,13 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
-from app.sep.deps import PeriodicTaskDep
 from app.tasks.crud import TaskManager
 from app.tasks.deps import get_executable_task_by_name, SessionDep
 from app.tasks.models import (
     TaskOwner,
 )
 from app.tasks.periodic.crud import PeriodicTaskManager
+from app.tasks.periodic.deps import PeriodicTaskDep
 from app.tasks.periodic.models import PeriodicTaskResponse, PeriodicTaskUpdate
 
 router = APIRouter(prefix="/periodic", tags=["periodic", "schedule", "tasks"])

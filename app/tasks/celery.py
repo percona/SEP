@@ -10,7 +10,6 @@ from typing import Any
 from asgiref.sync import async_to_sync
 from celery import Task
 from fastapi.encoders import jsonable_encoder
-from pydantic import validate_call
 
 from app.core.celery.db import (
     get_async_session_maker as get_celery_beat_async_session_maker,
@@ -125,7 +124,6 @@ async def process_orphaned_periodic_tasks() -> None:
         )
 
 
-@validate_call
 async def prepare_periodic_task_history(
     task_name: str, execution_data: PeriodicTaskExecuteRequest | None = None
 ) -> TaskHistory:
@@ -138,6 +136,11 @@ async def prepare_periodic_task_history(
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
     """
+    execution_data = (
+        PeriodicTaskExecuteRequest.model_validate(execution_data)
+        if execution_data
+        else None
+    )
     async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_task_by_name(session, task_name)
