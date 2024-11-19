@@ -60,7 +60,6 @@ development:
       CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
     RESULT_PERSISTENT: true
-    BEAT_SCHEDULER : 'sqlalchemy_celery_beat.schedulers:DatabaseScheduler'
     BEAT_DBURI: "sqlite:///schedule.db"
 
 production_docker:

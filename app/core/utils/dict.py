@@ -11,7 +11,7 @@ __all__ = [
 
 
 def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> None:
-    """Recursively merge `update_dict` into `main_dict`.
+    """Merge `update_dict` into `main_dict` recursively.
 
     Update `main_dict` with the contents of `update_dict` recursively. For each
     key in `update_dict`, if the key exists in `main_dict` and both values are
