@@ -47,7 +47,7 @@ async def test_context_manager_open_close(remote_api, base_url):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("method, test_path, request_payload, response_data, status_code"), # noqa: PT006
+    ("method, test_path, request_payload, response_data, status_code"),  # noqa: PT006
     [
         ("GET", "test/get", None, {"key": "value"}, 200),
         ("POST", "test/post", {"input": "data"}, {"result": "success"}, 201),
@@ -81,7 +81,7 @@ async def test_request_methods(
 
 
 @pytest.mark.parametrize(
-    ("endpoint, input_path, expected_path"), # noqa: PT006
+    ("endpoint, input_path, expected_path"),  # noqa: PT006
     [
         ("http://localhost:8000/", "users", "/users"),
         ("http://localhost:8000/api", "v1/users", "/api/v1/users"),
