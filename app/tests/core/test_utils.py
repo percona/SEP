@@ -3,64 +3,16 @@
 import sys
 from base64 import b64encode
 from datetime import UTC
-from http import HTTPStatus
 from importlib import util
 
 import pytest
 
-from app.core.utils import (
-    async_run,
-    b64encode_str,
-    ErrorFormatter,
-    import_var,
-    json_serializer,
-    minify_file_content,
-    slugify,
-    sort_dict,
-)
-
-
-class TestErrorFormatter:
-    """Tests for the ErrorFormatter class."""
-
-    def setup_method(self):
-        """Set up an instance of ErrorFormatter for testing."""
-        self.formatter = ErrorFormatter()
-
-    def test_format_error_heading_valid_status(self):
-        """Test formatting of error heading for a valid HTTP status code."""
-        details = {"status_code": 404}
-        heading = self.formatter.format_error_heading(details)
-        assert heading == HTTPStatus.NOT_FOUND.phrase
-
-    def test_format_error_heading_invalid_status(self):
-        """Test formatting of error heading for an invalid HTTP status code."""
-        details = {"status_code": 999}
-        heading = self.formatter.format_error_heading(details)
-        assert heading == HTTPStatus.NOT_FOUND.phrase
-
-    def test_format_error_message_valid_status(self):
-        """Test formatting of error message for a valid HTTP status code."""
-        details = {"status_code": 400}
-        message = self.formatter.format_error_message(details)
-        assert message == HTTPStatus.BAD_REQUEST.description
-
-    def test_format_error_message_invalid_status(self):
-        """Test formatting of error message for an invalid HTTP status code."""
-        details = {"status_code": 123}
-        message = self.formatter.format_error_message(details)
-        assert message == HTTPStatus.NOT_FOUND.description
-
-    def test_details_property_getter_setter(self):
-        """Test getting and setting of details property."""
-        details = {"key": "value"}
-        self.formatter.details = details
-        assert self.formatter.details == details
-
-    def test_details_setter_type_error(self):
-        """Test that setting non-dict to details raises a TypeError."""
-        with pytest.raises(TypeError):
-            self.formatter.details = "not a dict"
+from app.core.utils.asyncio import async_run
+from app.core.utils.dict import sort_dict
+from app.core.utils.imports import import_var
+from app.core.utils.serialization import json_serializer
+from app.core.utils.string import b64encode_str, slugify
+from app.tasks.execution.utils import minify_file_content
 
 
 def sample_func(x, y):

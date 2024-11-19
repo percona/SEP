@@ -2,20 +2,13 @@
 
 import pytest
 
-from app.core.fields import (
-    remove_duplicates,
-    resolve_relative_path,
-    URL,
+from app.core.utils.fields import URL
+from app.core.utils.imports import (
     validate_attribute_is_importable,
-    validate_log_level,
     validate_module_is_importable,
 )
-
-
-def test_validate_log_level_invalid_string():
-    """Test that an invalid log level string raises a ValueError."""
-    with pytest.raises(ValueError, match="Invalid log level: 'notalevel'"):
-        validate_log_level("notalevel")
+from app.core.utils.list import remove_duplicates
+from app.core.utils.path import resolve_relative_path
 
 
 def test_remove_duplicates_no_duplicates():
@@ -42,7 +35,7 @@ def test_validate_module_is_importable_invalid():
 def test_resolve_relative_path_invalid_type():
     """Raise a ValueError when an invalid type is provided for the path."""
     invalid_path = None
-    with pytest.raises(ValueError, match="Invalid path type: NoneType"):
+    with pytest.raises(ValueError, match="Unable to resolve path: None"):
         resolve_relative_path(invalid_path)
 
 

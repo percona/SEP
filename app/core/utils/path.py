@@ -18,4 +18,4 @@ def resolve_relative_path(path: PathLike | str) -> Path:
     try:
         return BASE_DIR / path
     except TypeError as exc:
-        raise ValueError from exc
+        raise ValueError(f"Unable to resolve path: {path}") from exc
