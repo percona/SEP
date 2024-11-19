@@ -13,6 +13,7 @@
       * [PMMSyncer](#pmmsyncer)
          * [Getting your PMM API Key](#getting-your-pmm-api-key)
 * [Usage](#usage)
+  * [Starting Celery with SEP for development](#starting-celery-with-sep-for-development)
 * [Alternative: Use Docker Compose](#alternative-use-docker-compose)
 * [Contributing](#contributing)
 
@@ -48,6 +49,20 @@ sudo nomad agent -node="pmm-server" -dev \
         -bind 0.0.0.0 \
         -network-interface='{{ GetDefaultInterfaces | attr "name" }}'
 ```
+
+- [Celery](https://docs.celeryq.dev/en/stable/)
+
+You can start the Celery Worker with:
+```shell
+celery -A app.tasks.celery worker -l info
+```
+
+and the Celery Beart with:
+```shell
+celery -A app.tasks.celery beat -S sqlalchemy --loglevel=info
+```
+
+For development purposes, you can also [start Celery with SEP](#starting-celery-with-sep-for-development).
 
 ## Setup
 
@@ -267,6 +282,14 @@ LOGGING=debug python3 -m app.main
 SEP will be available in http://localhost:8000.
 
 ![image](https://github.com/user-attachments/assets/cec67a8e-341a-45d5-9144-e6c24f5128eb)
+
+
+### Starting Celery with SEP for development
+
+For development environments, you can start the Celery Worker and the Celery Beat with SEP by using the `--start-celery` flag:
+```shell
+LOGGING=debug python3 -m app.main --start-celery
+```
 
 ## Alternative: Use Docker Compose
 
