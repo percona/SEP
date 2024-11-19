@@ -1,6 +1,7 @@
 """Define the main FastAPI app."""
 
 import logging.config
+from argparse import ArgumentParser
 from multiprocessing import Process
 
 from app.api.main import api_router
@@ -17,36 +18,55 @@ app.mount("/api/tasks", tasks_app)
 app.mount("/", sep_app)
 
 if __name__ == "__main__":
-    worker = celery_app.Worker(
-        include=["app.tasks.celery"],
-    )
-    beat = celery_app.Beat(
-        scheduler="sqlalchemy",
-        loglevel=settings.LOGGING_CONFIG["loggers"]["celery.beat"]["level"],
-    )
-    logging.config.dictConfig(settings.LOGGING_CONFIG)
-    celery_worker_process = Process(target=worker.start)
-    logging.info("Starting Celery worker...")
-    celery_worker_process.start()
-
-    celery_beat_process = Process(target=beat.run)
-    logging.info("Starting Celery beat for periodic tasks...")
-    celery_beat_process.start()
-
     import uvicorn
 
-    try:
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--start-celery",
+        action="store_true",
+        default=False,
+        help="Start the celery worker and beat processes",
+    )
+    args = parser.parse_args()
+
+    if args.start_celery:
+        worker = celery_app.Worker(
+            include=["app.tasks.celery"],
+        )
+        beat = celery_app.Beat(
+            scheduler="sqlalchemy",
+            loglevel=settings.LOGGING_CONFIG["loggers"]["celery.beat"]["level"],
+        )
+        logging.config.dictConfig(settings.LOGGING_CONFIG)
+        celery_worker_process = Process(target=worker.start)
+        logging.info("Starting Celery worker...")
+        celery_worker_process.start()
+
+        celery_beat_process = Process(target=beat.run)
+        logging.info("Starting Celery beat for periodic tasks...")
+        celery_beat_process.start()
+
+        try:
+            uvicorn.run(
+                app,
+                host=sep_settings.UVICORN_HOST,
+                port=sep_settings.UVICORN_PORT,
+                log_config=settings.LOGGING_CONFIG,
+            )
+        except KeyboardInterrupt:
+            logging.info("Shutting down Celery worker...")
+            logging.info("Shutting down Celery beat...")
+        finally:
+            celery_worker_process.terminate()
+            celery_worker_process.join()
+            celery_beat_process.terminate()
+            celery_beat_process.join()
+
+    else:
+        logging.config.dictConfig(settings.LOGGING_CONFIG)
         uvicorn.run(
             app,
             host=sep_settings.UVICORN_HOST,
             port=sep_settings.UVICORN_PORT,
             log_config=settings.LOGGING_CONFIG,
         )
-    except KeyboardInterrupt:
-        logging.info("Shutting down Celery worker...")
-        logging.info("Shutting down Celery beat...")
-    finally:
-        celery_worker_process.terminate()
-        celery_worker_process.join()
-        celery_beat_process.terminate()
-        celery_beat_process.join()
