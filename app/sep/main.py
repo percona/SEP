@@ -1,6 +1,6 @@
 """Define SEP routes."""
 
-import logging
+import logging.config
 
 from fastapi import Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -36,9 +36,11 @@ for plugin in sep_settings.PLUGINS:
     imported_plugins.add(plugin.module_name.split(".")[-1])
 
 if {"alters", "archives", "tasks"} & imported_plugins:
+    from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
+    sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
 User = get_user_model()
 templates = sep_settings.TEMPLATES
@@ -132,13 +134,7 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
 # TODO: take all these logics from routes layer  # noqa: TD002, TD003
 
 if __name__ == "__main__":
-    # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003
-    logging.basicConfig(
-        level=settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",
-    )
-    for name, level in settings.LOGGING_EXTRA.items():
-        logging.getLogger(name).setLevel(level)
+    logging.config.dictConfig(settings.LOGGING_CONFIG)
 
     import uvicorn
 
@@ -149,4 +145,5 @@ if __name__ == "__main__":
         proxy_headers=sep_settings.PROXY_HEADERS,
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,
+        log_config=settings.LOGGING_CONFIG,
     )

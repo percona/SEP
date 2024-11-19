@@ -1,4 +1,4 @@
-"""Define settings for the Inventory API."""
+"""Define settings for the Tasks app."""
 
 from typing import ClassVar
 
@@ -23,6 +23,7 @@ class TasksSettings(BaseYamlExtraSettings):
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
+
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]

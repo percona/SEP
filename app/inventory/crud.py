@@ -1,10 +1,10 @@
 """Define database operations for the Inventory API."""
 
-from app.core.db.crud import BaseChildManager, BaseManager
+from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager
 from app.inventory.models import Node, Schema, Service, Table
 
 
-class NodeManager(BaseManager):
+class NodeManager(BaseSQLModelManager):
     """Manage Node operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Node`).
@@ -14,7 +14,7 @@ class NodeManager(BaseManager):
     Model = Node
 
 
-class ServiceManager(BaseChildManager):
+class ServiceManager(BaseSQLModelChildManager):
     """Manage Service operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Service`).
@@ -32,7 +32,7 @@ class ServiceManager(BaseChildManager):
     connected_by = "node_id"
 
 
-class SchemaManager(BaseChildManager):
+class SchemaManager(BaseSQLModelChildManager):
     """Manage Schema operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Schema`).
@@ -50,7 +50,7 @@ class SchemaManager(BaseChildManager):
     connected_by = "service_id"
 
 
-class TableManager(BaseChildManager):
+class TableManager(BaseSQLModelChildManager):
     """Manage Table operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Table`).

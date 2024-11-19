@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.inventory.crud import SchemaManager, ServiceManager
@@ -62,11 +62,15 @@ async def update_service(
     return await ServiceManager.update(session, existing_service, updated_service)
 
 
-@router.delete("/{service_id}", dependencies=[IsAuthenticatedDep])
-async def delete_service(session: SessionDep, service: ServiceDep) -> ServiceResponse:
+@router.delete(
+    "/{service_id}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_service(session: SessionDep, service: ServiceDep) -> None:
     """Delete Service."""
     logger.debug("Deleting service %s", service.id)
-    return await ServiceManager.delete(session, service)
+    await ServiceManager.delete(session, service)
 
 
 @router.get("/{service_id}/schemas/", dependencies=[IsAuthenticatedDep])
@@ -83,7 +87,11 @@ async def list_schemas_by_service(
     )
 
 
-@router.post("/{service_id}/schemas/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/{service_id}/schemas/",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_schema_for_service(
     session: SessionDep,
     service: ServiceDep,

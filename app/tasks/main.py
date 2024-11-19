@@ -1,32 +1,20 @@
 """Define routes for the Tasks API."""
 
-import logging
+import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from os import getenv
 
+from celery.utils.log import get_task_logger
 from fastapi import FastAPI
 
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
-from app.tasks.db import init_tasks_db
-from app.tasks.routes import router
+from app.tasks.periodic.routes import router as periodic_router
+from app.tasks.routes import router as tasks_router
+from app.tasks.utils import init_periodic_tasks_db, init_tasks_db
 
 logger = logging.getLogger(__name__)
-
-
-DEFAULT_BACKEND_POLL_INTERVAL_SECONDS = 5
-# TODO: Make all these getenv proper settings  # noqa: TD002, TD003
-BACKEND_POLL_INTERVAL_SECONDS = getenv(
-    "TASKS_BACKEND_POLL_INTERVAL_SECONDS",
-    DEFAULT_BACKEND_POLL_INTERVAL_SECONDS,
-)
-
-AVAILABLE_OWNERS = {
-    "*": "Any",
-    "archiver": "Data Archiver",
-    "alters": "Schema Change",
-}
+celery_logger = get_task_logger(__name__)
 
 
 @asynccontextmanager
@@ -43,22 +31,19 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :rtype: AsyncGenerator[None, None]
     """
     await init_tasks_db()
+    await init_periodic_tasks_db()
     async with default_lifespan(app), tasks_settings.NOMAD:
         yield
 
 
 lifespan = tasks_lifespan if __name__ == "__main__" else None
-tasks_app = create_app(router, lifespan=lifespan, add_cors_middleware=True)
+tasks_app = create_app(
+    tasks_router, periodic_router, lifespan=lifespan, add_cors_middleware=True
+)
 
 
 if __name__ == "__main__":
-    # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003
-    logging.basicConfig(
-        level=settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",
-    )
-    for name, level in settings.LOGGING_EXTRA.items():
-        logging.getLogger(name).setLevel(level)
+    logging.config.dictConfig(settings.LOGGING_CONFIG)
 
     import uvicorn
 
@@ -68,4 +53,5 @@ if __name__ == "__main__":
         port=tasks_settings.UVICORN_PORT,
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
+        log_config=settings.LOGGING_CONFIG,
     )

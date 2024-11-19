@@ -1,24 +1,25 @@
 """Define the application settings."""
 
-import logging
+import logging.config
 import re
 import secrets
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, Self
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import (
-    AliasGenerator,
     AnyUrl,
     computed_field,
-    ConfigDict,
     DirectoryPath,
+    field_validator,
     HttpUrl,
+    model_validator,
     validate_call,
 )
 from pydantic_settings import (
@@ -27,51 +28,101 @@ from pydantic_settings import (
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
-from pydantic_settings.sources import PathType
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource, PathType
 from starlette.types import Lifespan
 
+from app import BASE_DIR
 from app.core.auth.providers.casdoor import CasdoorSDK
-from app.core.fields import (
+from app.core.celery.config import CeleryOptions
+from app.core.requests import RemoteAPI
+from app.core.utils import deep_dict_update, json_serializer
+from app.core.utils.fields import (
     LogLevel,
     RelativeFilePath,
     RequiredStr,
-    StrAnyUrl,
     StrImportableAttribute,
     URL,
 )
-from app.core.models import BaseCaseInsensitiveModel
-from app.core.requests import RemoteAPI
-from app.core.utils import deep_dict_update, json_serializer
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DEFAULT_FASTAPI_ENV = "development"
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(name)s: %(message)s <%(process)d>",
+        },
+        "uvicorn": {
+            "format": "uvicorn: %(message)s <%(process)d>",
+        },
+    },
+    "handlers": {
+        "default": {
+            "formatter": "default",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+            "show_path": False,
+        },
+        "app": {
+            "formatter": "default",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+            "show_path": True,
+        },
+        "uvicorn": {
+            "formatter": "uvicorn",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+            "show_path": False,
+        },
+        "celery": {
+            "formatter": "default",
+            "class": "rich.logging.RichHandler",
+            "omit_repeated_times": False,
+            "show_path": False,
+        },
+    },
+    "loggers": {
+        "": {"handlers": ["default"], "level": "INFO"},
+        "app": {"handlers": ["app"], "level": "INFO"},
+        "celery": {"handlers": ["celery"], "level": "INFO", "propagate": False},
+        "celery.beat": {"handlers": ["celery"], "level": "INFO", "propagate": False},
+        "sqlalchemy_celery_beat": {
+            "handlers": ["celery"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "uvicorn": {"handlers": ["uvicorn"], "level": "INFO", "propagate": False},
+        "uvicorn.error": {"handlers": ["uvicorn"], "level": "INFO", "propagate": False},
+        "uvicorn.access": {
+            "handlers": ["uvicorn"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
 
 
-logger = logging.getLogger(__name__)
+class PreEnvSettings(BaseSettings):
+    """Define meta environment settings read that need to be read before the others.
 
-
-class CeleryOptions(BaseCaseInsensitiveModel):
-    """Define configuration settings for Celery.
-
-    Any extra fields passed to this model will be used for configuring Celery.
-
-    :param BROKER_URL: The URL of the message broker.
-    :type BROKER_URL: StrAnyUrl
-    :param TASK_TRACK_STARTED: Whether to track when tasks start. Defaults to True.
-    :type TASK_TRACK_STARTED: bool
-    :param RESULT_BACKEND: The URL of the result backend. Defaults to None.
-    :type RESULT_BACKEND: StrAnyUrl | None
+    :param FASTAPI_ENV: The environment used (e.g. development, production).
+        Defaults to "development".
+    :type FASTAPI_ENV: str
+    :param ENV_FILE: The dot env file used to populate the applications settings.
+        Defaults to ".env" in the current directory.
+    :type ENV_FILE: Path
+    :param SETTINGS_FILE: The YAML file used to populate the applications settings.
+        Defaults to "settings.yaml" in the current directory.
+    :type SETTINGS_FILE: Path
     """
 
-    model_config = ConfigDict(
-        extra="allow",
-        alias_generator=AliasGenerator(
-            serialization_alias=lambda field_name: field_name.lower(),
-        ),
-    )
-    BROKER_URL: StrAnyUrl
-    TASK_TRACK_STARTED: bool = True
-    RESULT_BACKEND: StrAnyUrl | None = None
+    model_config = SettingsConfigDict(extra="ignore")
+    FASTAPI_ENV: str = "development"
+    ENV_FILE: Path = Path(".env")
+    SETTINGS_FILE: Path = Path("settings.yaml")
+
+
+pre_env_settings = PreEnvSettings()
 
 
 class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
@@ -97,7 +148,7 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
     def __init__(
         self,
         settings_cls: type[BaseSettings],
-        yaml_file: PathType | None = Path("settings.yaml"),
+        yaml_file: PathType | None = pre_env_settings.SETTINGS_FILE,
         yaml_file_encoding: str | None = None,
         prefixes: Sequence[RequiredStr] = (),
         base_prefix: RequiredStr | None = "default",
@@ -127,30 +178,32 @@ class BaseYamlSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=pre_env_settings.ENV_FILE,
         env_nested_delimiter="__",
-        yaml_file="settings.yaml",
+        yaml_file=pre_env_settings.SETTINGS_FILE,
         extra="ignore",
     )
-    FASTAPI_ENV: str = DEFAULT_FASTAPI_ENV
+    FASTAPI_ENV: str = pre_env_settings.FASTAPI_ENV
 
     @classmethod
     def settings_customise_sources(
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Load settings from Yaml file."""
         yaml_prefix = env_settings.env_vars.get(
             "fastapi_env",
-        ) or dotenv_settings.env_vars.get("fastapi_env", DEFAULT_FASTAPI_ENV)
+        ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
         return (
             env_settings,
             dotenv_settings,
-            YamlPrefixConfigSettingsSource(settings_cls, prefixes=(yaml_prefix,)),
+            YamlPrefixConfigSettingsSource(
+                settings_cls, pre_env_settings.SETTINGS_FILE, prefixes=(yaml_prefix,)
+            ),
         )
 
 
@@ -180,14 +233,14 @@ class BaseYamlExtraSettings(BaseYamlSettings):
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Load settings from Yaml file."""
         yaml_prefix = env_settings.env_vars.get(
             "fastapi_env",
-        ) or dotenv_settings.env_vars.get("fastapi_env", DEFAULT_FASTAPI_ENV)
+        ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
         env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
         for env_source in [env_settings, dotenv_settings]:
             env_vars = {}
@@ -221,8 +274,8 @@ class Settings(BaseYamlSettings):
     :type SECRET_KEY: str
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
-    :param LOGGING_EXTRA: Extra log levels to set for the application.
-    :type LOGGING_EXTRA: dict[str, LogLevel]
+    :param LOGGING_CONFIG: dictConfig logging configuration.
+    :type LOGGING_CONFIG: dict[str, Any]
     :param BACKEND_CORS_ORIGINS: A list of allowed CORS origins.
     :type BACKEND_CORS_ORIGINS: list[AnyUrl]
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
@@ -236,7 +289,7 @@ class Settings(BaseYamlSettings):
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
-    LOGGING_EXTRA: dict[str, LogLevel] = {}
+    LOGGING_CONFIG: dict[str, Any] = {}
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
     BASE_URL: URL | None = None
@@ -251,6 +304,34 @@ class Settings(BaseYamlSettings):
         :rtype: DirectoryPath
         """
         return BASE_DIR
+
+    @field_validator("LOGGING_CONFIG")
+    @classmethod
+    def _set_default_logging_config(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """Return the default configuration updated with the provided data.
+
+        :param v: The new logging configuration.
+        :type v: dict[str, Any]
+        :return: The updated configuration.
+        :rtype: dict[str, Any]
+        """
+        logging_config = deepcopy(LOGGING_CONFIG)
+        deep_dict_update(logging_config, v)
+        return logging_config
+
+    @model_validator(mode="after")
+    def set_log_level(self) -> Self:
+        """Set the logging level for the application.
+
+        Set the default log level in `self.LOGGING_CONFIG` according to the `LOGGING`
+        setting.
+
+        :return: Validated settings with default logging level set.
+        :rtype: Settings
+        """
+        self.LOGGING_CONFIG["loggers"][""]["level"] = self.LOGGING
+        self.LOGGING_CONFIG["loggers"]["app"]["level"] = self.LOGGING
+        return self
 
     @validate_call
     async def get_extra_client_session(
@@ -300,6 +381,8 @@ class Settings(BaseYamlSettings):
 
 
 settings = Settings()
+logging.config.dictConfig(settings.LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager

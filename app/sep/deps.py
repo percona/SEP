@@ -4,6 +4,7 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from http.cookies import SimpleCookie
 from typing import Annotated, Any
+from zoneinfo import available_timezones
 
 from fastapi import Depends, Request
 from itsdangerous import BadSignature
@@ -15,9 +16,9 @@ from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import HTTPNotFoundException
-from app.core.fields import URL
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
+from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
@@ -36,6 +37,7 @@ from app.tasks.models import (
     Task,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
+    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -375,7 +377,7 @@ async def get_tasks_context(
     tasks_api: TaskAPI,
     get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
     default_context: DefaultContext | None = None,
-    owner: str | None = None,
+    owner: TaskOwner | None = None,
 ) -> dict[str, Any]:
     """Assemble the template context for task-dependent plugins.
 
@@ -394,7 +396,7 @@ async def get_tasks_context(
         initializes an empty dictionary.
     :type default_context: dict[str, Any] | None
     :param owner: The owner filter for retrieving tasks. Defaults to `None`.
-    :type owner: str | None
+    :type owner: TaskOwner | None
     :return: The assembled context dictionary containing tasks and services information.
     :rtype: dict[str, Any]
     """
@@ -425,6 +427,7 @@ async def get_tasks_context(
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
+    periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
     executor_hosts = await tasks_api.get("/hosts/")
     context = default_context or {}
     context.update(
@@ -435,6 +438,8 @@ async def get_tasks_context(
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
+            "periodic_tasks": periodic_tasks,
+            "AVAILABLE_TIMEZONES": list(available_timezones()),
         },
     )
     return context
@@ -443,7 +448,7 @@ async def get_tasks_context(
 # TODO(yan): Put get_task in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_by_name(
-    tasks_api: TaskAPI, task_name: str, owner: str | None = None
+    tasks_api: TaskAPI, task_name: str, owner: TaskOwner | None = None
 ) -> Task:
     """Fetch and validate a task by name.
 
@@ -457,7 +462,7 @@ async def get_task_by_name(
     :type task_name: str
     :param owner: The owner filter for retrieving tasks. Defaults to `None`, meaning
         no filter.
-    :type owner: str | None
+    :type owner: TaskOwner | None
     :return: The retrieved task.
     :rtype: Task
     :raises HTTPNotFoundException: If the task is not found or is not owned by the
@@ -467,7 +472,7 @@ async def get_task_by_name(
         task = Task.model_validate(await tasks_api.get(f"/{task_name}"))
     except ValidationError:
         raise HTTPNotFoundException from None
-    if owner is not None and Task.validate_owner(owner) != task.owner:
+    if owner is not None and owner != task.owner:
         raise HTTPNotFoundException
     return task
 
@@ -475,7 +480,7 @@ async def get_task_by_name(
 # TODO(yan): Put get_task_history in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_history(
-    tasks_api: TaskAPI, task_history_id: int, owner: str | None = None
+    tasks_api: TaskAPI, task_history_id: int, owner: TaskOwner | None = None
 ) -> TaskHistoryResponse:
     """Fetch and validate a task history by ID.
 
@@ -489,7 +494,7 @@ async def get_task_history(
     :type task_history_id: str
     :param owner: The owner filter for the task history's task. Defaults to `None`,
         meaning no filter.
-    :type owner: str | None
+    :type owner: TaskOwner | None
     :return: The retrieved task history.
     :rtype: TaskHistoryResponse
     :raises HTTPNotFoundException: If the task history is not found or the validation
@@ -503,6 +508,6 @@ async def get_task_history(
         logger.debug("ValidationError retrieving task history.", exc_info=True)
         raise HTTPNotFoundException from None
     logger.debug("TASK IS %s", task_history)
-    if owner is not None and Task.validate_owner(owner) != task_history.task.owner:
+    if owner is not None and owner != task_history.task.owner:
         raise HTTPNotFoundException
     return task_history

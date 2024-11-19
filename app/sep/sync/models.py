@@ -1144,11 +1144,10 @@ class BaseTaskSyncer(BaseSyncer):
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
         """
-        response = await self.tasks_api.post(
+        task_history = await self.tasks_api.post(
             f"/execute/{task_name}",
             json={"meta": meta, "payload": payload},
         )
-        task_history = response["task_history_id"]
         task_history_id = task_history["id"]
         status = task_history["status"]
         time_waiting = 0

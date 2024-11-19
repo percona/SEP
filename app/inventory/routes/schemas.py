@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.inventory.crud import SchemaManager, TableManager
@@ -51,11 +51,15 @@ async def update_schema(
     return await SchemaManager.update(session, existing_schema, updated_schema)
 
 
-@router.delete("/{schema_id}", dependencies=[IsAuthenticatedDep])
-async def delete_schema(session: SessionDep, schema: SchemaDep) -> SchemaResponse:
+@router.delete(
+    "/{schema_id}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_schema(session: SessionDep, schema: SchemaDep) -> None:
     """Delete Schema."""
     logger.debug("Deleting schema %s", schema.id)
-    return await SchemaManager.delete(session, schema)
+    await SchemaManager.delete(session, schema)
 
 
 @router.get("/{schema_id}/tables/", dependencies=[IsAuthenticatedDep])
@@ -68,7 +72,11 @@ async def list_tables_by_schema(
     return await TableManager.list(session, schema_id=schema.id)
 
 
-@router.post("/{schema_id}/tables/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/{schema_id}/tables/",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_table_for_schema(
     session: SessionDep,
     schema: SchemaDep,

@@ -1,16 +1,24 @@
 """Define database operations for the Tasks API."""
 
-from datetime import datetime, UTC
+import logging
 
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.db.crud import BaseManager
-from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum
+from app.core.db.crud import BaseSQLModelManager
+from app.core.utils.datetime import utc_now
+from app.tasks.models import (
+    Task,
+    TaskHistory,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+)
+
+logger = logging.getLogger(__name__)
 
 
-class TaskManager(BaseManager):
+class TaskManager(BaseSQLModelManager):
     """Manage task operations, including retrieval, listing, and deletion.
 
     This class provides methods to interact with `Task` models in the database,
@@ -25,9 +33,8 @@ class TaskManager(BaseManager):
     @classmethod
     async def list_active(
         cls,
-        *,
         session: AsyncSession,
-        owner: str | None = None,
+        owner: TaskOwner | None = None,
     ) -> list[Task]:
         """List all active (non-deleted) tasks.
 
@@ -35,22 +42,15 @@ class TaskManager(BaseManager):
         :type session: AsyncSession
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
-        :type owner: str | None
+        :type owner: TaskOwner | None
         :return: A list of active tasks.
         :rtype: list[Task]
         """
-        if owner == "*":
-            return await cls.list(
-                session,
-                col(Task.deleted_at).is_(None),
-                col(Task.owner).is_(None),
-            )
         return await cls.list(session, col(Task.deleted_at).is_(None), owner=owner)
 
     @classmethod
     async def retrieve_by_name(
         cls,
-        *,
         session: AsyncSession,
         name: str,
         is_template: bool | None = None,
@@ -71,7 +71,7 @@ class TaskManager(BaseManager):
         return await cls.get_or_404(session, name=name, is_template=is_template)
 
     @classmethod
-    async def delete_by_name(cls, *, session: AsyncSession, name: str) -> Task:
+    async def delete_by_name(cls, session: AsyncSession, name: str) -> Task:
         """Delete a task by its name, marking it as deleted.
 
         If the task is protected, a forbidden exception will be raised.
@@ -89,11 +89,11 @@ class TaskManager(BaseManager):
             raise HTTPForbiddenException(
                 f"Task {name} is protected and cannot be deleted.",
             )
-        task.deleted_at = datetime.now(UTC)
+        task.deleted_at = utc_now()
         return await cls.save(session, task)
 
 
-class TaskHistoryManager(BaseManager):
+class TaskHistoryManager(BaseSQLModelManager):
     """Manage task history operations, including listing task histories by task name.
 
     :ivar Model: The SQLModel class this manager is responsible for (`TaskHistory`).

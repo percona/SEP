@@ -6,8 +6,8 @@ from typing import Any, Literal, Self
 
 from pydantic import computed_field, model_validator
 
-from app.core.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
 from app.core.requests import RemoteAPI
+from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
 
 
 # TODO: Make Casdoor optional, custom auth backend model selectable in settings  # noqa: TD002, TD003
@@ -53,7 +53,7 @@ class CasdoorSDK(RemoteAPI):
     :type certificate_path: RelativeFilePath | None
     :param allowed_issuers: The allowed token issuers (iss) for JWT validation.
         Defaults to an empty list.
-    :type allowed_issuers: list[StrHttpUrl] | Literal["*"]
+    :type allowed_issuers: set[StrHttpUrl] | Literal["*"]
     """
 
     logger_name: str = __name__
@@ -64,7 +64,7 @@ class CasdoorSDK(RemoteAPI):
     application_name: str = "app-built-in"
     front_endpoint: URL = URL()
     certificate_path: RelativeFilePath | None = None
-    allowed_issuers: list[StrHttpUrl] | Literal["*"] = []
+    allowed_issuers: set[StrHttpUrl] | Literal["*"] = set()
 
     @computed_field
     @cached_property
@@ -100,8 +100,9 @@ class CasdoorSDK(RemoteAPI):
         :return: The updated instance with `allowed_issuers` set.
         :rtype: Self
         """
-        if self.allowed_issuers != "*" and self.endpoint not in self.allowed_issuers:
-            self.allowed_issuers.append(self.endpoint)
+        str_endpoint = str(self.endpoint).rstrip("/")
+        if self.allowed_issuers != "*":
+            self.allowed_issuers.add(str_endpoint)
         return self
 
     @model_validator(mode="after")

@@ -1,12 +1,14 @@
 """Define base database models."""
 
-from datetime import datetime, UTC
+from datetime import datetime
 from uuid import uuid4
 
 from pydantic import UUID4
 from sqlalchemy import DateTime, func, Integer
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
+
+from app.core.utils.datetime import utc_now
 
 DateTimeWithTimezone = DateTime(timezone=True)
 
@@ -31,7 +33,7 @@ class BaseSQLModel(SQLModel):
     )
     created_at: datetime = SQLField(
         sa_type=DateTimeWithTimezone,
-        default_factory=lambda: datetime.now(UTC),
+        default_factory=utc_now,
     )
     updated_at: datetime | None = SQLField(
         default=None,

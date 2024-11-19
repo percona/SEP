@@ -1,3 +1,5 @@
+#!/bin/python
+
 """Script to purge tables. Can alert using Nagios when appropriate.
 
 Todo:

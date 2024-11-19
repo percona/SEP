@@ -7,7 +7,7 @@ from typing import ClassVar, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.db import BaseSQLModel
-from app.core.fields import EmptyStrToNone, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, RequiredStr
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.models import SyncInventoryEntityTypeEnum
 
