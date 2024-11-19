@@ -25,7 +25,7 @@ async def create_periodic_task(
     referer: Annotated[str, Header()] = "/tasks",
 ) -> RedirectResponse:
     """Create periodic task."""
-    periodic_task_data = periodic_task.model_dump(exclude_unset=True, exclude={"task"})
+    periodic_task_data = periodic_task.model_dump(exclude_none=True, exclude={"task"})
     logger.debug("Scheduling task %s, %s,", periodic_task.task, periodic_task_data)
     await tasks_api.post(f"/{periodic_task.task}/periodic/", json=periodic_task_data)
     return RedirectResponse(referer, status_code=status.HTTP_303_SEE_OTHER)

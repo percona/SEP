@@ -8,8 +8,6 @@
     {% endif %}
     {% if tasks %}
         <link rel="stylesheet" href="/static/saved.css">
-    {% endif %}
-    {% if periodic_tasks %}
         <link rel="stylesheet" href="/static/scheduled.css">
         <link rel="stylesheet" href="/static/select2.min.css">
     {% endif %}
@@ -20,15 +18,13 @@
         <script src="/static/logs.js"></script>
     {% endif %}
     {% if tasks %}
-        <script src="/static/saved.js"></script>
-    {% endif %}
-    {% if periodic_tasks %}
         <script>
             const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
             const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
         </script>
         <script src="/static/cronstrue.min.js"></script>
         <script src="/static/select2.min.js"></script>
+        <script src="/static/saved.js"></script>
         <script src="/static/scheduled.js"></script>
     {% endif %}
 {% endblock %}

@@ -59,7 +59,7 @@ RUN chmod +x $APP_HOME/entrypoint.sh
 RUN chmod +x $APP_HOME/entrypoint_celery.sh
 
 # TODO: Always use .env.docker even if there's a .env
-COPY ./.env.docker .env
+COPY ./.env.docker .
 
 # Copy project
 COPY . $APP_HOME

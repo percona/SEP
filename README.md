@@ -14,6 +14,7 @@
          * [Getting your PMM API Key](#getting-your-pmm-api-key)
 * [Usage](#usage)
 * [Alternative: Use Docker Compose](#alternative-use-docker-compose)
+* [Contributing](#contributing)
 
 ## Prerequisites
 

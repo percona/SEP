@@ -2,6 +2,7 @@ x-api-environment:
   environment: &api-environment
     FASTAPI_ENV: production_docker
     LOGGING: info
+    ENV_FILE: .env.docker
 
 x-api-db-environment:
   environment: &api-db-environment
@@ -13,8 +14,7 @@ x-api-db-environment:
     DATABASE__PORT: 5432
     DATABASE__NAME: sep
     CELERY__BROKER_URL: redis://redis:6379/0
-    CELERY__BEAT_DBURI: postgresql://postgres:postgres@sep-db:5432
-    CELERY__BEAT_SCHEMA: sep
+    CELERY__BEAT_DBURI: sqlite:///docker-schedule.db
 
 services:
   casdoor:
@@ -94,6 +94,7 @@ services:
       - casdoor
       - sep-db
       - redis
+      - celery_beat
     environment:
       <<: *api-db-environment
       UVICORN_HOST: tasks_api
@@ -139,3 +140,4 @@ services:
 volumes:
   casdoor-data:
   sep-data:
+  celery-beat-data:

@@ -330,6 +330,7 @@ class Settings(BaseYamlSettings):
         :rtype: Settings
         """
         self.LOGGING_CONFIG["loggers"][""]["level"] = self.LOGGING
+        self.LOGGING_CONFIG["loggers"]["app"]["level"] = self.LOGGING
         return self
 
     @validate_call
