@@ -17,6 +17,24 @@ app.mount("/api/inventory", inventory_app)
 app.mount("/api/tasks", tasks_app)
 app.mount("/", sep_app)
 
+
+def start_celery_worker() -> None:
+    """Start the Celery worker process."""
+    worker = celery_app.Worker(
+        include=["app.tasks.celery"],
+    )
+    worker.start()
+
+
+def start_celery_beat() -> None:
+    """Start the Celery beat process."""
+    beat = celery_app.Beat(
+        scheduler="sqlalchemy",
+        loglevel=settings.LOGGING_CONFIG["loggers"]["celery.beat"]["level"],
+    )
+    beat.run()
+
+
 if __name__ == "__main__":
     import uvicorn
 
@@ -30,19 +48,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.start_celery:
-        worker = celery_app.Worker(
-            include=["app.tasks.celery"],
-        )
-        beat = celery_app.Beat(
-            scheduler="sqlalchemy",
-            loglevel=settings.LOGGING_CONFIG["loggers"]["celery.beat"]["level"],
-        )
         logging.config.dictConfig(settings.LOGGING_CONFIG)
-        celery_worker_process = Process(target=worker.start)
+
+        celery_worker_process = Process(target=start_celery_worker)
         logging.info("Starting Celery worker...")
         celery_worker_process.start()
 
-        celery_beat_process = Process(target=beat.run)
+        celery_beat_process = Process(target=start_celery_beat)
         logging.info("Starting Celery beat for periodic tasks...")
         celery_beat_process.start()
 
