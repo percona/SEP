@@ -44,7 +44,7 @@ run-pre-commit: venv
 
 pip-audit: venv
 	@"${POETRY}" export -f requirements.txt --output requirements.txt
-	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --disable-pip --require-hashes -r requirements.txt; rm requirements.txt
+	@${VENV_BIN}/pip-audit --verbose --progress-spinner=off --disable-pip --require-hashes -r requirements.txt; status=$$?; rm requirements.txt; exit $$status
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
