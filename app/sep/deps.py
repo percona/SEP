@@ -91,7 +91,7 @@ OAuthRedirectException = Annotated[
 ]
 
 
-def get_access_token_from_cookie(  # nosec B107
+def get_access_token_from_cookie(
     oauth_redirect_exception: OAuthRedirectException,
     request: Request,
 ) -> str:
