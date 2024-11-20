@@ -320,8 +320,8 @@
         const hiddenTableInput = document.getElementById("dest_table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
-        updateDestinationFieldset();
         toggleDstFileContainer();
+        updateDestinationFieldset();
         toggleDestTableSelect()
     });
 
@@ -374,6 +374,8 @@
             sourceTableSelect.value = '';
             schemaSelect.removeAttribute('name');
             sourceTableSelect.removeAttribute('name');
+            removeHiddenInput('source_db_id')
+            removeHiddenInput('source_table_id')
         } else {
             schemaSelect.disabled = false;
             sourceTableSelect.disabled = false;
@@ -434,7 +436,7 @@
     }
 
     function toggleDestTableSelect() {
-        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1') {
+        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
             destTableSelect.disabled = true;
             destTableSelect.value = '';
             destTableSelect.removeAttribute('name');
@@ -471,6 +473,7 @@
             extraArgsInput.setAttribute('name', 'extra_args');
             whereInput.setAttribute('required', 'required')
         }
+        toggleOptionalInputNames();
     }
 
     function togglePurgeOptionsContainer() {
@@ -527,6 +530,13 @@
         toggleOptionalInputName(extraArgsInput);
     });
 
+    function toggleOptionalInputNames() {
+        toggleOptionalInputName(useIndexInput);
+        toggleOptionalInputName(limitInput);
+        toggleOptionalInputName(sleepInput);
+        toggleOptionalInputName(extraArgsInput);
+    }
+
     window.addEventListener('DOMContentLoaded', function () {
         if (connectToSelect.options.length === 1) {
             const singleHost = connectToSelect.options[0].value;
@@ -540,9 +550,6 @@
         toggleSwpTableSuffix();
         toggleWhereInput();
         togglePurgeOptionsContainer();
-        toggleOptionalInputName(useIndexInput);
-        toggleOptionalInputName(limitInput);
-        toggleOptionalInputName(sleepInput);
-        toggleOptionalInputName(extraArgsInput);
+        toggleOptionalInputNames();
     });
 </script>
