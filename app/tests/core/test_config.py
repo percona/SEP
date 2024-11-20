@@ -1,12 +1,15 @@
 """Define tests for the app.core.config module."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
     BaseYamlExtraSettings,
+    default_lifespan,
+    Settings,
     YamlPrefixConfigSettingsSource,
 )
 
@@ -153,3 +156,23 @@ def test_settings_customise_sources(
     assert "SSL_CERTFILE" in processed_dotenv_vars
     assert processed_dotenv_vars["SSL_KEYFILE"] == "/path/to/keyfile"
     assert processed_dotenv_vars["SSL_CERTFILE"] == "/path/to/certfile"
+
+
+@pytest.mark.asyncio
+async def test_default_lifespan():
+    """Test default_lifespan manages CASDOOR and closes sessions."""
+    mock_casdoor = AsyncMock()
+    mock_close_extra = AsyncMock()
+
+    with (
+        patch.object(Settings, "close_extra_client_sessions", mock_close_extra),
+        patch("app.core.config.settings.CASDOOR", mock_casdoor),
+    ):
+        app = FastAPI()
+
+        async with default_lifespan(app):
+            pass
+
+    mock_casdoor.__aenter__.assert_called_once()
+    mock_casdoor.__aexit__.assert_called_once()
+    mock_close_extra.assert_called_once()
