@@ -211,17 +211,17 @@ body > header {
 footer {
   text-align: center;
   vertical-align: middle;
+  grid-area: foot;
+  background-color: #2C323E;
+  color: #FFF;
+  padding: 1em;
+  border-bottom: 1em solid white;
+  border-right: 1em solid white;
 }
 
 @media (max-width: 960px) {
   body > footer {
-    grid-area: foot;
-    background-color: #2C323E;
     border-radius: 0 0 4.5em 4.5em;
-    color: #FFF;
-    padding: 1em;
-    border-bottom: 1em solid white;
-    border-right: 1em solid white;
     border-left: 1em solid white;
     z-index: 1;
 }
@@ -229,25 +229,13 @@ footer {
 
 @media (min-width: 961px) {
   body > footer {
-    grid-area: foot;
-    background-color: #2C323E;
     border-radius: 0 0 4.5em 0;
-    color: #FFF;
-    padding: 1em;
-    border-bottom: 1em solid white;
-    border-right: 1em solid white;
 }
 }
 
 @media (min-width: 1281px) {
   body > footer {
-    grid-area: foot;
-    background-color: #2C323E;
     border-radius: 0 0 4.5em 0;
-    color: #FFF;
-    padding: 1em;
-    border-bottom: 1em solid white;
-    border-right: 1em solid white;
 }
 }
 
@@ -317,6 +305,7 @@ body > nav {
     list-style: none;
     line-height: 2em;
     margin-left: -.5em;
+    height: calc(100vh - 240px) !important;
 }
   nav li > a {
     display: block;
@@ -428,7 +417,7 @@ body > nav {
     display: flex;
     opacity: 1;
     pointer-events: auto;
-    z-index: 0;
+    z-index: 1;
 }
     nav.active ul {
       transform: translateX(0);

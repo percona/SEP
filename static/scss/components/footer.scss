@@ -2,17 +2,17 @@
 footer {
 	text-align: center;
 	vertical-align: middle;
+	grid-area: foot;
+	background-color: $secondary-background;
+	color: $white;
+	padding: 1em;
+	border-bottom: 1em solid white;
+	border-right: 1em solid white;
 }
 @media (max-width:960px) {
 	body {
 		>footer {
-			grid-area: foot;
-			background-color: $secondary-background;
 			border-radius: 0 0 4.5em 4.5em;
-			color: $white;
-			padding: 1em;
-			border-bottom: 1em solid white;
-			border-right: 1em solid white;
 			border-left: 1em solid white;
 			z-index: 1;
 		}
@@ -21,26 +21,14 @@ footer {
 @media (min-width:961px) {
 	body {
 		>footer {
-			grid-area: foot;
-			background-color: $secondary-background;
 			border-radius: 0 0 4.5em 0;
-			color: $white;
-			padding: 1em;
-			border-bottom: 1em solid white;
-			border-right: 1em solid white;
 		}
 	}
 }
 @media (min-width:1281px) {
 	body {
 		>footer {
-			grid-area: foot;
-			background-color: $secondary-background;
 			border-radius: 0 0 4.5em 0;
-			color: $white;
-			padding: 1em;
-			border-bottom: 1em solid white;
-			border-right: 1em solid white;
 		}
 	}
 }
