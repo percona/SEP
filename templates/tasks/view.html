@@ -19,14 +19,14 @@
     {% if history or running_tasks %}
         <link rel="stylesheet" href="/static/css/logs.css">
     {% endif %}
-    <link rel="stylesheet" href="/static/saved.css">
+    <link rel="stylesheet" href="/static/css/saved.css">
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
     {% if history or running_tasks %}
         <script src="/static/js/logs.js"></script>
     {% endif %}
-    <script src="/static/saved.js"></script>
+    <script src="/static/js/saved.js"></script>
     <script>
         $(document).ready(function () {
             $('.delete-button').click(function (e) {

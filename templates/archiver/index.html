@@ -7,9 +7,9 @@
         <link rel="stylesheet" href="/static/css/logs.css">
     {% endif %}
     {% if tasks %}
-        <link rel="stylesheet" href="/static/saved.css">
-        <link rel="stylesheet" href="/static/scheduled.css">
-        <link rel="stylesheet" href="/static/select2.min.css">
+        <link rel="stylesheet" href="/static/css/saved.css">
+        <link rel="stylesheet" href="/static/css/scheduled.css">
+        <link rel="stylesheet" href="/static/css/select2.min.css">
     {% endif %}
 {% endblock %}
 
@@ -22,10 +22,10 @@
             const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
             const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
         </script>
-        <script src="/static/cronstrue.min.js"></script>
-        <script src="/static/select2.min.js"></script>
-        <script src="/static/saved.js"></script>
-        <script src="/static/scheduled.js"></script>
+        <script src="/static/js/cronstrue.min.js"></script>
+        <script src="/static/js/select2.min.js"></script>
+        <script src="/static/js/saved.js"></script>
+        <script src="/static/js/scheduled.js"></script>
     {% endif %}
 {% endblock %}
 
