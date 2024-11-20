@@ -34,3 +34,10 @@ def test_lowercase_key_transformation():
 
     with pytest.raises(ValidationError):
         ExampleModel(FIELD_ONE="missing_field", FIELD_THREE=50)
+
+
+def test_non_dict_input_returns_data_as_is():
+    """Test that non-dict input to transform_fields is returned unchanged."""
+    non_dict_input = ["list", "of", "values"]
+    transformed = ExampleModel.transform_fields(non_dict_input)
+    assert transformed == non_dict_input
