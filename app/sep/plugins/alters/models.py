@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from app.core.fields import RequiredStr
+from app.core.utils.fields import RequiredStr
 
 
 class AltersCreate(BaseModel):

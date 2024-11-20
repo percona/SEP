@@ -1,14 +1,4 @@
-"""Define models for the Task API.
-
-Todo:
-----
-  - ensure that we can handle arbitrary parameters for invocation, which should allow mapping
-    to HTML form fields to allow for dynamic rendering when executing a task via the UI
-  - owner of a task, allowing app-only, general use, etc (Casdoor potentially)
-    e.g. owner = tasks, owner = alters, owner = *
-  - scheduled task, which can run at a specific time, or require manual invocation
-
-"""
+"""Define models for the Task API."""
 
 from datetime import datetime
 from enum import auto, StrEnum
@@ -23,7 +13,6 @@ from pydantic import (
     computed_field,
     ConfigDict,
     Field,
-    field_validator,
     model_validator,
 )
 from sqlalchemy import Column, Index, JSON
@@ -33,6 +22,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin
 
 TASK_ALIAS_LENGTH = 100
 
@@ -69,6 +59,22 @@ class TaskHistoryStatusEnum(StrEnum):
     SUCCESS = auto()
 
 
+class TaskOwner(EnumFieldMixin, StrEnum):
+    """Control the choice of task owners.
+
+    :cvar ANY: Value for tasks without owner restrictions.
+    :vartype ANY: str
+    :cvar ALTERS: Value for schema change tasks.
+    :vartype ALTERS: str
+    :cvar ARCHIVER: Value for data archiver tasks.
+    :vartype ARCHIVER: str
+    """
+
+    ANY = "*"
+    ALTERS = auto()
+    ARCHIVER = auto()
+
+
 class TaskExecutionRequest(BaseModel):
     """Represent an execution request.
 
@@ -92,6 +98,7 @@ class TaskExecutionRequest(BaseModel):
     meta: dict | None = {}
     payload: str | None = None
     tracking: dict | None = {"allocation_id": None, "evaluation_id": None}
+    eta: datetime | None = None
 
     @cached_property
     def payload_content(self) -> str | None:
@@ -226,7 +233,7 @@ class GeneratedTask(BaseModel):
     """Represent a generated task.
 
     :param app: The application name associated with the task.
-    :type app: str
+    :type app: TaskOwner
     :param commands: A list of commands to execute the task.
     :type commands: list
     :param name: The task name.
@@ -246,7 +253,7 @@ class GeneratedTask(BaseModel):
     :type template: str
     """
 
-    app: str
+    app: TaskOwner
     commands: list
     name: str
     target: str
@@ -266,8 +273,8 @@ class TaskBase(SQLModel):
     :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to None.
-    :type owner: str | None
+    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+    :type owner: TaskOwner
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
@@ -280,7 +287,12 @@ class TaskBase(SQLModel):
         default=TaskBackendEnum.NOMAD,
         sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
     )
-    owner: str | None = SQLField(default=None, index=True)
+    owner: TaskOwner = SQLField(
+        default=TaskOwner.ANY,
+        sa_column=Column(
+            EnumField(TaskOwner, native_enum=False), nullable=False, index=True
+        ),
+    )
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
 
@@ -299,23 +311,6 @@ class TaskBase(SQLModel):
             raise ValueError("data must contain 'task' for Proxy backend")
         return self
 
-    @field_validator("owner")
-    @classmethod
-    def validate_owner(cls, v: str | None) -> str | None:
-        """Validate the owner field.
-
-        If the owner is set to "*", it is considered as no specific owner and returns
-        None.
-
-        :param v: The owner value to validate.
-        :type v: str | None
-        :return: The validated owner value.
-        :rtype: str | None
-        """
-        if v == "*":
-            return None
-        return v
-
 
 class Task(TaskBase, BaseSQLModel, table=True):
     """Represent a task stored in the database.
@@ -326,8 +321,8 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to None.
-    :type owner: str | None
+    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+    :type owner: TaskOwner
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
@@ -365,8 +360,8 @@ class TaskWrite(TaskBase):
     :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to None.
-    :type owner: str | None
+    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+    :type owner: TaskOwner
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
@@ -383,10 +378,14 @@ class TaskExecuteRequest(BaseModel):
     :param payload: Optional payload data or file path for the task execution.
         Defaults to None.
     :type payload: str | None
+    :param eta: The earliest time the task can be executed. Defaults to None, meaning
+        it will be executed as soon as possible.
+    :type eta: datetime | None
     """
 
     meta: dict[str, Any] = {}
     payload: str | None = None
+    eta: datetime | EmptyStrToNone = None
 
     @model_validator(mode="before")
     @classmethod

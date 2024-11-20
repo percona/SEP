@@ -4,13 +4,12 @@ from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, Self
+from typing import Any, ClassVar, Literal, Self
 from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from pydantic import (
-    AfterValidator,
     AliasGenerator,
     BaseModel,
     computed_field,
@@ -26,16 +25,16 @@ from app.core.config import (
     settings,
 )
 from app.core.db.config import DatabaseOptions
-from app.core.fields import (
+from app.core.models import BaseLowercaseModel
+from app.core.utils import deep_dict_update
+from app.core.utils.fields import (
     RelativeDirectoryPath,
-    remove_duplicates,
     StrImportableAttribute,
     TimedeltaSeconds,
+    UniqueList,
     URIPath,
     URL,
 )
-from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
-from app.core.utils import deep_dict_update
 from app.sep.models import Plugin
 
 
@@ -89,7 +88,7 @@ class OAuthOptions(BaseModel):
         return str(url)
 
 
-class SessionOptions(BaseCaseInsensitiveModel):
+class SessionOptions(BaseModel):
     """Configuration options for a SEP session.
 
     :param COOKIE_NAME: The key of the authentication cookie. Defaults to "authToken".
@@ -156,9 +155,9 @@ class SyncOptions(BaseLowercaseModel):
 class SEPSettings(BaseYamlExtraSettings):
     """Settings for SEP.
 
-    :param SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
+    :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
-    :type SETTINGS_PREFIXES: ClassVar[list[str]]
+    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
     :type UVICORN_PORT: int
     :param OAUTH: OAuth configuration options.
@@ -177,7 +176,7 @@ class SEPSettings(BaseYamlExtraSettings):
     :type TASKS_ENDPOINT: HttpUrl
     :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type PLUGINS: list[Plugin]
+    :type PLUGINS: UniqueList[Plugin]
     :param PROXY_HEADERS: Whether to use proxy headers (like `X-Forwarded-For`).
         Defaults to `False`.
     :type PROXY_HEADERS: bool
@@ -186,7 +185,7 @@ class SEPSettings(BaseYamlExtraSettings):
     :type DATABASE: DatabaseOptions
     :param SYNCERS: A list of synchronizers used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type SYNCERS: list[SyncOptions]
+    :type SYNCERS: UniqueList[SyncOptions]
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty dictionary.
     :type SYNCER_EXTRA_KWARGS: dict[str, Any]
@@ -200,10 +199,10 @@ class SEPSettings(BaseYamlExtraSettings):
     STATIC_DIR: RelativeDirectoryPath = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
-    PLUGINS: Annotated[list[Plugin], AfterValidator(remove_duplicates)] = []
+    PLUGINS: UniqueList[Plugin] = UniqueList()
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
-    SYNCERS: Annotated[list[SyncOptions], AfterValidator(remove_duplicates)] = []
+    SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
 
@@ -236,7 +235,7 @@ class SEPSettings(BaseYamlExtraSettings):
         :return: The updated `SEPSettings` instance with modified `SYNCERS`.
         :rtype: Self
         """
-        syncers = []
+        syncers = UniqueList()
         for syncer in self.SYNCERS:
             syncer_data = deepcopy(self.SYNCER_EXTRA_KWARGS)
             deep_dict_update(syncer_data, syncer.model_dump())

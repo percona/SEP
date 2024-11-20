@@ -1,21 +1,23 @@
 [tool.poetry]
 name = "sep"
-version = "0.0.1"
+version = "0.1.0-alpha"
 description = "SEP: Services Enablement Platform"
 authors = [
     "Ceri Williams <ceri.williams@percona.com>",
     "Max Bubenick <max.bubenick@percona.com>",
+    "Peter Addo <peter.addo@percona.com>",
     "Yan Orestes <yan.orestes@percona.com>",
 ]
 maintainers = [
     "Ceri Williams <ceri.williams@percona.com>",
     "Max Bubenick <max.bubenick@percona.com>",
+    "Peter Addo <peter.addo@percona.com>",
     "Yan Orestes <yan.orestes@percona.com>",
 ]
 readme = "README.md"
 repository = "https://github.com/percona/SEP"
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
     "Framework :: MkDocs",
     "Framework :: Pydantic :: 2",
@@ -24,6 +26,9 @@ classifiers = [
     "Natural Language :: English",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Database",
     "Topic :: System :: Monitoring",
     "Topic :: System :: Systems Administration",
@@ -35,7 +40,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
-aiohttp = "^3.9.4"
+aiohttp = "^3.11.4"
 fastapi = {version = "^0.115.0", extras = ["standard"]}
 idna = "^3.7"
 itsdangerous = "^2.1.2"
@@ -59,15 +64,18 @@ sqlmodel = "^0.0.22"
 async-lru = "^2.0.4"
 python-minifier = "^2.11.2"
 starlette = "^0.40.0"
+celery = "^5.4.0"
+asgiref = "^3.8.1"
+sqlalchemy-celery-beat = "0.8.0"
 
 [tool.poetry.group.audit]
 optional = true
 
 [tool.poetry.group.audit.dependencies]
-ruff = "^0.7.0"
 pip-audit = "^2.7.3"
 bandit = {extras = ["toml"], version = "^1.7.9"}
 poetry-plugin-export = "^1.8.0"
+ruff = "^0.7.2"
 
 
 [tool.poetry.group.mysql]
@@ -76,15 +84,38 @@ optional = true
 [tool.poetry.group.mysql.dependencies]
 aiomysql = "^0.2.0"
 
+[tool.poetry.group.syncmysql]
+optional = true
+
+[tool.poetry.group.syncmysql.dependencies]
+pymysql = "^1.1.1"
+
 [tool.poetry.group.postgresql]
 optional = true
 
 [tool.poetry.group.postgresql.dependencies]
 asyncpg = "^0.29.0"
 
+[tool.poetry.group.syncpostgresql]
+optional = true
+
+[tool.poetry.group.syncpostgresql.dependencies]
+psycopg2 = "^2.9.10"
+
+[tool.poetry.group.redis]
+optional = true
+
+[tool.poetry.group.redis.dependencies]
+redis = ">=4.5.2,<4.5.5 || >4.5.5,<6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
+pytest = "^8.3.3"
+pytest-cov = "^6.0.0"
+pytest-mock = "^3.14.0"
+faker = "^30.8.2"
+polyfactory = "^2.18.0"
+pytest-asyncio = "^0.24.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -95,7 +126,8 @@ exclude_dirs = [
     ".git",
     ".github",
     "build",
-    "venv"
+    "venv",
+    "app/tests/",
 ]
 
 [tool.ruff]
@@ -109,6 +141,7 @@ extend-exclude = [
     "etc",
     "app/*/migrations/*",
     "payload.py",
+    "payload",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"
@@ -195,9 +228,34 @@ order-by-type = false
     "N802",
 ]
 "app/core/config.py" = ["ARG003"]
+"app/tasks/celery.py" = ["ARG001"]
+"test_*.py" = ["S", "ARG001", "ARG002", "PLR0913", "ANN"]
+"conftest.py" = ["S", "ARG001", "ARG002", "PLR0913"]
+
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/tests/*",
+    "__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.tox]
+env_list = ["3.11", "3.12", "3.13"]
+
+[tool.tox.env_run_base]
+allowlist_externals = ["make"]
+commands = [["make", "test"]]

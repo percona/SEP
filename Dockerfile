@@ -14,12 +14,12 @@ ENV PYTHONUNBUFFERED 1
 ENV FASTAPI_ENV production_docker
 
 # Install system dependencies
-RUN apk update && apk add --no-cache gcc
+RUN apk update && apk add --no-cache build-base libpq libpq-dev python3-dev
 
 # Export requirements
 RUN pip install --no-cache-dir wheel poetry==1.8.3 poetry-plugin-export
 COPY ./pyproject.toml ./poetry.lock /usr/src/sep/
-RUN poetry export --with postgresql -f requirements.txt --output requirements.txt
+RUN poetry export --with postgresql --with redis -f requirements.txt --output requirements.txt
 
 # Build Wheel archives for requirements
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.txt
@@ -46,7 +46,7 @@ RUN mkdir $APP_HOME
 WORKDIR $APP_HOME
 
 # Install dependencies
-RUN apk update && apk add --no-cache netcat-openbsd
+RUN apk update && apk add --no-cache build-base libpq libpq-dev python3-dev netcat-openbsd
 COPY --from=builder /usr/src/sep/wheels /wheels
 COPY --from=builder /usr/src/sep/requirements.txt .
 RUN pip install --no-cache-dir wheel
@@ -54,10 +54,12 @@ RUN pip install --no-cache-dir /wheels/*
 
 # Copy entrypoint.sh
 COPY ./entrypoint.sh .
+COPY ./entrypoint_celery.sh .
 RUN chmod +x $APP_HOME/entrypoint.sh
+RUN chmod +x $APP_HOME/entrypoint_celery.sh
 
 # TODO: Always use .env.docker even if there's a .env
-COPY ./.env.docker .env
+COPY ./.env.docker .
 
 # Copy project
 COPY . $APP_HOME

@@ -13,7 +13,9 @@
       * [PMMSyncer](#pmmsyncer)
          * [Getting your PMM API Key](#getting-your-pmm-api-key)
 * [Usage](#usage)
+  * [Starting Celery with SEP for development](#starting-celery-with-sep-for-development)
 * [Alternative: Use Docker Compose](#alternative-use-docker-compose)
+* [Contributing](#contributing)
 
 ## Prerequisites
 
@@ -48,6 +50,20 @@ sudo nomad agent -node="pmm-server" -dev \
         -network-interface='{{ GetDefaultInterfaces | attr "name" }}'
 ```
 
+- [Celery](https://docs.celeryq.dev/en/stable/)
+
+You can start the Celery Worker with:
+```shell
+celery -A app.tasks.celery worker -l info
+```
+
+and the Celery Beart with:
+```shell
+celery -A app.tasks.celery beat -S sqlalchemy --loglevel=info
+```
+
+For development purposes, you can also [start Celery with SEP](#starting-celery-with-sep-for-development).
+
 ## Setup
 
 1. Clone the repository and enter the cloned folder:
@@ -70,20 +86,7 @@ source venv/bin/activate
 make migrate
 ```
 
-4. Download your Casdoor certificate
-
-In Casdoor's web interface, navigate to Identity > Certs > cert-built-in
-(should be in [this link](http://localhost:9999/certs/admin/cert-built-in)) and click on
-the **Download certificate** button. Save the `token_jwt_key.pem` file in the **SEP/data/certs/casdoor** folder.
-
-![image](https://github.com/user-attachments/assets/fbacba5d-4f08-4331-b54f-985015f750ac)
-
-> [!TIP]
-> You can store your cert file with any other name or in any other folder by adding the
-> setting `CERTIFICATE_PATH` in the `CASDOOR` section in `settings.yaml`, or the
-> `CASDOOR__CERTIFICATE_PATH` in your env vars/.env.
-
-5. Add your Redirect URL to the Casdoor application
+4. Add your Redirect URL to the Casdoor application
 
 In Casdoor's web interface, navigate to Identity > Applications > app-built-in
 (should be in [this link](http://localhost:9999/applications/built-in/app-built-in))
@@ -103,43 +106,50 @@ See the [secrets section](#secrets) of the README for more details.
 SEP will read settings in the following order of priority:
 1. Environment variables
 2. .env file
-3. settings.yaml
+3. Settings file
+
+By default, the .env file is expected to be `.env` and the settings file `settings.yaml`.
+You can change that by using the environment variables `ENV_FILE` and `SETTINGS_FILE`.
 
 The [settings.yaml](https://github.com/percona/SEP/blob/main/settings.yaml) has base settings that you can (but don't need to) change.
 
 Some settings are app-specific and you might not need them for running another app.
-These are the possible settings you can have, per app:
+These are some, but not all, the possible settings you can have, per app:
 
 
-| Name                       | App       | Required | Default                                             | settings.yaml                                  |
-|----------------------------|-----------|----------|-----------------------------------------------------|------------------------------------------------|
-| BASE_URI                   | all       | yes      | N/A                                                 | N/A                                            |
-| CASDOOR__ENDPOINT          | all       | yes      | N/A                                                 | N/A                                            |
-| CASDOOR__CERTIFICATE_PATH  | all       | yes      | N/A                                                 | data/certs/token_jwt_key.pem                   |
-| CASDOOR__ORGANIZATION_NAME | all       | no       | built-in                                            | N/A                                            |
-| CASDOOR__APPLICATION_NAME  | all       | no       | app-built-in                                        | N/A                                            |
-| AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                         |
-| LOGGING                    | all       | no       | WARNING                                             | N/A                                            |
-| BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000] |
-| TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                          |
-| TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                            |
-| TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | N/A                                            |
-| TASKS__NOMAD__VERIFY       | tasks     | no       | False                                               | N/A                                            |
-| TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                            |
-| TASKS__DATABASE__ENGINE    | tasks     | no       | sqlite                                              | N/A                                            |
-| TASKS__DATABASE__NAME      | tasks     | no       | tasks.db                                            | N/A                                            |
-| TASKS__DATABASE__USER      | tasks     | no       | N/A                                                 | N/A                                            |
-| TASKS__DATABASE__PASSWORD  | tasks     | no       | N/A                                                 | N/A                                            |
-| TASKS__DATABASE__HOST      | tasks     | no       | N/A                                                 | N/A                                            |
-| TASKS__DATABASE__PORT      | tasks     | no       | N/A                                                 | N/A                                            |
-| SEP__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory            |
-| SEP__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                |
-| SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback           |
-| SEP__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                            |
-| SEP__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                            |
-| SEP__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                   |
-| SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                      |
-| SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                            |
+| Name                       | App       | Required | Default                                             | settings.yaml (development)                      |
+|----------------------------|-----------|----------|-----------------------------------------------------|--------------------------------------------------|
+| BASE_URI                   | all       | no       | Built from the user's request                       | N/A                                              |
+| CASDOOR__ENDPOINT          | all       | yes      | N/A                                                 | `http://localhost:9999`                          |
+| CASDOOR__FRONT_ENDPOINT    | all       | no       | The same as `CASDOOR__ENDPOINT`                     | N/A                                              |
+| CASDOOR__CERTIFICATE_PATH  | all       | no       | N/A                                                 | N/A                                              |
+| CASDOOR__ORGANIZATION_NAME | all       | no       | built-in                                            | N/A                                              |
+| CASDOOR__APPLICATION_NAME  | all       | no       | app-built-in                                        | N/A                                              |
+| CASDOOR__ALLOWED_ISSUERS   | all       | no       | `[CASDOOR__ENDPOINT]`                               | `[http://localhost:9999, http://127.0.0.1:9999]` |
+| CELERY__BROKER_URL         | all       | no       | N/A                                                 | filesystem://                                    |
+| CELERY__BEAT_DBURI         | all       | no       | N/A                                                 | sqlite:///schedule.db                            |
+| AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                           |
+| LOGGING                    | all       | no       | WARNING                                             | N/A                                              |
+| BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
+| TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |
+| TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                              |
+| TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | N/A                                              |
+| TASKS__NOMAD__VERIFY       | tasks     | no       | False                                               | N/A                                              |
+| TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                              |
+| TASKS__DATABASE__ENGINE    | tasks     | no       | sqlite                                              | N/A                                              |
+| TASKS__DATABASE__NAME      | tasks     | no       | tasks.db                                            | N/A                                              |
+| TASKS__DATABASE__USER      | tasks     | no       | N/A                                                 | N/A                                              |
+| TASKS__DATABASE__PASSWORD  | tasks     | no       | N/A                                                 | N/A                                              |
+| TASKS__DATABASE__HOST      | tasks     | no       | N/A                                                 | N/A                                              |
+| TASKS__DATABASE__PORT      | tasks     | no       | N/A                                                 | N/A                                              |
+| SEP__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
+| SEP__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
+| SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback             |
+| SEP__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                              |
+| SEP__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
+| SEP__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                     |
+| SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
+| SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
 
 
 Path settings (`CASDOOR__CERTIFICATE_PATH`, `TEMPLATES_DIR`, `STATIC_DIR`, etc.) may have
@@ -273,6 +283,14 @@ SEP will be available in http://localhost:8000.
 
 ![image](https://github.com/user-attachments/assets/cec67a8e-341a-45d5-9144-e6c24f5128eb)
 
+
+### Starting Celery with SEP for development
+
+For development environments, you can start the Celery Worker and the Celery Beat with SEP by using the `--start-celery` flag:
+```shell
+LOGGING=debug python3 -m app.main --start-celery
+```
+
 ## Alternative: Use Docker Compose
 
 You can also run sep with Docker Compose by following these steps:
@@ -357,3 +375,7 @@ docker compose up
 
 SEP will be available in https://localhost.
 You can stop SEP with CTRL-C and later start it again with `docker compose up`.
+
+## Contributing
+
+See our [CONTRIBUTING](https://github.com/percona/SEP/blob/main/CONTRIBUTING.md) guide.

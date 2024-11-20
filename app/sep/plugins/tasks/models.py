@@ -4,8 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.core.fields import RequiredStr
-from app.tasks.models import TaskBackendEnum
+from app.core.utils.fields import RequiredStr
+from app.tasks.models import TaskBackendEnum, TaskOwner
 
 
 class TaskCreateRequest(BaseModel):
@@ -21,10 +21,11 @@ class TaskCreateRequest(BaseModel):
     :param backend: The backend system to use for task execution.
     :type backend: TaskBackendEnum
     :param owner: The owner of the task.
+    :type owner: TaskOwner
     """
 
     name: RequiredStr
     payload: RequiredStr  # TODO: Validate trying to parse  # noqa: TD002, TD003
     fmt: Literal["hcl", "json", "yaml"]
     backend: TaskBackendEnum
-    owner: RequiredStr
+    owner: TaskOwner

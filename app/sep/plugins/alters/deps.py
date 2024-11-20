@@ -16,7 +16,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task
+from app.tasks.models import GeneratedTask, Task, TaskOwner
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ async def build_alters_task_payload(
         args.append(f"--progress={form.progress}")
 
     return GeneratedTask(
-        app="alters",
+        app=TaskOwner.ALTERS,
         commands=[
             {
                 "args": [*args, "--execute"],
@@ -140,11 +140,10 @@ async def get_alters_task(
     :rtype: Task
     :raises HTTPNotFoundException: If the task is not found or is not owned by Alters.
     """
-    # TODO: Consider getting owner name from plugin MODULE_NAME  # noqa: TD002, TD003
-    return await get_task_by_name(tasks_api, task_name, "alters")
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.ALTERS)
 
 
-AltersTask = Annotated[dict, Depends(get_alters_task)]
+AltersTask = Annotated[Task, Depends(get_alters_task)]
 
 
 def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
@@ -184,5 +183,5 @@ async def get_alters_index_context(
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        inventory_api, tasks_api, get_alters_task_info, context, "alters"
+        inventory_api, tasks_api, get_alters_task_info, context, TaskOwner.ALTERS
     )

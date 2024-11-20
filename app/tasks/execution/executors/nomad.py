@@ -22,9 +22,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.utils import async_run, b64encode_str, minify_file_content, sort_dict
+from app.core.utils import async_run, b64encode_str, sort_dict
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution.utils import minify_file_content
 from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :type ssl_keyfile: RelativeFilePath | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :type ssl_certfile: RelativeFilePath | None
+    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
     :type secure: bool
     :param timeout: The timeout in seconds for requests to the Nomad API.

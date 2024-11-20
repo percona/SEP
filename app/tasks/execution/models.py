@@ -9,14 +9,14 @@ from typing import Any
 import yaml
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.models import BaseLowercaseModel
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import async_run
 from app.tasks.models import Task, TaskHistory, TaskLog
 
 logger = logging.getLogger(__name__)
 
 
-class BaseExecutor(BaseLowercaseModel, ABC):
+class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     """Define the blueprint of a task executor.
 
     :param wait_interval: The interval in seconds between status checks.

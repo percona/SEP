@@ -20,12 +20,17 @@
     {% if history_tasks or running_tasks %}
         <link rel="stylesheet" href="/static/css/logs.css">
     {% endif %}
+    {% if tasks %}
+        <link rel="stylesheet" href="/static/saved.css">
+    {% endif %}
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
     {% if history_tasks or running_tasks %}
-        <script>const logsPath = "/alters/logs/";</script>
         <script src="/static/js/logs.js"></script>
+    {% endif %}
+    {% if tasks %}
+        <script src="/static/saved.js"></script>
     {% endif %}
 {% endblock %}
 

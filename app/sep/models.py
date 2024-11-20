@@ -10,9 +10,9 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db.models import BaseUUIDSQLModel
-from app.core.fields import RequiredStr, StrImportableModule, URIPath
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import slugify
+from app.core.utils.fields import RequiredStr, StrImportableModule, URIPath
 
 
 class Plugin(BaseCaseInsensitiveModel):

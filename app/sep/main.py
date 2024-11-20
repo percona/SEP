@@ -1,8 +1,8 @@
 """Define SEP routes."""
 
-import logging
+import logging.config
 
-from fastapi import FastAPI, Request, status
+from fastapi import Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from jwt import InvalidTokenError
 from pydantic import ValidationError
@@ -10,7 +10,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
-from app.core.config import default_lifespan, settings
+from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var
 from app.sep.config import sep_settings
@@ -25,7 +25,8 @@ from app.sep.deps import (
 
 logger = logging.getLogger(__name__)
 
-sep_app = FastAPI(lifespan=default_lifespan) if __name__ == "__main__" else FastAPI()
+lifespan = default_lifespan if __name__ == "__main__" else None
+sep_app = create_app(lifespan=lifespan)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 imported_plugins = set()
@@ -35,9 +36,11 @@ for plugin in sep_settings.PLUGINS:
     imported_plugins.add(plugin.module_name.split(".")[-1])
 
 if {"alters", "archives", "tasks"} & imported_plugins:
+    from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
+    sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
 User = get_user_model()
 templates = sep_settings.TEMPLATES
@@ -131,13 +134,7 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
 # TODO: take all these logics from routes layer  # noqa: TD002, TD003
 
 if __name__ == "__main__":
-    # TODO: Rich formatting and custom logging handlers  # noqa: TD002, TD003
-    logging.basicConfig(
-        level=settings.LOGGING,
-        format="%(asctime)s %(levelname)s:%(name)s: PID<%(process)d> %(module)s.%(funcName)s - %(message)s",
-    )
-    for name, level in settings.LOGGING_EXTRA.items():
-        logging.getLogger(name).setLevel(level)
+    logging.config.dictConfig(settings.LOGGING_CONFIG)
 
     import uvicorn
 
@@ -148,4 +145,5 @@ if __name__ == "__main__":
         proxy_headers=sep_settings.PROXY_HEADERS,
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,
+        log_config=settings.LOGGING_CONFIG,
     )

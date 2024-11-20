@@ -1,19 +1,16 @@
 """Define database initialization and utility functions for the Tasks API."""
 
 import json
-import logging
 from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import select
 
-from app.core.db.utils import get_async_session_maker_from_engine, json_serializer
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.utils import json_serializer
 from app.tasks.config import tasks_settings
 from app.tasks.models import Task, TaskExecutionRequest
-
-logger = logging.getLogger(__name__)
 
 
 def json_deserialize(raw_data: str) -> Any:
@@ -219,24 +216,3 @@ def get_async_session_maker() -> sessionmaker:
     :rtype: sessionmaker
     """
     return get_async_session_maker_from_engine(engine)
-
-
-async def init_tasks_db() -> None:
-    """Initialize the database with generic Nomad task templates.
-
-    If the generic task templates for 'batch' or 'sysbatch' do not exist in the
-    database, this function will add them.
-    """
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        for task in SYSTEM_TASKS:
-            result = await session.exec(
-                select(Task).where(Task.name == task.name),
-            )
-            if result.first() is None:
-                logger.debug(
-                    "Creating task %s",
-                    task.name,
-                )
-                session.add(task)
-        await session.commit()

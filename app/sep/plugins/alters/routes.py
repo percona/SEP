@@ -3,8 +3,9 @@
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -97,10 +98,12 @@ async def alters_detail(
 async def alters_execute(
     task: AltersTask,
     tasks_api: TaskAPI,
+    eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute alters task."""
     await tasks_api.post(
-        f"/execute/{task.name}"
+        f"/execute/{task.name}",
+        json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 

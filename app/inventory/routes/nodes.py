@@ -2,11 +2,11 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPBadRequestException
-from app.core.fields import RequiredStr
+from app.core.utils.fields import RequiredStr
 from app.inventory.crud import NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
 from app.inventory.models import (
@@ -22,7 +22,7 @@ from app.inventory.models import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["nodes"])
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
@@ -58,7 +58,9 @@ async def retrieve_node(session: SessionDep, node_id: int) -> NodeResponse:
     )
 
 
-@router.post("/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
+)
 async def create_node(session: SessionDep, node: NodeWrite) -> Node:
     """Create Node."""
     logger.debug("Creating node %s", node)
@@ -76,11 +78,15 @@ async def update_node(
     return await NodeManager.update(session, existing_node, updated_node)
 
 
-@router.delete("/{node_id}", dependencies=[IsAuthenticatedDep])
-async def delete_node(session: SessionDep, node: NodeDep) -> NodeResponse:
+@router.delete(
+    "/{node_id}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_node(session: SessionDep, node: NodeDep) -> None:
     """Delete Node."""
     logger.debug("Deleting node %s", node.id)
-    return await NodeManager.delete(session, node)
+    await NodeManager.delete(session, node)
 
 
 @router.get("/{node_id}/services/", dependencies=[IsAuthenticatedDep])
@@ -103,7 +109,11 @@ async def list_services_by_node(
     )
 
 
-@router.post("/{node_id}/services/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/{node_id}/services/",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_service_for_node(
     session: SessionDep,
     node: NodeDep,

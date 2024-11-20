@@ -1,0 +1,192 @@
+#period-header {
+    width: 250px;
+}
+
+#scheduled-tasks-table.create-mode #start-time-header,
+#scheduled-tasks-table.create-mode #expires-header {
+    width: 225px;
+}
+
+#scheduled-tasks-table.create-mode #last-run-at-header {
+    width: 200px;
+}
+
+#scheduled-tasks-table.create-mode .hide-on-create-mode{
+    display: none;
+}
+
+#scheduled-tasks-table:not(.create-mode) .show-on-create-mode{
+    display: none;
+}
+
+.period-inputs select {
+    height: 28px;
+}
+
+.period-inputs input {
+    height: 28px;
+    margin-right: 10px;
+}
+
+.actions-cell {
+    align-items: center;
+}
+
+.enable-toggle {
+    display: flex;
+    align-items: center;
+}
+
+.enable-form {
+    padding-left: 0.5em;
+}
+
+.toggle-label {
+    margin-left: 0.5em;
+    color: #2C323E;
+    font-weight: bold;
+    font-size: 1em;
+    cursor: default;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.switch input {
+    display: none;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.1s;
+    border-radius: 24px;
+}
+
+.slider.round {
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.2s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #1060FF;
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 1px #1060FF;
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+
+.period-cell {
+    position: relative;
+}
+
+.new-periodic-task-form {
+    margin: 0;
+    padding: 0;
+}
+
+.new-periodic-task-row input,
+.new-periodic-task-row select {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.new-periodic-task-row .actions-cell,
+#add-periodic-task-row .actions-cell {
+    display: flex;
+    align-items: center;
+    padding: 1em;
+}
+
+.new-periodic-task-row .save-button,
+.new-periodic-task-row .discard-button {
+    margin-right: 0.5em;
+}
+
+.start-time-input,
+.expires-input {
+    padding: 0.5em;
+    margin-right: 0.5em;
+    border: 0.2em solid #F0F1F4;
+    border-radius: 2em;
+    font-size: 1em;
+}
+
+.interval-inputs {
+    display: flex;
+}
+
+.cron-inputs {
+    display: flex;
+    flex-direction: column;
+}
+
+.interval-inputs input[type="number"],
+.cron-inputs input[type="text"] {
+    width: 100px;
+    margin-bottom: 0.5em;
+}
+
+.cron-description {
+    font-style: italic;
+    font-size: 10px;
+    color: #555;
+}
+
+.invalid {
+    border-color: red;
+}
+
+.change-to-cron,
+.change-to-interval {
+    font-size: 0.9em;
+    color: #1060FF;
+    cursor: pointer;
+    text-decoration: underline;
+    margin-top: 0.5em;
+    display: inline-block;
+}
+
+.highlighted-row {
+    animation: highlight-animation 3s ease-in-out;
+}
+
+@keyframes highlight-animation {
+    0% { background-color: #ffffcc; }
+    100% { background-color: transparent; }
+}
+
+.disabled-row {
+    background-color: #f0f0f0;
+}
+.hidden {
+    display: none;
+}
+
+.select2-container {
+    font-size: 10px;
+}
