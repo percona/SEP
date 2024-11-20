@@ -1,0 +1,159 @@
+.log-console {
+    border: 1px solid #333;
+    font-family: monospace;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+}
+
+.log-top-bar, .log-bottom-bar {
+    display: flex;
+    align-items: center;
+    background-color: #f5f5f5;
+}
+
+.log-top-bar {
+    border-bottom: 1px solid #444;
+    padding: 0.5em;
+}
+
+.log-bottom-bar {
+    border-top: 1px solid #444;
+    padding: 0.5em;
+}
+
+.log-tabs {
+    display: flex;
+}
+
+.log-tabs a {
+    text-decoration: none;
+    font-weight: bold;
+    padding: 0.5em 1em;
+    border: 1px solid transparent;
+    border-bottom: none;
+    background-color: #fff;
+    margin-right: 0.5em;
+}
+
+.log-tabs a.selected {
+    color: #fff;
+    background-color: #93C7FF;
+    border: 1px solid #444;
+    border-bottom: 1px solid #1e1e1e;
+}
+
+.word-wrap-toggle {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+}
+
+.toggle-label {
+    margin-left: 0.5em;
+    color: #2C323E;
+    font-weight: bold;
+    font-size: 1em;
+    cursor: default;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.switch input {
+    display: none;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.1s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.2s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #1060FF;
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 1px #1060FF;
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+
+.log-content {
+    max-height: 400px;
+    overflow: auto;
+}
+
+.log-output {
+    display: none;
+    padding: 1em;
+    white-space: pre;
+    font-size: 1em;
+    line-height: 1.4em;
+}
+
+.log-output.word-wrap {
+    white-space: pre-wrap;
+}
+
+.logs-button {
+    width: 2em;
+}
+
+.log-step-tab:hover, .log-type-tab:hover {
+    border: 1px solid #444;
+    border-bottom: 1px solid #1e1e1e;
+}
+
+.log-console.completed {
+    border: 2px solid #8ACE00;
+}
+
+.tab-notification {
+    position: relative;
+}
+
+.tab-notification::after {
+    content: '';
+    display: block;
+    position: absolute;
+    top: 5px;
+    right: -5px;
+    height: 8px;
+    width: 8px;
+    background-color: red;
+    border-radius: 50%;
+}
+
+.unselectable {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}

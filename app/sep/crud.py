@@ -5,7 +5,7 @@ from typing import Any
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.db.crud import BaseManager
+from app.core.db.crud import BaseSQLModelManager
 from app.sep.models import (
     SyncInstance,
     SyncInstanceWrite,
@@ -20,7 +20,7 @@ from app.sep.sync.exceptions import (
 )
 
 
-class SyncItemManager(BaseManager):
+class SyncItemManager(BaseSQLModelManager):
     """Manage SyncItem operations, including creation, retrieval, and synchronization.
 
     This manager handles operations related to `SyncItem` models, such as creating new
@@ -70,42 +70,6 @@ class SyncItemManager(BaseManager):
         ):  # TODO: timeout for deleting old syncs  # noqa: TD002, TD003
             raise SyncItemAlreadyInProgressError(sync_in_progress)
         return await super().create(session, instance_create, **extra_fields)
-
-    @classmethod
-    async def get_or_create(
-        cls,
-        session: AsyncSession,
-        instance_create: SyncItemWrite,
-        **extra_fields: Any,
-    ) -> tuple[SyncItem, bool]:
-        """Retrieve an existing SyncItem or create a new one if none exists.
-
-        This method attempts to find a `SyncItem` with the specified `entity_id`,
-        `entity_type`, and `sync_instance_id` that is either pending or running.
-        If such an item exists, it returns it. Otherwise, it creates and saves a new
-        `SyncItem`.
-
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
-        :param instance_create: The data used to create the new SyncItem if none exists.
-        :type instance_create: SyncItemWrite
-        :param extra_fields: Additional fields to be set on the SyncItem.
-        :type extra_fields: Any
-        :return: The existing or newly created SyncItem, and a bool specifying whether a
-            new SyncItem was created.
-        :rtype: tuple[SyncItem, bool]
-        """
-        sync_in_progress = await cls.first(
-            session,
-            status=SyncStatusEnum.PENDING,
-            entity_id=instance_create.entity_id,
-            entity_type=instance_create.entity_type,
-            sync_instance_id=instance_create.sync_instance_id,
-        )
-        if sync_in_progress:
-            return sync_in_progress, False
-        return await super().create(session, instance_create, **extra_fields), True
 
     @classmethod
     async def sync_is_running(
@@ -205,7 +169,7 @@ class SyncItemManager(BaseManager):
         return await cls.finish_sync(session, instance, SyncStatusEnum.FAILED)
 
 
-class SyncInstanceManager(BaseManager):
+class SyncInstanceManager(BaseSQLModelManager):
     """Manage SyncInstance operations, including creation, retrieval, and validation.
 
     This manager handles operations related to `SyncInstance` models, such as creating

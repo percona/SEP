@@ -8,9 +8,9 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 
-from app.api.exceptions import InactiveUserException
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
+from app.core.exceptions import InactiveUserException
 
 logger = logging.getLogger(__name__)
 User = get_user_model()

@@ -10,13 +10,21 @@ else
     VENV?=venv
 endif
 VENV_BIN?="${VENV}/bin"
+ifdef POETRY
+	START_PKGS=pip wheel
+	VIRTUAL_ENV=$$("${POETRY}" env info --path)
+	VENV=${VIRTUAL_ENV}
+	VENV_BIN="${VENV}/bin"
+else
+	START_PKGS=pip wheel poetry
+	POETRY="${VENV_BIN}/poetry"
+endif
 PIP?="${VENV_BIN}/pip"
-POETRY?="${VENV_BIN}/poetry"
 APPS=tasks inventory sep
 
 venv: pyproject.toml poetry.lock
 	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
-	@"${PIP}" install --no-cache -U pip wheel poetry;
+	@"${PIP}" install --no-cache ${START_PKGS};
 	@source "${VENV_BIN}"/activate; "${POETRY}" install --with audit
 
 build: venv app/
@@ -29,18 +37,21 @@ lint: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
-audit: lint bandit pip-audit
+audit: run-pre-commit bandit pip-audit
+
+run-pre-commit: venv
+	@"${VENV_BIN}"/pre-commit run --all-files
 
 pip-audit: venv
 	@"${POETRY}" export -f requirements.txt --output requirements.txt
-	@"${VENV_BIN}"/pip-audit --verbose --progress-spinner=off --disable-pip --require-hashes -r requirements.txt; rm requirements.txt
+	@${VENV_BIN}/pip-audit --verbose --progress-spinner=off --disable-pip --require-hashes -r requirements.txt; status=$$?; rm requirements.txt; exit $$status
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
 
 makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py
 	@for app in $(APPS); do \
-		capitalized=$${app^}; \
+		capitalized=$$(echo $$app | sed 's/^./\U&/'); \
 		echo "Checking migrations for $$capitalized"; \
 		"${VENV_BIN}"/alembic --name $$app check > alembic_check.log 2>&1 || { \
 			if grep -q "Target database is not up to date" alembic_check.log; then \
@@ -71,3 +82,6 @@ migrate: venv alembic.ini app/tasks/migrations/versions
 
 compile-css: venv
 	@source "${VENV_BIN}"/activate; "${PYTHON}" compile_scss.py
+
+test: venv
+	@"${VENV_BIN}"/pytest -v --cov=app app/tests/

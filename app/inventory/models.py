@@ -10,7 +10,7 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
-from app.core.fields import RequiredStr
+from app.core.utils.fields import RequiredStr
 
 
 class SourceEnum(StrEnum):

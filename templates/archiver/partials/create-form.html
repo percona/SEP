@@ -1,67 +1,195 @@
-{% from tornado.escape import xhtml_unescape %}
 {% set form_class = "modal" if modal_required else "" %}
 <form action="" method="post" class="{{ form_class }}">
+    <legend>Main options</legend>
     <fieldset>
-        <legend>Archive type</legend>
-        <label for="archive_type_where">Where</label>
-        <input type="radio" id="archive_type_where" name="archive_type" value="where" checked/>
-        <!--
-        <label for="archive_type_swap">Swap and drop</label>
-        <input type="radio" id="archive_type_swap" name="archive_type_swap" value="swap" readonly />
-        -->
+        <legend>Executor Host</legend>
+        <label for="hostname">Select host</label>
+        {% if executor_hosts|length == 1 %}
+            {% set single_service = executor_hosts[0] %}
+            <select id="hostname" name="hostname" disabled>
+                <option value="{{ single_service }}" selected>{{ single_service }}</option>
+            </select>
+            <input type="hidden" name="hostname" value="{{ single_service }}">
+        {% else %}
+            <select id="hostname" name="hostname">
+                {% for executor_host in executor_hosts %}
+                <option value="{{ executor_host }}">{{ executor_host }}</option>
+                {% endfor %}
+            </select>
+        {% endif %}
     </fieldset>
     <fieldset>
         <legend>Source details</legend>
-        <label for="task_name">Task name
-            <input type="text" id="task_name" name="task_name" class="validate"/>
+        <label for="alias">Task name
+            <input type="text" id="alias" name="alias" class="validate" required/>
         </label>
-        <label for="hostname">Select host
-            <select id="hostname" name="hostname">
-                {% for host in hosts %}
-                <option value="{{ host['name'] }}">{{ host['name'] }}</option>
-                {% end %}
+        <label for="service_id">Select a database host
+        {% if mysql_services|length == 1 %}
+            {% set single_service = mysql_services[0] %}
+            <select id="service_id" name="service_id" disabled>
+                <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
             </select>
+            <input type="hidden" name="service_id" value="{{ single_service.id }}">
+        {% else %}
+            <select id="service_id" name="service_id">
+                <option value="" selected>Select a database host</option>
+                {% for service in mysql_services %}
+                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                {% endfor %}
+            </select>
+        {% endif %}
         </label>
-        <fieldset>
-            <legend>Type</legend>
-            <label for="source_type_table">Table
-                <input type="radio" id="source_type_table" name="source_type" value="table" checked/>
-            </label>
-            <!--
-            <label for="source_type_query">Query</label>
-            <input type="radio" id="source_type_query" name="source_type" value="query" readonly />
-            -->
-        </fieldset>
         <fieldset>
             <legend>Data</legend>
-            <label for="sourcedb">Schema
-                <input type="text" id="sourcedb" name="sourcedb" class="validate"/>
+            <label for="source_db_id">Schema
+                <select id="source_db_id" name="source_db_id" class="validate" disabled required>
+                    <option value="">Select a schema</option>
+                </select>
             </label>
-            <label for="sourcetbl">Table
-                <input type="text" id="sourcetbl" name="sourcetbl" class="validate"/>
+            <label for="source_table_id">Table
+                <select id="source_table_id" name="source_table_id" class="validate" disabled required>
+                    <option value="">Select a table</option>
+                </select>
             </label>
             <label for="where">Where condition
-                <input type="text" id="where" name="where" class="validate"/>
+                <input type="text" id="where" name="where" class="validate" required/>
             </label>
         </fieldset>
     </fieldset>
     <fieldset>
         <legend>Destination details</legend>
-        <fieldset>
-            <legend>Type</legend>
-            <label for="dest_type_table">Table
-                <input type="radio" id="dest_type_table" name="dest_type" value="table" checked/>
-            </label>
-            <!--
-            <label for="dest_type_file">File</label>
-            <input type="radio" id="dest_type_file" name="dest_type" value="file" checked />
-            -->
-        </fieldset>
-        <label for="dest_name">Name
-            <input type="text" id="dest_name" name="dest_name" class="validate"/>
+        <label for="dest_table_id">Name
+            <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
+                <option value="">Select a table</option>
+            </select>
         </label>
     </fieldset>
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
-    {% apply xhtml_unescape %} {{ xsrf_form_html() }} {% end %}
 </form>
+
+{% set serviceSchemas = {} %}
+{% for service in mysql_services %}
+    {% set schemas = {} %}
+    {% for schema in service.schemas %}
+        {% set tables = {} %}
+        {% for table in schema.tables %}
+            {% do tables.update({table.id: table.name}) %}
+        {% endfor %}
+        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
+    {% endfor %}
+    {% do serviceSchemas.update({service.id: schemas}) %}
+{% endfor %}
+
+<script type="text/javascript">
+    const serviceSchemas = {{ serviceSchemas | tojson }};
+    const connectToSelect = document.getElementById('service_id');
+    const schemaSelect = document.getElementById('source_db_id');
+    const sourceTableSelect = document.getElementById('source_table_id');
+    const destTableSelect = document.getElementById('dest_table_id');
+
+    function populateSchemas(selectedService) {
+        schemaSelect.disabled = true;
+        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
+        sourceTableSelect.disabled = true;
+        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
+        destTableSelect.disabled = true;
+        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedService && serviceSchemas[selectedService]) {
+            const schemas = Object.entries(serviceSchemas[selectedService]);
+            if (schemas.length > 0) {
+                for (const [schemaId, schema] of schemas) {
+                    const option = document.createElement('option');
+                    option.value = schemaId;
+                    option.textContent = schema.name;
+                    schemaSelect.appendChild(option);
+                    schemaSelect.disabled = false;
+                }
+                if (schemas.length === 1) {
+                    const [singleSchemaId, _] = schemas[0]
+                    schemaSelect.value = singleSchemaId;
+                    schemaSelect.disabled = true;
+                    schemaSelect.insertAdjacentHTML("afterend", `<input id="source_db_id_hidden" type="hidden" name="source_db_id" value="${schemaSelect.value}">`)
+                    populateSourceTables(selectedService, singleSchemaId);
+                }
+            }
+        }
+    }
+
+    function populateTables(tableSelect, tables) {
+        if (tables.length > 0) {
+            for (const [tableId, tableName] of tables) {
+                const option = document.createElement('option');
+                option.value = tableId;
+                option.textContent = tableName;
+                tableSelect.appendChild(option);
+                tableSelect.disabled = false;
+            }
+            if (tables.length === 1) {
+                const [singleTableId, _] = tables[0]
+                tableSelect.value = singleTableId;
+                tableSelect.disabled = true;
+                tableSelect.insertAdjacentHTML("afterend", `<input id="${tableSelect.id}_hidden" type="hidden" name="${tableSelect.name}" value="${tableSelect.value}">`)
+            }
+        }
+    }
+
+    function populateSourceTables(selectedService, selectedSchema) {
+        sourceTableSelect.disabled = true;
+        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
+        destTableSelect.disabled = true;
+        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
+            const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
+            populateTables(sourceTableSelect, tables);
+            if (tables.length === 1) {
+                const [singleTableId, _] = tables[0]
+                populateDestTables(selectedService, selectedSchema, singleTableId);
+            }
+        }
+    }
+
+    function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
+        destTableSelect.disabled = true;
+        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+
+        if (selectedSchema && selectedSourceTable && serviceSchemas[selectedService][selectedSchema]) {
+            let tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
+            tables = tables.filter(table => table[0] !== selectedSourceTable)
+            populateTables(destTableSelect, tables);
+        }
+    }
+
+    connectToSelect.addEventListener('change', function() {
+        const selectedService = this.value;
+        const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
+        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
+        populateSchemas(selectedService);
+    });
+
+    schemaSelect.addEventListener('change', function() {
+        const selectedService = connectToSelect.value;
+        const selectedSchema = this.value;
+        const hiddenTableInput = document.getElementById("source_table_id_hidden");
+        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
+        populateSourceTables(selectedService, selectedSchema);
+    });
+
+    window.addEventListener('DOMContentLoaded', function() {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            populateSchemas(singleHost);
+        }
+    });
+
+    sourceTableSelect.addEventListener('change', function () {
+        const selectedService = connectToSelect.value;
+        const selectedSchema = schemaSelect.value;
+        const selectedTable = this.value;
+        const hiddenTableInput = document.getElementById("dest_table_id_hidden");
+        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
+        populateDestTables(selectedService, selectedSchema, selectedTable);
+    });
+</script>

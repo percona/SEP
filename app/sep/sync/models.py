@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
 from types import TracebackType
@@ -14,7 +14,7 @@ from async_lru import _LRUCacheWrapper, alru_cache
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import BaseCaseInsensitiveModel
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
@@ -289,7 +289,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         self,
         entity_type: SyncInventoryEntityTypeEnum,
         created_entity: CreatedEntity | None,
-    ) -> SyncItem:
+    ) -> AsyncGenerator[SyncItem, None]:
         """Manage the synchronization lifecycle of a SyncItem.
 
         This asynchronous context manager handles the synchronization lifecycle of a
@@ -303,7 +303,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             (inventory) synchronization.
         :type created_entity: CreatedEntity | None
         :yield: The `SyncItem` instance being managed during the synchronization process.
-        :rtype: SyncItem
+        :rtype: AsyncGenerator[SyncItem, None]
         :raises SyncFailError: If an exception occurs during synchronization.
         """
         entity_id = None if created_entity is None else created_entity.id
@@ -1144,11 +1144,10 @@ class BaseTaskSyncer(BaseSyncer):
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
         """
-        response = await self.tasks_api.post(
+        task_history = await self.tasks_api.post(
             f"/execute/{task_name}",
             json={"meta": meta, "payload": payload},
         )
-        task_history = response["task_history_id"]
         task_history_id = task_history["id"]
         status = task_history["status"]
         time_waiting = 0
@@ -1157,7 +1156,7 @@ class BaseTaskSyncer(BaseSyncer):
             and time_waiting < self.task_execution_timeout
         ):
             await asyncio.sleep(self.tasks_execution_wait_interval)
-            time_waiting += 5
+            time_waiting += self.tasks_execution_wait_interval
             try:
                 task_history = await self.tasks_api.get(f"/history/{task_history_id}")
                 status = task_history["status"]
@@ -1168,10 +1167,9 @@ class BaseTaskSyncer(BaseSyncer):
             raise TimeoutError(f"Task {task_name} timed out")
 
         # TODO: Avoid keeping duplicate logs  # noqa: TD002, TD003
-        evaluation_id = task_history["execution_request"]["tracking"]["evaluation_id"]
         task_logs = task_history["execution_request"]["tracking"]["task_logs"][
-            evaluation_id
-        ][stdout_step]
+            stdout_step
+        ]
         output = task_logs.get("stdout", "")
         error_output = task_logs.get("stderr", "")
         exc_detail = f"Task {task_name} failed"

@@ -1,120 +1,133 @@
-{% extends "../base.html" %}
+{% extends "base.html" %}
 
-{% block title %}Data Archiver - {{ data["template_data"]["task_name"] }}{% end %}
+{% block title %}Data Archiver - {{ task.name }}{% endblock %}
 
 {% block style %}
-<link rel="stylesheet" href="/static/datatables/dataTables.min.css" media="screen,projection" />
-<style>
-  label + input[type=text]{display: block}
-  /*label:has(+ select){display: none}*/
-  table form{display:inline-block}
-  table button{width:2.2rem;height:2.2rem}
-</style>
-{% end %}
+    <style>
+        label + input[type=text] {
+            display: block
+        }
 
-{% block behaviours_optimized_extra %}{% end %}
+        table form {
+            display: inline-block
+        }
+
+        table button {
+            width: 2.2rem;
+            height: 2.2rem
+        }
+    </style>
+    <link rel="stylesheet" href="/static/logs.css">
+{% endblock %}
+
+{% block behaviours_optimized_extra %}
+    {% if history %}
+        <script src="/static/logs.js"></script>
+    {% endif %}
+{% endblock %}
 
 {% block main %}
-{% from sep.tasks.api.models import TASK_HISTORY_STATUS_MAP %}
-
-{% set template_data = data.get("template_data", {}) %}
-{% set task_name = template_data.get("task_name", []) %}
-{% set task = template_data.get("task", []) %}
-{% set history = template_data.get("history", []) %}
-{% set stats = template_data.get("stats", []) %}
-{% set xsrf_form_html = data.get("xsrf_form_html") %}
 
     <table class="row section">
-      <caption>Overview</caption>
-      <thead>
-        <tr>
-          <th>Hostname</th>
-          <th>Table</th>
-          <th>Created at</th>
-          <th>Updated at</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>{{ task['hostname'] }}</td>
-          <td>{{ task['table'] }}</td>
-          <td>{{ task['created_at'] }}</td>
-          <td>{{ task['updated_at'] }}</td>
-        </tr>
-      </tbody>
-      <tfoot>
-        <tr><td colspan="4"></td></tr>
-      </tfoot>
-    </table>
-
-    <section>
-      <h2>Execution</h2>
-      <h3>Command</h3>
-      <code>{{ task['cmd'] }}</code>
-
-      <h3>Parameters</h3>
-      <table>
-        <tbody>
-      {% for k, v in task['meta'].items() %}
-          <tr>
-            <th>{{ k }}</th>
-            <td>
-              {% if isinstance(v, dict) %}
-                <ul>
-                {% for j, w in v.items() %}
-                  <li>{{ j }}: {{ w }}</li>
-                {% end %}
-                </ul>
-              {% elif isinstance(v, list) and v %}
-                <ul>
-                  {% for j, w in v[0].items() %}
-                  <li>{{ j }}: {{ w }}</li>
-                  {% end %}
-                </ul>
-              {% else %}
-                <code>{{ v }}</code>
-              {% end %}
-            </td>
-          </tr>
-        {% end %}
-        </tbody>
-      </table>
-    </section>
-
-    <section>
-      <h2>Stats</h2>
-      {% if stats and stats["total"] %}
-      <table class="responsive-table">
-        <caption>Aggregated statistics for {{ task_name }}</caption>
+        <caption>Overview</caption>
         <thead>
-          <tr>
-            <th>Executions</th>
-            <th>Succeeded</th>
-            <th>Failed</th>
-            <th>Last Finished</th>
-            <th>Avg Duration (<abbr title="seconds">s</abbr>)</th>
-            <th>Last Duration (<abbr>s</abbr>)</th>
-          </tr>
+        <tr>
+            <th>Hostname</th>
+            <th>Source Table</th>
+            <th>Destination Table</th>
+            <th>Created at</th>
+            <th>Updated at</th>
+        </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>{{ stats["total"] }}</td>
-            <td>{{ stats["status"]["pass"] }}</td>
-            <td>{{ stats["status"]["fail"] }}</td>
-            <td>{{ stats["last_finished_at"] }}</td>
-            <td>{{ round(stats["duration"]["average_seconds"] or 0, 3) }}</td>
-            <td>{{ round(stats["duration"]["last_seconds"] or 0, 3) }}</td>
-          </tr>
+        <tr>
+            <td>{{ task.hostname }}</td>
+            <td>{{ task.source_table }}</td>
+            <td>{{ task.dest_table }}</td>
+            <td>{{ task.created_at }}</td>
+            <td>{{ task.updated_at }}</td>
+        </tr>
         </tbody>
-      </table>
-      {% else %}
-      <p>No data</p>
-      {% end %}
+        <tfoot>
+        <tr>
+            <td colspan="4"></td>
+        </tr>
+        </tfoot>
+    </table>
+
+    {% if running_tasks %}
+        <section id="running-tasks">
+            <h2>Running</h2>
+            {% include "tasks/partials/running-tasks.html" %}
+        </section>
+    {% endif %}
+
+    <section>
+        <h2>Execution</h2>
+        <h3>Parameters</h3>
+        <table>
+            <tbody>
+            {% for k, v in task.meta.items() %}
+                <tr>
+                    <th>{{ k }}</th>
+                    <td>
+                        {% if v is mapping %}
+                            <ul>
+                                {% for j, w in v.items() %}
+                                    <li>{{ j }}: {{ w }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% elif v is iterable and v is not string %}
+                            {# TODO: Refactor all these weird tests #}
+                            <ul>
+                                {% for j, w in v[0].items() %}
+                                    <li>{{ j }}: {{ w }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <code>{{ v }}</code>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section>
+        <h2>Stats</h2>
+        {% if stats and stats.total %}
+            <table class="responsive-table">
+                <caption>Aggregated statistics for {{ task_name }}</caption>
+                <thead>
+                <tr>
+                    <th>Executions</th>
+                    <th>Succeeded</th>
+                    <th>Failed</th>
+                    <th>Last Finished</th>
+                    <th>Avg Duration (<abbr title="seconds">s</abbr>)</th>
+                    <th>Last Duration (<abbr>s</abbr>)</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>{{ stats.total }}</td>
+                    <td>{{ stats.status.pass }}</td>
+                    <td>{{ stats.status.fail }}</td>
+                    <td>{{ stats.last_finished_at }}</td>
+                    <td>{{ stats.duration.average_seconds or 0|round(3) }}</td>
+                    <td>{{ stats.duration.last_seconds or 0|round(3) }}</td>
+                </tr>
+                </tbody>
+            </table>
+        {% else %}
+            <p>No data</p>
+        {% endif %}
     </section>
 
     <section>
-      <h2>History</h2>
-      {% set history_tasks = history %}
-      {% include "partials/completed-tasks.html" %}
+        <h2>History</h2>
+        {% set history_tasks = history %}
+        {% include "tasks/partials/completed-tasks.html" %}
     </section>
-{% end %}
+
+{% endblock %}

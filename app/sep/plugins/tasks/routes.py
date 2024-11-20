@@ -6,15 +6,25 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.core.fields import URIPath
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, IsAuthenticated, TaskAPI
+from app.sep.deps import (
+    DefaultContext,
+    IsAuthenticated,
+    TaskAPI,
+)
+from app.sep.plugins.tasks.deps import TaskDep
 from app.sep.plugins.tasks.models import TaskCreateRequest
-from app.tasks.main import AVAILABLE_OWNERS
-from app.tasks.models import TaskBackendEnum, TaskExecuteRequest
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+)
 
 logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
 templates = sep_settings.TEMPLATES
 
 
@@ -26,8 +36,12 @@ async def tasks_list(
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
     context["tasks"] = await tasks_api.get("/")
+    context["running_tasks"] = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
     context["available_backends"] = TaskBackendEnum
-    context["available_owners"] = AVAILABLE_OWNERS
+    context["available_owners"] = TaskOwner
+    logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
         name="tasks/list.html",
@@ -49,25 +63,26 @@ async def task_create(
         json=create_task_form.model_dump(include={"payload", "fmt"}),
         params={"backend": create_task_form.backend},
     )
-    logger.debug(task_data)
     await tasks_api.post("/", json=task_data)
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def tasks_detail(
-    task_name: str,
+    task: TaskDep,
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve task."""
-    context["task"] = await tasks_api.get(
-        f"/{task_name}",
-    )  # TODO: Use Pydantic/SQLModel models  # noqa: TD002, TD003
-    context["history"] = await tasks_api.get(f"/{task_name}/history/")
-    context["available_owners"] = AVAILABLE_OWNERS
-    context["task_data"] = context["task"]["data"]
+    context["task"] = task
+    context["schedule"] = await tasks_api.get(f"/{task.name}/periodic/")
+    context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["running_tasks"] = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["available_owners"] = TaskOwner
+    context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
     context["executor_hosts"] = list(executor_hosts.values())
     return templates.TemplateResponse(
@@ -79,21 +94,20 @@ async def tasks_detail(
 
 @router.post("/{task_name}", dependencies=[IsAuthenticated])
 async def tasks_execute(
-    task_name: str,
+    task: TaskDep,
     tasks_api: TaskAPI,
     execute_data: Annotated[TaskExecuteRequest, Form()],
 ) -> RedirectResponse:
     """Execute task."""
-    await tasks_api.post(f"/execute/{task_name}", json=execute_data.model_dump())
+    await tasks_api.post(f"/execute/{task.name}", json=execute_data.model_dump())
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/{task_name}/delete", dependencies=[IsAuthenticated])
 async def tasks_delete(
-    task_name: str,
+    task: TaskDep,
     tasks_api: TaskAPI,
-    redirect_to: Annotated[URIPath, Form()] = "/tasks",
 ) -> RedirectResponse:
     """Delete task."""
-    await tasks_api.delete(f"/{task_name}")
-    return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
+    await tasks_api.delete(f"/{task.name}")
+    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)

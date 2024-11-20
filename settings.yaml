@@ -3,7 +3,6 @@ default:
   CASDOOR:
     ENDPOINT: http://localhost:9999
     FRONT_ENDPOINT: //:9999
-    CERTIFICATE_PATH: data/certs/casdoor/token_jwt_key.pem
     ALLOWED_ISSUERS:
       - http://localhost:9999
       - http://127.0.0.1:9999
@@ -24,6 +23,10 @@ default:
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
+      - NAME: Archive
+        MODULE_NAME: archives
+        URI_PATH: /archives
+        CSS_CLASS: archive
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
@@ -48,6 +51,16 @@ development:
           - performance_schema
           - mysql
           - information_schema
+  CELERY:
+    BROKER_URL: "filesystem://"
+    BROKER_TRANSPORT_OPTIONS:
+      DATA_FOLDER_IN: data/celery/broker
+      DATA_FOLDER_OUT: data/celery/broker
+      PROCESSED_FOLDER: data/celery/processed
+      CONTROL_FOLDER: data/celery/control
+    RESULT_BACKEND: file://data/celery/results
+    RESULT_PERSISTENT: true
+    BEAT_DBURI: "sqlite:///schedule.db"
 
 production_docker:
   CASDOOR:
@@ -83,10 +96,9 @@ production_docker:
     NOMAD:
       ENDPOINT: https://host.docker.internal:4646
       SECURE: true
-      VERIFY: data/certs/sep-ca.pem
-      CERT:
-        - data/certs/nomad/global-client-nomad.pem
-        - data/certs/nomad/global-client-nomad-key.pem
+      SSL_KEYFILE: data/certs/nomad/global-client-nomad-key.pem
+      SSL_CERTFILE: data/certs/nomad/global-client-nomad.pem
+      SSL_CAFILE: data/certs/sep-ca.pem
     SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
   BACKEND_CORS_ORIGINS:

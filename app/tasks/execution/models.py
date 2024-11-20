@@ -3,19 +3,20 @@
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import yaml
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import BaseLowercaseModel
+from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import async_run
-from app.tasks.models import TaskHistory
+from app.tasks.models import Task, TaskHistory, TaskLog
 
 logger = logging.getLogger(__name__)
 
 
-class BaseExecutor(BaseLowercaseModel, ABC):
+class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     """Define the blueprint of a task executor.
 
     :param wait_interval: The interval in seconds between status checks.
@@ -64,6 +65,7 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
+        task: Task | None = None,
     ) -> TaskHistory:
         """Run a task and update the related task history.
 
@@ -72,6 +74,9 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
+        :param task: The task to be executed. If None, the queue_item's task will be
+            used.
+        :type task: Task | None
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """
@@ -94,4 +99,19 @@ class BaseExecutor(BaseLowercaseModel, ABC):
         :return: A dictionary with host addresses as key and the respective hostnames
             as values.
         :rtype: list[str]
+        """
+
+    @abstractmethod
+    async def stream_logs(
+        self, queue_item: TaskHistory
+    ) -> AsyncGenerator[TaskLog, None]:
+        """Stream logs from a task history record.
+
+        Retrieves the allocation details and concurrently streams stdout and stderr logs
+        for each task step. Yields `TaskLog` instances as log lines are received.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :yield: `TaskLog` instances containing log messages.
+        :rtype: TaskLog
         """

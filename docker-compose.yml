@@ -1,7 +1,8 @@
 x-api-environment:
   environment: &api-environment
     FASTAPI_ENV: production_docker
-    LOGGING: debug
+    LOGGING: info
+    ENV_FILE: .env.docker
 
 x-api-db-environment:
   environment: &api-db-environment
@@ -12,6 +13,8 @@ x-api-db-environment:
     DATABASE__HOST: sep-db
     DATABASE__PORT: 5432
     DATABASE__NAME: sep
+    CELERY__BROKER_URL: redis://redis:6379/0
+    CELERY__BEAT_DBURI: sqlite:///docker-schedule.db
 
 services:
   casdoor:
@@ -33,6 +36,38 @@ services:
     expose:
       - 5432
 
+  redis:
+    image: docker.io/library/redis:7-alpine
+    expose:
+      - 6379
+
+  celery_worker:
+    image: sep-image:latest
+    user: 1001:1001
+    entrypoint: /home/sep/app/entrypoint_celery.sh
+    command: worker --loglevel=info
+    depends_on:
+      - sep-db
+      - redis
+      - casdoor
+    environment:
+      <<: *api-db-environment
+    extra_hosts:
+      - "host.docker.internal:${HOST_IP:-host-gateway}"
+
+  celery_beat:
+    image: sep-image:latest
+    user: 1001:1001
+    entrypoint: /home/sep/app/entrypoint_celery.sh
+    command: beat --scheduler=sqlalchemy --loglevel=info
+    depends_on:
+      - sep-db
+      - redis
+      - casdoor
+      - celery_worker
+    environment:
+      <<: *api-db-environment
+
   inventory_api:
     image: sep-image:latest
     user: 1001:1001
@@ -41,6 +76,7 @@ services:
       - 9001
     depends_on:
       - casdoor
+      - sep-db
     environment:
       <<: *api-db-environment
       UVICORN_HOST: inventory_api
@@ -57,10 +93,13 @@ services:
     depends_on:
       - casdoor
       - sep-db
+      - redis
+      - celery_beat
     environment:
       <<: *api-db-environment
       UVICORN_HOST: tasks_api
       UVICORN_PORT: 9002
+      CELERY__BROKER_URL: redis://redis:6379/0
     extra_hosts:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
@@ -77,6 +116,7 @@ services:
       - inventory_api
       - tasks_api
       - casdoor
+      - sep-db
     environment:
       <<: *api-db-environment
       UVICORN_HOST: 0.0.0.0
@@ -100,3 +140,4 @@ services:
 volumes:
   casdoor-data:
   sep-data:
+  celery-beat-data:

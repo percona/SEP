@@ -1,13 +1,23 @@
 """Define routes for the alters plugin."""
 
 import logging
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, InventoryAPI, IsAuthenticated, TaskAPI
-from app.sep.plugins.alters.deps import AltersGeneratedTask, AltersTask
+from app.sep.deps import (
+    DefaultContext,
+    IsAuthenticated,
+    TaskAPI,
+)
+from app.sep.plugins.alters.deps import (
+    AltersGeneratedTask,
+    AltersTask,
+    get_alters_index_context,
+)
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -18,57 +28,9 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def alters_index(
     request: Request,
-    context: DefaultContext,
-    tasks_api: TaskAPI,
-    inventory_api: InventoryAPI,
+    context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
 ) -> HTMLResponse:
     """Homepage of alters plugin."""
-    all_hosts = await inventory_api.get("/")
-    mysql_hosts = []
-    for host in all_hosts:
-        for service in host["services"]:
-            if service["type"] == "mysql":
-                host["schemas"] = await inventory_api.get(
-                    f"/services/{service['id']}/schemas/",
-                )
-                mysql_hosts.append(host)
-                break
-    tasks = []
-    for task in await tasks_api.get("/", params={"owner": "alters"}):
-        data = task["data"]
-        meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
-        taskinfo = {
-            "hostname": data["Constraints"][0]["RTarget"],
-            "name": task["name"],
-            "table": f'{meta["schema_name"]}.{meta["table_name"]}',
-            "id": task["id"],
-        }
-        tasks.append(taskinfo)
-    history_tasks = []
-    scheduled_tasks = []
-    running_tasks = []
-    for task in tasks:
-        history = await tasks_api.get(f"/{task['name']}/history/")
-        for hist in history:
-            match TaskHistoryStatusEnum(hist["status"]):
-                case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
-                    history_tasks.append(hist)
-                case TaskHistoryStatusEnum.PENDING:
-                    scheduled_tasks.append(hist)
-                case TaskHistoryStatusEnum.RUNNING:
-                    running_tasks.append(hist)
-    executor_hosts = await tasks_api.get("/hosts/")
-    context.update(
-        {
-            "executor_hosts": list(executor_hosts.values()),
-            "mysql_hosts": mysql_hosts,
-            "tasks": tasks,
-            "pending_tasks": scheduled_tasks,
-            "running_tasks": running_tasks,
-            "history_tasks": history_tasks,
-        },
-    )
-    logger.info("CONTEXT: %s", context)
     return templates.TemplateResponse(
         request=request,
         name="alters/index.html",
@@ -81,7 +43,7 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
-    """Create new alters task."""
+    """Create an alter task."""
     logger.debug("Create alters task: %s", task)
     # TODO: validate response  # noqa: TD002, TD003
     await task_api.post(
@@ -102,21 +64,25 @@ async def alters_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve alters task."""
-    data = task["data"]
+    data = task.data
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
     task_data = {
-        "name": task["name"],
-        "created_at": task["created_at"],
-        "updated_at": task["updated_at"],
+        "name": task.name,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
         "hostname": data["Constraints"][0]["RTarget"],
         "table": f"{meta['schema_name']}.{meta['table_name']}",
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
     }
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task['name']}/history/")
-    context["stats"] = await tasks_api.get(f"/stats/{task['name']}")
+    # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
+    context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["running_tasks"] = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
         name="alters/details.html",
@@ -132,10 +98,12 @@ async def alters_detail(
 async def alters_execute(
     task: AltersTask,
     tasks_api: TaskAPI,
+    eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute alters task."""
     await tasks_api.post(
-        f"/execute/{task['name']}"
+        f"/execute/{task.name}",
+        json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -150,5 +118,5 @@ async def alters_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete alters task."""
-    await tasks_api.delete(f"/{task['name']}")
+    await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

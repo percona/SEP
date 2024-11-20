@@ -2,13 +2,14 @@
 
 import logging
 from collections import defaultdict
-from typing import ClassVar
+from typing import ClassVar, Self
 
 from async_lru import alru_cache
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
-from app.core.fields import RequiredStr
+from app.core.config import settings
 from app.core.requests import RemoteAPI
+from app.core.utils.fields import RequiredStr
 from app.inventory.models import SourceEnum
 from app.sep.inventory import CreatedNode, CreatedService, Node, Service
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -190,7 +191,20 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm_api: PMMRemoteAPI = Field(validation_alias="pmm")
+    pmm_api: PMMRemoteAPI = Field(validation_alias=AliasChoices("pmm", "PMM"))
+
+    async def __aenter__(self) -> Self:
+        """Enter the asynchronous context manager.
+
+        Overrides from BaseSyncer to also initialize the pmm_api's ClientSession.
+
+        :return: The `BaseRemoteAPI` instance.
+        :rtype: BaseRemoteAPI
+        """
+        self.pmm_api.session = await settings.get_extra_client_session(
+            self.pmm_api.endpoint, self.pmm_api.api_key
+        )
+        return await super().__aenter__()
 
     @alru_cache
     async def get_inventory_nodes(
