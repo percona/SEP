@@ -4,18 +4,23 @@ import argparse
 import json
 import socket
 import sys
+import re
 from collections.abc import Sequence
 from pathlib import Path
-
 import pymysql
 from pymysql.cursors import Cursor
 
 
-def get_table(cursor: Cursor, db_name: str, table_name: str) -> dict[str, str]:
-    """Retrieve the CREATE statement for a specific table.
+def get_table(
+    cursor: Cursor,
+    db_name: str,
+    table_name: str
+) -> dict[str, str | list[str]]:
+    """Retrieve the CREATE statement and key information for a specific table.
 
     Execute the `SHOW CREATE TABLE` command to obtain the creation statement
-    of the specified table within a given database.
+    of the specified table within a given database. Extracts the primary key
+    and unique keys from the statement.
 
     :param cursor: The database cursor to execute queries.
     :type cursor: Cursor
@@ -23,12 +28,38 @@ def get_table(cursor: Cursor, db_name: str, table_name: str) -> dict[str, str]:
     :type db_name: str
     :param table_name: The name of the table to retrieve the CREATE statement for.
     :type table_name: str
-    :return: A dictionary containing the table name and its CREATE statement.
+    :return: A dictionary containing:
+             - "name" (str): The name of the table.
+             - "create" (str): The CREATE TABLE SQL statement.
+             - "primary_key" (str | None): The primary key column(s) as a string
+             (or None if no primary key).
+             - "unique_keys" (list[str]): A list of unique key column names.
     :rtype: dict[str, str]
     """
     cursor.execute(f"SHOW CREATE TABLE `{db_name}`.`{table_name}`;")
     create_table_result = cursor.fetchone()
-    return {"name": table_name, "create": create_table_result[1]}
+    create_statement = create_table_result[1]
+
+    # Extract PRIMARY KEY and UNIQUE KEYS
+    primary_key = None
+    unique_keys = []
+
+    # Regular expression for PRIMARY KEY
+    primary_key_match = re.search(r"PRIMARY KEY\s+\((.*?)\)", create_statement)
+    if primary_key_match:
+        primary_key = primary_key_match.group(1).replace('`', '')
+
+    # Regular expression for UNIQUE KEYS
+    unique_key_matches = re.findall(r"UNIQUE KEY `.*?`\s+\((.*?)\)", create_statement)
+    for unique_key in unique_key_matches:
+        unique_keys.extend(unique_key.replace('`', '').split(', '))
+
+    return {
+        "name": table_name,
+        "create": create_statement,
+        "primary_key": primary_key,
+        "unique_keys": unique_keys,
+    }
 
 
 def get_schema(cursor: Cursor, db_name: str) -> dict[str, str]:
