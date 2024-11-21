@@ -15,7 +15,7 @@ def get_table(
     cursor: Cursor,
     db_name: str,
     table_name: str
-) -> dict[str, str | list[str]]:
+) -> dict[str, str]:
     """Retrieve the CREATE statement and key information for a specific table.
 
     Execute the `SHOW CREATE TABLE` command to obtain the creation statement
@@ -32,7 +32,7 @@ def get_table(
              - "name" (str): The name of the table.
              - "create" (str): The CREATE TABLE SQL statement.
              - "primary_key" (str | None): The primary key column(s) as a string
-             (or None if no primary key).
+            (or None if no primary key).
              - "unique_keys" (list[str]): A list of unique key column names.
     :rtype: dict[str, str]
     """
@@ -40,9 +40,9 @@ def get_table(
     create_table_result = cursor.fetchone()
     create_statement = create_table_result[1]
 
-    # Extract PRIMARY KEY and UNIQUE KEYS
-    primary_key = None
-    unique_keys = []
+    # Initialize PRIMARY KEY and UNIQUE KEYS as empty strings
+    primary_key = ""
+    unique_keys = ""
 
     # Regular expression for PRIMARY KEY
     primary_key_match = re.search(r"PRIMARY KEY\s+\((.*?)\)", create_statement)
@@ -51,8 +51,11 @@ def get_table(
 
     # Regular expression for UNIQUE KEYS
     unique_key_matches = re.findall(r"UNIQUE KEY `.*?`\s+\((.*?)\)", create_statement)
-    for unique_key in unique_key_matches:
-        unique_keys.extend(unique_key.replace('`', '').split(', '))
+    if unique_key_matches:
+        # Flatten and join all unique keys into a single string
+        unique_keys = ", ".join(
+            key.replace('`', '') for unique_key in unique_key_matches for key in unique_key.split(', ')
+        )
 
     return {
         "name": table_name,
@@ -60,7 +63,6 @@ def get_table(
         "primary_key": primary_key,
         "unique_keys": unique_keys,
     }
-
 
 def get_schema(cursor: Cursor, db_name: str) -> dict[str, str]:
     """Retrieve all tables and their CREATE statements for a specific schema.

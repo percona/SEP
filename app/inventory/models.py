@@ -449,6 +449,8 @@ class TableBase(SQLModel):
 
     name: RequiredStr
     create: RequiredStr = SQLField(sa_type=Text)
+    primary_key: str | None
+    unique_keys: str | None
     schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
 
 

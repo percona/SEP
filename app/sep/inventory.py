@@ -320,6 +320,8 @@ class Table(BaseInventoryModel):
 
     name: RequiredStr
     create: RequiredStr
+    primary_key: str
+    unique_keys: str
 
 
 class CreatedTable(CreatedEntityBase, Table):
