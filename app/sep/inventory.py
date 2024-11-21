@@ -316,12 +316,16 @@ class Table(BaseInventoryModel):
     :type name: RequiredStr
     :param create: The SQL statement used to create the table.
     :type create: RequiredStr
+    :param primary_key: The name of the primary key column, if any.
+    :type primary_key: str | None
+    :param unique_keys: A comma-separated list of columns that are unique keys, if any.
+    :type unique_keys: str | None
     """
 
     name: RequiredStr
     create: RequiredStr
-    primary_key: str
-    unique_keys: str
+    primary_key: str | None = None
+    unique_keys: str | None = None
 
 
 class CreatedTable(CreatedEntityBase, Table):

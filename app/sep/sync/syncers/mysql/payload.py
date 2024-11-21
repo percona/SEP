@@ -18,9 +18,9 @@ def get_table(
 ) -> dict[str, str]:
     """Retrieve the CREATE statement and key information for a specific table.
 
-    Execute the `SHOW CREATE TABLE` command to obtain the creation statement
+    Execute the SHOW CREATE TABLE command to obtain the creation statement
     of the specified table within a given database. Extracts the primary key
-    and unique keys from the statement.
+    and unique keys using the SHOW KEYS command.
 
     :param cursor: The database cursor to execute queries.
     :type cursor: Cursor
@@ -36,32 +36,49 @@ def get_table(
              - "unique_keys" (list[str]): A list of unique key column names.
     :rtype: dict[str, str]
     """
-    cursor.execute(f"SHOW CREATE TABLE `{db_name}`.`{table_name}`;")
+    # Retrieve the CREATE TABLE statement
+    cursor.execute(f"SHOW CREATE TABLE {db_name}.{table_name};")
     create_table_result = cursor.fetchone()
     create_statement = create_table_result[1]
 
-    # Initialize PRIMARY KEY and UNIQUE KEYS as empty strings
-    primary_key = ""
-    unique_keys = ""
+    primary_key = None
+    unique_keys = []
 
-    # Regular expression for PRIMARY KEY
-    primary_key_match = re.search(r"PRIMARY KEY\s+\((.*?)\)", create_statement)
-    if primary_key_match:
-        primary_key = primary_key_match.group(1).replace('`', '')
+    cursor.execute(f"SHOW KEYS FROM {db_name}.{table_name};")
+    keys = cursor.fetchall()
+    column_names_list = [desc[0] for desc in cursor.description]
 
-    # Regular expression for UNIQUE KEYS
-    unique_key_matches = re.findall(r"UNIQUE KEY `.*?`\s+\((.*?)\)", create_statement)
-    if unique_key_matches:
-        # Flatten and join all unique keys into a single string
-        unique_keys = ", ".join(
-            key.replace('`', '') for unique_key in unique_key_matches for key in unique_key.split(', ')
-        )
+    key_name_idx = column_names_list.index('Key_name')
+    column_name_idx = column_names_list.index('Column_name')
+    non_unique_idx = column_names_list.index('Non_unique')
+
+    keys_dict = {}
+    for row in keys:
+        key_name = row[key_name_idx]
+        column_name = row[column_name_idx]
+        non_unique = row[non_unique_idx]
+        if key_name not in keys_dict:
+            keys_dict[key_name] = {
+                'columns': [],
+                'non_unique': non_unique,
+            }
+        keys_dict[key_name]['columns'].append(column_name)
+
+    for key_name, info in keys_dict.items():
+        key_columns = info['columns']
+        non_unique = info['non_unique']
+        if key_name == 'PRIMARY':
+            primary_key = ', '.join(key_columns)
+        elif non_unique == 0:
+            unique_keys.append(', '.join(key_columns))
+
+    unique_keys_str = ', '.join(unique_keys)
 
     return {
         "name": table_name,
         "create": create_statement,
         "primary_key": primary_key,
-        "unique_keys": unique_keys,
+        "unique_keys": unique_keys_str,
     }
 
 def get_schema(cursor: Cursor, db_name: str) -> dict[str, str]:

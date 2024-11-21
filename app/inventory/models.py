@@ -445,13 +445,17 @@ class TableBase(SQLModel):
     :type create: RequiredStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
+    :param primary_key: The name of the primary key column, if any.
+    :type primary_key: str | None
+    :param unique_keys: A comma-separated list of columns that are unique keys, if any.
+    :type unique_keys: str | None
     """
 
     name: RequiredStr
     create: RequiredStr = SQLField(sa_type=Text)
+    schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
     primary_key: str | None
     unique_keys: str | None
-    schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
 
 
 class Table(BaseSQLModel, TableBase, table=True):
