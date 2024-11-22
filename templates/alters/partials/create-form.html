@@ -6,7 +6,7 @@
         padding-bottom: 5px;
         margin-bottom: 0.5em;
     }
-    
+
     .field {
         flex: 0 0 48%;
         box-sizing: border-box;
@@ -18,24 +18,24 @@
     fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1)) > .field {
         flex: 0 0 48%;
     }
-    
+
     .field label {
         width: 135px;
         margin-right: 10px;
     }
-    
+
     .field input,
     .field select {
         flex: 1;
     }
-    
+
 
     label + select,
     label + input {
         vertical-align: middle;
         margin-right: 0px;
     }
-    
+
     label:has(+ select),
     label:has(+ input) {
         display: inline-flex;
@@ -83,7 +83,7 @@
         opacity: 1;
         max-height: 300px;
     }
-    
+
     #result-panel.fade {
         opacity: 0;
         max-height: 0;
@@ -198,7 +198,7 @@
                 </div>
             </fieldset>
             <fieldset>
-                <div class="field"> 
+                <div class="field">
                     <input type="checkbox" id="print_arg" name="print_arg" checked="true" class="validate"/>
                     <label for="print_arg">Print</label>
                 </div>
@@ -208,19 +208,19 @@
                 </div>
             </fieldset>
             <fieldset>
-                <div class="field"> 
+                <div class="field">
                     <input type="checkbox" id="no_swap_tables" name="no_swap_tables" class="validate"/>
                     <label for="no_swap_tables">no-swap-tables</label>
                 </div>
-                <div class="field"> 
+                <div class="field">
                     <input type="checkbox" id="no_drop_old_table" name="no_drop_old_table" class="validate"/>
                     <label for="no_drop_old_table">no-drop-old-table</label>
                 </div>
-                <div class="field"> 
+                <div class="field">
                     <input type="checkbox" id="no_drop_new_table" name="no_drop_new_table" class="validate"/>
                     <label for="no_drop_new_table">no-drop-new-table</label>
                 </div>
-                <div class="field"> 
+                <div class="field">
                     <input type="checkbox" id="no_drop_triggers" name="no_drop_triggers" class="validate"/>
                     <label for="no_drop_triggers">no-drop-triggers</label>
                 </div>
@@ -235,7 +235,7 @@
                 <div class="field">
                     <label for="set_vars">Set Vars</label>
                     <input type="text" id="set_vars" name="set_vars" class="validate" value="tx_isolation='READ-COMMITTED',lock_wait_timeout=5" size="70"/>
-                </div>    
+                </div>
             </fieldset>
             <fieldset>
                 <div class="field">
@@ -414,16 +414,16 @@
     function analyzeTableStructure(tableData) {
         const hasPrimaryKey = tableData.primary_key && tableData.primary_key.length > 0;
         const hasUniqueKey = tableData.unique_keys && tableData.unique_keys.length > 0;
-        
+
         statusMessage.classList.remove('success', 'error');
-        
+
         if (hasPrimaryKey || hasUniqueKey) {
             statusMessage.classList.add('success');
             let message = '✅ This table has ';
-            
+
             if (hasPrimaryKey) message += 'a PRIMARY key';
             if (hasPrimaryKey && hasUniqueKey) message += ' and ';
-            
+
             if (hasUniqueKey) {
                 let uniqueKeysArray = tableData.unique_keys.split(',').map(key => key.trim()).filter(key => key.length > 0);
                 if (uniqueKeysArray.length === 1) {
@@ -432,7 +432,7 @@
                     message += 'UNIQUE keys like ' + uniqueKeysArray.join(', ');
                 }
             }
-            
+
             message += '.';
             statusMessage.innerHTML = message;
         } else {
