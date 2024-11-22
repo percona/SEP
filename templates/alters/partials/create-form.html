@@ -1,4 +1,17 @@
 <style>
+    label + select,
+    label + input {
+        vertical-align: middle;
+        margin-right: 0px;
+    }
+
+    label:has(+ select),
+    label:has(+ input) {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0px !important;
+    }
+
     .selection-panel, .result-panel {
         background-color: #fff;
         padding-left: 20px;
@@ -7,7 +20,6 @@
     }
     #toggleCreateTable {
         padding: 10px 20px;
-        font-size: 16px;
     }
 
     #createTableOutput {
@@ -17,16 +29,12 @@
         border-radius: 5px;
         overflow-x: auto;
         max-height: 300px;
-        margin-top: 20px;
-        font-family: 'Courier New', monospace;
+        font-family: monospace;
+        line-height: 1.4em;
     }
 
-    .hidden {
-        display: none;
-    }
     #statusMessage {
         margin-top: 20px;
-        font-size: 18px;
     }
 
     #statusMessage.success {
@@ -35,6 +43,19 @@
 
     #statusMessage.error {
         color: red;
+    }
+
+    #result-panel {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 300px;
+    }
+    
+    #result-panel.fade {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
     }
 </style>
 {% set form_class = "modal" if modal_required else "" %}
@@ -89,9 +110,8 @@
                     <option value="">Select a table</option>
                 </select>
             </fieldset>
-            <fieldset style="padding: 0;">
-                <div class="result-panel">
-                    <button id="toggleCreateTable" class="hidden">Show Create Table</button>
+            <fieldset style="padding-top: 0; padding-bottom: 0;">
+                <div id="result-panel" class="fade" style="width: -webkit-fill-available">
                     <pre id="createTableOutput" class="hidden"></pre>
                     <div id="statusMessage"></div>
                 </div>
@@ -190,9 +210,9 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
-    const toggleCreateTableBtn = document.getElementById('toggleCreateTable');
     const createTableOutput = document.getElementById('createTableOutput');
     const statusMessage = document.getElementById('statusMessage');
+    const resultPanel = document.getElementById('result-panel');
 
     let selectedService = null;
     let selectedSchema = null;
@@ -206,6 +226,7 @@
         selectedSchema = null;
         selectedTable = null;
         createTableOutput.classList.add('hidden');
+        resultPanel.classList.add('fade');
         statusMessage.textContent = '';
 
         if (selectedService && serviceSchemas[selectedService]) {
@@ -235,6 +256,7 @@
         tableSelect.innerHTML = '<option value="">Select a table</option>';
         selectedTable = null;
         createTableOutput.classList.add('hidden');
+        resultPanel.classList.add('fade');
         statusMessage.textContent = '';
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
@@ -277,18 +299,12 @@
         selectedTable = this.value;
         if (selectedTable) {
             fetchCreateTableStatement(selectedTable);
+            resultPanel.classList.remove("fade")
         } else {
             createTableOutput.classList.add('hidden');
             statusMessage.textContent = '';
-            toggleCreateTableBtn.textContent = 'Show Create Table';
+            resultPanel.classList.add("fade")
         }
-    });
-
-    toggleCreateTableBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        createTableOutput.classList.toggle('hidden');
-        this.textContent = createTableOutput.classList.contains('hidden') ?
-            'Show Create Table' : 'Hide Create Table';
     });
 
     window.addEventListener('DOMContentLoaded', function() {
@@ -312,19 +328,30 @@
     function displayCreateTable(sql) {
         createTableOutput.textContent = sql;
         createTableOutput.classList.remove('hidden');
-        toggleCreateTableBtn.textContent = 'Hide Create Table';
     }
 
     function analyzeTableStructure(tableData) {
         const hasPrimaryKey = tableData.primary_key && tableData.primary_key.length > 0;
         const hasUniqueKey = tableData.unique_keys && tableData.unique_keys.length > 0;
+        
         statusMessage.classList.remove('success', 'error');
+        
         if (hasPrimaryKey || hasUniqueKey) {
             statusMessage.classList.add('success');
             let message = '✅ This table has ';
+            
             if (hasPrimaryKey) message += 'a PRIMARY key';
             if (hasPrimaryKey && hasUniqueKey) message += ' and ';
-            if (hasUniqueKey) message += 'a UNIQUE key';
+            
+            if (hasUniqueKey) {
+                let uniqueKeysArray = tableData.unique_keys.split(',').map(key => key.trim()).filter(key => key.length > 0);
+                if (uniqueKeysArray.length === 1) {
+                    message += 'a UNIQUE key';
+                } else {
+                    message += 'UNIQUE keys like ' + uniqueKeysArray.join(', ');
+                }
+            }
+            
             message += '.';
             statusMessage.innerHTML = message;
         } else {
@@ -332,4 +359,4 @@
             statusMessage.innerHTML = '❌ This table does not have a PRIMARY or UNIQUE key.';
         }
     }
-</script>
+    </script>
