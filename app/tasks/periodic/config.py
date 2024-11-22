@@ -3,7 +3,7 @@
 from enum import auto, StrEnum
 from typing import ClassVar
 
-from app.core.config import BaseYamlExtraSettings
+from app.core.config import BaseYamlSettings
 from app.core.utils.fields import EnumFieldMixin
 from app.tasks.models import TaskOwner
 
@@ -24,7 +24,7 @@ class PeriodicTaskAction(EnumFieldMixin, StrEnum):
     DELETE = auto()
 
 
-class PeriodicTasksSettings(BaseYamlExtraSettings):
+class PeriodicTasksSettings(BaseYamlSettings):
     """Define settings for tasks configuration.
 
     :cvar SETTINGS_PREFIXES: The prefixes for periodic tasks related settings in the

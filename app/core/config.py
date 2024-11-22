@@ -17,6 +17,7 @@ from pydantic import (
     AnyUrl,
     computed_field,
     DirectoryPath,
+    Field,
     field_validator,
     HttpUrl,
     model_validator,
@@ -83,7 +84,7 @@ LOGGING_CONFIG = {
     },
     "loggers": {
         "": {"handlers": ["default"], "level": "INFO"},
-        "app": {"handlers": ["app"], "level": "INFO"},
+        "app": {"handlers": ["app"], "level": "INFO", "propagate": False},
         "celery": {"handlers": ["celery"], "level": "INFO", "propagate": False},
         "celery.beat": {"handlers": ["celery"], "level": "INFO", "propagate": False},
         "sqlalchemy_celery_beat": {
@@ -172,6 +173,8 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
 class BaseYamlSettings(BaseSettings):
     """Base settings class for YAML config.
 
+    :cvar SETTINGS_PREFIXES: Tuple of settings prefixes.
+    :vartype SETTINGS_PREFIXES: list[str]
     :param FASTAPI_ENV: The environment used (e.g. development, production).
         Defaults to "development".
     :type FASTAPI_ENV: str
@@ -183,6 +186,7 @@ class BaseYamlSettings(BaseSettings):
         yaml_file=pre_env_settings.SETTINGS_FILE,
         extra="ignore",
     )
+    SETTINGS_PREFIXES: ClassVar[list[str]] = []
     FASTAPI_ENV: str = pre_env_settings.FASTAPI_ENV
 
     @classmethod
@@ -198,57 +202,15 @@ class BaseYamlSettings(BaseSettings):
         yaml_prefix = env_settings.env_vars.get(
             "fastapi_env",
         ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
-        return (
-            env_settings,
-            dotenv_settings,
-            YamlPrefixConfigSettingsSource(
-                settings_cls, pre_env_settings.SETTINGS_FILE, prefixes=(yaml_prefix,)
-            ),
-        )
-
-
-class BaseYamlExtraSettings(BaseYamlSettings):
-    """Base settings for extra configuration.
-
-    :cvar SETTINGS_PREFIXES: Tuple of settings prefixes.
-    :vartype SETTINGS_PREFIXES: list[str]
-    :param UVICORN_HOST: The host for Uvicorn. Defaults to "127.0.0.1"
-    :type UVICORN_HOST: str
-    :param UVICORN_PORT: The port for Uvicorn. Defaults to 0.
-    :type UVICORN_PORT: int
-    :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
-    :type SSL_KEYFILE: RelativeFilePath | None
-    :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
-    :type SSL_CERTFILE: RelativeFilePath | None
-    """
-
-    SETTINGS_PREFIXES: ClassVar[list[str]]
-    UVICORN_HOST: str = "127.0.0.1"
-    UVICORN_PORT: int = 0
-    SSL_KEYFILE: RelativeFilePath | None = None
-    SSL_CERTFILE: RelativeFilePath | None = None
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: EnvSettingsSource,
-        dotenv_settings: DotEnvSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Load settings from Yaml file."""
-        yaml_prefix = env_settings.env_vars.get(
-            "fastapi_env",
-        ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
-        env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
-        for env_source in [env_settings, dotenv_settings]:
-            env_vars = {}
-            for key, value in env_source.env_vars.items():
-                env_vars[re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)] = (
-                    value
-                )
-            env_source.env_vars = env_vars
+        if cls.SETTINGS_PREFIXES:
+            env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
+            for env_source in [env_settings, dotenv_settings]:
+                env_vars = {}
+                for key, value in env_source.env_vars.items():
+                    env_vars[
+                        re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)
+                    ] = value
+                env_source.env_vars = env_vars
         return (
             env_settings,
             dotenv_settings,
@@ -282,6 +244,9 @@ class Settings(BaseYamlSettings):
     :type SSL_CAFILE: RelativeFilePath | None
     :param BASE_URL: The application's base URL.
     :type BASE_URL: URL | None
+    :param ALLOWED_HOSTS: A global list of trusted domain names or wildcards, to be used
+        as the default ALLOWED_HOSTS setting across all apps.
+    :type ALLOWED_HOSTS: list[str]
     """
 
     CASDOOR: CasdoorSDK
@@ -293,6 +258,7 @@ class Settings(BaseYamlSettings):
     BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
     BASE_URL: URL | None = None
+    ALLOWED_HOSTS: list[str] = []
     _EXTRA_CLIENT_SESSIONS: dict[tuple[str, str | None], ClientSession] = {}
 
     @computed_field
@@ -383,6 +349,43 @@ class Settings(BaseYamlSettings):
 settings = Settings()
 logging.config.dictConfig(settings.LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
+
+
+class BaseYamlAppSettings(BaseYamlSettings):
+    """Define base settings for a FastAPI app.
+
+    :cvar SETTINGS_PREFIXES: Tuple of settings prefixes.
+    :vartype SETTINGS_PREFIXES: list[str]
+    :param UVICORN_HOST: The host for Uvicorn. Defaults to "127.0.0.1"
+    :type UVICORN_HOST: str
+    :param UVICORN_PORT: The port for Uvicorn. Defaults to 0.
+    :type UVICORN_PORT: int
+    :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
+    :type SSL_KEYFILE: RelativeFilePath | None
+    :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
+    :type SSL_CERTFILE: RelativeFilePath | None
+    :param ALLOWED_HOSTS: A list of trusted domain names or wildcards, to which all
+        incoming requests have the Host header validated against. Use `["*"]` to allow
+        any hostname. Defaults to `settings.ALLOWED_HOSTS`.
+    :type ALLOWED_HOSTS: list[str]
+    """
+
+    UVICORN_HOST: str = "127.0.0.1"
+    UVICORN_PORT: int = 0
+    SSL_KEYFILE: RelativeFilePath | None = None
+    SSL_CERTFILE: RelativeFilePath | None = None
+    ALLOWED_HOSTS: list[str] = Field(settings.ALLOWED_HOSTS, min_length=1)
+
+    @field_validator("ALLOWED_HOSTS")
+    @classmethod
+    def _warn_allowed_hosts_match_any(cls, v: list[str]) -> list[str]:
+        if "*" in v:
+            logger.warning(
+                "The value '*' in %s.ALLOWED_HOSTS matches any hostname "
+                "- use it carefully",
+                cls.__name__,
+            )
+        return v
 
 
 @asynccontextmanager

@@ -2,11 +2,11 @@
 
 from typing import ClassVar
 
-from app.core.config import BaseYamlExtraSettings
+from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 
 
-class InventorySettings(BaseYamlExtraSettings):
+class InventorySettings(BaseYamlAppSettings):
     """Settings for the Inventory API.
 
     :cvar SETTINGS_PREFIXES: The prefixes for task-related settings in the

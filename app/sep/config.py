@@ -21,7 +21,7 @@ from pydantic import (
 )
 
 from app.core.config import (
-    BaseYamlExtraSettings,
+    BaseYamlAppSettings,
     settings,
 )
 from app.core.db.config import DatabaseOptions
@@ -152,7 +152,7 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
-class SEPSettings(BaseYamlExtraSettings):
+class SEPSettings(BaseYamlAppSettings):
     """Settings for SEP.
 
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
