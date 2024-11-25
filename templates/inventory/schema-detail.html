@@ -9,8 +9,8 @@
       text-align: left;
     }
 
-    .create_statement {
-      width: 45%;
+    .create_statement, .keys {
+      width: 35%;
       word-wrap: break-word;
     }
 
@@ -44,8 +44,7 @@
             <th>ID</th>
             <th>Name</th>
             <th class="create_statement">Create Statement</th>
-            <th>Primary Key</th>
-            <th>Unique Keys</th>
+            <th class="keys">Keys</th>
             <th>Actions</th>
         </tr>
     </thead>
@@ -55,8 +54,7 @@
             <td>{{ table.id }}</td>
             <td>{{ table.name }}</td>
             <td class="create_statement">{{ table.create }}</td>
-            <td>{{ table.primary_key }}</td>
-            <td>{{ table.unique_keys }}</td>
+            <td>{{ table.keys }}</td>
             <td>
                 <form action="/inventory/tables/{{ table.id }}/delete" method="post" style="display:inline;">
                     <button name="location" class="icons" style="width: 2em">delete forever</button>

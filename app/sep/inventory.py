@@ -310,22 +310,19 @@ class Table(BaseInventoryModel):
     """Represents an inventory table.
 
     This model represents a table within a schema in the Inventory API, including its
-    name and the SQL statement used to create the table.
+    name and the SQL statement used to create the table, and details about its keys.
 
     :param name: The name of the table.
     :type name: RequiredStr
     :param create: The SQL statement used to create the table.
     :type create: RequiredStr
-    :param primary_key: The name of the primary key column, if any.
-    :type primary_key: str | None
-    :param unique_keys: A comma-separated list of columns that are unique keys, if any.
-    :type unique_keys: str | None
+    :param keys: A dictionary containing details about table keys (e.g., primary, unique).
+    :type keys: dict
     """
 
     name: RequiredStr
     create: RequiredStr
-    primary_key: str | None = None
-    unique_keys: str | None = None
+    keys: dict
 
 
 class CreatedTable(CreatedEntityBase, Table):
