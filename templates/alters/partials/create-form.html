@@ -60,7 +60,7 @@
         padding: 15px;
         border-radius: 5px;
         overflow-x: auto;
-        max-height: 300px;
+        max-height: 1000px;
         font-family: monospace;
         line-height: 1.4em;
     }
@@ -81,7 +81,7 @@
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 1;
-        max-height: 300px;
+        max-height: 1000px;
     }
 
     #result-panel.fade {
@@ -276,8 +276,7 @@
                 table.id: {
                     "name": table.name,
                     "create": table.create,
-                    "primary_key": table.primary_key,
-                    "unique_keys": table.unique_keys,
+                    "keys": table['keys']
                 }
             }) %}
         {% endfor %}
@@ -402,6 +401,7 @@
             const tableData = serviceSchemas[selectedService][selectedSchema]["tables"][tableId];
             const createTableSQL = tableData.create;
             displayCreateTable(createTableSQL);
+            resultPanel.classList.remove("fade")
             analyzeTableStructure(tableData);
         }
     }
@@ -412,24 +412,35 @@
     }
 
     function analyzeTableStructure(tableData) {
-        const hasPrimaryKey = tableData.primary_key && tableData.primary_key.length > 0;
-        const hasUniqueKey = tableData.unique_keys && tableData.unique_keys.length > 0;
+        // Extract keys from the updated data structure
+        const keys = tableData.keys || {};
 
+        const primaryKey = Object.values(keys).find(key => key.type === 'PRIMARY');
+        const uniqueKeys = Object.entries(keys)
+            .filter(([keyName, key]) => key.type === 'UNIQUE')
+            .map(([keyName]) => keyName);
+
+        // Clear any existing success or error classes
         statusMessage.classList.remove('success', 'error');
 
-        if (hasPrimaryKey || hasUniqueKey) {
+        if (primaryKey || uniqueKeys.length > 0) {
             statusMessage.classList.add('success');
             let message = '✅ This table has ';
 
-            if (hasPrimaryKey) message += 'a PRIMARY key';
-            if (hasPrimaryKey && hasUniqueKey) message += ' and ';
+            if (primaryKey) {
+                const primaryColumns = primaryKey.columns.join(', ');
+                message += `a PRIMARY key (${primaryColumns})`;
+            }
 
-            if (hasUniqueKey) {
-                let uniqueKeysArray = tableData.unique_keys.split(',').map(key => key.trim()).filter(key => key.length > 0);
-                if (uniqueKeysArray.length === 1) {
-                    message += 'a UNIQUE key';
+            if (primaryKey && uniqueKeys.length > 0) {
+                message += ' and ';
+            }
+
+            if (uniqueKeys.length > 0) {
+                if (uniqueKeys.length === 1) {
+                    message += `a UNIQUE key (${uniqueKeys[0]})`;
                 } else {
-                    message += 'UNIQUE keys like ' + uniqueKeysArray.join(', ');
+                    message += `UNIQUE keys like ${uniqueKeys.join(', ')}`;
                 }
             }
 
@@ -440,4 +451,4 @@
             statusMessage.innerHTML = '❌ This table does not have a PRIMARY or UNIQUE key.';
         }
     }
-    </script>
+</script>
