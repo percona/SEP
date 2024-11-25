@@ -25,6 +25,18 @@
       -webkit-line-clamp: 4;
     }
 
+    .ellipse-btn {
+      color: black;
+      background: none;
+      text-decoration: underline;
+      font-weight: 200;
+      font-size: .9em;
+    }
+
+    .ellipse-btn:hover {
+      background: none !important ;
+    }
+
   </style>
 {% extends "inventory/base-inventory.html" %}
 
@@ -63,12 +75,12 @@
             <td>{{ table.name }}</td>
             <td class="create_statement">
               <div class="ellipse" id="create-{{ table.id }}">{{ table.create }}</div>
-              <button class="toggle-btn" onclick="toggleContent('create-{{ table.id}}', this)">More</button>
+              <button class="toggle-btn ellipse-btn" onclick="toggleContent('create-{{ table.id}}', this)">>>More</button>
             </td>
             <td>
               {% if table.keys %}
                 <div class="ellipse" id="keys-{{ table.id }}">{{ table.keys }}</div>
-                <button class="toggle-btn" onclick="toggleContent('keys-{{ table.id }}', this)">More</button>
+                <button class="toggle-btn ellipse-btn" onclick="toggleContent('keys-{{ table.id }}', this)">>>More</button>
               {% endif %}
             </td>
             <td>
@@ -90,10 +102,10 @@
     }
     if (element.classList.contains('ellipse')) {
         element.classList.remove('ellipse');
-        button.textContent = 'Less';
+        button.textContent = '<<Less';
     } else {
         element.classList.add('ellipse');
-        button.textContent = 'More';
+        button.textContent = '>>More';
     }
 }
 </script>
