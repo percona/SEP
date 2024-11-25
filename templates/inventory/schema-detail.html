@@ -17,6 +17,14 @@
     td, th {
       width: auto;
     }
+
+    .ellipse {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 4;
+    }
+
   </style>
 {% extends "inventory/base-inventory.html" %}
 
@@ -53,8 +61,16 @@
         <tr>
             <td>{{ table.id }}</td>
             <td>{{ table.name }}</td>
-            <td class="create_statement">{{ table.create }}</td>
-            <td>{{ table.keys }}</td>
+            <td class="create_statement">
+              <div class="ellipse" id="create-{{ table.id }}">{{ table.create }}</div>
+              <button class="toggle-btn" onclick="toggleContent('create-{{ table.id}}', this)">More</button>
+            </td>
+            <td>
+              {% if table.keys %}
+                <div class="ellipse" id="keys-{{ table.id }}">{{ table.keys }}</div>
+                <button class="toggle-btn" onclick="toggleContent('keys-{{ table.id }}', this)">More</button>
+              {% endif %}
+            </td>
             <td>
                 <form action="/inventory/tables/{{ table.id }}/delete" method="post" style="display:inline;">
                     <button name="location" class="icons" style="width: 2em">delete forever</button>
@@ -64,6 +80,23 @@
         {% endfor %}
     </tbody>
 </table>
+
+<script>
+  function toggleContent(id, button) {
+    const element = document.getElementById(id);
+    if (!element) {
+        console.error(`Element with ID '${id}' not found.`);
+        return;
+    }
+    if (element.classList.contains('ellipse')) {
+        element.classList.remove('ellipse');
+        button.textContent = 'Less';
+    } else {
+        element.classList.add('ellipse');
+        button.textContent = 'More';
+    }
+}
+</script>
 {% endblock %}
 
 {% block inventory_create %}
