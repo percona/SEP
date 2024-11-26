@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -317,12 +317,12 @@ class Table(BaseInventoryModel):
     :param create: The SQL statement used to create the table.
     :type create: RequiredStr
     :param keys: A dictionary containing details about table keys (e.g., primary, unique).
-    :type keys: dict
+    :type keys: dict[str, Any]
     """
 
     name: RequiredStr
     create: RequiredStr
-    keys: dict
+    keys: dict[str, Any]
 
 
 class CreatedTable(CreatedEntityBase, Table):
