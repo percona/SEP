@@ -14,6 +14,7 @@ inventory_app = create_app(
     tables.router,
     lifespan=lifespan,
     add_cors_middleware=True,
+    allowed_hosts=inventory_settings.ALLOWED_HOSTS,
 )
 
 

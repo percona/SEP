@@ -30,6 +30,7 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource, PathType
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import Lifespan
 
 from app import BASE_DIR
@@ -409,6 +410,7 @@ def create_app(
     *routers: APIRouter,
     lifespan: Lifespan[AppType] | None = None,
     add_cors_middleware: bool = False,
+    allowed_hosts: list[str] | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI app.
 
@@ -420,6 +422,9 @@ def create_app(
     :param add_cors_middleware: Whether to add CORS middleware to the FastAPI app.
         Defaults to False.
     :type add_cors_middleware: bool
+    :param allowed_hosts: List of allowed hosts for the TrustedHostMiddleware. Defaults
+        to None, meaning the middleware won't be added to the app.
+    :type allowed_hosts: list[str]
     :return: An instance of the FastAPI application with an attached Celery app.
     :rtype: FastAPI
     """
@@ -434,6 +439,8 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    if allowed_hosts is not None:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
     for router in routers:
         app.include_router(router)
     return app
