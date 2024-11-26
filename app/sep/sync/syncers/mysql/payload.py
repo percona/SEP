@@ -30,11 +30,11 @@ def get_table(cursor: DictCursor, db_name: str, table_name: str) -> dict:
              - "keys" (dict): A dictionary describing the keys.
     :rtype: dict
     """
-    cursor.execute(f"SHOW CREATE TABLE {db_name}.{table_name};")
+    cursor.execute(f"SHOW CREATE TABLE `{db_name}`.`{table_name}`;")
     create_table_result = cursor.fetchone()
     create_statement = create_table_result["Create Table"]
 
-    cursor.execute(f"SHOW KEYS FROM {db_name}.{table_name};")
+    cursor.execute(f"SHOW KEYS FROM `{db_name}`.`{table_name}`;")
     keys = cursor.fetchall()
 
     keys_dict = {}
@@ -71,7 +71,7 @@ def get_schema(cursor: DictCursor, db_name: str) -> dict[str, str]:
     """
     schema = {"name": db_name, "tables": []}
     cursor.execute(
-        f"SHOW FULL TABLES FROM {db_name} WHERE Table_Type = 'BASE TABLE';"
+        f"SHOW FULL TABLES FROM `{db_name}` WHERE Table_Type = 'BASE TABLE';"
     )
     tables = cursor.fetchall()
     for table in tables:
