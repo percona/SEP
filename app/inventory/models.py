@@ -1,10 +1,10 @@
 """Define models for the Inventory API."""
 
 from enum import auto, StrEnum
-from typing import Self
+from typing import Any, Self
 
 from pydantic import model_validator
-from sqlalchemy import Column, Index, Text
+from sqlalchemy import Column, Index, JSON, Text
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -445,11 +445,16 @@ class TableBase(SQLModel):
     :type create: RequiredStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
+    :param keys: A dictionary containing details about table keys (e.g., primary, unique).
+    :type keys: Dict[str, Any]
     """
 
     name: RequiredStr
     create: RequiredStr = SQLField(sa_type=Text)
     schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
+    keys: dict[str, Any] = SQLField(
+        sa_column=Column(JSON, nullable=False),
+    )
 
 
 class Table(BaseSQLModel, TableBase, table=True):
