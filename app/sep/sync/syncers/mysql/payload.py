@@ -4,18 +4,14 @@ import argparse
 import json
 import socket
 import sys
-import re
 from collections.abc import Sequence
 from pathlib import Path
+
 import pymysql
-from pymysql.cursors import Cursor, DictCursor
+from pymysql.cursors import DictCursor
 
 
-def get_table(
-    cursor: DictCursor,
-    db_name: str,
-    table_name: str
-) -> dict:
+def get_table(cursor: DictCursor, db_name: str, table_name: str) -> dict:
     """Retrieve the CREATE statement and key information for a specific table.
 
     Execute the SHOW CREATE TABLE command to obtain the creation statement
@@ -36,7 +32,7 @@ def get_table(
     """
     cursor.execute(f"SHOW CREATE TABLE {db_name}.{table_name};")
     create_table_result = cursor.fetchone()
-    create_statement = create_table_result['Create Table']
+    create_statement = create_table_result["Create Table"]
 
     cursor.execute(f"SHOW KEYS FROM {db_name}.{table_name};")
     keys = cursor.fetchall()
@@ -44,31 +40,21 @@ def get_table(
     keys_dict = {}
 
     for row in keys:
-        key_name = row['Key_name']
-        column_name = row['Column_name']
-        non_unique = row['Non_unique']
+        key_name = row["Key_name"]
+        column_name = row["Column_name"]
+        non_unique = row["Non_unique"]
 
         if key_name not in keys_dict:
             keys_dict[key_name] = {
                 "type": "PRIMARY" if key_name == "PRIMARY" else "UNIQUE",
                 "columns": [],
-                "nullable": non_unique == 1
+                "nullable": non_unique == 1,
             }
 
-        keys_dict[key_name]['columns'].append(column_name)
+        keys_dict[key_name]["columns"].append(column_name)
 
-    return dict(
-        name=table_name,
-        create=create_statement,
-        keys={
-            key_name: {
-                "type": key_info["type"],
-                "columns": key_info["columns"],
-                "nullable": key_info["nullable"]
-            }
-            for key_name, key_info in keys_dict.items()
-        }
-    )
+    return {"name": table_name, "create": create_statement, "keys": keys_dict}
+
 
 def get_schema(cursor: DictCursor, db_name: str) -> dict[str, str]:
     """Retrieve all tables and their CREATE statements for a specific schema.
@@ -84,10 +70,12 @@ def get_schema(cursor: DictCursor, db_name: str) -> dict[str, str]:
     :rtype: dict[str, any]
     """
     schema = {"name": db_name, "tables": []}
-    cursor.execute(f"SHOW TABLES FROM `{db_name}`;")
+    cursor.execute(
+        f"SHOW FULL TABLES FROM {db_name} WHERE Table_Type = 'BASE TABLE';"
+    )
     tables = cursor.fetchall()
     for table in tables:
-        table_name = list(table.values())[0]
+        table_name = next(iter(table.values()))
         schema["tables"].append(
             get_table(
                 cursor,
@@ -118,7 +106,7 @@ def get_all_schemas(
     cursor.execute("SHOW DATABASES;")
     databases = cursor.fetchall()
     for db in databases:
-        db_name = db['Database']
+        db_name = db["Database"]
         if db_name in ignored_databases:
             continue
         schemas.append(get_schema(cursor, db_name))
