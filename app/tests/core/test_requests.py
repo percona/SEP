@@ -1,10 +1,12 @@
 """Define tests for the app.core.requests module."""
 
 from http import HTTPStatus
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from aiohttp import ClientSession
+from aiohttp import ClientResponseError, ClientSession
 from aioresponses import aioresponses
+from fastapi import HTTPException, status
 
 from app.core.requests import RemoteAPI
 
@@ -95,3 +97,65 @@ def test_prepare_path(endpoint: str, input_path: str, expected_path: str):
         auth_scheme="Bearer",
     )
     assert remote_api.prepare_path(input_path) == expected_path
+
+
+@pytest.mark.asyncio
+async def test_request_client_error(remote_api):
+    """Test handling of client errors with detailed error response."""
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {
+        "detail": "(sqlite3.IntegrityError) UNIQUE constraint failed: task.name"
+    }
+    mock_response.status = status.HTTP_409_CONFLICT
+    error = ClientResponseError(
+        request_info=None,
+        history=None,
+        status=status.HTTP_409_CONFLICT,
+        message="Conflict",
+    )
+    mock_response.raise_for_status = Mock(side_effect=error)
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    with patch.object(remote_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(HTTPException) as exc_info:
+            await remote_api.request("GET", "/non-existent-path")
+        assert exc_info.value.status_code == status.HTTP_409_CONFLICT
+        assert exc_info.value.detail["error"] == "ClientResponseError"
+        assert exc_info.value.detail["message"] == "Conflict"
+        assert (
+            exc_info.value.detail["details"]
+            == "(sqlite3.IntegrityError) UNIQUE constraint failed: task.name"
+        )
+
+
+@pytest.mark.asyncio
+async def test_request_server_error(remote_api):
+    """Test handling of server errors with generic error response."""
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {}
+    mock_response.status = status.HTTP_500_INTERNAL_SERVER_ERROR
+    error = ClientResponseError(
+        request_info=None,
+        history=None,
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        message="Internal Server Error",
+    )
+    mock_response.raise_for_status = Mock(side_effect=error)
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    with patch.object(remote_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(HTTPException) as exc_info:
+            await remote_api.request("GET", "/error-path")
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert exc_info.value.detail["error"] == "ClientResponseError"
+        assert exc_info.value.detail["message"] == "Internal Server Error"
+        assert (
+            exc_info.value.detail["details"]
+            == "An unexpected error occurred on the server."
+        )

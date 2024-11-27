@@ -9,7 +9,8 @@ from types import TracebackType
 from typing import Any, Self
 from urllib.parse import urljoin
 
-from aiohttp import ClientResponse, ClientSession
+from aiohttp import ClientResponse, ClientResponseError, ClientSession
+from fastapi import HTTPException, status
 from pydantic import computed_field, HttpUrl
 
 from app.core.models import BaseCaseInsensitiveModel
@@ -310,16 +311,43 @@ class RemoteAPI(BaseRemoteAPI):
         :type kwargs: Any
         :return: The JSON response as a Python object.
         :rtype: dict[str, Any] | list[dict[str, Any]]
+        :raises HTTPException: If the request fails due to a server error.
+        :raises ClientResponseError: If the response contains invalid JSON or
+            another low-level error occurs while processing the response.
         """
         async with self._request(method, path, **kwargs) as response:
-            response_data = await response.json()
-            self.logger.debug(
-                "%s request to %s%s response: %s",
-                method,
-                self.base_url,
-                path,
-                response_data,
-            )
+            try:
+                response_data = await response.json()
+                self.logger.debug(
+                    "%s request to %s%s response: %s, status: %s",
+                    method,
+                    self.base_url,
+                    path,
+                    response_data,
+                    response.status,
+                )
+                response.raise_for_status()
+            except ClientResponseError as e:
+                error_response = {
+                    "error": "ClientResponseError",
+                    "status_code": e.status,
+                    "message": e.message,
+                }
+
+                if e.status == status.HTTP_500_INTERNAL_SERVER_ERROR:
+                    error_response.update(
+                        {"details": "An unexpected error occurred on the server."}
+                    )
+                else:
+                    error_detail = response_data.get(
+                        "detail", "No additional details available."
+                    )
+                    error_response.update({"details": error_detail})
+
+                raise HTTPException(
+                    status_code=e.status, detail=error_response
+                ) from None
+
             return response_data
 
     async def get(
