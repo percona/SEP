@@ -42,13 +42,13 @@ def get_table(cursor: DictCursor, db_name: str, table_name: str) -> dict:
     for row in keys:
         key_name = row["Key_name"]
         column_name = row["Column_name"]
-        non_unique = row["Non_unique"]
 
         if key_name not in keys_dict:
             keys_dict[key_name] = {
-                "type": "PRIMARY" if key_name == "PRIMARY" else "UNIQUE",
+                "type": "PRIMARY" if key_name == "PRIMARY" else "INDEX",
                 "columns": [],
-                "nullable": non_unique == 1,
+                "nullable": row.get("Null", "NO").upper() == "YES",
+                "unique": not bool(int(row.get("Non_unique", 0)))
             }
 
         keys_dict[key_name]["columns"].append(column_name)

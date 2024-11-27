@@ -417,7 +417,7 @@
 
         const primaryKey = Object.values(keys).find(key => key.type === 'PRIMARY');
         const uniqueKeys = Object.entries(keys)
-            .filter(([keyName, key]) => key.type === 'UNIQUE')
+            .filter(([keyName, key]) => key.type === 'INDEX' && key.unique)
             .map(([keyName]) => keyName);
 
         // Clear any existing success or error classes
@@ -440,7 +440,7 @@
                 if (uniqueKeys.length === 1) {
                     message += `a UNIQUE key (${uniqueKeys[0]})`;
                 } else {
-                    message += `UNIQUE keys like ${uniqueKeys.join(', ')}`;
+                    message += `UNIQUE keys (${uniqueKeys.join(', ')})`;
                 }
             }
 
