@@ -82,7 +82,6 @@ services:
       <<: *api-db-environment
       UVICORN_HOST: inventory_api
       UVICORN_PORT: 9001
-      ALLOWED_HOSTS: '["inventory_api"]'
     extra_hosts:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
@@ -101,7 +100,6 @@ services:
       <<: *api-db-environment
       UVICORN_HOST: tasks_api
       UVICORN_PORT: 9002
-      ALLOWED_HOSTS: '["tasks_api"]'
     extra_hosts:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
