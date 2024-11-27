@@ -445,13 +445,16 @@ class TableBase(SQLModel):
     :type create: RequiredStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
-    :param keys: A dictionary containing details about table keys (e.g., primary, unique).
+    :param keys: A dictionary containing details about table keys (e.g., primary,
+        unique).
     :type keys: Dict[str, Any]
     """
 
     name: RequiredStr
     create: RequiredStr = SQLField(sa_type=Text)
     schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
+    # TODO(yan): Make keys a Pydantic model
+    # SEP-203
     keys: dict[str, Any] = SQLField(
         sa_column=Column(JSON, nullable=False),
     )
