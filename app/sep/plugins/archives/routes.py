@@ -53,7 +53,7 @@ async def archives_create(
     return RedirectResponse(
         "/archives",
         status_code=status.HTTP_303_SEE_OTHER,
-    )
+    )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)

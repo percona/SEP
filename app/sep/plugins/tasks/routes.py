@@ -62,8 +62,6 @@ async def task_create(
         json=create_task_form.model_dump(include={"payload", "fmt"}),
         params={"backend": create_task_form.backend},
     )
-    # TODO: Exception for invalid job specification # noqa: TD002, TD003
-    logger.debug(task_data)
     await tasks_api.post("/", json=task_data)
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
