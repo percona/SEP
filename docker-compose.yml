@@ -1,7 +1,7 @@
 x-api-environment:
   environment: &api-environment
     FASTAPI_ENV: production_docker
-    LOGGING: debug
+    LOGGING: info
     ENV_FILE: .env.docker
 
 x-api-db-environment:
