@@ -46,11 +46,10 @@ async def archives_create(
 ) -> RedirectResponse:
     """Create new archives task."""
     logger.debug("Create archives task: %s", task)
-    # TODO: validate response  # noqa: TD002, TD003
     await task_api.post(
         "/",
         json=task.model_dump(),
-    )  # TODO: Proper error for unique constraint  # noqa: TD002, TD003
+    )
     return RedirectResponse(
         "/archives",
         status_code=status.HTTP_303_SEE_OTHER,
