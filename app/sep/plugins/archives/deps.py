@@ -55,30 +55,55 @@ async def build_archives_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    schema = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SCHEMA,
-        form.source_db_id,
-        service_id=service.id,
-    )
-    source_table = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.TABLE,
-        form.source_table_id,
-        schema_id=schema.id,
-    )
-    dest_table = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.TABLE,
-        form.dest_table_id,
-        schema_id=schema.id,
-    )
+
     purge_item_data = {
-        **form.model_dump(include={"alias", "where"}, by_alias=True),
-        "source_db": schema.name,
-        "source_table": source_table.name,
-        "dest_table": dest_table.name,
+        **form.model_dump(
+            include={
+                "alias",
+                "source_query",
+                "where",
+                "swap_drop",
+                "swp_table_suffix",
+                "use_index",
+                "extra_args",
+                "limit",
+                "sleep",
+                "disable_binlog",
+                "delete_data",
+            },
+            by_alias=True,
+        ),
     }
+
+    if form.source_db_id is not None:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            form.source_db_id,
+            service_id=service.id,
+        )
+        purge_item_data["source_db"] = schema.name
+
+    if form.source_table_id is not None:
+        source_table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.source_table_id,
+            schema_id=schema.id,
+        )
+        purge_item_data["source_table"] = source_table.name
+
+    if form.dest_table_id is not None:
+        dest_table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.dest_table_id,
+            schema_id=schema.id,
+        )
+        purge_item_data["dest_table"] = dest_table.name
+    elif form.dest_file is not None:
+        purge_item_data["dest_file"] = form.dest_file
+
     purge_config = PurgeConfig(
         all=PurgeConfigAll(
             source_host=service.node.address, source_port=service.port or 3306
@@ -94,7 +119,9 @@ async def build_archives_task_payload(
         data={
             "task": "run-python",
             "meta": {
-                "config": yaml.dump(purge_config.model_dump(by_alias=True)),
+                "config": yaml.dump(
+                    purge_config.model_dump(by_alias=True, exclude_none=True)
+                ),
                 "target": form.hostname,
                 "requirements": "PyMySQL\nfilelock\nPyYAML",
             },
@@ -144,11 +171,25 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
     purge_item = task_config["PURGE_LIST"][0]
-    return {
-        "hostname": meta["target"],
-        "source_table": f"{purge_item['SOURCE_DB']}.{purge_item['SOURCE_TABLE']}",
-        "dest_table": f"{purge_item['SOURCE_DB']}.{purge_item['DEST_TABLE']}",
-    }
+
+    source_db = purge_item.get("SOURCE_DB")
+    source_table = purge_item.get("SOURCE_TABLE")
+    dest_table = purge_item.get("DEST_TABLE")
+    source_query = purge_item.get("SOURCE_QUERY")
+    dest_file = purge_item.get("DEST_FILE")
+
+    result = {"hostname": meta["target"]}
+
+    if source_db and source_table:
+        result["source_table"] = f"{source_db}.{source_table}"
+    if source_db and dest_table:
+        result["dest_table"] = f"{source_db}.{dest_table}"
+    if source_query:
+        result["source_query"] = source_query
+    if dest_file:
+        result["dest_file"] = dest_file
+
+    return result
 
 
 async def get_archives_index_context(

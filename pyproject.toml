@@ -40,7 +40,8 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
-aiohttp = "^3.9.4"
+aiohttp = "^3.11.4"
+aioresponses = "^0.7.7"
 fastapi = {version = "^0.115.0", extras = ["standard"]}
 idna = "^3.7"
 itsdangerous = "^2.1.2"
@@ -83,6 +84,11 @@ optional = true
 
 [tool.poetry.group.mysql.dependencies]
 aiomysql = "^0.2.0"
+
+[tool.poetry.group.syncmysql]
+optional = true
+
+[tool.poetry.group.syncmysql.dependencies]
 pymysql = "^1.1.1"
 
 [tool.poetry.group.postgresql]
@@ -90,6 +96,11 @@ optional = true
 
 [tool.poetry.group.postgresql.dependencies]
 asyncpg = "^0.29.0"
+
+[tool.poetry.group.syncpostgresql]
+optional = true
+
+[tool.poetry.group.syncpostgresql.dependencies]
 psycopg2 = "^2.9.10"
 
 [tool.poetry.group.redis]
