@@ -101,7 +101,7 @@ asyncpg = "^0.29.0"
 optional = true
 
 [tool.poetry.group.syncpostgresql.dependencies]
-psycopg2 = "^2.9.10"
+psycopg2-binary = "^2.9.10"
 
 [tool.poetry.group.redis]
 optional = true
