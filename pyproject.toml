@@ -68,6 +68,7 @@ starlette = "^0.40.0"
 celery = "^5.4.0"
 asgiref = "^3.8.1"
 sqlalchemy-celery-beat = "0.8.0"
+fastapi-csrf-protect = "^0.3.6"
 
 [tool.poetry.group.audit]
 optional = true

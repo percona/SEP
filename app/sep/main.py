@@ -3,7 +3,9 @@
 import logging.config
 
 from fastapi import Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.exceptions import CsrfProtectError
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
@@ -13,7 +15,7 @@ from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var
-from app.sep.config import sep_settings
+from app.sep.config import CsrfSettings, sep_settings
 from app.sep.deps import (
     AccessTokenCookie,
     DefaultContext,
@@ -28,6 +30,17 @@ logger = logging.getLogger(__name__)
 lifespan = default_lifespan if __name__ == "__main__" else None
 sep_app = create_app(lifespan=lifespan)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
+
+
+@CsrfProtect.load_config
+def get_csrf_config() -> CsrfSettings:
+    """Load and return the CSRF configuration settings.
+
+    :return: An instance of `CsrfSettings` containing CSRF protection configuration.
+    :rtype: CsrfSettings
+    """
+    return sep_settings.CSRF
+
 
 imported_plugins = set()
 for plugin in sep_settings.PLUGINS:
@@ -129,6 +142,12 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
         name="homepage.html",
         context=context,
     )
+
+
+@sep_app.exception_handler(CsrfProtectError)
+def csrf_protect_exception_handler(exc: CsrfProtectError) -> JSONResponse:
+    """Handle exceptions raised by CSRF protection."""
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 
 # TODO: take all these logics from routes layer  # noqa: TD002, TD003

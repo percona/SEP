@@ -113,6 +113,43 @@ class SessionOptions(BaseModel):
     SECURE: bool = False
 
 
+class CsrfSettings(BaseLowercaseModel):
+    """Configuration for CSRF protection settings.
+
+    :param secret_key: Secret key used for CSRF token generation.
+    :type secret_key: str
+    :param cookie_secure: Whether the CSRF cookie is secure.
+    :type cookie_secure: bool
+    :param cookie_samesite: SameSite policy for the CSRF cookie.
+    :type cookie_samesite: str
+    :param token_key: Key name for the CSRF token. Required if `token_location`
+        is "body". Defaults to None.
+    :type token_key: str | None
+    :param token_location: Location where the CSRF token is expected. Can be
+        None or "body". Defaults to None.
+    :type token_location: Literal[None, "body"]
+    """
+
+    secret_key: str
+    cookie_secure: bool = True
+    cookie_samesite: str = "none"
+    token_key: str | None = None
+    token_location: Literal[None, "body"] = None
+
+    @model_validator(mode="after")
+    def validate_token_key(self) -> Self:
+        """Validate the relationship between `token_location` and `token_key`.
+
+        :raises ValueError: If `token_key` is set when `token_location` is None,
+            or if `token_key` is missing when `token_location` is "body".
+        """
+        if self.token_location is None and self.token_key is not None:
+            raise ValueError("token_key must not be set when token_location is None.")
+        if self.token_location is not None and self.token_key is None:
+            raise ValueError("token_key is required when token_location is 'body'.")
+        return self
+
+
 class SyncOptions(BaseLowercaseModel):
     """Represent a synchronizer for the SEP app.
 
@@ -195,6 +232,7 @@ class SEPSettings(BaseYamlExtraSettings):
     UVICORN_PORT: int = 8000
     OAUTH: OAuthOptions
     SESSION: SessionOptions = SessionOptions()
+    CSRF: CsrfSettings
     TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
     STATIC_DIR: RelativeDirectoryPath = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
