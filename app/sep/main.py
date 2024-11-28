@@ -107,6 +107,14 @@ async def custom_404_handler(
     )
 
 
+@sep_app.exception_handler(CsrfProtectError)
+async def csrf_protect_exception_handler(
+    _: Request, exc: CsrfProtectError
+) -> JSONResponse:
+    """Handle exceptions raised by CSRF protection."""
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
+
 @sep_app.get("/oauth/callback")
 async def callback(code: str) -> RedirectResponse:
     """Define callback route for OAuth."""
@@ -142,12 +150,6 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
         name="homepage.html",
         context=context,
     )
-
-
-@sep_app.exception_handler(CsrfProtectError)
-def csrf_protect_exception_handler(exc: CsrfProtectError) -> JSONResponse:
-    """Handle exceptions raised by CSRF protection."""
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 
 # TODO: take all these logics from routes layer  # noqa: TD002, TD003

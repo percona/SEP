@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from zoneinfo import available_timezones
 
 from fastapi import Depends, Request
+from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
 from jwt import InvalidTokenError
 from pydantic import ValidationError
@@ -157,6 +158,17 @@ async def get_current_user(
 
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
+
+
+async def validate_csrf(
+    request: Request,
+    csrf_protect: Annotated[CsrfProtect, Depends()],
+) -> None:
+    """Validate the CSRF token from the request."""
+    await csrf_protect.validate_csrf(request)
+
+
+IsCsrfValidated = Depends(validate_csrf)
 
 
 def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:

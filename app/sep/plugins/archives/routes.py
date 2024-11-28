@@ -13,6 +13,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     IsAuthenticated,
+    IsCsrfValidated,
     TaskAPI,
 )
 from app.sep.plugins.archives.deps import (
@@ -45,15 +46,14 @@ async def archives_index(
     return response
 
 
-@router.post("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.post(
+    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+)
 async def archives_create(
-    request: Request,
     task: ArchivesGeneratedTask,
     task_api: TaskAPI,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> RedirectResponse:
     """Create new archives task."""
-    await csrf_protect.validate_csrf(request)
     logger.debug("Create archives task: %s", task)
     await task_api.post(
         "/",
@@ -114,7 +114,7 @@ async def archives_detail(
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
 async def archives_execute(
@@ -132,7 +132,7 @@ async def archives_execute(
 
 @router.post(
     "/{task_name}/delete",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
 async def archives_delete(
