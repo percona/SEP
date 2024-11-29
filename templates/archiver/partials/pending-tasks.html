@@ -17,7 +17,7 @@
       <td>{{ archive['created_at'] }}</td>
       <td>
         <a href="{{ archive_name }}"><i class="icons">visibility</i></a>
-        <a href="javascript:;" onclick="document.getElementById('deleteTaskForm').submit();"><i class="icons">delete forever</i></a>
+        <a href="#" class="submitNextForm"><i class="icons">delete forever</i></a>
         <form action="{{ archive_name }}/delete" method="POST" style="display:none;" id="deleteTaskForm"></form>
       </td>
     </tr>

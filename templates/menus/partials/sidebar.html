@@ -9,7 +9,7 @@
         {% endfor %}
         {#   TODO: logout route with CSRF post     #}
         <li class="signout">
-            <a href="javascript:;" onclick="document.getElementById('logoutForm').submit();">Sign out</a>
+            <a href="#" class="submitNextForm">Sign out</a>
             <form action="/logout" method="POST" style="display:none;" id="logoutForm">
             </form>
         </li>

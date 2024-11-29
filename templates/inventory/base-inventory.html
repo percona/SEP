@@ -15,7 +15,7 @@
 
 {% block behaviours %}
 {% if sync_is_running %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
     setTimeout(function(){
         window.location.reload();
     }, {{ sync_refresh_time|default(5, true) * 1000}});

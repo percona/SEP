@@ -24,7 +24,7 @@
     <button type="submit">Create Node</button>
 </form>
 
-<script type="text/javascript">
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const sourceSelect = document.getElementById('source');
     const externalIdInput = document.getElementById('external_id');
 

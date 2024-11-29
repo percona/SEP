@@ -98,7 +98,7 @@ class SessionOptions(BaseModel):
     :param SAMESITE: SameSite policy for the session cookie. Defaults to 'lax'.
     :type SAMESITE: Literal["lax", "strict", "none"]
     :param SECURE: Whether the session cookie should be accessible only via HTTPS.
-        Defaults to False.
+        Defaults to True.
     :type SECURE: bool
     """
 
@@ -110,7 +110,7 @@ class SessionOptions(BaseModel):
     COOKIE_NAME: str = Field(default="authToken", serialization_alias="key")
     MAX_AGE: TimedeltaSeconds = timedelta(days=7)
     SAMESITE: Literal["lax", "strict", "none"] = "lax"
-    SECURE: bool = False
+    SECURE: bool = True
 
 
 class SyncOptions(BaseLowercaseModel):

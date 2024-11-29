@@ -50,7 +50,13 @@
       </footer>
 
       {% block behaviours_optimized %}
-      <script src="/static/js/jquery-3.7.1.min.js"></script>
+      <script src="/static/js/jquery-3.7.1.min.js" nonce="{{ request.state.csp_nonce }}"></script>
+      <script nonce="{{ request.state.csp_nonce }}">
+      $('.submitNextForm').click(function(e) {
+          e.preventDefault();
+          $(this).next('form').submit();
+      });
+      </script>
           {% block behaviours_optimized_extra %}
           {% endblock %}
       {% endblock %}

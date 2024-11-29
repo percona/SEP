@@ -24,10 +24,10 @@
 
 {% block behaviours_optimized_extra %}
     {% if history or running_tasks %}
-        <script src="/static/js/logs.js"></script>
+        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
-    <script src="/static/js/saved.js"></script>
-    <script>
+    <script src="/static/js/saved.js" nonce="{{ request.state.csp_nonce }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}">
         $(document).ready(function () {
             $('.delete-button').click(function (e) {
                 e.preventDefault();

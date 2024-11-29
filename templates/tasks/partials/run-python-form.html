@@ -80,7 +80,7 @@
     {% include "tasks/partials/scheduler-inputs.html" %}
 </form>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
     // Function to sync each meta input
     function syncMetaInput(item) {
         const mainInput = document.getElementById('meta_' + item);

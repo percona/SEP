@@ -7,14 +7,13 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Literal, Self
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import (
-    AnyUrl,
     computed_field,
     DirectoryPath,
     Field,
@@ -36,12 +35,17 @@ from starlette.types import Lifespan
 from app import BASE_DIR
 from app.core.auth.providers.casdoor import CasdoorSDK
 from app.core.celery.config import CeleryOptions
+from app.core.middleware.security_headers import (
+    SecurityHeadersMiddleware,
+    SecurityHeadersOptions,
+)
 from app.core.requests import RemoteAPI
 from app.core.utils import deep_dict_update, json_serializer
 from app.core.utils.fields import (
     LogLevel,
     RelativeFilePath,
     RequiredStr,
+    StrHttpUrl,
     StrImportableAttribute,
     URL,
 )
@@ -239,15 +243,19 @@ class Settings(BaseYamlSettings):
     :type LOGGING: LogLevel
     :param LOGGING_CONFIG: dictConfig logging configuration.
     :type LOGGING_CONFIG: dict[str, Any]
-    :param BACKEND_CORS_ORIGINS: A list of allowed CORS origins.
-    :type BACKEND_CORS_ORIGINS: list[AnyUrl]
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
     :type SSL_CAFILE: RelativeFilePath | None
     :param BASE_URL: The application's base URL.
     :type BASE_URL: URL | None
+    :param BACKEND_CORS_ORIGINS: A global list of allowed CORS origins, to be used as
+        the default BACKEND_CORS_ORIGINS setting across all apps.
+    :type BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None
     :param ALLOWED_HOSTS: A global list of trusted domain names or wildcards, to be used
         as the default ALLOWED_HOSTS setting across all apps.
     :type ALLOWED_HOSTS: list[str]
+    :param SECURITY_HEADERS: Global options for the SecurityHeadersMiddleware, to be
+        used as the default SECURITY_HEADERS setting across all apps.
+    :type SECURITY_HEADERS: SecurityHeadersOptions | None
     """
 
     CASDOOR: CasdoorSDK
@@ -256,10 +264,11 @@ class Settings(BaseYamlSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
-    BACKEND_CORS_ORIGINS: list[AnyUrl] = []
     SSL_CAFILE: RelativeFilePath | None = None
     BASE_URL: URL | None = None
+    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
+    SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
     _EXTRA_CLIENT_SESSIONS: dict[tuple[str, str | None], ClientSession] = {}
 
     @computed_field
@@ -365,17 +374,25 @@ class BaseYamlAppSettings(BaseYamlSettings):
     :type SSL_KEYFILE: RelativeFilePath | None
     :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
     :type SSL_CERTFILE: RelativeFilePath | None
+    :param BACKEND_CORS_ORIGINS: A list of allowed CORS origins. Use None to disable the
+        CORSMiddleware.
+    :type BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None
     :param ALLOWED_HOSTS: A list of trusted domain names or wildcards, to which all
         incoming requests have the Host header validated against. Use `["*"]` to allow
         any hostname. Defaults to `settings.ALLOWED_HOSTS`.
     :type ALLOWED_HOSTS: list[str]
+    :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
+        Use `False` to disable the middleware completely.
+    :type SECURITY_HEADERS: SecurityHeadersOptions | None
     """
 
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
     SSL_KEYFILE: RelativeFilePath | None = None
     SSL_CERTFILE: RelativeFilePath | None = None
+    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = settings.BACKEND_CORS_ORIGINS
     ALLOWED_HOSTS: list[str] = Field(settings.ALLOWED_HOSTS, min_length=1)
+    SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
 
     @field_validator("ALLOWED_HOSTS")
     @classmethod
@@ -384,6 +401,19 @@ class BaseYamlAppSettings(BaseYamlSettings):
             logger.warning(
                 "The value '*' in %s.ALLOWED_HOSTS matches any hostname "
                 "- use it carefully",
+                cls.__name__,
+            )
+        return v
+
+    @field_validator("SECURITY_HEADERS")
+    @classmethod
+    def _warn_security_headers_middleware_enabled_without_headers(
+        cls, v: SecurityHeadersOptions | Literal[False]
+    ) -> SecurityHeadersOptions | Literal[False]:
+        if v and not any(v.model_dump().values()):
+            logger.warning(
+                "SecurityHeadersMiddleware is enabled in %s but all options are "
+                "disabled. Set `SECURITY_HEADERS` to False to disable the middleware.",
                 cls.__name__,
             )
         return v
@@ -409,8 +439,9 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa:
 def create_app(
     *routers: APIRouter,
     lifespan: Lifespan[AppType] | None = None,
-    add_cors_middleware: bool = False,
+    backend_cors_origins: list[StrHttpUrl] | None = None,
     allowed_hosts: list[str] | None = None,
+    security_headers: SecurityHeadersOptions | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI app.
 
@@ -419,28 +450,30 @@ def create_app(
     :param lifespan: Lifespan context manager for the FastAPI app, if any. Defaults to
         None.
     :type lifespan: Lifespan[AppType] | None
-    :param add_cors_middleware: Whether to add CORS middleware to the FastAPI app.
-        Defaults to False.
-    :type add_cors_middleware: bool
+    :param backend_cors_origins: A list of allowed origins for the CORSMiddleware.
+        Defaults to None, meaning the middleware won't be added to the app.
+    :type backend_cors_origins: list[StrHttpUrl] | None
     :param allowed_hosts: List of allowed hosts for the TrustedHostMiddleware. Defaults
         to None, meaning the middleware won't be added to the app.
     :type allowed_hosts: list[str]
+    :param security_headers: Options for the SecurityHeadersMiddleware. Defaults to
+        None, meaning the middleware won't be added to the app.
     :return: An instance of the FastAPI application with an attached Celery app.
     :rtype: FastAPI
     """
     app = FastAPI(lifespan=lifespan)
-    if add_cors_middleware and settings.BACKEND_CORS_ORIGINS:
+    if backend_cors_origins is not None:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=[
-                str(origin).strip("/") for origin in settings.BACKEND_CORS_ORIGINS
-            ],
+            allow_origins=backend_cors_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
         )
     if allowed_hosts is not None:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+    if security_headers is not None:
+        app.add_middleware(SecurityHeadersMiddleware, options=security_headers)
     for router in routers:
         app.include_router(router)
     return app
