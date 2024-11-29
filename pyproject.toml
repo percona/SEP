@@ -42,7 +42,6 @@ packages = [
 python = ">=3.11,<3.14"
 aiohttp = "^3.11.4"
 aioresponses = "^0.7.7"
-fastapi = {version = "^0.115.0", extras = ["standard"]}
 idna = "^3.7"
 itsdangerous = "^2.1.2"
 pydantic = "^2.4.0"
@@ -69,6 +68,8 @@ celery = "^5.4.0"
 asgiref = "^3.8.1"
 sqlalchemy-celery-beat = "0.8.0"
 fastapi-csrf-protect = "^0.3.6"
+fastapi = "^0.115.5"
+httpx = "^0.28.0"
 
 [tool.poetry.group.audit]
 optional = true
