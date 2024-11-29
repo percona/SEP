@@ -14,7 +14,8 @@ x-api-db-environment:
     DATABASE__PORT: 5432
     DATABASE__NAME: sep
     CELERY__BROKER_URL: redis://redis:6379/0
-    CELERY__BEAT_DBURI: sqlite:///docker-schedule.db
+    CELERY__BEAT_DBURI: postgresql://postgres:postgres@sep-db:5432
+    CELERY__BEAT_SCHEMA: sep
 
 services:
   casdoor:
@@ -99,7 +100,6 @@ services:
       <<: *api-db-environment
       UVICORN_HOST: tasks_api
       UVICORN_PORT: 9002
-      CELERY__BROKER_URL: redis://redis:6379/0
     extra_hosts:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 

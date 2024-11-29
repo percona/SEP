@@ -11,9 +11,7 @@ from asgiref.sync import async_to_sync
 from celery import Task
 from fastapi.encoders import jsonable_encoder
 
-from app.core.celery.db import (
-    get_async_session_maker as get_celery_beat_async_session_maker,
-)
+from app.core.celery.db import get_async_session_maker as get_celery_async_session_maker
 from app.core.celery.utils import create_celery
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -101,7 +99,7 @@ def process_expired_and_orphaned_periodic_tasks(self: Task) -> None:
 async def process_expired_periodic_tasks() -> None:
     """Find and process expired periodic tasks."""
     logger.debug("Processing expired tasks...")
-    celery_beat_async_session = get_celery_beat_async_session_maker()
+    celery_beat_async_session = get_celery_async_session_maker(create_new_engine=True)
     async with celery_beat_async_session() as celery_beat_session:
         await PeriodicTaskManager.process_expired(celery_beat_session)
 
@@ -112,10 +110,12 @@ async def process_orphaned_periodic_tasks() -> None:
     if action == PeriodicTaskAction.NOTHING:
         logger.debug("ON_ORPHAN is NOTHING, ignoring orphaned periodic tasks")
         return
-    async_session = get_async_session_maker()
+
+    async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
         task_names = [task.name for task in await TaskManager.list_active(session)]
-    celery_beat_async_session = get_celery_beat_async_session_maker()
+
+    celery_beat_async_session = get_celery_async_session_maker(create_new_engine=True)
     async with celery_beat_async_session() as celery_beat_session:
         await PeriodicTaskManager.perform_action_where(
             celery_beat_session,
@@ -141,7 +141,7 @@ async def prepare_periodic_task_history(
         if execution_data
         else None
     )
-    async_session = get_async_session_maker()
+    async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
         task = await get_task_by_name(session, task_name)
         return await create_task_history(session, task, execution_data)
@@ -159,7 +159,7 @@ async def process_queue_item(queue_id: int) -> TaskHistory:
     :raises HTTPBadRequestException: If the task backend is unsupported,
         raises a 400 Bad Request error.
     """
-    async_session = get_async_session_maker()
+    async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
