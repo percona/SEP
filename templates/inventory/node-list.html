@@ -29,6 +29,7 @@
             <td>
                 <form action="{{ node.id }}/delete" method="post" style="display:inline;">
 {#                    TODO: Fix button clickable size #}
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
                     <button name="location" class="icons" style="width: 2em">delete forever</button>
                 </form>
             </td>

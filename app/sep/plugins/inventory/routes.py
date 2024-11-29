@@ -3,8 +3,9 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi_csrf_protect import CsrfProtect
 
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
@@ -15,6 +16,7 @@ from app.sep.deps import (
     DefaultContext,
     InventoryAPI,
     IsAuthenticated,
+    IsCsrfValidated,
     SessionDep,
 )
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
@@ -39,8 +41,11 @@ async def node_list(
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
+    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """List Nodes."""
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    context["csrf_token"] = csrf_token
     context["inventory"] = await inventory_api.get("/")
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
@@ -48,14 +53,16 @@ async def node_list(
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
     context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html",
         context=context,
     )
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 
-@router.post("/sync/", dependencies=[IsAuthenticated])
+@router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_inventory(
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
@@ -72,22 +79,27 @@ async def node_detail(
     request: Request,
     node: CreatedNodeDep,
     context: DefaultContext,
+    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Retrieve Node Details."""
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    context["csrf_token"] = csrf_token
     context["node"] = node
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.NODE,
     )
     context["can_sync"] = any(syncer.can_sync_node(node) for syncer in syncers)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="inventory/node-detail.html",
         context=context,
     )
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 
-@router.post("/{node_id}/sync/", dependencies=[IsAuthenticated])
+@router.post("/{node_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_node(
     node: CreatedNodeDep,
     syncers: SyncersDep,
@@ -101,7 +113,7 @@ async def sync_node(
     )
 
 
-@router.post("/", dependencies=[IsAuthenticated])
+@router.post("/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def node_create(
     inventory_api: InventoryAPI,
     node_data: Annotated[Node, Form()],
@@ -111,7 +123,7 @@ async def node_create(
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/{node_id}/delete", dependencies=[IsAuthenticated])
+@router.post("/{node_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def node_delete(
     node_id: int,
     inventory_api: InventoryAPI,
@@ -132,22 +144,29 @@ async def service_detail(
     request: Request,
     service: CreatedServiceDep,
     context: DefaultContext,
+    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Retrieve Service Details."""
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    context["csrf_token"] = csrf_token
     context["service"] = service
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.SERVICE,
     )
     context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html",
         context=context,
     )
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 
-@router.post("/services/{service_id}/sync/", dependencies=[IsAuthenticated])
+@router.post(
+    "/services/{service_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def sync_service(
     service: CreatedServiceDep,
     syncers: SyncersDep,
@@ -161,7 +180,7 @@ async def sync_service(
     )
 
 
-@router.post("/{node_id}/services/", dependencies=[IsAuthenticated])
+@router.post("/{node_id}/services/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def service_create_for_node(
     node_id: int,
     inventory_api: InventoryAPI,
@@ -178,7 +197,9 @@ async def service_create_for_node(
     )
 
 
-@router.post("/services/{service_id}/delete", dependencies=[IsAuthenticated])
+@router.post(
+    "/services/{service_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def service_delete(
     service_id: int,
     inventory_api: InventoryAPI,
@@ -203,22 +224,29 @@ async def schema_detail(
     request: Request,
     schema: CreatedSchemaDep,
     context: DefaultContext,
+    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Retrieve Schema Details."""
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    context["csrf_token"] = csrf_token
     context["schema"] = schema
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.SCHEMA,
     )
     context["can_sync"] = any(syncer.can_sync_schema(schema) for syncer in syncers)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="inventory/schema-detail.html",
         context=context,
     )
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 
-@router.post("/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated])
+@router.post(
+    "/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def sync_schema(
     schema: CreatedSchemaDep,
     syncers: SyncersDep,
@@ -232,7 +260,9 @@ async def sync_schema(
     )
 
 
-@router.post("/services/{service_id}/schemas/", dependencies=[IsAuthenticated])
+@router.post(
+    "/services/{service_id}/schemas/", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def schema_create_for_service(
     service_id: int,
     inventory_api: InventoryAPI,
@@ -249,7 +279,9 @@ async def schema_create_for_service(
     )
 
 
-@router.post("/schemas/{schema_id}/delete", dependencies=[IsAuthenticated])
+@router.post(
+    "/schemas/{schema_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def schema_delete(
     schema_id: int,
     inventory_api: InventoryAPI,
@@ -263,7 +295,9 @@ async def schema_delete(
     )
 
 
-@router.post("/schemas/{schema_id}/tables/", dependencies=[IsAuthenticated])
+@router.post(
+    "/schemas/{schema_id}/tables/", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def table_create_for_schema(
     schema_id: int,
     inventory_api: InventoryAPI,
@@ -280,7 +314,9 @@ async def table_create_for_schema(
     )
 
 
-@router.post("/tables/{table_id}/delete", dependencies=[IsAuthenticated])
+@router.post(
+    "/tables/{table_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def table_delete(
     table_id: int,
     inventory_api: InventoryAPI,
