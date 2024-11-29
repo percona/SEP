@@ -165,7 +165,6 @@ async def validate_csrf(
     csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> None:
     """Validate the CSRF token from the request."""
-    await request.form()
     await csrf_protect.validate_csrf(request)
 
 

@@ -1245,13 +1245,13 @@ standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.5)", "htt
 
 [[package]]
 name = "fastapi-csrf-protect"
-version = "0.3.6"
+version = "0.3.7"
 description = "Stateless implementation of Cross-Site Request Forgery (XSRF) Protection by using Double Submit Cookie mitigation pattern"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "fastapi_csrf_protect-0.3.6-py3-none-any.whl", hash = "sha256:a0de413d939a7192a210d8d1729468e14e6519d97e202e2cd5614e4a48ff9f25"},
-    {file = "fastapi_csrf_protect-0.3.6.tar.gz", hash = "sha256:fb9a6e304f5fe42ba4f2c0e4967bd21a2693c4aa89d95cf6f04b2af0287cdb01"},
+    {file = "fastapi_csrf_protect-0.3.7-py3-none-any.whl", hash = "sha256:75f6f30ebeafd832b7f52f0d0bc347cb3aa42add6b986b4555f213b26c72bc9e"},
+    {file = "fastapi_csrf_protect-0.3.7.tar.gz", hash = "sha256:ee1b4979ca20b7558668ee971d96431b8530483a21ca10dc476031f8f28c7930"},
 ]
 
 [package.dependencies]
@@ -1262,7 +1262,6 @@ pydantic-settings = ">=2.0.0"
 
 [package.extras]
 examples = ["jinja2 (>=3.0.1)", "pydantic[email] (>=1.7.2,<3.0.0)", "python-multipart (>=0.0.6)", "uvicorn (>=0.15.0)"]
-tests = ["httpx (>=0.24.1)", "pytest (>=7.3.1)"]
 
 [[package]]
 name = "fastjsonschema"
@@ -3998,4 +3997,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.14"
-content-hash = "7d3049eadc3e70d0598bf78babf7dfedc6c41141f0ae551a6a290ae26cc9e7f2"
+content-hash = "4424d4a20f67c6fca81a8e11725d43502d8ae93746a3aa20421823c64deee6ae"
