@@ -97,6 +97,7 @@
 </style>
 {% set form_class = "modal" if modal_required else "" %}
 <form action="" method="post" class="{{ form_class }}" style="padding-left: 0;">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
     <fieldset>
         <legend style="margin-bottom: 0.8em;">Main options</legend>
         <fieldset>
