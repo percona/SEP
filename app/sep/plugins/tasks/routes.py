@@ -56,7 +56,6 @@ async def task_create(
 ) -> RedirectResponse:
     """Create task."""
     logger.debug("Create task: %s", create_task_form)
-    # TODO: name should be unique  # noqa: TD002, TD003
     task_data = create_task_form.model_dump(exclude={"payload", "fmt"})
     task_data["data"] = await tasks_api.post(
         "/transform/",

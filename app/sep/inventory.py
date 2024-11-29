@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -310,16 +310,19 @@ class Table(BaseInventoryModel):
     """Represents an inventory table.
 
     This model represents a table within a schema in the Inventory API, including its
-    name and the SQL statement used to create the table.
+    name and the SQL statement used to create the table, and details about its keys.
 
     :param name: The name of the table.
     :type name: RequiredStr
     :param create: The SQL statement used to create the table.
     :type create: RequiredStr
+    :param keys: A dictionary containing details about table keys (e.g., primary, unique).
+    :type keys: dict[str, Any]
     """
 
     name: RequiredStr
     create: RequiredStr
+    keys: dict[str, Any]
 
 
 class CreatedTable(CreatedEntityBase, Table):

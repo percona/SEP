@@ -1,68 +1,181 @@
 {% set form_class = "modal" if modal_required else "" %}
+<style>
+    fieldset input,
+    select {
+        margin-top: 1em;
+    }
+
+    fieldset div>label:nth-child(n+2) {
+        margin-left: 1.5em;
+    }
+
+    #source_query_container,
+    #dest_file_container,
+    #delete_data_container {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 100px; /* Adjust based on actual content */
+    }
+
+    #source_query_container.hidden,
+    #dest_file_container.hidden,
+    #delete_data_container.hidden {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    #destination_container,
+    #purge_options_container{
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 500px; /* Adjust based on actual content height */
+    }
+
+    #destination_container.hidden,
+    #purge_options_container.hidden {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+
+    #swp_table_suffix_container {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 100px; /* Adjust based on actual content */
+    }
+
+    #swp_table_suffix_container.hidden {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+</style>
 <form action="" method="post" class="{{ form_class }}">
     <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
         <label for="hostname">Select host</label>
         {% if executor_hosts|length == 1 %}
-            {% set single_service = executor_hosts[0] %}
-            <select id="hostname" name="hostname" disabled>
-                <option value="{{ single_service }}" selected>{{ single_service }}</option>
-            </select>
-            <input type="hidden" name="hostname" value="{{ single_service }}">
+        {% set single_service = executor_hosts[0] %}
+        <select id="hostname" name="hostname" disabled>
+            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+        </select>
+        <input type="hidden" name="hostname" value="{{ single_service }}">
         {% else %}
-            <select id="hostname" name="hostname">
-                {% for executor_host in executor_hosts %}
-                <option value="{{ executor_host }}">{{ executor_host }}</option>
-                {% endfor %}
-            </select>
+        <select id="hostname" name="hostname">
+            {% for executor_host in executor_hosts %}
+            <option value="{{ executor_host }}">{{ executor_host }}</option>
+            {% endfor %}
+        </select>
         {% endif %}
+    </fieldset>
+    <fieldset style="display: flex; flex-flow: column;">
+        <legend>Archive Type</legend>
+        <div>
+            <label for="alias">Task name
+                <input type="text" id="alias" name="alias" class="validate" required />
+            </label>
+            <label for="swap_drop">Type
+                <select id="swap_drop" name="swap_drop">
+                    <option value="0">Standard purge</option>
+                    <option value="1">Swap and drop</option>
+                    <option value="2">Swap-archive-drop</option>
+                </select>
+            </label>
+        </div>
     </fieldset>
     <fieldset>
         <legend>Source details</legend>
-        <label for="alias">Task name
-            <input type="text" id="alias" name="alias" class="validate" required/>
-        </label>
-        <label for="service_id">Select a database host
-        {% if mysql_services|length == 1 %}
-            {% set single_service = mysql_services[0] %}
-            <select id="service_id" name="service_id" disabled>
-                <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-            </select>
-            <input type="hidden" name="service_id" value="{{ single_service.id }}">
-        {% else %}
-            <select id="service_id" name="service_id">
-                <option value="" selected>Select a database host</option>
-                {% for service in mysql_services %}
-                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                {% endfor %}
-            </select>
-        {% endif %}
-        </label>
-        <fieldset>
-            <legend>Data</legend>
+        <div>
+            <label for="service_id">Select a database host
+                {% if mysql_services|length == 1 %}
+                {% set single_service = mysql_services[0] %}
+                <select id="service_id" name="service_id" disabled>
+                    <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                </select>
+                <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                {% else %}
+                <select id="service_id" name="service_id" required>
+                    <option value="" selected>Select a database host</option>
+                    {% for service in mysql_services %}
+                    <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
+            </label>
+        </div>
+        <div>
             <label for="source_db_id">Schema
-                <select id="source_db_id" name="source_db_id" class="validate" disabled required>
+                <select id="source_db_id" name="source_db_id" class="validate" required>
                     <option value="">Select a schema</option>
                 </select>
             </label>
             <label for="source_table_id">Table
-                <select id="source_table_id" name="source_table_id" class="validate" disabled required>
+                <select id="source_table_id" name="source_table_id" class="validate" required>
                     <option value="">Select a table</option>
                 </select>
             </label>
-            <label for="where">Where condition
-                <input type="text" id="where" name="where" class="validate" required/>
+            <br/>
+            <div id="source_query_container" style="width: fit-content; margin-left: 1em;">
+            <label>OR</label>
+            <label for="source_query">Source Query
+                <input type="text" id="source_query" name="source_query" class="validate" required style="width: 25em;"/>
             </label>
-        </fieldset>
-    </fieldset>
-    <fieldset>
-        <legend>Destination details</legend>
-        <label for="dest_table_id">Name
-            <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
-                <option value="">Select a table</option>
-            </select>
+            </div>
+        </div>
+        <div id="swp_table_suffix_container">
+            <label for="swp_table_suffix">Swap Table Suffix
+                <input type="date" id="swp_table_suffix" name="swp_table_suffix" class="validate" required />
+            </label>
+        </div>
+        <div id="purge_options_container">
+            <label for="where">Where condition
+                <input type="text" id="where" name="where" class="validate" required style="width: 25em;"/>
+            </label>
+            <br/>
+            <label for="use_index">Use Index
+                <input type="text" id="use_index" name="use_index" class="validate"/>
+            </label>
+            <label for="limit">Limit
+                <input type="number" id="limit" name="limit" class="validate" value="1000"  style="width:5em;"/>
+            </label>
+            <label for="sleep">Sleep
+                <input type="number" id="sleep" name="sleep" class="validate" value="1"  style="width: 3em;"/>
+            </label>
+            <br/>
+            <label for="extra_args">Extra args
+                <input type="text" id="extra_args" name="extra_args" class="validate" style="width: 25em;"/>
+            </label>
+            <br/>
+            <label for="disable_binlog">Disable Binlog
+                <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1" />
+            </label>
+        </div>
+        <label for="delete_data" id="delete_data_container">DELETE_DATA
+            <input type="checkbox" id="delete_data" name="delete_data" class="validate" value="1" />
         </label>
+    </fieldset>
+    <fieldset id="destination_fieldset">
+        <legend>Destination details</legend>
+        <div id="destination_container">
+            <label for="dest_table_id">Destination Database
+                <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
+                    <option value="">Select a table</option>
+                </select>
+            </label>
+            <br/>
+            <div id="dest_file_container" style="width: fit-content;">
+                <label>OR</label>
+                <label for="dest_file" >Destination File
+                    <input type="text" id="dest_file" name="dest_file" class="validate" required style="width: 25em;"/>
+                </label>
+            </div>
+        </div>
     </fieldset>
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
@@ -70,15 +183,15 @@
 
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% set tables = {} %}
-        {% for table in schema.tables %}
-            {% do tables.update({table.id: table.name}) %}
-        {% endfor %}
-        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
+{% set schemas = {} %}
+{% for schema in service.schemas %}
+{% set tables = {} %}
+{% for table in schema.tables %}
+{% do tables.update({table.id: table.name}) %}
+{% endfor %}
+{% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
+{% endfor %}
+{% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
 
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
@@ -87,13 +200,27 @@
     const schemaSelect = document.getElementById('source_db_id');
     const sourceTableSelect = document.getElementById('source_table_id');
     const destTableSelect = document.getElementById('dest_table_id');
+    const dstFileInput = document.getElementById('dest_file');
+    const swapDropSelect = document.getElementById('swap_drop');
+    const destinationFieldset = document.getElementById('destination_fieldset');
+    const dstFileContainer = document.getElementById('dest_file_container');
+    const srcQueryInput = document.getElementById('source_query');
+    const srcQueryContainer = document.getElementById('source_query_container');
+    const destinationContainer = document.getElementById('destination_container');
+    const deleteDataContainer = document.getElementById('delete_data_container');
+    const prgPurgeCheckbox = document.getElementById('delete_data');
+    const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
+    const swpTableSuffixInput = document.getElementById('swp_table_suffix');
+    const useIndexInput = document.getElementById('use_index');
+    const limitInput = document.getElementById('limit');
+    const sleepInput = document.getElementById('sleep');
+    const extraArgsInput = document.getElementById('extra_args');
+    const whereInput = document.getElementById('where');
+    const purgeConfigOptionsContainer = document.getElementById('purge_options_container');
 
     function populateSchemas(selectedService) {
-        schemaSelect.disabled = true;
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
-        sourceTableSelect.disabled = true;
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedService && serviceSchemas[selectedService]) {
@@ -104,13 +231,13 @@
                     option.value = schemaId;
                     option.textContent = schema.name;
                     schemaSelect.appendChild(option);
-                    schemaSelect.disabled = false;
+                    if (srcQueryInput.value === '')
+                        schemaSelect.disabled = false;
                 }
                 if (schemas.length === 1) {
                     const [singleSchemaId, _] = schemas[0]
                     schemaSelect.value = singleSchemaId;
-                    schemaSelect.disabled = true;
-                    schemaSelect.insertAdjacentHTML("afterend", `<input id="source_db_id_hidden" type="hidden" name="source_db_id" value="${schemaSelect.value}">`)
+                    addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, singleSchemaId);
                 }
             }
@@ -129,16 +256,12 @@
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0]
                 tableSelect.value = singleTableId;
-                tableSelect.disabled = true;
-                tableSelect.insertAdjacentHTML("afterend", `<input id="${tableSelect.id}_hidden" type="hidden" name="${tableSelect.name}" value="${tableSelect.value}">`)
             }
         }
     }
 
     function populateSourceTables(selectedService, selectedSchema) {
-        sourceTableSelect.disabled = true;
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
@@ -146,43 +269,49 @@
             populateTables(sourceTableSelect, tables);
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0]
+                sourceTableSelect.value = singleTableId;
+                addHiddenInput(sourceTableSelect);
                 populateDestTables(selectedService, selectedSchema, singleTableId);
             }
         }
     }
 
     function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
-        destTableSelect.disabled = true;
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
 
         if (selectedSchema && selectedSourceTable && serviceSchemas[selectedService][selectedSchema]) {
             let tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
             tables = tables.filter(table => table[0] !== selectedSourceTable)
             populateTables(destTableSelect, tables);
+
+            if (tables.length === 1) {
+                const [singleTableId, _] = tables[0];
+                destTableSelect.value = singleTableId;
+            }
         }
     }
 
-    connectToSelect.addEventListener('change', function() {
+    connectToSelect.addEventListener('change', function () {
         const selectedService = this.value;
         const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
-        populateSchemas(selectedService);
+        populateSchemas(this.value);
+        toggleSourceQueryInput();
+        toggleDstFileContainer();
+        toggleDestTableSelect()
+        updateDestinationFieldset();
     });
 
-    schemaSelect.addEventListener('change', function() {
+    schemaSelect.addEventListener('change', function () {
         const selectedService = connectToSelect.value;
         const selectedSchema = this.value;
         const hiddenTableInput = document.getElementById("source_table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateSourceTables(selectedService, selectedSchema);
+        populateSourceTables(connectToSelect.value, this.value);
+        updateDestinationFieldset();
     });
 
-    window.addEventListener('DOMContentLoaded', function() {
-        if (connectToSelect.options.length === 1) {
-            const singleHost = connectToSelect.options[0].value;
-            populateSchemas(singleHost);
-        }
-    });
+
 
     sourceTableSelect.addEventListener('change', function () {
         const selectedService = connectToSelect.value;
@@ -190,6 +319,237 @@
         const selectedTable = this.value;
         const hiddenTableInput = document.getElementById("dest_table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateDestTables(selectedService, selectedSchema, selectedTable);
+        populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
+        toggleDstFileContainer();
+        updateDestinationFieldset();
+        toggleDestTableSelect()
+    });
+
+
+
+    function updateDestinationFieldset() {
+        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+            destinationContainer.classList.add('hidden');
+            destTableSelect.disabled = true;
+            dstFileInput.disabled = true;
+            removeHiddenInput('dest_table_id');
+            removeHiddenInput('dest_file');
+        } else {
+            destinationContainer.classList.remove('hidden');
+            if(!dstFileInput.value)
+                destTableSelect.disabled = false;
+            if(!destTableSelect.value)
+                dstFileInput.disabled = false;
+
+            destTableSelect.setAttribute('name', 'dest_table_id');
+            dstFileInput.setAttribute('name', 'dest_file');
+        }
+    }
+
+    function removeHiddenInput(inputName) {
+        const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
+        if (hiddenInput) {
+            hiddenInput.parentNode.removeChild(hiddenInput);
+        }
+    }
+
+    function addHiddenInput(inputElement) {
+        removeHiddenInput(inputElement.name);
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = inputElement.name;
+        hiddenInput.value = inputElement.value;
+        hiddenInput.id = `${inputElement.id}_hidden`;
+        inputElement.insertAdjacentElement('afterend', hiddenInput);
+    }
+
+
+    function toggleSchemaAndTable() {
+        if (srcQueryInput.value.trim() !== '') {
+            schemaSelect.disabled = true;
+            sourceTableSelect.disabled = true;
+            schemaSelect.removeAttribute('required');
+            sourceTableSelect.removeAttribute('required');
+            schemaSelect.value = '';
+            sourceTableSelect.value = '';
+            schemaSelect.removeAttribute('name');
+            sourceTableSelect.removeAttribute('name');
+            removeHiddenInput('source_db_id')
+            removeHiddenInput('source_table_id')
+        } else {
+            schemaSelect.disabled = false;
+            sourceTableSelect.disabled = false;
+            schemaSelect.setAttribute('required', 'required');
+            sourceTableSelect.setAttribute('required', 'required');
+            schemaSelect.name = 'source_db_id';
+            sourceTableSelect.name = 'source_table_id';
+        }
+    }
+
+    function toggleSourceQueryInput() {
+        if (schemaSelect.value !== '' && sourceTableSelect.value !== '') {
+            srcQueryInput.disabled = true;
+            srcQueryInput.removeAttribute('required');
+            srcQueryInput.value = '';
+            srcQueryInput.removeAttribute('name');
+            srcQueryContainer.classList.add('hidden');
+        } else {
+            srcQueryInput.disabled = false;
+            srcQueryInput.setAttribute('required', 'required');
+            srcQueryInput.name = 'source_query';
+            srcQueryContainer.classList.remove('hidden');
+        }
+    }
+
+    function togglePrgPurgeCheckbox() {
+        if (swapDropSelect.value !== '1') {
+            prgPurgeCheckbox.disabled = false
+            deleteDataContainer.classList.remove('hidden');
+            return;
+        }
+        prgPurgeCheckbox.disabled = true;
+        deleteDataContainer.classList.add('hidden');
+    }
+
+    function toggleSwpTableSuffix() {
+        if (swapDropSelect.value === '2') {
+            swpTableSuffixContainer.classList.remove('hidden');
+            swpTableSuffixInput.disabled = false;
+            swpTableSuffixInput.setAttribute('name', 'swp_table_suffix');
+        } else {
+            swpTableSuffixContainer.classList.add('hidden');
+            swpTableSuffixInput.disabled = true;
+            swpTableSuffixInput.removeAttribute('name');
+        }
+    }
+    function toggleDstFileContainer() {
+        if (destTableSelect.value !== '') {
+            dstFileContainer.classList.add('hidden');
+            dstFileInput.disabled = true;
+            dstFileInput.value = '';
+            dstFileInput.removeAttribute('name');
+        } else {
+            dstFileContainer.classList.remove('hidden');
+            dstFileInput.disabled = false;
+            dstFileInput.setAttribute('name', 'dest_file');
+        }
+    }
+
+    function toggleDestTableSelect() {
+        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+            destTableSelect.disabled = true;
+            destTableSelect.value = '';
+            destTableSelect.removeAttribute('name');
+            removeHiddenInput('dest_table_id')
+        } else {
+            destTableSelect.disabled = false;
+            destTableSelect.setAttribute('name', 'dest_table_id');
+        }
+    }
+
+    function toggleOptionalInputName(inputElement) {
+        if (inputElement.value.trim() === '') {
+            inputElement.removeAttribute('name');
+        } else {
+            inputElement.setAttribute('name', inputElement.id);
+        }
+    }
+
+    function toggleWhereInput() {
+        if (swapDropSelect.value === '1') {
+            whereInput.classList.add('hidden');
+            whereInput.removeAttribute('name');
+            useIndexInput.removeAttribute('name');
+            limitInput.removeAttribute('name');
+            sleepInput.removeAttribute('name');
+            extraArgsInput.removeAttribute('name');
+            whereInput.removeAttribute('required');
+        } else {
+            whereInput.classList.remove('hidden');
+            whereInput.setAttribute('name', 'where');
+            useIndexInput.setAttribute('name', 'use_index');
+            limitInput.setAttribute('name', 'limit');
+            sleepInput.setAttribute('name', 'sleep');
+            extraArgsInput.setAttribute('name', 'extra_args');
+            whereInput.setAttribute('required', 'required')
+        }
+        toggleOptionalInputNames();
+    }
+
+    function togglePurgeOptionsContainer() {
+        if (swapDropSelect.value === '1') {
+            purgeConfigOptionsContainer.classList.add('hidden');
+        } else {
+            purgeConfigOptionsContainer.classList.remove('hidden');
+        }
+    }
+
+    swapDropSelect.addEventListener('change', function () {
+        togglePrgPurgeCheckbox()
+        updateDestinationFieldset();
+        toggleSwpTableSuffix();
+        toggleWhereInput();
+        togglePurgeOptionsContainer();
+    });
+
+
+    srcQueryInput.addEventListener('input', function() {
+        toggleSchemaAndTable();
+    });
+
+    schemaSelect.addEventListener('change', function() {
+        toggleSourceQueryInput();
+    });
+
+    sourceTableSelect.addEventListener('change', function() {
+        toggleSourceQueryInput();
+    });
+
+    prgPurgeCheckbox.addEventListener('change', function () {
+        updateDestinationFieldset();
+    });
+
+    destTableSelect.addEventListener('change', function () {
+        toggleDstFileContainer();
+    });
+
+    dstFileInput.addEventListener('input', function () {
+        toggleDestTableSelect();
+    });
+
+    useIndexInput.addEventListener('input', function () {
+        toggleOptionalInputName(useIndexInput);
+    });
+    limitInput.addEventListener('input', function () {
+        toggleOptionalInputName(limitInput);
+    });
+    sleepInput.addEventListener('input', function () {
+        toggleOptionalInputName(sleepInput);
+    });
+    extraArgsInput.addEventListener('input', function () {
+        toggleOptionalInputName(extraArgsInput);
+    });
+
+    function toggleOptionalInputNames() {
+        toggleOptionalInputName(useIndexInput);
+        toggleOptionalInputName(limitInput);
+        toggleOptionalInputName(sleepInput);
+        toggleOptionalInputName(extraArgsInput);
+    }
+
+    window.addEventListener('DOMContentLoaded', function () {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            populateSchemas(singleHost);
+        }
+        updateDestinationFieldset();
+        toggleSchemaAndTable();
+        toggleSourceQueryInput();
+        toggleDstFileContainer();
+        toggleDestTableSelect();
+        toggleSwpTableSuffix();
+        toggleWhereInput();
+        togglePurgeOptionsContainer();
+        toggleOptionalInputNames();
     });
 </script>
