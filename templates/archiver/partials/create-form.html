@@ -64,7 +64,7 @@
         {% if executor_hosts|length == 1 %}
         {% set single_service = executor_hosts[0] %}
         <select id="hostname" name="hostname" disabled>
-            <option     
+            <option
             value="{{ single_service }}" selected>{{ single_service }}</option>
         </select>
         <input type="hidden" name="hostname" value="{{ single_service }}">

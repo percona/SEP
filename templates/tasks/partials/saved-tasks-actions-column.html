@@ -6,7 +6,7 @@
 
     <form id="{{ task.name }}-send" class="send-form" method="post"
           action="{{ task.name }}">
-        <!--<input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>-->
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         <input type="datetime-local" class="eta-input"
                disabled>
         <input type="hidden" name="eta" class="eta-value" disabled>
