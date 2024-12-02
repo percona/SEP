@@ -11,6 +11,7 @@ from fastapi_csrf_protect.exceptions import CsrfProtectError
 
 from app.sep.config import CsrfSettings
 from app.sep.deps import IsCsrfValidated
+from app.sep.main import csrf_protect_exception_handler
 from app.sep.middleware import CSRFMiddleware
 
 
@@ -34,11 +35,7 @@ def test_client() -> TestClient:
 
     app.add_middleware(CSRFMiddleware)
 
-    @app.exception_handler(CsrfProtectError)
-    def csrf_protect_error_handler(request: Request, exc: CsrfProtectError):
-        return JSONResponse(
-            status_code=exc.status_code, content={"detail": exc.message}
-        )
+    app.add_exception_handler(CsrfProtectError, csrf_protect_exception_handler)
 
     return TestClient(app)
 
