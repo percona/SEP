@@ -10,6 +10,7 @@ from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 
 from app.sep.config import CsrfSettings
+from app.sep.deps import IsCsrfValidated
 from app.sep.main import csrf_protect_exception_handler
 from app.sep.middleware import CSRFMiddleware
 
@@ -27,8 +28,8 @@ def test_client() -> TestClient:
         )
         return response
 
-    @app.post("/protected", response_class=JSONResponse)
-    def protected():
+    @app.post("/protected", dependencies=[IsCsrfValidated], response_class=JSONResponse)
+    def protected(request: Request):
         response: JSONResponse = JSONResponse(status_code=200, content={"detail": "OK"})
         return response
 
@@ -79,6 +80,8 @@ def test_invalid_csrf_token(test_client: TestClient):
 
     csrf_cookie = test_client.cookies.get("fastapi-csrf-token", None)
     assert csrf_cookie is not None
+
+    test_client.cookies = None
 
     response = test_client.post("/protected")
     assert response.status_code == HTTPStatus.BAD_REQUEST

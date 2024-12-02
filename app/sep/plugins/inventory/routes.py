@@ -15,6 +15,7 @@ from app.sep.deps import (
     DefaultContext,
     InventoryAPI,
     IsAuthenticated,
+    IsCsrfValidated,
     SessionDep,
 )
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
@@ -56,7 +57,7 @@ async def node_list(
     )
 
 
-@router.post("/sync/", dependencies=[IsAuthenticated])
+@router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_inventory(
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
@@ -89,7 +90,7 @@ async def node_detail(
     )
 
 
-@router.post("/{node_id}/sync/", dependencies=[IsAuthenticated])
+@router.post("/{node_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_node(
     node: CreatedNodeDep,
     syncers: SyncersDep,
@@ -103,7 +104,7 @@ async def sync_node(
     )
 
 
-@router.post("/", dependencies=[IsAuthenticated])
+@router.post("/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def node_create(
     inventory_api: InventoryAPI,
     node_data: Annotated[Node, Form()],
@@ -113,7 +114,7 @@ async def node_create(
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/{node_id}/delete", dependencies=[IsAuthenticated])
+@router.post("/{node_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def node_delete(
     node_id: int,
     inventory_api: InventoryAPI,
@@ -151,7 +152,7 @@ async def service_detail(
 
 
 @router.post(
-    "/services/{service_id}/sync/", dependencies=[IsAuthenticated]
+    "/services/{service_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_service(
     service: CreatedServiceDep,
@@ -166,7 +167,7 @@ async def sync_service(
     )
 
 
-@router.post("/{node_id}/services/", dependencies=[IsAuthenticated])
+@router.post("/{node_id}/services/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def service_create_for_node(
     node_id: int,
     inventory_api: InventoryAPI,
@@ -184,7 +185,7 @@ async def service_create_for_node(
 
 
 @router.post(
-    "/services/{service_id}/delete", dependencies=[IsAuthenticated]
+    "/services/{service_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def service_delete(
     service_id: int,
@@ -227,7 +228,7 @@ async def schema_detail(
 
 
 @router.post(
-    "/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated]
+    "/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_schema(
     schema: CreatedSchemaDep,
@@ -243,7 +244,7 @@ async def sync_schema(
 
 
 @router.post(
-    "/services/{service_id}/schemas/", dependencies=[IsAuthenticated]
+    "/services/{service_id}/schemas/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def schema_create_for_service(
     service_id: int,
@@ -262,7 +263,7 @@ async def schema_create_for_service(
 
 
 @router.post(
-    "/schemas/{schema_id}/delete", dependencies=[IsAuthenticated]
+    "/schemas/{schema_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def schema_delete(
     schema_id: int,
@@ -278,7 +279,7 @@ async def schema_delete(
 
 
 @router.post(
-    "/schemas/{schema_id}/tables/", dependencies=[IsAuthenticated]
+    "/schemas/{schema_id}/tables/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def table_create_for_schema(
     schema_id: int,
@@ -297,7 +298,7 @@ async def table_create_for_schema(
 
 
 @router.post(
-    "/tables/{table_id}/delete", dependencies=[IsAuthenticated]
+    "/tables/{table_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def table_delete(
     table_id: int,

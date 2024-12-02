@@ -10,6 +10,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     IsAuthenticated,
+    IsCsrfValidated,
     TaskAPI,
 )
 from app.sep.plugins.tasks.deps import TaskDep
@@ -51,7 +52,7 @@ async def tasks_list(
 
 
 @router.post(
-    "/", dependencies=[IsAuthenticated], response_class=HTMLResponse
+    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
 async def task_create(
     create_task_form: Annotated[TaskCreateRequest, Form()],
@@ -96,7 +97,7 @@ async def tasks_detail(
     )
 
 
-@router.post("/{task_name}", dependencies=[IsAuthenticated])
+@router.post("/{task_name}", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def tasks_execute(
     task: TaskDep,
     tasks_api: TaskAPI,
@@ -109,7 +110,7 @@ async def tasks_execute(
 
 @router.post(
     "/{task_name}/delete",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
 )
 async def tasks_delete(
     task: TaskDep,

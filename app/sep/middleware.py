@@ -1,6 +1,5 @@
 """Define middleware to handle CSRF protection."""
 
-from fastapi import Depends
 from fastapi_csrf_protect import CsrfProtect
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -30,14 +29,13 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if request.method == "GET":
             csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
             request.state.csrf_token = csrf_token
-        elif request.method == "POST":
-            await csrf_protect.validate_csrf(request)
-        
+
         response = await call_next(request)
 
-        if request.method == "GET":
-            csrf_protect.set_csrf_cookie(signed_token, response)
-        elif request.method == "POST":
-            csrf_protect.unset_csrf_cookie(response)
+        csrf_cookie_handler = {
+            "GET": lambda: csrf_protect.set_csrf_cookie(signed_token, response),
+            "POST": lambda: csrf_protect.unset_csrf_cookie(response),
+        }
+        csrf_cookie_handler.get(request.method, lambda: None)()
 
         return response
