@@ -5,7 +5,6 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi_csrf_protect import CsrfProtect
 from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
@@ -31,18 +30,14 @@ templates = sep_settings.TEMPLATES
 async def alters_index(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Homepage of alters plugin."""
-    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-    context["csrf_token"] = csrf_token
-    response = templates.TemplateResponse(
+    context["csrf_token"] = request.state.csrf_token
+    return templates.TemplateResponse(
         request=request,
         name="alters/index.html",
         context=context,
     )
-    csrf_protect.set_csrf_cookie(signed_token, response)
-    return response
 
 
 @router.post(

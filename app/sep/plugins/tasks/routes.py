@@ -3,9 +3,8 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi_csrf_protect import CsrfProtect
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -35,11 +34,9 @@ async def tasks_list(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
-    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-    context["csrf_token"] = csrf_token
+    context["csrf_token"] = request.state.csrf_token
     context["tasks"] = await tasks_api.get("/")
     context["running_tasks"] = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
@@ -47,13 +44,11 @@ async def tasks_list(
     context["available_backends"] = TaskBackendEnum
     context["available_owners"] = TaskOwner
     logger.debug("context: %s", context["running_tasks"])
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name="tasks/list.html",
         context=context,
     )
-    csrf_protect.set_csrf_cookie(signed_token, response)
-    return response
 
 
 @router.post(
@@ -81,11 +76,9 @@ async def tasks_detail(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Retrieve task."""
-    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-    context["csrf_token"] = csrf_token
+    context["csrf_token"] = request.state.csrf_token
     context["tasks"] = await tasks_api.get("/")
     context["task"] = task
     context["schedule"] = await tasks_api.get(f"/{task.name}/periodic/")
@@ -97,13 +90,11 @@ async def tasks_detail(
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
     context["executor_hosts"] = list(executor_hosts.values())
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name="tasks/view.html",
         context=context,
     )
-    csrf_protect.set_csrf_cookie(signed_token, response)
-    return response
 
 
 @router.post("/{task_name}", dependencies=[IsAuthenticated, IsCsrfValidated])

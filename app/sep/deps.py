@@ -159,12 +159,20 @@ async def get_current_user(
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
 
+CsrfProtectDep = Annotated[CsrfProtect, Depends()]
+
 
 async def validate_csrf(
     request: Request,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
+    csrf_protect: CsrfProtectDep,
 ) -> None:
-    """Validate the CSRF token from the request."""
+    """Validate the CSRF token from the request.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param csrf_protect: The CSRF protection mechanism dependency.
+    :type csrf_protect: Annotated[CsrfProtect, Depends]
+    """
     await csrf_protect.validate_csrf(request)
 
 

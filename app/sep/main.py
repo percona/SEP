@@ -2,7 +2,7 @@
 
 import logging.config
 
-from fastapi import Request, status
+from fastapi import HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
@@ -24,6 +24,7 @@ from app.sep.deps import (
     get_default_context,
     IsAuthenticated,
 )
+from app.sep.middleware import CSRFMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def get_csrf_config() -> CsrfSettings:
     :return: An instance of `CsrfSettings` containing CSRF protection configuration.
     :rtype: CsrfSettings
     """
-    return sep_settings.CSRF
+    return CsrfSettings()
 
 
 imported_plugins = set()
@@ -112,7 +113,7 @@ async def csrf_protect_exception_handler(
     _: Request, exc: CsrfProtectError
 ) -> JSONResponse:
     """Handle exceptions raised by CSRF protection."""
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 @sep_app.get("/oauth/callback")
@@ -150,6 +151,9 @@ async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
         name="homepage.html",
         context=context,
     )
+
+
+sep_app.add_middleware(CSRFMiddleware)
 
 
 # TODO: take all these logics from routes layer  # noqa: TD002, TD003

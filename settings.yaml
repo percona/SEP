@@ -14,12 +14,6 @@ default:
       REDIRECT_URI: /oauth/callback
     SESSION:
       COOKIE_NAME: casdoorToken
-    CSRF:
-      SECRET_KEY: sep-key
-      COOKIE_SECURE: true
-      COOKIE_SAMESITE: none
-      TOKEN_KEY: csrf-token
-      TOKEN_LOCATION: body
     PLUGINS:
       - NAME: Schema Change
         MODULE_NAME: alters

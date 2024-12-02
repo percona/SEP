@@ -3,9 +3,8 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, status
+from fastapi import APIRouter, BackgroundTasks, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi_csrf_protect import CsrfProtect
 
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
@@ -41,11 +40,9 @@ async def node_list(
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """List Nodes."""
-    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-    context["csrf_token"] = csrf_token
+    context["csrf_token"] = request.state.csrf_token
     context["inventory"] = await inventory_api.get("/")
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
@@ -53,13 +50,11 @@ async def node_list(
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
     context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html",
         context=context,
     )
-    csrf_protect.set_csrf_cookie(signed_token, response)
-    return response
 
 
 @router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -79,24 +74,20 @@ async def node_detail(
     request: Request,
     node: CreatedNodeDep,
     context: DefaultContext,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Retrieve Node Details."""
-    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-    context["csrf_token"] = csrf_token
+    context["csrf_token"] = request.state.csrf_token
     context["node"] = node
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.NODE,
     )
     context["can_sync"] = any(syncer.can_sync_node(node) for syncer in syncers)
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name="inventory/node-detail.html",
         context=context,
     )
-    csrf_protect.set_csrf_cookie(signed_token, response)
-    return response
 
 
 @router.post("/{node_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -144,24 +135,20 @@ async def service_detail(
     request: Request,
     service: CreatedServiceDep,
     context: DefaultContext,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Retrieve Service Details."""
-    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-    context["csrf_token"] = csrf_token
+    context["csrf_token"] = request.state.csrf_token
     context["service"] = service
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.SERVICE,
     )
     context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html",
         context=context,
     )
-    csrf_protect.set_csrf_cookie(signed_token, response)
-    return response
 
 
 @router.post(
@@ -224,24 +211,20 @@ async def schema_detail(
     request: Request,
     schema: CreatedSchemaDep,
     context: DefaultContext,
-    csrf_protect: Annotated[CsrfProtect, Depends()],
 ) -> HTMLResponse:
     """Retrieve Schema Details."""
-    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-    context["csrf_token"] = csrf_token
+    context["csrf_token"] = request.state.csrf_token
     context["schema"] = schema
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.SCHEMA,
     )
     context["can_sync"] = any(syncer.can_sync_schema(schema) for syncer in syncers)
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name="inventory/schema-detail.html",
         context=context,
     )
-    csrf_protect.set_csrf_cookie(signed_token, response)
-    return response
 
 
 @router.post(
