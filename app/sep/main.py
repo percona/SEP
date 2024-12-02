@@ -111,6 +111,7 @@ async def custom_404_handler(
 @sep_app.exception_handler(CsrfProtectError)
 async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> None:
     """Handle exceptions raised by CSRF protection."""
+    breakpoint()
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 

@@ -11,7 +11,6 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     IsAuthenticated,
-    IsCsrfValidated,
     TaskAPI,
 )
 from app.sep.plugins.alters.deps import (
@@ -41,7 +40,7 @@ async def alters_index(
 
 
 @router.post(
-    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+    "/", dependencies=[IsAuthenticated], response_class=HTMLResponse
 )
 async def alters_create(
     task: AltersGeneratedTask,
@@ -95,7 +94,7 @@ async def alters_detail(
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
     response_class=RedirectResponse,
 )
 async def alters_execute(
@@ -113,7 +112,7 @@ async def alters_execute(
 
 @router.post(
     "/{task_name}/delete",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
     response_class=RedirectResponse,
 )
 async def alters_delete(

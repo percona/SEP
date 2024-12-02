@@ -1,11 +1,12 @@
 """Define middleware to handle CSRF protection."""
 
+from fastapi import Depends
+from fastapi_csrf_protect import CsrfProtect
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
 from app.sep.config import sep_settings
-from app.sep.deps import CsrfProtectDep
 
 templates = sep_settings.TEMPLATES
 
@@ -25,15 +26,18 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         :return: The HTTP response with added security headers.
         :rtype: Response
         """
-        csrf_protect = CsrfProtectDep()
-        csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-        request.state.csrf_token = csrf_token
-        request.state.signed_token = signed_token
+        csrf_protect = CsrfProtect()
+        if request.method == "GET":
+            csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+            request.state.csrf_token = csrf_token
+        elif request.method == "POST":
+            await csrf_protect.validate_csrf(request)
+        
         response = await call_next(request)
 
-        csrf_protect.set_csrf_cookie(signed_token, response)
-
-        if hasattr(response, "context"):
-            response.context["csrf_token"] = csrf_token
+        if request.method == "GET":
+            csrf_protect.set_csrf_cookie(signed_token, response)
+        elif request.method == "POST":
+            csrf_protect.unset_csrf_cookie(response)
 
         return response
