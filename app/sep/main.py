@@ -3,7 +3,7 @@
 import logging.config
 
 from fastapi import HTTPException, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from jwt import InvalidTokenError
@@ -109,9 +109,7 @@ async def custom_404_handler(
 
 
 @sep_app.exception_handler(CsrfProtectError)
-async def csrf_protect_exception_handler(
-    _: Request, exc: CsrfProtectError
-) -> JSONResponse:
+async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> None:
     """Handle exceptions raised by CSRF protection."""
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
