@@ -322,7 +322,7 @@ class Table(BaseInventoryModel):
 
     name: RequiredStr
     create: RequiredStr
-    keys: dict[str, Any]
+    keys: dict[str, Any] = Field(default_factory=dict)
 
 
 class CreatedTable(CreatedEntityBase, Table):
