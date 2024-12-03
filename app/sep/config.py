@@ -123,19 +123,17 @@ class CsrfSettings(BaseModel):
     :type cookie_secure: bool
     :param cookie_samesite: SameSite policy for the CSRF cookie.
     :type cookie_samesite: str
-    :param token_key: Key name for the CSRF token. Required if `token_location`
-        is "body". Defaults to None.
-    :type token_key: str | None
-    :param token_location: Location where the CSRF token is expected. Can be
-        None or "body". Defaults to None.
-    :type token_location: Literal[None, "body"]
+    :param token_key: Key name for the CSRF token.
+    :type token_key: str
+    :param token_location: Location where the CSRF token is expected.
+    :type token_location: str
     """
 
     SECRET_KEY: str = settings.SECRET_KEY
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "none"
-    TOKEN_KEY: str | None = "csrf-token"
-    TOKEN_LOCATION: Literal[None, "body"] = "body"
+    TOKEN_KEY: str = "csrf-token"
+    TOKEN_LOCATION: str = "body"
 
 
 class SyncOptions(BaseLowercaseModel):
