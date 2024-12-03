@@ -75,6 +75,7 @@
 
     {% if not task.protected %}
         <form class="delete-form" method="post" action="/tasks/{{ task['name'] }}/delete">
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         </form>
         {% include "tasks/partials/scheduler-form.html" %}
     {% endif %}
