@@ -38,6 +38,12 @@
         Schemas: {{ schemas }}
         Tables: {{ tables }}
     </section>
+    <section id="hosts">
+        <h2>Hosts</h2>
+        {% for host in executor_hosts %}
+            <li>{{ host }}</li>
+        {% endfor %}
+    </section>
 {% endblock %}
 {% block behaviours_optimized_extra %}
     {% if history_tasks or running_tasks %}

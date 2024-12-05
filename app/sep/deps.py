@@ -495,6 +495,7 @@ async def get_tasks_index_context(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
     periodic_tasks = await tasks_api.get("/periodic/", params={"list_active": "True"})
+    executor_hosts = await tasks_api.get("/hosts/")
     inventory, service, schema, table = await asyncio.gather(
         inventory_api.get("/"),
         inventory_api.get("/services/"),
@@ -514,6 +515,7 @@ async def get_tasks_index_context(
             "running_tasks": running_tasks,
             "pending_tasks": scheduled_tasks,
             "periodic_tasks": periodic_tasks,
+            "executor_hosts": list(executor_hosts.values()),
         },
     )
     return context

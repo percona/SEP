@@ -1,65 +1,100 @@
 {% set owner_paths = {
-    "any": "/tasks",
-    "archiver": "/archives",
-    "alters": "/alters"
+  "any": "/tasks",
+  "archiver": "/archives",
+  "alters": "/alters"
 } %}
-{% if running_tasks %}
-    <table class="responsive-table">
-        <thead>
+<style>
+  .tasks-table-container {
+    border: 1px solid #c7c7c7;
+    border-radius: 10px;
+  }
+
+  .tasks-table {
+    border: none;
+    margin-bottom: none;
+  }
+
+  .tasks-table td,th {
+    padding: 0.8em 1em;
+  }
+
+  .tasks-table th {
+    font-weight: 600;
+  }
+
+  .previous-log-row {
+    border-bottom: none;
+  }
+
+  .previous-log-row td {
+    padding-bottom: .4em !important;
+  }
+
+  .log-row td{
+    padding: 0 0 .2em .8em !important
+  }
+</style>
+<div class="tasks-table-container">
+  <table class="responsive-table tasks-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Host</th>
+        <th>Start At</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% if running_tasks %}
+      {% for task in running_tasks %}
+          {% set task_name = task["task"]["name"] %}
+          {% set task_owner_path = owner_paths.get(task["task"]["owner"], task["task"]["owner"]) %}
+          {% if page != "homepage" %}
+              {% set task_path = task_name %}
+          {% else %}
+              {% set task_path = task_owner_path + "/" + task_name%}
+          {% endif %}
+          <tr class="previous-log-row">
+              <td>{{ task_name }}</td>
+              <td>{{ task['execution_request']['target'] }}</td>
+              <td>{{ task['updated_at'] }}</td>
+              <td>
+                  <a href="{{ task_path }}"><i class="icons">visibility</i></a>
+              </td>
+          </tr>
+          <tr class="log-row" data-task-id="{{ task.id }}">
+              <td colspan="4">
+                  <div class="log-console streaming-console"
+                       data-task-id="{{ task.id }}">
+                      <div class="log-top-bar">
+                          <div class="log-tabs">
+                              <a href="#" class="log-type-tab selected"
+                                 data-log-type="stdout">stdout</a>
+                              <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
+                          </div>
+                          <div class="word-wrap-toggle">
+                              <label class="switch">
+                                  <input type="checkbox" class="word-wrap-checkbox">
+                                  <span class="slider round"></span>
+                              </label>
+                              <span class="toggle-label">Word Wrap</span>
+                          </div>
+                      </div>
+                      <div class="log-content">
+                      </div>
+                      <div class="log-bottom-bar">
+                          <div class="log-tabs">
+                          </div>
+                      </div>
+                  </div>
+              </td>
+          </tr>
+      {% endfor %}
+      {% else %}
         <tr>
-            <th>Name</th>
-            <th>Host</th>
-            <th>Start At</th>
-            <th>Actions</th>
+          <td>No data<td>
         </tr>
-        </thead>
-        <tbody>
-        {% for task in running_tasks %}
-            {% set task_name = task["task"]["name"] %}
-            {% set task_owner_path = owner_paths.get(task["task"]["owner"], task["task"]["owner"]) %}
-            {% if page != "homepage" %}
-                {% set task_path = task_name %}
-            {% else %}
-                {% set task_path = task_owner_path + "/" + task_name%}
-            {% endif %}
-            <tr>
-                <td>{{ task_name }}</td>
-                <td>{{ task['execution_request']['target'] }}</td>
-                <td>{{ task['updated_at'] }}</td>
-                <td>
-                    <a href="{{ task_path }}"><i class="icons">visibility</i></a>
-                </td>
-            </tr>
-            <tr class="log-row" data-task-id="{{ task.id }}">
-                <td colspan="4">
-                    <div class="log-console streaming-console"
-                         data-task-id="{{ task.id }}">
-                        <div class="log-top-bar">
-                            <div class="log-tabs">
-                                <a href="#" class="log-type-tab selected"
-                                   data-log-type="stdout">stdout</a>
-                                <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
-                            </div>
-                            <div class="word-wrap-toggle">
-                                <label class="switch">
-                                    <input type="checkbox" class="word-wrap-checkbox">
-                                    <span class="slider round"></span>
-                                </label>
-                                <span class="toggle-label">Word Wrap</span>
-                            </div>
-                        </div>
-                        <div class="log-content">
-                        </div>
-                        <div class="log-bottom-bar">
-                            <div class="log-tabs">
-                            </div>
-                        </div>
-                    </div>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-{% else %}
-        <p>No data</p>
-{% endif %}
+      {% endif %}
+      </tbody>
+  </table>
+</div>
