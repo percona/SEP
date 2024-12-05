@@ -6,6 +6,7 @@
 
     <form id="{{ task.name }}-send" class="send-form" method="post"
           action="{{ task.name }}">
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         <input type="datetime-local" class="eta-input"
                disabled>
         <input type="hidden" name="eta" class="eta-value" disabled>
@@ -22,6 +23,7 @@
         </form>
         <form id="{{ task.name }}-delete" method="post"
               action="{{ task.name }}/delete">
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
             <button title="Delete" type="submit"
                     class="icons delete-button">delete forever
             </button>

@@ -113,6 +113,29 @@ class SessionOptions(BaseModel):
     SECURE: bool = False
 
 
+class CsrfSettings(BaseModel):
+    """Configuration for CSRF protection settings.
+
+    :param secret_key: Secret key used for CSRF token generation.
+    :type secret_key: str
+    :param cookie_secure: Whether the CSRF cookie should be accessible
+        only via HTTPS (except on localhost).
+    :type cookie_secure: bool
+    :param cookie_samesite: SameSite policy for the CSRF cookie.
+    :type cookie_samesite: str
+    :param token_key: Key name for the CSRF token.
+    :type token_key: str
+    :param token_location: Location where the CSRF token is expected.
+    :type token_location: str
+    """
+
+    SECRET_KEY: str = settings.SECRET_KEY
+    COOKIE_SECURE: bool = True
+    COOKIE_SAMESITE: str = "none"
+    TOKEN_KEY: str = "csrf-token"
+    TOKEN_LOCATION: str = "body"
+
+
 class SyncOptions(BaseLowercaseModel):
     """Represent a synchronizer for the SEP app.
 
