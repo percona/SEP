@@ -1,40 +1,40 @@
 <style>
-    #hosts {  
-        width: 60%;  
-        float: left;  
-    }  
-    
-    .hosts-container {  
-        display: grid;  
-        grid-template-columns: 1fr 1fr 1fr;  
-        gap: 0.8em;  
-        border: 1px solid gray;  
-        border-radius: 8px;  
-        padding: 1em;  
-        min-height: 94px;  
-        box-sizing: border-box;  
-    }  
-    
-    .host {  
+    #hosts {
+        width: 60%;
+        float: left;
+    }
+
+    .hosts-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 0.8em;
+        border: 1px solid gray;
+        border-radius: 8px;
+        padding: 1em;
+        min-height: 94px;
+        box-sizing: border-box;
+    }
+
+    .host {
         padding: 0.5em;
-    }  
+    }
 </style>
 
-<section id="hosts">  
-    <h2>Hosts   
-        {% if executor_hosts %}  
-            ({{ executor_hosts | length }})  
-        {% else %}  
-            (None)  
-        {% endif %}  
-    </h2> 
-    <div class="hosts-container"> 
-        {% if executor_hosts %}  
-            {% for host in executor_hosts %}  
-                <div class="host">{{ host }}</div>  
-            {% endfor %}  
-        {% else %}  
-            <div class="host">No hosts available.</div>  
-        {% endif %}  
-    </div>  
-</section>  
+<section id="hosts">
+    <h2>Hosts
+        {% if executor_hosts %}
+            ({{ executor_hosts | length }})
+        {% else %}
+            (None)
+        {% endif %}
+    </h2>
+    <div class="hosts-container">
+        {% if executor_hosts %}
+            {% for host in executor_hosts %}
+                <div class="host">{{ host }}</div>
+            {% endfor %}
+        {% else %}
+            <div class="host">No hosts available.</div>
+        {% endif %}
+    </div>
+</section>

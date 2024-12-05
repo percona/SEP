@@ -51,11 +51,10 @@
         <td>{{ task['execution_request']['target'] }}</td>
         <td>{{ task['created_at'] }}</td>
         <td>
-          {% if page != "homepage" %}b
-          {% else %}
-          {% endif %}
           <a href="{{ task_path }}"><i class="icons">visibility</i></a>
+          {% if page != "homepage" %}
           <a href="javascript:;" onclick="document.getElementById('deleteTaskForm').submit();"><i class="icons">delete forever</i></a>
+          {% endif %}
           <form action="{{ task_path }}/delete" method="POST" style="display:none;" id="deleteTaskForm"></form>
         </td>
       </tr>
