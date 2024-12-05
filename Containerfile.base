@@ -20,5 +20,3 @@ RUN poetry export --with postgresql --with syncpostgresql --with redis -f requir
 
 # Build Wheel archives for requirements
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.txt
-
-
