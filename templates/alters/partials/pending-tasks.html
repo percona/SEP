@@ -21,7 +21,7 @@
       {% set task_path = task_name %}
     {% else %}
       {% set task_path = task_owner_path + "/" + task_name%}
-    {% endif %}    
+    {% endif %}
     <tr>
       <td>{{ task_name }}</td>
       <td>{{ task['execution_request']['target'] }}</td>

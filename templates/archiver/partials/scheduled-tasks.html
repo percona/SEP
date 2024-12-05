@@ -4,6 +4,7 @@
 <table id="scheduled-tasks-table">
     <thead>
     <tr>
+        {% if page != "homepage" %}
         <th style="width: 250px;">Task</th>
         <th id="period-header">Period</th>
         <th id="start-time-header">Start Time</th>
@@ -12,15 +13,37 @@
         <th style="width: 80px;">Runs</th>
         <th style="width: 100px;">Enabled</th>
         <th>Actions</th>
+        {% else %}
+        <th>Task</th>
+        <th>Owner</th>
+        <th>Period</th>
+        <th>Last Run At</th>
+        <th>Runs</th>
+        {% endif %}
     </tr>
     </thead>
     <tbody>
+    {% set owner_paths = {
+        "any": "/tasks",
+        "archiver": "/archives",
+        "alters": "/alters"
+    } %}
     {% for periodic_task in periodic_tasks %}
+        {% set task_name = periodic_task.task %}
+        {% set task_owner_path = owner_paths.get(periodic_task.owner, periodic_task.owner) %}
+        {% if page != "homepage" %}
+            {% set task_path = "#" + task_name %}
+        {% else %}
+            {% set task_path = task_owner_path + "/" + task_name%}
+        {% endif %}
         <tr{% if not periodic_task.enabled %} class="disabled-row"{% endif %}>
             <td>
-                <a href="#{{ periodic_task.task }}"
-                   class="task-link">{{ periodic_task.task }}</a>
+                <a href="{{ task_path }}"
+                   class="task-link">{{ task_name }}</a>
             </td>
+            {% if page == "homepage" %}
+            <td>{{ periodic_task.owner }}</td>
+            {% endif %}
             {% if periodic_task.crontab %}
                 <td class="period-cell period-crontab"
                     data-timezone="{{ periodic_task.crontab.timezone }}">
@@ -29,10 +52,13 @@
             {% endif %}
             {{ periodic_task.period }}
             </td>
+            {% if page != "homepage" %}
             <td>{{ periodic_task.start_time or '' }}</td>
             <td>{{ periodic_task.expires or '' }}</td>
+            {% endif %}
             <td>{{ periodic_task.last_run_at or '' }}</td>
             <td>{{ periodic_task.total_run_count }}</td>
+            {% if page != "homepage" %}
             <td>
                 <form method="post" action="/periodic/{{ periodic_task.id }}/update"
                       class="enable-form">
@@ -57,8 +83,11 @@
                     </button>
                 </form>
             </td>
+            {% endif %}
         </tr>
     {% endfor %}
+
+    {% if page != "homepage" %}
     <!-- Row for new periodic task -->
     <tr class="new-periodic-task-row show-on-create-mode">
         <td>
@@ -127,5 +156,6 @@
             </button>
         </td>
     </tr>
+    {% endif %}
     </tbody>
 </table>

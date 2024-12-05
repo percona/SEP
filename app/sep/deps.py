@@ -470,7 +470,7 @@ async def get_tasks_context(
 
 
 async def get_tasks_index_context(
-    inventory_api: InventoryAPI, tasks_api: TaskAPI, context: DefaultContext
+    tasks_api: TaskAPI, default_context: DefaultContext
 ) -> dict[str, Any]:
     """Assemble the context for the Homepage.
 
@@ -487,9 +487,23 @@ async def get_tasks_index_context(
     :return: An updated context dictionary containing tasks' data.
     :rtype: dict[str, Any]
     """
-    return await get_tasks_context(
-        inventory_api, tasks_api, None, context, None
+    running_tasks = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    scheduled_tasks = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+    )
+    periodic_tasks = await tasks_api.get("/periodic/", params={"list_active": "True"})
+    context = default_context or {}
+    context.update(
+        {
+            "running_tasks": running_tasks,
+            "pending_tasks": scheduled_tasks,
+            "periodic_tasks": periodic_tasks,
+        },
+    )
+    return context
+
 
 # TODO(yan): Put get_task in a proper TasksAPI SDK class
 # SEP-130

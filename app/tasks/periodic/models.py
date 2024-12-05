@@ -18,7 +18,7 @@ from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
 from app.core.utils.datetime import utc_now
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
-from app.tasks.models import TaskExecuteRequest
+from app.tasks.models import TaskExecuteRequest, TaskOwner
 
 
 class PeriodicTaskExecuteRequest(TaskExecuteRequest):
@@ -278,6 +278,46 @@ class PeriodicTaskResponse(BasePeriodicTask):
                 )
             return data | extra_kwargs
         return data
+
+
+class ExtendedPeriodicTaskResponse(PeriodicTaskResponse):
+    """Representing an extended response for a periodic task API call.
+
+    This model extends `PeriodicTaskResponse` and includes additional fields such as the task owner.
+
+    :param name: The name of the periodic task.
+    :type name: str
+    :param task: The SEP task name.
+    :type task: str
+    :param start_time: The start time for the task execution.
+    :type start_time: UTCDatetime | None
+    :param expires: The expiration time for the task execution.
+    :type expires: UTCDatetime | None
+    :param enabled: Whether the task is enabled.
+    :type enabled: bool
+    :param description: A description of the task.
+    :type description: str
+    :param execute_request: The execution request details for the task.
+    :type execute_request: PeriodicTaskExecuteRequest | None
+    :param id: The unique identifier of the periodic task.
+    :type id: int
+    :param last_run_at: The datetime of the last run.
+    :type last_run_at: UTCDatetime | None
+    :param total_run_count: The total number of times the task has run.
+    :type total_run_count: int
+    :param date_changed: The datetime when the task was last changed.
+    :type date_changed: UTCDatetime | None
+    :param interval: The interval schedule for the task. Defaults to None. This field
+        is populated with the alias "model_intervalschedule".
+    :type interval: IntervalSchedule | None
+    :param crontab: The crontab schedule for the task. Defaults to None. This field
+        is populated with the alias "model_crontabschedule".
+    :type crontab: CrontabSchedule | None
+    :param owner: The owner of the periodic task.
+    :type owner: TaskOwner | None
+    """
+
+    owner: TaskOwner | None
 
 
 class PeriodicTaskWrite(BasePeriodicTask):

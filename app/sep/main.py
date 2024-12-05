@@ -19,10 +19,10 @@ from app.core.utils import import_var
 from app.sep.config import CsrfSettings, sep_settings
 from app.sep.deps import (
     AccessTokenCookie,
-    DefaultContext,
     get_base_url,
     get_current_user,
     get_default_context,
+    get_tasks_index_context,
     IsAuthenticated,
     TaskAPI,
     get_tasks_index_context,
