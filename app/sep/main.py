@@ -23,8 +23,10 @@ from app.sep.deps import (
     get_current_user,
     get_default_context,
     IsAuthenticated,
+    TaskAPI,
 )
 from app.sep.middleware import CSRFMiddleware
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -142,8 +144,16 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
 
 
 @sep_app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
+async def read_root(
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
+) -> HTMLResponse:
     """Homepage route."""
+    context["page"] = "homepage"
+    context["running_tasks"] = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
     return templates.TemplateResponse(
         request=request,
         name="homepage.html",

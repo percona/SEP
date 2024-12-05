@@ -1,3 +1,8 @@
+{% set owner_paths = {
+    "any": "/tasks",
+    "archiver": "/archives",
+    "alters": "/alters"
+} %}
 {% if running_tasks %}
     <table class="responsive-table">
         <thead>
@@ -11,12 +16,17 @@
         <tbody>
         {% for task in running_tasks %}
             {% set task_name = task["task"]["name"] %}
+            {% set task_owner_path = owner_paths.get(task["task"]["owner"], task["task"]["owner"]) %}
             <tr>
                 <td>{{ task_name }}</td>
                 <td>{{ task['execution_request']['target'] }}</td>
                 <td>{{ task['updated_at'] }}</td>
                 <td>
+                    {% if page != "homepage" %}
                     <a href="{{ task_name }}"><i class="icons">visibility</i></a>
+                    {% else %}
+                    <a href="{{task_owner_path}}/{{ task_name }}"><i class="icons">visibility</i></a>
+                    {% endif %}
                 </td>
             </tr>
             <tr class="log-row" data-task-id="{{ task.id }}">
@@ -50,5 +60,5 @@
         </tbody>
     </table>
 {% else %}
-    <p>No data</p>
+        <p>No data</p>
 {% endif %}

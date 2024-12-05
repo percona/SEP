@@ -1,16 +1,27 @@
 {% extends "base.html" %}
-
 {% block title %}Services Enablement Platform{% endblock %}
 
 {% block home_link %}{% endblock %}
 {% block title_prefix %}{% endblock %}
 
 {% block main %}
+{% if history or running_tasks %}
+    <link rel="stylesheet" href="/static/logs.css">
+{% endif %}
     {% if widgets is defined and widgets|length > 0 %}
     <section id="widgets">
         {% for widget in widgets %}
             {% include "widget.html" %}
         {% endfor %}
     </section>
+    {% endif %}
+    <section id="running-tasks">
+        <h2>Running</h2>
+        {% include "tasks/partials/running-tasks.html" %}
+    </section>
+{% endblock %}
+{% block behaviours_optimized_extra %}
+    {% if history_tasks or running_tasks %}
+        <script src="/static/logs.js"></script>
     {% endif %}
 {% endblock %}
