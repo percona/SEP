@@ -27,9 +27,16 @@
         <h2>Pending</h2>
         {% include "alters/partials/pending-tasks.html" %}
     </section>
-    <section id="pending-tasks">
+    <section id="periodic-tasks">
         <h2>Periodic Tasks</h2>
         {% include "archiver/partials/scheduled-tasks.html" %}
+    </section>
+    <section id="inventories">
+        <h2>Inventories</h2>
+        Nodes: {{ nodes }}
+        Services: {{ services }}
+        Schemas: {{ schemas }}
+        Tables: {{ tables }}
     </section>
 {% endblock %}
 {% block behaviours_optimized_extra %}

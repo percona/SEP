@@ -1,5 +1,6 @@
 """Define SEP dependencies."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
 from http.cookies import SimpleCookie
@@ -470,7 +471,7 @@ async def get_tasks_context(
 
 
 async def get_tasks_index_context(
-    tasks_api: TaskAPI, default_context: DefaultContext
+    inventory_api: InventoryAPI, tasks_api: TaskAPI, default_context: DefaultContext
 ) -> dict[str, Any]:
     """Assemble the context for the Homepage.
 
@@ -494,9 +495,22 @@ async def get_tasks_index_context(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
     periodic_tasks = await tasks_api.get("/periodic/", params={"list_active": "True"})
+    inventory, service, schema, table = await asyncio.gather(
+        inventory_api.get("/"),
+        inventory_api.get("/services/"),
+        inventory_api.get("/schemas/"),
+        inventory_api.get("/tables/"),
+    )
+    inventories = {
+        "nodes": len(inventory),
+        "services": len(service),
+        "schemas": len(schema),
+        "tables": len(table),
+    }
     context = default_context or {}
     context.update(
         {
+            **inventories,
             "running_tasks": running_tasks,
             "pending_tasks": scheduled_tasks,
             "periodic_tasks": periodic_tasks,

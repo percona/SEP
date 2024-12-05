@@ -24,11 +24,8 @@ from app.sep.deps import (
     get_default_context,
     get_tasks_index_context,
     IsAuthenticated,
-    TaskAPI,
-    get_tasks_index_context,
 )
 from app.sep.middleware import CSRFMiddleware
-from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
