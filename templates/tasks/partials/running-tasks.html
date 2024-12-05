@@ -33,6 +33,10 @@
   .log-row td{
     padding: 0 0 .2em .8em !important
   }
+
+  .no-tasks {
+    text-align: center;
+  }
 </style>
 <div class="tasks-table-container">
   <table class="responsive-table tasks-table">
@@ -92,7 +96,7 @@
       {% endfor %}
       {% else %}
         <tr>
-          <td>No data<td>
+          <td colspan="4" class="no-tasks">No tasks running</td>
         </tr>
       {% endif %}
       </tbody>

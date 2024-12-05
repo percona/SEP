@@ -21,6 +21,10 @@
   .tasks-table th {
     font-weight: 600;
   }
+
+  .no-tasks {
+    text-align: center;
+  }
 </style>
 <div class="tasks-table-container">
   <table class="responsive-table tasks-table">
@@ -58,7 +62,7 @@
       {% endfor %}
       {% else %}
       <tr>
-        <td>No data<td>
+        <td colspan="4" class="no-tasks">No tasks pending</td>
       </tr>
       {% endif %}
     </tbody>

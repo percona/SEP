@@ -17,6 +17,10 @@
       font-weight: 600;
     }
 
+    .no-tasks {
+        text-align: center;
+    }
+
   </style>
   <div class="scheduled-tasks-table-container">
     <form id="new-periodic-task-form" method="post" action="/periodic/" style="display: none;">
@@ -110,9 +114,9 @@
       {% endfor %}
       {% else %}
       {% if page == "homepage" %}
-        <tr>
-          <td>No data<td>
-        </tr>
+      <tr>
+        <td colspan="5" class="no-tasks">No periodic tasks</td>
+      </tr>
       {% endif %}
       {% endif %}
 

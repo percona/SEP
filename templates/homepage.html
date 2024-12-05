@@ -31,19 +31,8 @@
         <h2>Periodic Tasks</h2>
         {% include "archiver/partials/scheduled-tasks.html" %}
     </section>
-    <section id="inventories">
-        <h2>Inventories</h2>
-        Nodes: {{ nodes }}
-        Services: {{ services }}
-        Schemas: {{ schemas }}
-        Tables: {{ tables }}
-    </section>
-    <section id="hosts">
-        <h2>Hosts</h2>
-        {% for host in executor_hosts %}
-            <li>{{ host }}</li>
-        {% endfor %}
-    </section>
+    {% include "inventory/partials/inventory-metrics.html" %}
+    {% include "tasks/partials/host-metrics.html" %}
 {% endblock %}
 {% block behaviours_optimized_extra %}
     {% if history_tasks or running_tasks %}

@@ -1,0 +1,42 @@
+<style>
+    #inventories {  
+      width: 40%;  
+      float: left;  
+    }  
+    
+    .inventories-container {  
+      border-radius: 10px;  
+      border: 1px solid gray;  
+      width: 90%;  
+    }  
+    
+    .inventories-table {  
+      margin: 0;  
+    } 
+
+    .inventories-table td {
+        padding: 0.8em 1em;
+    }
+</style> 
+
+<section id="inventories">  
+    <h2>Inventories</h2>  
+    <div class="inventories-container">  
+        <table class="inventories-table">  
+            <thead>  
+                <tr>  
+                    <th>Nodes</th>  
+                    <th>Services</th>  
+                    <th>Schemas</th>  
+                    <th>Tables</th>  
+                </tr>  
+                <tr>  
+                    <td>{{ nodes }}</td>
+                    <td>{{ services }}</td>
+                    <td>{{ schemas }}</td>                  
+                    <td>{{ tables }}</td>
+                </tr>  
+            </thead>  
+        </table>  
+    </div>  
+</section>  
