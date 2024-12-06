@@ -4,14 +4,15 @@
             aria-expanded="false">schedule
     </button>
 
-    <form id="{{ task.name }}-send" class="send-form" method="post"
-          action="{{ task.name }}">
+    <form id="{{ task.name }}-send" class="send-form confirmable-form" method="post"
+          action="{{ task.name }}"
+          data-confirm-message="Are you sure you want to Execute?">
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         <input type="datetime-local" class="eta-input"
                disabled>
         <input type="hidden" name="eta" class="eta-value" disabled>
         <button title="Execute" type="submit"
-                class="icons send-button">send
+                class="icons send-button submitButton">send
         </button>
     </form>
 
