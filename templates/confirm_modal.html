@@ -106,9 +106,9 @@
         submitButtons.forEach(button => {
             button.addEventListener('click', function (e) {
                 e.preventDefault()
-                currentForm = button.closest('form');
+                currentForm = button.form
                 if (!currentForm)
-                    currentForm = button.form
+                    currentForm = button.closest('form');
                 const message = currentForm.getAttribute('data-confirm-message');
                 confirmationMessage.textContent = message;
                 const requiredInputs = currentForm.querySelectorAll('[required]');
