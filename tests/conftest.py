@@ -8,7 +8,7 @@ from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
-from app.tests.factories import OAuthTokenFactory
+from tests.factories import OAuthTokenFactory
 
 
 def pytest_configure(config: pytest.Config) -> None:
