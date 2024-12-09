@@ -63,59 +63,64 @@
         </dd>
     </dl>
 
-    {% if running_tasks %}
-        <section id="running-tasks">
-            <h2>Running</h2>
-            {% include "tasks/partials/running-tasks.html" %}
-        </section>
-    {% endif %}
     {% if not task.is_template %}
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html" %}
+            </section>
+        {% endif %}
         {% include "tasks/partials/run-python-form.html" %}
     {% endif %}
 
     {% if not task.protected %}
-        <form class="delete-form" method="post" action="/tasks/{{ task['name'] }}/delete">
+        <form class="delete-form" method="post"
+              action="/tasks/{{ task['name'] }}/delete">
             <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         </form>
         {% include "tasks/partials/scheduler-form.html" %}
     {% endif %}
 
-    <section>
-        <h2>History</h2>
-        {% set history_tasks = history %}
-        {% include "tasks/partials/completed-tasks.html" %}
-    </section>
+    {% if not task.is_template %}
+        <section>
+            <h2>History</h2>
+            {% set history_tasks = history %}
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
 
-    {% if schedule is defined and schedule|length > 0 %}
-    <table>
-        <caption>Periodic Tasks</caption>
-        <thead>
-            <tr>
-                <th>Created</th>
-                <th>Period</th>
-                <th>Execute Request</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tfoot>
-            <tr>
-                <td colspan="3">&nbsp;</td>
-            </tr>
-        </tfoot>
-        <tbody>
-            {% for item in schedule %}
+        {% if schedule is defined and schedule|length > 0 %}
+            <table>
+                <caption>Periodic Tasks</caption>
+                <thead>
                 <tr>
-                    <th scope="row">{{ item["created_at"] }}</th>
-                    <td>{{ item["period"] }}</td>
-                    <th scope="row">{{ item["execute_request"] }}</th>
-                    <td>
-                        <form action="/schedule/{{ item['id'] }}/cancel" method="post">
-                            <button type="submit"><i class="icons">delete</i></button>
-                        </form>
-                    </td>
+                    <th>Created</th>
+                    <th>Period</th>
+                    <th>Execute Request</th>
+                    <th>Actions</th>
                 </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                </thead>
+                <tfoot>
+                <tr>
+                    <td colspan="3">&nbsp;</td>
+                </tr>
+                </tfoot>
+                <tbody>
+                {% for item in schedule %}
+                    <tr>
+                        <th scope="row">{{ item["created_at"] }}</th>
+                        <td>{{ item["period"] }}</td>
+                        <th scope="row">{{ item["execute_request"] }}</th>
+                        <td>
+                            <form action="/schedule/{{ item['id'] }}/cancel"
+                                  method="post">
+                                <button type="submit"><i class="icons">delete</i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
     {% endif %}
 {% endblock %}
