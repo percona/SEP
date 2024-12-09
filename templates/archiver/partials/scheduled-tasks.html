@@ -1,4 +1,6 @@
-<form id="new-periodic-task-form" method="post" action="/periodic/">
+<form id="new-periodic-task-form" method="post" action="/periodic/"
+    class="confirmable-form"
+    data-confirm-message="Are you sure you want to Execute?">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
 </form>
 <table id="scheduled-tasks-table">
@@ -50,9 +52,10 @@
             <td class="actions-cell flex">
 
                 <form method="post" action="/periodic/{{ periodic_task.id }}/delete"
+                    data-confirm-message="Are you sure you want to delete this one?"
                       class="delete-form">
                     <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
-                    <button type="submit" class="delete-button icons" title="Delete">
+                    <button type="submit" class="delete-button icons submitButton" title="Delete">
                         delete forever
                     </button>
                 </form>
@@ -111,7 +114,7 @@
             </label>
         </td>
         <td class="actions-cell flex">
-            <button type="submit" class="save-button icons" title="Save"
+            <button type="submit" id="save-button" class="save-button icons" title="Save"
                     form="new-periodic-task-form">save
             </button>
             <button type="button" class="discard-button icons" title="Discard">

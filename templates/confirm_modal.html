@@ -1,4 +1,3 @@
-
 <style>
     body {
         font-family: Arial, sans-serif;
@@ -41,8 +40,8 @@
     }
 
     .confirm-btn {
-      min-width: 4em;
-      margin: 0.8em 0.5em 0 .5em;
+        min-width: 4em;
+        margin: 0.8em 0.5em 0 .5em;
     }
 
     #confirmationMessage {
@@ -54,6 +53,7 @@
         from {
             transform: scale(0);
         }
+
         to {
             transform: scale(1);
         }
@@ -63,64 +63,79 @@
         from {
             transform: scale(1);
         }
+
         to {
             transform: scale(0);
         }
     }
-    </style>
-    <div id="confirmationDialog" class="dialog">
-        <div class="dialog-content">
-            <p id="confirmationMessage">Are you sure you want to submit?</p>
-            <button id="confirmYes" class="confirm-btn">Yes</button>
-            <button id="confirmNo" class="confirm-btn">No</button>
-        </div>
+</style>
+<div id="confirmationDialog" class="dialog">
+    <div class="dialog-content">
+        <p id="confirmationMessage">Are you sure you want to submit?</p>
+        <button id="confirmYes" class="confirm-btn">Yes</button>
+        <button id="confirmNo" class="confirm-btn">No</button>
     </div>
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const dialog = document.getElementById('confirmationDialog');
-            const dialogContent = document.querySelector('.dialog-content');
-            const confirmationMessage = document.getElementById('confirmationMessage');
-            const confirmYes = document.getElementById('confirmYes');
-            const confirmNo = document.getElementById('confirmNo');
-            const submitButtons = document.querySelectorAll('.submitButton');
+</div>
+<script>
 
-            let currentForm = null;
+    document.addEventListener('DOMContentLoaded', function () {
+        const dialog = document.getElementById('confirmationDialog');
+        const dialogContent = document.querySelector('.dialog-content');
+        const confirmationMessage = document.getElementById('confirmationMessage');
+        const confirmYes = document.getElementById('confirmYes');
+        const confirmNo = document.getElementById('confirmNo');
+        const submitButtons = document.querySelectorAll('.submitButton');
 
-            function showModal() {
-                dialog.style.display = 'flex';
-                dialogContent.classList.remove('pop-down');
-                dialogContent.classList.add('pop-up');
-            }
+        let currentForm = null;
 
-            function hideModal() {
-                dialogContent.classList.remove('pop-up');
-                dialogContent.classList.add('pop-down');
+        function showModal() {
+            dialog.style.display = 'flex';
+            dialogContent.classList.remove('pop-down');
+            dialogContent.classList.add('pop-up');
+        }
 
-                setTimeout(() => {
-                    dialog.style.display = 'none';
-                }, 300);
-            }
+        function hideModal() {
+            dialogContent.classList.remove('pop-up');
+            dialogContent.classList.add('pop-down');
 
-            submitButtons.forEach(button => {
-                button.addEventListener('click', function (e) {
-                    e.preventDefault()
-                    currentForm = button.closest('form');
-                    const message = currentForm.getAttribute('data-confirm-message');
-                    confirmationMessage.textContent = message;
-                    showModal();
+            setTimeout(() => {
+                dialog.style.display = 'none';
+            }, 300);
+        }
+
+        submitButtons.forEach(button => {
+            button.addEventListener('click', function (e) {
+                e.preventDefault()
+                currentForm = button.closest('form');
+                if (!currentForm)
+                    currentForm = button.form
+                const message = currentForm.getAttribute('data-confirm-message');
+                confirmationMessage.textContent = message;
+                const requiredInputs = currentForm.querySelectorAll('[required]');
+                let allFieldsValid = true;
+
+                requiredInputs.forEach(input => {
+                    if (!input.checkValidity()) {
+                        allFieldsValid = false;
+                        input.reportValidity(); // Trigger the browser's built-in validation popup
+                        return; // Exit the loop as we only need to show one validation error at a time
+                    }
                 });
-            });
-
-            confirmYes.addEventListener('click', function () {
-                if (currentForm) {
-                    currentForm.submit();
+                if (allFieldsValid) {
+                    showModal();
                 }
-                hideModal();
-            });
-
-            confirmNo.addEventListener('click', function () {
-                hideModal();
             });
         });
 
-    </script>
+        confirmYes.addEventListener('click', function () {
+            if (currentForm) {
+                currentForm.submit();
+                hideModal();
+            }
+        });
+
+        confirmNo.addEventListener('click', function () {
+            hideModal();
+        });
+    });
+</script>
