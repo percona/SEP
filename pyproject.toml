@@ -42,10 +42,9 @@ packages = [
 python = ">=3.11,<3.14"
 aiohttp = "^3.11.4"
 aioresponses = "^0.7.7"
-fastapi = {version = "^0.115.0", extras = ["standard"]}
 idna = "^3.7"
 itsdangerous = "^2.1.2"
-pydantic = "^2.4.0"
+pydantic = ">=2.4.0,<2.10.0"
 PyYAML = "^6.0.1"
 python-multipart = "^0.0.18"
 python-nomad = "^2.0.0"
@@ -68,6 +67,9 @@ starlette = "^0.40.0"
 celery = "^5.4.0"
 asgiref = "^3.8.1"
 sqlalchemy-celery-beat = "0.8.0"
+fastapi-csrf-protect = "^0.3.7"
+fastapi = "^0.115.5"
+httpx = "^0.28.0"
 
 [tool.poetry.group.audit]
 optional = true
@@ -101,7 +103,7 @@ asyncpg = "^0.29.0"
 optional = true
 
 [tool.poetry.group.syncpostgresql.dependencies]
-psycopg2 = "^2.9.10"
+psycopg2-binary = "^2.9.10"
 
 [tool.poetry.group.redis]
 optional = true
@@ -230,6 +232,7 @@ order-by-type = false
 ]
 "app/core/config.py" = ["ARG003"]
 "app/tasks/celery.py" = ["ARG001"]
+"app/sep/plugins/inventory/routes.py" = ["PLR0913"]
 "test_*.py" = ["S", "ARG001", "ARG002", "PLR0913", "ANN"]
 "conftest.py" = ["S", "ARG001", "ARG002", "PLR0913"]
 

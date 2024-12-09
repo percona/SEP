@@ -95,6 +95,7 @@
             </td>
             <td>
                 <form action="/inventory/tables/{{ table.id }}/delete" method="post" style="display:inline;">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
                     <button name="location" class="icons" style="width: 2em">delete forever</button>
                 </form>
             </td>
