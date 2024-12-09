@@ -33,6 +33,14 @@ def test_client() -> TestClient:
         response: JSONResponse = JSONResponse(status_code=200, content={"detail": "OK"})
         return response
 
+    @app.get("/static/example", response_class=JSONResponse)
+    def static_example():
+        return JSONResponse(status_code=200, content={"detail": "Static OK"})
+
+    @app.post("/stream-logs/data", response_class=JSONResponse)
+    def stream_logs_data():
+        return JSONResponse(status_code=200, content={"detail": "Stream OK"})
+
     app.add_middleware(CSRFMiddleware)
 
     app.add_exception_handler(CsrfProtectError, csrf_protect_exception_handler)
@@ -102,3 +110,21 @@ def test_invalid_csrf_token(test_client: TestClient):
     )
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json() == {"detail": "The CSRF token is invalid."}
+
+
+def test_excluded_paths(test_client: TestClient):
+    """Test that excluded paths do not involve CSRF protection."""
+
+    @CsrfProtect.load_config
+    def get_configs():
+        return CsrfSettings()
+
+    response = test_client.get("/static/example")
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {"detail": "Static OK"}
+    assert test_client.cookies.get("fastapi-csrf-token") is None
+
+    response = test_client.post("/stream-logs/data")
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {"detail": "Stream OK"}
+    assert test_client.cookies.get("fastapi-csrf-token") is None
