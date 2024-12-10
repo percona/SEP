@@ -98,4 +98,4 @@ migrate: venv alembic.ini app/tasks/migrations/versions
 	done
 
 test: venv
-	@"${VENV_BIN}"/pytest -v --cov=app app/tests/
+	@"${VENV_BIN}"/pytest -v --cov=app tests/

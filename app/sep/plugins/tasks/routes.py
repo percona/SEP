@@ -79,13 +79,13 @@ async def tasks_detail(
 ) -> HTMLResponse:
     """Retrieve task."""
     context["csrf_token"] = request.state.csrf_token
-    context["tasks"] = await tasks_api.get("/")
     context["task"] = task
-    context["schedule"] = await tasks_api.get(f"/{task.name}/periodic/")
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
-        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
-    )
+    if not task.is_template:
+        context["schedule"] = await tasks_api.get(f"/{task.name}/periodic/")
+        context["history"] = await tasks_api.get(f"/{task.name}/history/")
+        context["running_tasks"] = await tasks_api.get(
+            f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+        )
     context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
