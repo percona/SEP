@@ -46,7 +46,7 @@ idna = "^3.7"
 itsdangerous = "^2.1.2"
 pydantic = ">=2.4.0,<2.10.0"
 PyYAML = "^6.0.1"
-python-multipart = "^0.0.18"
+python-multipart = "^0.0.19"
 python-nomad = "^2.0.0"
 SQLAlchemy = "^2.0.34"
 urllib3 = "^2.2.2"
@@ -63,12 +63,12 @@ alembic = "^1.13.2"
 sqlmodel = "^0.0.22"
 async-lru = "^2.0.4"
 python-minifier = "^2.11.2"
-starlette = "^0.40.0"
+starlette = "^0.41.3"
 celery = "^5.4.0"
 asgiref = "^3.8.1"
 sqlalchemy-celery-beat = "0.8.0"
 fastapi-csrf-protect = "^0.3.7"
-fastapi = "^0.115.5"
+fastapi = "^0.115.6"
 httpx = "^0.28.0"
 
 [tool.poetry.group.audit]
@@ -249,7 +249,6 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.coverage.run]
 source = ["app"]
 omit = [
-    "app/tests/*",
     "__init__.py",
 ]
 
