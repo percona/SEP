@@ -1,5 +1,6 @@
 {% set owner_paths = {
   "any": "/tasks",
+  "*": "/tasks",
   "archiver": "/archives",
   "alters": "/alters"
 } %}
@@ -41,6 +42,7 @@
       {% for task in pending_tasks %}
       {% set task_name = task["task"]["name"] %}
       {% set task_owner_path = owner_paths.get(task["task"]["owner"], task["task"]["owner"]) %}
+      {{task["task"]["name"]}}-{{task["task"]["owner"]}}-{{task_owner_path}}
       {% if page != "homepage" %}
         {% set task_path = task_name %}
       {% else %}
