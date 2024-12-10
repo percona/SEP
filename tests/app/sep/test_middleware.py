@@ -64,10 +64,10 @@ def test_valid_csrf_token(test_client: TestClient):
     csrf_cookie = test_client.cookies.get("fastapi-csrf-token", None)
     assert csrf_cookie is not None
 
+    test_client.cookies["fastapi-csrf-token"] = csrf_cookie
     response = test_client.post(
         "/protected",
         data={"csrf-token": csrf_token},
-        cookies={"fastapi-csrf-token": csrf_cookie},
     )
     assert response.status_code == HTTPStatus.OK
     assert response.json() == {"detail": "OK"}
@@ -95,18 +95,18 @@ def test_invalid_csrf_token(test_client: TestClient):
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json() == {"detail": "Missing Cookie: `fastapi-csrf-token`."}
 
+    test_client.cookies["fastapi-csrf-token"] = csrf_cookie
     response = test_client.post(
         "/protected",
         data={"csrf-token": "invalid token"},
-        cookies={"fastapi-csrf-token": csrf_cookie},
     )
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json() == {"detail": "The CSRF signatures submitted do not match."}
 
+    test_client.cookies["fastapi-csrf-token"] = "invalid cookie"
     response = test_client.post(
         "/protected",
         data={"csrf-token": csrf_token},
-        cookies={"fastapi-csrf-token": "invalid cookie"},
     )
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json() == {"detail": "The CSRF token is invalid."}

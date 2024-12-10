@@ -8,16 +8,11 @@ from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
-from app.tests.factories import OAuthTokenFactory
+from app.core.auth.utils import get_user_model
+from app.models import CasdoorUser
+from tests.app.factories import CasdoorUserFactory, OAuthTokenFactory
 
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Set environment variables for testing."""
-    import os
-
-    os.environ["CASDOOR__CLIENT_ID"] = "test-client-id"
-    os.environ["CASDOOR__CLIENT_SECRET"] = "test-client-secret"
-    os.environ["CASDOOR__ALLOWED_ISSUERS"] = '["https://allowed-issuer.com"]'
+User = get_user_model()
 
 
 @pytest.fixture(scope="session")
@@ -136,3 +131,18 @@ def casdoor_mock(
     from app.core.config import settings
 
     return mocker.patch.object(settings, "CASDOOR", settings.CASDOOR)
+
+
+@pytest.fixture
+def admin_user(valid_username: str, faker: Faker) -> CasdoorUser:
+    """Create a mock admin user with active status."""
+    return CasdoorUserFactory.build(is_admin=True)
+
+
+@pytest.fixture
+def regular_user(valid_username: str, faker: Faker) -> CasdoorUser:
+    """Create a mock regular user with active status."""
+    return CasdoorUserFactory.build(
+        username=valid_username,
+        is_admin=False,
+    )

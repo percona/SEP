@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.api.deps import get_current_user
 from app.core.auth.utils import get_user_model
 from app.main import app
+from tests.app.factories import CasdoorUserFactory
 
 User = get_user_model()
 
@@ -21,37 +22,10 @@ def test_client():
 
 
 @pytest.fixture
-def admin_user(valid_username, faker: Faker):
-    """Create a mock admin user with active status."""
-    return User(
-        id=faker.uuid4(),
-        username=valid_username,
-        owner="organization",
-        is_active=True,
-        is_admin=True,
-    )
-
-
-@pytest.fixture
-def regular_user(valid_username, faker: Faker):
-    """Create a mock regular user with active status."""
-    return User(
-        id=faker.uuid4(),
-        username=valid_username,
-        owner="organization",
-        is_active=True,
-        is_admin=False,
-    )
-
-
-@pytest.fixture
 def other_user(faker: Faker):
     """Create a mock user with active status and no admin privileges."""
-    return User(
-        id=faker.uuid4(),
-        owner="organization",
+    return CasdoorUserFactory.build(
         username="other_user",
-        is_active=True,
         is_admin=False,
     )
 
