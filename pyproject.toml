@@ -40,7 +40,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
-aiohttp = "^3.11.4"
+aiohttp = "^3.11.10"
 aioresponses = "^0.7.7"
 idna = "^3.7"
 itsdangerous = "^2.1.2"
