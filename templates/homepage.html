@@ -5,6 +5,7 @@
 {% block title_prefix %}{% endblock %}
 
 {% block main %}
+<link rel="stylesheet" href="/static/homepage.css">
 {% if history or running_tasks %}
 <link rel="stylesheet" href="/static/logs.css">
 {% endif %}
@@ -21,11 +22,11 @@
     {% endif %}
     <section id="running-tasks">
         <h2>Running</h2>
-        {% include "tasks/partials/running-tasks.html" %}
+        {% include "homepage/running-tasks.html" %}
     </section>
     <section id="pending-tasks">
         <h2>Pending</h2>
-        {% include "tasks/partials/pending-tasks.html" %}
+        {% include "homepage/pending-tasks.html" %}
     </section>
     <section id="periodic-tasks">
         <h2>Periodic Tasks</h2>

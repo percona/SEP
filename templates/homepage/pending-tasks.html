@@ -1,0 +1,79 @@
+{% set owner_paths = {
+"any": "/tasks",
+"*": "/tasks",
+"archiver": "/archives",
+"alters": "/alters"
+} %}
+<style>
+  .tasks-table-container {
+    border: 1px solid #c7c7c7;
+    border-radius: 10px;
+  }
+
+  .tasks-table {
+    border: none;
+    margin-bottom: 0;
+  }
+
+  .tasks-table td,
+  th {
+    padding: 0.8em 1em;
+  }
+
+  .tasks-table th {
+    font-weight: 600;
+  }
+
+  .no-tasks {
+    text-align: center;
+  }
+</style>
+<div class="tasks-table-container">
+  <table class="responsive-table tasks-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Host</th>
+        <th>Created At</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if pending_tasks %}
+      {% for task in pending_tasks %}
+      {% set task_name = task["task"]["name"] %}
+      {% set task_owner_path = owner_paths.get(task["task"]["owner"], task["task"]["owner"]) %}
+      {% set ns = namespace(found=False) %}
+      {% for plugin in plugins %}
+      {% if task_owner_path == plugin.uri_path %}
+      {% set ns.found = True %}
+      {% endif %}
+      {% endfor %}
+      {% set task_path = task_owner_path + "/" + task_name%}
+      <tr>
+        <td>{{ task_name }}</td>
+        <td>{{ task['execution_request']['target'] }}</td>
+        <td>{{ task['created_at'] }}</td>
+        <td>
+          {% if ns.found %}
+          <a href="{{ task_path }}"><i class="icons">visibility</i></a>
+          {% else %}
+          <a class="tooltip">
+            <i class="icons">visibility_off</i>
+            <span class="tooltiptext">Enable the {{ task["task"]["owner"] }} plugin to view details of this
+              task.</span>
+          </a>
+          {% endif %}
+          <form action="{{ task_path }}/delete" method="POST" style="display:none;" id="deleteTaskForm">
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% else %}
+      <tr>
+        <td colspan="4" class="no-tasks">No tasks pending</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
