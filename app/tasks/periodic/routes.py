@@ -16,7 +16,6 @@ from app.tasks.models import (
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.deps import PeriodicTaskDep
 from app.tasks.periodic.models import (
-    ExtendedPeriodicTaskResponse,
     PeriodicTaskResponse,
     PeriodicTaskUpdate,
 )
@@ -30,39 +29,21 @@ logger = logging.getLogger(__name__)
 @router.get(
     "/",
     dependencies=[IsAuthenticatedDep],
-    response_model=list[ExtendedPeriodicTaskResponse],
+    response_model=list[PeriodicTaskResponse],
 )
 async def list_periodic_tasks(
     session: CeleryBeatSessionDep,
     tasks_session: SessionDep,
     owner: TaskOwner | None = None,
-    *,
-    list_active: bool = False,
 ) -> list[PeriodicTask]:
     """List all periodic tasks."""
     if owner is None:
-        tasks = await PeriodicTaskManager.list(session=session)
-        for task in tasks:
-            unique_task_name = json.loads(task.kwargs).get("task_name")
-            task_detail = await TaskManager.retrieve_by_name(
-                session=tasks_session, name=unique_task_name
-            )
-            task.owner = task_detail.owner
-    else:
-        tasks_names = [
-            task.name
-            for task in await TaskManager.list_active(
-                session=tasks_session, owner=owner
-            )
-        ]
-        tasks = await PeriodicTaskManager.list_by_task_names(session, *tasks_names)
-        for task in tasks:
-            task.owner = owner
-
-    if list_active:
-        tasks = [task for task in tasks if task.enabled]
-
-    return tasks
+        return await PeriodicTaskManager.list(session=session)
+    tasks_names = [
+        task.name
+        for task in await TaskManager.list_active(session=tasks_session, owner=owner)
+    ]
+    return await PeriodicTaskManager.list_by_task_names(session, *tasks_names)
 
 
 @router.get("/{periodic_task_id}", dependencies=[IsAuthenticatedDep])
