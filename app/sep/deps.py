@@ -515,7 +515,7 @@ async def get_tasks_index_context(
             "running_tasks": running_tasks,
             "pending_tasks": scheduled_tasks,
             "periodic_tasks": periodic_tasks,
-            "executor_hosts": list(executor_hosts.values()),
+            "executor_hosts": executor_hosts.items(),
         },
     )
     return context

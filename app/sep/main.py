@@ -148,7 +148,6 @@ async def read_root(
     context: Annotated[dict[str, Any], Depends(get_tasks_index_context)],
 ) -> HTMLResponse:
     """Homepage route."""
-    context["page"] = "homepage"
     return templates.TemplateResponse(
         request=request,
         name="homepage.html",

@@ -6,7 +6,7 @@
 
     .hosts-container {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: 1fr 1fr;
         gap: 0.8em;
         border: 1px solid gray;
         border-radius: 8px;
@@ -30,8 +30,8 @@
     </h2>
     <div class="hosts-container">
         {% if executor_hosts %}
-            {% for host in executor_hosts %}
-                <div class="host">{{ host }}</div>
+            {% for ip, hostname in executor_hosts %}
+                <div class="host">{{ ip }} - {{ hostname }}</div>
             {% endfor %}
         {% else %}
             <div class="host">No hosts available.</div>
