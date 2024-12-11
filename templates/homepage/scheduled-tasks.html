@@ -1,0 +1,94 @@
+{% set owner_paths = {
+  "any": "/tasks",
+  "*": "/tasks",
+  "archiver": "/archives",
+  "alters": "/alters"
+  } %}
+<style>
+  .scheduled-tasks-table-container {
+    border: 1px solid #c7c7c7;
+    border-radius: 10px;
+  }
+
+  #scheduled-tasks-table {
+    border: none;
+    margin-bottom: 0;
+  }
+
+  #scheduled-tasks-table td,
+  #scheduled-tasks-table th {
+    padding: 0.8em 1em;
+  }
+
+  #scheduled-tasks-table th {
+    font-weight: 600;
+  }
+
+  .no-tasks {
+    text-align: center;
+  }
+</style>
+<div class="scheduled-tasks-table-container">
+  <form id="new-periodic-task-form" method="post" action="/periodic/" style="display: none;">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+  </form>
+  <table id="scheduled-tasks-table">
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>Owner</th>
+        <th>Period</th>
+        <th>Last Run At</th>
+        <th>Runs</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if periodic_tasks %}
+      {% for periodic_task in periodic_tasks %}
+      {% set task_name = periodic_task.task %}
+      {% set task_owner_path = owner_paths.get(periodic_task.owner, periodic_task.owner) %}
+      {% set ns = namespace(found=False) %}
+      {% for plugin in plugins %}
+      {% if task_owner_path == plugin.uri_path %}
+      {% set ns.found = True %}
+      {% endif %}
+      {% endfor %}
+      {% set task_path = task_owner_path + "/" + task_name%}
+      <tr{% if not periodic_task.enabled %} class="disabled-row" {% endif %}>
+        <td>
+         {{ task_name }}
+        </td>
+        <td>{{ periodic_task.owner }}</td>
+        {% if periodic_task.crontab %}
+        <td class="period-cell period-crontab" data-timezone="{{ periodic_task.crontab.timezone }}">
+          {% else %}
+        <td class="period-cell">
+          {% endif %}
+          {{ periodic_task.period }}
+        </td>
+        <td>{{ periodic_task.last_run_at or '' }}</td>
+        <td>{{ periodic_task.total_run_count }}</td>
+        <td>
+          {% if ns.found %}
+          <a href="{{ task_path }}"><i class="icons">visibility</i></a>
+          {% else %}
+          <a class="tooltip">
+            <i class="icons">visibility_off</i>
+            <span class="tooltiptext">Enable the {{ periodic_task.owner }} plugin to view details of this
+              task.</span>
+          </a>
+          {% endif %}
+          <form action="{{ task_path }}/delete" method="POST" style="display:none;" id="deleteTaskForm">
+          </form>
+        </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr>
+          <td colspan="5" class="no-tasks">No periodic tasks</td>
+        </tr>
+        {% endif %}
+    </tbody>
+  </table>
+</div>
