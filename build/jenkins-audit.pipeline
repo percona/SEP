@@ -1,0 +1,143 @@
+// vim: ts=8:sts=8:sw=8:ft=groovy:noai:noet
+
+pipeline {
+	agent {
+		node {
+			label 'stream9'
+		}
+	}
+
+	parameters {
+	    gitParameter branchFilter: 'origin/(main|SEP.*)',
+	        defaultValue: 'main',
+	        name: 'releaseTag',
+	        type: 'PT_BRANCH',
+		requiredParameter: true,
+		useRepository: 'https://github.com/percona/SEP.git'
+		string(
+			name: 'defaultCmd',
+			defaultValue: '--log-level=DEBUG'
+		)
+		choice(
+			name: 'pyVersion',
+			choices: [
+				'3.11'
+			]
+		)
+	}
+
+	options {
+		timestamps()
+	}
+
+
+	environment {
+		BUILD_OPTIONS = ''
+		CMD = "${defaultCmd}"
+
+		PYTHON = "python${pyVersion}"
+		PYTHON_VERSION = "${pyVersion}"
+
+		RELEASE_VER = "${releaseTag}"
+
+	}
+
+	stages {
+		stage('Prepare workspace') {
+			steps {
+				checkout scmGit(
+					branches: [
+						[
+							name: "${params.releaseTag}"
+						]
+					],
+					extensions: [
+						cloneOption(shallow: true)
+					],
+					userRemoteConfigs: [
+						[
+							credentialsId: '9024f3ea-4c7e-46a6-acf5-4b2c768f0930',
+							url: 'https://github.com/percona/SEP.git'
+						]
+					]
+				)
+			}
+		}
+
+		stage('Prepare Python') {
+			options {
+				timeout(time: 5, unit: 'MINUTES')
+			}
+
+			steps {
+				sh '''
+					set -o errexit
+					set -o pipefail
+					
+					which ${PYTHON}
+					
+					${PYTHON} -m venv venv
+					venv/bin/pip install --no-cache -U pip wheel poetry
+					venv/bin/poetry install --with audit
+				'''
+			}
+		}
+
+		stage('Pre-commit checks') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			steps {
+				echo 'Running pre-commit ..'
+				sh '''
+					set -o errexit
+					set -o pipefail
+					
+					make run-pre-commit
+				'''
+			}
+		}
+		
+		stage('Audit : Bandit') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			steps {
+				echo 'Running bandit ..'
+				sh '''
+					set -o errexit
+					set -o pipefail
+					
+					make bandit
+				'''
+			}
+		}
+		
+		stage('Audit : pip-audit' ) {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			steps {
+				echo 'Running pip-audit ..'
+				sh '''
+					set -o errexit
+					set -o pipefail
+					
+					make pip-audit
+				'''
+			}
+		}
+	}
+
+	post {
+		failure {
+			slackSend color: "danger", message: "Failed to build $JOB_NAME : $BUILD_URL"
+		}
+		always {
+			cleanWs()
+		}
+	}
+}
