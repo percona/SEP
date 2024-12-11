@@ -35,6 +35,7 @@ pipeline {
 		BUILD_OPTIONS = ''
 		CMD = "${defaultCmd}"
 
+		POETRY_VIRTUALENVS_IN_PROJECT = "true"
 		PYTHON = "python${pyVersion}"
 		PYTHON_VERSION = "${pyVersion}"
 
@@ -64,21 +65,23 @@ pipeline {
 			}
 		}
 
-		stage('Prepare Python') {
+		stage('Prepare environment') {
 			options {
-				timeout(time: 5, unit: 'MINUTES')
+				timeout(time: 10, unit: 'MINUTES')
 			}
 
 			steps {
 				sh '''
 					set -o errexit
 					set -o pipefail
-					
-					which ${PYTHON}
-					
+
 					${PYTHON} -m venv venv
-					venv/bin/pip install --no-cache -U pip wheel poetry
-					venv/bin/poetry install --with audit
+					ln -s venv .venv
+					venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel
+
+					${PYTHON} -m venv build/venv
+					build/venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel poetry
+					build/venv/bin/poetry install --with audit
 				'''
 			}
 		}
@@ -93,12 +96,12 @@ pipeline {
 				sh '''
 					set -o errexit
 					set -o pipefail
-					
+
 					make run-pre-commit
 				'''
 			}
 		}
-		
+
 		stage('Audit : Bandit') {
 			options {
 				timeout(time: 10, unit: 'MINUTES')
@@ -109,12 +112,12 @@ pipeline {
 				sh '''
 					set -o errexit
 					set -o pipefail
-					
+
 					make bandit
 				'''
 			}
 		}
-		
+
 		stage('Audit : pip-audit' ) {
 			options {
 				timeout(time: 10, unit: 'MINUTES')
@@ -125,7 +128,7 @@ pipeline {
 				sh '''
 					set -o errexit
 					set -o pipefail
-					
+
 					make pip-audit
 				'''
 			}
