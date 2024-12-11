@@ -8,12 +8,14 @@ pipeline {
 	}
 
 	parameters {
-	    gitParameter branchFilter: 'origin/(main|SEP.*)',
+		gitParameter branchFilter: 'origin/(main|SEP.*|v.*)',
 	        defaultValue: 'main',
 	        name: 'releaseTag',
-	        type: 'PT_BRANCH',
-		requiredParameter: true,
-		useRepository: 'https://github.com/percona/SEP.git'
+	        selectedValue: 'DEFAULT',
+	        sortMode: 'DESCENDING_SMART',
+	        type: 'PT_REVISION',
+	        requiredParameter: true,
+			useRepository: 'https://github.com/percona/SEP.git'
 		string(
 			name: 'defaultCmd',
 			defaultValue: '--log-level=DEBUG'
@@ -23,6 +25,11 @@ pipeline {
 			choices: [
 				'3.11'
 			]
+		)
+		choice(
+			name: 'notifySlack',
+			choices: ['true', 'false'],
+			defaultValue: 'true'
 		)
 	}
 
@@ -34,6 +41,8 @@ pipeline {
 	environment {
 		BUILD_OPTIONS = ''
 		CMD = "${defaultCmd}"
+		
+		NOTIFY_SLACK = "${notifySlack}"
 
 		POETRY_VIRTUALENVS_IN_PROJECT = "true"
 		PYTHON = "python${pyVersion}"
@@ -137,7 +146,11 @@ pipeline {
 
 	post {
 		failure {
-			slackSend color: "danger", message: "Failed to build $JOB_NAME : $BUILD_URL"
+			when {
+				env.NOTIFY_SLACK == "true"
+			{
+					slackSend color: "danger", message: "Failed to build $JOB_NAME : $BUILD_URL"
+			}
 		}
 		always {
 			cleanWs()
