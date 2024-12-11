@@ -128,7 +128,7 @@ class MySQLSyncer(BaseTaskSyncer):
         return {
             "config": config,
             "target": target,
-            "requirements": "PyMySQL\nPyMySQL[rsa]\nPyMySQL[ed25519]",
+            "requirements": "PyMySQL[rsa,ed25519]",
         }
 
     async def wait_for_task_output(
