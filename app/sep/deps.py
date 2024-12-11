@@ -1,6 +1,5 @@
 """Define SEP dependencies."""
 
-import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
 from http.cookies import SimpleCookie
@@ -501,18 +500,7 @@ async def get_tasks_index_context(
         task_name = periodic_task.get("task")
         periodic_task["owner"] = task_owner_mapping.get(task_name)
     executor_hosts = await tasks_api.get("/hosts/")
-    inventory, service, schema, table = await asyncio.gather(
-        inventory_api.get("/"),
-        inventory_api.get("/services/"),
-        inventory_api.get("/schemas/"),
-        inventory_api.get("/tables/"),
-    )
-    inventories = {
-        "nodes": len(inventory),
-        "services": len(service),
-        "schemas": len(schema),
-        "tables": len(table),
-    }
+    inventories = await inventory_api.get("/summary/")
     context = default_context or {}
     context.update(
         {

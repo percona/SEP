@@ -3,7 +3,7 @@
 from enum import auto, StrEnum
 from typing import Any, Self
 
-from pydantic import model_validator
+from pydantic import BaseModel, model_validator
 from sqlalchemy import Column, Index, JSON, Text
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -40,6 +40,25 @@ class ServiceTypeEnum(StrEnum):
     POSTGRESQL = auto()
     MONGODB = auto()
     EXTERNAL = auto()
+
+
+class SummaryResponse(BaseModel):
+    """Define the structure for the inventory summary response.
+
+    :param nodes: The count of nodes in the inventory.
+    :type nodes: int
+    :param services: The count of services in the inventory.
+    :type services: int
+    :param schemas: The count of schemas in the inventory.
+    :type schemas: int
+    :param tables: The count of tables in the inventory.
+    :type tables: int
+    """
+
+    nodes: int
+    services: int
+    schemas: int
+    tables: int
 
 
 class NodeBase(SQLModel):
