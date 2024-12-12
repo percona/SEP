@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sep"
-version = "0.1.0-alpha"
+version = "0.2.1-alpha"
 description = "SEP: Services Enablement Platform"
 authors = [
     "Ceri Williams <ceri.williams@percona.com>",
@@ -40,7 +40,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
-aiohttp = "^3.11.4"
+aiohttp = "^3.11.10"
 aioresponses = "^0.7.7"
 idna = "^3.7"
 itsdangerous = "^2.1.2"
@@ -70,6 +70,7 @@ sqlalchemy-celery-beat = "0.8.0"
 fastapi-csrf-protect = "^0.3.7"
 fastapi = "^0.115.6"
 httpx = "^0.28.0"
+rich = "^13.9.4"
 
 [tool.poetry.group.audit]
 optional = true
