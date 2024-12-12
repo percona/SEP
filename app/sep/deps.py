@@ -497,8 +497,11 @@ async def get_tasks_index_context(
     tasks = await tasks_api.get("/")
     task_owner_mapping = {task["name"]: task["owner"] for task in tasks}
     for periodic_task in periodic_tasks:
-        task_name = periodic_task.get("task")
-        periodic_task["owner"] = task_owner_mapping.get(task_name)
+        if not periodic_task.get("enabled", False):
+            periodic_tasks.remove(periodic_task)
+        else:
+            task_name = periodic_task.get("task")
+            periodic_task["owner"] = task_owner_mapping.get(task_name)
     executor_hosts = await tasks_api.get("/hosts/")
     inventories = await inventory_api.get("/summary/")
     context = default_context or {}
