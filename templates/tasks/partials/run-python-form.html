@@ -54,12 +54,11 @@
         <button title="Toggle scheduler mode" type="button" class="icons schedule-button" data-task="{{ task.name }}"
             aria-expanded="false">schedule
         </button>
+        <input type="datetime-local" class="eta-input" disabled>
         <button type="submit" class="icons send-button submitButton">send</button>
         {% if not task.protected %}
         <button class="icons delete-button submitButton delete-tasks-button" form="delete-form">delete forever</button>
         {% endif %}
-        <input type="datetime-local" class="eta-input"
-               disabled>
         <input type="hidden" name="eta" class="eta-value" disabled>
     </div>
 </form>

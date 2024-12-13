@@ -138,6 +138,7 @@ $(document).ready(function () {
         e.preventDefault()
         const $cronDiv = $('.cron-inputs');
         const $periodDiv = $('.interval-inputs')
+        const $runPythonForm = $("#run-python-send")
 
         if (!$cronDiv.hasClass('hidden')) {
             const cronExpression = $('input[name="cron_expression"]').val();
@@ -173,34 +174,35 @@ $(document).ready(function () {
                 $dateInputValue.val(awareDate.toISOString());
             }
         });
+        if($runPythonForm.length) {
+            if(!$runPythonForm.get(0).reportValidity()){
+                return false;
+            }
+        }
         if ($dialog.length) {
             $('#confirmationMessage').text("Are you sure to want to excute?")
             showModal()
             $('#confirmYes').off('click').on('click', function () {
                 hideModal();
-                $('#new-periodic-task-form').submit(); // Submit the form
+                if($runPythonForm.length) {
+                    const runPythonFormData =$runPythonForm.serializeArray();
+                    runPythonFormData.forEach(function(data) {
+                        if (data.name !== "csrf-token") {
+                            let inputName = "execute_request_payload"
+                            if (data.name !== "payload")
+                                inputName = `execute_request_meta_${data.name.replace('meta_', '')}`
+                            const inputElement = $('<input>', {
+                                type: 'hidden',
+                                name: inputName,
+                                value: data.value
+                            });
+                            $("#new-periodic-task-form").append(inputElement);
+                        }
+                    });
+                }
+                $('#new-periodic-task-form').submit();
             });
             return false;
-        }
-        const $runPythonForm = $("#run-python-send")
-        if($runPythonForm) {
-            if(!$runPythonForm.get(0).reportValidity()){
-                return false;
-            }
-            const runPythonFormData =$runPythonForm.serializeArray();
-            runPythonFormData.forEach(function(data) {
-                if (data.name !== "csrf-token") {
-                    let inputName = "execute_request_payload"
-                    if (data.name !== "payload")
-                        inputName = `execute_request_meta_${data.name.replace('meta_', '')}`
-                    const inputElement = $('<input>', {
-                        type: 'hidden',
-                        name: inputName,
-                        value: data.value
-                    });
-                    $("#new-periodic-task-form").append(inputElement);
-                }
-            });
         }
         return true;
     });
