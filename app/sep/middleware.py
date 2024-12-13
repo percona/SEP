@@ -1,5 +1,6 @@
 """Define middleware to handle CSRF protection."""
 
+from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -13,8 +14,6 @@ templates = sep_settings.TEMPLATES
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     """Manage CSRF protection for HTTP requests and responses."""
-
-    EXCLUDED_PATHS = ("/static/", "/stream-logs/")
 
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
@@ -32,9 +31,6 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         :return: The HTTP response with added security headers.
         :rtype: Response
         """
-        if not self.is_relevant_request(request):
-            return await call_next(request)
-
         method = request.method.upper()
 
         if method == "GET":
@@ -43,14 +39,18 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
-        csrf_cookie_handler = {
-            "GET": lambda: self.csrf_protect.set_csrf_cookie(signed_token, response),
-            "POST": lambda: self.csrf_protect.unset_csrf_cookie(response),
-        }
-        csrf_cookie_handler.get(method, lambda: None)()
+        endpoint = request.scope.get("endpoint")
+        if isinstance(endpoint, StaticFiles):
+            return response
+
+        is_exempt = getattr(endpoint, "is_csrf_exempt", False)
+        if not is_exempt:
+            csrf_cookie_handler = {
+                "GET": lambda: self.csrf_protect.set_csrf_cookie(
+                    signed_token, response
+                ),
+                "POST": lambda: self.csrf_protect.unset_csrf_cookie(response),
+            }
+            csrf_cookie_handler.get(method, lambda: None)()
 
         return response
-
-    def is_relevant_request(self, request: Request) -> bool:
-        """Determine if the request should be handled by CSRF middleware."""
-        return not request.url.path.startswith(self.EXCLUDED_PATHS)

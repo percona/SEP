@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from starlette.responses import StreamingResponse
 
+from app.sep.decorators import csrf_exempt
 from app.sep.deps import get_task_history, IsAuthenticated, TaskAPI
 from app.tasks.models import TaskHistoryResponse
 
@@ -14,6 +15,7 @@ router = APIRouter()
 
 
 @router.get("/{task_history_id}", dependencies=[IsAuthenticated])
+@csrf_exempt
 async def archives_logs_event_stream(
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_api: TaskAPI,

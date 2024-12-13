@@ -1,15 +1,18 @@
 """Define tests for the CSRF protection for app.sep module."""
 
 from http import HTTPStatus
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 
 from app.sep.config import CsrfSettings
+from app.sep.decorators import csrf_exempt
 from app.sep.deps import IsCsrfValidated
 from app.sep.main import csrf_protect_exception_handler
 from app.sep.middleware import CSRFMiddleware
@@ -33,14 +36,12 @@ def test_client() -> TestClient:
         response: JSONResponse = JSONResponse(status_code=200, content={"detail": "OK"})
         return response
 
-    @app.get("/static/example", response_class=JSONResponse)
-    def static_example():
-        return JSONResponse(status_code=200, content={"detail": "Static OK"})
-
     @app.post("/stream-logs/data", response_class=JSONResponse)
+    @csrf_exempt
     def stream_logs_data():
         return JSONResponse(status_code=200, content={"detail": "Stream OK"})
 
+    app.mount("/static", StaticFiles(directory="static"), name="static")
     app.add_middleware(CSRFMiddleware)
 
     app.add_exception_handler(CsrfProtectError, csrf_protect_exception_handler)
@@ -112,16 +113,19 @@ def test_invalid_csrf_token(test_client: TestClient):
     assert response.json() == {"detail": "The CSRF token is invalid."}
 
 
-def test_excluded_paths(test_client: TestClient):
+@patch("fastapi.staticfiles.StaticFiles.get_response", new_callable=AsyncMock)
+def test_excluded_paths(mock_get_response, test_client: TestClient):
     """Test that excluded paths do not involve CSRF protection."""
 
     @CsrfProtect.load_config
     def get_configs():
         return CsrfSettings()
 
-    response = test_client.get("/static/example")
+    mock_response = JSONResponse(content="Static file content", status_code=200)
+    mock_get_response.return_value = mock_response
+
+    response = test_client.get("/static/example.txt")
     assert response.status_code == HTTPStatus.OK
-    assert response.json() == {"detail": "Static OK"}
     assert test_client.cookies.get("fastapi-csrf-token") is None
 
     response = test_client.post("/stream-logs/data")
