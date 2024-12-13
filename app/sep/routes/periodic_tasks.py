@@ -8,7 +8,10 @@ from fastapi.responses import RedirectResponse
 
 from app.core.utils import deep_dict_update
 from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
-from app.sep.tasks import PeriodicTaskCreateRequest, PeriodicTaskRequest
+from app.sep.tasks import (
+    EnhancedPeriodicTaskCreateRequest,
+    PeriodicTaskRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +24,7 @@ router = APIRouter()
 )
 async def create_periodic_task(
     tasks_api: TaskAPI,
-    periodic_task: Annotated[PeriodicTaskCreateRequest, Form()],
+    periodic_task: Annotated[EnhancedPeriodicTaskCreateRequest, Form()],
     referer: Annotated[str, Header()] = "/tasks",
 ) -> RedirectResponse:
     """Create periodic task."""
