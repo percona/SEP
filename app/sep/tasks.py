@@ -95,3 +95,47 @@ class PeriodicTaskCreateRequest(PeriodicTaskRequest):
     """
 
     task: str
+
+
+class EnhancedPeriodicTaskCreateRequest(PeriodicTaskCreateRequest):
+    """Define a model for creating periodic tasks compatible with the SEP app form data.
+
+    This model populates the execute_request field by extracting keys prefixed with 'execute_request_'
+    and combines them into an ExecuteRequest object.
+
+    :param start_time: The start time for the task execution.
+    :type start_time: UTCDatetime | EmptyStrToNone
+    :param expires: The expiration time for the task execution.
+    :type expires: UTCDatetime | EmptyStrToNone
+    :param enabled: Whether the task is enabled.
+    :type enabled: bool | EmptyStrToNone
+    :param execute_request: The execution request details for the task.
+    :type execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone
+    :param interval: The interval schedule for the task.
+    :type interval: IntervalSchedule | EmptyStrToNone
+    :param crontab: The crontab schedule for the task.
+    :type crontab: CrontabSchedule | EmptyStrToNone
+    :param task: The SEP task name.
+    :type task: str
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_execute_request(cls, data: Any) -> Any:
+        """Populate the execute_request field by extracting keys prefixed with 'execute_request_'.
+
+        :param data: The input data containing potential execute_request fields.
+        :type data: Any
+        :return: The modified data with the execute_request field populated.
+        :rtype: Any
+        """
+        if isinstance(data, dict):
+            execute_request_data = {}
+            for key, value in list(data.items()):
+                if key.startswith("execute_request_"):
+                    execute_request_data[key.replace("execute_request_", "")] = value
+            if execute_request_data:
+                data["execute_request"] = PeriodicTaskExecuteRequest(
+                    **execute_request_data
+                )
+        return data

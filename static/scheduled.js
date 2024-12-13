@@ -149,6 +149,26 @@ $(document).ready(function () {
             }
 
         });
+        const $runPythonForm = $("#run-python-send")
+        if($runPythonForm) {
+            if(!$runPythonForm.get(0).reportValidity()){
+                return false;
+            }
+            const runPythonFormData =$runPythonForm.serializeArray();
+            runPythonFormData.forEach(function(data) {
+                if (data.name !== "csrf-token") {
+                    let inputName = "execute_request_payload"
+                    if (data.name !== "payload")
+                        inputName = `execute_request_meta_${data.name.replace('meta_', '')}`
+                    const inputElement = $('<input>', {
+                        type: 'hidden',
+                        name: inputName,
+                        value: data.value
+                    });
+                    $("#new-periodic-task-form").append(inputElement);
+                }
+            });
+        }
         return true;
     });
 });
