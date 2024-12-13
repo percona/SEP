@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated
+from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -81,7 +82,7 @@ async def tasks_detail(
     context["csrf_token"] = request.state.csrf_token
     context["task"] = task
     if not task.is_template:
-        context["schedule"] = await tasks_api.get(f"/{task.name}/periodic/")
+        context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
         context["history"] = await tasks_api.get(f"/{task.name}/history/")
         context["running_tasks"] = await tasks_api.get(
             f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
@@ -90,6 +91,7 @@ async def tasks_detail(
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
     context["executor_hosts"] = list(executor_hosts.values())
+    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
     return templates.TemplateResponse(
         request=request,
         name="tasks/view.html",
