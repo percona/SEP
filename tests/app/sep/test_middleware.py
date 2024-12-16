@@ -1,10 +1,9 @@
 """Define tests for the CSRF protection for app.sep module."""
 
-from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
@@ -26,20 +25,24 @@ def test_client() -> TestClient:
     @app.get("/gen-token", response_class=JSONResponse)
     def generate(request: Request):
         response: JSONResponse = JSONResponse(
-            status_code=200,
+            status_code=status.HTTP_200_OK,
             content={"detail": "OK", "csrf_token": request.state.csrf_token},
         )
         return response
 
     @app.post("/protected", dependencies=[IsCsrfValidated], response_class=JSONResponse)
     def protected(request: Request):
-        response: JSONResponse = JSONResponse(status_code=200, content={"detail": "OK"})
+        response: JSONResponse = JSONResponse(
+            status_code=status.HTTP_200_OK, content={"detail": "OK"}
+        )
         return response
 
     @app.post("/stream-logs/data", response_class=JSONResponse)
     @csrf_exempt
     def stream_logs_data():
-        return JSONResponse(status_code=200, content={"detail": "Stream OK"})
+        return JSONResponse(
+            status_code=status.HTTP_200_OK, content={"detail": "Stream OK"}
+        )
 
     app.mount("/static", StaticFiles(directory="static"), name="static")
     app.add_middleware(CSRFMiddleware)
@@ -57,7 +60,7 @@ def test_valid_csrf_token(test_client: TestClient):
         return CsrfSettings()
 
     response = test_client.get("/gen-token")
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == status.HTTP_200_OK
 
     csrf_token = response.json().get("csrf_token", None)
     assert csrf_token is not None
@@ -70,7 +73,7 @@ def test_valid_csrf_token(test_client: TestClient):
         "/protected",
         data={"csrf-token": csrf_token},
     )
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"detail": "OK"}
 
 
@@ -82,7 +85,7 @@ def test_invalid_csrf_token(test_client: TestClient):
         return CsrfSettings()
 
     response = test_client.get("/gen-token")
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == status.HTTP_200_OK
 
     csrf_token = response.json().get("csrf_token", None)
     assert csrf_token is not None
@@ -93,7 +96,7 @@ def test_invalid_csrf_token(test_client: TestClient):
     test_client.cookies = None
 
     response = test_client.post("/protected")
-    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.json() == {"detail": "Missing Cookie: `fastapi-csrf-token`."}
 
     test_client.cookies["fastapi-csrf-token"] = csrf_cookie
@@ -101,7 +104,7 @@ def test_invalid_csrf_token(test_client: TestClient):
         "/protected",
         data={"csrf-token": "invalid token"},
     )
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json() == {"detail": "The CSRF signatures submitted do not match."}
 
     test_client.cookies["fastapi-csrf-token"] = "invalid cookie"
@@ -109,7 +112,7 @@ def test_invalid_csrf_token(test_client: TestClient):
         "/protected",
         data={"csrf-token": csrf_token},
     )
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json() == {"detail": "The CSRF token is invalid."}
 
 
@@ -121,14 +124,16 @@ def test_excluded_paths(mock_get_response, test_client: TestClient):
     def get_configs():
         return CsrfSettings()
 
-    mock_response = JSONResponse(content="Static file content", status_code=200)
+    mock_response = JSONResponse(
+        content="Static file content", status_code=status.HTTP_200_OK
+    )
     mock_get_response.return_value = mock_response
 
     response = test_client.get("/static/example.txt")
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == status.HTTP_200_OK
     assert test_client.cookies.get("fastapi-csrf-token") is None
 
     response = test_client.post("/stream-logs/data")
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"detail": "Stream OK"}
     assert test_client.cookies.get("fastapi-csrf-token") is None
