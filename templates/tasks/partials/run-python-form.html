@@ -1,5 +1,5 @@
 <form method="post" action="" id="{{ task.name }}-send" class="send-form"
-    data-confirm-message="Are you sure you want to execute this one?"
+    data-confirm-message='Are you sure you want to execute task "{{ task.name }}" now?'
     style="padding: 20px; flex-direction: column; align-items: start;">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     {% if task_data.get("ParameterizedJob") %}

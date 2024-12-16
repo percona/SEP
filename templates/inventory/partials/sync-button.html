@@ -1,11 +1,9 @@
 <div style="display: flex; justify-content: space-between; align-items: center;">
     <h2>{{ inventory_table_title }}</h2>
     {% if can_sync %}
-    <form action="{{ inventory_sync_route }}" method="post"
-    class="confirmable-form" data-confirm-message="Are you sure you want to execute?"
-    style="display: inline;">
+    <form action="{{ inventory_sync_route }}" method="post" style="display: inline;">
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
-        <button {% if sync_is_running %}disabled{% endif %} class="submitButton">
+        <button {% if sync_is_running %}disabled{% endif %}>
             <span class="icons">autorenew</span>
         </button>
     </form>

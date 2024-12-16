@@ -6,7 +6,7 @@
 
     <form id="{{ task.name }}-send" class="send-form confirmable-form" method="post"
           action="{{ task.name }}"
-          data-confirm-message="Are you sure you want to execute?">
+          data-confirm-message='Are you sure you want to execute task "{{ task.name }}" now?'>
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         <input type="datetime-local" class="eta-input"
                disabled>
@@ -23,7 +23,7 @@
             </button>
         </form>
         <form id="{{ task.name }}-delete" method="post" class="confirmable-form"
-            data-confirm-message="Are you sure you want to delete this one?"
+            data-confirm-message='Are you sure you want to delete task {{ task.name }}?'
               action="{{ task.name }}/delete"
               >
             <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
