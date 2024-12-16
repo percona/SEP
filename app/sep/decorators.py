@@ -9,7 +9,7 @@ def csrf_exempt(func: Callable[..., Any]) -> Callable[..., Any]:
     """Mark a route handler as exempt from CSRF checks."""
 
     @wraps(func)
-    async def wrapper(*args, **kwargs) -> Any:
+    async def wrapper(*args: tuple[Any, ...], **kwargs: dict[str, Any]) -> Any:
         request = kwargs.get("request") or (args[0] if args else None)
 
         if request and hasattr(request, "state"):

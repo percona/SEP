@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from starlette.responses import StreamingResponse
 
 from app.sep.decorators import csrf_exempt
