@@ -39,7 +39,7 @@ def test_client() -> TestClient:
 
     @app.post("/stream-logs/data", response_class=JSONResponse)
     @csrf_exempt
-    def stream_logs_data():
+    async def stream_logs_data():
         return JSONResponse(
             status_code=status.HTTP_200_OK, content={"detail": "Stream OK"}
         )
