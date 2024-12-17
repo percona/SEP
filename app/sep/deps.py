@@ -489,15 +489,12 @@ async def get_tasks_index_context(
     scheduled_tasks = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
-    periodic_tasks = await tasks_api.get("/periodic/")
+    periodic_tasks = await tasks_api.get("/periodic/", params={"enabled": "True"})
     tasks = await tasks_api.get("/")
     task_owner_mapping = {task["name"]: task["owner"] for task in tasks}
     for periodic_task in periodic_tasks:
-        if not periodic_task.get("enabled", False):
-            periodic_tasks.remove(periodic_task)
-        else:
-            task_name = periodic_task.get("task")
-            periodic_task["owner"] = task_owner_mapping.get(task_name)
+        task_name = periodic_task.get("task")
+        periodic_task["owner"] = task_owner_mapping.get(task_name)
     executor_hosts = await tasks_api.get("/hosts/")
     inventories = await inventory_api.get("/summary/")
     plugins = sep_settings.PLUGINS
