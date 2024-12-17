@@ -9,12 +9,13 @@ pipeline {
 
 	parameters {
 		gitParameter branchFilter: 'origin/(main|SEP.*|v.*)',
-	        defaultValue: 'main',
-	        name: 'releaseTag',
-	        selectedValue: 'DEFAULT',
-	        sortMode: 'DESCENDING_SMART',
-	        type: 'PT_REVISION',
-	        requiredParameter: true,
+			//defaultValue: 'main',
+			name: 'releaseTag',
+			//selectedValue: 'DEFAULT',
+			selectedValue: 'NONE',
+			sortMode: 'DESCENDING_SMART',
+			type: 'PT_REVISION',
+			requiredParameter: true,
 			useRepository: 'https://github.com/percona/SEP.git'
 		string(
 			name: 'defaultCmd',
@@ -26,10 +27,10 @@ pipeline {
 				'3.11'
 			]
 		)
-		choice(
+		booleanParam(
 			name: 'notifySlack',
-			choices: ['true', 'false'],
-			defaultValue: 'true'
+			defaultValue: false,
+			description: 'Send notifications to Slack'
 		)
 	}
 
@@ -145,13 +146,6 @@ pipeline {
 	}
 
 	post {
-		failure {
-			when {
-				env.NOTIFY_SLACK == "true"
-			{
-					slackSend color: "danger", message: "Failed to build $JOB_NAME : $BUILD_URL"
-			}
-		}
 		always {
 			cleanWs()
 		}
