@@ -42,7 +42,7 @@ pipeline {
 	environment {
 		BUILD_OPTIONS = ''
 		CMD = "${defaultCmd}"
-		
+
 		NOTIFY_SLACK = "${notifySlack}"
 
 		POETRY_VIRTUALENVS_IN_PROJECT = "true"
