@@ -1,42 +1,93 @@
-td {
-    overflow: visible;
+.tasks-table-container {
+    border: 1px solid #c7c7c7;
+    border-radius: 10px;
 }
 
-.tooltip {
-    position: relative;
-    display: inline-block;
-    cursor: pointer;
+.tasks-table {
+    border: none;
+    margin-bottom: 0;
 }
 
-.tooltip .tooltiptext {
-    visibility: hidden;
-    min-width: 150px;
-    background-color: black;
-    color: #fff;
+.tasks-table td,
+.tasks-table th {
+    padding: 0.8em 1em;
+}
+
+.tasks-table th {
+    font-weight: 600;
+}
+
+.no-tasks {
     text-align: center;
-    padding: 5px;
-    border-radius: 4px;
-    position: absolute;
-    z-index: 1;
-    bottom: 150%;
-    left: 50%;
-    transform: translateX(-50%);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
-
-.tooltip .tooltiptext::after {
-    content: "";
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    margin-left: -5px;
-    border-width: 5px;
-    border-style: solid;
-    border-color: black transparent transparent transparent;
 }
 
-.tooltip:hover .tooltiptext {
-    visibility: visible;
-    opacity: 1;
+.previous-log-row {
+    border-bottom: none;
+}
+
+.previous-log-row td {
+    padding-bottom: .4em !important;
+}
+
+.log-row td {
+    padding: 0 0 .2em .8em !important
+}
+
+.scheduled-tasks-table-container {
+    border: 1px solid #c7c7c7;
+    border-radius: 10px;
+}
+
+#scheduled-tasks-table {
+    border: none;
+    margin-bottom: 0;
+}
+
+#scheduled-tasks-table td,
+#scheduled-tasks-table th {
+    padding: 0.8em 1em;
+}
+
+#scheduled-tasks-table th {
+    font-weight: 600;
+}
+
+#inventories {
+    width: 40%;
+    float: left;
+}
+
+.inventories-container {
+    border-radius: 10px;
+    border: 1px solid gray;
+    width: 90%;
+}
+
+.inventories-table {
+    margin: 0;
+}
+
+.inventories-table td,
+.inventories-table th {
+    padding: 0.8em 1em;
+}
+
+#hosts {
+    width: 60%;
+    float: left;
+}
+
+.hosts-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8em;
+    border: 1px solid gray;
+    border-radius: 8px;
+    padding: 1em;
+    min-height: 94px;
+    box-sizing: border-box;
+}
+
+.host {
+    padding: 0.5em;
 }

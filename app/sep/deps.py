@@ -504,6 +504,10 @@ async def get_tasks_index_context(
             periodic_task["owner"] = task_owner_mapping.get(task_name)
     executor_hosts = await tasks_api.get("/hosts/")
     inventories = await inventory_api.get("/summary/")
+    plugins = sep_settings.PLUGINS
+    is_task_manager_enabled = any(
+        p.name == "Task Manager" and p.sidebar for p in plugins
+    )
     context = default_context or {}
     context.update(
         {
@@ -512,6 +516,7 @@ async def get_tasks_index_context(
             "pending_tasks": scheduled_tasks,
             "periodic_tasks": periodic_tasks,
             "executor_hosts": executor_hosts.items(),
+            "is_task_manager_enabled": is_task_manager_enabled,
         },
     )
     return context

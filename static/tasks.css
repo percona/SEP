@@ -1,0 +1,34 @@
+.tasks-table-container {
+    border: 1px solid #c7c7c7;
+    border-radius: 10px;
+}
+
+.tasks-table {
+    border: none;
+    margin-bottom: 0;
+}
+
+.tasks-table td,
+.tasks-table th {
+    padding: 0.8em 1em;
+}
+
+.tasks-table th {
+    font-weight: 600;
+}
+
+.previous-log-row {
+    border-bottom: none;
+}
+
+.previous-log-row td {
+    padding-bottom: .4em !important;
+}
+
+.log-row td {
+    padding: 0 0 .2em .8em !important
+}
+
+.no-tasks {
+    text-align: center;
+}
