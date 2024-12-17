@@ -395,7 +395,7 @@ CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 async def get_tasks_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
-    get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
     default_context: DefaultContext | None = None,
     owner: TaskOwner | None = None,
 ) -> dict[str, Any]:
@@ -411,7 +411,7 @@ async def get_tasks_context(
     :type tasks_api: RemoteAPI
     :param get_task_info_func: A callable that receives a task and returns
         the processed task information.
-    :type get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]] | None
+    :type get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]]
     :param default_context: The base context dictionary to update. If None (default),
         initializes an empty dictionary.
     :type default_context: dict[str, Any] | None
@@ -431,16 +431,12 @@ async def get_tasks_context(
     history_tasks = []
     scheduled_tasks = []
     running_tasks = []
-    task_params = {}
-    if owner is not None:
-        task_params["owner"] = owner
-    for task in await tasks_api.get("/", params=task_params):
+    for task in await tasks_api.get("/", params={"owner": owner}):
         task_info = {
             "name": task["name"],
             "id": task["id"],
         }
-        if get_task_info_func:
-            task_info |= get_task_info_func(task)
+        task_info |= get_task_info_func(task)
         tasks.append(task_info)
         history = await tasks_api.get(f"/{task['name']}/history/")
         for hist in history:
@@ -451,7 +447,7 @@ async def get_tasks_context(
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
-    periodic_tasks = await tasks_api.get("/periodic/", params=task_params)
+    periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
     executor_hosts = await tasks_api.get("/hosts/")
     context = default_context or {}
     context.update(
@@ -464,7 +460,7 @@ async def get_tasks_context(
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
             "AVAILABLE_TIMEZONES": list(available_timezones()),
-        },
+        }
     )
     return context
 
@@ -482,8 +478,8 @@ async def get_tasks_index_context(
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Alters-specific information.
-    :type context: DefaultContext
+    :param default_context: The default context to be updated with Alters-specific information.
+    :type default_context: DefaultContext
     :return: An updated context dictionary containing tasks' data.
     :rtype: dict[str, Any]
     """
