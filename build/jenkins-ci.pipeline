@@ -29,7 +29,7 @@ Boolean notifyStatusViaSlack(String buildStatus) {
 
 	try {
 		println("slackSend color: " + color + " message: " + message_prefix + " " + base_message);
-		slackSend (color: color, message: message_prefix + " " + base_message)
+		slackSend (color: color, message: message_prefix + " " + base_message);
 	} catch (Exception e) {
 		status = false;
 	} finally {
