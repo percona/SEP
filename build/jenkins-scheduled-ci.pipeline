@@ -1,41 +1,5 @@
 // vim: ts=8:sts=8:sw=8:ft=groovy:noai:noet
 
-// TODO: move to shared, or refactor to a single job that calls the others
-Boolean notifyStatusViaSlack(String buildStatus) {
-	println("buildStatus: " + buildStatus);
-
-	if (env.NOTIFY_SLACK != true || env.BRANCH_NAME != "main") {
-		return true;
-	}
-
-	println("checking status");
-
-	Boolean status = true
-
-	String color = "good";
-	String base_message = "${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|View>)";
-	String message_prefix = buildStatus;
-
-	switch (buildStatus) {
-		case "SUCCESS":
-			break;
-		case "UNSTABLE":
-			color = "warning";
-			break;
-		case "FAILURE":
-			color = "danger";
-			break;
-	}
-
-	try {
-		println("slackSend color: " + color + " message: " + message_prefix + " " + base_message);
-	} catch (Exception e) {
-		status = false;
-	} finally {
-		return status;
-	}
-}
-
 pipeline {
 	agent {
 		node {
@@ -45,8 +9,9 @@ pipeline {
 
 	parameters {
 		gitParameter branchFilter: 'origin/(main|SEP.*|v.*)',
+			defaultValue: 'main',
 			name: 'releaseTag',
-			selectedValue: 'NONE',
+			selectedValue: 'DEFAULT',
 			sortMode: 'DESCENDING_SMART',
 			type: 'PT_REVISION',
 			requiredParameter: true,
@@ -63,7 +28,7 @@ pipeline {
 		)
 		booleanParam(
 			name: 'notifySlack',
-			defaultValue: false,
+			defaultValue: true,
 			description: 'Send notifications to Slack'
 		)
 		booleanParam(
@@ -110,20 +75,9 @@ pipeline {
 				)
 			}
 		}
-
-		stage('Perform audit') {
+		stage('Execute CI') {
 			steps {
-				build job: 'SEP/Audit', parameters: [
-					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
-					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
-					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")]
-				], propagate: true, wait: true
-			}
-		}
-
-		stage('Build image') {
-			steps {
-				build job: 'SEP/Build', parameters: [
+				build job: 'SEP/CI', parameters: [
 					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
 					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
 					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")],
@@ -131,20 +85,10 @@ pipeline {
 				], propagate: true, wait: true
 			}
 		}
-
-		/*stage('Deploy') {
-			steps {
-				build job: 'SEP/Deploy', parameters: [
-					string(name: 'releaseTag', value: "${RELEASE_VER}"),
-					string(name: 'pyVersion', value: "${PYTHON_VERSION}")
-				], propagate: true, wait: true
-			}
-		}*/
 	}
 
 	post {
 		always {
-			notifyStatusViaSlack(currentBuild.currentResult)
 			cleanWs()
 		}
 	}

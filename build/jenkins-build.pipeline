@@ -9,12 +9,11 @@ pipeline {
 
 	parameters {
 		gitParameter branchFilter: 'origin/(main|SEP.*|v.*)',
-	        defaultValue: 'main',
-	        name: 'releaseTag',
-	        selectedValue: 'DEFAULT',
-	        sortMode: 'DESCENDING_SMART',
-	        type: 'PT_REVISION',
-	        requiredParameter: true,
+			name: 'releaseTag',
+			selectedValue: 'NONE',
+			sortMode: 'DESCENDING_SMART',
+			type: 'PT_REVISION',
+			requiredParameter: true,
 			useRepository: 'https://github.com/percona/SEP.git'
 		string(
 			name: 'defaultCmd',
@@ -26,10 +25,15 @@ pipeline {
 				'3.11'
 			]
 		)
-		choice(
+		booleanParam(
 			name: 'notifySlack',
-			choices: ['true', 'false'],
-			defaultValue: 'true'
+			defaultValue: false,
+			description: 'Send notifications to Slack'
+		)
+		booleanParam(
+			name: 'pushImage',
+			defaultValue: false,
+			description: 'Push the image to the registry'
 		)
 	}
 
@@ -41,7 +45,7 @@ pipeline {
 	environment {
 		BUILD_OPTIONS = ''
 		CMD = "${defaultCmd}"
-		
+
 		NOTIFY_SLACK = "${notifySlack}"
 
 		POETRY_VIRTUALENVS_IN_PROJECT = "true"
@@ -73,16 +77,67 @@ pipeline {
 				)
 			}
 		}
+
+		stage('Build base image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
+			steps {
+				echo 'Building base image ..'
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					podman image exists "sep:builder" && podman image rm "sep:builder" || true
+					buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
+				'''
+			}
+		}
+
+		stage('Build SEP image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
+			steps {
+				echo "Building SEP image for ${RELEASE_VER} .."
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					make image
+				'''
+			}
+		}
+
+		stage('Push SEP image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			when {
+				expression {
+					return params.pushImage
+				}
+			}
+
+			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
+			steps {
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					podman image push sep:${RELEASE_VER} labbox-mini.tp.int.percona.com:5555/sep:${RELEASE_VER}
+				'''
+			}
+		}
+
 	}
 
 	post {
-		failure {
-			when {
-				env.NOTIFY_SLACK == "true"
-			{
-					slackSend color: "danger", message: "Failed to build $JOB_NAME : $BUILD_URL"
-			}
-		}
 		always {
 			cleanWs()
 		}
