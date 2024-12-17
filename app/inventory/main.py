@@ -7,27 +7,26 @@ from fastapi import APIRouter
 from app.api.deps import IsAuthenticatedDep
 from app.core.config import create_app, default_lifespan, settings
 from app.inventory.config import inventory_settings
-from app.inventory.crud import NodeManager, SchemaManager, ServiceManager
+from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
 from app.inventory.deps import SessionDep
-from app.inventory.models import SummaryResponse
 from app.inventory.routes import nodes, schemas, services, tables
 
 summary_router = APIRouter(prefix="/summary", tags=["summary"])
 
 
 @summary_router.get("/", dependencies=[IsAuthenticatedDep])
-async def get_summary_inventory(session: SessionDep) -> SummaryResponse:
+async def get_summary_inventory(session: SessionDep) -> dict[str, int]:
     """Retrieve a summary of inventory counts."""
-    nodes = await NodeManager.list(session=session)
-    services = await ServiceManager.list(session=session)
-    schemas = await SchemaManager.list(session=session)
-    tables = await ServiceManager.list(session=session)
-    return SummaryResponse(
-        nodes=len(nodes),
-        services=len(services),
-        schemas=len(schemas),
-        tables=len(tables),
-    )
+    nodes = await NodeManager.count(session=session)
+    services = await ServiceManager.count(session=session)
+    schemas = await SchemaManager.count(session=session)
+    tables = await TableManager.count(session=session)
+    return {
+        "nodes": nodes,
+        "services": services,
+        "schemas": schemas,
+        "tables": tables,
+    }
 
 
 lifespan = default_lifespan if __name__ == "__main__" else None
