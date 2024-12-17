@@ -72,22 +72,22 @@
     padding: 0.8em 1em;
 }
 
-#hosts {
+#targets {
     width: 60%;
     float: left;
 }
 
-.hosts-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.8em;
+.targets-container {
+    border-radius: 10px;
     border: 1px solid gray;
-    border-radius: 8px;
-    padding: 1em;
-    min-height: 94px;
-    box-sizing: border-box;
+    width: 90%;
 }
 
-.host {
-    padding: 0.5em;
+.targets-table {
+    margin: 0;
+}
+
+.targets-table td,
+.targets-table th {
+    padding: 0.8em 1em;
 }
