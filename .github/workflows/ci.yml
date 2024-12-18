@@ -29,5 +29,25 @@ jobs:
     needs:
     - python
     steps:
-    - name: Mark as complete
-      run: echo Done
+    - name: Prepare environment
+      run: |
+        sudo apt update -qqy
+        sudo apt install -qqy podman buildah
+        systemctl --user start podman
+        echo "DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock" >> "$GITHUB_ENV"
+
+    - name: Build wheel
+      env:
+        RELEASE_VER: "${{ github.ref }}"
+      run: |
+        make build
+
+    - name: Build container image
+      env:
+        RELEASE_VER: "${{ github.ref }}"
+    run: |
+      buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
+      make pack
+      buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
+      podman run --rm --entrypoint /bin/sh --timeout 10 "sep:${RELEASE_VER}" -c 'sleep 3'
+
