@@ -7,7 +7,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor import CasdoorSDK
 from app.models import CasdoorUser
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner
 
 
 class CasdoorSDKFactory(ModelFactory[CasdoorSDK]):
@@ -29,6 +29,8 @@ class TaskFactory(ModelFactory[Task]):
     """Define factory for Task instances."""
 
     is_template: bool = False
+    owner: TaskOwner = TaskOwner.ALTERS
+    backend: TaskBackendEnum = TaskBackendEnum.NOMAD
 
 
 class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
