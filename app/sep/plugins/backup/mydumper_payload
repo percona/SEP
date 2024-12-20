@@ -760,7 +760,7 @@ class DirectoryEncryptor:
             ):
                 continue
 
-            p = self._start_gpg_subp(file_path, recipient=recipient, nice=nice)
+            p = self._start_gpg_subp(str(file_path), recipient=recipient, nice=nice)
             enc_procs[file_path] = p
             ok = self._prune_finished_procs(enc_procs, max_proc)
             all_ok = all_ok and ok

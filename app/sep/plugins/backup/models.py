@@ -49,7 +49,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     hardlink: bool = True
     compress: bool = True
     check_disk_space: bool = True
-    encrypt: bool | EmptyStrToNone = None
+    encrypt: bool = False
     encrypt_using_tmpdir: bool | EmptyStrToNone = None
     only_if_running_slave: bool = False
     only_if_read_only: bool = False
