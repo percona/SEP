@@ -1,0 +1,422 @@
+<style>
+    fieldset input,
+    fieldset select,
+    fieldset textarea {
+        margin-top: 1em;
+        display: block;
+    }
+
+    .hidden {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    .visible {
+        opacity: 1;
+        max-height: 1000px; /* Large enough to show all content */
+        pointer-events: auto;
+    }
+
+    /* Smaller containers might have less content, adjust accordingly if needed */
+    #mydumper_container,
+    #xtrabackup_container,
+    #s3_container,
+    #rsync_container {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 0;
+        max-height: 0;
+    }
+
+    #mydumper_container.visible,
+    #xtrabackup_container.visible,
+    #s3_container.visible,
+    #rsync_container.visible {
+        opacity: 1;
+        max-height: 1000px;
+    }
+
+    button {
+        margin-top: 1em;
+        margin-right: 1em;
+    }
+
+    .checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1em;
+        align-items: center;
+    }
+
+    .checkbox-group label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25em;
+        margin-top: 0;
+    }
+
+    .checkbox-group input {
+        margin-top: 0 !important;
+    }
+</style>
+
+<form action="" method="post" class="{{ form_class }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+    <legend>Main Options</legend>
+    <fieldset>
+        <legend>Executor Host</legend>
+        <label for="hostname">Select Executor Host:</label>
+        {% if executor_hosts|length == 1 %}
+        {% set single_service = executor_hosts[0] %}
+        <select id="hostname" name="hostname" disabled>
+            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+        </select>
+        <input type="hidden" name="hostname" value="{{ single_service }}">
+        {% else %}
+        <select id="hostname" name="hostname" required>
+            <option value="" selected>Select a host</option>
+            {% for executor_host in executor_hosts %}
+            <option value="{{ executor_host }}">{{ executor_host }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </fieldset>
+
+    <fieldset>
+        <legend>Basic Task Information</legend>
+        <label for="task_name">Task Name:
+            <input type="text" id="task_name" name="task_name" class="validate" required placeholder="Enter a descriptive task name" />
+        </label>
+        <label for="service_id">Select a Database Host:
+            {% if mysql_services|length == 1 %}
+            {% set single_service = mysql_services[0] %}
+            <select id="service_id" name="service_id" disabled>
+                <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+            </select>
+            <input type="hidden" name="service_id" value="{{ single_service.id }}">
+            {% else %}
+            <select id="service_id" name="service_id" required>
+                <option value="" selected>Select a database host</option>
+                {% for service in mysql_services %}
+                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+        </label>
+        <label for="backup_type">Backup Type:
+            <select id="backup_type" name="backup_type" required>
+                <option value="">Select a backup type</option>
+                <option value="M">Mydumper</option>
+                <option value="X">Xtrabackup</option>
+            </select>
+        </label>
+        <label for="encryption_recipient">Encryption Recipient (optional):
+            <input type="text" id="encryption_recipient" name="encryption_recipient" placeholder="Recipient email or key ID"/>
+        </label>
+    </fieldset>
+
+    <fieldset>
+        <legend>General Backup Configuration</legend>
+        <div class="checkbox-group">
+            <label for="hardlink">
+                <input type="checkbox" id="hardlink" name="hardlink" value="1" checked/>
+                Hardlink
+            </label>
+            <label for="compress">
+                <input type="checkbox" id="compress" name="compress" value="1" checked/>
+                Compress
+            </label>
+            <label for="check_disk_space">
+                <input type="checkbox" id="check_disk_space" name="check_disk_space" value="1" checked/>
+                Check Disk Space
+            </label>
+            <label for="encrypt">
+                <input type="checkbox" id="encrypt" name="encrypt" value="1"/>
+                Encrypt
+            </label>
+            <label for="encrypt_using_tmpdir">
+                <input type="checkbox" id="encrypt_using_tmpdir" name="encrypt_using_tmpdir" value="1"/>
+                Encrypt using tmpdir
+            </label>
+            <label for="only_if_running_slave">
+                <input type="checkbox" id="only_if_running_slave" name="only_if_running_slave" value="1"/>
+                Only if running slave
+            </label>
+            <label for="only_if_read_only">
+                <input type="checkbox" id="only_if_read_only" name="only_if_read_only" value="1"/>
+                Only if read-only
+            </label>
+        </div>
+        <label for="logging_dir">Logging Directory (optional):
+            <input type="text" id="logging_dir" name="logging_dir" placeholder="/path/to/logs"/>
+        </label>
+        <label for="backup_dir">Backup Directory (optional):
+            <input type="text" id="backup_dir" name="backup_dir" placeholder="/path/to/backups"/>
+        </label>
+        <label for="defaults_file">Defaults File (optional):
+            <input type="text" id="defaults_file" name="defaults_file" placeholder="/path/to/defaults.cnf"/>
+        </label>
+    </fieldset>
+
+    <fieldset id="mydumper_container">
+        <legend>Mydumper Configuration</legend>
+        <label for="mydumper_daily_purge">Daily Purge (days):
+            <input type="number" id="mydumper_daily_purge" name="mydumper_daily_purge" placeholder="e.g. 7"/>
+        </label>
+        <label for="mydumper_weekly_purge">Weekly Purge (weeks):
+            <input type="number" id="mydumper_weekly_purge" name="mydumper_weekly_purge" placeholder="e.g. 4"/>
+        </label>
+
+        <div class="checkbox-group">
+            <label for="mydumper_schemas">
+                <input type="checkbox" id="mydumper_schemas" name="mydumper_schemas" value="1"/>
+                Dump Schemas
+            </label>
+            <label for="mydumper_dump_triggers">
+                <input type="checkbox" id="mydumper_dump_triggers" name="mydumper_dump_triggers" value="1"/>
+                Dump Triggers
+            </label>
+            <label for="mydumper_desync_pxc">
+                <input type="checkbox" id="mydumper_desync_pxc" name="mydumper_desync_pxc" value="1"/>
+                Desync PXC
+            </label>
+            <label for="mydumper_less_locking">
+                <input type="checkbox" id="mydumper_less_locking" name="mydumper_less_locking" value="1"/>
+                Less Locking
+            </label>
+            <label for="mydumper_use_numa">
+                <input type="checkbox" id="mydumper_use_numa" name="mydumper_use_numa" value="1"/>
+                Use NUMA
+            </label>
+            <label for="use_ftwrl_guardian">
+                <input type="checkbox" id="use_ftwrl_guardian" name="use_ftwrl_guardian" value="1"/>
+                Use FTWRL Guardian
+            </label>
+        </div>
+
+        <label for="mydumper_extra_args">Extra Arguments (optional):
+            <input type="text" id="mydumper_extra_args" name="mydumper_extra_args" placeholder="e.g. --verbose=3"/>
+        </label>
+    </fieldset>
+
+    <fieldset id="xtrabackup_container">
+        <legend>Xtrabackup Configuration</legend>
+        <label for="xtrabackup_copies">Number of Copies:
+            <input type="number" id="xtrabackup_copies" name="xtrabackup_copies" placeholder="e.g. 2"/>
+        </label>
+
+        <div class="checkbox-group">
+            <label for="xtrabackup_kill_queries">
+                <input type="checkbox" id="xtrabackup_kill_queries" name="xtrabackup_kill_queries" value="1"/>
+                Kill Queries
+            </label>
+            <label for="xtrabackup_verify">
+                <input type="checkbox" id="xtrabackup_verify" name="xtrabackup_verify" value="1"/>
+                Verify Backup
+            </label>
+            <label for="xtrabackup_prepare">
+                <input type="checkbox" id="xtrabackup_prepare" name="xtrabackup_prepare" value="1"/>
+                Prepare Backup
+            </label>
+            <label for="xtrabackup_desync_pxc">
+                <input type="checkbox" id="xtrabackup_desync_pxc" name="xtrabackup_desync_pxc" value="1"/>
+                Desync PXC
+            </label>
+            <label for="xtrabackup_rsync">
+                <input type="checkbox" id="xtrabackup_rsync" name="xtrabackup_rsync" value="1"/>
+                Use Rsync
+            </label>
+            <label for="xtrabackup_slave_info">
+                <input type="checkbox" id="xtrabackup_slave_info" name="xtrabackup_slave_info" value="1"/>
+                Include Slave Info
+            </label>
+            <label for="xtrabackup_stop_slave">
+                <input type="checkbox" id="xtrabackup_stop_slave" name="xtrabackup_stop_slave" value="1"/>
+                Stop Slave Before Backup
+            </label>
+            <label for="xtrabackup_lock_ddl">
+                <input type="checkbox" id="xtrabackup_lock_ddl" name="xtrabackup_lock_ddl" value="1"/>
+                Lock DDL
+            </label>
+        </div>
+
+        <label for="xtrabackup_kill_queries_timeout">Kill Queries Timeout (seconds):
+            <input type="number" id="xtrabackup_kill_queries_timeout" name="xtrabackup_kill_queries_timeout" placeholder="e.g. 30"/>
+        </label>
+        <label for="xtrabackup_kill_query_type">Query Type to Kill:
+            <select id="xtrabackup_kill_query_type" name="xtrabackup_kill_query_type">
+                <option value="">Select one</option>
+                <option value="select">select</option>
+                <option value="all">all</option>
+            </select>
+        </label>
+
+        <label for="xtrabackup_prepare_memory">Prepare Memory (optional):
+            <input type="text" id="xtrabackup_prepare_memory" name="xtrabackup_prepare_memory" placeholder="e.g. 1G"/>
+        </label>
+        <label for="xtrabackup_defaults_file">Defaults File (optional):
+            <input type="text" id="xtrabackup_defaults_file" name="xtrabackup_defaults_file" placeholder="/path/to/my.cnf"/>
+        </label>
+        <label for="xtrabackup_extra_args">Extra Arguments (optional):
+            <input type="text" id="xtrabackup_extra_args" name="xtrabackup_extra_args" placeholder="e.g. --compact"/>
+        </label>
+        <label for="xtrabackup_incremental_method">Incremental Method:
+            <select id="xtrabackup_incremental_method" name="xtrabackup_incremental_method">
+                <option value="">Select one</option>
+                <option value="less_space">less_space</option>
+                <option value="fast_restore">fast_restore</option>
+            </select>
+        </label>
+        <label for="xtrabackup_incremental_cycle">Incremental Cycle:
+            <select id="xtrabackup_incremental_cycle" name="xtrabackup_incremental_cycle">
+                <option value="">Select one</option>
+                <option value="daily">daily</option>
+                <option value="weekly">weekly</option>
+            </select>
+        </label>
+        <label for="xtrabackup_local_ssh_destination">Local SSH Destination (optional):
+            <input type="text" id="xtrabackup_local_ssh_destination" name="xtrabackup_local_ssh_destination" placeholder="user@host:/path"/>
+        </label>
+        <label for="xtrabackup_aes256_keyfile">AES256 Keyfile (optional):
+            <input type="text" id="xtrabackup_aes256_keyfile" name="xtrabackup_aes256_keyfile" placeholder="/path/to/keyfile"/>
+        </label>
+        <label for="xtrabackup_bin_cmd">Binary Command:
+            <select id="xtrabackup_bin_cmd" name="xtrabackup_bin_cmd">
+                <option value="">Select one</option>
+                <option value="xtrabackup">xtrabackup</option>
+                <option value="mariadb-backup">mariadb-backup</option>
+                <option value="innobackupex">innobackupex</option>
+            </select>
+        </label>
+    </fieldset>
+
+    <fieldset>
+        <legend>Additional Upload Options</legend>
+        <button type="button" id="toggle_s3_btn">+ Add S3 upload</button>
+        <div id="s3_container">
+            <label for="s3_bucket">S3 Bucket:
+                <input type="text" id="s3_bucket" name="s3_bucket" placeholder="e.g. my-backup-bucket"/>
+            </label>
+            <label for="s3_storage_class">S3 Storage Class (optional):
+                <input type="text" id="s3_storage_class" name="s3_storage_class" placeholder="STANDARD, GLACIER, etc."/>
+            </label>
+            <label for="skip_s3_safety_check">
+                <input type="checkbox" id="skip_s3_safety_check" name="skip_s3_safety_check" value="1"/>
+                Skip S3 Safety Check
+            </label>
+        </div>
+
+        <button type="button" id="toggle_rsync_btn">+ Add Rsync upload</button>
+        <div id="rsync_container">
+            <label for="rsync_path">Rsync Path:
+                <input type="text" id="rsync_path" name="rsync_path" placeholder="user@host:/path"/>
+            </label>
+        </div>
+    </fieldset>
+
+    <button type="submit">Create</button>
+    <button type="reset">Reset</button>
+</form>
+
+<script type="text/javascript">
+    const backupTypeSelect = document.getElementById('backup_type');
+    const mydumperContainer = document.getElementById('mydumper_container');
+    const xtrabackupContainer = document.getElementById('xtrabackup_container');
+
+    const s3Container = document.getElementById('s3_container');
+    const toggleS3Btn = document.getElementById('toggle_s3_btn');
+    let s3Visible = false;
+
+    const rsyncContainer = document.getElementById('rsync_container');
+    const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
+    let rsyncVisible = false;
+
+    const s3BucketInput = document.getElementById('s3_bucket');
+    const rsyncPathInput = document.getElementById('rsync_path');
+
+    function disableAllMydumperFields(disabled) {
+        mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+    }
+
+    function disableAllXtrabackupFields(disabled) {
+        xtrabackupContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+    }
+
+    function showContainer(container, show) {
+        if (show) {
+            container.classList.add('visible');
+            container.classList.remove('hidden');
+        } else {
+            container.classList.add('hidden');
+            container.classList.remove('visible');
+        }
+    }
+
+    function updateBackupTypeUI() {
+        const backupType = backupTypeSelect.value;
+        if (backupType === 'M') {
+            // Show mydumper, hide xtrabackup
+            showContainer(mydumperContainer, true);
+            disableAllMydumperFields(false);
+
+            showContainer(xtrabackupContainer, false);
+            disableAllXtrabackupFields(true);
+        } else if (backupType === 'X') {
+            // Show xtrabackup, hide mydumper
+            showContainer(xtrabackupContainer, true);
+            disableAllXtrabackupFields(false);
+
+            showContainer(mydumperContainer, false);
+            disableAllMydumperFields(true);
+        } else {
+            // No selection
+            showContainer(mydumperContainer, false);
+            disableAllMydumperFields(true);
+
+            showContainer(xtrabackupContainer, false);
+            disableAllXtrabackupFields(true);
+        }
+    }
+
+    function toggleS3() {
+        s3Visible = !s3Visible;
+        if (s3Visible) {
+            showContainer(s3Container, true);
+            s3BucketInput.required = true;
+            toggleS3Btn.textContent = "- Remove S3 upload";
+        } else {
+            showContainer(s3Container, false);
+            s3BucketInput.required = false;
+            s3BucketInput.value = '';
+            document.getElementById('s3_storage_class').value = '';
+            document.getElementById('skip_s3_safety_check').checked = false;
+            toggleS3Btn.textContent = "+ Add S3 upload";
+        }
+    }
+
+    function toggleRsync() {
+        rsyncVisible = !rsyncVisible;
+        if (rsyncVisible) {
+            showContainer(rsyncContainer, true);
+            rsyncPathInput.required = true;
+            toggleRsyncBtn.textContent = "- Remove Rsync upload";
+        } else {
+            showContainer(rsyncContainer, false);
+            rsyncPathInput.required = false;
+            rsyncPathInput.value = '';
+            toggleRsyncBtn.textContent = "+ Add Rsync upload";
+        }
+    }
+
+    backupTypeSelect.addEventListener('change', updateBackupTypeUI);
+    toggleS3Btn.addEventListener('click', toggleS3);
+    toggleRsyncBtn.addEventListener('click', toggleRsync);
+
+    // Initialize
+    updateBackupTypeUI();
+    showContainer(s3Container, false);
+    showContainer(rsyncContainer, false);
+</script>
