@@ -20,6 +20,7 @@ from app.sep.plugins.backup.deps import (
     BackupsTask,
     get_backups_index_context,
 )
+from app.sep.plugins.backup.models import BackupType
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ async def backups_detail(
     data = task.data
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
-    server_config = task_config["PURGE_LIST"][0]
+    server_config = task_config["SERVER_LIST"][0]
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -80,7 +81,7 @@ async def backups_detail(
         "meta": meta,
         "host": server_config["HOST"],
         "port": server_config["PORT"],
-        "backup_type": server_config["BACKUP_TYPE"],
+        "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
     }
 
     context["task"] = task_data

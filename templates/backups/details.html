@@ -32,9 +32,8 @@
         <caption>Overview</caption>
         <thead>
         <tr>
-            <th>Hostname</th>
+            <th>Target</th>
             <th>Host</th>
-            <th>Port</th>
             <th>Type</th>
             <th>Created at</th>
             <th>Updated at</th>
@@ -42,6 +41,7 @@
         </thead>
         <tbody>
         <tr>
+            <td>{{ task.hostname }}</td>
             <td>{{ task.host }} ({{ task.port }})</td>
             <td>{{ task.backup_type }}</td>
             <td>{{ task.created_at }}</td>

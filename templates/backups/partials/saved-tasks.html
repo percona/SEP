@@ -4,7 +4,6 @@
         <tr>
             <th style="width: 200px;">Name</th>
             <th style="width: 200px;">Host</th>
-            <th>Port</th>
             <th>Type</th>
             <th>Upload</th>
             <th>Actions</th>
@@ -14,8 +13,7 @@
         {% for task in tasks %}
         <tr id="{{ task.name }}">
             <td>{{ task.name }}</td>
-            <td>{{ task.host }}</td>
-            <td>{{ task.port }}</td>
+            <td>{{ task.host }} ({{ task.port }})</td>
             <td>{{ task.backup_type }}</td>
             <td>{{ task.upload }}</td>
             {% include "tasks/partials/saved-tasks-actions-column.html" %}
