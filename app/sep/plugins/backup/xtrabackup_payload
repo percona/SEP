@@ -2201,7 +2201,7 @@ class Xtrabackup(Backup):
         Optionally, performs incremental or streaming backup.
         """
         version = self._get_version()
-        xtrabackup_cmd = ["sudo"]
+        xtrabackup_cmd = []
         if self.xtrabackup_bin_cmd == 'xtrabackup':
             xtrabackup_cmd.append(XTRABACKUP_BIN_REAL)
         elif self.xtrabackup_bin_cmd == 'mariadb-backup':
@@ -2793,4 +2793,7 @@ class Xtrabackup(Backup):
 
 
 if __name__ == "__main__":
-    main()
+    if os.geteuid() == 0:
+        main()
+    else:
+        os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
