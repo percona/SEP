@@ -92,13 +92,16 @@ async def build_backup_task_payload(
         all_servers=BackupConfigAll.model_validate(all_config),
         server_list=[BackupConfigServer.model_validate(server_config)],
     )
+    requirements = "packaging\nPyYAML\nPyMySQL\nboto3"
     if form.backup_type == BackupType.MYDUMPER:
         payload_name = "mydumper_payload"
     elif form.backup_type == BackupType.XTRABACKUP:
         payload_name = "xtrabackup_payload"
+        requirements += "\nfilelock"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
     payload_path = Path(__file__).parent / payload_name
+
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
@@ -110,7 +113,7 @@ async def build_backup_task_payload(
                     backup_config.model_dump(by_alias=True, exclude_none=True)
                 ),
                 "target": form.hostname,
-                "requirements": "packaging\nPyYAML\nPyMySQL\nboto3",
+                "requirements": requirements,
             },
             "payload": f"file://{payload_path}",
         },

@@ -194,113 +194,6 @@ XTRABACKUP_BIN_MARIADB = os.getenv(
 ZSTD_BIN = os.getenv("PERCONA_BACKUP_ZSTD_BIN", "/usr/bin/zstd")
 
 
-def ftwrl_guardian(
-    server_data: dict[str, Any],
-    logger: logging.Logger | None = None,
-    sleep_time: int = 1,
-    check_metadata: bool = False,
-) -> str | None:
-    """Guard against race conditions in MyDumper by killing blocking SELECT queries
-    if a FLUSH TABLES WITH READ LOCK (FTWRL) is detected.
-
-    :param server_data: MySQL server connection data.
-    :param logger: Logger instance to log activities.
-    :param sleep_time: Time to sleep before checking processes.
-    :param check_metadata: Check for table metadata lock if True.
-    :return: Error message if an error occurred, otherwise None.
-    """
-    time.sleep(sleep_time)  # arbitrary wait
-
-    re_ftwrl = re.compile(r"FLUSH TABLES WITH READ LOCK", flags=re.IGNORECASE)
-    re_metadata = re.compile(r"Waiting for table metadata lock", flags=re.IGNORECASE)
-    re_read = re.compile("SELECT", flags=re.IGNORECASE)
-    re_state = re.compile("Waiting", flags=re.IGNORECASE)
-
-    try:
-        conn = pymysql.connect(
-            read_default_file=server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF),
-            host=server_data["HOST"],
-            port=int(server_data.get("PORT", 3306)),
-        )
-    except Error as err:
-        error_code = err.args[0] if isinstance(err.args[0], int) else 0
-        error_message = (
-            err.args[1]
-            if len(err.args) > 1 and isinstance(err.args[1], str)
-            else str(err)
-        )
-        return f"ftwrl_guardian error [{error_code}]: {error_message}"
-
-    with conn:
-        with conn.cursor() as curs:
-            curs.execute("SHOW PROCESSLIST")
-            res = curs.fetchall()
-
-        ftwrl = None
-        metadata_lock = None
-        dprocess = None
-        for row_res in res:
-            if not ftwrl and not metadata_lock:
-                if row_res[7]:
-                    ftwrl = re_ftwrl.search(str(row_res[7]))
-                if check_metadata and row_res[6]:
-                    metadata_lock = re_metadata.search(str(row_res[6]))
-                dprocess = row_res
-            else:
-                break
-
-        if not ftwrl and not metadata_lock:
-            # do not run if FTWRL not present
-            return None
-
-        out = {
-            "Detected": {
-                "PID": f"{dprocess[0]}",
-                "User": dprocess[1],
-                "Host": dprocess[2],
-                "Schema": dprocess[3],
-                "Command": dprocess[4],
-                "Time": f"{dprocess[5]}",
-                "State": dprocess[6],
-                "Info": dprocess[7],
-            }
-        }
-        if logger:
-            logger.info(out)
-
-        with conn.cursor() as curs:
-            for row_kill in res:
-                row_kill = list(row_kill)
-                if row_kill[6] is None:
-                    row_kill[6] = ""
-                if row_kill[7] is None:
-                    row_kill[7] = ""
-
-                if (
-                    row_kill[4] in ("Query", "Execute")
-                    and row_kill[5] > 0
-                    and not re_state.search(str(row_kill[6]))
-                    and re_read.search(str(row_kill[7]))
-                ):
-                    out = {
-                        "Killing": {
-                            "PID": f"{row_kill[0]}",
-                            "User": row_kill[1],
-                            "Host": row_kill[2],
-                            "Schema": row_kill[3],
-                            "Command": row_kill[4],
-                            "Time": f"{row_kill[5]}",
-                            "State": row_kill[6],
-                            "Info": row_kill[7],
-                        }
-                    }
-                    if logger:
-                        logger.info(out)
-                    with suppress(OperationalError, InternalError):
-                        curs.execute(f"KILL {row_kill[0]}")
-
-    return None
-
 
 def md5sum_file(filename: str) -> str:
     """Calculate the MD5 checksum of a file.
@@ -441,47 +334,6 @@ def hardlink_dirs(
     return ret
 
 
-def hardlink_listed_files(
-    src_dir: str,
-    dest_dir: str,
-    compress: bool,
-    encrypted: bool = False,
-    file_wlist: str = "not_updated_tables",
-) -> tuple[int, str]:
-    """Hardlink files listed in `dest_dir/file_wlist` from `src_dir`.
-
-    :param src_dir: Source directory.
-    :param dest_dir: Destination directory.
-    :param compress: Whether the files are compressed.
-    :param encrypted: Whether the files are encrypted.
-    :param file_wlist: Filename containing the list of files.
-    :return: (Status code, message). 0 means success.
-    """
-    files_file = Path(dest_dir) / file_wlist
-    if files_file.is_file():
-        ext = ".sql"
-        if compress:
-            ext += ".gz"
-        if encrypted:
-            ext += ".gpg"
-
-        with files_file.open("r") as f:
-            # Change working directory to src_dir for glob matching
-            os.chdir(src_dir)
-            for line in f:
-                f_name = line.strip()
-                src_exist = False
-                for fthl in Path(src_dir).glob(f_name + "*" + ext):
-                    dest_file = Path(dest_dir) / fthl.name
-                    if dest_file.is_file():
-                        dest_file.unlink()
-                    os.link(str(fthl), str(dest_file))
-                    src_exist = True
-                if not src_exist:
-                    return 1, f_name
-    return 0, "Ok"
-
-
 def get_dir_size(start_path: str, unit: str = "text") -> int | str:
     """Get the size of a directory.
 
@@ -515,39 +367,6 @@ def get_dir_size(start_path: str, unit: str = "text") -> int | str:
     if mbyte < 1024:
         return f"{int(mbyte)} MB"
     return f"{int(mbyte / 1024)} GB"
-
-
-def parse_weekday_from_str(date_str: str) -> int | None:
-    """Parse weekday from a date string.
-
-    :param date_str: A string containing a date.
-    :return: Weekday number (1=Monday, ..., 7=Sunday) or None if parsing fails.
-    """
-    weekday = None
-    if re.search(BACKUP_DIR_REGEX["X"], date_str):
-        weekday = datetime.datetime.strptime(date_str[:10], "%Y-%m-%d").isoweekday()
-    elif re.search(BACKUP_DIR_REGEX["M"], date_str):
-        weekday = datetime.datetime.strptime(date_str, "%Y%m%d").isoweekday()
-    return weekday
-
-
-def hash_file(file_path: str) -> str | None:
-    """Compute the SHA-256 hash of a file.
-
-    :param file_path: Path to the file.
-    :return: SHA-256 hex digest or None if file not accessible.
-    """
-    sha = hashlib.sha256()
-    fpath = Path(file_path)
-    try:
-        with fpath.open("rb") as input_file:
-            buffer = input_file.read(4096)
-            while buffer:
-                sha.update(buffer)
-                buffer = input_file.read(4096)
-        return sha.hexdigest()
-    except OSError:
-        return None
 
 
 def logging_setup(
@@ -819,8 +638,8 @@ class DirectoryEncryptor:
     :vartype config: dict
     """
 
-    def __init__(self, cfg_path: Path = DIR_ENCRYPT_CFG_PATH, **cfg) -> None:
-        self.config: dict[str, str | bool | int] = {}
+    def __init__(self, cfg_path: Path, **cfg) -> None:
+        self.config = {}
         self._setup_cfgs(cfg_path)
         self.config.update(cfg)
 
@@ -839,14 +658,6 @@ class DirectoryEncryptor:
             self._set_default_config()
 
         gpg_bin = self.config.get("gpg bin", "/usr/bin/gpg")
-        use_pinentry = self.config.get("use_pinentry", True)
-        if use_pinentry is None or use_pinentry is True or use_pinentry == 1:
-            try:
-                subprocess.check_output(
-                    [gpg_bin, "--pinentry-mode"], stderr=subprocess.STDOUT
-                )
-            except subprocess.CalledProcessError as err:
-                self.config["use_pinentry"] = "missing" in err.output.decode()
 
     def _set_default_config(self) -> None:
         """Set default configuration values."""
@@ -857,7 +668,6 @@ class DirectoryEncryptor:
             "encryption nice": False,
             "gpg bin": "/usr/bin/gpg",
             "encryption file filter": "",
-            "use_pinentry": True,
         }
 
     def _start_gpg_subp(
@@ -866,7 +676,6 @@ class DirectoryEncryptor:
         recipient: str = "",
         *,
         nice: bool = False,
-        decrypt: bool = False,
     ) -> subprocess.Popen:
         """Start and return a GPG encryption (or decryption) subprocess.
 
@@ -876,85 +685,30 @@ class DirectoryEncryptor:
         :type recipient: str
         :param nice: If True, start the process with `nice`.
         :type nice: bool
-        :param decrypt: If True, perform decryption instead of encryption.
-        :type decrypt: bool
         :return: The subprocess.Popen object representing the started GPG process.
         :rtype: subprocess.Popen
         """
         gpg_bin = self.config["gpg bin"]
-        use_pinentry = self.config.get("use_pinentry", True)
         home_dir = self.config.get("encryption home dir", "")
-
-        if decrypt:
-            output_filename = filename.replace(".gpg", "", 1)
-            stdin = subprocess.PIPE
-            if use_pinentry:
-                cmd = [
-                    gpg_bin,
-                    "--batch",
-                    "--pinentry-mode=loopback",
-                    "--decrypt",
-                    "--passphrase-fd=0",
-                    "--quiet",
-                    f"--output={output_filename}",
-                    filename,
-                ]
-            else:
-                cmd = [
-                    gpg_bin,
-                    "--batch",
-                    "--decrypt",
-                    "--passphrase-fd=0",
-                    "--quiet",
-                    f"--output={output_filename}",
-                    filename,
-                ]
-        else:
-            output_filename = filename + ".gpg"
-            stdin = None
-            cmd = [
-                gpg_bin,
-                "--batch",
-                "--yes",
-                "--encrypt",
-                "--always-trust",
-                "--quiet",
-                f"--recipient={recipient}",
-                f"--output={output_filename}",
-                filename,
-            ]
+        output_filename = filename + ".gpg"
+        stdin = None
+        cmd = [
+            gpg_bin,
+            "--batch",
+            "--yes",
+            "--encrypt",
+            "--always-trust",
+            "--quiet",
+            f"--recipient={recipient}",
+            f"--output={output_filename}",
+            filename,
+        ]
 
         if nice:
             cmd.insert(0, "nice")
         if home_dir:
             cmd.insert(-1, f"--homedir={home_dir}")
         return subprocess.Popen(cmd, stdin=stdin)
-
-    def _all_files_in_dir(
-        self, root_dir: str, regex: str | None
-    ) -> Generator[str, None, None]:
-        """Yield all files under the given directory that match the given regex.
-
-        Skips files if they match the configured 'encryption file filter' regex.
-
-        :param root_dir: The root directory to search.
-        :type root_dir: str
-        :param regex: A regular expression to match files. If None, all files are
-            returned (except those filtered by config).
-        :type regex: str | None
-        :yield: Paths to files that pass the filters.
-        :rtype: Generator[str, None, None]
-        """
-        file_re_opt = re.compile(regex) if regex else None
-        file_filter = self.config.get("encryption file filter", "")
-        file_re = re.compile(file_filter) if file_filter else None
-
-        for root, _, files in os.walk(root_dir):
-            for file_name in files:
-                if file_re is not None and file_re.match(file_name):
-                    continue
-                if file_re_opt is None or file_re_opt.match(file_name):
-                    yield str(Path(root) / file_name)
 
     def _prune_finished_procs(
         self, proc_dict: dict[str, subprocess.Popen], max_live_proc: int = 0
@@ -996,11 +750,7 @@ class DirectoryEncryptor:
 
     def encrypt_dir(
         self,
-        encr_dir: str,
-        recipient: str | None = None,
-        nice: bool | None = None,
-        max_proc: int | None = None,
-        regex: str | None = None,
+        encr_dir: Path,
     ) -> bool:
         """Encrypt all regular files under `encr_dir` using GPG.
 
@@ -1010,27 +760,14 @@ class DirectoryEncryptor:
 
         :param encr_dir: The directory path containing files to be encrypted.
         :type encr_dir: str
-        :param recipient: The GPG recipient. If None, uses the config value.
-        :type recipient: str | None
-        :param nice: If True, the GPG processes will be niced.
-        :type nice: bool | None
-        :param max_proc: The maximum number of concurrent GPG encryption processes.
-            Defaults to config.
-        :type max_proc: int | None
-        :param regex: A regex to match filenames to encrypt. If None, all files are
-            considered.
-        :type regex: str | None
         :return: True if all files were encrypted successfully, False otherwise.
         :rtype: bool
         """
-        if recipient is None:
-            recipient = self.config.get("encryption recipient", "CHANGEME_GPG")
-        if nice is None:
-            nice = bool(self.config.get("encryption nice", False))
-        if max_proc is None:
-            max_proc = int(self.config.get("max encryption processes", 5))
+        recipient = self.config.get("encryption recipient", "CHANGEME_GPG")
+        nice = bool(self.config.get("encryption nice", False))
+        max_proc = int(self.config.get("max encryption processes", 5))
 
-        enc_procs: dict[str, subprocess.Popen] = {}
+        enc_procs = {}
         all_ok = True
 
         exclude_names = {
@@ -1040,15 +777,15 @@ class DirectoryEncryptor:
             "xtrabackup_checkpoints",
         }
 
-        for file_path in self._all_files_in_dir(encr_dir, regex):
-            if (file_path.endswith(".gpg") and regex is None) or Path(
-                file_path
-            ).name in exclude_names:
+        for file_path in encr_dir.rglob("*"):
+            if (
+                not file_path.is_file()
+                or file_path.name.endswith(".gpg")
+                or file_path.name in exclude_names
+            ):
                 continue
 
-            p = self._start_gpg_subp(
-                file_path, recipient=recipient, nice=nice, decrypt=False
-            )
+            p = self._start_gpg_subp(str(file_path), recipient=recipient, nice=nice)
             enc_procs[file_path] = p
             ok = self._prune_finished_procs(enc_procs, max_proc)
             all_ok = all_ok and ok
@@ -1107,38 +844,6 @@ class BaseBackup:
         # Dynamically set
         self.is_slave = False
         self.last_backup_dir = ""
-
-    @property
-    def backup_uuid(self) -> uuid.UUID | None:
-        """Get the backup UUID.
-
-        :return: The backup UUID or None if not set.
-        """
-        return self._backup_uuid
-
-    @backup_uuid.setter
-    def backup_uuid(self, value: Any) -> None:
-        """Set the backup UUID.
-
-        :param value: UUID object or None. If not a UUID, generates a new one.
-        :raises UserWarning: If backup_uuid is already set.
-        """
-        if self._backup_uuid is not None:
-            self.logger.debug("backup_uuid is already set")
-            raise UserWarning("backup_uuid is already set")
-        if isinstance(value, uuid.UUID):
-            self._backup_uuid = value
-        else:
-            self._backup_uuid = uuid.uuid4()
-
-    @backup_uuid.deleter
-    def backup_uuid(self) -> NoReturn:
-        """Delete operation for backup_uuid is not supported.
-
-        :raises NotImplementedError: Always raised, as backup_uuid cannot be deleted.
-        """
-        self.logger.debug("backup_uuid cannot be deleted")
-        raise NotImplementedError("backup_uuid cannot be deleted")
 
     def get_policy(self) -> str | None:
         """Retrieve the notification policy.
@@ -1294,7 +999,7 @@ class BaseBackup:
         # Construct metrics text
         # We use None for missing values and convert them to string.
         encryption_val = self.report_options.get("encryption", "")
-        backup_id_val = str(self.backup_uuid) if self.backup_uuid else ""
+        backup_id_val = ""
         start_time_val = str(self.report_options.get("start_time", ""))
         end_time_val = str(self.report_options.get("end_time", ""))
 
@@ -1687,9 +1392,6 @@ class LocalConfig:
         self.base: dict[str, Any] = {}
         self.cfg_path = Path(cfg_path)
         self.populated = False
-        self.config_hash = (
-            hash_file(str(self.cfg_path)) if self.cfg_path.is_file() else None
-        )
         self.raw_cfg_data: dict[str, Any] = {}
         self.try_only = try_only
         self._populate_cfg()
