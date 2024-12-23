@@ -37,9 +37,9 @@ def test_client() -> TestClient:
         )
         return response
 
-    @app.post("/stream-logs/data", response_class=JSONResponse)
+    @app.get("/stream-logs/data", response_class=JSONResponse)
     @csrf_exempt
-    async def stream_logs_data():
+    async def stream_logs_data(request: Request):
         return JSONResponse(
             status_code=status.HTTP_200_OK, content={"detail": "Stream OK"}
         )
@@ -133,7 +133,7 @@ def test_excluded_paths(mock_get_response, test_client: TestClient):
     assert response.status_code == status.HTTP_200_OK
     assert test_client.cookies.get("fastapi-csrf-token") is None
 
-    response = test_client.post("/stream-logs/data")
+    response = test_client.get("/stream-logs/data")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"detail": "Stream OK"}
     assert test_client.cookies.get("fastapi-csrf-token") is None
