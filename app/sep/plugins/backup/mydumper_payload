@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from contextlib import suppress
-from enum import auto, IntEnum, StrEnum
+from enum import auto, IntEnum, Enum
 from getpass import getuser
 from pathlib import Path
 from typing import Any
@@ -85,7 +85,7 @@ class BackupNotifyStatus(IntEnum):
     UNKNOWN = 3
 
 
-class MSPAction(StrEnum):
+class MSPAction(str, Enum):
     BACKUP = auto()
     UPLOAD = auto()
 
