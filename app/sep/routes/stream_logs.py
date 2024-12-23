@@ -1,26 +1,30 @@
 """Define routes for streaming tasks logs."""
 
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from starlette.responses import StreamingResponse
 
 from app.sep.decorators import csrf_exempt
 from app.sep.deps import get_task_history, IsAuthenticated, TaskAPI
 from app.tasks.models import TaskHistoryResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.get("/{task_history_id}", dependencies=[IsAuthenticated])
 @csrf_exempt
-async def archives_logs_event_stream(
+async def task_logs_event_stream(
+    request: Request,
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_api: TaskAPI,
 ) -> StreamingResponse:
     """Stream a task history's logs as server-sent events."""
+    logger.debug("request.state.is_csrf_exempt is %s", request.state.is_csrf_exempt)
     return StreamingResponse(
         task_history_logs_event_stream(tasks_api, task_history.id),
         media_type="text/event-stream",

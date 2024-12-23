@@ -7,10 +7,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
-from app.sep.config import sep_settings
-
-templates = sep_settings.TEMPLATES
-
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     """Manage CSRF protection for HTTP requests and responses."""
