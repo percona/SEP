@@ -80,7 +80,7 @@ async def backups_detail(
         "hostname": meta["target"],
         "meta": meta,
         "host": server_config["HOST"],
-        "port": server_config["PORT"],
+        "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
     }
 
