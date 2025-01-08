@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+from binascii import b2a_base64
 from collections.abc import AsyncGenerator
 from datetime import datetime, UTC
 from functools import cached_property
@@ -22,10 +23,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.utils import async_run, b64encode_str, sort_dict
+from app.core.utils import async_run, sort_dict
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
-from app.tasks.execution.utils import minify_file_content
+from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if payload is not None:
             if self.minify_payload:
                 payload = minify_file_content(payload)
-            payload = b64encode_str(payload)
+            payload = b2a_base64(gzip_compress(payload)).decode("utf-8")
         job_status = self.backend.job.dispatch_job(
             task.data["ID"],
             payload=payload,
