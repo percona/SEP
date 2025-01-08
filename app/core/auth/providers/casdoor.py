@@ -212,7 +212,7 @@ class CasdoorSDK(RemoteAPI):
     async def introspect_token(
         self,
         token: str,
-        token_type: Literal["access_token", "refresh_token"] = "access_token",  # noqa: S107
+        token_type: Literal["access-token", "refresh-token"] = "access-token",  # noqa: S107
     ) -> dict[str, Any]:
         """Introspect a token to verify its validity.
 
@@ -221,8 +221,8 @@ class CasdoorSDK(RemoteAPI):
         :param token: The token to introspect.
         :type token: str
         :param token_type: The type of the token being introspected.
-            Defaults to "access_token".
-        :type token_type: Literal["access_token", "refresh_token"]
+            Defaults to "access-token".
+        :type token_type: Literal["access-token", "refresh-token"]
         :return: The introspection result from Casdoor.
         :rtype: dict[str, Any]
         """
