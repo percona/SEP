@@ -1,14 +1,16 @@
 python:
-  - '**/**.py'
-  - 'pyproject.toml'
-  - 'poetry.lock'
-
-#docs:
-#  - 'docs/**'
-#  - 'etc/mkdocs.yaml'
+- any:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/**.py'
+      - 'pyproject.toml'
+      - 'poetry.lock'
 
 skip-test:
-  - 'CODEOWNERS'
-  - 'README.md'
-  - '.gitignore'
-  - 'dist/**'
+- all:
+  - changed-files:
+    - any-glob-to-all-files:
+      - 'CODEOWNERS'
+      - 'README.md'
+      - '.gitignore'
+      - 'dist/**'
