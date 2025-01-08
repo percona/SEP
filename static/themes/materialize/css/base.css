@@ -199,3 +199,57 @@ table {
   footer {
     text-align: center;
     vertical-align: middle; } }
+
+/* Custom CSS from WebTeam */
+
+form fieldset div {
+  margin-bottom: 10px;
+}
+
+#name {
+  margin-left: 10px;
+}
+
+#payload {
+  height:200px;
+  margin-top: 10px;
+}
+
+form fieldset fieldset {
+  margin-left: -15px;
+  margin-top: 10px;
+
+}
+
+main form button {
+  background-color: #4B5468;
+  color: white;
+  padding-left: 28px;
+  padding-right: 30px;
+  padding-bottom: 10px;
+  font-weight: normal;
+}
+
+main form button:hover {
+  background-color: #3a4151!important;
+}
+
+body > main:nth-child(3) > p:nth-child(3) {
+  font-size: 50px;
+  text-align: center;
+}
+
+#sep > ul > li.signout > a {
+  background-color: #fc3519;
+}
+
+body > main:nth-child(3) > form:nth-child(4) > fieldset:nth-child(1){
+  display: flex;
+  flex-direction: column;
+  width: 20.833vw;
+  gap: 0.5em;
+}
+
+html.zglea.idc0_350 body.has-fixed-sidenav main form fieldset input#name {
+  margin-left: unset;
+}

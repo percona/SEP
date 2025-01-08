@@ -12,6 +12,7 @@
       {% endblock %}
       <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
       <!--<link rel="stylesheet" href="/static/themes/materialize/css/base.css" media="screen,projection" />-->
+      <link rel="stylesheet" href="/static/themes/materialize/css/custom.css" media="screen,projection" />
       {% block style %}
       {% endblock %}
       <style>
@@ -46,8 +47,21 @@
               background-color: white;
               color: #303642;
               font: 100% "Poppins", sans-serif;
-              padding: 1em;
+              /*padding: 1em;*/
               text-align: left;
+              border-radius: unset;
+              padding: 5px;
+          }
+
+          body > header:nth-child(1){
+              border-radius: unset;
+          }
+
+          body > footer:nth-child(4){
+              border-radius: unset;
+          }
+          #sep {
+              border-radius: unset;
           }
 
           h1, h2, h3, h4, h5, h6 {
@@ -119,9 +133,9 @@
                   grid-template-columns: 15em 1fr;
               }
 
-              body {
-                  border-radius: 4.5em;
-              }
+              /*body {*/
+              /*    border-radius: 4.5em;*/
+              /*}*/
 
               body > header {
                   grid-area: head;
@@ -440,6 +454,9 @@
       {% block footer %}
       {% endblock %}
       <p><em class="notice">Copyright &copy; Percona LLC</em></p>
+          <div style="background-color: none; padding: 10px; text-align: center;">
+              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+          </div>
       </footer>
 
       {% block behaviours_optimized %}
