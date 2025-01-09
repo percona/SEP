@@ -240,10 +240,10 @@ class CasdoorSDK(RemoteAPI):
         """
         version_info = await self.get_version_info()
         casdoor_version = version_info["version"].lstrip("v")
-        current_version = parse_version(casdoor_version)
-        required_version = parse_version("1.765.0")
+        major_str, minor_str, patch_str = casdoor_version.split(".")[:3]
+        major, minor, patch = int(major_str), int(minor_str), int(patch_str)
 
-        if current_version < required_version:
+        if (major, minor, patch) < (1, 765, 0):
             token_type_hint = token_type.replace("-", "_")
         else:
             token_type_hint = token_type
