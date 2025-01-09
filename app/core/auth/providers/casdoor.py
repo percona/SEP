@@ -4,6 +4,7 @@ from base64 import b64encode
 from functools import cached_property
 from typing import Any, Literal, Self
 
+from pkg_resources import parse_version
 from pydantic import computed_field, model_validator
 
 from app.core.requests import RemoteAPI
@@ -209,6 +210,15 @@ class CasdoorSDK(RemoteAPI):
             data["grant_type"] = "password"
         return await self.post("/api/login/oauth/access_token", json=data)
 
+    async def get_version_info(self) -> dict[str, Any]:
+        """Retrieve the current version information from Casdoor.
+
+        :return: A dictinoary containin Casdoor's version details.
+        :rtype: dict[str, Any]
+        """
+        version = await self.get("/api/get-version-info")
+        return version["data"]
+
     async def introspect_token(
         self,
         token: str,
@@ -216,19 +226,30 @@ class CasdoorSDK(RemoteAPI):
     ) -> dict[str, Any]:
         """Introspect a token to verify its validity.
 
-        Sends a request to Casdoor to verify the provided token and its type.
+        Sends a request to Casdoor to verify the provided token. If Casdoor
+        version is >= 1.765.0, the token type hint must be `access-token` or
+        `refresh-token`. Otherwise, it must be `access_token` or `refresh_token`.
 
         :param token: The token to introspect.
         :type token: str
-        :param token_type: The type of the token being introspected.
-            Defaults to "access-token".
+        :param token_type: The type of the token being introspected. Defaults to
+            "access-token". For Casdoor < 1.765.0, `_` is used instead of `-`.
         :type token_type: Literal["access-token", "refresh-token"]
         :return: The introspection result from Casdoor.
         :rtype: dict[str, Any]
         """
+        version_info = await self.get_version_info()
+        casdoor_version = version_info["version"].lstrip("v")
+        current_version = parse_version(casdoor_version)
+        required_version = parse_version("1.765.0")
+
+        if current_version < required_version:
+            token_type_hint = token_type.replace("-", "_")
+        else:
+            token_type_hint = token_type
         return await self.post(
             "/api/login/oauth/introspect",
-            data={"token": token, "token_type_hint": token_type},
+            data={"token": token, "token_type_hint": token_type_hint},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
 
