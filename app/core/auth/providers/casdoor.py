@@ -4,7 +4,6 @@ from base64 import b64encode
 from functools import cached_property
 from typing import Any, Literal, Self
 
-from pkg_resources import parse_version
 from pydantic import computed_field, model_validator
 
 from app.core.requests import RemoteAPI
