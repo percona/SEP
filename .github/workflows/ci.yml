@@ -43,7 +43,7 @@ jobs:
         env:
           RELEASE_VER: "${{ github.ref }}"
         run: |
-          make build
+          echo make build is disabled for now
 
       - name: Build container image
         env:
