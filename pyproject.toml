@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sep"
-version = "0.1.0-alpha"
+version = "0.2.1-alpha"
 description = "SEP: Services Enablement Platform"
 authors = [
     "Ceri Williams <ceri.williams@percona.com>",
@@ -40,13 +40,13 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
-aiohttp = "^3.11.4"
+aiohttp = "^3.11.10"
 aioresponses = "^0.7.7"
 idna = "^3.7"
 itsdangerous = "^2.1.2"
 pydantic = ">=2.4.0,<2.10.0"
 PyYAML = "^6.0.1"
-python-multipart = "^0.0.18"
+python-multipart = "^0.0.19"
 python-nomad = "^2.0.0"
 SQLAlchemy = "^2.0.34"
 urllib3 = "^2.2.2"
@@ -54,7 +54,7 @@ uvicorn = {extras = ["standard"], version = "^0.32.0"}
 cryptography = "^43.0.1"
 pyjwt = "^2.10.1"
 yarl = "^1.9.2"
-jinja2 = "^3.1.4"
+jinja2 = "^3.1.5"
 pydantic-settings = "^2.4.0"
 email-validator = "^2.2.0"
 greenlet = "^3.0.3"
@@ -63,13 +63,14 @@ alembic = "^1.13.2"
 sqlmodel = "^0.0.22"
 async-lru = "^2.0.4"
 python-minifier = "^2.11.2"
-starlette = "^0.40.0"
+starlette = "^0.41.3"
 celery = "^5.4.0"
 asgiref = "^3.8.1"
 sqlalchemy-celery-beat = "0.8.0"
 fastapi-csrf-protect = "^0.3.7"
-fastapi = "^0.115.5"
+fastapi = "^0.115.6"
 httpx = "^0.28.0"
+rich = "^13.9.4"
 
 [tool.poetry.group.audit]
 optional = true
@@ -145,6 +146,7 @@ extend-exclude = [
     "app/*/migrations/*",
     "payload.py",
     "payload",
+    "*_payload",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"
@@ -249,7 +251,6 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.coverage.run]
 source = ["app"]
 omit = [
-    "app/tests/*",
     "__init__.py",
 ]
 

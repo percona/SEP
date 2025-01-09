@@ -32,6 +32,10 @@ class ServiceTypeEnum(StrEnum):
     :vartype POSTGRESQL: str
     :cvar MONGODB: Represents the MongoDB service type.
     :vartype MONGODB: str
+    :cvar PROXYSQL: Represents the ProxySQL service type.
+    :vartype PROXYSQL: str
+    :cvar HAPROXY: Represents the HAProxy service type.
+    :vartype HAPROXY: str
     :cvar EXTERNAL: Represents an external service type.
     :vartype EXTERNAL: str
     """
@@ -39,6 +43,8 @@ class ServiceTypeEnum(StrEnum):
     MYSQL = auto()
     POSTGRESQL = auto()
     MONGODB = auto()
+    PROXYSQL = auto()
+    HAPROXY = auto()
     EXTERNAL = auto()
 
 
