@@ -1,0 +1,145 @@
+// vim: ts=8:sts=8:sw=8:ft=groovy:noai:noet
+
+pipeline {
+	agent {
+		node {
+			label 'stream9'
+		}
+	}
+
+	parameters {
+		gitParameter branchFilter: 'origin/(main|SEP.*|v.*)',
+			name: 'releaseTag',
+			selectedValue: 'NONE',
+			sortMode: 'DESCENDING_SMART',
+			type: 'PT_REVISION',
+			requiredParameter: true,
+			useRepository: 'https://github.com/percona/SEP.git'
+		string(
+			name: 'defaultCmd',
+			defaultValue: '--log-level=DEBUG'
+		)
+		choice(
+			name: 'pyVersion',
+			choices: [
+				'3.11'
+			]
+		)
+		booleanParam(
+			name: 'notifySlack',
+			defaultValue: false,
+			description: 'Send notifications to Slack'
+		)
+		booleanParam(
+			name: 'pushImage',
+			defaultValue: false,
+			description: 'Push the image to the registry'
+		)
+	}
+
+	options {
+		timestamps()
+	}
+
+
+	environment {
+		BUILD_OPTIONS = ''
+		CMD = "${defaultCmd}"
+
+		NOTIFY_SLACK = "${notifySlack}"
+
+		POETRY_VIRTUALENVS_IN_PROJECT = "true"
+		PYTHON = "python${pyVersion}"
+		PYTHON_VERSION = "${pyVersion}"
+
+		RELEASE_VER = "${releaseTag}"
+
+	}
+
+	stages {
+		stage('Prepare workspace') {
+			steps {
+				checkout scmGit(
+					branches: [
+						[
+							name: "${params.releaseTag}"
+						]
+					],
+					extensions: [
+						cloneOption(shallow: true)
+					],
+					userRemoteConfigs: [
+						[
+							credentialsId: '9024f3ea-4c7e-46a6-acf5-4b2c768f0930',
+							url: 'https://github.com/percona/SEP.git'
+						]
+					]
+				)
+			}
+		}
+
+		stage('Build base image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
+			steps {
+				echo 'Building base image ..'
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					podman image exists "sep:builder" && podman image rm "sep:builder" || true
+					buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
+				'''
+			}
+		}
+
+		stage('Build SEP image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
+			steps {
+				echo "Building SEP image for ${RELEASE_VER} .."
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					make image
+				'''
+			}
+		}
+
+		stage('Push SEP image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			when {
+				expression {
+					return params.pushImage
+				}
+			}
+
+			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
+			steps {
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					podman image push sep:${RELEASE_VER} labbox-mini.tp.int.percona.com:5555/sep:${RELEASE_VER}
+				'''
+			}
+		}
+
+	}
+
+	post {
+		always {
+			cleanWs()
+		}
+	}
+}

@@ -1,0 +1,96 @@
+// vim: ts=8:sts=8:sw=8:ft=groovy:noai:noet
+
+pipeline {
+	agent {
+		node {
+			label 'stream9'
+		}
+	}
+
+	parameters {
+		gitParameter branchFilter: 'origin/main',
+	        defaultValue: 'main',
+	        name: 'releaseTag',
+	        selectedValue: 'TOP',
+	        sortMode: 'DESCENDING_SMART',
+		tagFilter: 'v*',
+	        type: 'PT_TAG',
+	        requiredParameter: true,
+			useRepository: 'https://github.com/percona/SEP.git'
+		string(
+			name: 'defaultCmd',
+			defaultValue: '--log-level=DEBUG'
+		)
+		choice(
+			name: 'pyVersion',
+			choices: [
+				'3.11'
+			]
+		)
+		booleanParam(
+			name: 'notifySlack',
+			defaultValue: true,
+			description: 'Send notifications to Slack'
+		)
+		booleanParam(
+			name: 'pushImage',
+			defaultValue: true,
+			description: 'Push the image to the registry'
+		)
+	}
+
+	options {
+		timestamps()
+	}
+
+
+	environment {
+		BUILD_OPTIONS = ''
+		CMD = "${defaultCmd}"
+
+		PYTHON = "python${pyVersion}"
+		PYTHON_VERSION = "${pyVersion}"
+
+		RELEASE_VER = "${releaseTag}"
+
+	}
+
+	stages {
+		stage('Prepare workspace') {
+			steps {
+				checkout scmGit(
+					branches: [
+						[
+							name: "${params.releaseTag}"
+						]
+					],
+					extensions: [
+						cloneOption(shallow: true)
+					],
+					userRemoteConfigs: [
+						[
+							credentialsId: '9024f3ea-4c7e-46a6-acf5-4b2c768f0930',
+							url: 'https://github.com/percona/SEP.git'
+						]
+					]
+				)
+			}
+		}
+		stage('Execute CI') {
+			steps {
+				build job: 'SEP/CI', parameters: [
+					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
+					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
+					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")],
+					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")]
+				], propagate: true, wait: true
+			}
+		}
+	}
+
+	post {
+		always {
+			cleanWs()
+		}
+	}
+}
