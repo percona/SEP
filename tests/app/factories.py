@@ -7,9 +7,14 @@ from sqlalchemy_celery_beat import PeriodicTask
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor import CasdoorSDK
 from app.models import CasdoorUser
-from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService
+from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
 from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner
+
+MOCK_CREATEAD_NODE_ID = 1
+MOCK_CREATEAD_SERVICE_ID = 1
+MOCK_CREATEAD_SCHEMA_ID = 1
+MOCK_CREATEAD_TABLE_ID = 1
 
 
 class CasdoorSDKFactory(ModelFactory[CasdoorSDK]):
@@ -50,10 +55,24 @@ class AltersCreateFactory(ModelFactory[AltersCreate]):
 class CreatedNodeFactory(ModelFactory[CreatedNode]):
     """Define factory for CreatedNode instances."""
 
+    id = MOCK_CREATEAD_NODE_ID
+
 
 class CreatedServiceFactory(ModelFactory[CreatedService]):
     """Define factory for CreatedService instances."""
 
+    id = MOCK_CREATEAD_SERVICE_ID
+
 
 class CreatedSchemaFactory(ModelFactory[CreatedSchema]):
     """Define factory for CreatedSchema instances."""
+
+    id = MOCK_CREATEAD_SCHEMA_ID
+    service_id: int = MOCK_CREATEAD_SERVICE_ID
+
+
+class CreatedTableFactory(ModelFactory[CreatedTable]):
+    """Define factory for CreatedTable instances."""
+
+    id = MOCK_CREATEAD_TABLE_ID
+    schema_id: int = MOCK_CREATEAD_SCHEMA_ID

@@ -20,6 +20,10 @@ from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
     CreatedServiceFactory,
+    MOCK_CREATEAD_NODE_ID,
+    MOCK_CREATEAD_SCHEMA_ID,
+    MOCK_CREATEAD_SERVICE_ID,
+    MOCK_CREATEAD_TABLE_ID,
 )
 
 
@@ -53,9 +57,7 @@ def mock_background_tasks():
 @pytest.fixture
 def created_node() -> CreatedNode:
     """Return a fake created node."""
-    created_node = CreatedNodeFactory.build()
-    created_node.id = 1
-    return created_node
+    return CreatedNodeFactory.build()
 
 
 @pytest.fixture
@@ -70,7 +72,6 @@ def _mock_created_node_dep(created_node):
 def created_service(created_node) -> CreatedService:
     """Return a fake created service."""
     created_service = CreatedServiceFactory.build()
-    created_service.id = 1
     created_service.node = created_node
     return created_service
 
@@ -87,7 +88,6 @@ def _mock_created_service_dep(created_service):
 def created_schema(created_service) -> CreatedSchema:
     """Return a fake created Schema."""
     created_schema = CreatedSchemaFactory.build()
-    created_schema.id = 1
     created_schema.service = created_service
     return created_schema
 
@@ -210,7 +210,7 @@ def test_service_create_for_node(test_client, created_node, mock_inventory_api):
 
 def test_service_delete(test_client, created_service, mock_inventory_api):
     """Test deleting a service."""
-    returned_node_id = 1
+    returned_node_id = MOCK_CREATEAD_NODE_ID
     mock_inventory_api.delete.return_value = {"node_id": returned_node_id}
     response = test_client.post(
         f"/inventory/services/{created_service.id}/delete", follow_redirects=False
@@ -258,7 +258,7 @@ def test_schema_create_for_service(test_client, created_service, mock_inventory_
 
 def test_schema_delete(test_client, created_schema, mock_inventory_api):
     """Test deleting a schema."""
-    returned_service_id = 1
+    returned_service_id = MOCK_CREATEAD_SERVICE_ID
     mock_inventory_api.delete.return_value = {"service_id": returned_service_id}
     response = test_client.post(
         f"/inventory/schemas/{created_schema.id}/delete", follow_redirects=False
@@ -288,8 +288,8 @@ def test_table_create_for_schema(test_client, created_schema, mock_inventory_api
 
 def test_table_delete(test_client, mock_inventory_api):
     """Test deleting a table."""
-    delete_table_id = 1
-    returned_schema_id = 1
+    delete_table_id = MOCK_CREATEAD_TABLE_ID
+    returned_schema_id = MOCK_CREATEAD_SCHEMA_ID
     mock_inventory_api.delete.return_value = {"schema_id": returned_schema_id}
     response = test_client.post(
         f"/inventory/tables/{delete_table_id}/delete", follow_redirects=False
