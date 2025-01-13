@@ -9,12 +9,14 @@ from app.core.auth.providers.casdoor import CasdoorSDK
 from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
+from app.sep.plugins.archives.models import ArchivesCreate
 from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner
 
 MOCK_CREATEAD_NODE_ID = 1
 MOCK_CREATEAD_SERVICE_ID = 1
 MOCK_CREATEAD_SCHEMA_ID = 1
 MOCK_CREATEAD_TABLE_ID = 1
+MOCK_DESTINATION_TABLE_ID = 2
 
 
 class CasdoorSDKFactory(ModelFactory[CasdoorSDK]):
@@ -50,6 +52,10 @@ class GeneratedTaskFactory(ModelFactory[GeneratedTask]):
 
 class AltersCreateFactory(ModelFactory[AltersCreate]):
     """Define factory for AltersCreate instances."""
+
+
+class ArchivesCreateFactory(ModelFactory[ArchivesCreate]):
+    """Define factory for ArchivesCreate instances."""
 
 
 class CreatedNodeFactory(ModelFactory[CreatedNode]):

@@ -1,4 +1,4 @@
-"""Define tests for the app.sep.plugins.tasks.deps module."""
+"""Define tests for the app.sep.plugins.alters.deps module."""
 
 from unittest.mock import AsyncMock
 

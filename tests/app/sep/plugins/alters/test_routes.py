@@ -1,4 +1,4 @@
-"""Define tests for the app.sep.plugins.tasks.routes module."""
+"""Define tests for the app.sep.plugins.alters.routes module."""
 
 from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock
