@@ -1,5 +1,8 @@
 """Define utilities shared across the task executors."""
 
+from gzip import GzipFile
+from io import BytesIO
+
 from python_minifier import minify
 
 
@@ -37,3 +40,19 @@ def minify_file_content(content: str, file_ext: str = "") -> str:
         )
     except SyntaxError:
         return content
+
+
+def gzip_compress(data: str, encoding: str = "utf-8") -> bytes:
+    """Compress a given string using gzip and return the compressed data as bytes.
+
+    :param data: The input string to compress.
+    :type data: str
+    :param encoding: The encoding to use for the compressed data. Defaults to "utf-8".
+    :type encoding: str
+    :return: The compressed data in gzip format.
+    :rtype: bytes
+    """
+    buffer = BytesIO()
+    with GzipFile(fileobj=buffer, mode="wb") as gz:
+        gz.write(data.encode(encoding))
+    return buffer.getvalue()
