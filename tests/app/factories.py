@@ -12,10 +12,10 @@ from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.archives.models import ArchivesCreate
 from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner
 
-MOCK_CREATEAD_NODE_ID = 1
-MOCK_CREATEAD_SERVICE_ID = 1
-MOCK_CREATEAD_SCHEMA_ID = 1
-MOCK_CREATEAD_TABLE_ID = 1
+MOCK_CREATED_NODE_ID = 1
+MOCK_CREATED_SERVICE_ID = 1
+MOCK_CREATED_SCHEMA_ID = 1
+MOCK_CREATED_TABLE_ID = 1
 MOCK_DESTINATION_TABLE_ID = 2
 
 
@@ -61,24 +61,24 @@ class ArchivesCreateFactory(ModelFactory[ArchivesCreate]):
 class CreatedNodeFactory(ModelFactory[CreatedNode]):
     """Define factory for CreatedNode instances."""
 
-    id = MOCK_CREATEAD_NODE_ID
+    id = MOCK_CREATED_NODE_ID
 
 
 class CreatedServiceFactory(ModelFactory[CreatedService]):
     """Define factory for CreatedService instances."""
 
-    id = MOCK_CREATEAD_SERVICE_ID
+    id = MOCK_CREATED_SERVICE_ID
 
 
 class CreatedSchemaFactory(ModelFactory[CreatedSchema]):
     """Define factory for CreatedSchema instances."""
 
-    id = MOCK_CREATEAD_SCHEMA_ID
-    service_id: int = MOCK_CREATEAD_SERVICE_ID
+    id = MOCK_CREATED_SCHEMA_ID
+    service_id: int = MOCK_CREATED_SERVICE_ID
 
 
 class CreatedTableFactory(ModelFactory[CreatedTable]):
     """Define factory for CreatedTable instances."""
 
-    id = MOCK_CREATEAD_TABLE_ID
-    schema_id: int = MOCK_CREATEAD_SCHEMA_ID
+    id = MOCK_CREATED_TABLE_ID
+    schema_id: int = MOCK_CREATED_SCHEMA_ID

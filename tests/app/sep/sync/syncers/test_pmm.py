@@ -4,8 +4,52 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.inventory.models import SourceEnum
-from app.sep.sync.syncers.pmm import PMMRemoteAPI
+from app.core.requests import RemoteAPI
+from app.inventory.models import Service, ServiceTypeEnum, SourceEnum
+from app.sep.inventory import CreatedNode, CreatedService, Node
+from app.sep.sync.syncers.pmm import PMMRemoteAPI, PMMSyncer
+from tests.app.factories import (
+    CreatedNodeFactory,
+    CreatedServiceFactory,
+    MOCK_CREATED_NODE_ID,
+)
+
+
+@pytest.fixture
+def mock_pmm_api() -> AsyncMock:
+    """Mock the PMMRemoteAPI dependency."""
+    return AsyncMock(spec=PMMRemoteAPI)
+
+
+@pytest.fixture
+def mock_inventory_api() -> AsyncMock:
+    """Mock the InventoryAPI dependency."""
+    return AsyncMock(spec=RemoteAPI)
+
+
+@pytest.fixture
+def pmmsyncer(mock_pmm_api, mock_inventory_api) -> PMMSyncer:
+    """Mock PMMSyncer instance with mocked APIs."""
+    return PMMSyncer(pmm=mock_pmm_api, inventory_api=mock_inventory_api)
+
+
+@pytest.fixture
+def created_node() -> CreatedNode:
+    """Return a fake created node."""
+    created_node = CreatedNodeFactory.build()
+    created_node.id = MOCK_CREATED_NODE_ID
+    created_node.address = "localhost"
+    return created_node
+
+
+@pytest.fixture
+def created_service(created_node) -> CreatedService:
+    """Return a fake created service."""
+    created_service = CreatedServiceFactory.build()
+    created_service.node = created_node
+    created_service.node_id = created_node.id
+    created_service.type = ServiceTypeEnum.MYSQL
+    return created_service
 
 
 @pytest.mark.asyncio
@@ -176,3 +220,111 @@ async def test_get_nodes(mocker):
         "/v1/inventory/Nodes/List",
         json={"node_type": ""},
     )
+
+
+@pytest.mark.asyncio
+async def test_fetch_node(created_node, pmmsyncer):
+    """Test fetching updated data for a specific node."""
+    pmmsyncer.pmm_api.get_node = AsyncMock(
+        return_value=Node(
+            external_id=created_node.external_id,
+            address="localhost",
+            name="Remote Node",
+        )
+    )
+
+    node = await pmmsyncer.fetch_node(created_node)
+
+    assert node.name == "Remote Node"
+    pmmsyncer.pmm_api.get_node.assert_awaited_once_with(created_node.external_id)
+
+
+@pytest.mark.asyncio
+async def test_fetch_service(created_service, pmmsyncer):
+    """Test fetching updated data for a specific service."""
+    pmmsyncer.pmm_api.get_service = AsyncMock(
+        return_value=Service(
+            external_id=created_service.external_id,
+            type=ServiceTypeEnum.MYSQL,
+            name="Remote Service",
+        )
+    )
+
+    service = await pmmsyncer.fetch_service(created_service)
+
+    assert service.name == "Remote Service"
+    pmmsyncer.pmm_api.get_service.assert_awaited_once_with(created_service.external_id)
+
+
+@pytest.mark.asyncio
+async def test_perform_service_sync(created_service, created_node, pmmsyncer):
+    """Test synchronizing data for a specific service."""
+    updated_service = Service(
+        external_id=created_service.external_id,
+        type=ServiceTypeEnum.MYSQL,
+        name="Remote Service",
+    )
+    pmmsyncer.inventory_api.get.side_effect = [
+        [created_node.model_dump()],
+    ]
+    pmmsyncer.inventory_api.put.side_effect = [created_service.model_dump()]
+
+    await pmmsyncer.perform_service_sync(created_service, updated_service)
+
+    pmmsyncer.inventory_api.put.assert_awaited_once()
+    expected_url = f"/services/{created_service.id}"
+    assert pmmsyncer.inventory_api.put.call_args.args[0] == expected_url
+
+
+@pytest.mark.asyncio
+async def test_perform_node_sync(created_node, pmmsyncer, mocker):
+    """Test synchronizing data for a specific node."""
+    updated_node = Node(
+        id=created_node.id + 1,
+        external_id=created_node.external_id,
+        source=SourceEnum.PMM,
+        name="Remote Node",
+        type="Generic",
+        address="localhost",
+    )
+    pmmsyncer.inventory_api.put.side_effect = [created_node.model_dump()]
+    mocker.patch(
+        "app.sep.sync.syncers.pmm.PMMSyncer.delete_service", new_callable=AsyncMock
+    )
+    await pmmsyncer.perform_node_sync(created_node, updated_node)
+    pmmsyncer.inventory_api.put.assert_awaited_once()
+    pmmsyncer.delete_service.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_perform_inventory_sync(created_node, pmmsyncer, mocker):
+    """Test performing the inventory synchronization process."""
+    pmmsyncer.inventory_api.get.side_effect = [[created_node.model_dump()]]
+    mock_post = mocker.patch(
+        "app.sep.sync.syncers.pmm.PMMRemoteAPI.get", new_callable=AsyncMock
+    )
+    mock_post.side_effect = [
+        {
+            "Generic": {
+                "node_id": "node_id",
+                "name": "Test Node",
+                "address": "localhost",
+            }
+        },
+        {
+            "Generic": [
+                {
+                    "service_id": "service-1",
+                    "name": "Service 1",
+                    "node_id": "node_id",
+                    "type": "mysql",
+                }
+            ]
+        },
+    ]
+    mocker.patch(
+        "app.sep.sync.syncers.pmm.PMMSyncer.delete_node", new_callable=AsyncMock
+    )
+    await pmmsyncer.perform_inventory_sync()
+    pmmsyncer.inventory_api.get.assert_awaited_once()
+    pmmsyncer.delete_node.assert_awaited_once()
