@@ -460,6 +460,56 @@ async def get_tasks_context(
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
             "AVAILABLE_TIMEZONES": list(available_timezones()),
+        }
+    )
+    return context
+
+
+async def get_tasks_index_context(
+    inventory_api: InventoryAPI, tasks_api: TaskAPI, default_context: DefaultContext
+) -> dict[str, Any]:
+    """Assemble the context for the Homepage.
+
+    Retrieves MySQL services and associated tasks, organizing them based on their
+    execution status. Integrates this information into the default context for
+    rendering in templates.
+
+    :param inventory_api: The Inventory API client for fetching service and schema data.
+    :type inventory_api: InventoryAPI
+    :param tasks_api: The TaskAPI client for fetching task data.
+    :type tasks_api: TaskAPI
+    :param default_context: The default context to be updated with Alters-specific information.
+    :type default_context: DefaultContext
+    :return: An updated context dictionary containing tasks' data.
+    :rtype: dict[str, Any]
+    """
+    running_tasks = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    scheduled_tasks = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+    )
+    periodic_tasks = await tasks_api.get("/periodic/", params={"enabled": "True"})
+    tasks = await tasks_api.get("/")
+    task_owner_mapping = {task["name"]: task["owner"] for task in tasks}
+    for periodic_task in periodic_tasks:
+        task_name = periodic_task.get("task")
+        periodic_task["owner"] = task_owner_mapping.get(task_name)
+    executor_hosts = await tasks_api.get("/hosts/")
+    inventories = await inventory_api.get("/summary/")
+    plugins = sep_settings.PLUGINS
+    is_task_manager_enabled = any(
+        p.name == "Task Manager" and p.sidebar for p in plugins
+    )
+    context = default_context or {}
+    context.update(
+        {
+            **inventories,
+            "running_tasks": running_tasks,
+            "pending_tasks": scheduled_tasks,
+            "periodic_tasks": periodic_tasks,
+            "executor_hosts": executor_hosts.items(),
+            "is_task_manager_enabled": is_task_manager_enabled,
         },
     )
     return context

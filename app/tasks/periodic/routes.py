@@ -15,7 +15,10 @@ from app.tasks.models import (
 )
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.deps import PeriodicTaskDep
-from app.tasks.periodic.models import PeriodicTaskResponse, PeriodicTaskUpdate
+from app.tasks.periodic.models import (
+    PeriodicTaskResponse,
+    PeriodicTaskUpdate,
+)
 
 router = APIRouter(prefix="/periodic", tags=["periodic", "schedule", "tasks"])
 
@@ -24,21 +27,26 @@ logger = logging.getLogger(__name__)
 
 # TODO: Pagination  # noqa: TD002, TD003
 @router.get(
-    "/", dependencies=[IsAuthenticatedDep], response_model=list[PeriodicTaskResponse]
+    "/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=list[PeriodicTaskResponse],
 )
 async def list_periodic_tasks(
     session: CeleryBeatSessionDep,
     tasks_session: SessionDep,
     owner: TaskOwner | None = None,
+    enabled: bool | None = None,
 ) -> list[PeriodicTask]:
     """List all periodic tasks."""
     if owner is None:
-        return await PeriodicTaskManager.list(session=session)
+        return await PeriodicTaskManager.list(session=session, enabled=enabled)
     tasks_names = [
         task.name
         for task in await TaskManager.list_active(session=tasks_session, owner=owner)
     ]
-    return await PeriodicTaskManager.list_by_task_names(session, *tasks_names)
+    return await PeriodicTaskManager.list_by_task_names(
+        session, *tasks_names, enabled=enabled
+    )
 
 
 @router.get("/{periodic_task_id}", dependencies=[IsAuthenticatedDep])
