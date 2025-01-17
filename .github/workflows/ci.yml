@@ -27,7 +27,29 @@ jobs:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     needs:
-    - python
+      - python
     steps:
-    - name: Mark as complete
-      run: echo Done
+      - name: Checkout codebase
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Prepare environment
+        run: |
+          sudo apt update -qqy
+          sudo apt install -qqy podman buildah
+          systemctl --user start podman
+          echo "DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock" >> "$GITHUB_ENV"
+
+      - name: Build wheel
+        env:
+          RELEASE_VER: "${{ github.ref_name }}"
+        run: |
+          echo make build is disabled for now
+
+      - name: Build container image
+        env:
+          RELEASE_VER: "${{ github.ref_name }}"
+        run: |
+          buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
+          make pack
+          buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
+          podman run --rm --entrypoint /bin/sh --timeout 10 "sep:${RELEASE_VER}" -c 'sleep 3'

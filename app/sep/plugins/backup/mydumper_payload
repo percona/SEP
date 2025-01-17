@@ -1,0 +1,2023 @@
+#!/bin/python
+"""The script for creating Mydumper backups.
+
+It creates Mydumper backup, can encrypt it and upload to Amazon S3 bucket,
+purges old backups.
+"""
+
+import argparse
+import datetime
+import hashlib
+import json
+import logging
+import multiprocessing.queues
+import os
+import pwd
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import time
+from contextlib import suppress
+from enum import auto, IntEnum, Enum
+from getpass import getuser
+from pathlib import Path
+from typing import Any
+
+import boto3
+import pymysql
+import pymysql.cursors
+import yaml
+from botocore.exceptions import ClientError
+from packaging.version import Version
+from pymysql import Error, InternalError, OperationalError, ProgrammingError
+
+BYTES_PER_MB = 1024**2
+ST_BLOCKS_SIZE = 512
+BACKUP_DIR_REGEX = r"^2[0-9]{7}$"
+CURRENT_USER = os.getenv("PERCONA_BACKUP_USER") or os.getenv("SUDO_USER") or getuser()
+CURRENT_USER_HOME_DIR = Path(pwd.getpwnam(CURRENT_USER).pw_dir)
+BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
+    "PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR",
+    CURRENT_USER_HOME_DIR
+    / "pmm"
+    / "collectors"
+    / "textfile-collector"
+    / "low-resolution",
+)
+BACKUP_TYPE = "Mydumper"
+DEFAULT_COMPRESSION_ALGORITHM = "gzip"
+AVAILABLE_COMPRESSION_ALGORITHMS = ["gzip"]
+DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+DEFAULT_CFG_DIR = Path(
+    os.getenv(
+        "PERCONA_BACKUP_DEFAULT_CFG_DIR",
+        CURRENT_USER_HOME_DIR / ".config" / "percona" / "backup",
+    )
+)
+DIR_ENCRYPT_CFG_PATH = DEFAULT_CFG_DIR / "dir_encrypt.yml"
+DEFAULT_LOGGING_DIR = Path(
+    os.getenv(
+        "PERCONA_BACKUP_DEFAULT_LOGGING_DIR",
+        CURRENT_USER_HOME_DIR / ".local" / "percona" / "logs" / "backup",
+    )
+)
+DEFAULT_MYCNF = CURRENT_USER_HOME_DIR / ".my.cnf"
+LOGGING_FORMAT = "%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s"
+LOGGING_FORMAT_DEBUG = (
+    "%(asctime)s PID<%(process)d> %(levelname)s:%(lineno)d:%(alias)s%(message)s"
+)
+LOGGING_NAME = "mydumper.log"
+MD5SUM_FILE = "md5sum"
+MYDUMPER_METADATA = "metadata"
+UPLOADME_FILE = ".uploadme"
+EXCLUDE_FILES = [MD5SUM_FILE, UPLOADME_FILE]
+GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
+MYDUMPER_BIN = os.getenv("PERCONA_BACKUP_MYDUMPER_BIN", "/usr/bin/mydumper")
+RSYNC_BIN = "/usr/bin/rsync"
+
+
+class BackupNotifyStatus(IntEnum):
+    OK = 0
+    WARNING = 1
+    CRITICAL = 2
+    UNKNOWN = 3
+
+
+class MSPAction(str, Enum):
+    BACKUP = auto()
+    UPLOAD = auto()
+
+
+def ftwrl_guardian(
+    server_data: dict[str, Any],
+    logger: logging.Logger,
+) -> str | None:
+    """Guard against race conditions in MyDumper by killing blocking SELECT queries
+    if a FLUSH TABLES WITH READ LOCK (FTWRL) is detected.
+
+    :param server_data: MySQL server connection data.
+    :param logger: Logger instance to log activities.
+    :param sleep_time: Time to sleep before checking processes.
+    :param check_metadata: Check for table metadata lock if True.
+    :return: Error message if an error occurred, otherwise None.
+    """
+    time.sleep(1)
+
+    re_ftwrl = re.compile(r"FLUSH TABLES WITH READ LOCK", flags=re.IGNORECASE)
+    re_read = re.compile("SELECT", flags=re.IGNORECASE)
+    re_state = re.compile("Waiting", flags=re.IGNORECASE)
+
+    try:
+        conn = pymysql.connect(
+            read_default_file=server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF),
+            host=server_data["HOST"],
+            port=int(server_data.get("PORT", 3306)),
+        )
+    except Error as err:
+        error_code = err.args[0] if isinstance(err.args[0], int) else 0
+        error_message = (
+            err.args[1]
+            if len(err.args) > 1 and isinstance(err.args[1], str)
+            else str(err)
+        )
+        return f"ftwrl_guardian error [{error_code}]: {error_message}"
+
+    with conn:
+        with conn.cursor() as curs:
+            curs.execute("SHOW PROCESSLIST")
+            res = curs.fetchall()
+
+        ftwrl = None
+        metadata_lock = None
+        dprocess = None
+        for row_res in res:
+            if not ftwrl and not metadata_lock:
+                if row_res[7]:
+                    ftwrl = re_ftwrl.search(str(row_res[7]))
+                dprocess = row_res
+            else:
+                break
+
+        if not ftwrl and not metadata_lock:
+            return None
+
+        out = {
+            "Detected": {
+                "PID": f"{dprocess[0]}",
+                "User": dprocess[1],
+                "Host": dprocess[2],
+                "Schema": dprocess[3],
+                "Command": dprocess[4],
+                "Time": f"{dprocess[5]}",
+                "State": dprocess[6],
+                "Info": dprocess[7],
+            }
+        }
+        if logger:
+            logger.info(out)
+
+        with conn.cursor() as curs:
+            for row_kill in res:
+                row_kill = list(row_kill)
+                if row_kill[6] is None:
+                    row_kill[6] = ""
+                if row_kill[7] is None:
+                    row_kill[7] = ""
+
+                if (
+                    row_kill[4] in ("Query", "Execute")
+                    and row_kill[5] > 0
+                    and not re_state.search(str(row_kill[6]))
+                    and re_read.search(str(row_kill[7]))
+                ):
+                    out = {
+                        "Killing": {
+                            "PID": f"{row_kill[0]}",
+                            "User": row_kill[1],
+                            "Host": row_kill[2],
+                            "Schema": row_kill[3],
+                            "Command": row_kill[4],
+                            "Time": f"{row_kill[5]}",
+                            "State": row_kill[6],
+                            "Info": row_kill[7],
+                        }
+                    }
+                    if logger:
+                        logger.info(out)
+                    with suppress(OperationalError, InternalError):
+                        curs.execute(f"KILL {row_kill[0]}")
+
+    return None
+
+
+def md5sum_file(fpath: Path) -> str:
+    """Calculate the MD5 checksum of a file.
+
+    :param fpath: Path to the file.
+    :return: MD5 checksum as a hex string.
+    """
+    d = hashlib.md5()
+    with fpath.open("rb") as f:
+        buf = f.read(8192)
+        while buf:
+            d.update(buf)
+            buf = f.read(8192)
+    return d.hexdigest()
+
+
+def get_dir_dict(
+    path: Path, json_cache_file: Path | None = None, *, md5: bool = False
+) -> dict[str, dict[str, Any]]:
+    """Create a dictionary of files in a directory, including inode, size, and optional MD5.
+
+    :param path: Directory path.
+    :param md5: Whether to compute MD5 checksums.
+    :param json_cache_file: Path to a JSON cache file to store results.
+    :return: Dictionary with file info keyed by relative file path.
+    """
+    if json_cache_file is None:
+        json_cache_file = path / MD5SUM_FILE
+    ret = {}
+
+    for p in path.rglob("*"):
+        if p.is_file() and not p.name.endswith(".gpg") and p.name != MD5SUM_FILE:
+            stat_data = p.stat()
+            rel_path = str(p.relative_to(path))
+            file_md5 = md5sum_file(p) if md5 else None
+            ret[rel_path] = {
+                "inode": stat_data.st_ino,
+                "size": stat_data.st_size,
+                "md5": file_md5,
+            }
+
+    write_dict(ret, json_cache_file)
+    return ret
+
+
+def load_dir_dict(dir_path: Path) -> dict[str, dict[str, Any]]:
+    """Load a directory dictionary from a JSON file if it exists, otherwise create it.
+
+    :param dir_path: Directory path.
+    :return: Directory dictionary.
+    """
+    json_cache_file = dir_path / MD5SUM_FILE
+
+    if not json_cache_file.is_file():
+        get_dir_dict(dir_path, json_cache_file)
+
+    with json_cache_file.open("r") as f:
+        return json.load(f)
+
+
+def write_dict(dictionary: dict[Any, Any], json_file: Path) -> None:
+    """Write a dictionary to a JSON file.
+
+    :param dictionary: Dictionary to write.
+    :param json_file: Path to output JSON file.
+    """
+    with json_file.open("w") as f:
+        json.dump(dictionary, f)
+
+
+def hardlink_dirs(
+    src_dir: Path, dest_dir: Path, *, encrypted: bool = False
+) -> dict[str, tuple[int, int]]:
+    """Hardlink matching files from src_dir to dest_dir if size and MD5 match.
+
+    :param src_dir: Source directory.
+    :param dest_dir: Destination directory.
+    :param encrypted: Whether the files are encrypted.
+    :return: Dictionary of hardlinked files with their inode and size.
+    """
+    ret = {}
+    dir1 = load_dir_dict(src_dir)
+    dir2 = load_dir_dict(dest_dir)
+
+    for file in list(dir1.keys()):
+        if file in dir2:
+            md51 = dir1[file]["md5"]
+            inode1 = dir1[file]["inode"]
+            size1 = dir1[file]["size"]
+
+            md52 = dir2[file]["md5"]
+            inode2 = dir2[file]["inode"]
+            size2 = dir2[file]["size"]
+
+            if size1 and size2 and size1 == size2 and inode1 != inode2:
+                file1 = src_dir / file
+                file2 = dest_dir / file
+                if encrypted:
+                    file1_enc = file1.with_suffix(file1.suffix + ".gpg")
+                    link_name = file2.with_suffix(file2.suffix + ".gpg")
+                    if md51 is None:
+                        md51 = md5sum_file(file1_enc)
+                    if md52 is None:
+                        md52 = md5sum_file(file2)
+                    if md51 == md52:
+                        if file2.is_file():
+                            file2.unlink()
+                        if link_name.is_file():
+                            link_name.unlink()
+                        os.link(str(file1_enc), str(link_name))
+                        ret[file] = (int(inode1), int(size1))
+                else:
+                    if md51 is None:
+                        md51 = md5sum_file(file1)
+                    if md52 is None:
+                        md52 = md5sum_file(file2)
+                    if md51 == md52:
+                        if file2.is_file():
+                            file2.unlink()
+                        os.link(str(file1), str(file2))
+                        ret[file] = (int(inode1), int(size1))
+
+            dir1[file] = {"inode": inode1, "size": size1, "md5": md51}
+
+    json_cache_file = src_dir / MD5SUM_FILE
+    write_dict(dir1, json_cache_file)
+    return ret
+
+
+def hardlink_listed_files(
+    src_dir: Path,
+    dest_dir: Path,
+    *,
+    compress: bool,
+    encrypted: bool = False,
+) -> tuple[int, str]:
+    """Hardlink files listed in `dest_dir/file_wlist` from `src_dir`.
+
+    :param src_dir: Source directory.
+    :param dest_dir: Destination directory.
+    :param compress: Whether the files are compressed.
+    :param encrypted: Whether the files are encrypted.
+    :param file_wlist: Filename containing the list of files.
+    :return: (Status code, message). 0 means success.
+    """
+    files_file = dest_dir / "not_updated_tables"
+    if files_file.is_file():
+        ext = ".sql"
+        if compress:
+            ext += ".gz"
+        if encrypted:
+            ext += ".gpg"
+
+        with files_file.open("r") as f:
+            os.chdir(src_dir)
+            for line in f:
+                f_name = line.strip()
+                src_exist = False
+                for fthl in src_dir.glob(f_name + "*" + ext):
+                    dest_file = dest_dir / fthl.name
+                    if dest_file.is_file():
+                        dest_file.unlink()
+                    os.link(str(fthl), str(dest_file))
+                    src_exist = True
+                if not src_exist:
+                    return 1, f_name
+    return 0, "Ok"
+
+
+def get_dir_size(start_path: Path) -> int:
+    """Get the disk usage of a directory in bytes."""
+    total_size = start_path.stat().st_blocks * ST_BLOCKS_SIZE
+    try:
+        for file in start_path.rglob("*"):
+            if not file.is_symlink():
+                total_size += file.stat().st_blocks * ST_BLOCKS_SIZE
+    except Exception as e:
+        logging.warning(
+            "Error traversing directory %s: %s", start_path, e, exc_info=True
+        )
+    return total_size
+
+
+def humanize_bytes(size: int) -> str:
+    for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
+        if abs(size) < 1024:
+            return f"{size:3.1f} {unit}B"
+        size /= 1024
+    return f"{size:.1f} YiB"
+
+
+def logging_setup(
+    logging_dir: Path, log_name: str, level: int = logging.INFO
+) -> logging.Logger:
+    """Set up and return a configured logger.
+
+    :param logging_dir: Directory for log files.
+    :param log_name: Name of the log file.
+    :param level: Logging level.
+    :return: Configured logger instance.
+    """
+    real_logging_dir = logging_dir.expanduser().resolve()
+
+    if not real_logging_dir.is_dir():
+        real_logging_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        test_file = real_logging_dir / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+    except OSError:
+        print(f"Logging directory {logging_dir} is not writable.")
+        sys.exit(4)
+
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    name = log_name.replace(".log", "")
+    logger = logging.getLogger(name)
+    log_file = real_logging_dir / log_name
+
+    if not any(
+        isinstance(h, logging.FileHandler)
+        and getattr(h, "baseFilename", None) == str(log_file)
+        for h in logger.handlers
+    ):
+        file_handler = logging.FileHandler(str(log_file))
+        file_formatter = logging.Formatter(LOGGING_FORMAT)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
+    if not any(
+        isinstance(h, logging.StreamHandler) and h.stream == sys.stdout
+        for h in logger.handlers
+    ):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        if level <= logging.DEBUG:
+            stream_formatter = logging.Formatter(LOGGING_FORMAT_DEBUG)
+        else:
+            stream_formatter = logging.Formatter(LOGGING_FORMAT)
+        stream_handler.setFormatter(stream_formatter)
+        logger.addHandler(stream_handler)
+
+    logger.setLevel(level)
+    logging_set_host(None, name)
+    return logger
+
+
+def logging_set_host(alias: str | None, log_name: str) -> None:
+    """Prepend a server alias to the logging messages until unset.
+
+    :param alias: Alias to prepend.
+    :param log_name: Logger name.
+    """
+
+    class ContextFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            record.alias = f"[{alias}] " if alias else ""
+            return True
+
+    log_name = log_name.replace(".log", "")
+    logging.getLogger(log_name).addFilter(ContextFilter())
+
+
+def format_seconds_to_hhmmss(seconds: float) -> str:
+    """Format seconds into HH:MM:SS format.
+
+    :param seconds: Number of seconds.
+    :return: Formatted time string.
+    """
+    seconds = round(seconds)
+    hours = seconds // 3600
+    seconds %= 3600
+    minutes = seconds // 60
+    seconds %= 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def get_free_space(dir_path: Path, *, pct: bool = False) -> float:
+    """Get free space in MB or percent of a filesystem.
+
+    :param dir_path: Directory path.
+    :param pct: If True, return free space as a percentage.
+    :return: Free space in MB or percent.
+    """
+    stat = os.statvfs(dir_path)
+    free_mb = stat.f_bavail * stat.f_bsize / BYTES_PER_MB
+    if pct:
+        total_mb = stat.f_blocks * stat.f_bsize / BYTES_PER_MB
+        free_mb = free_mb * 100 / total_mb
+    return free_mb
+
+
+def get_max_subdir_size(start_path: Path) -> int:
+    """Get the maximum size among all subdirectories of a given path.
+
+    :param start_path: Directory path.
+    :return: Maximum subdirectory size in the given unit.
+    """
+    return max(get_dir_size(file) for file in start_path.glob("*") if file.is_dir())
+
+
+def is_free_space(
+    dir_path: Path,
+    logger: logging.Logger,
+    *,
+    double_space_needed: bool = False,
+) -> tuple[bool, str]:
+    """Check if there is enough disk space for the backup.
+
+    :param dir_path: Directory path to check.
+    :param logger: Logger instance.
+    :param double_space_needed: If True, require double space.
+    :return: (space_ok, message) tuple.
+    """
+    space_ok = True
+    output = ""
+
+    free_mb = get_free_space(dir_path)
+    max_backup_size = get_max_subdir_size(dir_path) / BYTES_PER_MB
+    ratio = 2 if double_space_needed else 1
+    max_size = int(max_backup_size * ratio * 1.1) if max_backup_size > 0 else 0
+
+    if free_mb < max_size:
+        space_ok = False
+        output = f"Not enough disk space: free {free_mb:.2f} Mb, needed {max_size} Mb"
+    elif logger:
+        logger.info("Disk space OK: free %.2f Mb, needed %d Mb.", free_mb, max_size)
+
+    return space_ok, output
+
+
+def encrypt_dir(path: Path, logger: logging.Logger, **cfg: Any) -> None:
+    """Encrypt a directory using GPG.
+
+    :param path: Directory path to encrypt.
+    :param logger: Logger instance.
+    :param cfg: Additional encryption configuration arguments.
+    :raises BackupError: If encryption fails or verification fails.
+    """
+    logger.info("Encrypting backup...")
+    logger.info("Running on: %s", path)
+
+    dir_encrypt = DirectoryEncryptor(cfg_path=DIR_ENCRYPT_CFG_PATH, **cfg)
+    if not dir_encrypt.encrypt_dir(encr_dir=path):
+        raise BackupError("Encryption failed.")
+
+    if not is_encrypted_dir(path, logger):
+        raise BackupError("Something wrong, there are still unencrypted files!")
+
+    logger.info("OK Encryption complete and verified.")
+
+
+def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
+    """Check if all files in the directory are encrypted.
+
+    :param path: Directory path.
+    :param logger: Logger instance.
+    :return: True if all files are encrypted, False otherwise.
+    """
+    for p in path.rglob("*"):
+        if p.is_file() and p.name not in EXCLUDE_FILES:
+            cmd = [
+                GPG_BIN,
+                "--batch",
+                "--list-only",
+                "--status-fd",
+                "1",
+                "--decrypt",
+                str(p),
+            ]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            _, err = proc.communicate()
+            if proc.returncode != 0:
+                if logger:
+                    logger.error("Running: %s", " ".join(cmd))
+                    logger.error(
+                        'Problem verifying encryption of the file "%s". Error: %s',
+                        p.name,
+                        err,
+                    )
+                return False
+    return True
+
+
+def preflight_check() -> None:
+    """Perform checks prior to running backups."""
+    if not sys.version_info >= (3, 8):
+        print(f"ERROR: python 3.8+ required. Your version: {sys.version_info}.\n")
+        sys.exit(4)
+
+
+def main() -> None:
+    """Run main program."""
+    options = parse_args()
+    preflight_check()
+    mydumper_runner = MyDumperRunner(options.config)
+    mydumper_runner.run()
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments.
+
+    :return: Parsed arguments namespace.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c", "--config", type=Path, help="File name of the YAML config"
+    )
+    return parser.parse_args()
+
+
+class DirectoryEncryptor:
+    """Handle encryption of files in a directory using GPG.
+
+    :param cfg_path: Path to the configuration file.
+    :type cfg_path: Path
+    :ivar config: A dictionary holding configuration options such as encryption
+        recipient, GPG binary path, encryption home directory, and concurrency limits.
+    :vartype config: dict
+    """
+
+    def __init__(self, cfg_path: Path, **cfg) -> None:
+        self.config = {}
+        self._setup_cfgs(cfg_path)
+        self.config.update(cfg)
+
+    def _setup_cfgs(self, cfg_path: Path) -> None:
+        """Load configuration from the specified path, or set defaults if not found.
+
+        Also checks if pinentry-mode is supported by the configured GPG binary.
+        """
+        if cfg_path.exists():
+            try:
+                with cfg_path.open(encoding="utf-8") as cfg_f:
+                    self.config = yaml.safe_load(cfg_f) or {}
+            except (FileNotFoundError, yaml.YAMLError):
+                self._set_default_config()
+        else:
+            self._set_default_config()
+
+        gpg_bin = self.config.get("gpg bin", "/usr/bin/gpg")
+
+    def _set_default_config(self) -> None:
+        """Set default configuration values."""
+        self.config = {
+            "encryption recipient": "CHANGEME_GPG",
+            "encryption home dir": "~/.gnupg",
+            "max encryption processes": 5,
+            "encryption nice": False,
+            "gpg bin": "/usr/bin/gpg",
+            "encryption file filter": "",
+        }
+
+    def _start_gpg_subp(
+        self,
+        filename: str,
+        recipient: str = "",
+        *,
+        nice: bool = False,
+    ) -> subprocess.Popen:
+        """Start and return a GPG encryption (or decryption) subprocess.
+
+        :param filename: The input file to encrypt or decrypt.
+        :type filename: str
+        :param recipient: The GPG recipient if encrypting, ignored if decrypting.
+        :type recipient: str
+        :param nice: If True, start the process with `nice`.
+        :type nice: bool
+        :return: The subprocess.Popen object representing the started GPG process.
+        :rtype: subprocess.Popen
+        """
+        gpg_bin = self.config["gpg bin"]
+        home_dir = self.config.get("encryption home dir", "")
+        output_filename = filename + ".gpg"
+        stdin = None
+        cmd = [
+            gpg_bin,
+            "--batch",
+            "--yes",
+            "--encrypt",
+            "--always-trust",
+            "--quiet",
+            f"--recipient={recipient}",
+            f"--output={output_filename}",
+            filename,
+        ]
+
+        if nice:
+            cmd.insert(0, "nice")
+        if home_dir:
+            cmd.insert(-1, f"--homedir={home_dir}")
+        return subprocess.Popen(cmd, stdin=stdin)
+
+    def _prune_finished_procs(
+        self, proc_dict: dict[str, subprocess.Popen], max_live_proc: int = 0
+    ) -> bool:
+        """Check the dictionary of active processes for those that have finished.
+
+        Once a process finishes:
+        - If exit code is 0, the original file is unlinked.
+        - If exit code is non-zero, logs an error and exits the program with status 1.
+
+        Prunes finished processes from the dictionary.
+
+        :param proc_dict: A dictionary of {filename: Popen} representing running
+            encryption processes.
+        :type proc_dict: dict[str, subprocess.Popen]
+        :param max_live_proc: The maximum number of processes allowed before waiting.
+        :type max_live_proc: int
+        :return: True if no errors were encountered, False otherwise.
+        :rtype: bool
+        """
+        ok = True
+        while proc_dict:
+            for fp, proc in list(proc_dict.items()):
+                rc = proc.poll()
+                if rc is None:
+                    continue
+                if rc == 0:
+                    with suppress(OSError):
+                        Path(fp).unlink()
+                else:
+                    ok = False
+                    logging.error("%r did not encrypt correctly.", fp)
+                    sys.exit(1)
+                del proc_dict[fp]
+            if len(proc_dict) < max_live_proc:
+                break
+            time.sleep(0.1)
+        return ok
+
+    def encrypt_dir(
+        self,
+        encr_dir: Path,
+    ) -> bool:
+        """Encrypt all regular files under `encr_dir` using GPG.
+
+        If `recipient`, `nice`, and `max_proc` are not provided, the values are taken
+        from the configuration file. If a file is successfully encrypted, the original
+        file is removed.
+
+        :param encr_dir: The directory path containing files to be encrypted.
+        :type encr_dir: str
+        :return: True if all files were encrypted successfully, False otherwise.
+        :rtype: bool
+        """
+        recipient = self.config.get("encryption recipient", "CHANGEME_GPG")
+        nice = bool(self.config.get("encryption nice", False))
+        max_proc = int(self.config.get("max encryption processes", 5))
+
+        enc_procs = {}
+        all_ok = True
+
+        exclude_names = {
+            "md5sum",
+            ".uploadme",
+            "xtrabackup_info",
+            "xtrabackup_checkpoints",
+        }
+
+        for file_path in encr_dir.rglob("*"):
+            if (
+                not file_path.is_file()
+                or file_path.name.endswith(".gpg")
+                or file_path.name in exclude_names
+            ):
+                continue
+
+            p = self._start_gpg_subp(str(file_path), recipient=recipient, nice=nice)
+            enc_procs[file_path] = p
+            ok = self._prune_finished_procs(enc_procs, max_proc)
+            all_ok = all_ok and ok
+
+        ok = self._prune_finished_procs(enc_procs)
+        return all_ok and ok
+
+
+class BaseBackup:
+    """Base class for shared functionality across backup and restore operations."""
+
+    def __init__(
+        self,
+        server_data: dict[str, Any],
+        backup_code: str,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Initialize the BaseBackup object.
+
+        :param server_data: Dictionary of server configuration and runtime data.
+        :param backup_code: Backup code indicating the type of backup.
+        :param logger: Optional logger instance to use.
+        """
+        self.server_data = server_data
+        self.backup_code = backup_code
+        self.backup_textfile_collector_dir = Path(
+            self.server_data.get(
+                "BACKUP_TEXTFILE_COLLECTOR_DIR", BACKUP_TEXTFILE_COLLECTOR_DIR
+            )
+        )
+        self.alias = self.server_data.get("ALIAS")
+        self.report_options: dict[str, Any] = {}
+        self.logging_dir = Path(
+            self.server_data.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+        )
+        self.logger = logger
+
+        self.compress = self.server_data.get("COMPRESS", True)
+        self.compression_algorithm = self.server_data.get(
+            "COMPRESSION_ALGORITHM", DEFAULT_COMPRESSION_ALGORITHM
+        )
+        if self.compress:
+            self.check_compression_algorithm(self.compression_algorithm)
+
+        # Dynamically set
+        self.is_slave = False
+        self.last_backup_dir = None
+
+    def check_compression_algorithm(self, algorithm: str) -> None:
+        """Check if the given compression algorithm is compatible with the backup type.
+
+        :param algorithm: Compression algorithm name.
+        :raises BackupError: If the algorithm is not compatible.
+        """
+        if not self.compress:
+            self.logger.debug("Compression is disabled, skipping check")
+            return
+        if algorithm in AVAILABLE_COMPRESSION_ALGORITHMS:
+            self.logger.debug(
+                "Algorithm %s accepted for backup type %s", algorithm, self.backup_code
+            )
+            return
+        raise BackupError(
+            f"algorithm {algorithm} is not one of {AVAILABLE_COMPRESSION_ALGORITHMS}"
+        )
+
+    def notify(self, status: BackupNotifyStatus, output: str) -> None:
+        """Send notifications about backup or restore operations.
+
+        :param status: Operation status code.
+        :param output: Operation output or message.
+        """
+        if len(output) > 300:
+            output = f"{output[:300]}..."
+
+        if isinstance(self, Backup) and self.is_slave:
+            output = f"Host {self.alias}. {output}"
+
+        self.report_options["end_time"] = time.strftime(DATETIME_FORMAT, time.gmtime())
+
+        if status == BackupNotifyStatus.OK:
+            self.textfile_collector_notify(0)
+            if "OK no new binlogs to upload" in output:
+                self.textfile_collector_write_status(status, MSPAction.UPLOAD)
+        else:
+            self.textfile_collector_notify(1)
+
+    def check_textcollector_dir(self) -> bool:
+        """Check if the textfile collector directory exists.
+
+        :return: True if directory exists, False otherwise.
+        """
+        backup_textfile_collector_dir = self.backup_textfile_collector_dir.parent
+        if not backup_textfile_collector_dir.is_dir():
+            self.logger.warning(
+                "Textfile Collector directory %s does not exist.",
+                backup_textfile_collector_dir,
+            )
+            return False
+        return True
+
+    def textfile_collector_write_status(
+        self,
+        backup_status: int,
+        msp_action: MSPAction = MSPAction.BACKUP,
+    ) -> None:
+        """Write backup status to textfile collector for Prometheus.
+
+        :param backup_status: Backup status code.
+        """
+        if not self.check_textcollector_dir():
+            return
+
+        collector_file = (
+            self.backup_textfile_collector_dir
+            / f"{msp_action}.{BACKUP_TYPE}.{self.alias}.prom"
+        )
+
+        encryption_val = self.report_options.get("encryption", "")
+        start_time_val = str(self.report_options.get("start_time", ""))
+        end_time_val = str(self.report_options.get("end_time", ""))
+
+        metrics_text = (
+            f"# HELP msp_{msp_action}_status The status of the job\n"
+            f"# TYPE msp_{msp_action}_status Untyped\n"
+            f"# HELP msp_{msp_action}_last_report_ts The Last Report Time\n"
+            f"# TYPE msp_{msp_action}_last_report_ts Untyped\n"
+            f'msp_{msp_action}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
+            f'backup_id="", start_time="{start_time_val}", end_time="{end_time_val}"'
+        )
+
+        size_bytes = (
+            get_dir_size(self.last_backup_dir)
+            if self.last_backup_dir is not None
+            else 0
+        )
+        metrics_text += f', backup_size="{size_bytes}"'
+
+        metrics_text += f"}} {backup_status}\n"
+        metrics_text += f'msp_{msp_action}_last_report_ts{{type="{BACKUP_TYPE}", alias="{self.alias}", backup_id=""}} {int(time.time())}\n'
+
+        with collector_file.open("w") as outfile:
+            outfile.write(metrics_text)
+
+    def textfile_collector_notify(self, backup_status: int) -> None:
+        """Notify status via textfile collector.
+
+        :param backup_status: Backup status code.
+        """
+        self.textfile_collector_write_status(backup_status)
+
+
+class Backup(BaseBackup):
+    """Common class for all backup types."""
+
+    def __init__(
+        self,
+        server_data: dict[str, Any],
+        backup_code: str,
+        logger: logging.Logger,
+    ) -> None:
+        """Initialize the Backup object with server data and backup code.
+
+        :param server_data: Server configuration and data.
+        :param backup_code: Backup code string.
+        :param logger: Optional logger instance.
+        """
+        self.backup_code = backup_code
+        super().__init__(server_data, backup_code, logger)
+        self.host = server_data.get("HOST", "localhost")
+        self.alias = server_data.get("ALIAS", self.host)
+        self.port = server_data.get("PORT", 3306)
+        self.hostname = str(
+            server_data.get("HOSTNAME", socket.gethostname().split(".")[0])
+        )
+        self.check_disk_space = server_data.get("CHECK_DISK_SPACE", True)
+        self.defaults_cnf_file = server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF)
+        self.hardlink = server_data.get("HARDLINK", True)
+        self.dir_encrypt_config = server_data.get("DIR_ENCRYPT_CONFIG", {})
+        self.post_run_encrypt = server_data.get("POST_RUN_ENCRYPT", False)
+        self.only_if_read_only = server_data.get("ONLY_IF_READ_ONLY")
+        self.only_if_running_slave = server_data.get("ONLY_IF_RUNNING_SLAVE")
+        self.upload_type = server_data.get("UPLOAD", set())
+        if isinstance(self.upload_type, str):
+            self.upload_type = {self.upload_type}
+        self.upload_interval = server_data.get("UPLOAD_INTERVAL", "weekly")
+        self.all_cnf_files = []
+        self.backup_textfile_collector_dir = Path(
+            self.server_data.get(
+                "BACKUP_TEXTFILE_COLLECTOR_DIR", BACKUP_TEXTFILE_COLLECTOR_DIR
+            )
+        )
+
+        self.logger = (
+            self.logger
+            or logger
+            or logging_setup(self.logging_dir, BACKUP_TYPE.lower() + ".log")
+        )
+        logging_set_host(self.alias, BACKUP_TYPE.lower() + ".log")
+
+        self.report_options = {
+            "host": self.alias,
+            "status": "error",
+            "start_time": time.strftime(DATETIME_FORMAT, time.gmtime()),
+            "end_time": "",
+            "size_mb": 0,
+            "hl_mb": None,
+            "options": {},
+            "encryption": "none",
+        }
+
+    def enable_upload(self, backup_dir: Path) -> None:
+        """If upload interval permits, mark backup for upload by creating the UPLOADME_FILE.
+
+        :param backup_dir: Path to the backup directory.
+        """
+        uploadme_path = backup_dir / UPLOADME_FILE
+        if not uploadme_path.is_file():
+            uploadme_path.touch()
+            self.logger.info("Backup marked for upload.")
+
+    def _query_mysql(self, sql: str) -> Any:
+        """Execute a MySQL query and return the result.
+
+        :param sql: SQL query string.
+        :return: Fetched result.
+        :raises BackupError: If query fails.
+        """
+        try:
+            conn = pymysql.connect(
+                read_default_file=self.defaults_cnf_file,
+                host=self.host,
+                port=self.port,
+                cursorclass=pymysql.cursors.DictCursor,
+            )
+            with conn, conn.cursor() as cursor:
+                cursor.execute(sql)
+                return cursor.fetchone()
+        except (OperationalError, InternalError) as err:
+            msg = f'Error running query "{sql}": {err}'
+            raise BackupError(msg) from err
+
+    def _is_running_slave(self) -> bool:
+        """Check if MySQL slave is running.
+
+        :return: True if slave is running, False otherwise.
+        """
+        result = None
+        for word in ["NONBLOCKING", "NOLOCK", ""]:
+            try:
+                result = self._query_mysql(f"SHOW SLAVE STATUS {word}")
+            except ProgrammingError:
+                pass
+            else:
+                break
+
+        if result and result["Slave_IO_Running"] == "Yes":
+            self.logger.info("MySQL slave is running.")
+            return True
+        return False
+
+    def _is_read_only(self) -> bool:
+        """Check if MySQL is read-only.
+
+        :return: True if read_only=1, False otherwise.
+        """
+        result = self._query_mysql("SELECT @@read_only")
+        if result["@@read_only"] == 1:
+            self.logger.info("MySQL read_only is enabled.")
+            return True
+        return False
+
+    def _is_pxc(self) -> bool:
+        """Check if MySQL is running PXC/Galera cluster.
+
+        :return: True if wsrep_on=1, False otherwise.
+        """
+        try:
+            result = self._query_mysql("SELECT @@wsrep_on")
+        except BackupError:
+            return False
+
+        if result["@@wsrep_on"] == 1:
+            self.logger.info("PXC/Galera cluster detected.")
+            return True
+        return False
+
+    def _pxc_desync(self, new_status: int = 1) -> bool:
+        """Change wsrep_desync of a Galera node.
+
+        :param new_status: Desired wsrep_desync status (0 or 1).
+        :return: True if wsrep_desync changed or already in desired state, False otherwise.
+        """
+        try:
+            result = self._query_mysql("SELECT @@wsrep_desync")
+        except BackupError:
+            return False
+
+        if result["@@wsrep_desync"] != new_status:
+            if result["@@wsrep_desync"] == 1:
+                recv_queue = self._query_mysql(
+                    'SHOW GLOBAL STATUS LIKE "wsrep_local_recv_queue"'
+                )
+                if int(recv_queue["Value"]) > 32:
+                    logging.warning(
+                        "Galera node is not synced, queue size is %s",
+                        recv_queue["Value"],
+                    )
+
+            self._query_mysql(f"SET GLOBAL wsrep_desync = {new_status}")
+            self.logger.info("MySQL wsrep_desync changed to %s", new_status)
+
+        return True
+
+
+class BackupError(Exception):
+    """Typical backup error."""
+
+    def __init__(self, message) -> None:
+        super().__init__(self, message)
+        self.message = message
+
+
+class LocalConfig:
+    """Local configuration class for backup/restore processes."""
+
+    default_nowrite_timeout = 1800  # 30 minutes
+    default_purge_days = 30
+
+    def __init__(self, cfg_path: Path) -> None:
+        """Initialize LocalConfig and populate configuration from the specified YAML file.
+
+        :param cfg_path: Path to the configuration file.
+        """
+        self.server_data_list: list[dict[str, Any]] = []
+        self.base: dict[str, Any] = {}
+        self.cfg_path = Path(cfg_path)
+        self.populated = False
+        self.raw_cfg_data: dict[str, Any] = {}
+        self._populate_cfg()
+
+    def _populate_cfg(self) -> None:
+        """Populate the configuration from the YAML file."""
+        try:
+            with self.cfg_path.open("r") as cfg_file:
+                cfg_file_contents = cfg_file.read()
+                data = yaml.safe_load(cfg_file_contents)
+        except Exception:
+            logging.exception("Could not read config file %r", self.cfg_path)
+            return
+
+        self.raw_cfg_data = data
+
+        default_server = {
+            "PORT": 3306,
+            "NOWRITE_TIMEOUT": LocalConfig.default_nowrite_timeout,
+            "BINLOG_PURGE_DAYS": LocalConfig.default_purge_days,
+        }
+        default_server.update(data["ALL_SERVERS"])
+        self.base = default_server.copy()
+
+        for server in data["SERVER_LIST"]:
+            if (
+                "HOST" in server
+                and isinstance(server["HOST"], str)
+                and server["HOST"].count(":") > 1
+            ):
+                logging.warning("Unsupported host format %s", server["HOST"])
+                continue
+            server_data = default_server.copy()
+            server_data.update(server)
+            self.server_data_list.append(server_data)
+        self.populated = True
+
+
+class Upload(Backup):
+    """Parent class for all specific uploaders.
+    Provides a run method to execute uploading.
+    """
+
+    def __init__(
+        self,
+        upload_type: str,
+        upload_provider: Any,
+        settings: dict[str, Any],
+        logger: logging.Logger,
+    ) -> None:
+        """Initialize the Upload object.
+
+        :param upload_type: Type of upload (e.g., "S3", "Rsync").
+        :param upload_provider: Class handling the specific upload method.
+        :param settings: Server/backup settings.
+        :param logger: Logger instance.
+        """
+        backup_code = settings["BACKUP_TYPE"]
+        super().__init__(settings, backup_code, logger)
+        self.upload_type = upload_type
+        self.upload_provider = upload_provider(settings, logger)
+        self.last_uploaded_number = 0
+        self.last_to_upload_number = 0
+        log_path = self.logging_dir / "upload.log"
+        self.log_stream = log_path.open("a")
+        self.backup_type = BACKUP_TYPE
+        self.encrypt = settings.get("ENCRYPT", True)
+        self.encrypt_using_tmpdir = settings.get("ENCRYPT_USING_TMPDIR", False)
+        self.post_run_encrypt = settings.get("POST_RUN_ENCRYPT", False)
+
+        if self.post_run_encrypt or not self.encrypt:
+            self.encrypt_using_tmpdir = False
+
+        self.report_options["options"] = {
+            "upload_to": self.upload_type,
+            "encrypt": self.encrypt or self.post_run_encrypt,
+        }
+
+        if self.encrypt or self.post_run_encrypt:
+            self.report_options["encryption"] = "gpg"
+
+        root_backup_dir = settings["BACKUP_DIR"]
+        root_backup_path = Path(root_backup_dir)
+
+        self.relative_backup_path = Path("mydumper") / self.alias
+        self.full_backup_path = root_backup_path / self.relative_backup_path
+        self.tmpdir_for_enc_upload = (
+            root_backup_path / "_tmpdir_for_enc_upload" / self.relative_backup_path
+        )
+
+        self.paths = []
+
+    def _collect_paths(self) -> None:
+        """If there are backups to upload, add them to the upload list.
+        Otherwise, with empty self.paths, the upload will be skipped.
+        """
+        for datedir in self.full_backup_path.iterdir():
+            if datedir.is_dir():
+                conditions_to_upload = [
+                    re.search(BACKUP_DIR_REGEX, datedir.name),
+                    (datedir / UPLOADME_FILE).is_file(),
+                ]
+                if all(conditions_to_upload):
+                    self.paths.append(
+                        {
+                            "source": str(datedir),
+                            "rel_destination": str(
+                                self.relative_backup_path / datedir.name
+                            ),
+                            "tmpdir": str(self.tmpdir_for_enc_upload / datedir.name),
+                        }
+                    )
+
+    def _copy_to_tmpdir(self) -> None:
+        """Copy backup to a temporary directory for encryption prior to upload, if enabled."""
+        if not self.encrypt_using_tmpdir:
+            return
+
+        self.logger.info("Copying backup to tmpdir for encryption...")
+        for path in self.paths:
+            tmpdir = Path(path["tmpdir"])
+            if tmpdir.is_dir():
+                shutil.rmtree(tmpdir)
+                self.logger.info("Removed old tmpdir %s", tmpdir)
+
+            source_path = Path(path["source"])
+            self.logger.info(
+                "Checking available disk space to copy %s ...", source_path
+            )
+            bkp_size = get_dir_size(source_path) / BYTES_PER_MB
+            tmpdir_base = tmpdir
+            while not tmpdir_base.is_dir():
+                tmpdir_base = tmpdir_base.parent
+            free_size = get_free_space(tmpdir_base)
+            self.logger.info("Backup size: %sMB free space: %sMB", bkp_size, free_size)
+            if free_size > bkp_size * 1.1:
+                shutil.copytree(source_path, tmpdir)
+            else:
+                msg = "No free space to use tmp dir for encryption."
+                raise BackupError(msg)
+
+        self.logger.info("OK Copy complete.")
+
+    def _encrypt(self) -> None:
+        """Encrypt backup directories prior to upload if encryption is enabled."""
+        if not (self.encrypt or self.post_run_encrypt):
+            self.logger.warning("UPLOADING UNENCRYPTED BACKUP!!!")
+            return
+
+        for path in self.paths:
+            dir_ = Path(path["tmpdir"] if self.encrypt_using_tmpdir else path["source"])
+            encrypt_dir(dir_, self.logger, **self.dir_encrypt_config)
+
+    def _upload(self) -> None:
+        """Upload backups to the remote destination using the provided upload provider."""
+        for path in self.paths:
+            dir_ = path["tmpdir"] if self.encrypt_using_tmpdir else path["source"]
+            dest_path = self.upload_provider.upload(dir_, path["rel_destination"])
+            self.report_options["options"]["remote_path"] = dest_path
+            self._mark_as_uploaded(Path(path["source"]))
+
+    def _mark_as_uploaded(self, dir_: Path) -> None:
+        """Mark the backup as uploaded by removing or updating the UPLOADME_FILE.
+
+        :param dir_: Path to the backup directory.
+        """
+        uploadme_file = dir_ / UPLOADME_FILE
+        if self.backup_code in ["B", "O"]:
+            with uploadme_file.open("w+") as file_:
+                file_.write(str(self.last_to_upload_number))
+        elif uploadme_file.is_file():
+            uploadme_file.unlink(missing_ok=True)
+
+    def _cleanup(self) -> None:
+        """Purge temporary directories used for encryption if enabled."""
+        if not self.encrypt_using_tmpdir:
+            return
+
+        for path in self.paths:
+            tmpdir = Path(path["tmpdir"])
+            if tmpdir.is_dir():
+                shutil.rmtree(tmpdir)
+                self.logger.info("Removed tmpdir %s", tmpdir)
+
+    def run(self) -> str:
+        """Execute the upload process.
+
+        :return: Status message of the upload process.
+        """
+        logging_set_host(self.alias, "upload.log")
+
+        if self.full_backup_path.is_dir():
+            self._collect_paths()
+
+        if not self.paths:
+            self.logger.debug("Nothing to upload of %s backup.", self.backup_type)
+            return "OK no new binlogs to upload." if self.backup_code == "B" else ""
+
+        start_time = time.time()
+        self.logger.info(
+            "Starting %s upload of %s backup: %s",
+            self.upload_type,
+            self.backup_type.lower(),
+            ", ".join([p["source"] for p in self.paths]),
+        )
+
+        self.textfile_collector_write_status(-1, MSPAction.UPLOAD)
+
+        self._copy_to_tmpdir()
+        self._encrypt()
+        self._upload()
+        self._cleanup()
+
+        time_spent = format_seconds_to_hhmmss(time.time() - start_time)
+        msg = f"OK {self.upload_type} upload complete. Duration: {time_spent}."
+        self.logger.info(msg)
+        self.textfile_collector_write_status(0, MSPAction.UPLOAD)
+
+        return msg
+
+
+class MyDumperUpload(Upload):
+    """Implements uploading of MyDumper backups."""
+
+    def __init__(
+        self,
+        upload_type: str,
+        upload_provider: Any,
+        settings: dict[str, Any],
+        logger: logging.Logger,
+    ) -> None:
+        """Initialize MyDumperUpload object."""
+        super().__init__(upload_type, upload_provider, settings, logger)
+        if not self.encrypt:
+            self.encrypt_using_tmpdir = False
+            self.logger.debug(
+                "Not using tmpdir for upload because encryption is disabled."
+            )
+
+
+class RsyncUploadProvider:
+    """Rsync folder to another location."""
+
+    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+        """Initialize RsyncUploadProvider.
+
+        :param settings: Backup/server settings.
+        :param logger: Logger instance.
+        :raises BackupError: If RSYNC_PATH not set or rsync not installed.
+        """
+        self.logger = logger
+        host = settings.get("HOST", "localhost")
+        self.alias = settings.get("ALIAS", host)
+        self.rsync_dir = settings.get("RSYNC_PATH")
+        self.backup_type = settings.get("BACKUP_TYPE")
+        if self.rsync_dir is None:
+            msg = "RSYNC_PATH is not set."
+            raise BackupError(msg)
+
+        logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
+        log_file = (
+            logging_dir
+            / f"rsync-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+        )
+        self.log_stream = log_file.open("a")
+
+    def upload(self, source_dir: str, dest_dir: str) -> str:
+        """Rsync files from source dir to target directory.
+
+        :param source_dir: Local source directory.
+        :param dest_dir: Remote/target directory structure.
+        :return: Destination path.
+        :raises BackupError: If rsync fails.
+        """
+        if not Path(RSYNC_BIN).exists():
+            msg = f"Missing {RSYNC_BIN}. Install rsync package."
+            raise BackupError(msg)
+
+        if "_incrementals" in dest_dir:
+            _, inc_dir_name = dest_dir.rsplit("/", 1)
+            dest_path = str(Path(self.rsync_dir) / inc_dir_name / "")
+        else:
+            dest_path = str(Path(self.rsync_dir) / "")
+
+        cmd = [
+            RSYNC_BIN,
+            "-avH",
+            "--numeric-ids",
+            "--no-owner",
+            "--no-group",
+            source_dir,
+            dest_path,
+        ]
+        self.logger.info("Starting rsync...")
+        self.logger.info("Running: %s", " ".join(cmd))
+        proc = subprocess.Popen(cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            msg = f"Rsync failed. Error: {err}"
+            raise BackupError(msg)
+
+        return dest_path
+
+
+class S3UploadProvider:
+    """Upload to Amazon S3 bucket using boto3."""
+
+    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+        """Initialize S3UploadProvider.
+
+        :param settings: Backup/server settings.
+        :param logger: Logger instance.
+        :raises BackupError: If S3_BUCKET not set.
+        """
+        self.logger = logger
+        host = settings.get("HOST", "localhost")
+        self.alias = settings.get("ALIAS", host)
+        self.s3_bucket = settings.get("S3_BUCKET")
+        self.fake_s3_upload = settings.get("FAKE_S3_UPLOAD")
+        self.s3_limit_rate = settings.get("S3_LIMIT_RATE")
+        self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
+        self.backup_type = settings.get("BACKUP_TYPE")
+        self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
+        self.logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
+
+        if self.s3_bucket is None:
+            msg = "S3_BUCKET is not set."
+            raise BackupError(msg)
+
+        log_file = (
+            self.logging_dir
+            / f"s3cmd-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+        )
+        self.log_stream = log_file.open("a")
+
+        bucket_str = self.s3_bucket
+        if bucket_str.startswith("s3://"):
+            bucket_str = bucket_str[5:]
+        parts = bucket_str.split("/", 1)
+        self.bucket_name = parts[0]
+        self.bucket_prefix = parts[1] if len(parts) > 1 else ""
+
+        self.s3 = boto3.client("s3")
+
+    def _check_bucket_safety(self) -> None:
+        """Check whether the S3 bucket is safe by verifying public access block settings.
+
+        :raises BackupError: If the bucket is found to be unsafe.
+        """
+        if self.skip_s3_safety_check:
+            self.logger.info("Skipping S3 bucket safety check as requested.")
+            return
+
+        self.logger.info("Checking S3 bucket safety...")
+        try:
+            resp = self.s3.get_public_access_block(Bucket=self.bucket_name)
+            public_block = resp.get("PublicAccessBlockConfiguration", {})
+            if not all(public_block.get(k, True) for k in public_block):
+                msg = "Unsafe S3 bucket: public access is allowed!"
+                raise BackupError(msg)
+        except ClientError as e:
+            self.logger.warning("Could not check S3 bucket safety: %s", e)
+        self.logger.info("OK S3 bucket looks to be safe or safety check skipped.")
+
+    def upload(self, source_dir: str, dest_dir: str) -> str:
+        """Upload directory to S3.
+
+        :param source_dir: Local source directory.
+        :param dest_dir: Destination path (relative) on S3.
+        :return: S3 URI of the uploaded backup.
+        :raises BackupError: If S3 upload fails.
+        """
+        if not self.skip_s3_safety_check:
+            self._check_bucket_safety()
+
+        full_prefix = str(Path(self.bucket_prefix) / dest_dir)
+        if not full_prefix.endswith("/"):
+            full_prefix += "/"
+
+        if self.fake_s3_upload:
+            self.logger.warning("*** Fake S3 upload in action ***")
+            return f"s3://{self.bucket_name}/{full_prefix}"
+
+        self.logger.info("Uploading backup...")
+        source_path = Path(source_dir)
+        for root, _dirs, files in os.walk(str(source_path)):
+            for file_ in files:
+                local_path = Path(root) / file_
+                relative_path = local_path.relative_to(source_path)
+                key = str(Path(full_prefix) / relative_path)
+
+                extra_args = {
+                    "StorageClass": self.s3_storage_class,
+                    "ServerSideEncryption": "AES256",
+                }
+
+                self.logger.info(
+                    "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
+                )
+                try:
+                    self.s3.upload_file(
+                        str(local_path), self.bucket_name, key, ExtraArgs=extra_args
+                    )
+                except ClientError as e:
+                    raise BackupError(f"S3 upload failed: {e}") from None
+
+        if self.backup_type not in ["B", "O"] and not (
+            self.backup_type == "X" and "_incrementals" in dest_dir
+        ):
+            latest_key = str(
+                Path(self.bucket_prefix)
+                / "/".join(full_prefix.split("/")[:-2])
+                / "latest"
+            )
+            try:
+                tmp_dir = Path("/tmp/percona_backup_latest")
+                tmp_dir.mkdir(parents=True, exist_ok=True)
+                latest_local_path = tmp_dir / "latest"
+                with latest_local_path.open("w") as fn:
+                    fn.write(f"s3://{self.bucket_name}/{full_prefix}")
+
+                self.s3.upload_file(
+                    str(latest_local_path),
+                    self.bucket_name,
+                    latest_key,
+                    ExtraArgs={
+                        "StorageClass": self.s3_storage_class,
+                        "ServerSideEncryption": "AES256",
+                    },
+                )
+            except Exception as e:
+                self.logger.warning("S3 latest file upload failed: %s", e)
+
+        return f"s3://{self.bucket_name}/{full_prefix}"
+
+
+class MyDumperRunner(multiprocessing.Process):
+    """Mydumper multiprocessing class to run backups in parallel."""
+
+    def __init__(
+        self,
+        config_path: Path,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize MyDumperRunner.
+
+        :param config_path: Path to the configuration file.
+        """
+        super().__init__(*args, **kwargs)
+        self.config_path = config_path
+        self.logger = None
+
+    def run(self) -> None:
+        """Run the MyDumperRunner: iterate over servers and run MyDumper backups."""
+        local_cfg = LocalConfig(self.config_path)
+
+        logging_dir = Path(
+            local_cfg.raw_cfg_data["ALL_SERVERS"].get(
+                "LOGGING_DIR", DEFAULT_LOGGING_DIR
+            )
+        )
+
+        servers = local_cfg.server_data_list
+        settings = servers[0]
+        if settings.get("DEBUG") or local_cfg.raw_cfg_data["ALL_SERVERS"].get("DEBUG"):
+            self.logger = logging_setup(logging_dir, LOGGING_NAME, logging.DEBUG)
+        if self.logger is None:
+            self.logger = logging_setup(logging_dir, LOGGING_NAME)
+
+        start_time = time.time()
+        self.logger.info(">>>>>>>>>>>>>>>>>> Backup started.")
+        self.logger.info("Total servers: %s", len(servers))
+
+        for server_data in servers:
+            bkp = MyDumper(server_data, logger=self.logger)
+            try:
+                bkp.run()
+            except BackupError as exc:
+                self.logger.exception(exc.message)
+                self.logger.exception("Backup failed for this host.")
+                bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+            except:
+                self.logger.exception("Unhandled exception occurred.")
+                bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+
+            logging_set_host(None, LOGGING_NAME)
+
+        time_spent = format_seconds_to_hhmmss(time.time() - start_time)
+        self.logger.info(
+            ">>>>>>>>>>>>>>>>>> Backup finished. Total duration: %s.", time_spent
+        )
+
+
+class MyDumper(Backup):
+    """Run MyDumper for an individual server."""
+
+    def __init__(self, server_data: dict[str, Any], logger: logging.Logger) -> None:
+        """Initialize MyDumper backup class for a given server.
+
+        :param server_data: Server configuration and runtime data.
+        :type server_data: dict[str, Any]
+        :param logger: Optional logger instance.
+        :type logger: logging.Logger, optional
+        """
+        super().__init__(server_data, "M", logger=logger)
+
+        self.daily_purge: int = server_data.get("MYDUMPER_DAILY_PURGE", 7)
+        self.weekly_purge: int = server_data.get("MYDUMPER_WEEKLY_PURGE", 4)
+        self.mydumper_for_schemas: bool = server_data.get("MYDUMPER_SCHEMAS", True)
+        self.mydumper_dump_triggers: bool = server_data.get(
+            "MYDUMPER_DUMP_TRIGGERS", True
+        )
+        self.desync_pxc: bool = server_data.get("MYDUMPER_DESYNC_PXC", False)
+        self.less_locking: bool = server_data.get("MYDUMPER_LESS_LOCKING", True)
+        self.updated_since: int = server_data.get("MYDUMPER_UPDATED_SINCE", 0)
+        self.mydumper_extra_args: str | None = server_data.get("MYDUMPER_EXTRA_ARGS")
+        self.use_ftwrl_guardian: bool = server_data.get("USE_FTWRL_GUARDIAN", True)
+        self.mydumper_use_numa: bool = server_data.get("MYDUMPER_USE_NUMA", False)
+
+        self.server_setting: dict[str, Any] = server_data
+        self.s3_bucket: str | None = server_data.get("MYDUMPER_S3_BUCKET")
+        self.s3_daily: bool = server_data.get("MYDUMPER_S3_DAILY", False)
+        self.s3_encrypt: bool = server_data.get("MYDUMPER_ENCRYPT_S3", True)
+        self.encrypt_using_tmpdir: bool = server_data.get(
+            "MYDUMPER_USE_TMPDIR_FOR_ENC_S3UPLOAD", False
+        )
+
+        # Set report options
+        self.report_options["options"] = {
+            "dailies": self.daily_purge,
+            "weeklies": self.weekly_purge,
+        }
+
+        # Paths
+        self.today_str = time.strftime("%Y%m%d")
+        yesterday_str = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime(
+            "%Y%m%d"
+        )
+        self.backup_server_dir = (
+            (Path(server_data["BACKUP_DIR"]) / "mydumper" / self.alias)
+            .expanduser()
+            .resolve()
+        )
+        self.backup_dir = self.backup_server_dir / self.today_str
+        self.latest_link = self.backup_server_dir / "latest"
+        self.prev_backup_dir = self.backup_server_dir / yesterday_str
+        self.last_backup_dir = self.backup_dir
+
+        self.prev_encrypted = False
+        self.cache_md5 = False
+        self.valid_prev_backup_dir = None
+
+    def run(self) -> None:
+        """Start the backup for the individual server."""
+        start_time = time.time()
+
+        if self.only_if_running_slave:
+            self.is_slave = self._is_running_slave()
+            if not self.is_slave:
+                self.logger.info("Not running slave, ignoring this host.")
+                return
+
+        if self.only_if_read_only:
+            self.is_slave = self._is_read_only()
+            if not self.is_slave:
+                self.logger.info("Not read_only, ignoring this host.")
+                return
+
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.check_disk_space:
+            is_free, msg = is_free_space(
+                self.backup_server_dir,
+                self.logger,
+                double_space_needed=self.encrypt_using_tmpdir,
+            )
+            if not is_free:
+                raise BackupError(msg)
+
+        # Check mydumper version for schemas support
+        if self.mydumper_for_schemas:
+            version = self._get_version()
+            try:
+                if version and Version(version) >= Version("0.9"):
+                    self.logger.info("Using mydumper %s for schemas", version)
+                else:
+                    self.mydumper_for_schemas = False
+                    self.logger.info(
+                        "mydumper %s does not support schemas. "
+                        "Please consider upgrading to >=0.9",
+                        version if version else "unknown",
+                    )
+            except ValueError as err:
+                self.logger.exception("Failed to parse the mydumper version")
+                raise BackupError("Invalid mydumper version") from err
+
+        if not self.mydumper_for_schemas:
+            raise BackupError("MYDUMPER_SCHEMAS has been disabled, please enable it")
+
+        # Run actual backup
+        self._run_backup_cmd()
+
+        # Update latest link
+        if self.latest_link.is_symlink():
+            self.latest_link.unlink()
+        self.latest_link.symlink_to(self.today_str)
+
+        # Purge old backups
+        self._purge_old_backups()
+
+        # Encrypt backup or hardlink to save space
+        if self.post_run_encrypt:
+            self.report_options["encryption"] = "gpg"
+            self.logger.info("Post-run backup encryption is enabled.")
+            encrypt_dir(self.backup_dir, self.logger, **self.dir_encrypt_config)
+        else:
+            self._save_disk_space()
+
+        # Upload if needed
+        for upload_type in self.upload_type:
+            self.enable_upload(self.backup_dir)
+            if upload_type == "rsync":
+                MyDumperUpload(
+                    upload_type=upload_type,
+                    upload_provider=RsyncUploadProvider,
+                    settings=self.server_setting,
+                    logger=self.logger,
+                ).run()
+            elif upload_type == "s3":
+                MyDumperUpload(
+                    upload_type=upload_type,
+                    upload_provider=S3UploadProvider,
+                    settings=self.server_setting,
+                    logger=self.logger,
+                ).run()
+            else:
+                self.logger.warning("Unsupported upload type: %r", upload_type)
+
+        time_spent = format_seconds_to_hhmmss(time.time() - start_time)
+        size_text = humanize_bytes(get_dir_size(self.backup_dir))
+        msg = f"OK Backup complete. Duration: {time_spent}. Size: {size_text}."
+        self.logger.info(msg)
+        self.notify(BackupNotifyStatus.OK, msg)
+
+    def _save_disk_space(self) -> None:
+        """Hardlink backups to save disk space if conditions allow."""
+        if (
+            self.s3_bucket
+            and self.s3_encrypt
+            and self.hardlink
+            and not self.encrypt_using_tmpdir
+        ):
+            if self.s3_daily:
+                # Daily upload
+                self.cache_md5 = True
+                self.prev_encrypted = True
+            else:
+                # Weekly upload
+                weekday = datetime.datetime.today().isoweekday()
+                if weekday == 1:
+                    # Monday
+                    self.hardlink = False
+                elif weekday == 2:
+                    # Tuesday
+                    twodaysago = (
+                        datetime.datetime.now() - datetime.timedelta(days=2)
+                    ).strftime("%Y%m%d")
+                    self.prev_backup_dir = self.backup_server_dir / twodaysago
+
+        # Check if previous backup is encrypted
+        if self.prev_backup_dir.is_dir():
+            self.prev_encrypted = is_encrypted_dir(self.prev_backup_dir, self.logger)
+            if self.prev_encrypted:
+                self.logger.info(
+                    "Disabling today's hardlinking: previous backup is encrypted"
+                )
+
+        # Validate previous backups for updated_since option
+        if self.updated_since > 0:
+            self._validate_updated_since()
+
+        # Hardlink not updated tables if updated_since is set
+        if self.updated_since and self.valid_prev_backup_dir:
+            self.logger.info("Hardlinking not dumped tables...")
+            ret_code, ret_info = hardlink_listed_files(
+                self.valid_prev_backup_dir,
+                self.backup_dir,
+                compress=self.compress,
+                encrypted=self.s3_daily and self.s3_encrypt,
+            )
+            if ret_code != 0:
+                msg = f"Error: files for table {ret_info} not found"
+                raise BackupError(msg)
+            self.logger.info("Hardlinking of not dumped tables complete.")
+
+        if not self.hardlink:
+            return
+
+        if not self.prev_backup_dir.is_dir() or self.prev_encrypted:
+            self.logger.info("Checksumming backup...")
+            get_dir_dict(self.backup_dir, md5=self.cache_md5)
+            self.logger.info("OK Checksum complete.")
+        else:
+            self.logger.info("Hardlinking backups...")
+            get_dir_dict(self.backup_dir, md5=self.cache_md5)
+            hl_files = hardlink_dirs(
+                self.prev_backup_dir, self.backup_dir, encrypted=self.prev_encrypted
+            )
+            bytes_saved = sum(file_data[1] for file_data in hl_files.values())
+            self.report_options["hl_mb"] = round(bytes_saved / 1024 / 1024)
+            self.logger.info(
+                "OK Hardlinking complete: %d MB saved.",
+                round(bytes_saved / 1024 / 1024),
+            )
+
+    def _validate_updated_since(self) -> None:
+        """Validate previous backups that can be used with mydumper's --updated-since option."""
+        for i in range(1, self.updated_since):
+            dayago = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime(
+                "%Y%m%d"
+            )
+            check_backup_dir = self.backup_server_dir / dayago
+            if self.s3_daily and self.s3_encrypt:
+                if (check_backup_dir / f"{MYDUMPER_METADATA}.gpg").is_file():
+                    self.valid_prev_backup_dir = str(check_backup_dir)
+                    break
+            elif (check_backup_dir / MYDUMPER_METADATA).is_file():
+                self.valid_prev_backup_dir = str(check_backup_dir)
+                break
+
+        if self.valid_prev_backup_dir is None:
+            self.logger.warning(
+                "Disabling mydumper's updated_since option: no valid previous backup"
+            )
+            self.updated_since = 0
+
+    def _run_backup_cmd(self) -> None:
+        """Run the mydumper backup command."""
+        is_pxc = False
+        try:
+            # Check for PXC
+            if self.desync_pxc:
+                is_pxc = self._is_pxc()
+
+            # Desync PXC node
+            if is_pxc:
+                self._pxc_desync(new_status=1)
+
+            mydumper_cmd = []
+            if self.mydumper_use_numa:
+                mydumper_cmd.extend(["/bin/numactl", "--interleave=all"])
+
+            default_args = [
+                f"--outputdir={self.backup_dir}",
+                "--verbose=3",
+                f"--host={self.host}",
+                f"--port={self.port}",
+                "--kill-long-queries",
+                "--chunk-filesize=5120",
+                "--build-empty-files",
+            ]
+
+            mydumper_cmd.append(MYDUMPER_BIN)
+
+            if self.mydumper_extra_args:
+                mydumper_cmd.extend(self.mydumper_extra_args.split(" "))
+
+            mydumper_cmd.extend(default_args)
+
+            if self.mydumper_for_schemas:
+                mydumper_cmd.extend(["--events", "--routines"])
+                if self.mydumper_dump_triggers:
+                    mydumper_cmd.append("--triggers")
+            else:
+                mydumper_cmd.append("--no-schemas")
+
+            if self.compress:
+                mydumper_cmd.append("--compress")
+
+            if self.updated_since > 0:
+                mydumper_cmd.append(f"--updated-since={self.updated_since}")
+
+            if self.less_locking:
+                mydumper_cmd.append("--less-locking")
+
+            md_log_file = (
+                self.logging_dir / f"mydumper-{self.alias}-{self.today_str}.log"
+            )
+            self.logger.info("Backup data...")
+            self.logger.info("Running: %s", " ".join(map(str, mydumper_cmd)))
+
+            with md_log_file.open("a") as md_log_stream:
+                proc = subprocess.Popen(
+                    mydumper_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                )
+                if proc.stdout:
+                    for line in proc.stdout:
+                        line_decoded = line.decode()
+                        sys.stdout.write(line_decoded)
+                        md_log_stream.write(line_decoded)
+                proc.wait()
+
+            ret_code = proc.returncode
+            while ret_code is None:
+                if self.use_ftwrl_guardian:
+                    ftwrl_guardian({"HOST": self.host, "PORT": self.port}, self.logger)
+                ret_code = proc.poll()
+
+            if ret_code != 0:
+                with md_log_file.open("r") as md_log_stream:
+                    lines = md_log_stream.readlines()
+                err = lines[-1] if lines else "Unknown error"
+                if self.post_run_encrypt:
+                    # remove failed backups if post encrypt is enabled
+                    shutil.rmtree(self.backup_dir)
+                msg = f"Mydumper failed ({ret_code}): {err} For more details, see {md_log_file}"
+                raise BackupError(msg)
+
+            self.logger.info("OK Mydumper complete.")
+        finally:
+            # Resync PXC node
+            if is_pxc:
+                for _ in range(6):
+                    if self._pxc_desync(new_status=0):
+                        break
+                    self.logger.info("Sleeping 10 secs to re-try syncing Galera node.")
+                    time.sleep(10)
+                else:
+                    self.logger.error("Galera node left desynced.")
+
+    def _list_backups(self, path: Path) -> list[str]:
+        """Get a list of directories with existing backups.
+
+        :param path: Path to the server backup directory.
+        :return: Sorted list of backup directory names.
+        """
+        dname_re = re.compile("^[0-9]{8}$")
+        return sorted(
+            [
+                dname
+                for dname in os.listdir(path)
+                if (path / dname).is_dir() and dname_re.search(dname)
+            ]
+        )
+
+    def _purge_old_backups(self) -> int:
+        """Purge old backups, keeping a specified number of daily and weekly backups.
+
+        :return: Number of purged directories.
+        """
+        self.logger.info("Purging old backups...")
+        dir_list = self._list_backups(self.backup_server_dir)
+        dir_map = {dname: 0 for dname in dir_list}
+
+        # Weeklies iteration (keep certain Mondays)
+        weekly_age = self.weekly_purge
+        for i in sorted(dir_map.keys(), reverse=True):
+            wkday = datetime.datetime.strptime(i, "%Y%m%d").date().isoweekday()
+            if wkday == 1:
+                if weekly_age > 0:
+                    weekly_age -= 1
+                    dir_map[i] = 2  # Mark to not delete
+                else:
+                    dir_map[i] = 1  # Mark to delete
+
+        saved_weeklies = [k for k, v in dir_map.items() if v == 2]
+        if saved_weeklies:
+            self.logger.info(
+                "Keeping weeklies (max %s): %s",
+                self.weekly_purge,
+                ",".join(sorted(saved_weeklies, reverse=True)),
+            )
+
+        # Dailies iteration
+        daily_age = self.daily_purge
+        for i in sorted(dir_map.keys(), reverse=True):
+            if daily_age > 0:
+                daily_age -= 1
+                # Mark to not delete if not weekly
+                if dir_map[i] != 2:
+                    dir_map[i] = 0
+            elif dir_map[i] != 2:
+                dir_map[i] = 1  # Mark to delete
+
+        saved_dailies = [k for k, v in dir_map.items() if v == 0]
+        if saved_dailies:
+            self.logger.info(
+                "Keeping dailies (max %s): %s",
+                self.daily_purge,
+                ",".join(sorted(saved_dailies, reverse=True)),
+            )
+
+        # Purging
+        purge_dir_list = [k for k, v in dir_map.items() if v == 1]
+        purges = 0
+        for dir_ in sorted(purge_dir_list):
+            shutil.rmtree(self.backup_server_dir / dir_)
+            self.logger.info("* Dir %s removed.", dir_)
+            purges += 1
+
+        self.logger.info("OK %s dirs purged.", purges)
+        return purges
+
+    def _get_version(self) -> str | None:
+        """Extract MyDumper version.
+
+        :return: MyDumper version string or None.
+        """
+        cmd = [MYDUMPER_BIN, "--version"]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, _ = proc.communicate()
+        if proc.returncode == 0:
+            match = re.search(r"mydumper v?([\w\.]+)(-[0-9]{1,2})*[;,]", out.decode())
+            if match:
+                return match.group(1)
+
+        self.logger.warning("Error getting mydumper version")
+        return None
+
+
+if __name__ == "__main__":
+    main()

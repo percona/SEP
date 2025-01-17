@@ -71,7 +71,7 @@ class TestCasdoorTokenPayload:
     @pytest.mark.asyncio
     async def test_from_jwt(self, casdoor_token_payload_data, casdoor_mock):
         """Verify CasdoorTokenPayload creation from JWT."""
-        token = "access_token"
+        token = "access-token"
         token_payload = await CasdoorTokenPayload.from_jwt(token)
         assert token_payload.iss == casdoor_token_payload_data["iss"]
         assert token_payload.sub == casdoor_token_payload_data["sub"]
