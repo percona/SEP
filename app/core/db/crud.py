@@ -507,11 +507,16 @@ class BaseManager:
     ) -> int:
         """Return the count of records that match the query.
 
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :param equal_filters: Keyword arguments representing column names and
-            their filter values.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
         :return: The count of matching records.
+        :rtype: int
         """
         query = cls._filter_query(
             select(func.count()).select_from(cls.Model), *whereclause, **equal_filters
