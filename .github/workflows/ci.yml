@@ -39,10 +39,6 @@ jobs:
           systemctl --user start podman
           echo "DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock" >> "$GITHUB_ENV"
 
-      - name: Build wheel
-        run: |
-          make build
-
       - name: Build container image
         run: |
           buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
