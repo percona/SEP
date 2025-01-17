@@ -41,7 +41,7 @@ jobs:
 
       - name: Build container image
         env:
-          RELEASE_VER: ${{ github.event.pull_request.head.sha || 'HEAD' }}
+          RELEASE_VER: HEAD
         run: |
           buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
           make pack
