@@ -1,19 +1,5 @@
 $(document).ready(function () {
     const cronstrue = window.cronstrue;
-    const $dialog = $('#confirmationDialog');
-    const $dialogContent = $('.dialog-content');
-
-    function showModal() {
-        $dialog.css('display', 'flex');
-        $dialogContent.removeClass('pop-down').addClass('pop-up');
-    }
-    function hideModal() {
-        $dialogContent.removeClass('pop-up').addClass('pop-down');
-
-        setTimeout(() => {
-            $dialog.css('display', 'none');
-        }, 300);
-    }
 
     $('.period-cell.period-crontab').each(function () {
         const cronExpression = $(this).text().trim();
@@ -30,6 +16,13 @@ $(document).ready(function () {
                 console.error('Invalid cron expression:', cronExpression);
             }
         }
+    });
+
+    $('#scheduled-tasks-table .delete-form').each(function () {
+        const taskName = $(this).closest('tr').find('td:first').text().trim();
+        const periodCell = $(this).closest('tr').find('.period-cell');
+        const periodDescription = periodCell.attr('title') || periodCell.text().trim();
+        $(this).attr('data-confirm-message', `Are you sure you want to delete the periodic task for "${taskName}" (${periodDescription})?`);
     });
 
     $('.new-periodic-task-enable-checkbox').change(function (e) {
@@ -174,36 +167,28 @@ $(document).ready(function () {
                 $dateInputValue.val(awareDate.toISOString());
             }
         });
-        if($runPythonForm.length) {
-            if(!$runPythonForm.get(0).reportValidity()){
+        if ($runPythonForm.length) {
+            if (!$runPythonForm.get(0).reportValidity()) {
                 return false;
             }
         }
-        if ($dialog.length) {
-            $('#confirmationMessage').text("Are you sure to want to excute?")
-            showModal()
-            $('#confirmYes').off('click').on('click', function () {
-                hideModal();
-                if($runPythonForm.length) {
-                    const runPythonFormData =$runPythonForm.serializeArray();
-                    runPythonFormData.forEach(function(data) {
-                        if (data.name !== "csrf-token") {
-                            let inputName = "execute_request_payload"
-                            if (data.name !== "payload")
-                                inputName = `execute_request_meta_${data.name.replace('meta_', '')}`
-                            const inputElement = $('<input>', {
-                                type: 'hidden',
-                                name: inputName,
-                                value: data.value
-                            });
-                            $("#new-periodic-task-form").append(inputElement);
-                        }
+        if ($runPythonForm.length) {
+            const runPythonFormData = $runPythonForm.serializeArray();
+            runPythonFormData.forEach(function (data) {
+                if (data.name !== "csrf-token") {
+                    let inputName = "execute_request_payload"
+                    if (data.name !== "payload")
+                        inputName = `execute_request_meta_${data.name.replace('meta_', '')}`
+                    const inputElement = $('<input>', {
+                        type: 'hidden',
+                        name: inputName,
+                        value: data.value
                     });
+                    $("#new-periodic-task-form").append(inputElement);
                 }
-                $('#new-periodic-task-form').submit();
             });
-            return false;
         }
+        $('#new-periodic-task-form').submit();
         return true;
     });
 });
