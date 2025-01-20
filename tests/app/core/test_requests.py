@@ -39,12 +39,15 @@ async def test_context_manager_open_close(remote_api, base_url):
     with aioresponses() as m:
         m.get(base_url, status=200, payload={})
 
-        async with remote_api as api:
-            assert isinstance(api.session, ClientSession)
-            response = await api.session.get(base_url)
+        assert remote_api.session is None
+
+        async with remote_api:
+            assert remote_api.session is not None
+            assert isinstance(remote_api.session, ClientSession)
+            response = await remote_api.session.get(base_url)
             assert response.status == HTTPStatus.OK
 
-        assert api.session.closed
+        assert remote_api.session is None
 
 
 @pytest.mark.asyncio

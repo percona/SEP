@@ -45,18 +45,18 @@
         {% endif %}
     {% else %}
         {% set modal_required = True %}
-        {% if running_tasks  %}
-        <section id="running-tasks">
-            <h2>Running</h2>
-            {% include "tasks/partials/running-tasks.html" %}
-        </section>
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html" %}
+            </section>
         {% endif %}
 
         <section id="saved-tasks">
             <h2>Saved</h2>
             {% include "archiver/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
-            {% include "archiver/partials/scheduled-tasks.html" %}
+            {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create an archiving process</h3>
             {% include "archiver/partials/create-form.html" %}
         </section>

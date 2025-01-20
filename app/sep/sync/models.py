@@ -493,9 +493,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.NODE,
             created_node,
         ):
-            CreatedNode.model_validate(
-                await self.inventory_api.delete(f"/{created_node.id}"),
-            )
+            await self.inventory_api.delete(f"/{created_node.id}")
 
     async def delete_service(self, created_service: CreatedService) -> None:
         """Delete a service from the inventory system.
@@ -511,9 +509,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.SERVICE,
             created_service,
         ):
-            CreatedService.model_validate(
-                await self.inventory_api.delete(f"/services/{created_service.id}"),
-            )
+            await self.inventory_api.delete(f"/services/{created_service.id}")
 
     async def delete_schema(self, created_schema: CreatedSchema) -> None:
         """Delete a schema from the inventory system.
@@ -532,9 +528,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.SCHEMA,
             created_schema,
         ):
-            CreatedSchema.model_validate(
-                await self.inventory_api.delete(f"/schemas/{created_schema.id}"),
-            )
+            await self.inventory_api.delete(f"/schemas/{created_schema.id}")
 
     async def delete_table(self, created_table: CreatedTable) -> None:
         """Delete a table from the inventory system.
@@ -553,9 +547,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.TABLE,
             created_table,
         ):
-            CreatedTable.model_validate(
-                await self.inventory_api.delete(f"/tables/{created_table.id}"),
-            )
+            await self.inventory_api.delete(f"/tables/{created_table.id}")
 
     async def sync_inventory(self) -> None:
         """Synchronize the entire inventory.
