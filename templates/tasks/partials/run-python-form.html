@@ -1,4 +1,5 @@
 <form method="post" action="" id="{{ task.name }}-send" class="send-form"
+    data-confirm-message='Are you sure you want to execute task "{{ task.name }}" now?'
     style="padding: 20px; flex-direction: column; align-items: start;">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     {% if task_data.get("ParameterizedJob") %}
@@ -54,10 +55,10 @@
             aria-expanded="false">schedule
         </button>
         <input type="datetime-local" class="eta-input" disabled>
-        <input type="hidden" name="eta" class="eta-value" disabled>
-        <button type="submit" class="icons send-button">send</button>
+        <button type="submit" class="icons send-button submitButton">send</button>
         {% if not task.protected %}
-        <button class="icons delete-button delete-tasks-button">delete forever</button>
+        <button class="icons delete-button submitButton delete-tasks-button" form="delete-form">delete forever</button>
         {% endif %}
+        <input type="hidden" name="eta" class="eta-value" disabled>
     </div>
 </form>

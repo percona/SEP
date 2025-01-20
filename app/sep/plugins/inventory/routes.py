@@ -12,6 +12,7 @@ from app.sep.deps import (
     CreatedNodeDep,
     CreatedSchemaDep,
     CreatedServiceDep,
+    CreatedTableDep,
     DefaultContext,
     InventoryAPI,
     IsAuthenticated,
@@ -188,14 +189,13 @@ async def service_create_for_node(
     "/services/{service_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def service_delete(
-    service_id: int,
     inventory_api: InventoryAPI,
+    service: CreatedServiceDep,
 ) -> RedirectResponse:
     """Delete Service."""
-    response = await inventory_api.delete(f"/services/{service_id}")
-    node_id = response["node_id"]
+    await inventory_api.delete(f"/services/{service.id}")
     return RedirectResponse(
-        f"/inventory/{node_id}",
+        f"/inventory/{service.node_id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -266,14 +266,13 @@ async def schema_create_for_service(
     "/schemas/{schema_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def schema_delete(
-    schema_id: int,
     inventory_api: InventoryAPI,
+    schema: CreatedSchemaDep,
 ) -> RedirectResponse:
     """Delete Schema."""
-    response = await inventory_api.delete(f"/schemas/{schema_id}")
-    service_id = response["service_id"]
+    await inventory_api.delete(f"/schemas/{schema.id}")
     return RedirectResponse(
-        f"/inventory/services/{service_id}",
+        f"/inventory/services/{schema.service_id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -301,13 +300,12 @@ async def table_create_for_schema(
     "/tables/{table_id}/delete", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def table_delete(
-    table_id: int,
     inventory_api: InventoryAPI,
+    table: CreatedTableDep,
 ) -> RedirectResponse:
     """Delete Table."""
-    response = await inventory_api.delete(f"/tables/{table_id}")
-    schema_id = response["schema_id"]
+    await inventory_api.delete(f"/tables/{table.id}")
     return RedirectResponse(
-        f"/inventory/schemas/{schema_id}",
+        f"/inventory/schemas/{table.schema_id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )

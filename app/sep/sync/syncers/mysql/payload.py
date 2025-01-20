@@ -30,28 +30,32 @@ def get_table(cursor: DictCursor, db_name: str, table_name: str) -> dict:
              - "keys" (dict): A dictionary describing the keys.
     :rtype: dict
     """
-    cursor.execute("SHOW CREATE TABLE %s.%s", (db_name, table_name))
+    query = f"SHOW CREATE TABLE `{db_name.replace('`', '``')}`.`{table_name.replace('`', '``')}`"
+    cursor.execute(query)
     create_table_result = cursor.fetchone()
     create_statement = create_table_result["Create Table"]
 
-    cursor.execute("SHOW KEYS FROM %s.%s", (db_name, table_name))
+    cursor.execute(
+        "SELECT `INDEX_NAME`, `COLUMN_NAME`, `NON_UNIQUE`, `NULLABLE` FROM "
+        "`INFORMATION_SCHEMA`.`STATISTICS` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = %s",
+        (db_name, table_name),
+    )
     keys = cursor.fetchall()
 
     keys_dict = {}
 
     for row in keys:
-        key_name = row["Key_name"]
-        column_name = row["Column_name"]
+        key_name = row["INDEX_NAME"]
 
         if key_name not in keys_dict:
             keys_dict[key_name] = {
                 "type": "PRIMARY" if key_name == "PRIMARY" else "INDEX",
                 "columns": [],
-                "nullable": row.get("Null", "NO").upper() == "YES",
-                "unique": not bool(int(row.get("Non_unique", 0)))
+                "unique": not bool(int(row.get("NON_UNIQUE", 0))),
+                "nullable": row.get("NULLABLE", "NO").upper() == "YES",
             }
 
-        keys_dict[key_name]["columns"].append(column_name)
+        keys_dict[key_name]["columns"].append(row["COLUMN_NAME"])
 
     return {"name": table_name, "create": create_statement, "keys": keys_dict}
 
@@ -71,16 +75,17 @@ def get_schema(cursor: DictCursor, db_name: str) -> dict[str, str]:
     """
     schema = {"name": db_name, "tables": []}
     cursor.execute(
-        "SHOW FULL TABLES FROM %s WHERE Table_Type = 'BASE TABLE'", (db_name)
+        "SELECT `TABLE_NAME` FROM `INFORMATION_SCHEMA`.`TABLES` WHERE "
+        "`TABLE_SCHEMA` = %s AND `TABLE_TYPE` = 'BASE TABLE'",
+        (db_name),
     )
     tables = cursor.fetchall()
     for table in tables:
-        table_name = next(iter(table.values()))
         schema["tables"].append(
             get_table(
                 cursor,
                 db_name,
-                table_name,
+                table["TABLE_NAME"],
             ),
         )
     return schema
@@ -103,7 +108,7 @@ def get_all_schemas(
     :rtype: list[dict[str, any]]
     """
     schemas = []
-    cursor.execute("SHOW DATABASES;")
+    cursor.execute("SHOW DATABASES")
     databases = cursor.fetchall()
     for db in databases:
         db_name = db["Database"]

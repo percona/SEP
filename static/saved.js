@@ -14,7 +14,9 @@ $(document).ready(function () {
             $etaInput.attr('disabled', true);
             $etaInput.attr('required', false);
             $sendForm.removeClass('expanded');
+            $sendForm.attr('data-confirm-message', `Are you sure you want to execute task "${taskName}" now?`);
             $sendButton.attr('title', 'Execute');
+
 
             $infoDeleteContainer.show();
         } else {
@@ -24,6 +26,7 @@ $(document).ready(function () {
             $sendForm.addClass('expanded');
             $etaInput.attr('disabled', false);
             $etaInput.attr('required', true);
+            $sendForm.attr('data-confirm-message', `Are you sure you want to schedule task "${taskName}"?`);
             $sendButton.attr('title', 'Schedule');
 
             $infoDeleteContainer.hide();
@@ -34,13 +37,11 @@ $(document).ready(function () {
         }
     });
 
-    $('.send-form').submit(function() {
-        console.log("SUBMIT");
-        const $sendForm = $(this);
-        const $etaInput = $sendForm.find('.eta-input');
+    $('.eta-input').change(function () {
+        const $sendForm = $(this).parent().parent();
+        const $etaInput = $(this);
         const etaValue = $etaInput.val();
-        console.log(etaValue);
-        const $scheduleButton = $sendForm.parent().find('.schedule-button');
+        const $scheduleButton = $sendForm.find('.schedule-button');
         const $etaInputValue = $sendForm.find('.eta-value');
         if ($scheduleButton.hasClass('toggled-on') && etaValue) {
             $etaInputValue.attr('disabled', false);

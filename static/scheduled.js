@@ -18,7 +18,14 @@ $(document).ready(function () {
         }
     });
 
-    $('.new-periodic-task-enable-checkbox').change(function(e) {
+    $('#scheduled-tasks-table .delete-form').each(function () {
+        const taskName = $(this).closest('tr').find('td:first').text().trim();
+        const periodCell = $(this).closest('tr').find('.period-cell');
+        const periodDescription = periodCell.attr('title') || periodCell.text().trim();
+        $(this).attr('data-confirm-message', `Are you sure you want to delete the periodic task for "${taskName}" (${periodDescription})?`);
+    });
+
+    $('.new-periodic-task-enable-checkbox').change(function (e) {
         const checkbox = $(this);
         const enabled = checkbox.is(':checked');
         checkbox.parent('label.switch').siblings('input[name="enabled"]').val(enabled ? 'true' : 'false');
@@ -57,49 +64,49 @@ $(document).ready(function () {
     });
 
     // Update cron description on input
-        $('input[name="cron_expression"]').on('input', function() {
-            const cronExpression = $(this).val();
-            const $cronDescription = $('.cron-description');
-            if (cronExpression) {
-                try {
-                    const humanized = cronstrue.toString(cronExpression);
-                    $cronDescription.text(humanized);
-                    $(this).removeClass('invalid');
-                } catch (e) {
-                    $cronDescription.text('Invalid cron expression');
-                    $(this).addClass('invalid');
-                }
-            } else {
-                $cronDescription.text('');
+    $('input[name="cron_expression"]').on('input', function () {
+        const cronExpression = $(this).val();
+        const $cronDescription = $('.cron-description');
+        if (cronExpression) {
+            try {
+                const humanized = cronstrue.toString(cronExpression);
+                $cronDescription.text(humanized);
+                $(this).removeClass('invalid');
+            } catch (e) {
+                $cronDescription.text('Invalid cron expression');
+                $(this).addClass('invalid');
             }
-        });
+        } else {
+            $cronDescription.text('');
+        }
+    });
 
-        // Handle discard button
-        $('.discard-button').click(function() {
-            $('#add-periodic-task-button-container').show();
-            $('#new-periodic-task-form').trigger('reset');
-            $('.cron-description').text('');
-            $('.interval-inputs').removeClass('hidden');
-            $('.cron-inputs').addClass('hidden');
-            $('#scheduled-tasks-table').removeClass('create-mode');
-        });
+    // Handle discard button
+    $('.discard-button').click(function () {
+        $('#add-periodic-task-button-container').show();
+        $('#new-periodic-task-form').trigger('reset');
+        $('.cron-description').text('');
+        $('.interval-inputs').removeClass('hidden');
+        $('.cron-inputs').addClass('hidden');
+        $('#scheduled-tasks-table').removeClass('create-mode');
+    });
 
     // Handle switching between interval and cron modes
-        $('.change-period-mode').click(function() {
-            const intervalDiv = $('.interval-inputs');
-            const cronDiv = $('.cron-inputs');
-            intervalDiv.toggleClass('hidden');
-            cronDiv.toggleClass('hidden');
-            const cronIsActive = intervalDiv.hasClass('hidden')
-            intervalDiv.children().attr('required', !cronIsActive);
-            intervalDiv.children().attr('disabled', cronIsActive);
-            cronDiv.find('div').first().children().attr('required', cronIsActive);
-            cronDiv.find('div').first().children().attr('disabled', !cronIsActive);
-            $(this).text(cronIsActive ? 'change to interval mode' : 'change to cron mode');
-        });
+    $('.change-period-mode').click(function () {
+        const intervalDiv = $('.interval-inputs');
+        const cronDiv = $('.cron-inputs');
+        intervalDiv.toggleClass('hidden');
+        cronDiv.toggleClass('hidden');
+        const cronIsActive = intervalDiv.hasClass('hidden')
+        intervalDiv.children().attr('required', !cronIsActive);
+        intervalDiv.children().attr('disabled', cronIsActive);
+        cronDiv.find('div').first().children().attr('required', cronIsActive);
+        cronDiv.find('div').first().children().attr('disabled', !cronIsActive);
+        $(this).text(cronIsActive ? 'change to interval mode' : 'change to cron mode');
+    });
 
     // Show the form row when "+" button is clicked
-    $('#add-periodic-task-button').click(function() {
+    $('#add-periodic-task-button').click(function () {
         $('#add-periodic-task-button-container').hide();
         $('#scheduled-tasks-table').addClass('create-mode');
 
@@ -120,8 +127,12 @@ $(document).ready(function () {
     });
 
     // Handle validation before form submission
-    $('#new-periodic-task-form').submit(function(e) {
+    $('#save-button').click(function (e) {
+        e.preventDefault()
         const $cronDiv = $('.cron-inputs');
+        const $periodDiv = $('.interval-inputs')
+        const $runPythonForm = $("#run-python-send")
+
         if (!$cronDiv.hasClass('hidden')) {
             const cronExpression = $('input[name="cron_expression"]').val();
             if (cronExpression) {
@@ -139,7 +150,15 @@ $(document).ready(function () {
                 return false;
             }
         }
-        $('.new-periodic-task-row input[type="datetime-local"]').each(function() {
+        if (!$periodDiv.hasClass('hidden')) {
+            const $intervalEveryInput = $('input[name="interval_every"]')
+            if ($intervalEveryInput.val() === '') {
+                alert('Please provide an interval every value.');
+                $intervalEveryInput.addClass('invalid');
+                return false;
+            }
+        }
+        $('.new-periodic-task-row input[type="datetime-local"]').each(function () {
             const $dateInput = $(this);
             const dateValue = $dateInput.val();
             if (dateValue) {
@@ -147,15 +166,15 @@ $(document).ready(function () {
                 const awareDate = new Date($dateInput.val());
                 $dateInputValue.val(awareDate.toISOString());
             }
-
         });
-        const $runPythonForm = $("#run-python-send")
-        if($runPythonForm) {
-            if(!$runPythonForm.get(0).reportValidity()){
+        if ($runPythonForm.length) {
+            if (!$runPythonForm.get(0).reportValidity()) {
                 return false;
             }
-            const runPythonFormData =$runPythonForm.serializeArray();
-            runPythonFormData.forEach(function(data) {
+        }
+        if ($runPythonForm.length) {
+            const runPythonFormData = $runPythonForm.serializeArray();
+            runPythonFormData.forEach(function (data) {
                 if (data.name !== "csrf-token") {
                     let inputName = "execute_request_payload"
                     if (data.name !== "payload")
@@ -169,6 +188,7 @@ $(document).ready(function () {
                 }
             });
         }
+        $('#new-periodic-task-form').submit();
         return true;
     });
 });

@@ -3,33 +3,33 @@
 {% block title %}Node {{ node.name }}{% endblock %}
 
 {% block inventory_entity_details %}
-{% with inventory_table_title = "Node Details", inventory_sync_route = "/inventory/" ~  node.id ~ "/sync/" %}
-    {% include "inventory/partials/sync-button.html" %}
-{% endwith %}
-<dl>
-    <dt>ID</dt>
-    <dd>{{ node.id }}</dd>
-    <dt>Name</dt>
-    <dd>{{ node.name }}</dd>
-    <dt>Address</dt>
-    <dd>{{ node.address }}</dd>
-    <dt>Type</dt>
-    <dd>{{ node.type }}</dd>
-    {% if node.source %}
-    <dt>Source</dt>
-    <dd>{{ node.source }}</dd>
-        {% if node.external_id %}
-    <dt>External ID</dt>
-    <dd>{{ node.external_id }}</dd>
+    {% with inventory_table_title = "Node Details", inventory_sync_route = "/inventory/" ~  node.id ~ "/sync/" %}
+        {% include "inventory/partials/sync-button.html" %}
+    {% endwith %}
+    <dl>
+        <dt>ID</dt>
+        <dd>{{ node.id }}</dd>
+        <dt>Name</dt>
+        <dd>{{ node.name }}</dd>
+        <dt>Address</dt>
+        <dd>{{ node.address }}</dd>
+        <dt>Type</dt>
+        <dd>{{ node.type }}</dd>
+        {% if node.source %}
+            <dt>Source</dt>
+            <dd>{{ node.source }}</dd>
+            {% if node.external_id %}
+                <dt>External ID</dt>
+                <dd>{{ node.external_id }}</dd>
+            {% endif %}
         {% endif %}
-    {% endif %}
-</dl>
+    </dl>
 {% endblock %}
 
 {% block inventory_table %}
-<h3>Services on this Node</h3>
-<table>
-    <thead>
+    <h3>Services on this Node</h3>
+    <table>
+        <thead>
         <tr>
             <th>ID</th>
             <th>Name</th>
@@ -37,27 +37,33 @@
             <th>Port</th>
             <th>Actions</th>
         </tr>
-    </thead>
-    <tbody>
+        </thead>
+        <tbody>
         {% for service in node.services %}
-        <tr>
-            <td>{{ service.id }}</td>
-            <td><a href="services/{{ service.id }}">{{ service.name }}</a></td>
-            <td>{{ service.type }}</td>
-            <td>{{ service.port }}</td>
-            <td>
-                <form action="/inventory/services/{{ service.id }}/delete" method="post" style="display:inline;">
-                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
-                    <button name="location" class="icons" style="width: 2em">delete forever</button>
-                </form>
-            </td>
-        </tr>
+            <tr>
+                <td>{{ service.id }}</td>
+                <td><a href="services/{{ service.id }}">{{ service.name }}</a></td>
+                <td>{{ service.type }}</td>
+                <td>{{ service.port }}</td>
+                <td>
+                    <form action="/inventory/services/{{ service.id }}/delete"
+                          method="post" style="display:inline;"
+                          class="confirmable-form"
+                          data-confirm-message="Are you sure you want to delete service #{{ service.id }}?">
+                        <input type="hidden" name="csrf-token"
+                               value="{{ csrf_token }}"/>
+                        <button name="location" class="icons submitButton"
+                                style="width: 2em">delete forever
+                        </button>
+                    </form>
+                </td>
+            </tr>
         {% endfor %}
-    </tbody>
-</table>
+        </tbody>
+    </table>
 {% endblock %}
 
 {% block inventory_create %}
-<h3>Add a New Service</h3>
-{% include "inventory/partials/service-create-form.html" %}
+    <h3>Add a New Service</h3>
+    {% include "inventory/partials/service-create-form.html" %}
 {% endblock %}

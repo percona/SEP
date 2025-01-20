@@ -16,6 +16,7 @@
             border-radius: 4px;
         }
     </style>
+    <link rel="stylesheet" href="/static/tasks.css">
     {% if history or running_tasks %}
         <link rel="stylesheet" href="/static/logs.css">
     {% endif %}
@@ -40,7 +41,6 @@
         $(document).ready(function () {
             $('.delete-tasks-button').click(function (e) {
                 e.preventDefault();
-                $('.delete-form').submit();
             });
         });
     </script>
@@ -85,8 +85,9 @@
     {% endif %}
 
     {% if not task.protected %}
-        <form class="delete-form" method="post"
-              action="/tasks/{{ task['name'] }}/delete">
+        <form class="delete-form" id="delete-form"
+            data-confirm-message='Are you sure you want to delete task "{{ task_name }}"?'
+            method="post" action="/tasks/{{ task['name'] }}/delete">
             <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         </form>
     {% endif %}
