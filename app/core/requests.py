@@ -44,7 +44,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     ssl_keyfile: RelativeFilePath | None = None
     ssl_certfile: RelativeFilePath | None = None
     logger_name: str = __name__
-    _session: ClientSession
+    _session: ClientSession | None = None
 
     async def __aenter__(self) -> Self:
         """Enter the asynchronous context manager.
@@ -81,6 +81,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """
         self.logger.debug("Closing ClientSession for %s", self.base_url)
         await self._session.close()
+        self._session = None
 
     @cached_property
     def logger(self) -> logging.Logger:
