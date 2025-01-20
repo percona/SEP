@@ -92,7 +92,10 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
 
     @classmethod
     async def list_by_task_names(
-        cls, session: AsyncSession, *task_names: str
+        cls,
+        session: AsyncSession,
+        *task_names: str,
+        **equal_filters: Any,
     ) -> list[PeriodicTask]:
         """List periodic tasks by the tasks names.
 
@@ -100,11 +103,13 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
         :type session: AsyncSession
         :param task_names: The names of the tasks to list periodic tasks for.
         :type task_names: str
+        :param equal_filters: Additional filters as column=value pairs; ignored if value is None.
+        :type equal_filters: Any
         :return: A list of periodic tasks for the specified task.
         :rtype: list[PeriodicTask]
         """
         return await super().list(
-            session, cls.build_where_clause_by_task_names(*task_names)
+            session, cls.build_where_clause_by_task_names(*task_names), **equal_filters
         )
 
     @classmethod

@@ -68,11 +68,14 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     :vartype ALTERS: str
     :cvar ARCHIVER: Value for data archiver tasks.
     :vartype ARCHIVER: str
+    :cvar BACKUPS: Value for backup tasks.
+    :vartype BACKUPS: str
     """
 
     ANY = "*"
     ALTERS = auto()
     ARCHIVER = auto()
+    BACKUPS = auto()
 
 
 class TaskExecutionRequest(BaseModel):

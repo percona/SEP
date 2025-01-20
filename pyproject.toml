@@ -54,7 +54,7 @@ uvicorn = {extras = ["standard"], version = "^0.32.0"}
 cryptography = "^43.0.1"
 pyjwt = "^2.10.1"
 yarl = "^1.9.2"
-jinja2 = "^3.1.4"
+jinja2 = "^3.1.5"
 pydantic-settings = "^2.4.0"
 email-validator = "^2.2.0"
 greenlet = "^3.0.3"
@@ -146,6 +146,7 @@ extend-exclude = [
     "app/*/migrations/*",
     "payload.py",
     "payload",
+    "*_payload",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"

@@ -12,6 +12,7 @@
       {% endblock %}
       <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
       <!--<link rel="stylesheet" href="/static/themes/materialize/css/base.css" media="screen,projection" />-->
+      <link rel="stylesheet" href="/static/themes/materialize/css/custom.css" media="screen,projection" />
       {% block style %}
       {% endblock %}
       <style>
@@ -46,8 +47,21 @@
               background-color: white;
               color: #303642;
               font: 100% "Poppins", sans-serif;
-              padding: 1em;
+              /*padding: 1em;*/
               text-align: left;
+              border-radius: unset;
+              padding: 5px;
+          }
+
+          body > header:nth-child(1){
+              border-radius: unset;
+          }
+
+          body > footer:nth-child(4){
+              border-radius: unset;
+          }
+          #sep {
+              border-radius: unset;
           }
 
           h1, h2, h3, h4, h5, h6 {
@@ -117,10 +131,6 @@
                   grid-template-areas: "head head" "nav  main" "nav  foot";
                   grid-template-rows: 10em 1fr 5em;
                   grid-template-columns: 15em 1fr;
-              }
-
-              body {
-                  border-radius: 4.5em;
               }
 
               body > header {
@@ -196,7 +206,7 @@
                   vertical-align: middle;
               }
 
-              .archive a:before, .tasks a:before, .alters a:before, .inventory a:before, .casdoor a:before, .signout a:before {
+              .archive a:before, .tasks a:before, .alters a:before, .backups a:before, .inventory a:before, .casdoor a:before, .signout a:before {
                   font-family: "Material Icons";
                   padding-right: .5em;
                   vertical-align: middle;
@@ -204,6 +214,10 @@
 
               .alters a:before {
                   content: "adjust"
+              }
+
+              .backups a:before {
+                  content: "backup"
               }
 
               .inventory a:before {

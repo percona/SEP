@@ -121,12 +121,11 @@ NOMAD_RUN_PYTHON = {
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
-                        "command": "${NOMAD_ALLOC_DIR}/venv/bin/python3",
+                        "command": "sh",
                         "args": [
-                            "-u",
-                            "${NOMAD_TASK_DIR}/script.py",
-                            "--config",
-                            "script_config",
+                            "-c",
+                            "gzip -d ${NOMAD_TASK_DIR}/script.py.gz;"
+                            "${NOMAD_ALLOC_DIR}/venv/bin/python3 -u ${NOMAD_TASK_DIR}/script.py --config script_config",
                         ],
                     },
                     "Meta": {},
@@ -137,7 +136,7 @@ NOMAD_RUN_PYTHON = {
                             "DestPath": "script_config",
                         },
                     ],
-                    "DispatchPayload": {"file": "script.py"},
+                    "DispatchPayload": {"file": "script.py.gz"},
                 },
                 {
                     "Name": "clean-up",

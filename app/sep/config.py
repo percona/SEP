@@ -1,6 +1,5 @@
 """Define SEP settings."""
 
-from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
@@ -260,8 +259,8 @@ class SEPSettings(BaseYamlExtraSettings):
         """
         syncers = UniqueList()
         for syncer in self.SYNCERS:
-            syncer_data = deepcopy(self.SYNCER_EXTRA_KWARGS)
-            deep_dict_update(syncer_data, syncer.model_dump())
+            syncer_data = syncer.model_dump()
+            deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
             syncers.append(SyncOptions.model_validate(syncer_data))
         self.SYNCERS = syncers
         return self
