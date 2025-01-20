@@ -37,6 +37,10 @@
         background: none !important;
     }
 
+    .hidden {
+        display: none;
+    }
+
 </style>
 {% extends "inventory/base-inventory.html" %}
 
@@ -76,7 +80,9 @@
                 <td class="create_statement">
                     <div class="ellipse"
                          id="create-{{ table.id }}">{{ table.create }}</div>
-                    <button class="toggle-btn ellipse-btn"
+                    <button
+                            class="toggle-btn ellipse-btn hidden"
+                            id="create-btn-{{ table.id }}"
                             onclick="toggleContent('create-{{ table.id }}', this)">
                         >>More
                     </button>
@@ -85,7 +91,9 @@
                     {% if table.keys %}
                         <div class="ellipse"
                              id="keys-{{ table.id }}">{{ table.keys }}</div>
-                        <button class="toggle-btn ellipse-btn"
+                        <button
+                                class="toggle-btn ellipse-btn hidden"
+                                id="keys-btn-{{ table.id }}"
                                 onclick="toggleContent('keys-{{ table.id }}', this)">
                             >>More
                         </button>
@@ -108,12 +116,39 @@
     </table>
 
     <script>
+        function isOverflowing(element) {
+            return element.scrollHeight > element.offsetHeight;
+        }
+
+        function initializeToggleButtons() {
+            const ellipsedElements = document.querySelectorAll('.ellipse');
+
+            ellipsedElements.forEach(element => {
+                const buttonId = element.id.replace('create-', 'create-btn-').replace('keys-', 'keys-btn-');
+                const button = document.getElementById(buttonId);
+
+                if (!button) {
+                    console.error(`Button with ID '${buttonId}' not found.`);
+                    return;
+                }
+
+                if (isOverflowing(element)) {
+                    button.classList.remove('hidden');
+                } else {
+                    button.classList.add('hidden');
+                    element.classList.add('ellipse');
+                }
+            });
+        }
+
         function toggleContent(id, button) {
             const element = document.getElementById(id);
+
             if (!element) {
                 console.error(`Element with ID '${id}' not found.`);
                 return;
             }
+
             if (element.classList.contains('ellipse')) {
                 element.classList.remove('ellipse');
                 button.textContent = '<<Less';
@@ -122,6 +157,12 @@
                 button.textContent = '>>More';
             }
         }
+
+        document.addEventListener('DOMContentLoaded', initializeToggleButtons);
+
+        window.addEventListener('resize', () => {
+            initializeToggleButtons();
+        });
     </script>
 {% endblock %}
 
