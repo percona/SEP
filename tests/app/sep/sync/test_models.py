@@ -21,7 +21,8 @@ from app.sep.models import (
     SyncItem,
     SyncItemWrite,
 )
-from app.sep.sync.models import BaseSyncer
+from app.sep.sync.models import BaseSyncer, BaseTaskSyncer
+from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
@@ -34,6 +35,12 @@ from tests.app.factories import (
 @pytest.fixture
 def mock_inventory_api() -> AsyncMock:
     """Mock the InventoryAPI dependency."""
+    return AsyncMock(spec=RemoteAPI)
+
+
+@pytest.fixture
+def mock_task_api() -> AsyncMock:
+    """Mock the TaskAPI dependency."""
     return AsyncMock(spec=RemoteAPI)
 
 
@@ -292,3 +299,247 @@ async def test_delete_node(
     mock_inventory_api.delete.reset_mock()
     await syncer.delete_table(created_table)
     mock_inventory_api.delete.assert_awaited_once_with(f"/tables/{created_table.id}")
+
+
+@pytest.mark.asyncio
+async def test_sync_iventory(mock_inventory_api, mocker):
+    """Test synchronizating the entire inventory."""
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {
+        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
+    }
+
+    class TestSyncer(BaseSyncer):
+        _session = (AsyncMock(spec=AsyncSession),)
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
+
+    syncer = TestSyncer(
+        inventory_api=mock_inventory_api,
+        sync_instance=None,
+        sync_items=mock_sync_items,
+    )
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_sync_item
+    mock_context_manager.__aexit__.return_value = None
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.manage_sync_item",
+        return_value=mock_context_manager,
+    )
+    mock_perform_inventory_sync = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.perform_inventory_sync",
+        new_callable=AsyncMock,
+    )
+    await syncer.sync_inventory()
+    mock_perform_inventory_sync.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_node(created_node, mock_inventory_api, mocker):
+    """Test synchronizing data for a specific node."""
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {
+        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
+    }
+
+    class TestSyncer(BaseSyncer):
+        _session = (AsyncMock(spec=AsyncSession),)
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
+
+    syncer = TestSyncer(
+        inventory_api=mock_inventory_api,
+        sync_instance=None,
+        sync_items=mock_sync_items,
+    )
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_sync_item
+    mock_context_manager.__aexit__.return_value = None
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.manage_sync_item",
+        return_value=mock_context_manager,
+    )
+    mock_perform_node_sync = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.perform_node_sync",
+        new_callable=AsyncMock,
+    )
+    mock_fetch_node = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.fetch_node",
+        new_callable=AsyncMock,
+    )
+    await syncer.sync_node(created_node, None)
+    mock_perform_node_sync.assert_called_once()
+    mock_fetch_node.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_service(created_service, mock_inventory_api, mocker):
+    """Test synchronizing data for a specific service."""
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {
+        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
+    }
+
+    class TestSyncer(BaseSyncer):
+        _session = (AsyncMock(spec=AsyncSession),)
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SERVICE
+
+    syncer = TestSyncer(
+        inventory_api=mock_inventory_api,
+        sync_instance=None,
+        sync_items=mock_sync_items,
+    )
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_sync_item
+    mock_context_manager.__aexit__.return_value = None
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.manage_sync_item",
+        return_value=mock_context_manager,
+    )
+    mock_perform_service_sync = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.perform_service_sync",
+        new_callable=AsyncMock,
+    )
+    mock_fetch_service = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.fetch_service",
+        new_callable=AsyncMock,
+    )
+    await syncer.sync_service(created_service, None)
+    mock_perform_service_sync.assert_called_once()
+    mock_fetch_service.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_schema(created_schema, mock_inventory_api, mocker):
+    """Test synchronizing data for a specific schema."""
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {
+        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
+    }
+
+    class TestSyncer(BaseSyncer):
+        _session = (AsyncMock(spec=AsyncSession),)
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SCHEMA
+
+    syncer = TestSyncer(
+        inventory_api=mock_inventory_api,
+        sync_instance=None,
+        sync_items=mock_sync_items,
+    )
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_sync_item
+    mock_context_manager.__aexit__.return_value = None
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.manage_sync_item",
+        return_value=mock_context_manager,
+    )
+    mock_perform_schema_sync = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.perform_schema_sync",
+        new_callable=AsyncMock,
+    )
+    mock_fetch_schema = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.fetch_schema",
+        new_callable=AsyncMock,
+    )
+    await syncer.sync_schema(created_schema, None)
+    mock_perform_schema_sync.assert_called_once()
+    mock_fetch_schema.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_table(created_table, mock_inventory_api, mocker):
+    """Test synchronizing data for a specific table."""
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {
+        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
+    }
+
+    class TestSyncer(BaseSyncer):
+        _session = (AsyncMock(spec=AsyncSession),)
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.TABLE
+
+    syncer = TestSyncer(
+        inventory_api=mock_inventory_api,
+        sync_instance=None,
+        sync_items=mock_sync_items,
+    )
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_sync_item
+    mock_context_manager.__aexit__.return_value = None
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.manage_sync_item",
+        return_value=mock_context_manager,
+    )
+    mock_perform_table_sync = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.perform_table_sync",
+        new_callable=AsyncMock,
+    )
+    mock_fetch_table = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.fetch_table",
+        new_callable=AsyncMock,
+    )
+    await syncer.sync_table(created_table, None)
+    mock_perform_table_sync.assert_called_once()
+    mock_fetch_table.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_table(created_table, mock_inventory_api, mocker):
+    """Test updating a table in the inventory system."""
+    updated_table = created_table
+    syncer = BaseSyncer(
+        inventory_api=mock_inventory_api, sync_instance=None, _session=AsyncMock()
+    )
+    mock_inventory_api.put.side_effect = [updated_table.model_dump()]
+    await syncer.update_table(created_table, updated_table)
+    mock_inventory_api.put.assert_awaited_once_with(
+        f"/tables/{created_table.id}", json=updated_table.model_dump()
+    )
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_output(mock_inventory_api, mock_task_api, mocker):
+    """Test waiting for a task to complete and retrieve its output."""
+    step_name = "mock_step_name"
+    expected_call_count = 2
+    mock_task_api.post.side_effect = [
+        {
+            "id": "12345",
+            "status": TaskHistoryStatusEnum.PENDING,
+        }
+    ]
+
+    mock_task_api.get.side_effect = [
+        {"id": "12345", "status": TaskHistoryStatusEnum.RUNNING},
+        {
+            "id": "12345",
+            "status": TaskHistoryStatusEnum.SUCCESS,
+            "execution_request": {
+                "tracking": {
+                    "task_logs": {
+                        step_name: {
+                            "stdout": "Task completed successfully.",
+                            "stderr": "",
+                        }
+                    }
+                }
+            },
+        },
+    ]
+
+    class TestTaskSyncer(BaseTaskSyncer):
+        _session = (AsyncMock(spec=AsyncSession),)
+
+    task_syncer = TestTaskSyncer(
+        inventory_api=mock_inventory_api,
+        tasks_api=mock_task_api,
+        sync_instance=None,
+    )
+
+    await task_syncer.wait_for_task_output(task_name="syncing", stdout_step=step_name)
+
+    mock_task_api.post.assert_awaited_once()
+    assert mock_task_api.get.await_count == expected_call_count
