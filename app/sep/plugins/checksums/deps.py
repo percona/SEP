@@ -15,27 +15,27 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.alters.models import AltersCreate
+from app.sep.plugins.checksums.models import ChecksumsCreate
 from app.tasks.models import GeneratedTask, Task, TaskOwner
 
 logger = logging.getLogger(__name__)
 
 
-async def build_alters_task_payload(
-    form: Annotated[AltersCreate, Form()],
+async def build_checksums_task_payload(
+    form: Annotated[ChecksumsCreate, Form()],
     inventory_api: InventoryAPI,
 ) -> GeneratedTask:
-    """Build the alter task payload from form.
+    """Build the checksums task payload from form.
 
-    Build the payload for an Alters task to be executed, including the
-    necessary command arguments for performing schema changes.
+    Build the payload for an Checksums task to be executed, including the
+    necessary command arguments.
 
-    :param form: The form data for the Alters creation.
-    :type form: AltersCreate
+    :param form: The form data for the Checksums creation.
+    :type form: ChecksumsCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
     :return: A fully constructed `GeneratedTask` object containing all the necessary
-        commands and parameters for the Alters task execution.
+        commands and parameters for the Checksums task execution.
     :rtype: GeneratedTask
     """
     service = await get_created_entity(
@@ -66,7 +66,6 @@ async def build_alters_task_payload(
         form.recursion_method = f"dsn={form.dsn_table}"
 
     args = [
-        f"--alter={form.alter}",
         dsn,
         f"--recursion-method={form.recursion_method}",
     ]
@@ -74,13 +73,11 @@ async def build_alters_task_payload(
     # Mapping form fields to their respective arguments
     optional_args = {
         "pause_file": f"--pause-file={form.pause_file}",
-        "new_table_name": f"--new-table-name={form.new_table_name}",
-        "tries": f"--tries={form.tries}",
         "set_vars": f"--set-vars={form.set_vars}",
-        "critical_load": f"--critical-load={form.critical_load}",
         "max_load": f"--max-load={form.max_load}",
         "chunk_time": f"--chunk-time={form.chunk_time}",
         "max_lag": f"--max-lag={form.max_lag}",
+        "progress": f"--progress={form.progress}",
     }
 
     # Adding optional arguments if their values exist
@@ -88,26 +85,21 @@ async def build_alters_task_payload(
 
     # Adding flag arguments (no value needed, just presence)
     flag_args = {
-        "print_arg": "--print",
-        "no_swap_tables": "--no-swap-tables",
-        "no_drop_old_table": "--no-drop-old-table",
-        "no_drop_new_table": "--no-drop-new-table",
-        "no_drop_triggers": "--no-drop-triggers",
+        "binary_index": f"--binary_index",
+        "explain_arg": f"--explain_arg",
+        "fail_on_stopped_replication": f"--fail_on_stopped_replication",
+        "truncate_replicate_table": f"--truncate_replicate_table",
     }
 
     # Adding flag arguments if set to True
     args.extend(arg for key, arg in flag_args.items() if getattr(form, key))
 
-    # Adding '--progress' argument if 'print_arg' is set
-    if form.print_arg:
-        args.append(f"--progress={form.progress}")
-
     return GeneratedTask(
-        app=TaskOwner.ALTERS,
+        app=TaskOwner.CHECKSUMS,
         commands=[
             {
-                "args": [*args, "--execute"],
-                "command": "pt-online-schema-change",
+                "args": [*args],
+                "command": "pt-table-checksum",
                 "meta": {
                     "schema_name": schema.name,
                     "table_name": table.name,
@@ -119,18 +111,18 @@ async def build_alters_task_payload(
     )
 
 
-AltersGeneratedTask = Annotated[GeneratedTask, Depends(build_alters_task_payload)]
+ChecksumsGeneratedTask = Annotated[GeneratedTask, Depends(build_checksums_task_payload)]
 
 
-async def get_alters_task(
+async def get_checksums_task(
     task_name: str,
     tasks_api: TaskAPI,
 ) -> Task:
-    """Fetch and validate a task for the Alters plugin.
+    """Fetch and validate a task for the Checksums plugin.
 
     This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Alters plugin. If the task does not exist or is not
-    owned by Alters, it raises a 404 HTTP exception.
+    that it is owned by the Checksums plugin. If the task does not exist or is not
+    owned by Checksums, it raises a 404 HTTP exception.
 
     :param task_name: The name of the task to retrieve.
     :type task_name: str
@@ -138,16 +130,16 @@ async def get_alters_task(
     :type tasks_api: TaskAPI
     :return: The retrieved task.
     :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Alters.
+    :raises HTTPNotFoundException: If the task is not found or is not owned by Checksums.
     """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.ALTERS)
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.CHECKSUMS)
 
 
-AltersTask = Annotated[Task, Depends(get_alters_task)]
+ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
 
 
-def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant information from a task for the Alters plugin.
+def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
+    """Extract relevant information from a task for the Checksums plugin.
 
     Processes the task data to extract hostname and table information.
 
@@ -164,10 +156,10 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def get_alters_index_context(
+async def get_checksums_index_context(
     inventory_api: InventoryAPI, tasks_api: TaskAPI, context: DefaultContext
 ) -> dict[str, Any]:
-    """Assemble the context for the Alters plugin index view.
+    """Assemble the context for the Checksums plugin index view.
 
     Retrieves MySQL services and associated tasks, organizing them based on their
     execution status. Integrates this information into the default context for
@@ -177,11 +169,11 @@ async def get_alters_index_context(
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Alters-specific information.
+    :param context: The default context to be updated with Checksums-specific information.
     :type context: DefaultContext
-    :return: An updated context dictionary containing Alters-related data.
+    :return: An updated context dictionary containing Checksums-related data.
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        inventory_api, tasks_api, get_alters_task_info, context, TaskOwner.ALTERS
+        inventory_api, tasks_api, get_checksums_task_info, context, TaskOwner.CHECKSUMS
     )

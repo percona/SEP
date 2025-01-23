@@ -14,10 +14,10 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.plugins.alters.deps import (
-    AltersGeneratedTask,
-    AltersTask,
-    get_alters_index_context,
+from app.sep.plugins.checksums.deps import (
+    ChecksumsGeneratedTask,
+    ChecksumsTask,
+    get_checksums_index_context,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -27,15 +27,15 @@ templates = sep_settings.TEMPLATES
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def alters_index(
+async def checksums_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
+    context: Annotated[dict[str, Any], Depends(get_checksums_index_context)],
 ) -> HTMLResponse:
-    """Homepage of alters plugin."""
+    """Homepage of checksums plugin."""
     context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
-        name="alters/index.html",
+        name="checksums/index.html",
         context=context,
     )
 
@@ -43,30 +43,30 @@ async def alters_index(
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
-async def alters_create(
-    task: AltersGeneratedTask,
+async def checksums_create(
+    task: ChecksumsGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
-    """Create an alter task."""
-    logger.debug("Create alters task: %s", task)
+    """Create an checksum task."""
+    logger.debug("Create checksums task: %s", task)
     await task_api.post(
         "/generate/",
         json=task.model_dump(),
     )
     return RedirectResponse(
-        "/alters",
+        "/checksums",
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def alters_detail(
-    task: AltersTask,
+async def checksums_detail(
+    task: ChecksumsTask,
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Retrieve alters task."""
+    """Retrieve checksums task."""
     data = task.data
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
@@ -88,7 +88,7 @@ async def alters_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="alters/details.html",
+        name="checksums/details.html",
         context=context,
     )
 
@@ -98,17 +98,17 @@ async def alters_detail(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def alters_execute(
-    task: AltersTask,
+async def checksums_execute(
+    task: ChecksumsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
-    """Execute alters task."""
+    """Execute checksums task."""
     await tasks_api.post(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse("/checksums", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(
@@ -116,10 +116,10 @@ async def alters_execute(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def alters_delete(
-    task: AltersTask,
+async def checksums_delete(
+    task: ChecksumsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Delete alters task."""
+    """Delete checksums task."""
     await tasks_api.delete(f"/{task.name}")
-    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse("/checksums", status_code=status.HTTP_303_SEE_OTHER)

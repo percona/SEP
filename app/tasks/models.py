@@ -70,12 +70,15 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     :vartype ARCHIVER: str
     :cvar BACKUPS: Value for backup tasks.
     :vartype BACKUPS: str
+    :cvar CHECKSUMS: Value for checksum tasks.
+    :vartype CHECKSUMS: str
     """
 
     ANY = "*"
     ALTERS = auto()
     ARCHIVER = auto()
     BACKUPS = auto()
+    CHECKSUMS = auto()
 
 
 class TaskExecutionRequest(BaseModel):
