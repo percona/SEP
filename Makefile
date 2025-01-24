@@ -3,7 +3,7 @@
 SHELL=/usr/bin/bash
 
 PYTHON=python3
-RELEASE_VER?=
+RELEASE_VER?=HEAD
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
 else

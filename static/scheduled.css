@@ -2,9 +2,21 @@
     width: 250px;
 }
 
+#scheduled-tasks-table select {
+    margin-top: 0;
+}
+
+#start-time-header, #expires-header {
+    width: 225px;
+}
+
 #scheduled-tasks-table.create-mode #start-time-header,
 #scheduled-tasks-table.create-mode #expires-header {
     width: 225px;
+}
+
+#last-run-at-header {
+    width: 200px;
 }
 
 #scheduled-tasks-table.create-mode #last-run-at-header {
@@ -39,6 +51,11 @@
 
 .enable-form {
     padding-left: 0.5em;
+    padding-top: 0.5em;
+}
+
+.delete-form {
+    padding-top: 0.5em;
 }
 
 .toggle-label {
@@ -113,6 +130,7 @@ input:checked + .slider:before {
 .new-periodic-task-row select {
     max-width: 100%;
     box-sizing: border-box;
+    margin-top: 0;
 }
 
 .new-periodic-task-row .actions-cell,
@@ -120,6 +138,7 @@ input:checked + .slider:before {
     display: flex;
     align-items: center;
     padding: 1em;
+    padding-top: .5em;
 }
 
 .new-periodic-task-row .save-button,

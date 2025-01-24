@@ -32,7 +32,8 @@
 {% block main %}
 
     <p>Perform a backup, currently only supporting MySQL and MariaDB with <a
-            href="https://github.com/percona/percona-xtrabackup">Percona XtraBackup</a> (physical) and
+            href="https://github.com/percona/percona-xtrabackup">Percona XtraBackup</a>
+        (physical) and
         <a href="https://github.com/mydumper/mydumper">MyDumper</a> (logical).</p>
 
     {% if not tasks and not history_tasks %}
@@ -47,25 +48,25 @@
         {% endif %}
     {% else %}
         {% set modal_required = True %}
-        {% if running_tasks  %}
-        <section id="running-tasks">
-            <h2>Running</h2>
-            {% include "tasks/partials/running-tasks.html" %}
-        </section>
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html" %}
+            </section>
         {% endif %}
 
         <section id="saved-tasks">
             <h2>Saved</h2>
             {% include "backups/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
-            {% include "backups/partials/scheduled-tasks.html" %}
+            {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a backup process</h3>
             {% include "backups/partials/create-form.html" %}
         </section>
 
         <section id="pending-tasks">
             <h2>Pending</h2>
-            {% include "backups/partials/pending-tasks.html" %}
+            {% include "tasks/partials/pending-tasks.html" %}
         </section>
 
         <section id="completed-tasks">
