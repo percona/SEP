@@ -37,6 +37,7 @@
       {% endblock %}
 
       <main>
+      {% include 'confirm_modal.html' %}
       {% block main %}
       <p>Nothing to see here, move along</p>
       {% endblock %}
@@ -48,7 +49,6 @@
       {% endblock %}
       <p><em class="notice">Copyright &copy; Percona LLC</em></p>
       </footer>
-
       {% block behaviours_optimized %}
       <script src="/static/js/jquery-3.7.1.min.js" nonce="{{ request.state.csp_nonce }}"></script>
       <script nonce="{{ request.state.csp_nonce }}">

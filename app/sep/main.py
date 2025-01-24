@@ -1,9 +1,12 @@
 """Define SEP routes."""
 
 import logging.config
+from typing import Annotated, Any
 
-from fastapi import Request, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.exceptions import CsrfProtectError
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
@@ -13,15 +16,16 @@ from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var
-from app.sep.config import sep_settings
+from app.sep.config import CsrfSettings, sep_settings
 from app.sep.deps import (
     AccessTokenCookie,
-    DefaultContext,
     get_base_url,
     get_current_user,
     get_default_context,
+    get_tasks_index_context,
     IsAuthenticated,
 )
+from app.sep.middleware import CSRFMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,17 @@ sep_app = create_app(
     security_headers=sep_settings.SECURITY_HEADERS,
 )
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
+
+
+@CsrfProtect.load_config
+def get_csrf_config() -> CsrfSettings:
+    """Load and return the CSRF configuration settings.
+
+    :return: An instance of `CsrfSettings` containing CSRF protection configuration.
+    :rtype: CsrfSettings
+    """
+    return CsrfSettings()
+
 
 imported_plugins = set()
 for plugin in sep_settings.PLUGINS:
@@ -98,6 +113,12 @@ async def custom_404_handler(
     )
 
 
+@sep_app.exception_handler(CsrfProtectError)
+async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> None:
+    """Handle exceptions raised by CSRF protection."""
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
 @sep_app.get("/oauth/callback")
 async def callback(code: str) -> RedirectResponse:
     """Define callback route for OAuth."""
@@ -126,13 +147,19 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
 
 
 @sep_app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request, context: DefaultContext) -> HTMLResponse:
+async def read_root(
+    request: Request,
+    context: Annotated[dict[str, Any], Depends(get_tasks_index_context)],
+) -> HTMLResponse:
     """Homepage route."""
     return templates.TemplateResponse(
         request=request,
         name="homepage.html",
         context=context,
     )
+
+
+sep_app.add_middleware(CSRFMiddleware)
 
 
 # TODO: take all these logics from routes layer  # noqa: TD002, TD003

@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated
+from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -10,6 +11,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     IsAuthenticated,
+    IsCsrfValidated,
     TaskAPI,
 )
 from app.sep.plugins.tasks.deps import TaskDep
@@ -35,6 +37,7 @@ async def tasks_list(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
+    context["csrf_token"] = request.state.csrf_token
     context["tasks"] = await tasks_api.get("/")
     context["running_tasks"] = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
@@ -49,7 +52,9 @@ async def tasks_list(
     )
 
 
-@router.post("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.post(
+    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+)
 async def task_create(
     create_task_form: Annotated[TaskCreateRequest, Form()],
     tasks_api: TaskAPI,
@@ -74,16 +79,19 @@ async def tasks_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve task."""
+    context["csrf_token"] = request.state.csrf_token
     context["task"] = task
-    context["schedule"] = await tasks_api.get(f"/{task.name}/periodic/")
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
-        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
-    )
+    if not task.is_template:
+        context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
+        context["history"] = await tasks_api.get(f"/{task.name}/history/")
+        context["running_tasks"] = await tasks_api.get(
+            f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+        )
     context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
     context["executor_hosts"] = list(executor_hosts.values())
+    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
     return templates.TemplateResponse(
         request=request,
         name="tasks/view.html",
@@ -91,7 +99,7 @@ async def tasks_detail(
     )
 
 
-@router.post("/{task_name}", dependencies=[IsAuthenticated])
+@router.post("/{task_name}", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def tasks_execute(
     task: TaskDep,
     tasks_api: TaskAPI,
@@ -102,7 +110,10 @@ async def tasks_execute(
     return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/{task_name}/delete", dependencies=[IsAuthenticated])
+@router.post(
+    "/{task_name}/delete",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+)
 async def tasks_delete(
     task: TaskDep,
     tasks_api: TaskAPI,

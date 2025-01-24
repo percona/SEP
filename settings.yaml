@@ -30,6 +30,10 @@ default:
         MODULE_NAME: archives
         URI_PATH: /archives
         CSS_CLASS: archive
+      - NAME: Backups
+        MODULE_NAME: backup
+        URI_PATH: /backups
+        CSS_CLASS: backups
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646

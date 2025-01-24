@@ -1,4 +1,5 @@
 <form action="/inventory/schemas/{{ schema.id }}/tables/" method="post">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
     <fieldset>
         <legend>Create New Table</legend>
         <label for="name">Name:</label>

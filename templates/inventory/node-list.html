@@ -4,11 +4,11 @@
 {% block title %}Node List{% endblock %}
 
 {% block inventory_table %}
-{% with inventory_table_title = "Node List", inventory_sync_route = "/inventory/sync/" %}
-    {% include "inventory/partials/sync-button.html" %}
-{% endwith %}
-<table>
-    <thead>
+    {% with inventory_table_title = "Node List", inventory_sync_route = "/inventory/sync/" %}
+        {% include "inventory/partials/sync-button.html" %}
+    {% endwith %}
+    <table>
+        <thead>
         <tr>
             <th>ID</th>
             <th>Name</th>
@@ -17,28 +17,35 @@
             <th>Source</th>
             <th>Actions</th>
         </tr>
-    </thead>
-    <tbody>
+        </thead>
+        <tbody>
         {% for node in inventory %}
-        <tr>
-            <td>{{ node.id }}</td>
-            <td><a href="{{ node.id }}">{{ node.name }}</a></td>
-            <td>{{ node.address }}</td>
-            <td>{{ node.type }}</td>
-            <td>{% if node.source %}{{ node.source }}{% if node.external_id %} ({{ node.external_id }}){% endif %}{% endif %}</td>
-            <td>
-                <form action="{{ node.id }}/delete" method="post" style="display:inline;">
-{#                    TODO: Fix button clickable size #}
-                    <button name="location" class="icons" style="width: 2em">delete forever</button>
-                </form>
-            </td>
-        </tr>
+            <tr>
+                <td>{{ node.id }}</td>
+                <td><a href="{{ node.id }}">{{ node.name }}</a></td>
+                <td>{{ node.address }}</td>
+                <td>{{ node.type }}</td>
+                <td>{% if node.source %}{{ node.source }}{% if node.external_id %} (
+                    {{ node.external_id }}){% endif %}{% endif %}</td>
+                <td>
+                    <form action="{{ node.id }}/delete" method="post"
+                          style="display:inline;" class="confirmable-form"
+                          data-confirm-message="Are you sure you want to delete node #{{ node.id }}?">
+                        {#                    TODO: Fix button clickable size #}
+                        <input type="hidden" name="csrf-token"
+                               value="{{ csrf_token }}"/>
+                        <button name="location" class="icons submitButton"
+                                style="width: 2em">delete forever
+                        </button>
+                    </form>
+                </td>
+            </tr>
         {% endfor %}
-    </tbody>
-</table>
+        </tbody>
+    </table>
 {% endblock %}
 
 {% block inventory_create %}
-<h3>Add a New Node</h3>
-{% include "inventory/partials/node-create-form.html" %}
+    <h3>Add a New Node</h3>
+    {% include "inventory/partials/node-create-form.html" %}
 {% endblock %}

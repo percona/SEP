@@ -3,7 +3,7 @@
 SHELL=/usr/bin/bash
 
 PYTHON=python3
-RELEASE_VER?=
+RELEASE_VER?=HEAD
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
 else
@@ -29,6 +29,23 @@ venv: pyproject.toml poetry.lock
 
 build: venv app/
 	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
+
+pack:
+ifndef BUNDLE
+	@echo Exporting bundle
+	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app static templates
+else
+	@echo Copying custom bundle "${BUNDLE}"
+	@cp -a "${BUNDLE}" bundle.tgz
+endif
+
+builder:
+	@podman image exists "sep:builder" && podman image rm "sep:builder"
+	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
+
+image: pack
+	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
+	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
 
 format:
 	@"${VENV_BIN}"/ruff format .
@@ -81,4 +98,4 @@ migrate: venv alembic.ini app/tasks/migrations/versions
 	done
 
 test: venv
-	@"${VENV_BIN}"/pytest -v --cov=app app/tests/
+	@"${VENV_BIN}"/pytest -v --cov=app tests/

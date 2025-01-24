@@ -1,4 +1,5 @@
 <form id="new-periodic-task-form" method="post" action="/periodic/">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
 </form>
 <table id="scheduled-tasks-table">
     <thead>
@@ -34,7 +35,8 @@
             <td>{{ periodic_task.total_run_count }}</td>
             <td>
                 <form method="post" action="/periodic/{{ periodic_task.id }}/update"
-                      class="enable-form">
+                      class="enable-form confirmable-form">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
                     <input type="hidden" name="enabled"
                            value="{% if periodic_task.enabled %}true{% else %}false{% endif %}">
                     <label class="switch">
@@ -49,7 +51,9 @@
 
                 <form method="post" action="/periodic/{{ periodic_task.id }}/delete"
                       class="delete-form">
-                    <button type="submit" class="delete-button icons" title="Delete">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+                    <button type="submit" class="delete-button icons submitButton"
+                            title="Delete">
                         delete forever
                     </button>
                 </form>
@@ -88,27 +92,35 @@
                 </div>
                 <div class="cron-description"></div>
             </div>
-            <a href="#" class="change-period-mode" style="font-size: 11px;">change to cron mode</a>
+            <a href="#" class="change-period-mode" style="font-size: 11px;">change to
+                cron mode</a>
         </td>
         <td>
-            <input type="hidden" form="new-periodic-task-form" name="start_time" class="date-value">
-            <input type="datetime-local" class="start-time-input" title="Optional start time for the periodic task">
+            <input type="hidden" form="new-periodic-task-form" name="start_time"
+                   class="date-value">
+            <input type="datetime-local" class="start-time-input"
+                   title="Optional start time for the periodic task">
         </td>
         <td>
-            <input type="hidden" form="new-periodic-task-form" name="expires" class="date-value">
-            <input type="datetime-local" class="expires-input" title="Optional expiration time for the periodic task">
+            <input type="hidden" form="new-periodic-task-form" name="expires"
+                   class="date-value">
+            <input type="datetime-local" class="expires-input"
+                   title="Optional expiration time for the periodic task">
         </td>
         <td></td>
         <td>0</td>
         <td style="padding-left: 0.5em">
-            <input type="hidden" form="new-periodic-task-form" name="enabled" value="true">
+            <input type="hidden" form="new-periodic-task-form" name="enabled"
+                   value="true">
             <label class="switch">
-                <input type="checkbox" class="new-periodic-task-enable-checkbox" checked>
+                <input type="checkbox" class="new-periodic-task-enable-checkbox"
+                       checked>
                 <span class="slider round"></span>
             </label>
         </td>
         <td class="actions-cell flex">
-            <button type="submit" class="save-button icons" title="Save"
+            <button type="submit" id="save-button" class="save-button icons"
+                    title="Save"
                     form="new-periodic-task-form">save
             </button>
             <button type="button" class="discard-button icons" title="Discard">

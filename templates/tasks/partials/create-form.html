@@ -1,5 +1,6 @@
 <h2>Create a new task</h2>
 <form action="" method="post">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
     <fieldset>
         <legend>Enter a new task definition</legend>
         <div>

@@ -1,141 +1,64 @@
-<form method="post" action="" style="padding: 20px;" id="mainForm">
+<form method="post" action="" id="{{ task.name }}-send" class="send-form"
+    data-confirm-message='Are you sure you want to execute task "{{ task.name }}" now?'
+    style="padding: 20px; flex-direction: column; align-items: start;">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     {% if task_data.get("ParameterizedJob") %}
-    <fieldset>
+    <fieldset style="width: 90%;">
         <legend style="font-size: 1.5em; font-weight: bold; color: #333;">
             Configuration
         </legend>
         {% if task_data.ParameterizedJob %}
-            {% set optional = task_data.ParameterizedJob.get("MetaOptional", []) %}
-            {% set required = task_data.ParameterizedJob.get("MetaRequired", []) %}
+        {% set optional = task_data.ParameterizedJob.get("MetaOptional", []) %}
+        {% set required = task_data.ParameterizedJob.get("MetaRequired", []) %}
         {% else %}
-            {% set optional = [] %}
-            {% set required = [] %}
+        {% set optional = [] %}
+        {% set required = [] %}
         {% endif %}
         {% set meta_defaults = task_data.get("Meta",{}) %}
         {% for item in required %}
-            <div style="margin-bottom: 15px;">
-                <label for="meta_{{ item }}"
-                    class="form-label">{{ item.capitalize() }}
-                    (required)</label>
-                {% if item == "target" %}
-                    {% include "tasks/partials/select-host.html" %}
-                {% else %}
-                    <input type="text" name="meta_{{ item }}"
-                    id="meta_{{ item }}"
-                    value="{{ meta_defaults[item] }}" required
-                    class="form-input">
-                {% endif %}
-            </div>
+        <div style="margin-bottom: 15px;">
+            <label for="meta_{{ item }}" class="form-label">{{ item.capitalize() }}
+                (required)</label>
+            {% if item == "target" %}
+            {% include "tasks/partials/select-host.html" %}
+            {% else %}
+            <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults[item] }}" required
+                class="form-input">
+            {% endif %}
+        </div>
         {% endfor %}
         {% for item in optional %}
-            <div style="margin-bottom: 15px;">
-                <label for="meta_{{ item }}"
-                    class="form-label">{{ item.capitalize() }}</label>
-                {% if item == "target" %}
-                    {% include "tasks/partials/select-host.html" %}
-                {% else %}
-                    <input type="text" name="meta_{{ item }}"
-                        id="meta_{{ item }}"
-                        value="{{ meta_defaults.get(item, '') }}"
-                        class="form-input">
-                {% endif %}
-            </div>
+        <div style="margin-bottom: 15px;">
+            <label for="meta_{{ item }}" class="form-label">{{ item.capitalize() }}</label>
+            {% if item == "target" %}
+            {% include "tasks/partials/select-host.html" %}
+            {% else %}
+            <input type="text" name="meta_{{ item }}" id="meta_{{ item }}" value="{{ meta_defaults.get(item, '') }}"
+                class="form-input">
+            {% endif %}
+        </div>
         {% endfor %}
         {% set nomad_payload_rule = task_data["ParameterizedJob"].get("Payload", "optional") %}
         {% if nomad_payload_rule in ["optional", "required"] %}
-            <div style="margin-bottom: 20px;">
-                <label for="payload" class="form-label">Payload
-                    {% if nomad_payload_rule == "required" %}
-                        (required){% endif %}</label>
-                <textarea name="payload" id="payload" cols="80" rows="30"
-                    {% if nomad_payload_rule == "required" %}
-                    required{% endif %} class="form-input"></textarea>
-            </div>
+        <div style="margin-bottom: 20px;">
+            <label for="payload" class="form-label">Payload
+                {% if nomad_payload_rule == "required" %}
+                (required){% endif %}</label>
+            <textarea name="payload" id="payload" cols="80" rows="30" {% if nomad_payload_rule=="required" %} required{%
+                endif %} class="form-input"></textarea>
+        </div>
         {% endif %}
     </fieldset>
     {% endif %}
-    <div class="actions-cell">
-        <button title="Toggle scheduler mode" type="button"
-                class="icons schedule-button" data-task="{{ task.name }}"
-                aria-expanded="false">schedule
+    <div class="actions-cell flex">
+        <button title="Toggle scheduler mode" type="button" class="icons schedule-button" data-task="{{ task.name }}"
+            aria-expanded="false">schedule
         </button>
-        <input type="datetime-local" class="eta-input"
-               disabled>
-        <input type="hidden" name="eta" class="eta-value" disabled>
-        <button type="submit" class="icons send-button">send</button>
+        <input type="datetime-local" class="eta-input" disabled>
+        <button type="submit" class="icons send-button submitButton">send</button>
         {% if not task.protected %}
-        <button class="icons delete-button">delete forever</button>
+        <button class="icons delete-button submitButton delete-tasks-button" form="delete-form">delete forever</button>
         {% endif %}
+        <input type="hidden" name="eta" class="eta-value" disabled>
     </div>
 </form>
-
-{% if required %}
-<form id="schedulerForm" method="post" action="/schedule/{{ task['name'] }}">
-
-    {% for item in required + optional %}
-        <input type="hidden" name="meta_{{ item }}" id="scheduler_meta_{{ item }}">
-    {% endfor %}
-    <input type="hidden" name="payload" id="scheduler_payload">
-
-    {% include "tasks/partials/scheduler-inputs.html" %}
-</form>
-
-<script nonce="{{ request.state.csp_nonce }}">
-    // Function to sync each meta input
-    function syncMetaInput(item) {
-        const mainInput = document.getElementById('meta_' + item);
-        const schedulerInput = document.getElementById('scheduler_meta_' + item);
-        schedulerInput.value = mainInput.value;
-    }
-
-    // Function to sync payload input
-    function syncPayload() {
-        const mainPayload = document.getElementById('payload');
-        const schedulerPayload = document.getElementById('scheduler_payload');
-        schedulerPayload.value = mainPayload.value;
-    }
-
-    // Ensure synchronization upon page load for any pre-filled values
-    document.addEventListener('DOMContentLoaded', () => {
-        {% for item in required + optional %}
-            syncMetaInput('{{ item }}'); // Initial sync for each meta input
-            document.getElementById('meta_{{ item }}').addEventListener(
-                'input',
-                () => syncMetaInput('{{ item }}')
-            ); // Sync on input change
-        {% endfor %}
-
-        syncPayload(); // Initial sync for payload
-        document.getElementById('payload').addEventListener('input', syncPayload); // Sync on input change for payload
-    });
-
-    // Scheduler form validation
-    document.getElementById("schedulerForm").addEventListener("submit", (event) => {
-        const isBasicMode =
-            document.getElementById("BasicContainer").style.display !== "none";
-
-        // Trigger native validation on all required fields in mainForm
-        const mainForm = document.getElementById("mainForm");
-        if (!mainForm.checkValidity()) {
-            mainForm.reportValidity(); // Show native validation popups
-            event.preventDefault(); // Prevent submission if validation fails
-            return;
-        }
-
-        if (isBasicMode) validateBasicInput();
-        else validateCronExpression();
-
-        if (isBasicMode && !frequencyInput.checkValidity()) {
-            alert("Please correct errors in Basic Mode before scheduling.");
-        } else if (!isBasicMode && !cronInput.checkValidity()) {
-            document.getElementById("BasicContainer").style.display = "none";
-            document.getElementById("AdvancedContainer").style.display = "block";
-            cronInput.focus();
-            event.preventDefault();
-            alert("Please correct errors in Advanced Mode before scheduling.");
-        } else {
-            alert("Cron job scheduled with expression: " + cronInput.value);
-        }
-    });
-</script>
-{% endif %}

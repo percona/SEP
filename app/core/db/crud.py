@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import CursorResult, delete, inspect, ScalarResult, Select
+from sqlalchemy import CursorResult, delete, func, inspect, ScalarResult, Select
 from sqlalchemy.engine import TupleResult
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import joinedload
@@ -497,6 +497,32 @@ class BaseManager:
             cls.Model.__name__,
         )
         return result
+
+    @classmethod
+    async def count(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        **equal_filters: Any,
+    ) -> int:
+        """Return the count of records that match the query.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The count of matching records.
+        :rtype: int
+        """
+        query = cls._filter_query(
+            select(func.count()).select_from(cls.Model), *whereclause, **equal_filters
+        )
+        result = await session.scalar(query)
+        return result or 0
 
 
 class BaseSQLModelManager(BaseManager):

@@ -7,8 +7,11 @@ from fastapi import APIRouter, Form, Header, status
 from fastapi.responses import RedirectResponse
 
 from app.core.utils import deep_dict_update
-from app.sep.deps import IsAuthenticated, TaskAPI
-from app.sep.tasks import PeriodicTaskCreateRequest, PeriodicTaskRequest
+from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
+from app.sep.tasks import (
+    EnhancedPeriodicTaskCreateRequest,
+    PeriodicTaskRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +20,11 @@ router = APIRouter()
 
 @router.post(
     "/",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
 )
 async def create_periodic_task(
     tasks_api: TaskAPI,
-    periodic_task: Annotated[PeriodicTaskCreateRequest, Form()],
+    periodic_task: Annotated[EnhancedPeriodicTaskCreateRequest, Form()],
     referer: Annotated[str, Header()] = "/tasks",
 ) -> RedirectResponse:
     """Create periodic task."""
@@ -33,7 +36,7 @@ async def create_periodic_task(
 
 @router.post(
     "/{periodic_task_id}/delete",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
 async def delete_periodic_task(
@@ -47,7 +50,9 @@ async def delete_periodic_task(
     return RedirectResponse(referer, status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/{periodic_task_id}/update", dependencies=[IsAuthenticated])
+@router.post(
+    "/{periodic_task_id}/update", dependencies=[IsAuthenticated, IsCsrfValidated]
+)
 async def update_periodic_task(
     periodic_task_id: int,
     tasks_api: TaskAPI,

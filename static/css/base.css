@@ -29,8 +29,21 @@ body {
     background-color: white;
     color: #303642;
     font: 100% "Poppins", sans-serif;
-    padding: 1em;
     text-align: left;
+    border-radius: unset;
+    padding: 5px;
+}
+
+body > header:nth-child(1) {
+    border-radius: unset;
+}
+
+body > footer:nth-child(4) {
+    border-radius: unset;
+}
+
+#sep {
+    border-radius: unset;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -179,7 +192,7 @@ table {
         vertical-align: middle;
     }
 
-    .archive a:before, .tasks a:before, .alters a:before, .inventory a:before, .casdoor a:before, .signout a:before {
+    .sidebar-button a:before {
         font-family: "Material Icons";
         padding-right: .5em;
         vertical-align: middle;
@@ -187,6 +200,10 @@ table {
 
     .alters a:before {
         content: "adjust"
+    }
+
+    .backups a:before {
+        content: "backup"
     }
 
     .inventory a:before {
@@ -384,3 +401,58 @@ table {
         vertical-align: middle
     }
 }
+
+
+/* Custom CSS from WebTeam */
+
+/*form fieldset div {*/
+/*    margin-bottom: 10px;*/
+/*}*/
+
+/*#name {*/
+/*    margin-left: 10px;*/
+/*}*/
+
+/*#payload {*/
+/*    height: 200px;*/
+/*    margin-top: 10px;*/
+/*}*/
+
+/*form fieldset fieldset {*/
+/*    margin-left: -15px;*/
+/*    margin-top: 10px;*/
+
+/*}*/
+
+/*main form button {*/
+/*    background-color: #4B5468;*/
+/*    color: white;*/
+/*    padding-left: 28px;*/
+/*    padding-right: 30px;*/
+/*    padding-bottom: 10px;*/
+/*    font-weight: normal;*/
+/*}*/
+
+/*main form button:hover {*/
+/*    background-color: #3a4151 !important;*/
+/*}*/
+
+/*body > main:nth-child(3) > p:nth-child(3) {*/
+/*    font-size: 50px;*/
+/*    text-align: center;*/
+/*}*/
+
+/*#sep > ul > li.signout > a {*/
+/*    background-color: #fc3519;*/
+/*}*/
+
+/*body > main:nth-child(3) > form:nth-child(4) > fieldset:nth-child(1) {*/
+/*    display: flex;*/
+/*    flex-direction: column;*/
+/*    width: 20.833vw;*/
+/*    gap: 0.5em;*/
+/*}*/
+
+/*html.zglea.idc0_350 body.has-fixed-sidenav main form fieldset input#name {*/
+/*    margin-left: unset;*/
+/*}*/

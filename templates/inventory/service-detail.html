@@ -3,62 +3,69 @@
 {% block title %}Service {{ service.name }} ({{ service.node_id }}){% endblock %}
 
 {% block inventory_entity_details %}
-{% with inventory_table_title = "Service Details", inventory_sync_route = "/inventory/services/" ~  service.id ~ "/sync/" %}
-    {% include "inventory/partials/sync-button.html" %}
-{% endwith %}
-<dl>
-    <dt>ID</dt>
-    <dd>{{ service.id }}</dd>
-    <dt>Name</dt>
-    <dd>{{ service.name }}</dd>
-    <dt>Type</dt>
-    <dd>{{ service.type }}</dd>
-    {% if service.node.source %}
-    <dt>Source</dt>
-    <dd>{{ service.node.source }}</dd>
-    {% endif %}
-    {% if service.external_id %}
-    <dt>External ID</dt>
-    <dd>{{ service.external_id }}</dd>
-    {% endif %}
-    <dt>Port</dt>
-    <dd>{{ service.port }}</dd>
-    {% if service.environment %}
-    <dt>Environment</dt>
-    <dd>{{ service.environment }}</dd>
-    {% endif %}
-    <dt>Node ID</dt>
-    <dd>{{ service.node_id }}</dd>
-</dl>
+    {% with inventory_table_title = "Service Details", inventory_sync_route = "/inventory/services/" ~  service.id ~ "/sync/" %}
+        {% include "inventory/partials/sync-button.html" %}
+    {% endwith %}
+    <dl>
+        <dt>ID</dt>
+        <dd>{{ service.id }}</dd>
+        <dt>Name</dt>
+        <dd>{{ service.name }}</dd>
+        <dt>Type</dt>
+        <dd>{{ service.type }}</dd>
+        {% if service.node.source %}
+            <dt>Source</dt>
+            <dd>{{ service.node.source }}</dd>
+        {% endif %}
+        {% if service.external_id %}
+            <dt>External ID</dt>
+            <dd>{{ service.external_id }}</dd>
+        {% endif %}
+        <dt>Port</dt>
+        <dd>{{ service.port }}</dd>
+        {% if service.environment %}
+            <dt>Environment</dt>
+            <dd>{{ service.environment }}</dd>
+        {% endif %}
+        <dt>Node ID</dt>
+        <dd>{{ service.node_id }}</dd>
+    </dl>
 {% endblock %}
 
 {% block inventory_table %}
-<h3>Schemas in this Service</h3>
-<table>
-    <thead>
+    <h3>Schemas in this Service</h3>
+    <table>
+        <thead>
         <tr>
             <th>ID</th>
             <th>Name</th>
             <th>Actions</th>
         </tr>
-    </thead>
-    <tbody>
+        </thead>
+        <tbody>
         {% for schema in service.schemas %}
-        <tr>
-            <td>{{ schema.id }}</td>
-            <td><a href="/inventory/schemas/{{ schema.id }}">{{ schema.name }}</a></td>
-            <td>
-                <form action="/inventory/schemas/{{ schema.id }}/delete" method="post" style="display:inline;">
-                    <button name="location" class="icons" style="width: 2em">delete forever</button>
-                </form>
-            </td>
-        </tr>
+            <tr>
+                <td>{{ schema.id }}</td>
+                <td><a href="/inventory/schemas/{{ schema.id }}">{{ schema.name }}</a>
+                </td>
+                <td>
+                    <form action="/inventory/schemas/{{ schema.id }}/delete"
+                          method="post" style="display:inline;" class="confirmable-form"
+                          data-confirm-message="Are you sure you want to delete schema #{{ schema.id }}?">
+                        <input type="hidden" name="csrf-token"
+                               value="{{ csrf_token }}"/>
+                        <button name="location" class="icons submitButton"
+                                style="width: 2em">delete forever
+                        </button>
+                    </form>
+                </td>
+            </tr>
         {% endfor %}
-    </tbody>
-</table>
+        </tbody>
+    </table>
 {% endblock %}
 
 {% block inventory_create %}
-<h3>Add a New Schema</h3>
-{% include "inventory/partials/schema-create-form.html" %}
+    <h3>Add a New Schema</h3>
+    {% include "inventory/partials/schema-create-form.html" %}
 {% endblock %}

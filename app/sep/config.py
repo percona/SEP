@@ -1,6 +1,5 @@
 """Define SEP settings."""
 
-from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
@@ -111,6 +110,29 @@ class SessionOptions(BaseModel):
     MAX_AGE: TimedeltaSeconds = timedelta(days=7)
     SAMESITE: Literal["lax", "strict", "none"] = "lax"
     SECURE: bool = True
+
+
+class CsrfSettings(BaseModel):
+    """Configuration for CSRF protection settings.
+
+    :param secret_key: Secret key used for CSRF token generation.
+    :type secret_key: str
+    :param cookie_secure: Whether the CSRF cookie should be accessible
+        only via HTTPS (except on localhost).
+    :type cookie_secure: bool
+    :param cookie_samesite: SameSite policy for the CSRF cookie.
+    :type cookie_samesite: str
+    :param token_key: Key name for the CSRF token.
+    :type token_key: str
+    :param token_location: Location where the CSRF token is expected.
+    :type token_location: str
+    """
+
+    SECRET_KEY: str = settings.SECRET_KEY
+    COOKIE_SECURE: bool = True
+    COOKIE_SAMESITE: str = "none"
+    TOKEN_KEY: str = "csrf-token"
+    TOKEN_LOCATION: str = "body"
 
 
 class SyncOptions(BaseLowercaseModel):
@@ -237,8 +259,8 @@ class SEPSettings(BaseYamlAppSettings):
         """
         syncers = UniqueList()
         for syncer in self.SYNCERS:
-            syncer_data = deepcopy(self.SYNCER_EXTRA_KWARGS)
-            deep_dict_update(syncer_data, syncer.model_dump())
+            syncer_data = syncer.model_dump()
+            deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
             syncers.append(SyncOptions.model_validate(syncer_data))
         self.SYNCERS = syncers
         return self

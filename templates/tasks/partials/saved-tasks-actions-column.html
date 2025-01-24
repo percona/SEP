@@ -4,13 +4,15 @@
             aria-expanded="false">schedule
     </button>
 
-    <form id="{{ task.name }}-send" class="send-form" method="post"
-          action="{{ task.name }}">
+    <form id="{{ task.name }}-send" class="send-form confirmable-form" method="post"
+          action="{{ task.name }}"
+          data-confirm-message='Are you sure you want to execute task "{{ task.name }}" now?'>
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
         <input type="datetime-local" class="eta-input"
                disabled>
         <input type="hidden" name="eta" class="eta-value" disabled>
         <button title="Execute" type="submit"
-                class="icons send-button">send
+                class="icons send-button submitButton">send
         </button>
     </form>
 
@@ -20,12 +22,14 @@
             <button title="Detail" class="icons info-button">info
             </button>
         </form>
-        <form id="{{ task.name }}-delete" method="post"
-              action="{{ task.name }}/delete">
+        <form id="{{ task.name }}-delete" method="post" class="confirmable-form"
+              data-confirm-message='Are you sure you want to delete task "{{ task.name }}"?'
+              action="{{ task.name }}/delete"
+        >
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
             <button title="Delete" type="submit"
-                    class="icons delete-button">delete forever
+                    class="icons delete-button submitButton">delete forever
             </button>
-            {#                TODO: confirm dialog #}
         </form>
     </div>
 </td>

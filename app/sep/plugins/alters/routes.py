@@ -11,6 +11,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     IsAuthenticated,
+    IsCsrfValidated,
     TaskAPI,
 )
 from app.sep.plugins.alters.deps import (
@@ -31,6 +32,7 @@ async def alters_index(
     context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
 ) -> HTMLResponse:
     """Homepage of alters plugin."""
+    context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
         name="alters/index.html",
@@ -38,7 +40,9 @@ async def alters_index(
     )
 
 
-@router.post("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.post(
+    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+)
 async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
@@ -91,7 +95,7 @@ async def alters_detail(
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
 async def alters_execute(
@@ -109,7 +113,7 @@ async def alters_execute(
 
 @router.post(
     "/{task_name}/delete",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
 async def alters_delete(

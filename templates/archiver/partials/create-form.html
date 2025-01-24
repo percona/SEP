@@ -55,7 +55,8 @@
         pointer-events: none;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form action="" method="post" class="{{ form_class }}" >
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
     <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
@@ -63,7 +64,8 @@
         {% if executor_hosts|length == 1 %}
         {% set single_service = executor_hosts[0] %}
         <select id="hostname" name="hostname" disabled>
-            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+            <option
+            value="{{ single_service }}" selected>{{ single_service }}</option>
         </select>
         <input type="hidden" name="hostname" value="{{ single_service }}">
         {% else %}
