@@ -13,14 +13,14 @@ from app.sep.deps import (
     get_created_service,
     get_inventory_api,
 )
-from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService
+from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.main import sep_app
 from app.sep.plugins.inventory.deps import get_syncers
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
     CreatedServiceFactory,
-    MOCK_CREATED_NODE_ID,
+    CreatedTableFactory,
     MOCK_CREATED_SCHEMA_ID,
     MOCK_CREATED_SERVICE_ID,
     MOCK_CREATED_TABLE_ID,
@@ -98,6 +98,14 @@ def _mock_created_schema_dep(created_schema):
     sep_app.dependency_overrides[get_created_schema] = lambda: created_schema
     yield
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def created_table(created_schema) -> CreatedTable:
+    """Return a fake created Table."""
+    created_table = CreatedTableFactory.build()
+    created_table.database = created_schema
+    return created_table
 
 
 def test_node_list(test_client, mock_inventory_api):
@@ -210,13 +218,13 @@ def test_service_create_for_node(test_client, created_node, mock_inventory_api):
 
 def test_service_delete(test_client, created_service, mock_inventory_api):
     """Test deleting a service."""
-    returned_node_id = MOCK_CREATED_NODE_ID
-    mock_inventory_api.delete.return_value = {"node_id": returned_node_id}
+    mock_inventory_api.get.return_value = created_service.model_dump()
+    mock_inventory_api.delete.return_value = {"node_id": created_service.node_id}
     response = test_client.post(
         f"/inventory/services/{created_service.id}/delete", follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == f"/inventory/{returned_node_id}"
+    assert response.headers["location"] == f"/inventory/{created_service.node_id}"
 
 
 @pytest.mark.usefixtures("_mock_created_schema_dep")
@@ -259,6 +267,7 @@ def test_schema_create_for_service(test_client, created_service, mock_inventory_
 def test_schema_delete(test_client, created_schema, mock_inventory_api):
     """Test deleting a schema."""
     returned_service_id = MOCK_CREATED_SERVICE_ID
+    mock_inventory_api.get.return_value = created_schema.model_dump()
     mock_inventory_api.delete.return_value = {"service_id": returned_service_id}
     response = test_client.post(
         f"/inventory/schemas/{created_schema.id}/delete", follow_redirects=False
@@ -282,14 +291,14 @@ def test_table_create_for_schema(test_client, created_schema, mock_inventory_api
         data=form_data,
         follow_redirects=False,
     )
-    # TODO(Peter): This endpoint is not working. # noqa: TD003
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_303_SEE_OTHER
 
 
-def test_table_delete(test_client, mock_inventory_api):
+def test_table_delete(test_client, created_table, mock_inventory_api):
     """Test deleting a table."""
     delete_table_id = MOCK_CREATED_TABLE_ID
     returned_schema_id = MOCK_CREATED_SCHEMA_ID
+    mock_inventory_api.get.return_value = created_table.model_dump()
     mock_inventory_api.delete.return_value = {"schema_id": returned_schema_id}
     response = test_client.post(
         f"/inventory/tables/{delete_table_id}/delete", follow_redirects=False
