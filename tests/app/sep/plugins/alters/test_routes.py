@@ -97,7 +97,7 @@ def test_alters_create(
 ):
     """Test creating a new alters task."""
     response = test_client.post(
-        "/alters/", json=created_alters.model_dump(), follow_redirects=False
+        "/alters/", data=created_alters.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/alters"
