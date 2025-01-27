@@ -97,5 +97,5 @@ migrate: venv alembic.ini app/tasks/migrations/versions
 		"${VENV_BIN}"/alembic --name $$app upgrade head; \
 	done
 
-test: venv
+test: migrate
 	@"${VENV_BIN}"/pytest -v -r s --cov=app tests/
