@@ -7,6 +7,7 @@ from fastapi import BackgroundTasks, status
 
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
+from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     get_created_node,
     get_created_schema,
@@ -34,6 +35,14 @@ def mock_inventory_api() -> AsyncMock:
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def mock_sync_item_manager(mocker) -> AsyncMock:
+    """Mock the SyncItemManager sync_is_running method."""
+    return mocker.patch.object(
+        SyncItemManager, "sync_is_running", new=AsyncMock(return_value=False)
+    )
 
 
 @pytest.fixture
@@ -108,6 +117,7 @@ def created_table(created_schema) -> CreatedTable:
     return created_table
 
 
+@pytest.mark.usefixtures("mock_sync_item_manager")
 def test_node_list(test_client, mock_inventory_api):
     """Test listing nodes."""
     response = test_client.get("/inventory/")
@@ -124,7 +134,7 @@ async def test_sync_inventory(async_test_client, mock_syncers, mock_background_t
     assert response.headers["location"] == "/inventory/"
 
 
-@pytest.mark.usefixtures("_mock_created_node_dep")
+@pytest.mark.usefixtures("_mock_created_node_dep", "mock_sync_item_manager")
 def test_node_detail(
     test_client,
     created_node,
@@ -172,7 +182,7 @@ def test_node_delete(test_client, created_node, mock_inventory_api):
     assert response.headers["location"] == "/inventory/"
 
 
-@pytest.mark.usefixtures("_mock_created_service_dep")
+@pytest.mark.usefixtures("_mock_created_service_dep", "mock_sync_item_manager")
 def test_service_detail(
     test_client,
     created_service,
@@ -227,7 +237,7 @@ def test_service_delete(test_client, created_service, mock_inventory_api):
     assert response.headers["location"] == f"/inventory/{created_service.node_id}"
 
 
-@pytest.mark.usefixtures("_mock_created_schema_dep")
+@pytest.mark.usefixtures("_mock_created_schema_dep", "mock_sync_item_manager")
 def test_schema_detail(
     test_client,
     created_schema,
