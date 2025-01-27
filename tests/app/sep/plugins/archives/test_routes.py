@@ -105,7 +105,7 @@ def test_archives_create(
 ):
     """Test creating a new archives task."""
     response = test_client.post(
-        "/archives/", data=created_archives, follow_redirects=False
+        "/archives/", json=created_archives.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/archives"

@@ -96,7 +96,9 @@ def test_alters_create(
     generated_task,
 ):
     """Test creating a new alters task."""
-    response = test_client.post("/alters/", data=created_alters, follow_redirects=False)
+    response = test_client.post(
+        "/alters/", json=created_alters.model_dump(), follow_redirects=False
+    )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/alters"
     mock_task_api.post.assert_any_await(
