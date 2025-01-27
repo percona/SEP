@@ -3,14 +3,22 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pymysql.cursors import DictCursor
 
-from app.sep.sync.syncers.mysql.payload import (
-    get_all_schemas,
-    get_schema,
-    get_table,
-    parse_host_port,
-)
+pytestmark = pytest.mark.syncmysql
+
+try:
+    from pymysql.cursors import DictCursor
+
+    from app.sep.sync.syncers.mysql.payload import (
+        get_all_schemas,
+        get_schema,
+        get_table,
+        parse_host_port,
+    )
+except ImportError:
+    pytest.skip(
+        "skipping mysql payload tests (pymysql not installed)", allow_module_level=True
+    )
 
 
 @pytest.fixture
