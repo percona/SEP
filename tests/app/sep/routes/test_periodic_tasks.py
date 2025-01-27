@@ -1,25 +1,12 @@
 """Define tests for the app.sep.routes.periodic_tasks module."""
 
 import datetime
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import status
 from sqlalchemy_celery_beat import PeriodicTask
 
-from app.core.requests import RemoteAPI
-from app.sep.deps import get_tasks_api
-from app.sep.main import sep_app
 from tests.app.factories import PeriodicTaskFactory
-
-
-@pytest.fixture
-def mock_task_api() -> AsyncMock:
-    """Mock the TaskAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
 
 
 @pytest.fixture
@@ -41,7 +28,7 @@ def created_periodic_task() -> PeriodicTask:
         },
     ],
 )
-def test_create_periodic_task(test_client, mock_task_api, faker, extra_data):
+def test_create_periodic_task(test_client, mock_task_api_dep, faker, extra_data):
     """Test creating a new periodic task."""
     task_name = "run-python"
     start_time = faker.date_time_this_year()
@@ -65,7 +52,7 @@ def test_create_periodic_task(test_client, mock_task_api, faker, extra_data):
 def test_delete_periodic_task(
     test_client,
     created_periodic_task,
-    mock_task_api,
+    mock_task_api_dep,
 ):
     """Test deleting a periodic task."""
     response = test_client.post(
@@ -73,12 +60,12 @@ def test_delete_periodic_task(
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/tasks"
-    mock_task_api.delete.assert_awaited_once_with(
+    mock_task_api_dep.delete.assert_awaited_once_with(
         f"/periodic/{created_periodic_task.id}"
     )
 
 
-def test_update_periodic_task(test_client, mock_task_api, created_periodic_task):
+def test_update_periodic_task(test_client, mock_task_api_dep, created_periodic_task):
     """Test updating a periodic task."""
     updated_task_data = {
         "enabled": "false",

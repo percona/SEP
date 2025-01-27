@@ -29,7 +29,7 @@ from tests.app.factories import (
 
 
 @pytest.fixture
-def mock_inventory_api() -> AsyncMock:
+def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     """Mock the InventoryAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
@@ -56,7 +56,7 @@ def mock_syncers() -> AsyncMock:
 
 @pytest.fixture
 def mock_background_tasks():
-    """Mock the Background tasks dependencey."""
+    """Mock the Background tasks dependency."""
     mock = MagicMock(spec=BackgroundTasks)
     sep_app.dependency_overrides[BackgroundTasks] = lambda: mock
     yield mock
@@ -118,17 +118,17 @@ def created_table(created_schema) -> CreatedTable:
 
 
 @pytest.mark.usefixtures("mock_sync_item_manager")
-def test_node_list(test_client, mock_inventory_api):
+def test_node_list(test_client, mock_inventory_api_dep):
     """Test listing nodes."""
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    mock_inventory_api.get.assert_any_await("/")
+    mock_inventory_api_dep.get.assert_any_await("/")
 
 
 @pytest.mark.asyncio
 async def test_sync_inventory(async_test_client, mock_syncers, mock_background_tasks):
-    """Test syncing inventroies."""
+    """Test syncing inventory."""
     response = await async_test_client.post("/inventory/sync/", follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/inventory/"
@@ -159,7 +159,7 @@ async def test_sync_node(
     assert response.headers["location"] == f"/inventory/{created_node.id}"
 
 
-def test_node_create(test_client, mock_inventory_api):
+def test_node_create(test_client, mock_inventory_api_dep):
     """Test creating a new node."""
     form_data = {
         "address": "127.0.0.1",
@@ -172,9 +172,9 @@ def test_node_create(test_client, mock_inventory_api):
     assert response.headers["location"] == "/inventory/"
 
 
-def test_node_delete(test_client, created_node, mock_inventory_api):
+def test_node_delete(test_client, created_node, mock_inventory_api_dep):
     """Test deleting a node."""
-    mock_inventory_api.delete.return_value = AsyncMock()
+    mock_inventory_api_dep.delete.return_value = AsyncMock()
     response = test_client.post(
         f"/inventory/{created_node.id}/delete", follow_redirects=False
     )
@@ -208,7 +208,7 @@ async def test_sync_service(
 
 
 @pytest.mark.usefixtures("_mock_created_node_dep")
-def test_service_create_for_node(test_client, created_node, mock_inventory_api):
+def test_service_create_for_node(test_client, created_node, mock_inventory_api_dep):
     """Test creating a new service for node."""
     form_data = {
         "environment": "staging",
@@ -226,10 +226,10 @@ def test_service_create_for_node(test_client, created_node, mock_inventory_api):
     assert response.headers["location"] == f"/inventory/{created_node.id}"
 
 
-def test_service_delete(test_client, created_service, mock_inventory_api):
+def test_service_delete(test_client, created_service, mock_inventory_api_dep):
     """Test deleting a service."""
-    mock_inventory_api.get.return_value = created_service.model_dump()
-    mock_inventory_api.delete.return_value = {"node_id": created_service.node_id}
+    mock_inventory_api_dep.get.return_value = created_service.model_dump()
+    mock_inventory_api_dep.delete.return_value = {"node_id": created_service.node_id}
     response = test_client.post(
         f"/inventory/services/{created_service.id}/delete", follow_redirects=False
     )
@@ -262,7 +262,9 @@ async def test_sync_schema(
     assert response.headers["location"] == f"/inventory/schemas/{created_schema.id}"
 
 
-def test_schema_create_for_service(test_client, created_service, mock_inventory_api):
+def test_schema_create_for_service(
+    test_client, created_service, mock_inventory_api_dep
+):
     """Test creating a new schema for service."""
     form_data = {"name": "schema_name"}
     response = test_client.post(
@@ -274,11 +276,11 @@ def test_schema_create_for_service(test_client, created_service, mock_inventory_
     assert response.headers["location"] == f"/inventory/services/{created_service.id}"
 
 
-def test_schema_delete(test_client, created_schema, mock_inventory_api):
+def test_schema_delete(test_client, created_schema, mock_inventory_api_dep):
     """Test deleting a schema."""
     returned_service_id = MOCK_CREATED_SERVICE_ID
-    mock_inventory_api.get.return_value = created_schema.model_dump()
-    mock_inventory_api.delete.return_value = {"service_id": returned_service_id}
+    mock_inventory_api_dep.get.return_value = created_schema.model_dump()
+    mock_inventory_api_dep.delete.return_value = {"service_id": returned_service_id}
     response = test_client.post(
         f"/inventory/schemas/{created_schema.id}/delete", follow_redirects=False
     )
@@ -286,7 +288,7 @@ def test_schema_delete(test_client, created_schema, mock_inventory_api):
     assert response.headers["location"] == f"/inventory/services/{returned_service_id}"
 
 
-def test_table_create_for_schema(test_client, created_schema, mock_inventory_api):
+def test_table_create_for_schema(test_client, created_schema, mock_inventory_api_dep):
     """Test creating a new table for schema."""
     form_data = {
         "name": "table_name",
@@ -304,12 +306,12 @@ def test_table_create_for_schema(test_client, created_schema, mock_inventory_api
     assert response.status_code == status.HTTP_303_SEE_OTHER
 
 
-def test_table_delete(test_client, created_table, mock_inventory_api):
+def test_table_delete(test_client, created_table, mock_inventory_api_dep):
     """Test deleting a table."""
     delete_table_id = MOCK_CREATED_TABLE_ID
     returned_schema_id = MOCK_CREATED_SCHEMA_ID
-    mock_inventory_api.get.return_value = created_table.model_dump()
-    mock_inventory_api.delete.return_value = {"schema_id": returned_schema_id}
+    mock_inventory_api_dep.get.return_value = created_table.model_dump()
+    mock_inventory_api_dep.delete.return_value = {"schema_id": returned_schema_id}
     response = test_client.post(
         f"/inventory/tables/{delete_table_id}/delete", follow_redirects=False
     )

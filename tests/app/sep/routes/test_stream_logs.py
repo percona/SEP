@@ -41,7 +41,7 @@ def task_history_response(faker, created_task):
 
 
 @pytest.fixture
-def mock_task_api(task_history_response):
+def mock_task_api_dep(task_history_response):
     """Mock the TaskAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock
@@ -68,10 +68,12 @@ def mock_stream(path, task_history_id):
     raise ValueError(f"Unexpected path: {path}")
 
 
-def test_archives_logs_event_stream(test_client, mock_task_api, task_history_response):
+def test_archives_logs_event_stream(
+    test_client, mock_task_api_dep, task_history_response
+):
     """Test streaming task history logs as server-sent events."""
     # Use the standalone mock_stream function
-    mock_task_api.stream.side_effect = lambda path: mock_stream(
+    mock_task_api_dep.stream.side_effect = lambda path: mock_stream(
         path, task_history_response.id
     )
     response = test_client.get(f"/stream-logs/{task_history_response.id}")
@@ -83,6 +85,6 @@ def test_archives_logs_event_stream(test_client, mock_task_api, task_history_res
     assert "log line 1" in streamed_content
     assert "log line 2" in streamed_content
 
-    mock_task_api.stream.assert_called_once_with(
+    mock_task_api_dep.stream.assert_called_once_with(
         f"/history/{task_history_response.id}/logs/"
     )

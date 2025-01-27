@@ -10,7 +10,7 @@ from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.archives.models import ArchivesCreate
-from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import GeneratedTask, Task, TaskBackendEnum
 
 MOCK_CREATED_NODE_ID = 1
 MOCK_CREATED_SERVICE_ID = 1
@@ -38,7 +38,6 @@ class TaskFactory(ModelFactory[Task]):
     """Define factory for Task instances."""
 
     is_template: bool = False
-    owner: TaskOwner = TaskOwner.ALTERS
     backend: TaskBackendEnum = TaskBackendEnum.NOMAD
 
 

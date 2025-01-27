@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.requests import RemoteAPI
 from app.inventory.models import Service, ServiceTypeEnum, SourceEnum
 from app.sep.inventory import CreatedNode, CreatedService, Node
 from app.sep.sync.syncers.pmm import PMMRemoteAPI, PMMSyncer
@@ -22,15 +21,9 @@ def mock_pmm_api() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_inventory_api() -> AsyncMock:
-    """Mock the InventoryAPI dependency."""
-    return AsyncMock(spec=RemoteAPI)
-
-
-@pytest.fixture
-def pmmsyncer(mock_pmm_api, mock_inventory_api) -> PMMSyncer:
+def pmmsyncer(mock_pmm_api, mock_remote_api) -> PMMSyncer:
     """Mock PMMSyncer instance with mocked APIs."""
-    return PMMSyncer(pmm=mock_pmm_api, inventory_api=mock_inventory_api)
+    return PMMSyncer(pmm=mock_pmm_api, inventory_api=mock_remote_api)
 
 
 @pytest.fixture

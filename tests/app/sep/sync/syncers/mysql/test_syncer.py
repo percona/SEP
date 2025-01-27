@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import (
     CreatedNode,
@@ -29,21 +28,9 @@ from tests.app.factories import (
 
 
 @pytest.fixture
-def mock_inventory_api() -> AsyncMock:
-    """Mock the InventoryAPI dependency."""
-    return AsyncMock(spec=RemoteAPI)
-
-
-@pytest.fixture
-def mock_task_api() -> AsyncMock:
-    """Mock the TaskAPI dependency."""
-    return AsyncMock(spec=RemoteAPI)
-
-
-@pytest.fixture
-def mock_mysql_syncer(mock_task_api, mock_inventory_api) -> MySQLSyncer:
+def mock_mysql_syncer(mock_remote_api) -> MySQLSyncer:
     """Mock MySQLSyncer instance with mocked APIs."""
-    return MySQLSyncer(tasks_api=mock_task_api, inventory_api=mock_inventory_api)
+    return MySQLSyncer(tasks_api=mock_remote_api, inventory_api=mock_remote_api)
 
 
 @pytest.fixture
@@ -257,7 +244,7 @@ async def test_perform_node_sync(created_node, mock_mysql_syncer, mocker):
 
 @pytest.mark.asyncio
 async def test_perform_service_sync(
-    created_service, created_schema, mock_inventory_api, mock_mysql_syncer, mocker
+    created_service, created_schema, mock_remote_api, mock_mysql_syncer, mocker
 ):
     """Test synchronizing data for a specific service."""
     updated_service = created_service.model_copy()
@@ -269,10 +256,10 @@ async def test_perform_service_sync(
         ),
     ]
     created_schema.service.node.id = MOCK_CREATED_NODE_ID
-    mock_inventory_api.get.side_effect = [
+    mock_remote_api.get.side_effect = [
         [created_schema.model_dump()],
     ]
-    mock_inventory_api.post.side_effect = [created_schema.model_dump()]
+    mock_remote_api.post.side_effect = [created_schema.model_dump()]
     mocker.patch(
         "app.sep.sync.syncers.mysql.syncer.MySQLSyncer.sync_schema",
         new_callable=AsyncMock,
@@ -288,15 +275,15 @@ async def test_perform_service_sync(
 
 @pytest.mark.asyncio
 async def test_perform_schema_sync(
-    created_schema, mock_inventory_api, mock_mysql_syncer, mocker
+    created_schema, mock_remote_api, mock_mysql_syncer, mocker
 ):
     """Test synchronize data for a specific schema."""
     updated_schema = created_schema.model_copy()
     updated_table = created_schema.tables[0].model_copy()
     updated_table.name = "updated_table_name"
     updated_schema.tables = [updated_table]
-    mock_inventory_api.put.side_effect = [updated_schema.model_dump()]
-    mock_inventory_api.post.side_effect = [updated_table.model_dump()]
+    mock_remote_api.put.side_effect = [updated_schema.model_dump()]
+    mock_remote_api.post.side_effect = [updated_table.model_dump()]
     mocker.patch(
         "app.sep.sync.syncers.mysql.syncer.MySQLSyncer.sync_table",
         new_callable=AsyncMock,
