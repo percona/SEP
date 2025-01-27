@@ -524,8 +524,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     step,
                     alloc_id,
                 )
-                alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
-                state = alloc["TaskStates"][step]["State"]
             except ClientError:
                 logger.exception(
                     "An error occurred while fetching %s logs for %s (%s)",
@@ -534,6 +532,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     alloc_id,
                 )
                 break
+
+            alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
+            state = alloc["TaskStates"][step]["State"]
+            if state != "running":
+                logger.info(
+                    "Task %s of alloc %s is no longer running. Finalizing log stream.",
+                    step,
+                    alloc_id,
+                )
+                break
+
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
 
     async def stream_logs(
