@@ -2,12 +2,12 @@
 
 from typing import ClassVar
 
-from app.core.config import BaseYamlExtraSettings
+from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
-class TasksSettings(BaseYamlExtraSettings):
+class TasksSettings(BaseYamlAppSettings):
     """Define settings for tasks configuration.
 
     :cvar SETTINGS_PREFIXES: The prefixes for task-related settings in the

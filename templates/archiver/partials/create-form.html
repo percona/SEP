@@ -196,7 +196,7 @@
 {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
 
-<script type="text/javascript">
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas | tojson }};
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('source_db_id');

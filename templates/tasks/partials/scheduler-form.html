@@ -6,7 +6,7 @@
     {% include "tasks/partials/scheduler-inputs.html" %}
 </form>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
     document.getElementById("schedulerForm").addEventListener("submit", (event) => {
         const isBasicMode =
             document.getElementById("BasicContainer").style.display !== "none";

@@ -19,7 +19,7 @@
         <td>{{ task['created_at'] }}</td>
         <td>
           <a href="{{ task_name }}"><i class="icons">visibility</i></a>
-          <a href="javascript:;" onclick="document.getElementById('deleteTaskForm').submit();">
+          <a href="#" class="submitNextForm">
             <i class="icons">delete forever</i></a>
           <form action="{{ task_path }}/delete" method="POST" style="display:none;" id="deleteTaskForm"></form>
         </td>

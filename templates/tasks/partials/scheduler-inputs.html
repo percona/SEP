@@ -40,7 +40,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 
     const frequencyInput = document.getElementById("frequencyNumber");
     const unitSelect = document.getElementById("frequencyUnit");

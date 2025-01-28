@@ -8,7 +8,6 @@ from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
-from app.core.auth.utils import get_user_model
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
@@ -23,8 +22,6 @@ from tests.app.factories import (
     CreatedTableFactory,
     OAuthTokenFactory,
 )
-
-User = get_user_model()
 
 
 @pytest.fixture(scope="session")

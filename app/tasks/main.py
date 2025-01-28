@@ -38,7 +38,12 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 lifespan = tasks_lifespan if __name__ == "__main__" else None
 tasks_app = create_app(
-    tasks_router, periodic_router, lifespan=lifespan, add_cors_middleware=True
+    tasks_router,
+    periodic_router,
+    lifespan=lifespan,
+    backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
+    allowed_hosts=tasks_settings.ALLOWED_HOSTS,
+    security_headers=tasks_settings.SECURITY_HEADERS,
 )
 
 

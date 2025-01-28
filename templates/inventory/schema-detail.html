@@ -115,7 +115,7 @@
         </tbody>
     </table>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         function isOverflowing(element) {
             return element.scrollHeight > element.offsetHeight;
         }

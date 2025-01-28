@@ -18,14 +18,13 @@
         }
     </style>
     {% if history or running_tasks %}
-        <link rel="stylesheet" href="/static/logs.css">
+        <link rel="stylesheet" href="/static/css/logs.css">
     {% endif %}
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
     {% if history or running_tasks %}
-        <script>const logsPath = "/alters/logs/";</script>
-        <script src="/static/logs.js"></script>
+        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock %}
 
