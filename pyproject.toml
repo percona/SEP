@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sep"
-version = "0.2.1-alpha"
+version = "0.3.2-beta"
 description = "SEP: Services Enablement Platform"
 authors = [
     "Ceri Williams <ceri.williams@percona.com>",
