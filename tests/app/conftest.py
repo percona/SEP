@@ -178,18 +178,13 @@ def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
 @pytest.fixture
 def created_node() -> CreatedNode:
     """Return a fake created node."""
-    created_node = CreatedNodeFactory.build()
-    created_node.address = "localhost"
-    return created_node
+    return CreatedNodeFactory.build(address="localhost")
 
 
 @pytest.fixture
 def created_service(created_node: CreatedNode) -> CreatedService:
     """Return a fake created service."""
-    created_service = CreatedServiceFactory.build()
-    created_service.node = created_node
-    created_service.type = ServiceTypeEnum.MYSQL
-    return created_service
+    return CreatedServiceFactory.build(node=created_node, type=ServiceTypeEnum.MYSQL)
 
 
 @pytest.fixture
