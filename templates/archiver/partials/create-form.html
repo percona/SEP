@@ -60,16 +60,17 @@
     <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
-        <label for="hostname">Select host</label>
+        {% set hostname_title="Select the hostname of the target system for task execution." %}
+        <label for="hostname" title="{{ hostname_title }}">Select host</label>
         {% if executor_hosts|length == 1 %}
         {% set single_service = executor_hosts[0] %}
-        <select id="hostname" name="hostname" disabled>
+        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
             <option
             value="{{ single_service }}" selected>{{ single_service }}</option>
         </select>
         <input type="hidden" name="hostname" value="{{ single_service }}">
         {% else %}
-        <select id="hostname" name="hostname">
+        <select id="hostname" name="hostname" title="{{ hostname_title }}">
             {% for executor_host in executor_hosts %}
             <option value="{{ executor_host }}">{{ executor_host }}</option>
             {% endfor %}
@@ -79,10 +80,12 @@
     <fieldset style="display: flex; flex-flow: column;">
         <legend>Archive Type</legend>
         <div>
-            <label for="alias">Task name
-                <input type="text" id="alias" name="alias" class="validate" required />
+            {% set task_name_title="Type the name of task to be created."%}
+            <label for="alias" title="{{ task_name_title }}">Task name
+                <input type="text" id="alias" name="alias" class="validate" placeholder="Archiver_Task_01" required />
             </label>
-            <label for="swap_drop">Type
+            {% set swap_drop_title="Select the drop behavior: 'Standard Purge' for basic purging, 'Swap and Drop' to replace and drop the original table, or 'Swap-Archive-Drop' to archive before dropping."%}
+            <label for="swap_drop" title="{{ swap_drop_title }}">Type
                 <select id="swap_drop" name="swap_drop">
                     <option value="0">Standard purge</option>
                     <option value="1">Swap and drop</option>
@@ -94,7 +97,8 @@
     <fieldset>
         <legend>Source details</legend>
         <div>
-            <label for="service_id">Select a database host
+            {% set service_id_title="Select the database host from the inventory to connect to."%}
+            <label for="service_id" title="{{ service_id_title }}">Database host
                 {% if mysql_services|length == 1 %}
                 {% set single_service = mysql_services[0] %}
                 <select id="service_id" name="service_id" disabled>
@@ -112,12 +116,14 @@
             </label>
         </div>
         <div>
-            <label for="source_db_id">Schema
+            {% set source_db_id_title="Select the source database schema from which data will be purged."%}
+            <label for="source_db_id" title="{{ source_db_id_title }}">Schema
                 <select id="source_db_id" name="source_db_id" class="validate" required>
                     <option value="">Select a schema</option>
                 </select>
             </label>
-            <label for="source_table_id">Table
+            {% set source_table_id_title="Select the source table from which data will be purged."%}
+            <label for="source_table_id" title="{{ source_table_id_title }}">Table
                 <select id="source_table_id" name="source_table_id" class="validate" required>
                     <option value="">Select a table</option>
                 </select>
@@ -125,47 +131,57 @@
             <br/>
             <div id="source_query_container" style="width: fit-content; margin-left: 1em;">
             <label>OR</label>
-            <label for="source_query">Source Query
-                <input type="text" id="source_query" name="source_query" class="validate" required style="width: 25em;"/>
+            {% set source_query_title="Type an optional query to define the source data to be purged." %}
+            <label for="source_query" title="{{ source_query_title }}">Source Query
+                <input type="text" id="source_query" name="source_query" class="validate" placeholder="SELECT ..." required style="width: 25em;"/>
             </label>
             </div>
         </div>
         <div id="swp_table_suffix_container">
-            <label for="swp_table_suffix">Swap Table Suffix
+            {% set swp_table_suffix_title="Select an date suffix for the swap table."%}
+            <label for="swp_table_suffix" title="{{ swp_table_suffix_title }}">Swap Table Suffix
                 <input type="date" id="swp_table_suffix" name="swp_table_suffix" class="validate" required />
             </label>
         </div>
         <div id="purge_options_container">
-            <label for="where">Where condition
-                <input type="text" id="where" name="where" class="validate" required style="width: 25em;"/>
+            {% set where_title="Type a WHERE clause to limit rows for archiving (exclude the keyword 'WHERE')."%}
+            <label for="where" title="{{ where_title }}">Where condition
+                <input type="text" id="where" name="where" class="validate" required style="width: 25em;" placeholder="ts < current_date - interval 90 day"/>
             </label>
             <br/>
-            <label for="use_index">Use Index
-                <input type="text" id="use_index" name="use_index" class="validate"/>
+            {% set use_index_title="Optionally specify an index to optimize the query execution." %}
+            <label for="use_index" title="{{ use_index_title }}">Use Index
+                <input type="text" id="use_index" name="use_index" class="validate" placeholder="created_date"/>
             </label>
-            <label for="limit">Limit
-                <input type="number" id="limit" name="limit" class="validate" value="1000"  style="width:5em;"/>
+            {% set limit_title="Set the number of rows to fetch and archive per statement." %}
+            <label for="limit" title="{{ limit_title }}">Limit
+                <input type="number" id="limit" name="limit" class="validate" value="1000" placeholder="100" style="width:5em;"/>
             </label>
-            <label for="sleep">Sleep
-                <input type="number" id="sleep" name="sleep" class="validate" value="1"  style="width: 3em;"/>
+            {% set sleep_title="Set the sleep time (in seconds) between fetch operations. Default: 0 (no sleep)."%}
+            <label for="sleep" title="{{ sleep_title }}">Sleep
+                <input type="number" id="sleep" name="sleep" class="validate" value="1" placeholder="1" style="width: 3em;"/>
             </label>
             <br/>
-            <label for="extra_args">Extra args
-                <input type="text" id="extra_args" name="extra_args" class="validate" style="width: 25em;"/>
+            {% set extra_args_title="Type optional additional arguments for the archive task." %}
+            <label for="extra_args" title="{{ extra_args_title }}">Extra args
+                <input type="text" id="extra_args" name="extra_args" class="validate" placeholder="--quick" style="width: 25em;"/>
             </label>
             <br/>
-            <label for="disable_binlog">Disable Binlog
+            {% set disable_binlog_title="Disable binary logging for the operation."%}
+            <label for="disable_binlog" title="{{ disable_binlog_title }}">Disable Binlog
                 <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1" />
             </label>
         </div>
-        <label for="delete_data" id="delete_data_container">DELETE_DATA
+        {% set delete_data_title="Enable to delete the rows after they are archived."%}
+        <label for="delete_data" id="delete_data_container" title="{{ delete_data_title }}">DELETE_DATA
             <input type="checkbox" id="delete_data" name="delete_data" class="validate" value="1" />
         </label>
     </fieldset>
     <fieldset id="destination_fieldset">
         <legend>Destination details</legend>
         <div id="destination_container">
-            <label for="dest_table_id">Destination Database
+            {% set dest_table_id_title="Select the destination table for the archived data." %}
+            <label for="dest_table_id" title="{{ dest_table_id_title }}">Destination Database
                 <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
                     <option value="">Select a table</option>
                 </select>
@@ -173,8 +189,9 @@
             <br/>
             <div id="dest_file_container" style="width: fit-content;">
                 <label>OR</label>
-                <label for="dest_file" >Destination File
-                    <input type="text" id="dest_file" name="dest_file" class="validate" required style="width: 25em;"/>
+                {% set dest_file_title="Type the file path where the archived data will be stored." %}
+                <label for="dest_file" title="{{ dest_file_title }}">Destination File
+                    <input type="text" id="dest_file" name="dest_file" class="validate" placeholder="/path/to/detination/file.txt" required style="width: 25em;"/>
                 </label>
             </div>
         </div>
