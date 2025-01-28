@@ -248,6 +248,9 @@ line-ending = "lf"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "syncmysql: require syncmysql dependencies",
+]
 
 [tool.coverage.run]
 source = ["app"]

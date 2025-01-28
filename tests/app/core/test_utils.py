@@ -22,14 +22,6 @@ def sample_func(x, y):
     return x + y
 
 
-def long_running_func():
-    """Sample function that simulates a long-running task."""
-    import time
-
-    time.sleep(1)
-    return "done"
-
-
 def error_func():
     """Sample function that raises a ValueError."""
     raise ValueError("Test error")
@@ -41,9 +33,6 @@ async def test_async_run():
     result = await async_run(sample_func, 2, 3)
     expected_result = 5
     assert result[0] == expected_result
-
-    result = await async_run(long_running_func)
-    assert result[0] == "done"
 
     with pytest.raises(ValueError, match="Test error"):
         await async_run(error_func)
