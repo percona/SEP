@@ -317,7 +317,7 @@
     <button type="reset">Reset</button>
 </form>
 
-<script type="text/javascript">
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
     const mydumperContainer = document.getElementById('mydumper_container');
     const xtrabackupContainer = document.getElementById('xtrabackup_container');

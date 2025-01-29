@@ -17,12 +17,12 @@
             height: 2.2rem
         }
     </style>
-    <link rel="stylesheet" href="/static/logs.css">
+    <link rel="stylesheet" href="/static/css/logs.css">
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
     {% if history %}
-        <script src="/static/logs.js"></script>
+        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock %}
 

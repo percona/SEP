@@ -1,18 +1,27 @@
 """Define test fixtures."""
 
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
-from app.core.auth.utils import get_user_model
+from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
-from tests.app.factories import CasdoorUserFactory, OAuthTokenFactory
-
-User = get_user_model()
+from app.sep.deps import get_tasks_api
+from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
+from app.sep.main import sep_app
+from tests.app.factories import (
+    CasdoorUserFactory,
+    CreatedNodeFactory,
+    CreatedSchemaFactory,
+    CreatedServiceFactory,
+    CreatedTableFactory,
+    OAuthTokenFactory,
+)
 
 
 @pytest.fixture(scope="session")
@@ -146,3 +155,42 @@ def regular_user(valid_username: str, faker: Faker) -> CasdoorUser:
         username=valid_username,
         is_admin=False,
     )
+
+
+@pytest.fixture
+def mock_remote_api() -> AsyncMock:
+    """Mock a RemoteAPI object."""
+    return AsyncMock(spec=RemoteAPI)
+
+
+@pytest.fixture
+def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+    """Mock the TaskAPI dependency."""
+    mock = AsyncMock(spec=RemoteAPI)
+    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
+    yield mock
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def created_node() -> CreatedNode:
+    """Return a fake created node."""
+    return CreatedNodeFactory.build(address="localhost")
+
+
+@pytest.fixture
+def created_service(created_node: CreatedNode) -> CreatedService:
+    """Return a fake created service."""
+    return CreatedServiceFactory.build(node=created_node, type=ServiceTypeEnum.MYSQL)
+
+
+@pytest.fixture
+def created_schema() -> CreatedSchema:
+    """Return a fake created Schema."""
+    return CreatedSchemaFactory.build()
+
+
+@pytest.fixture
+def created_table() -> CreatedTable:
+    """Return a fake created Table."""
+    return CreatedTableFactory.build()

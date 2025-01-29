@@ -76,7 +76,7 @@
         <button id="confirmNo" class="confirm-btn">No</button>
     </div>
 </div>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 
     document.addEventListener('DOMContentLoaded', function () {
         const dialog = document.getElementById('confirmationDialog');

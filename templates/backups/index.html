@@ -15,17 +15,17 @@
 
 {% block behaviours_optimized_extra %}
     {% if history_tasks or running_tasks %}
-        <script src="/static/logs.js"></script>
+        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
     {% if tasks %}
-        <script>
+        <script nonce="{{ request.state.csp_nonce }}">
             const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
             const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
         </script>
-        <script src="/static/cronstrue.min.js"></script>
-        <script src="/static/select2.min.js"></script>
-        <script src="/static/saved.js"></script>
-        <script src="/static/scheduled.js"></script>
+        <script src="/static/js/cronstrue.min.js" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="/static/js/select2.min.js" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="/static/js/saved.js" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="/static/js/scheduled.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock %}
 

@@ -30,7 +30,11 @@ from app.sep.middleware import CSRFMiddleware
 logger = logging.getLogger(__name__)
 
 lifespan = default_lifespan if __name__ == "__main__" else None
-sep_app = create_app(lifespan=lifespan)
+sep_app = create_app(
+    lifespan=lifespan,
+    allowed_hosts=sep_settings.ALLOWED_HOSTS,
+    security_headers=sep_settings.SECURITY_HEADERS,
+)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 

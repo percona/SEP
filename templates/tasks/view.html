@@ -18,32 +18,25 @@
     </style>
     <link rel="stylesheet" href="/static/tasks.css">
     {% if history or running_tasks %}
-        <link rel="stylesheet" href="/static/logs.css">
+        <link rel="stylesheet" href="/static/css/logs.css">
     {% endif %}
-    <link rel="stylesheet" href="/static/saved.css">
-    <link rel="stylesheet" href="/static/scheduled.css">
-    <link rel="stylesheet" href="/static/select2.min.css">
+    <link rel="stylesheet" href="/static/css/saved.css">
+    <link rel="stylesheet" href="/static/css/scheduled.css">
+    <link rel="stylesheet" href="/static/css/select2.min.css">
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
     {% if history or running_tasks %}
-        <script src="/static/logs.js"></script>
+        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
         const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
     </script>
-    <script src="/static/cronstrue.min.js"></script>
-    <script src="/static/saved.js"></script>
-    <script src="/static/select2.min.js"></script>
-    <script src="/static/scheduled.js"></script>
-    <script>
-        $(document).ready(function () {
-            $('.delete-tasks-button').click(function (e) {
-                e.preventDefault();
-            });
-        });
-    </script>
+    <script src="/static/js/cronstrue.min.js" nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="/static/js/saved.js" nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="/static/js/select2.min.js" nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="/static/js/scheduled.js" nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock %}
 
 

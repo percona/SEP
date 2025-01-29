@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
-    BaseYamlExtraSettings,
+    BaseYamlAppSettings,
     default_lifespan,
     Settings,
     YamlPrefixConfigSettingsSource,
@@ -107,7 +107,7 @@ def mock_yaml_prefix_source():
 def settings_class():
     """Mock settings class."""
 
-    class TestSettings(BaseYamlExtraSettings):
+    class TestSettings(BaseYamlAppSettings):
         SETTINGS_PREFIXES = ["prefix"]
 
     return TestSettings

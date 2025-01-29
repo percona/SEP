@@ -56,6 +56,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: poetry
+      - name: Install test dependencies
+        working-directory: ./workspace
+        run: poetry install --with syncmysql
       - name: Run tests
         working-directory: ./workspace
         run: make test

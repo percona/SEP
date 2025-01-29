@@ -5,23 +5,12 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import status
 
-from app.core.requests import RemoteAPI
 from app.sep.deps import (
     get_task_by_name,
-    get_tasks_api,
 )
 from app.sep.main import sep_app
 from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import TaskFactory
-
-
-@pytest.fixture
-def mock_task_api() -> AsyncMock:
-    """Mock the TaskAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
 
 
 @pytest.fixture
@@ -40,11 +29,11 @@ def _mock_task_dep(created_task):
 
 def test_tasks_list(
     test_client,
-    mock_task_api,
+    mock_task_api_dep,
     created_task,
 ):
     """Test listing tasks."""
-    mock_task_api.get.side_effect = [
+    mock_task_api_dep.get.side_effect = [
         [created_task.model_dump()],  # for /
         [],  # for /history/
     ]
@@ -52,19 +41,19 @@ def test_tasks_list(
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert created_task.name in response.text
-    mock_task_api.get.assert_any_await("/")
-    mock_task_api.get.assert_awaited_with(
+    mock_task_api_dep.get.assert_any_await("/")
+    mock_task_api_dep.get.assert_awaited_with(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
 
 
 def test_task_create(
     test_client,
-    mock_task_api,
+    mock_task_api_dep,
 ):
     """Test creating a new task."""
     transform_return = {"transformed": "data"}
-    mock_task_api.post.side_effect = [
+    mock_task_api_dep.post.side_effect = [
         transform_return,  # for /transform/
         {"created": "task"},  # for /
     ]
@@ -85,10 +74,10 @@ def test_task_create(
     response = test_client.post("/tasks/", data=form_data, follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/tasks"
-    mock_task_api.post.assert_any_await(
+    mock_task_api_dep.post.assert_any_await(
         "/transform/", json=transform_data, params={"backend": TaskBackendEnum.NOMAD}
     )
-    mock_task_api.post.assert_awaited_with(
+    mock_task_api_dep.post.assert_awaited_with(
         "/", json=task_data | {"data": transform_return}
     )
 
@@ -97,11 +86,11 @@ def test_task_create(
 def test_task_detail(
     test_client,
     created_task,
-    mock_task_api,
+    mock_task_api_dep,
 ):
     """Test retrieving a task's detail page."""
-    mock_task_api.get.return_value = []
-    mock_task_api.get.side_effect = [
+    mock_task_api_dep.get.return_value = []
+    mock_task_api_dep.get.side_effect = [
         [],  # for /{task_name}/periodic/
         [],  # for /{task_name}/history/
         [],  # for /{task_name}/history/?status=RUNNING
@@ -111,23 +100,23 @@ def test_task_detail(
     response = test_client.get(f"/tasks/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
-    mock_task_api.get.assert_any_await(f"/{created_task.name}/periodic/")
-    mock_task_api.get.assert_any_await(f"/{created_task.name}/history/")
-    mock_task_api.get.assert_any_await(
+    mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/periodic/")
+    mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
+    mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
-    mock_task_api.get.assert_awaited_with("/hosts/")
+    mock_task_api_dep.get.assert_awaited_with("/hosts/")
 
 
 @pytest.mark.usefixtures("_mock_task_dep")
 def test_task_execute(
     test_client,
     created_task,
-    mock_task_api,
+    mock_task_api_dep,
 ):
     """Test executing a task."""
-    mock_task_api.post.return_value = AsyncMock()
+    mock_task_api_dep.post.return_value = AsyncMock()
 
     execute_data = {
         "meta": {},
@@ -138,7 +127,7 @@ def test_task_execute(
     response = test_client.post(f"/tasks/{created_task.name}", follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/tasks"
-    mock_task_api.post.assert_awaited_once_with(
+    mock_task_api_dep.post.assert_awaited_once_with(
         f"/execute/{created_task.name}", json=execute_data
     )
 
@@ -147,14 +136,14 @@ def test_task_execute(
 def test_tasks_delete(
     test_client,
     created_task,
-    mock_task_api,
+    mock_task_api_dep,
 ):
     """Test deleting a task."""
-    mock_task_api.delete.return_value = AsyncMock()
+    mock_task_api_dep.delete.return_value = AsyncMock()
 
     response = test_client.post(
         f"/tasks/{created_task.name}/delete", follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/tasks"
-    mock_task_api.delete.assert_awaited_once_with(f"/{created_task.name}")
+    mock_task_api_dep.delete.assert_awaited_once_with(f"/{created_task.name}")

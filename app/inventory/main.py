@@ -37,7 +37,9 @@ inventory_app = create_app(
     schemas.router,
     tables.router,
     lifespan=lifespan,
-    add_cors_middleware=True,
+    backend_cors_origins=inventory_settings.BACKEND_CORS_ORIGINS,
+    allowed_hosts=inventory_settings.ALLOWED_HOSTS,
+    security_headers=inventory_settings.SECURITY_HEADERS,
 )
 
 
