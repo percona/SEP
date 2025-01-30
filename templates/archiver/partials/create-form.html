@@ -82,7 +82,7 @@
         <div>
             {% set task_name_title="Type the name of task to be created."%}
             <label for="alias" title="{{ task_name_title }}">Task name
-                <input type="text" id="alias" name="alias" class="validate" placeholder="Archiver_Task_01" required />
+                <input type="text" id="alias" name="alias" class="validate" placeholder="Enter a descriptive task name" required />
             </label>
             {% set swap_drop_title="Select the drop behavior: 'Standard Purge' for basic purging, 'Swap and Drop' to replace and drop the original table, or 'Swap-Archive-Drop' to archive before dropping."%}
             <label for="swap_drop" title="{{ swap_drop_title }}">Type
