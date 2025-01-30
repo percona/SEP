@@ -5,13 +5,13 @@
 {% block title_prefix %}{% endblock %}
 
 {% block main %}
-<link rel="stylesheet" href="/static/homepage.css">
+<link rel="stylesheet" href="/static/css/homepage.css">
 {% if history or running_tasks %}
-<link rel="stylesheet" href="/static/logs.css">
+<link rel="stylesheet" href="/static/css/logs.css">
 {% endif %}
 {% if periodic_tasks %}
-<link rel="stylesheet" href="/static/scheduled.css">
-<link rel="stylesheet" href="/static/select2.min.css">
+<link rel="stylesheet" href="/static/css/scheduled.css">
+<link rel="stylesheet" href="/static/css/select2.min.css">
 {% endif %}
     {% if widgets is defined and widgets|length > 0 %}
     <section id="widgets">
