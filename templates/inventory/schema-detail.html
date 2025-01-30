@@ -83,8 +83,8 @@
                     <button
                             class="toggle-btn ellipse-btn hidden"
                             id="create-btn-{{ table.id }}"
-                            onclick="toggleContent('create-{{ table.id }}', this)">
-                        >>More
+                            data-target="create-{{ table.id }}">
+                        &gt;&gt;More
                     </button>
                 </td>
                 <td>
@@ -94,8 +94,8 @@
                         <button
                                 class="toggle-btn ellipse-btn hidden"
                                 id="keys-btn-{{ table.id }}"
-                                onclick="toggleContent('keys-{{ table.id }}', this)">
-                            >>More
+                                data-target="keys-{{ table.id }}">
+                            &gt;&gt;More
                         </button>
                     {% endif %}
                 </td>
@@ -131,6 +131,11 @@
                     console.error(`Button with ID '${buttonId}' not found.`);
                     return;
                 }
+
+                button.addEventListener('click', function () {
+                    const targetId = button.getAttribute('data-target');
+                    toggleContent(targetId, button);
+                });
 
                 if (isOverflowing(element)) {
                     button.classList.remove('hidden');
