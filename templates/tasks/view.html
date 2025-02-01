@@ -26,6 +26,7 @@
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
+    <script src="/static/js/relativeTime.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% if history or running_tasks %}
         <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
@@ -50,7 +51,7 @@
         <dt>Engine</dt>
         <dd>{{ Nomad }}</dd>
         <dt>Created</dt>
-        <dd>{{ task.created_at }}</dd>
+        <dd class="relativeTime">{{ task.created_at }}</dd>
         <dt>Specification</dt>
         <dd>
             <code>

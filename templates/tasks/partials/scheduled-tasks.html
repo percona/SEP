@@ -29,8 +29,8 @@
             {% endif %}
             {{ periodic_task.period }}
             </td>
-            <td>{{ periodic_task.start_time or '' }}</td>
-            <td>{{ periodic_task.expires or '' }}</td>
+            <td class="relativeTime">{{ periodic_task.start_time or '' }}</td>
+            <td class="relativeTime">{{ periodic_task.expires or '' }}</td>
             <td>{{ periodic_task.last_run_at or '' }}</td>
             <td>{{ periodic_task.total_run_count }}</td>
             <td>

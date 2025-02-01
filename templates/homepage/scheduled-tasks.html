@@ -29,7 +29,7 @@
         {% endif %}
           {{ periodic_task.period }}
         </td>
-        <td>{{ periodic_task.last_run_at or '' }}</td>
+        <td class="relativeTime">{{ periodic_task.last_run_at or '' }}</td>
         <td>{{ periodic_task.total_run_count }}</td>
         <td>
           {% if is_task_manager_enabled %}

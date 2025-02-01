@@ -15,7 +15,7 @@
       <tr class="previous-log-row">
         <td>{{ task_name }}</td>
         <td>{{ task['execution_request']['target'] }}</td>
-        <td>{{ task['updated_at'] }}</td>
+        <td class="relativeTime">{{ task['updated_at'] }}</td>
         <td>
           {% if is_task_manager_enabled %}
           <a href="/tasks/{{ task_name }}"><i class="icons">visibility</i></a>

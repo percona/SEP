@@ -10,6 +10,7 @@
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
+    <script src="/static/js/relativeTime.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% if running_tasks %}
         <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
@@ -43,7 +44,7 @@
             <tr>
                 <th><a href="/tasks/{{ task['name'] }}">{{ task["name"] }}</a></th>
                 <td>{{ task["backend"].capitalize() }}</td>
-                <td>{{ task["created_at"] }}</td>
+                <td class="relativeTime">{{ task["created_at"] }}</td>
             </tr>
         {% endfor %}
         </tbody>

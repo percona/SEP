@@ -21,6 +21,7 @@
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
+    <script src="/static/js/relativeTime.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% if history %}
         <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
@@ -44,8 +45,8 @@
             <td>{{ task.hostname }}</td>
             <td>{{ task.host }} ({{ task.port }})</td>
             <td>{{ task.backup_type }}</td>
-            <td>{{ task.created_at }}</td>
-            <td>{{ task.updated_at }}</td>
+            <td class="relativeTime">{{ task.created_at }}</td>
+            <td class="relativeTime">{{ task.updated_at }}</td>
         </tr>
         </tbody>
         <tfoot>

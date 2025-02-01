@@ -14,6 +14,7 @@
 {% endblock %}
 
 {% block behaviours_optimized_extra %}
+    <script src="/static/js/relativeTime.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% if history_tasks or running_tasks %}
         <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}

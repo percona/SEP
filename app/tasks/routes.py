@@ -32,6 +32,7 @@ from app.tasks.models import (
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLog,
+    TaskResponse,
     TaskStats,
     TaskWrite,
     TransformPayloadRequest,
@@ -46,7 +47,7 @@ router = APIRouter(tags=["tasks"])
 
 
 # TODO: Pagination  # noqa: TD002, TD003
-@router.get("/", dependencies=[IsAuthenticatedDep])
+@router.get("/", dependencies=[IsAuthenticatedDep], response_model=list[TaskResponse])
 async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
@@ -56,6 +57,7 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
 @router.delete(
     "/{task_name}",
     dependencies=[IsAuthenticatedDep],
+    response_model=TaskResponse,
 )
 async def delete_task(
     session: SessionDep, celery_beat_session: CeleryBeatSessionDep, task_name: str
@@ -71,14 +73,19 @@ async def delete_task(
     return task
 
 
-@router.get("/{task_name}", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/{task_name}", dependencies=[IsAuthenticatedDep], response_model=TaskResponse
+)
 async def get_task(task: TaskDep) -> Task:
     """Retrieve a task by its name."""
     return task
 
 
 @router.post(
-    "/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
+    "/",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+    response_model=TaskResponse,
 )
 async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     """Create a new task."""
