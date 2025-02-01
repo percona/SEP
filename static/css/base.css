@@ -80,7 +80,7 @@ table {
 
 .notice {
     font-weight: bolder;
-    font-style: normal
+    font-style: normal;
 }
 
 @media screen and (max-device-width: 1279px) {
@@ -144,7 +144,7 @@ table {
         background-color: #2C323E;
         border-radius: 0 0 4.5em 0;
         color: #fff;
-        padding: 1em
+        padding: 0.5em;
     }
 
     nav ul {
@@ -234,22 +234,18 @@ table {
 
     header svg {
         grid-area: icon;
-        margin-top: -1em
+        margin-top: -1em;
+        height: 90%;
+        width: 90%;
+    }
+
+    header svg path.cls-2 {
+        fill: rgb(255, 255, 255) !important
     }
 
     header h1 {
         grid-area: title;
         margin-top: 2em
-    }
-
-    svg {
-        height: 90%;
-        width: 90%;
-        grid-area: icon;
-    }
-
-    svg path.cls-2 {
-        fill: rgb(255, 255, 255) !important
     }
 
     form, fieldset {
