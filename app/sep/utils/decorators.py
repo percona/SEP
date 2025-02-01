@@ -1,4 +1,4 @@
-"""Module containing decorators for CSRF exemption."""
+"""Define reusable decorators for the SEP app."""
 
 from collections.abc import Callable
 from functools import wraps
