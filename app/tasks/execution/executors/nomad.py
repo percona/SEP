@@ -310,16 +310,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             job_status["EvalID"],
         )
         stop_ts = time.time_ns()
+        duration = (stop_ts - start_ts) / 1000**3
         queue_item.execution_request.tracking.update(
-            raw_duration=(stop_ts - start_ts) / 1000**3,
+            raw_duration=duration,
             started_at_ns=start_ts,
             finished_at_ns=stop_ts,
             started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=UTC),
             finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=UTC),
+            duration=duration,
         )
-        queue_item.execution_request.tracking["duration"] = (
-            (stop_ts - start_ts) / 1000**3
-        ) - queue_item.execution_request.tracking["duration"]
         return await TaskHistoryManager.save(
             session,
             queue_item,
@@ -406,7 +405,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             task_logs=sort_dict(
                 task_logs, lambda item: list(task_states.keys()).index(item[0])
             ),
-            duration=attempts * self.wait_interval,
         )
         return queue_item
 
