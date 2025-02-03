@@ -426,13 +426,13 @@ main form button {
     border: solid 2px white;
 }
 
-main form button:hover, td button:hover {
+main form button:hover, td button:hover, button.confirm-btn:hover {
     background-color: white;
     border: solid 2px #4B5468;
     color: #4B5468;
 }
 
-button.icons {
+button.icons, button.confirm-btn {
     width: 2.2em;
     height: 2.2em;
     border: solid 2px white;
