@@ -45,9 +45,9 @@
     }
 </style>
 {% extends "inventory/base-inventory.html" %}
-{% block title %}
+{% block title -%}
     Schema {{ schema.name }} ({{ schema.service_id }})
-{% endblock title %}
+{%- endblock title %}
 {% block inventory_entity_details %}
     {% with inventory_table_title = "Schema Details", inventory_sync_route = "/inventory/schemas/" ~ schema.id ~ "/sync/" %}
         {% include "inventory/partials/sync-button.html" %}

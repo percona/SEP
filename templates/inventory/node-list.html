@@ -1,7 +1,7 @@
 {% extends "inventory/base-inventory.html" %}
-{% block title %}
+{% block title -%}
     Node List
-{% endblock title %}
+{%- endblock title %}
 {% block inventory_table %}
     {% with inventory_table_title = "Node List", inventory_sync_route = "/inventory/sync/" %}
         {% include "inventory/partials/sync-button.html" %}

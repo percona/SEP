@@ -47,9 +47,9 @@
     <script src="{{ url_for('static', path='/js/scheduled.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
-{% block title %}
+{% block title -%}
     Task: {{ task.name }}
-{% endblock title %}
+{%- endblock title %}
 {## TODO: the template is currently Nomad-specific#}
 {# TODO: Adjust indentation of all templates #}
 {% block main %}

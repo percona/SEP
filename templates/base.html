@@ -2,11 +2,9 @@
 <html lang="en">
     <head>
         {#  TODO: success/error messages on top #}
-        <title>SEP
-            {% block title %}
-                The page with no name
-            {% endblock title %}
-        </title>
+        {# djlint:off #}
+        <title>SEP {% block title %}The page with no name{% endblock title %}</title>
+        {# djlint:on #}
         <meta charset="utf-8">
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="description" content="Percona Services Enablement Platform">
