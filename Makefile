@@ -47,7 +47,7 @@ image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
 	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
 
-format:
+format: venv
 	@"${VENV_BIN}"/ruff format .
 	@"${VENV_BIN}"/djlint . --reformat
 

@@ -81,6 +81,8 @@ bandit = {extras = ["toml"], version = "^1.7.9"}
 poetry-plugin-export = "^1.8.0"
 ruff = "^0.9.4"
 djlint = "^1.36.4"
+jsbeautifier = "^1.15.1"
+cssbeautifier = "^1.15.1"
 
 
 [tool.poetry.group.mysql]

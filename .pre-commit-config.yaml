@@ -11,6 +11,21 @@ repos:
     hooks:
       - id: djlint
       - id: djlint-reformat
+  - repo: local
+    hooks:
+      - id: js-beautify
+        name: JS Beautify
+        description: "Run js-beautify (from jsbeautifier) on .js files"
+        entry: js-beautify --end-with-newline --replace
+        language: system
+        files: ^(?!.*\.min\.js$).*\.js$
+      - id: css-beautify
+        name: CSS Beautify
+        description: "Run css-beautify (from cssbeautifier) on .css files"
+        entry: css-beautify --end-with-newline --replace
+        language: system
+        files: ^(?!.*\.min\.css$).*\.css$
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
     hooks:

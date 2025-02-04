@@ -42,8 +42,8 @@ function humanizeRelativeTime(date) {
     return diff > 0 ? `in ${relativeTime}` : `${relativeTime} ago`;
 }
 
-$(document).ready(function () {
-    $('.relativeTime').each(function () {
+$(document).ready(function() {
+    $('.relativeTime').each(function() {
         const $dateElem = $(this);
         const relativeDate = new Date($(this).text());
         $dateElem.attr('title', humanizeRelativeTime(relativeDate));

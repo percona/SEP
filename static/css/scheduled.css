@@ -6,7 +6,8 @@
     margin-top: 0;
 }
 
-#start-time-header, #expires-header {
+#start-time-header,
+#expires-header {
     width: 225px;
 }
 
@@ -23,11 +24,11 @@
     width: 200px;
 }
 
-#scheduled-tasks-table.create-mode .hide-on-create-mode{
+#scheduled-tasks-table.create-mode .hide-on-create-mode {
     display: none;
 }
 
-#scheduled-tasks-table:not(.create-mode) .show-on-create-mode{
+#scheduled-tasks-table:not(.create-mode) .show-on-create-mode {
     display: none;
 }
 
@@ -105,15 +106,15 @@
     border-radius: 50%;
 }
 
-input:checked + .slider {
+input:checked+.slider {
     background-color: #1060FF;
 }
 
-input:focus + .slider {
+input:focus+.slider {
     box-shadow: 0 0 1px #1060FF;
 }
 
-input:checked + .slider:before {
+input:checked+.slider:before {
     transform: translateX(26px);
 }
 
@@ -195,13 +196,19 @@ input:checked + .slider:before {
 }
 
 @keyframes highlight-animation {
-    0% { background-color: #ffffcc; }
-    100% { background-color: transparent; }
+    0% {
+        background-color: #ffffcc;
+    }
+
+    100% {
+        background-color: transparent;
+    }
 }
 
 .disabled-row {
     background-color: #f0f0f0;
 }
+
 .hidden {
     display: none;
 }
