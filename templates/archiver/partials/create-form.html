@@ -55,37 +55,41 @@
         pointer-events: none;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}" >
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+<form action="" method="post" class="{{ form_class }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
-        {% set hostname_title="Select the hostname of the target system for task execution." %}
+        {% set hostname_title = "Select the hostname of the target system for task execution." %}
         <label for="hostname" title="{{ hostname_title }}">Select host</label>
         {% if executor_hosts|length == 1 %}
-        {% set single_service = executor_hosts[0] %}
-        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-            <option
-            value="{{ single_service }}" selected>{{ single_service }}</option>
-        </select>
-        <input type="hidden" name="hostname" value="{{ single_service }}">
+            {% set single_service = executor_hosts[0] %}
+            <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                <option value="{{ single_service }}" selected>{{ single_service }}</option>
+            </select>
+            <input type="hidden" name="hostname" value="{{ single_service }}">
         {% else %}
-        <select id="hostname" name="hostname" title="{{ hostname_title }}">
-            {% for executor_host in executor_hosts %}
-            <option value="{{ executor_host }}">{{ executor_host }}</option>
-            {% endfor %}
-        </select>
+            <select id="hostname" name="hostname" title="{{ hostname_title }}">
+                {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+            </select>
         {% endif %}
     </fieldset>
     <fieldset style="display: flex; flex-flow: column;">
         <legend>Archive Type</legend>
         <div>
-            {% set task_name_title="Type the name of task to be created."%}
-            <label for="alias" title="{{ task_name_title }}">Task name
-                <input type="text" id="alias" name="alias" class="validate" placeholder="Enter a unique task name" required />
+            {% set task_name_title = "Type the name of task to be created." %}
+            <label for="alias" title="{{ task_name_title }}">
+                Task name
+                <input type="text"
+                       id="alias"
+                       name="alias"
+                       class="validate"
+                       placeholder="Enter a unique task name"
+                       required />
             </label>
-            {% set swap_drop_title="Select the drop behavior: 'Standard Purge' for basic purging, 'Swap and Drop' to replace and drop the original table, or 'Swap-Archive-Drop' to archive before dropping."%}
-            <label for="swap_drop" title="{{ swap_drop_title }}">Type
+            {% set swap_drop_title = "Select the drop behavior: 'Standard Purge' for basic purging, 'Swap and Drop' to replace and drop the original table, or 'Swap-Archive-Drop' to archive before dropping." %}
+            <label for="swap_drop" title="{{ swap_drop_title }}">
+                Type
                 <select id="swap_drop" name="swap_drop">
                     <option value="0">Standard purge</option>
                     <option value="1">Swap and drop</option>
@@ -97,101 +101,174 @@
     <fieldset>
         <legend>Source details</legend>
         <div>
-            {% set service_id_title="Select the database host from the inventory to connect to."%}
-            <label for="service_id" title="{{ service_id_title }}">Database host
+            {% set service_id_title = "Select the database host from the inventory to connect to." %}
+            <label for="service_id" title="{{ service_id_title }}">
+                Database host
                 {% if mysql_services|length == 1 %}
-                {% set single_service = mysql_services[0] %}
-                <select id="service_id" name="service_id" disabled>
-                    <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                </select>
-                <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% set single_service = mysql_services[0] %}
+                    <select id="service_id" name="service_id" disabled>
+                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                    </select>
+                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
                 {% else %}
-                <select id="service_id" name="service_id" required>
-                    <option value="" selected>Select a database host</option>
-                    {% for service in mysql_services %}
-                    <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                    {% endfor %}
-                </select>
+                    <select id="service_id" name="service_id" required>
+                        <option value="" selected>Select a database host</option>
+                        {% for service in mysql_services %}
+                            <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                        {% endfor %}
+                    </select>
                 {% endif %}
             </label>
         </div>
         <div>
-            {% set source_db_id_title="Select the source database schema from which data will be purged."%}
-            <label for="source_db_id" title="{{ source_db_id_title }}">Schema
+            {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
+            <label for="source_db_id" title="{{ source_db_id_title }}">
+                Schema
                 <select id="source_db_id" name="source_db_id" class="validate" required>
                     <option value="">Select a schema</option>
                 </select>
             </label>
-            {% set source_table_id_title="Select the source table from which data will be purged."%}
-            <label for="source_table_id" title="{{ source_table_id_title }}">Table
+            {% set source_table_id_title = "Select the source table from which data will be purged." %}
+            <label for="source_table_id" title="{{ source_table_id_title }}">
+                Table
                 <select id="source_table_id" name="source_table_id" class="validate" required>
                     <option value="">Select a table</option>
                 </select>
             </label>
-            <br/>
-            <div id="source_query_container" style="width: fit-content; margin-left: 1em;">
-            <label>OR</label>
-            {% set source_query_title="Type an optional query to define the source data to be purged." %}
-            <label for="source_query" title="{{ source_query_title }}">Source Query
-                <input type="text" id="source_query" name="source_query" class="validate" placeholder="SELECT ..." required style="width: 25em;"/>
-            </label>
+            <br />
+            <div id="source_query_container"
+                 style="width: fit-content;
+                        margin-left: 1em">
+                <label>OR</label>
+                {% set source_query_title = "Type an optional query to define the source data to be purged." %}
+                <label for="source_query" title="{{ source_query_title }}">
+                    Source Query
+                    <input type="text"
+                           id="source_query"
+                           name="source_query"
+                           class="validate"
+                           placeholder="SELECT ..."
+                           required
+                           style="width: 25em" />
+                </label>
             </div>
         </div>
         <div id="swp_table_suffix_container">
-            {% set swp_table_suffix_title="Select an date suffix for the swap table."%}
-            <label for="swp_table_suffix" title="{{ swp_table_suffix_title }}">Swap Table Suffix
-                <input type="date" id="swp_table_suffix" name="swp_table_suffix" class="validate" required />
+            {% set swp_table_suffix_title = "Select an date suffix for the swap table." %}
+            <label for="swp_table_suffix" title="{{ swp_table_suffix_title }}">
+                Swap Table Suffix
+                <input type="date"
+                       id="swp_table_suffix"
+                       name="swp_table_suffix"
+                       class="validate"
+                       required />
             </label>
         </div>
         <div id="purge_options_container">
-            {% set where_title="Type a WHERE clause to limit rows for archiving (exclude the keyword 'WHERE')."%}
-            <label for="where" title="{{ where_title }}">Where condition
-                <input type="text" id="where" name="where" class="validate" required style="width: 25em;" placeholder="ts < current_date - interval 90 day"/>
+            {% set where_title = "Type a WHERE clause to limit rows for archiving (exclude the keyword 'WHERE')." %}
+            <label for="where" title="{{ where_title }}">
+                Where condition
+                <input type="text"
+                       id="where"
+                       name="where"
+                       class="validate"
+                       required
+                       style="width: 25em"
+                       placeholder="ts < current_date - interval 90 day" />
             </label>
-            <br/>
-            {% set use_index_title="Optionally specify an index to optimize the query execution." %}
-            <label for="use_index" title="{{ use_index_title }}">Use Index
-                <input type="text" id="use_index" name="use_index" class="validate" placeholder="created_date"/>
+            <br />
+            {% set use_index_title = "Optionally specify an index to optimize the query execution." %}
+            <label for="use_index" title="{{ use_index_title }}">
+                Use Index
+                <input type="text"
+                       id="use_index"
+                       name="use_index"
+                       class="validate"
+                       placeholder="created_date" />
             </label>
-            {% set limit_title="Set the number of rows to fetch and archive per statement." %}
-            <label for="limit" title="{{ limit_title }}">Limit
-                <input type="number" id="limit" name="limit" class="validate" value="1000" placeholder="100" style="width:5em;"/>
+            {% set limit_title = "Set the number of rows to fetch and archive per statement." %}
+            <label for="limit" title="{{ limit_title }}">
+                Limit
+                <input type="number"
+                       id="limit"
+                       name="limit"
+                       class="validate"
+                       value="1000"
+                       placeholder="100"
+                       style="width:5em" />
             </label>
-            {% set sleep_title="Set the sleep time (in seconds) between fetch operations. Default: 0 (no sleep)."%}
-            <label for="sleep" title="{{ sleep_title }}">Sleep
-                <input type="number" id="sleep" name="sleep" class="validate" value="1" placeholder="1" style="width: 3em;"/>
+            {% set sleep_title = "Set the sleep time (in seconds) between fetch operations. Default: 0 (no sleep)." %}
+            <label for="sleep" title="{{ sleep_title }}">
+                Sleep
+                <input type="number"
+                       id="sleep"
+                       name="sleep"
+                       class="validate"
+                       value="1"
+                       placeholder="1"
+                       style="width: 3em" />
             </label>
-            <br/>
-            {% set extra_args_title="Type optional additional arguments for the archive task." %}
-            <label for="extra_args" title="{{ extra_args_title }}">Extra args
-                <input type="text" id="extra_args" name="extra_args" class="validate" placeholder="--quick" style="width: 25em;"/>
+            <br />
+            {% set extra_args_title = "Type optional additional arguments for the archive task." %}
+            <label for="extra_args" title="{{ extra_args_title }}">
+                Extra args
+                <input type="text"
+                       id="extra_args"
+                       name="extra_args"
+                       class="validate"
+                       placeholder="--quick"
+                       style="width: 25em" />
             </label>
-            <br/>
-            {% set disable_binlog_title="Disable binary logging for the operation."%}
-            <label for="disable_binlog" title="{{ disable_binlog_title }}">Disable Binlog
-                <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1" />
+            <br />
+            {% set disable_binlog_title = "Disable binary logging for the operation." %}
+            <label for="disable_binlog" title="{{ disable_binlog_title }}">
+                Disable Binlog
+                <input type="checkbox"
+                       id="disable_binlog"
+                       name="disable_binlog"
+                       class="validate"
+                       value="1" />
             </label>
         </div>
-        {% set delete_data_title="Enable to delete the rows after they are archived."%}
-        <label for="delete_data" id="delete_data_container" title="{{ delete_data_title }}">DELETE_DATA
-            <input type="checkbox" id="delete_data" name="delete_data" class="validate" value="1" />
+        {% set delete_data_title = "Enable to delete the rows after they are archived." %}
+        <label for="delete_data"
+               id="delete_data_container"
+               title="{{ delete_data_title }}">
+            DELETE_DATA
+            <input type="checkbox"
+                   id="delete_data"
+                   name="delete_data"
+                   class="validate"
+                   value="1" />
         </label>
     </fieldset>
     <fieldset id="destination_fieldset">
         <legend>Destination details</legend>
         <div id="destination_container">
-            {% set dest_table_id_title="Select the destination table for the archived data." %}
-            <label for="dest_table_id" title="{{ dest_table_id_title }}">Destination Database
-                <select id="dest_table_id" name="dest_table_id" class="validate" disabled required>
+            {% set dest_table_id_title = "Select the destination table for the archived data." %}
+            <label for="dest_table_id" title="{{ dest_table_id_title }}">
+                Destination Database
+                <select id="dest_table_id"
+                        name="dest_table_id"
+                        class="validate"
+                        disabled
+                        required>
                     <option value="">Select a table</option>
                 </select>
             </label>
-            <br/>
+            <br />
             <div id="dest_file_container" style="width: fit-content;">
                 <label>OR</label>
-                {% set dest_file_title="Type the file path where the archived data will be stored." %}
-                <label for="dest_file" title="{{ dest_file_title }}">Destination File
-                    <input type="text" id="dest_file" name="dest_file" class="validate" placeholder="/path/to/detination/file.txt" required style="width: 25em;"/>
+                {% set dest_file_title = "Type the file path where the archived data will be stored." %}
+                <label for="dest_file" title="{{ dest_file_title }}">
+                    Destination File
+                    <input type="text"
+                           id="dest_file"
+                           name="dest_file"
+                           class="validate"
+                           placeholder="/path/to/detination/file.txt"
+                           required
+                           style="width: 25em" />
                 </label>
             </div>
         </div>
@@ -199,20 +276,18 @@
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
 </form>
-
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}
-{% set schemas = {} %}
-{% for schema in service.schemas %}
-{% set tables = {} %}
-{% for table in schema.tables %}
-{% do tables.update({table.id: table.name}) %}
+    {% set schemas = {} %}
+    {% for schema in service.schemas %}
+        {% set tables = {} %}
+        {% for table in schema.tables %}
+            {% do tables.update({table.id: table.name}) %}
+        {% endfor %}
+        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
+    {% endfor %}
+    {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
-{% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-{% endfor %}
-{% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
-
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas | tojson }};
     const connectToSelect = document.getElementById('service_id');
@@ -310,7 +385,7 @@
         }
     }
 
-    connectToSelect.addEventListener('change', function () {
+    connectToSelect.addEventListener('change', function() {
         const selectedService = this.value;
         const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
@@ -321,7 +396,7 @@
         updateDestinationFieldset();
     });
 
-    schemaSelect.addEventListener('change', function () {
+    schemaSelect.addEventListener('change', function() {
         const selectedService = connectToSelect.value;
         const selectedSchema = this.value;
         const hiddenTableInput = document.getElementById("source_table_id_hidden");
@@ -332,7 +407,7 @@
 
 
 
-    sourceTableSelect.addEventListener('change', function () {
+    sourceTableSelect.addEventListener('change', function() {
         const selectedService = connectToSelect.value;
         const selectedSchema = schemaSelect.value;
         const selectedTable = this.value;
@@ -355,9 +430,9 @@
             removeHiddenInput('dest_file');
         } else {
             destinationContainer.classList.remove('hidden');
-            if(!dstFileInput.value)
+            if (!dstFileInput.value)
                 destTableSelect.disabled = false;
-            if(!destTableSelect.value)
+            if (!destTableSelect.value)
                 dstFileInput.disabled = false;
 
             destTableSelect.setAttribute('name', 'dest_table_id');
@@ -503,7 +578,7 @@
         }
     }
 
-    swapDropSelect.addEventListener('change', function () {
+    swapDropSelect.addEventListener('change', function() {
         togglePrgPurgeCheckbox()
         updateDestinationFieldset();
         toggleSwpTableSuffix();
@@ -524,28 +599,28 @@
         toggleSourceQueryInput();
     });
 
-    prgPurgeCheckbox.addEventListener('change', function () {
+    prgPurgeCheckbox.addEventListener('change', function() {
         updateDestinationFieldset();
     });
 
-    destTableSelect.addEventListener('change', function () {
+    destTableSelect.addEventListener('change', function() {
         toggleDstFileContainer();
     });
 
-    dstFileInput.addEventListener('input', function () {
+    dstFileInput.addEventListener('input', function() {
         toggleDestTableSelect();
     });
 
-    useIndexInput.addEventListener('input', function () {
+    useIndexInput.addEventListener('input', function() {
         toggleOptionalInputName(useIndexInput);
     });
-    limitInput.addEventListener('input', function () {
+    limitInput.addEventListener('input', function() {
         toggleOptionalInputName(limitInput);
     });
-    sleepInput.addEventListener('input', function () {
+    sleepInput.addEventListener('input', function() {
         toggleOptionalInputName(sleepInput);
     });
-    extraArgsInput.addEventListener('input', function () {
+    extraArgsInput.addEventListener('input', function() {
         toggleOptionalInputName(extraArgsInput);
     });
 
@@ -556,7 +631,7 @@
         toggleOptionalInputName(extraArgsInput);
     }
 
-    window.addEventListener('DOMContentLoaded', function () {
+    window.addEventListener('DOMContentLoaded', function() {
         if (connectToSelect.options.length === 1) {
             const singleHost = connectToSelect.options[0].value;
             populateSchemas(singleHost);

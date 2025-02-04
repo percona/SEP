@@ -49,10 +49,17 @@ image: pack
 
 format:
 	@"${VENV_BIN}"/ruff format .
+	@"${VENV_BIN}"/djlint . --reformat
 
-lint: venv
+ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
+
+djlint: venv
+	@"${VENV_BIN}"/djlint .
+	@"${VENV_BIN}"/djlint . --check
+
+lint: ruff djlint
 
 audit: run-pre-commit bandit pip-audit
 

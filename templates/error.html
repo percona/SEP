@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-
-{% block title %}Uh oh! We've found a problem{% endblock %}
-
+{% block title %}
+    Uh oh! We've found a problem
+{% endblock title %}
 {% block main %}
     <h2>Error</h2>
     {% if user.is_admin %}
-    <h3>Traceback</h3>
-    <pre>{{ exception }}</pre>
+        <h3>Traceback</h3>
+        <pre>{{ exception }}</pre>
     {% endif %}
-{% endblock %}
+{% endblock main %}

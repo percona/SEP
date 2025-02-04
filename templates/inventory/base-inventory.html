@@ -1,30 +1,41 @@
 {% extends "base.html" %}
-
 {% block style %}
-<style>
-    @keyframes spin {
-        from {transform:rotate(0deg);}
-        to {transform:rotate(360deg);}
-    }
-    button[disabled] .icons {
-        display: inline-block;
-        animation: spin 3s linear infinite;
-    }
-</style>
-{% endblock %}
+    <style>
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
 
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        button[disabled] .icons {
+            display: inline-block;
+            animation: spin 3s linear infinite;
+        }
+    </style>
+{% endblock style %}
 {% block behaviours %}
-{% if sync_is_running %}
-<script nonce="{{ request.state.csp_nonce }}">
-    setTimeout(function(){
-        window.location.reload();
-    }, {{ sync_refresh_time|default(5, true) * 1000}});
-</script>
-{% endif %}
-{% endblock %}
-
+    {% if sync_is_running %}
+        <script nonce="{{ request.state.csp_nonce }}">
+            setTimeout(function() {
+                window.location.reload();
+            }, {
+                {
+                    sync_refresh_time |
+                        default (5, true) * 1000
+                }
+            });
+        </script>
+    {% endif %}
+{% endblock behaviours %}
 {% block main %}
-{% block inventory_entity_details %}{% endblock %}
-{% block inventory_table %}{% endblock %}
-{% block inventory_create %}{% endblock %}
-{% endblock %}
+    {% block inventory_entity_details %}
+    {% endblock inventory_entity_details %}
+    {% block inventory_table %}
+    {% endblock inventory_table %}
+    {% block inventory_create %}
+    {% endblock inventory_create %}
+{% endblock main %}

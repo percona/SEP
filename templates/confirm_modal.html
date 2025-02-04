@@ -77,8 +77,7 @@
     </div>
 </div>
 <script nonce="{{ request.state.csp_nonce }}">
-
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', function() {
         const dialog = document.getElementById('confirmationDialog');
         const dialogContent = document.querySelector('.dialog-content');
         const confirmationMessage = document.getElementById('confirmationMessage');
@@ -104,7 +103,7 @@
         }
 
         submitButtons.forEach(button => {
-            button.addEventListener('click', function (e) {
+            button.addEventListener('click', function(e) {
                 e.preventDefault()
                 currentForm = button.form
                 if (!currentForm)
@@ -127,14 +126,14 @@
             });
         });
 
-        confirmYes.addEventListener('click', function () {
+        confirmYes.addEventListener('click', function() {
             if (currentForm) {
                 currentForm.submit();
                 hideModal();
             }
         });
 
-        confirmNo.addEventListener('click', function () {
+        confirmNo.addEventListener('click', function() {
             hideModal();
         });
     });
