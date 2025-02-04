@@ -171,7 +171,7 @@ async def generate_task(
         ]
         tg.tasks.append(
             TaskGroupTask(
-                name=f"step{i+1}" if not cmd.get("name") else cmd["name"],
+                name=f"step{i + 1}" if not cmd.get("name") else cmd["name"],
                 config={
                     "args": cmd.get("args"),
                     "command": cmd.get("command"),

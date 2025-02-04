@@ -7,7 +7,7 @@ from sqlalchemy import DateTime, func, Integer
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
 
-from app.core.utils.datetime import utc_now
+from app.core.utils.date_time import utc_now
 from app.core.utils.fields import UTCDatetime
 
 DateTimeWithTimezone = DateTime(timezone=True)

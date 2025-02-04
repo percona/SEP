@@ -131,8 +131,8 @@ class CsrfSettings(BaseModel):
     SECRET_KEY: str = settings.SECRET_KEY
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "none"
-    TOKEN_KEY: str = "csrf-token"
-    TOKEN_LOCATION: str = "body"
+    TOKEN_KEY: str = "csrf-token"  # noqa: S105
+    TOKEN_LOCATION: str = "body"  # noqa: S105
 
 
 class SyncOptions(BaseLowercaseModel):

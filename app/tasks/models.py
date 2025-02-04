@@ -216,7 +216,7 @@ class TaskGroup(BaseModel):
                     for i, task in enumerate(self.tasks):
                         data["TaskGroups"].append(
                             {
-                                "Name": f"{self.name}{i+1}",
+                                "Name": f"{self.name}{i + 1}",
                                 "Tasks": [task.model_dump(by_alias=True)],
                             },
                         )

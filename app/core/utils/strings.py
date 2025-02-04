@@ -5,9 +5,9 @@ import unicodedata
 from base64 import b64encode
 
 __all__ = [
-    "to_uppercase",
-    "slugify",
     "b64encode_str",
+    "slugify",
+    "to_uppercase",
 ]
 
 

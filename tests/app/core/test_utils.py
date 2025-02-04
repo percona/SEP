@@ -8,12 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core.utils.asyncio import async_run
-from app.core.utils.datetime import make_datetime_utc
+from app.core.utils.async_run import async_run
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.dict import sort_dict
 from app.core.utils.imports import import_var
 from app.core.utils.serialization import json_serializer
-from app.core.utils.string import b64encode_str, slugify
+from app.core.utils.strings import b64encode_str, slugify
 from app.tasks.execution.utils import minify_file_content
 
 
