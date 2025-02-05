@@ -17,13 +17,15 @@ repos:
         name: JS Beautify
         description: "Run js-beautify (from jsbeautifier) on .js files"
         entry: js-beautify --end-with-newline --replace
-        language: system
+        language: python
+        additional_dependencies: ["jsbeautifier==1.15.1"]
         files: ^(?!.*\.min\.js$).*\.js$
       - id: css-beautify
         name: CSS Beautify
         description: "Run css-beautify (from cssbeautifier) on .css files"
         entry: css-beautify --end-with-newline --replace
-        language: system
+        language: python
+        additional_dependencies: ["cssbeautifier==1.15.1"]
         files: ^(?!.*\.min\.css$).*\.css$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
