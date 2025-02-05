@@ -117,7 +117,7 @@
                         <td>{{ stats.total }}</td>
                         <td>{{ stats.status.pass }}</td>
                         <td>{{ stats.status.fail }}</td>
-                        <td>{{ stats.last_finished_at }}</td>
+                        <td class="relativeTime">{{ stats.last_finished_at }}</td>
                         <td>{{ stats.duration.average_seconds or 0|round(3) }}</td>
                         <td>{{ stats.duration.last_seconds or 0|round(3) }}</td>
                     </tr>
