@@ -310,7 +310,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         stop_ts = time.time_ns()
         duration = (stop_ts - start_ts) / 1000**3
         queue_item.execution_request.tracking.update(
-            raw_duration=duration,
             started_at_ns=start_ts,
             finished_at_ns=stop_ts,
             started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=UTC),
