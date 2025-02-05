@@ -44,19 +44,7 @@ async def build_checksums_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    schema = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SCHEMA,
-        form.schema_id,
-        service_id=service.id,
-    )
-    table = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.TABLE,
-        form.table_id,
-        schema_id=schema.id,
-    )
-    dsn = f"D={schema.name},t={table.name}"
+    dsn = ""
     if service.port is not None:
         dsn = f"P={service.port},{dsn}"
     if service.node.address != "localhost":
@@ -70,8 +58,34 @@ async def build_checksums_task_payload(
         f"--recursion-method={form.recursion_method}",
     ]
 
+    # --databases and --tables options
+    databases = ""
+    for s in form.schema_id:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            s,
+            service_id=service.id,
+        )
+        databases += f"{schema.name},"
+    form.databases = databases.rstrip(",")
+
+    tables = ""
+    if len(form.schema_id) == 1 and form.table_id is not None:
+        for t in form.table_id:
+            table = await get_created_entity(
+                inventory_api,
+                SyncInventoryEntityTypeEnum.TABLE,
+                t,
+                schema_id=list(form.schema_id)[0],
+            )
+            tables += f"{table.name},"
+    form.tables = tables.rstrip(",")
+
     # Mapping form fields to their respective arguments
     optional_args = {
+        "databases": f"--databases={form.databases}",
+        "tables": f"--tables={form.tables}",
         "pause_file": f"--pause-file={form.pause_file}",
         "set_vars": f"--set-vars={form.set_vars}",
         "max_load": f"--max-load={form.max_load}",
@@ -85,10 +99,10 @@ async def build_checksums_task_payload(
 
     # Adding flag arguments (no value needed, just presence)
     flag_args = {
-        "binary_index": f"--binary_index",
-        "explain_arg": f"--explain_arg",
-        "fail_on_stopped_replication": f"--fail_on_stopped_replication",
-        "truncate_replicate_table": f"--truncate_replicate_table",
+        "binary_index": f"--binary-index",
+        "explain_arg": f"--explain",
+        "fail_on_stopped_replication": f"--fail-on-stopped-replication",
+        "truncate_replicate_table": f"--truncate-replicate-table",
     }
 
     # Adding flag arguments if set to True
@@ -101,8 +115,7 @@ async def build_checksums_task_payload(
                 "args": [*args],
                 "command": "pt-table-checksum",
                 "meta": {
-                    "schema_name": schema.name,
-                    "table_name": table.name,
+                    "service_name": service.name,
                 },
             },
         ],
@@ -141,7 +154,7 @@ ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
 def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant information from a task for the Checksums plugin.
 
-    Processes the task data to extract hostname and table information.
+    Processes the task data to extract hostname and service name information.
 
     :param task: The task data retrieved from the Tasks API.
     :type task: dict[str, Any]
@@ -150,9 +163,12 @@ def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    service_name = ''
+    if "service_name" in meta:
+        service_name = meta['service_name']
     return {
         "hostname": data["Constraints"][0]["RTarget"],
-        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+        "service_name": f'{service_name}',
     }
 
 

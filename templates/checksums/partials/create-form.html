@@ -98,8 +98,9 @@
                 {% endif %}
             </div>
         </fieldset>
+
         <fieldset>
-            <legend>Change details</legend>
+            <legend>Checksum details</legend>
             <div class="field">
                 <label for="task_name">Task name</label>
                 <input type="text" id="task_name" name="task_name" class="validate" required>
@@ -122,71 +123,72 @@
                 {% endif %}
             </div>
         </fieldset>
+    </fieldset>
 
-        <fieldset style="margin-bottom: 0;">
-            <legend>Data</legend>
-            <div class="field">
-                <label for="schema_id">Schema</label>
-                <select multiple id="schema_id" name="schema_id">
-                </select>
-            </div>
-            <div class="field">
-                <label for="table_id">Table</label>
-                <select multiple id="table_id" name="table_id" disabled>
-                </select>
-            </div>
-        </fieldset>
+    <fieldset style="margin-bottom: 0;">
+        <legend>Data</legend>
+        <div class="field">
+            <label for="schema_id">Include Schemas</label>
+            <select multiple id="schema_id" name="schema_id">
+                <!-- <option value=""> </option> -->
+            </select>
+        </div>
+        <div class="field">
+            <label for="table_id">Include Tables</label>
+            <select multiple id="table_id" name="table_id" disabled>
+                <!-- <option value=""> </option> -->
+            </select>
+        </div>
 
         <fieldset>
+            <legend>Flags</legend>
             <div class="field">
-                <input type="checkbox" id="binary_index" name="binary_index" checked="false" class="validate" />
+                <input type="checkbox" id="binary_index" name="binary_index" class="validate" />
                 <label for="binary_index">Binary Index</label>
             </div>
-        </fieldset>
 
-        <fieldset>
             <div class="field">
-                <input type="checkbox" id="explain_arg" name="explain_arg" checked="false" class="validate" />
+                <input type="checkbox" id="explain_arg" name="explain_arg" class="validate" />
                 <label for="explain_arg">Explain</label>
             </div>
-        </fieldset>
 
-        <fieldset>
             <div class="field">
                 <input type="checkbox" id="fail_on_stopped_replication" name="fail_on_stopped_replication"
-                    checked="false" class="validate" />
+                    class="validate" />
                 <label for="fail_on_stopped_replication">Fail on stopped replication</label>
             </div>
-        </fieldset>
 
-        <fieldset>
             <div class="field">
-                <input type="checkbox" id="truncate_replicate_table" name="truncate_replicate_table" checked="false"
-                    class="validate" />
+                <input type="checkbox" id="truncate_replicate_table" name="truncate_replicate_table" class="validate" />
                 <label for="truncate_replicate_table">Truncate replicate table</label>
             </div>
         </fieldset>
+    </fieldset>
 
-        <!-- 
- --chunk-index
+    <!-- 
+--chunk-index
 --chunk-index-columns
+
+--ignore-databases
+--ignore-tables
+
 --columns
+--ignore-columns
+
 --engines
+--ignore-engines
 
- --ignore-columns
- --ignore-databases
- --ignore-engines
- --ignore-tables
-
- --where
+--where
 -->
+    <fieldset>
+        <legend>Advanced options</legend>
         <fieldset>
-            <legend>Advanced options</legend>
+            <legend>Recursion Method</legend>
             <div class="field">
                 <label for="recursion_method">Recursion method</label>
                 <select id="recursion_method" name="recursion_method">
                     <option value="processlist" selected>processlist</option>
-                    <option value="host">host</option>
+                    <option value="hosts">hosts</option>
                     <option value="dsn">dsn</option>
                     <option value="none">none</option>
                 </select>
@@ -196,39 +198,40 @@
                 <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="schema.table" />
             </div>
         </fieldset>
+
         <fieldset>
+            <legend>Customization</legend>
             <div class="field">
                 <label for="pause_file">Pause file</label>
                 <input type="text" id="pause_file" name="pause_file" class="validate" />
             </div>
-        </fieldset>
-        <fieldset>
+
             <div class="field">
                 <label for="progress">Progress</label>
                 <input type="text" id="progress" name="progress" class="validate" size="15" value="time,10" />
             </div>
-        </fieldset>
-        <fieldset>
+
             <div class="field">
                 <label for="set_vars">Set Vars</label>
                 <input type="text" id="set_vars" name="set_vars" class="validate"
                     value="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5" size="70" />
             </div>
         </fieldset>
+
         <fieldset>
+            <legend>Performance</legend>
+
             <div class="field">
                 <label for="max_load">Max Load</label>
                 <input type="text" id="max_load" name="max_load" class="validate" value="Threads_running=50"
                     size="30" />
             </div>
-        </fieldset>
-        <fieldset>
+
             <div class="field">
                 <label for="chunk_time">Chunk Time</label>
                 <input type="text" id="chunk_time" name="chunk_time" class="validate" value="0.5" size="5" />
             </div>
-        </fieldset>
-        <fieldset>
+
             <div class="field">
                 <label for="max_lag">Max Lag</label>
                 <input type="text" id="max_lag" name="max_lag" class="validate" value="150" size="5" />
@@ -304,6 +307,7 @@ table.id: {
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
             const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
+            console.log(tables)
             if (tables.length > 0) {
                 for (const [tableId, table] of tables) {
                     const option = document.createElement('option');

@@ -14,10 +14,14 @@ class ChecksumsCreate(BaseModel):
     :type hostname: RequiredStr
     :param service_id: The Inventory ID of the database service to connect to.
     :type service_id: int
-    :param schema_id: The database schema ID on which the task will operate.
+    :param schema_id: The database schema IDs on which the task will operate.
     :type schema_id: set[int]
-    :param table_id: The table ID within the schema to be altered.
+    :param databases: The database schemas on which the task will operate.
+    :type databases: str
+    :param table_id: The table IDs within the schema to be checksummed.
     :type table_id: set[int]
+    :param tables: The tables within the schema to be checksummed.
+    :type tables: str
     :param recursion_method: The method for handling recursion.
     :type recursion_method: RequiredStr
     :param dsn_table: The DSN table for recursion method when using `dsn`. Defaults to
@@ -50,8 +54,10 @@ class ChecksumsCreate(BaseModel):
     task_name: RequiredStr
     hostname: RequiredStr
     service_id: int
-    schema_id: int
-    table_id: int
+    schema_id: set[int] = None
+    databases: str = ""
+    table_id: set[int] = None
+    tables: str = ""
     recursion_method: RequiredStr
     dsn_table: str = ""
     pause_file: str = ""

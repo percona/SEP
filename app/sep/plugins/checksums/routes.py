@@ -75,7 +75,6 @@ async def checksums_detail(
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
     }

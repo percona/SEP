@@ -170,13 +170,12 @@ def main() -> None:
         host, port = parse_host_port(host_entry)
         if config.get("resolve_localhost") and host == local_ip:
             host = "127.0.0.1"
-        print(f"Sveta: connecting to {host}:{port}", file=sys.stderr)
         try:
             with (
                 pymysql.connect(
                     host=host,
                     port=port,
-                    read_default_file="/home/sveta/.my.cnf",
+                    read_default_file='~/.my.cnf',
                 ) as connection,
                 connection.cursor(DictCursor) as cursor,
             ):
