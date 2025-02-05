@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.utils.fields import RequiredStr
 from app.inventory.crud import SchemaManager, ServiceManager
 from app.inventory.deps import ServiceDep, SessionDep
 from app.inventory.models import (
@@ -35,6 +36,20 @@ async def list_services(
         select_related=[Service.schemas],
         type=service_type,
     )
+
+
+@router.get("/id", dependencies=[IsAuthenticatedDep])
+async def get_service_id(
+    session: SessionDep,
+    address: RequiredStr,
+    port: RequiredStr,
+) -> dict:
+    """Retrieve a Service's ID by the node's address and the service's port."""
+    logger.debug("Looking up service with node address %s and port %s", address, port)
+    service = await ServiceManager.get_by_node_address_and_port(
+        session, address=address, port=int(port)
+    )
+    return {"service_id": service[0].id}
 
 
 @router.get("/{service_id}", dependencies=[IsAuthenticatedDep])

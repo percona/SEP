@@ -126,3 +126,15 @@ async def create_service_for_node(
         )
     logger.debug("Creating service for node %s: %s", node.id, service)
     return await ServiceManager.create(session, service, node_id=node.id)
+
+
+@router.get("/id", dependencies=[IsAuthenticatedDep])
+async def get_node_id(
+    session: SessionDep,
+    name: RequiredStr,
+    address: RequiredStr,
+) -> dict:
+    """Retrieve a Node's ID by its unique name and address."""
+    logger.debug("Retrieving node id for name=%s, address=%s", name, address)
+    node = await NodeManager.get_or_404(session, name=name, address=address)
+    return {"node_id": node.id}

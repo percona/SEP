@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.utils.fields import RequiredStr
 from app.inventory.crud import SchemaManager, TableManager
 from app.inventory.deps import SchemaDep, SessionDep
 from app.inventory.models import (
@@ -27,6 +28,18 @@ async def list_schemas(session: SessionDep) -> list[SchemaResponse]:
     """List Schemas."""
     logger.debug("Listing schemas")
     return await SchemaManager.list(session, select_related=[Schema.tables])
+
+
+@router.get("/id", dependencies=[IsAuthenticatedDep])
+async def get_schema_id(
+    session: SessionDep,
+    name: RequiredStr,
+    service_id: int,
+) -> dict:
+    """Retrieve a Schema's ID by its unique name and service_id."""
+    logger.debug("Retrieving schema id for name=%s, service_id=%s", name, service_id)
+    schema = await SchemaManager.get_or_404(session, name=name, service_id=service_id)
+    return {"schema_id": schema.id}
 
 
 @router.get("/{schema_id}", dependencies=[IsAuthenticatedDep])

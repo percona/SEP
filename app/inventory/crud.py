@@ -1,6 +1,10 @@
 """Define database operations for the Inventory API."""
 
+from sqlalchemy import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import Node, Schema, Service, Table
 
 
@@ -30,6 +34,33 @@ class ServiceManager(BaseSQLModelChildManager):
     Model = Service
     ParentManager = NodeManager
     connected_by = "node_id"
+
+    @classmethod
+    async def get_by_node_address_and_port(
+        cls, session: AsyncSession, address: str, port: int
+    ) -> Service:
+        """Retrieve a Service using the node's address and the service's port.
+
+        The combination of the node's address and the service's port is unique.
+
+        :param session: The asynchronous session to use for the query.
+        :param address: The node's address.
+        :param port: The service's port.
+        :return: The matching Service instance.
+        :raises HTTPNotFoundException: If no matching service is found.
+        """
+        stmt = (
+            select(cls.Model)
+            .join(Node, cls.Model.node_id == Node.id)
+            .where(Node.address == address, cls.Model.port == port)
+        )
+        result = await session.exec(stmt)
+        service = result.one_or_none()
+        if service is None:
+            raise HTTPNotFoundException(
+                f"No service found for node address '{address}' and port {port}"
+            )
+        return service
 
 
 class SchemaManager(BaseSQLModelChildManager):

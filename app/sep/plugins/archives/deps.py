@@ -1,5 +1,6 @@
 """Define dependencies for the Archives plugin."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -25,6 +26,7 @@ from app.sep.plugins.archives.models import (
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -213,3 +215,114 @@ async def get_archives_index_context(
     return await get_tasks_context(
         inventory_api, tasks_api, get_archives_task_info, context, TaskOwner.ARCHIVER
     )
+
+
+async def get_archives_detail_context(
+    task: ArchivesTask,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+    context: DefaultContext,
+) -> dict[str, Any]:
+    """Assemble the context for the Archives detail view.
+
+    This dependency extracts task details, retrieves associated service, schema,
+    and table information, and also gathers history and stats data.
+
+    :param task: The ArchivesTask instance resolved by the task name.
+    :param inventory_api: The Inventory API client.
+    :param tasks_api: The Tasks API client.
+    :param context: The default context dictionary.
+    :return: A dictionary containing all data needed for the detail view template.
+    :rtype: dict[str, Any]
+    """
+    meta = task.data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    host_data = task_config["ALL"]
+    purge_item = task_config["PURGE_LIST"][0]
+
+    task_data = {
+        "name": task.name,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+        "hostname": meta["target"],
+        "meta": meta,
+    }
+
+    source_host = host_data.get("SOURCE_HOST")
+    source_port = host_data.get("SOURCE_PORT")
+    source_db = purge_item.get("SOURCE_DB")
+    source_table = purge_item.get("SOURCE_TABLE")
+    dest_table = purge_item.get("DEST_TABLE")
+    source_query = purge_item.get("SOURCE_QUERY")
+    dest_file = purge_item.get("DEST_FILE")
+
+    if source_db and source_table:
+        task_data["source_table"] = f"{source_db}.{source_table}"
+    if source_db and dest_table:
+        task_data["dest_table"] = f"{source_db}.{dest_table}"
+    if source_query:
+        task_data["source_query"] = source_query
+    if dest_file:
+        task_data["dest_file"] = dest_file
+
+    archive_data = {key.lower(): value for key, value in purge_item.items()}
+
+    if source_host and source_port:
+        service_response = await inventory_api.get(
+            "/services/id", params={"address": source_host, "port": source_port}
+        )
+        service_id = service_response["service_id"]
+        archive_data["service_id"] = service_id
+
+        if source_db and service_id:
+            schema_response = await inventory_api.get(
+                "/schemas/id", params={"name": source_db, "service_id": service_id}
+            )
+            schema_id = schema_response["schema_id"]
+            archive_data["source_db_id"] = service_id
+
+            if source_table and schema_id:
+                table_response = await inventory_api.get(
+                    "/tables/id", params={"name": source_table, "schema_id": schema_id}
+                )
+                archive_data["source_table_id"] = table_response["table_id"]
+
+            if dest_table and schema_id:
+                dest_table_response = await inventory_api.get(
+                    "/tables/id", params={"name": dest_table, "schema_id": schema_id}
+                )
+                archive_data["dest_table_id"] = dest_table_response["table_id"]
+
+    mysql_services = await inventory_api.get(
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    )
+    schemas_tasks = [
+        inventory_api.get(f"/services/{service['id']}/schemas/")
+        for service in mysql_services
+    ]
+    schemas_results = await asyncio.gather(*schemas_tasks)
+    for service, schemas in zip(mysql_services, schemas_results, strict=False):
+        service["schemas"] = schemas
+
+    history_url = f"/{task.name}/history/"
+    history_task = tasks_api.get(history_url)
+    running_tasks_task = tasks_api.get(
+        history_url, params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    stats_task = tasks_api.get(f"/stats/{task.name}")
+    history, running_tasks, stats = await asyncio.gather(
+        history_task, running_tasks_task, stats_task
+    )
+
+    context.update(
+        {
+            "mysql_services": mysql_services,
+            "archive_data": archive_data,
+            "task": task_data,
+            "history": history,
+            "running_tasks": running_tasks,
+            "stats": stats,
+        }
+    )
+
+    return context

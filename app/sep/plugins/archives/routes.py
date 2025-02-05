@@ -3,14 +3,12 @@
 import logging
 from typing import Annotated, Any
 
-import yaml
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
-    DefaultContext,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -18,9 +16,9 @@ from app.sep.deps import (
 from app.sep.plugins.archives.deps import (
     ArchivesGeneratedTask,
     ArchivesTask,
+    get_archives_detail_context,
     get_archives_index_context,
 )
-from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -62,44 +60,10 @@ async def archives_create(
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def archives_detail(
-    task: ArchivesTask,
     request: Request,
-    context: DefaultContext,
-    tasks_api: TaskAPI,
+    context: Annotated[dict[str, Any], Depends(get_archives_detail_context)],
 ) -> HTMLResponse:
     """Retrieve archives task."""
-    data = task.data
-    meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    purge_item = task_config["PURGE_LIST"][0]
-    task_data = {
-        "name": task.name,
-        "created_at": task.created_at,
-        "updated_at": task.updated_at,
-        "hostname": meta["target"],
-        "meta": meta,
-    }
-
-    source_db = purge_item.get("SOURCE_DB")
-    source_table = purge_item.get("SOURCE_TABLE")
-    dest_table = purge_item.get("DEST_TABLE")
-    source_query = purge_item.get("SOURCE_QUERY")
-    dest_file = purge_item.get("DEST_FILE")
-
-    if source_db and source_table:
-        task_data["source_table"] = f"{source_db}.{source_table}"
-    if source_db and dest_table:
-        task_data["dest_table"] = f"{source_db}.{dest_table}"
-    if source_query:
-        task_data["source_query"] = source_query
-    if dest_file:
-        task_data["dest_file"] = dest_file
-    context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
-        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
-    )
-    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
         name="archiver/details.html",
