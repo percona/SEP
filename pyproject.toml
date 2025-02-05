@@ -71,6 +71,7 @@ fastapi-csrf-protect = "^0.3.7"
 fastapi = "^0.115.6"
 httpx = "^0.28.0"
 rich = "^13.9.4"
+pygments = "^2.19.1"
 
 [tool.poetry.group.audit]
 optional = true

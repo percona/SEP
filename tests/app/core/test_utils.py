@@ -1,4 +1,4 @@
-"""Define tests for the app.core.utils module."""
+"""Define tests for the app.core.utils package."""
 
 import sys
 from base64 import b64encode

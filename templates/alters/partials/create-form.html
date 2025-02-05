@@ -97,6 +97,12 @@
         flex: none;
         margin-right: 0.5em;
     }
+
+    pre {
+        white-space: break-spaces;
+    }
+
+    {{ syntax_highlight_css(style="monokai") }}
 </style>
 {% set form_class = "modal" if modal_required else "" %}
 <form action=""
@@ -407,7 +413,7 @@
             {% do tables.update({
             table.id: {
             "name": table.name,
-            "create": table.create,
+            "create": table.create|syntax_highlight("sql", style="monokai"),
             "keys": table['keys']
             }
             }) %}
@@ -538,7 +544,7 @@
     }
 
     function displayCreateTable(sql) {
-        createTableOutput.textContent = sql;
+        createTableOutput.innerHTML = sql;
         createTableOutput.classList.remove('hidden');
     }
 
