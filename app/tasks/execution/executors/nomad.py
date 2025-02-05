@@ -86,9 +86,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             address=self.endpoint,
             secure=self.secure,
             timeout=self.timeout,
-            verify=self.secure
-            and self.verify_ssl
-            and self.ssl_cafile
+            verify=(self.secure and self.verify_ssl and self.ssl_cafile)
             or self.verify_ssl,
             cert=cert,
         )

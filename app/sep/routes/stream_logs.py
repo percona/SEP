@@ -8,8 +8,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import StreamingResponse
 
-from app.sep.decorators import csrf_exempt
 from app.sep.deps import get_task_history, IsAuthenticated, TaskAPI
+from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import TaskHistoryResponse
 
 logger = logging.getLogger(__name__)

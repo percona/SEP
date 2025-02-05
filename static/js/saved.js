@@ -1,5 +1,5 @@
-$(document).ready(function () {
-    $('.schedule-button').on('click', function () {
+$(document).ready(function() {
+    $('.schedule-button').on('click', function() {
         const $scheduleButton = $(this);
         const taskName = $scheduleButton.data('task');
         const $sendForm = $('#' + taskName + '-send');
@@ -31,13 +31,13 @@ $(document).ready(function () {
 
             $infoDeleteContainer.hide();
 
-            setTimeout(function () {
+            setTimeout(function() {
                 $etaInput.focus();
             }, 500);
         }
     });
 
-    $('.eta-input').change(function () {
+    $('.eta-input').change(function() {
         const $sendForm = $(this).parent().parent();
         const $etaInput = $(this);
         const etaValue = $etaInput.val();

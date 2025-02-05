@@ -11,10 +11,10 @@ from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 
 from app.sep.config import CsrfSettings
-from app.sep.decorators import csrf_exempt
 from app.sep.deps import IsCsrfValidated
 from app.sep.main import csrf_protect_exception_handler
 from app.sep.middleware import CSRFMiddleware
+from app.sep.utils.decorators import csrf_exempt
 
 
 @pytest.fixture

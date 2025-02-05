@@ -16,7 +16,7 @@ from pydantic import (
 from sqlalchemy_celery_beat.models import CrontabSchedule as BaseCrontabSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
-from app.core.utils.datetime import utc_now
+from app.core.utils.date_time import utc_now
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.models import TaskExecuteRequest
 

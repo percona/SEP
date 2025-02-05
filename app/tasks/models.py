@@ -22,7 +22,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, UTCDatetime
 
 TASK_ALIAS_LENGTH = 100
 
@@ -216,7 +216,7 @@ class TaskGroup(BaseModel):
                     for i, task in enumerate(self.tasks):
                         data["TaskGroups"].append(
                             {
-                                "Name": f"{self.name}{i+1}",
+                                "Name": f"{self.name}{i + 1}",
                                 "Tasks": [task.model_dump(by_alias=True)],
                             },
                         )
@@ -333,7 +333,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :param history: The history of task executions.
     :type history: list[TaskHistory]
     :param deleted_at: The deletion timestamp, if applicable.
-    :type deleted_at: datetime | None
+    :type deleted_at: UTCDatetime | None
     """
 
     __table_args__ = (
@@ -347,11 +347,33 @@ class Task(TaskBase, BaseSQLModel, table=True):
         ),
     )
     history: list["TaskHistory"] = Relationship(back_populates="task")
-    deleted_at: datetime | None = SQLField(
+    deleted_at: UTCDatetime | None = SQLField(
         sa_type=DateTimeWithTimezone,
         default=None,
         index=True,
     )
+
+
+class TaskResponse(TaskBase, BaseSQLModel):
+    """Represent a task API response.
+
+    :param name: The name of the task.
+    :type name: str
+    :param data: The task data stored in JSON format.
+    :type data: dict
+    :param backend: The backend used for task execution. Defaults to Nomad.
+    :type backend: TaskBackendEnum
+    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+    :type owner: TaskOwner
+    :param is_template: Whether the task is a template. Defaults to False.
+    :type is_template: bool
+    :param protected: Whether the task is protected from deletion. Defaults to False.
+    :type protected: bool
+    :param deleted_at: The deletion timestamp, if applicable.
+    :type deleted_at: UTCDatetime | None
+    """
+
+    deleted_at: UTCDatetime | None
 
 
 class TaskWrite(TaskBase):
@@ -474,7 +496,7 @@ class TaskHistoryResponse(BaseSQLModel):
 
     execution_request: TaskExecutionRequest
     status: TaskHistoryStatusEnum
-    task: Task
+    task: TaskResponse
     errors: list
 
 

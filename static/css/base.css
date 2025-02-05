@@ -34,11 +34,11 @@ body {
     padding: 5px;
 }
 
-body > header:nth-child(1) {
+body>header:nth-child(1) {
     border-radius: unset;
 }
 
-body > footer:nth-child(4) {
+body>footer:nth-child(4) {
     border-radius: unset;
 }
 
@@ -46,7 +46,12 @@ body > footer:nth-child(4) {
     border-radius: unset;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
     font-weight: 600
 }
 
@@ -80,7 +85,7 @@ table {
 
 .notice {
     font-weight: bolder;
-    font-style: normal
+    font-style: normal;
 }
 
 @media screen and (max-device-width: 1279px) {
@@ -95,7 +100,8 @@ table {
         padding: 0;
     }
 
-    html, body {
+    html,
+    body {
         height: 98%;
         overflow-y: scroll
     }
@@ -119,7 +125,7 @@ table {
         border-radius: 4.5em;
     }
 
-    body > header {
+    body>header {
         grid-area: head;
         background-color: #2C323E;
         border-radius: 4.5em 4.5em 0 0;
@@ -127,24 +133,24 @@ table {
         padding: 1em
     }
 
-    body > nav {
+    body>nav {
         grid-area: nav;
         background-color: #F0F1F4;
         border-radius: 0 0 0 4.5em;
         padding: 1em
     }
 
-    body > main {
+    body>main {
         grid-area: main;
         padding: 1em
     }
 
-    body > footer {
+    body>footer {
         grid-area: foot;
         background-color: #2C323E;
         border-radius: 0 0 4.5em 0;
         color: #fff;
-        padding: 1em
+        padding: 0.5em;
     }
 
     nav ul {
@@ -154,7 +160,7 @@ table {
         margin-left: -.5em
     }
 
-    nav li > a {
+    nav li>a {
         display: block;
         margin-bottom: .5em;
         text-decoration: none;
@@ -162,7 +168,8 @@ table {
         border-radius: 2em;
     }
 
-    nav a:link, nav a:visited {
+    nav a:link,
+    nav a:visited {
         background-color: #4b5468;
         color: #fff;
     }
@@ -177,7 +184,8 @@ table {
         color: #fff;
     }
 
-    nav a:active, nav a.selected {
+    nav a:active,
+    nav a.selected {
         background-color: #2C323E;
     }
 
@@ -234,7 +242,13 @@ table {
 
     header svg {
         grid-area: icon;
-        margin-top: -1em
+        margin-top: -1em;
+        height: 90%;
+        width: 90%;
+    }
+
+    header svg path.cls-2 {
+        fill: rgb(255, 255, 255) !important
     }
 
     header h1 {
@@ -242,25 +256,19 @@ table {
         margin-top: 2em
     }
 
-    svg {
-        height: 90%;
-        width: 90%;
-        grid-area: icon;
-    }
-
-    svg path.cls-2 {
-        fill: rgb(255, 255, 255) !important
-    }
-
-    form, fieldset {
+    form,
+    fieldset {
         padding: 1em
     }
 
-    form > fieldset, input, select, textarea {
+    form>fieldset,
+    input,
+    select,
+    textarea {
         border: .2em solid #F0F1F4
     }
 
-    form > fieldset > fieldset {
+    form>fieldset>fieldset {
         border: 0;
         column-gap: 1em;
         display: flex;
@@ -270,16 +278,18 @@ table {
         row-gap: 1em;
     }
 
-    form > fieldset > fieldset label {
+    form>fieldset>fieldset label {
         flex-basis: fit-content(100%);
     }
 
-    form > fieldset > fieldset input, form > fieldset > fieldset select,
-    form > fieldset > fieldset textarea {
+    form>fieldset>fieldset input,
+    form>fieldset>fieldset select,
+    form>fieldset>fieldset textarea {
         margin-left: .5em;
     }
 
-    input, select {
+    input,
+    select {
         padding: .5em
     }
 
@@ -342,7 +352,8 @@ table {
         margin-top: inherit
     }
 
-    thead tr, tbody tr {
+    thead tr,
+    tbody tr {
         border-bottom: .2em solid #F0F1F4
     }
 
@@ -350,7 +361,8 @@ table {
         font-weight: 500;
     }
 
-    td, th {
+    td,
+    th {
         padding: .5em 0;
         overflow: scroll;
         text-overflow: ellipsis;
@@ -363,11 +375,18 @@ table {
         font-weight: 600;
     }
 
-    main h1, main h2, main h3, main h4, main h5, main h6, main p {
+    main h1,
+    main h2,
+    main h3,
+    main h4,
+    main h5,
+    main h6,
+    main p {
         margin: 1em 0 0.5em 0
     }
 
-    main section, main table {
+    main section,
+    main table {
         margin-bottom: 1em
     }
 

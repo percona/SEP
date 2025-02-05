@@ -15,7 +15,7 @@ from pydantic import (
     UUID4,
 )
 
-from app.core.utils.datetime import utc_now
+from app.core.utils.date_time import utc_now
 from app.core.utils.fields import EmptyStrToNone, RequiredStr, TimedeltaSeconds
 
 
