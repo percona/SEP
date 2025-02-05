@@ -5,7 +5,8 @@
     color: #d4d4d4;
 }
 
-.log-top-bar, .log-bottom-bar {
+.log-top-bar,
+.log-bottom-bar {
     display: flex;
     align-items: center;
     background-color: #f5f5f5;
@@ -91,15 +92,15 @@
     border-radius: 50%;
 }
 
-input:checked + .slider {
+input:checked+.slider {
     background-color: #1060FF;
 }
 
-input:focus + .slider {
+input:focus+.slider {
     box-shadow: 0 0 1px #1060FF;
 }
 
-input:checked + .slider:before {
+input:checked+.slider:before {
     transform: translateX(26px);
 }
 
@@ -124,7 +125,8 @@ input:checked + .slider:before {
     width: 2em;
 }
 
-.log-step-tab:hover, .log-type-tab:hover {
+.log-step-tab:hover,
+.log-type-tab:hover {
     border: 1px solid #444;
     border-bottom: 1px solid #1e1e1e;
 }

@@ -144,10 +144,10 @@ class NodeResponse(BaseSQLModel, NodeBase):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param address: The network address of the node.
     :type address: RequiredStr
     :param name: The name of the node.
@@ -234,10 +234,10 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service. Must be unique for
         node_id, as defined by composite index ix_service_external_id_node_id.
     :type external_id: RequiredStr | None
@@ -280,10 +280,10 @@ class ServiceResponse(BaseSQLModel, ServiceBase):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service.
     :type external_id: RequiredStr | None
     :param name: The name of the service.
@@ -310,10 +310,10 @@ class ServiceDetailResponse(ServiceResponse):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service.
     :type external_id: RequiredStr | None
     :param name: The name of the service.
@@ -356,10 +356,10 @@ class Schema(BaseSQLModel, SchemaBase, table=True):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the schema. Must be unique for service_id, as defined by
         composite index ix_schema_name_service_id.
     :type name: RequiredStr
@@ -405,10 +405,10 @@ class SchemaResponse(BaseSQLModel, SchemaBase):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
     :type name: RequiredStr
     :param service_id: The unique identifier of the service to which the schema belongs.
@@ -427,10 +427,10 @@ class SchemaDetailResponse(SchemaResponse):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
     :type name: RequiredStr
     :param service_id: The unique identifier of the service to which the schema belongs.
@@ -473,10 +473,10 @@ class Table(BaseSQLModel, TableBase, table=True):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the table. Must be unique for schema_id, as defined by
         composite index ix_table_name_schema_id.
     :type name: RequiredStr
@@ -521,10 +521,10 @@ class TableResponse(BaseSQLModel, TableBase):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the table.
     :type name: RequiredStr
     :param create: The SQL statement used to create the table.
@@ -541,10 +541,10 @@ class TableDetailResponse(TableResponse):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the table.
     :type name: RequiredStr
     :param create: The SQL statement used to create the table.

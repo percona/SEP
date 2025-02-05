@@ -22,7 +22,7 @@ router = APIRouter()
     "/",
     dependencies=[IsAuthenticated, IsCsrfValidated],
 )
-async def create_periodic_task(
+async def periodic_task_create(
     tasks_api: TaskAPI,
     periodic_task: Annotated[EnhancedPeriodicTaskCreateRequest, Form()],
     referer: Annotated[str, Header()] = "/tasks",
@@ -39,7 +39,7 @@ async def create_periodic_task(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def delete_periodic_task(
+async def periodic_task_delete(
     periodic_task_id: str,
     tasks_api: TaskAPI,
     referer: Annotated[str, Header()] = "/tasks",
@@ -53,7 +53,7 @@ async def delete_periodic_task(
 @router.post(
     "/{periodic_task_id}/update", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
-async def update_periodic_task(
+async def periodic_task_update(
     periodic_task_id: int,
     tasks_api: TaskAPI,
     updated_task: Annotated[PeriodicTaskRequest, Form()],

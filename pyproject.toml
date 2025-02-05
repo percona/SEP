@@ -71,6 +71,7 @@ fastapi-csrf-protect = "^0.3.7"
 fastapi = "^0.115.6"
 httpx = "^0.28.0"
 rich = "^13.9.4"
+pygments = "^2.19.1"
 
 [tool.poetry.group.audit]
 optional = true
@@ -79,7 +80,10 @@ optional = true
 pip-audit = "^2.7.3"
 bandit = {extras = ["toml"], version = "^1.7.9"}
 poetry-plugin-export = "^1.8.0"
-ruff = "^0.7.2"
+ruff = "^0.9.4"
+djlint = "^1.36.4"
+jsbeautifier = "^1.15.1"
+cssbeautifier = "^1.15.1"
 
 
 [tool.poetry.group.mysql]
@@ -189,7 +193,7 @@ select = [
     "SLF001",
     "SIM",
     "TID252",
-    "TCH",
+    "TC",
     "ARG",
     "PTH",
     "TD",
@@ -212,7 +216,7 @@ ignore = [
     "D203",
     "D213",
     "ISC001",
-    "TCH001",
+    "TC001",
     "FIX002",
     "TRY003",
     "RUF007",
@@ -268,3 +272,8 @@ env_list = ["3.11", "3.12", "3.13"]
 [tool.tox.env_run_base]
 allowlist_externals = ["make"]
 commands = [["make", "test"]]
+
+
+[tool.djlint]
+profile = "jinja"
+ignore = "H021"

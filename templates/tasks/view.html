@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block style %}
     <style>
         .form-label {
@@ -16,41 +15,53 @@
             border-radius: 4px;
         }
     </style>
-    <link rel="stylesheet" href="/static/css/tasks.css">
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/tasks.css') }}">
     {% if history or running_tasks %}
-        <link rel="stylesheet" href="/static/css/logs.css">
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
-    <link rel="stylesheet" href="/static/css/saved.css">
-    <link rel="stylesheet" href="/static/css/scheduled.css">
-    <link rel="stylesheet" href="/static/css/select2.min.css">
-{% endblock %}
-
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/saved.css') }}">
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/scheduled.css') }}">
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/select2.min.css') }}">
+{% endblock style %}
 {% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     {% if history or running_tasks %}
-        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
     <script nonce="{{ request.state.csp_nonce }}">
         const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
         const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
     </script>
-    <script src="/static/js/cronstrue.min.js" nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="/static/js/saved.js" nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="/static/js/select2.min.js" nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="/static/js/scheduled.js" nonce="{{ request.state.csp_nonce }}"></script>
-{% endblock %}
-
-
-{% block title %}Task: {{ task.name }}{% endblock %}
-
+    <script src="{{ url_for('static', path='/js/cronstrue.min.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/saved.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/select2.min.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/scheduled.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock behaviours_optimized_extra %}
+{% block title -%}
+    Task: {{ task.name }}
+{%- endblock title %}
 {## TODO: the template is currently Nomad-specific#}
 {# TODO: Adjust indentation of all templates #}
 {% block main %}
-
     <dl>
         <dt>Engine</dt>
-        <dd>{{ Nomad }}</dd>
+        <dd>
+            {{ Nomad }}
+        </dd>
         <dt>Created</dt>
-        <dd>{{ task.created_at }}</dd>
+        <dd class="relativeTime">
+            {{ task.created_at }}
+        </dd>
         <dt>Specification</dt>
         <dd>
             <code>
@@ -64,7 +75,6 @@
             </ul>
         </dd>
     </dl>
-
     {% if not task.is_template %}
         {% if running_tasks %}
             <section id="running-tasks">
@@ -76,15 +86,15 @@
         <h2>Periodic Tasks</h2>
         {% include "/tasks/partials/scheduled-tasks.html" %}
     {% endif %}
-
     {% if not task.protected %}
-        <form class="delete-form" id="delete-form"
-            data-confirm-message='Are you sure you want to delete task "{{ task_name }}"?'
-            method="post" action="/tasks/{{ task['name'] }}/delete">
-            <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+        <form class="delete-form"
+              id="delete-form"
+              data-confirm-message='Are you sure you want to delete task "{{ task.name }}"?'
+              method="post"
+              action="{{ url_for('tasks_delete', task_name=task.name) }}">
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
         </form>
     {% endif %}
-
     {% if not task.is_template %}
         <section>
             <h2>History</h2>
@@ -92,4 +102,4 @@
             {% include "tasks/partials/completed-tasks.html" %}
         </section>
     {% endif %}
-{% endblock %}
+{% endblock main %}

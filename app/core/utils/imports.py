@@ -6,8 +6,8 @@ from typing import Any
 
 __all__ = [
     "import_var",
-    "validate_module_is_importable",
     "validate_attribute_is_importable",
+    "validate_module_is_importable",
 ]
 
 

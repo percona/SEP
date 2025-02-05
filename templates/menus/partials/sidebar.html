@@ -1,18 +1,25 @@
 {% block sidebar %}
-<nav class="sidebar" id="sep">
-    <ul>
-        {% if user.is_admin %}
-        <li class="casdoor sidebar-button"><a href="{{ casdoor_url }}" target="_blank">Casdoor</a></li>
-        {% endif %}
-        {% for plugin in plugins %}
-        <li class="{{ plugin.css_class }} sidebar-button"><a href="{{ plugin.uri_path }}/">{{ plugin.name }}</a></li>
-        {% endfor %}
-        {#   TODO: logout route with CSRF post     #}
-        <li class="signout sidebar-button">
-            <a href="#" class="submitNextForm">Sign out</a>
-            <form action="/logout" method="POST" style="display:none;" id="logoutForm">
-            </form>
-        </li>
-    </ul>
-</nav>
-{% endblock %}
+    <nav class="sidebar" id="sep">
+        <ul>
+            {% if user.is_admin %}
+                <li class="casdoor sidebar-button">
+                    <a href="{{ casdoor_url }}" target="_blank">Casdoor</a>
+                </li>
+            {% endif %}
+            {% for plugin in plugins %}
+                <li class="{{ plugin.css_class }} sidebar-button">
+                    <a href="{{ plugin.uri_path }}/">{{ plugin.name }}</a>
+                </li>
+            {% endfor %}
+            {#   TODO: logout route with CSRF post     #}
+            <li class="signout sidebar-button">
+                <a href="#" class="submitNextForm">Sign out</a>
+                <form action="{{ url_for('logout') }}"
+                      method="post"
+                      style="display:none"
+                      id="logoutForm">
+                </form>
+            </li>
+        </ul>
+    </nav>
+{% endblock sidebar %}

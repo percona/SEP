@@ -1,7 +1,7 @@
-$(document).ready(function () {
+$(document).ready(function() {
     const cronstrue = window.cronstrue;
 
-    $('.period-cell.period-crontab').each(function () {
+    $('.period-cell.period-crontab').each(function() {
         const cronExpression = $(this).text().trim();
         const timezone = $(this).data('timezone');
         if (cronExpression) {
@@ -18,20 +18,20 @@ $(document).ready(function () {
         }
     });
 
-    $('#scheduled-tasks-table .delete-form').each(function () {
+    $('#scheduled-tasks-table .delete-form').each(function() {
         const taskName = $(this).closest('tr').find('td:first').text().trim();
         const periodCell = $(this).closest('tr').find('.period-cell');
         const periodDescription = periodCell.attr('title') || periodCell.text().trim();
         $(this).attr('data-confirm-message', `Are you sure you want to delete the periodic task for "${taskName}" (${periodDescription})?`);
     });
 
-    $('.new-periodic-task-enable-checkbox').change(function (e) {
+    $('.new-periodic-task-enable-checkbox').change(function(e) {
         const checkbox = $(this);
         const enabled = checkbox.is(':checked');
         checkbox.parent('label.switch').siblings('input[name="enabled"]').val(enabled ? 'true' : 'false');
     });
 
-    $('.enable-checkbox').change(function (e) {
+    $('.enable-checkbox').change(function(e) {
         e.preventDefault();
         const checkbox = $(this);
         const form = checkbox.closest('.enable-form');
@@ -51,20 +51,20 @@ $(document).ready(function () {
     });
 
     // Highlight task for 3 seconds
-    $('.task-link').click(function (e) {
+    $('.task-link').click(function(e) {
         var targetId = $(this).attr('href').substring(1);
         var $targetRow = $('#' + targetId);
 
         if ($targetRow.length) {
             $targetRow.addClass('highlighted-row');
-            setTimeout(function () {
+            setTimeout(function() {
                 $targetRow.removeClass('highlighted-row');
             }, 3000);
         }
     });
 
     // Update cron description on input
-    $('input[name="cron_expression"]').on('input', function () {
+    $('input[name="cron_expression"]').on('input', function() {
         const cronExpression = $(this).val();
         const $cronDescription = $('.cron-description');
         if (cronExpression) {
@@ -82,7 +82,7 @@ $(document).ready(function () {
     });
 
     // Handle discard button
-    $('.discard-button').click(function () {
+    $('.discard-button').click(function() {
         $('#add-periodic-task-button-container').show();
         $('#new-periodic-task-form').trigger('reset');
         $('.cron-description').text('');
@@ -92,7 +92,7 @@ $(document).ready(function () {
     });
 
     // Handle switching between interval and cron modes
-    $('.change-period-mode').click(function () {
+    $('.change-period-mode').click(function() {
         const intervalDiv = $('.interval-inputs');
         const cronDiv = $('.cron-inputs');
         intervalDiv.toggleClass('hidden');
@@ -106,7 +106,7 @@ $(document).ready(function () {
     });
 
     // Show the form row when "+" button is clicked
-    $('#add-periodic-task-button').click(function () {
+    $('#add-periodic-task-button').click(function() {
         $('#add-periodic-task-button-container').hide();
         $('#scheduled-tasks-table').addClass('create-mode');
 
@@ -127,7 +127,7 @@ $(document).ready(function () {
     });
 
     // Handle validation before form submission
-    $('#save-button').click(function (e) {
+    $('#save-button').click(function(e) {
         e.preventDefault()
         const $cronDiv = $('.cron-inputs');
         const $periodDiv = $('.interval-inputs')
@@ -158,7 +158,7 @@ $(document).ready(function () {
                 return false;
             }
         }
-        $('.new-periodic-task-row input[type="datetime-local"]').each(function () {
+        $('.new-periodic-task-row input[type="datetime-local"]').each(function() {
             const $dateInput = $(this);
             const dateValue = $dateInput.val();
             if (dateValue) {
@@ -174,7 +174,7 @@ $(document).ready(function () {
         }
         if ($runPythonForm.length) {
             const runPythonFormData = $runPythonForm.serializeArray();
-            runPythonFormData.forEach(function (data) {
+            runPythonFormData.forEach(function(data) {
                 if (data.name !== "csrf-token") {
                     let inputName = "execute_request_payload"
                     if (data.name !== "payload")

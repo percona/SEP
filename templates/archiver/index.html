@@ -1,38 +1,44 @@
 {% extends "base.html" %}
-
-{% block title %}Data Archiver{% endblock %}
-
+{% block title -%}
+    Data Archiver
+{%- endblock title %}
 {% block style %}
     {% if history_tasks or running_tasks %}
-        <link rel="stylesheet" href="/static/css/logs.css">
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
     {% if tasks %}
-        <link rel="stylesheet" href="/static/css/saved.css">
-        <link rel="stylesheet" href="/static/css/scheduled.css">
-        <link rel="stylesheet" href="/static/css/select2.min.css">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/saved.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/scheduled.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/select2.min.css') }}">
     {% endif %}
-{% endblock %}
-
+{% endblock style %}
 {% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     {% if history_tasks or running_tasks %}
-        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
     {% if tasks %}
         <script nonce="{{ request.state.csp_nonce }}">
             const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
             const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
         </script>
-        <script src="/static/js/cronstrue.min.js" nonce="{{ request.state.csp_nonce }}"></script>
-        <script src="/static/js/select2.min.js" nonce="{{ request.state.csp_nonce }}"></script>
-        <script src="/static/js/saved.js" nonce="{{ request.state.csp_nonce }}"></script>
-        <script src="/static/js/scheduled.js" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/cronstrue.min.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/select2.min.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/saved.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/scheduled.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
-{% endblock %}
-
+{% endblock behaviours_optimized_extra %}
 {% block main %}
-
     <p>Perform data archiving tasks, currently MySQL-only.</p>
-
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure an archiver task</h2>
@@ -51,7 +57,6 @@
                 {% include "tasks/partials/running-tasks.html" %}
             </section>
         {% endif %}
-
         <section id="saved-tasks">
             <h2>Saved</h2>
             {% include "archiver/partials/saved-tasks.html" %}
@@ -60,16 +65,13 @@
             <h3>Create an archiving process</h3>
             {% include "archiver/partials/create-form.html" %}
         </section>
-
         <section id="pending-tasks">
             <h2>Pending</h2>
             {% include "tasks/partials/pending-tasks.html" %}
         </section>
-
         <section id="completed-tasks">
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}
         </section>
     {% endif %}
-
-{% endblock %}
+{% endblock main %}

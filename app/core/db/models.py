@@ -1,6 +1,5 @@
 """Define base database models."""
 
-from datetime import datetime
 from uuid import uuid4
 
 from pydantic import UUID4
@@ -8,7 +7,8 @@ from sqlalchemy import DateTime, func, Integer
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
 
-from app.core.utils.datetime import utc_now
+from app.core.utils.date_time import utc_now
+from app.core.utils.fields import UTCDatetime
 
 DateTimeWithTimezone = DateTime(timezone=True)
 
@@ -20,10 +20,10 @@ class BaseSQLModel(SQLModel):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     """
 
     id: int | None = SQLField(
@@ -31,11 +31,11 @@ class BaseSQLModel(SQLModel):
         sa_type=Integer,
         sa_column_kwargs={"primary_key": True, "autoincrement": True},
     )
-    created_at: datetime = SQLField(
+    created_at: UTCDatetime = SQLField(
         sa_type=DateTimeWithTimezone,
         default_factory=utc_now,
     )
-    updated_at: datetime | None = SQLField(
+    updated_at: UTCDatetime | None = SQLField(
         default=None,
         sa_type=DateTimeWithTimezone,
         sa_column_kwargs={"onupdate": func.now()},
@@ -53,10 +53,10 @@ class BaseUUIDSQLModel(BaseSQLModel):
     :type id: UUID4
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     """
 
     id: UUID4 = SQLField(

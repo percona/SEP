@@ -5,8 +5,8 @@ from typing import Any
 
 __all__ = [
     "deep_dict_update",
-    "transform_dict_keys",
     "sort_dict",
+    "transform_dict_keys",
 ]
 
 

@@ -28,7 +28,7 @@ def created_periodic_task() -> PeriodicTask:
         },
     ],
 )
-def test_create_periodic_task(test_client, mock_task_api_dep, faker, extra_data):
+def test_periodic_task_create(test_client, mock_task_api_dep, faker, extra_data):
     """Test creating a new periodic task."""
     task_name = "run-python"
     start_time = faker.date_time_this_year()
@@ -49,7 +49,7 @@ def test_create_periodic_task(test_client, mock_task_api_dep, faker, extra_data)
     assert response.headers["location"] == "/tasks"
 
 
-def test_delete_periodic_task(
+def test_periodic_task_delete(
     test_client,
     created_periodic_task,
     mock_task_api_dep,
@@ -65,7 +65,7 @@ def test_delete_periodic_task(
     )
 
 
-def test_update_periodic_task(test_client, mock_task_api_dep, created_periodic_task):
+def test_periodic_task_update(test_client, mock_task_api_dep, created_periodic_task):
     """Test updating a periodic task."""
     updated_task_data = {
         "enabled": "false",

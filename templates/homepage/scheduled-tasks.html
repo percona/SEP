@@ -1,56 +1,58 @@
 <div class="scheduled-tasks-table-container">
-  <form id="new-periodic-task-form" method="post" action="/periodic/" style="display: none;">
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-  </form>
-  <table id="scheduled-tasks-table">
-    <thead>
-      <tr>
-        <th>Task</th>
-        <th>Owner</th>
-        <th>Period</th>
-        <th>Last Run At</th>
-        <th>Runs</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% if periodic_tasks %}
-      {% for periodic_task in periodic_tasks %}
-      {% set task_name = periodic_task.task %}
-      <tr{% if not periodic_task.enabled %} class="disabled-row" {% endif %}>
-        <td>
-          {{ task_name }}
-        </td>
-        <td>{{ periodic_task.owner }}</td>
-        {% if periodic_task.crontab %}
-          <td class="period-cell period-crontab" data-timezone="{{ periodic_task.crontab.timezone }}">
-        {% else %}
-          <td class="period-cell">
-        {% endif %}
-          {{ periodic_task.period }}
-        </td>
-        <td>{{ periodic_task.last_run_at or '' }}</td>
-        <td>{{ periodic_task.total_run_count }}</td>
-        <td>
-          {% if is_task_manager_enabled %}
-          <a href="/tasks/{{ task_name }}"><i class="icons">visibility</i></a>
-          {% else %}
-          <a class="tooltip">
-            <i class="icons">visibility_off</i>
-            <span class="tooltiptext">Enable the Task Manager plugin or navigate to the "{{ periodic_task.owner }}"
-              plugin to view details of this task.</span>
-          </a>
-          {% endif %}
-          <form action="/tasks/{{ task_name }}/delete" method="POST" style="display:none;" id="deleteTaskForm">
-          </form>
-        </td>
-        </tr>
-        {% endfor %}
-        {% else %}
-        <tr>
-          <td colspan="5" class="no-tasks">No periodic tasks</td>
-        </tr>
-        {% endif %}
-    </tbody>
-  </table>
-</div>
+    <form id="new-periodic-task-form"
+          method="post"
+          action="{{ url_for('periodic_task_create') }}"
+          style="display: none">
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    </form>
+    <table id="scheduled-tasks-table">
+        <thead>
+            <tr>
+                <th>Task</th>
+                <th>Owner</th>
+                <th>Period</th>
+                <th>Last Run At</th>
+                <th>Runs</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if periodic_tasks %}
+                {% for periodic_task in periodic_tasks %}
+                    {% set task_name = periodic_task.task %}
+                    <tr {% if not periodic_task.enabled %}class="disabled-row"{% endif %}>
+                        <td>{{ task_name }}</td>
+                        <td>{{ periodic_task.owner }}</td>
+                        {% if periodic_task.crontab %}
+                            {# djlint:off H025 #}
+                            <td class="period-cell period-crontab"
+                                data-timezone="{{ periodic_task.crontab.timezone }}">
+                                {# djlint:on #}
+                            {% else %}
+                                <td class="period-cell">
+                                {% endif %}
+                                {{ periodic_task.period }}
+                            </td>
+                            <td class="relativeTime">{{ periodic_task.last_run_at or '' }}</td>
+                            <td>{{ periodic_task.total_run_count }}</td>
+                            <td>
+                                {% if is_task_manager_enabled %}
+                                    <a href="{{ url_for('tasks_detail', task_name=task_name) }}"><i class="icons">visibility</i></a>
+                                {% else %}
+                                    <a class="tooltip">
+                                        <i class="icons">visibility_off</i>
+                                        <span class="tooltiptext">Enable the Task Manager plugin or navigate to the "{{ periodic_task.owner }}"
+                                        plugin to view details of this task.</span>
+                                    </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="no-tasks">No periodic tasks</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
