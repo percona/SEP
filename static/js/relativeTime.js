@@ -43,7 +43,7 @@ function humanizeRelativeTime(date) {
 }
 
 $(document).ready(function() {
-    $('.relativeTime').each(function() {
+    $('.relativeTime').hover(function() {
         const $dateElem = $(this);
         const relativeDate = new Date($(this).text());
         $dateElem.attr('title', humanizeRelativeTime(relativeDate));
