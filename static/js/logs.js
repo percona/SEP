@@ -1,13 +1,13 @@
-$(document).ready(function () {
+$(document).ready(function() {
     const lastMessagesIds = {};
-    $('.log-console.streaming-console').each(function () {
+    $('.log-console.streaming-console').each(function() {
         const $logConsole = $(this);
         const taskId = $logConsole.data('task-id');
         lastMessagesIds[taskId] = 0;
 
         const eventSource = new EventSource('/stream-logs/' + taskId);
 
-        eventSource.onmessage = function (event) {
+        eventSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
 
             const logId = data.id
@@ -69,7 +69,7 @@ $(document).ready(function () {
             }
         };
 
-        eventSource.addEventListener('finish', function (event) {
+        eventSource.addEventListener('finish', function(event) {
             eventSource.close();
             if (lastMessagesIds[taskId] === 0) {
                 window.location.reload();
@@ -82,7 +82,7 @@ $(document).ready(function () {
             }
         });
 
-        eventSource.onerror = function (e) {
+        eventSource.onerror = function(e) {
             console.error(`Error receiving SSE for task ${taskId}: ${e}`);
             if (lastMessagesIds[taskId] === 0) {
                 eventSource.close();
@@ -91,7 +91,7 @@ $(document).ready(function () {
         };
     });
 
-    $('.logs-button').click(function () {
+    $('.logs-button').click(function() {
         const logId = $(this).data('log-id');
         const logRow = $('tr.log-row[data-log-id="' + logId + '"]');
         logRow.toggle();
@@ -103,7 +103,7 @@ $(document).ready(function () {
         }
     });
 
-    $('.log-type-tab').click(function (e) {
+    $('.log-type-tab').click(function(e) {
         e.preventDefault();
         const $this = $(this);
         const logType = $this.data('log-type');
@@ -118,7 +118,7 @@ $(document).ready(function () {
         $this.removeClass('tab-notification');
     });
 
-    $('.log-console').on('click', '.log-step-tab', function (e) {
+    $('.log-console').on('click', '.log-step-tab', function(e) {
         e.preventDefault();
         const $this = $(this);
         const stepName = $this.data('step-name');
@@ -137,7 +137,7 @@ $(document).ready(function () {
         $this.removeClass('tab-notification');
     });
 
-    $('.word-wrap-checkbox').change(function () {
+    $('.word-wrap-checkbox').change(function() {
         const $this = $(this);
         const $logConsole = $this.closest('.log-console');
         if ($this.is(':checked')) {
@@ -148,7 +148,7 @@ $(document).ready(function () {
     });
     $('.word-wrap-checkbox').trigger("change");
 
-    $('.toggle-label').click(function (e) {
+    $('.toggle-label').click(function(e) {
         $(this).prev(".switch").click();
     });
 });

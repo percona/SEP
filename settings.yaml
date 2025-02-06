@@ -68,6 +68,7 @@ development:
     RESULT_BACKEND: file://data/celery/results
     RESULT_PERSISTENT: true
     BEAT_DBURI: "sqlite:///schedule.db"
+    MAX_RETRIES: 3
 
 production_docker:
   CASDOOR:

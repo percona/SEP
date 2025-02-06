@@ -13,7 +13,7 @@ from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.config import settings
-from app.core.utils.datetime import utc_now
+from app.core.utils.date_time import utc_now
 from app.tasks.periodic.config import periodic_tasks_settings, PeriodicTaskAction
 
 logger = logging.getLogger(__name__)

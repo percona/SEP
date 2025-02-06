@@ -38,7 +38,7 @@ celery = create_celery("tasks")
     bind=True,
     autoretry_for=(Exception,),
     retry_backoff=True,
-    retry_kwargs={"max_retries": 5},
+    retry_kwargs={"max_retries": celery.conf.max_retries},
 )
 def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     """Trigger a Celery task by executing a queue item.
@@ -58,7 +58,7 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     bind=True,
     autoretry_for=(Exception,),
     retry_backoff=True,
-    retry_kwargs={"max_retries": 5},
+    retry_kwargs={"max_retries": celery.conf.max_retries},
 )
 def execute_task_by_name(
     self: Task, task_name: str, execution_data: PeriodicTaskExecuteRequest | None = None
@@ -80,18 +80,9 @@ def execute_task_by_name(
     return jsonable_encoder(async_to_sync(process_queue_item)(task_history.id))
 
 
-@celery.task(
-    bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_kwargs={"max_retries": 5},
-)
-def process_expired_and_orphaned_periodic_tasks(self: Task) -> None:
-    """Define Celery task to process expired and orphaned periodic tasks.
-
-    :param self: The Celery task instance.
-    :type self: Task
-    """
+@celery.task
+def process_expired_and_orphaned_periodic_tasks() -> None:
+    """Define Celery task to process expired and orphaned periodic tasks."""
     async_to_sync(process_expired_periodic_tasks)()
     async_to_sync(process_orphaned_periodic_tasks)()
 

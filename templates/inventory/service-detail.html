@@ -1,71 +1,85 @@
 {% extends "inventory/base-inventory.html" %}
-
-{% block title %}Service {{ service.name }} ({{ service.node_id }}){% endblock %}
-
+{% block title -%}
+    Service {{ service.name }} ({{ service.node_id }})
+{%- endblock title %}
 {% block inventory_entity_details %}
-    {% with inventory_table_title = "Service Details", inventory_sync_route = "/inventory/services/" ~  service.id ~ "/sync/" %}
+    {% with inventory_table_title = "Service Details", inventory_sync_route = "/inventory/services/" ~ service.id ~ "/sync/" %}
         {% include "inventory/partials/sync-button.html" %}
     {% endwith %}
     <dl>
         <dt>ID</dt>
-        <dd>{{ service.id }}</dd>
+        <dd>
+            {{ service.id }}
+        </dd>
         <dt>Name</dt>
-        <dd>{{ service.name }}</dd>
+        <dd>
+            {{ service.name }}
+        </dd>
         <dt>Type</dt>
-        <dd>{{ service.type }}</dd>
+        <dd>
+            {{ service.type }}
+        </dd>
         {% if service.node.source %}
             <dt>Source</dt>
-            <dd>{{ service.node.source }}</dd>
+            <dd>
+                {{ service.node.source }}
+            </dd>
         {% endif %}
         {% if service.external_id %}
             <dt>External ID</dt>
-            <dd>{{ service.external_id }}</dd>
+            <dd>
+                {{ service.external_id }}
+            </dd>
         {% endif %}
         <dt>Port</dt>
-        <dd>{{ service.port }}</dd>
+        <dd>
+            {{ service.port }}
+        </dd>
         {% if service.environment %}
             <dt>Environment</dt>
-            <dd>{{ service.environment }}</dd>
+            <dd>
+                {{ service.environment }}
+            </dd>
         {% endif %}
         <dt>Node ID</dt>
-        <dd>{{ service.node_id }}</dd>
+        <dd>
+            {{ service.node_id }}
+        </dd>
     </dl>
-{% endblock %}
-
+{% endblock inventory_entity_details %}
 {% block inventory_table %}
     <h3>Schemas in this Service</h3>
     <table>
         <thead>
-        <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Actions</th>
-        </tr>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Actions</th>
+            </tr>
         </thead>
         <tbody>
-        {% for schema in service.schemas %}
-            <tr>
-                <td>{{ schema.id }}</td>
-                <td><a href="/inventory/schemas/{{ schema.id }}">{{ schema.name }}</a>
-                </td>
-                <td>
-                    <form action="/inventory/schemas/{{ schema.id }}/delete"
-                          method="post" style="display:inline;" class="confirmable-form"
-                          data-confirm-message="Are you sure you want to delete schema #{{ schema.id }}?">
-                        <input type="hidden" name="csrf-token"
-                               value="{{ csrf_token }}"/>
-                        <button name="location" class="icons submitButton"
-                                >delete forever
-                        </button>
-                    </form>
-                </td>
-            </tr>
-        {% endfor %}
+            {% for schema in service.schemas %}
+                <tr>
+                    <td>{{ schema.id }}</td>
+                    <td>
+                        <a href="{{ url_for('schema_detail', schema_id=schema.id) }}">{{ schema.name }}</a>
+                    </td>
+                    <td>
+                        <form action="{{ url_for('schema_delete', schema_id=schema.id) }}"
+                              method="post"
+                              style="display:inline"
+                              class="confirmable-form"
+                              data-confirm-message="Are you sure you want to delete schema '{{ schema.name }}' (#{{ schema.id }})?">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                            <button name="location" class="icons submitButton">delete forever</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
         </tbody>
     </table>
-{% endblock %}
-
+{% endblock inventory_table %}
 {% block inventory_create %}
     <h3>Add a New Schema</h3>
     {% include "inventory/partials/schema-create-form.html" %}
-{% endblock %}
+{% endblock inventory_create %}

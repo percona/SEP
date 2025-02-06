@@ -1,39 +1,44 @@
 <h2>Create a new task</h2>
 <form action="" method="post">
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Enter a new task definition</legend>
         <div>
-            <label>Alias
+            <label>
+                Alias
                 <input id="name" name="name" maxlength="100" size="20" required>
             </label>
         </div>
-        <label>Definition
+        <label>
+            Definition
             <textarea id="payload" name="payload" rows="40" cols="80" required></textarea>
         </label>
         <fieldset>
             <legend>Format</legend>
-            <label title="Nomad-only">HCL
+            <label title="Nomad-only">
+                HCL
                 <input type="radio" id="format-hcl" name="fmt" value="hcl">
             </label>
-            <label>JSON
+            <label>
+                JSON
                 <input type="radio" id="format-json" name="fmt" value="json" checked>
             </label>
-            <label>YAML
+            <label>
+                YAML
                 <input type="radio" id="format-yaml" name="fmt" value="yaml">
             </label>
         </fieldset>
-        <label>Engine
+        <label>
+            Engine
             <select id="backend" name="backend" required>
-                {% for backend in available_backends %}
-                <option value="{{ backend }}">{{ backend.capitalize() }}</option>
-                {% endfor %}
+                {% for backend in available_backends %}<option value="{{ backend }}">{{ backend.capitalize() }}</option>{% endfor %}
             </select>
         </label>
-        <label>Owner
+        <label>
+            Owner
             <select id="owner" name="owner" required>
                 {% for owner in available_owners %}
-                <option value="{{ owner }}" {% if loop.first %}selected{% endif %}>{{ owner.name.capitalize() }}</option>
+                    <option value="{{ owner }}" {% if loop.first %}selected{% endif %}>{{ owner.name.capitalize() }}</option>
                 {% endfor %}
             </select>
         </label>

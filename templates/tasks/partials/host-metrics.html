@@ -1,5 +1,6 @@
 <section id="targets">
-    <h2>Targets
+    <h2>
+        Targets
         {% if executor_hosts %}
             ({{ executor_hosts | length }})
         {% else %}
@@ -14,12 +15,12 @@
                     <th>Address</th>
                 </tr>
                 {% if executor_hosts %}
-                {% for ip, targetname in executor_hosts %}
-                    <tr>
-                        <td>{{ ip }}</td>
-                        <td>{{ targetname }}</td>
-                    </tr>
-                {% endfor %}
+                    {% for ip, targetname in executor_hosts %}
+                        <tr>
+                            <td>{{ ip }}</td>
+                            <td>{{ targetname }}</td>
+                        </tr>
+                    {% endfor %}
                 {% else %}
                     <tr>
                         <td colspan="2" class="no-tasks">No targets available.</td>

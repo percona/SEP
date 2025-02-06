@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-
-{% block title %}Tasks{% endblock %}
-
+{% block title -%}
+    Tasks
+{%- endblock title %}
 {% block style %}
-    <link rel="stylesheet" href="/static/css/tasks.css">
-    {% if running_tasks %}
-        <link rel="stylesheet" href="/static/css/logs.css">
-    {% endif %}
-{% endblock %}
-
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/tasks.css') }}">
+    {% if running_tasks %}<link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">{% endif %}
+{% endblock style %}
 {% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     {% if running_tasks %}
-        <script src="/static/js/logs.js" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
-{% endblock %}
-
+{% endblock behaviours_optimized_extra %}
 {% block main %}
     <p>Manage the configuration, execution and reporting with the task manager.</p>
     {% if running_tasks %}
@@ -27,26 +27,28 @@
     <table>
         <caption>Tasks available for reuse</caption>
         <thead>
-        <tr>
-            <th>Task</th>
-            <th>Engine</th>
-            <th>Created</th>
-        </tr>
+            <tr>
+                <th>Task</th>
+                <th>Engine</th>
+                <th>Created</th>
+            </tr>
         </thead>
         <tfoot>
-        <tr>
-            <td colspan="3"></td>
-        </tr>
+            <tr>
+                <td colspan="3"></td>
+            </tr>
         </tfoot>
         <tbody>
-        {% for task in tasks %}
-            <tr>
-                <th><a href="/tasks/{{ task['name'] }}">{{ task["name"] }}</a></th>
-                <td>{{ task["backend"].capitalize() }}</td>
-                <td>{{ task["created_at"] }}</td>
-            </tr>
-        {% endfor %}
+            {% for task in tasks %}
+                <tr>
+                    <th>
+                        <a href="{{ url_for('tasks_detail', task_name=task['name']) }}">{{ task["name"] }}</a>
+                    </th>
+                    <td>{{ task["backend"].capitalize() }}</td>
+                    <td class="relativeTime">{{ task["created_at"] }}</td>
+                </tr>
+            {% endfor %}
         </tbody>
     </table>
     {% include "tasks/partials/create-form.html" %}
-{% endblock %}
+{% endblock main %}
