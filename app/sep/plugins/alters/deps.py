@@ -160,7 +160,7 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
     return {
         "hostname": data["Constraints"][0]["RTarget"],
-        "table": f'{meta["schema_name"]}.{meta["table_name"]}',
+        "table": f"{meta['schema_name']}.{meta['table_name']}",
     }
 
 

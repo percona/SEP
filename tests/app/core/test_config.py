@@ -61,9 +61,9 @@ def test_yaml_prefix_config_settings_source_multiple_prefixes(mock_yaml_file):
         "key4": "env2_nested_value4",
     }
 
-    assert (
-        settings_source.yaml_data == expected_data
-    ), f"Expected {expected_data} but got {settings_source.yaml_data}"
+    assert settings_source.yaml_data == expected_data, (
+        f"Expected {expected_data} but got {settings_source.yaml_data}"
+    )
 
 
 class MockSettings(BaseSettings):

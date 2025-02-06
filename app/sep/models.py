@@ -150,10 +150,10 @@ class SyncInstance(BaseUUIDSQLModel, SyncInstanceBase, table=True):
     :type id: UUID4
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param syncer: The name of the synchronizer responsible for this synchronization.
         Indexed for quick lookup.
     :type syncer: RequiredStr
@@ -228,10 +228,10 @@ class SyncItem(BaseUUIDSQLModel, SyncItemBase, table=True):
     :type id: UUID4
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param entity_id: The identifier of the inventory item being synchronized.
     :type entity_id: int | None
     :param entity_type: The type of the inventory item being synchronized.

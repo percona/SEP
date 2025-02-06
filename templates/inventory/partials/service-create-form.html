@@ -1,10 +1,10 @@
-<form action="/inventory/{{ node.id }}/services/" method="post">
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+<form action="{{ url_for('service_create_for_node', node_id=node.id) }}"
+      method="post">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Create New Service</legend>
         <label for="name">Name:</label>
         <input type="text" name="name" id="name" required>
-
         <label for="service_type">Type:</label>
         <select name="service_type" id="service_type" required>
             <option value="mysql">MySQL</option>
@@ -12,15 +12,12 @@
             <option value="mongodb">MongoDB</option>
             <option value="external">External</option>
         </select>
-
         {% if node.source %}
-        <label for="external_id">External ID:</label>
-        <input type="text" name="external_id" id="external_id">
+            <label for="external_id">External ID:</label>
+            <input type="text" name="external_id" id="external_id">
         {% endif %}
-
         <label for="port">Port:</label>
         <input type="number" name="port" id="port">
-
         <label for="environment">Environment:</label>
         <input type="text" name="environment" id="environment">
     </fieldset>

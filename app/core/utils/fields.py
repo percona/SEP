@@ -25,7 +25,7 @@ from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema, Url
 from starlette.datastructures import URL as StarletteURL  # noqa: N811
 
-from app.core.utils.datetime import make_datetime_utc
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.imports import (
     validate_attribute_is_importable,
     validate_module_is_importable,

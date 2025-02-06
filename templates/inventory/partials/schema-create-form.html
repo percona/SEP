@@ -1,5 +1,6 @@
-<form action="/inventory/services/{{ service.id }}/schemas/" method="post">
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+<form action="{{ url_for('schema_create_for_service', service_id=service.id) }}"
+      method="post">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Create New Schema</legend>
         <label for="name">Name:</label>

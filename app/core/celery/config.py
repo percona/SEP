@@ -1,7 +1,8 @@
 """Define Celery settings."""
 
-from typing import Self
+from typing import Annotated, Self
 
+from annotated_types import Ge
 from pydantic import ConfigDict, model_validator
 
 from app.core.models import BaseLowercaseModel
@@ -24,6 +25,9 @@ class CeleryOptions(BaseLowercaseModel):
     :type beat_dburi: StrDatabaseUrl
     :param beat_schema: The schema to store the beat tables in the database.
     :type beat_schema: str | None
+    :param max_retries: The maximum number of times to retry failed tasks. Defaults
+        to `0` (no retries).
+    :type max_retries: int
     """
 
     model_config = ConfigDict(extra="allow")
@@ -32,6 +36,7 @@ class CeleryOptions(BaseLowercaseModel):
     result_backend: StrAnyUrl | None = None
     beat_dburi: StrDatabaseUrl = "sqlite:///schedule.db"
     beat_schema: str | None = None
+    max_retries: Annotated[int, Ge(0)] = 0
 
     @model_validator(mode="after")
     def set_default_beat_schema(self) -> Self:
