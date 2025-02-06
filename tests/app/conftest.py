@@ -11,7 +11,7 @@ from app.core.auth.models import OAuthToken
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
-from app.sep.deps import get_tasks_api
+from app.sep.deps import get_inventory_api, get_tasks_api
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.main import sep_app
 from tests.app.factories import (
@@ -171,6 +171,13 @@ def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     yield mock
     sep_app.dependency_overrides = {}
 
+@pytest.fixture
+def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+    """Mock the InventoryAPI dependency."""
+    mock = AsyncMock(spec=RemoteAPI)
+    sep_app.dependency_overrides[get_inventory_api] = lambda: mock
+    yield mock
+    sep_app.dependency_overrides = {}
 
 @pytest.fixture
 def created_node() -> CreatedNode:

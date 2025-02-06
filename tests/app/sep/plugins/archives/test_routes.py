@@ -100,10 +100,12 @@ def test_archives_detail(
     test_client,
     created_task,
     mock_task_api_dep,
+    mock_inventory_api_dep,
 ):
     """Test retrieving an archives detail page."""
     mock_meta_config = yaml.dump(
         {
+            "ALL": { "SOURCE_HOST": "localhost"},
             "PURGE_LIST": [
                 {
                     "SOURCE_DB": "mock_source_db",
