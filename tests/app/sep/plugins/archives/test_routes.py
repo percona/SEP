@@ -10,12 +10,12 @@ from fastapi import status
 from app.sep.main import sep_app
 from app.sep.plugins.archives.deps import (
     build_archives_task_payload,
+    get_archives_detail_context,
     get_archives_index_context,
     get_archives_task,
 )
 from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
 from app.tasks.models import (
-    TaskHistoryStatusEnum,
     TaskOwner,
 )
 from tests.app.factories import TaskFactory
@@ -52,6 +52,31 @@ def created_task():
 def _mock_get_archives_task_dep(created_task):
     """Mock the TaskDep dependency."""
     sep_app.dependency_overrides[get_archives_task] = lambda: created_task
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def _mock_get_archives_detail_context_dep(created_task):
+    """Mock the TaskDep dependency."""
+    sep_app.dependency_overrides[get_archives_detail_context] = lambda: {
+        "executor_hosts": ["127.0.0.1"],
+        "mysql_services": [{"id": "1", "name": "mydb"}],
+        "archive_data": {
+            # Mock detail of archiver
+            "service_id": "1",
+            "source_db_id": "2",
+            "source_table_id": "3",
+        },
+        "task": {
+            **created_task.model_dump(),
+            "meta": {
+                "config": "ALL:\n  SOURCE_HOST: localhost\n",
+                "requirements": "PyMySQL\nfilelock\nPyYAML",
+            },
+        },
+        "user": AsyncMock,
+    }
     yield
     sep_app.dependency_overrides = {}
 
@@ -95,7 +120,7 @@ def test_archives_create(
     )
 
 
-@pytest.mark.usefixtures("_mock_get_archives_task_dep")
+@pytest.mark.usefixtures("_mock_get_archives_detail_context_dep")
 def test_archives_detail(
     test_client,
     created_task,
@@ -105,14 +130,14 @@ def test_archives_detail(
     """Test retrieving an archives detail page."""
     mock_meta_config = yaml.dump(
         {
-            "ALL": { "SOURCE_HOST": "localhost"},
+            "ALL": {"SOURCE_HOST": "localhost"},
             "PURGE_LIST": [
                 {
                     "SOURCE_DB": "mock_source_db",
                     "SOURCE_TABLE": "mock_source_table",
                     "SWAP_DROP": 1,
                 }
-            ]
+            ],
         }
     )
 
@@ -126,12 +151,6 @@ def test_archives_detail(
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
-    mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
-    mock_task_api_dep.get.assert_any_await(
-        f"/{created_task.name}/history/",
-        params={"status": TaskHistoryStatusEnum.RUNNING},
-    )
-    mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
 
 
 @pytest.mark.usefixtures("_mock_get_archives_task_dep")

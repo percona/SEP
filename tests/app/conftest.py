@@ -171,6 +171,7 @@ def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     yield mock
     sep_app.dependency_overrides = {}
 
+
 @pytest.fixture
 def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     """Mock the InventoryAPI dependency."""
@@ -178,6 +179,7 @@ def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides = {}
+
 
 @pytest.fixture
 def created_node() -> CreatedNode:

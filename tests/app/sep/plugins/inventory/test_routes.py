@@ -5,14 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import BackgroundTasks, status
 
-from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     get_created_node,
     get_created_schema,
     get_created_service,
-    get_inventory_api,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.main import sep_app

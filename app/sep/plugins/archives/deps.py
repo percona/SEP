@@ -279,7 +279,7 @@ async def get_archives_detail_context(
                 "/schemas/id", params={"name": source_db, "service_id": service_id}
             )
             schema_id = schema_response["schema_id"]
-            archive_data["source_db_id"] = service_id
+            archive_data["source_db_id"] = schema_id
 
             if source_table and schema_id:
                 table_response = await inventory_api.get(
@@ -313,9 +313,10 @@ async def get_archives_detail_context(
     history, running_tasks, stats = await asyncio.gather(
         history_task, running_tasks_task, stats_task
     )
-
+    executor_hosts = await tasks_api.get("/hosts/")
     context.update(
         {
+            "executor_hosts": list(executor_hosts.values()),
             "mysql_services": mysql_services,
             "archive_data": archive_data,
             "task": task_data,
