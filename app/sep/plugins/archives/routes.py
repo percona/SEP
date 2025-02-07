@@ -64,6 +64,7 @@ async def archives_detail(
     context: Annotated[dict[str, Any], Depends(get_archives_detail_context)],
 ) -> HTMLResponse:
     """Retrieve archives task."""
+    context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
         name="archiver/details.html",
@@ -86,6 +87,24 @@ async def archives_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
+    return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+) 
+async def archives_update(
+    task_update: ArchivesGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update archives task."""
+    logger.debug("Updating archives task: %s", task_update)
+    await tasks_api.put(
+        f"/{task_update.name}",
+        json=task_update.model_dump(),
+    ) 
     return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
 
 

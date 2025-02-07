@@ -55,7 +55,7 @@
         pointer-events: none;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form action="{{ request.url.path }}/update" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main options</legend>
     <fieldset>
@@ -154,7 +154,7 @@
                            name="source_query"
                            class="validate"
                            placeholder="SELECT ..."
-                           value="{{ archive_data['source_query'] }} "
+                           value="{{ archive_data['source_query'] }}"
                            required
                            style="width: 25em" />
                 </label>
@@ -168,7 +168,7 @@
                        id="swp_table_suffix"
                        name="swp_table_suffix"
                        class="validate"
-                       value="{{ archive_data['swp_table_suffix'] }} "
+                       value="{{ archive_data['swp_table_suffix'] }}"
                        required />
             </label>
         </div>
@@ -180,7 +180,7 @@
                        id="where"
                        name="where"
                        class="validate"
-                       value="{{ archive_data['where'] }} "
+                       value="{{ archive_data['where'] }}"
                        required
                        style="width: 25em"
                        placeholder="ts < current_date - interval 90 day" />
@@ -192,7 +192,7 @@
                 <input type="text"
                        id="use_index"
                        name="use_index"
-                       value="{{ archive_data['use_index'] }} "
+                       value="{{ archive_data['use_index'] }}"
                        class="validate"
                        placeholder="created_date" />
             </label>
@@ -226,7 +226,7 @@
                 <input type="text"
                        id="extra_args"
                        name="extra_args"
-                       value="{{ archive_data['extra_args'] }} "
+                       value="{{ archive_data['extra_args'] }}"
                        class="validate"
                        placeholder="--quick"
                        style="width: 25em" />
@@ -279,7 +279,7 @@
                     <input type="text"
                            id="dest_file"
                            name="dest_file"
-                           value="{{ archive_data['dest_file'] }} "
+                           value="{{ archive_data['dest_file'] }}"
                            class="validate"
                            placeholder="/path/to/detination/file.txt"
                            required
@@ -288,7 +288,7 @@
             </div>
         </div>
     </fieldset>
-    <button type="submit">Create</button>
+    <button type="submit">Edit</button>
     <button type="reset">Reset</button>
 </form>
 {% set serviceSchemas = {} %}
@@ -313,8 +313,7 @@
     const initialTableId = {{ initialTableId }};
     const initialDestTableId = {{ initialDestTableId }};
     const serviceSchemas = {{ serviceSchemas | tojson }};
-    const test = {{ archive_data | tojson }};
-console.log(test)
+
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('source_db_id');
     const sourceTableSelect = document.getElementById('source_table_id');
@@ -358,7 +357,7 @@ console.log(test)
                 if (schemas.length === 1 || initialSchemaId != undefined) {
                     const [singleSchemaId, _] = schemas[0]
                     schemaSelect.value = singleSchemaId;
-                    addHiddenInput(schemaSelect);
+                    // addHiddenInput(schemaSelect);
                     if (singleSchemaId == initialSchemaId)
                         populateSourceTables(selectedService, initialSchemaId);
                     else
@@ -396,7 +395,7 @@ console.log(test)
             if (tables.length === 1 || initialDestTableId != undefined) {
                 const [singleTableId, _] = tables[0]
                 sourceTableSelect.value = singleTableId;
-                addHiddenInput(sourceTableSelect);
+                // addHiddenInput(sourceTableSelect);
                 if (singleTableId === initialDestTableId)
                     populateDestTables(selectedService, selectedSchema, initialDestTableId);
                 else
@@ -558,9 +557,12 @@ console.log(test)
             dstFileInput.value = '';
             dstFileInput.removeAttribute('name');
         } else {
-            dstFileContainer.classList.remove('hidden');
-            dstFileInput.disabled = false;
-            dstFileInput.setAttribute('name', 'dest_file');
+            if(!prgPurgeCheckbox.checked) {
+                dstFileContainer.classList.remove('hidden');
+                prgPurgeCheckbox.checked
+                dstFileInput.disabled = false;
+                dstFileInput.setAttribute('name', 'dest_file');
+            }
         }
     }
 
@@ -588,18 +590,28 @@ console.log(test)
         if (swapDropSelect.value === '1') {
             whereInput.classList.add('hidden');
             whereInput.removeAttribute('name');
+            whereInput.disabled = true
             useIndexInput.removeAttribute('name');
+            useIndexInput.disabled = true
             limitInput.removeAttribute('name');
+            limitInput.disabled = true
             sleepInput.removeAttribute('name');
+            sleepInput.disabled = true
             extraArgsInput.removeAttribute('name');
+            extraArgsInput.disabled = true
             whereInput.removeAttribute('required');
         } else {
             whereInput.classList.remove('hidden');
             whereInput.setAttribute('name', 'where');
+            whereInput.disabled = false;
             useIndexInput.setAttribute('name', 'use_index');
+            useIndexInput.disabled = false;
             limitInput.setAttribute('name', 'limit');
+            limitInput.disabled = false;
             sleepInput.setAttribute('name', 'sleep');
+            sleepInput.disabled = false;
             extraArgsInput.setAttribute('name', 'extra_args');
+            extraArgsInput.disabled = false;
             whereInput.setAttribute('required', 'required')
         }
         toggleOptionalInputNames();

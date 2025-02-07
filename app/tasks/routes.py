@@ -4,13 +4,13 @@ import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.tasks.celery import execute_task_queue
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
@@ -92,6 +92,38 @@ async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     logger.debug("Creating task %s", task.name)
     return await TaskManager.create(session, task)
 
+@router.put(
+    "/{task_name}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+    response_model=TaskResponse,
+)
+async def update_task(
+    task_name: str, 
+    session: SessionDep, 
+    task_update: TaskWrite
+) -> Task:
+    """Update an existing task."""
+    logger.debug("Updating task %s", task_update.name)
+    
+    existing_task = await TaskManager.retrieve_by_name(session, task_name)
+    if not existing_task:
+        raise HTTPNotFoundException("Task not found")
+    update_values = task_update.model_dump(exclude_unset=True)
+    
+    result = await TaskManager.update_where(
+        session,
+        values=update_values,
+        name=task_name
+    )
+    
+    if result.rowcount == 0:
+        raise HTTPException(status_code=400, detail="Task update failed or no changes applied")
+    
+    updated_task = await TaskManager.retrieve_by_name(session, task_name)
+
+    return updated_task
+    
 
 @router.get(
     "/{task_name}/periodic/",
