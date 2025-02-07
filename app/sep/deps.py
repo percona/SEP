@@ -2,21 +2,19 @@
 
 import logging
 from collections.abc import AsyncGenerator, Callable
-from http.cookies import SimpleCookie
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, status
 from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
@@ -24,6 +22,7 @@ from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
+from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import (
     CreatedEntity,
     CreatedNode,
@@ -64,52 +63,20 @@ def get_base_url(request: Request) -> URL:
 BaseURL = Annotated[URL, Depends(get_base_url)]
 
 
-def get_oauth_redirect_exception(base_url: BaseURL) -> HTTPTemporaryRedirectException:
-    """Return the HTTPTemporaryRedirectException for OAuth2 login.
-
-    Create an HTTP redirect exception to handle OAuth2 redirection, clearing
-    the old session cookie in the process.
-
-    :param base_url: The base URL to be used for generating the OAuth redirect URL.
-    :type base_url: Any
-    :return: An exception that triggers a temporary redirect to the OAuth2 authorization
-        URL.
-    :rtype: HTTPTemporaryRedirectException
-    """
-    exc = HTTPTemporaryRedirectException(sep_settings.OAUTH.get_auth_url(base_url))
-    cookie = SimpleCookie()
-    cookie[sep_settings.SESSION.COOKIE_NAME] = ""
-    cookie[sep_settings.SESSION.COOKIE_NAME]["httponly"] = True
-    cookie[sep_settings.SESSION.COOKIE_NAME]["secure"] = sep_settings.SESSION.SECURE
-    cookie[sep_settings.SESSION.COOKIE_NAME]["samesite"] = sep_settings.SESSION.SAMESITE
-    exc.headers["set-cookie"] = cookie.output(header="").strip()
-    return exc
-
-
-OAuthRedirectException = Annotated[
-    HTTPTemporaryRedirectException,
-    Depends(get_oauth_redirect_exception),
-]
-
-
 def get_access_token_from_cookie(
-    oauth_redirect_exception: OAuthRedirectException,
     request: Request,
 ) -> str:
     """Retrieve and verify the access token from a session cookie.
 
     Extracts the signed access token from the request cookies, verifies it, and
-    returns the unsigned token. If verification fails, raises an OAuth redirect
-        exception.
+    returns the unsigned token. If verification fails, raises a login
+    redirect exception.
 
-    :param oauth_redirect_exception: The exception to raise if the token is invalid or
-        cannot be verified.
-    :type oauth_redirect_exception: HTTPTemporaryRedirectException
     :param request: The HTTP request containing the session cookie.
     :type request: Request
     :return: The verified and unsigned access token.
     :rtype: str
-    :raises HTTPTemporaryRedirectException: If the token is invalid or cannot be
+    :raises LoginRedirectException: If the token is invalid or cannot be
         verified due to a `BadSignature`.
     """
     signed_access_token = request.cookies.get(sep_settings.SESSION.COOKIE_NAME, "")
@@ -120,7 +87,7 @@ def get_access_token_from_cookie(
         )
     except BadSignature:
         logger.debug("Failed to unsign token")
-        raise oauth_redirect_exception from None
+        raise LoginRedirectException(request) from None
 
 
 AccessTokenCookie = Annotated[str, Depends(get_access_token_from_cookie)]
@@ -135,29 +102,41 @@ async def get_current_user(
     :type request: Request
     :return: The authenticated user.
     :rtype: User
-    :raises HTTPTemporaryRedirectException: If the token is invalid or the user is
+    :raises LoginRedirectException: If the token is invalid or the user is
         inactive.
     """
-    base_url = get_base_url(request)
-    oauth_redirect_exception = get_oauth_redirect_exception(base_url)
-    token = get_access_token_from_cookie(
-        oauth_redirect_exception,
-        request,
-    )
+    token = get_access_token_from_cookie(request)
     try:
         user = await User.from_jwt(token)
     except (BadSignature, InvalidTokenError, ValidationError) as exc:
         logger.debug("Failed to authenticate user: %s", exc, exc_info=True)
-        raise oauth_redirect_exception from None
+        raise LoginRedirectException(request) from None
     if not user.is_active:
         logger.debug("User %s is not active", user.username)
         # TODO: Message on inactive  # noqa: TD002, TD003
-        raise oauth_redirect_exception
+        raise LoginRedirectException(request)
     return user
 
 
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
+
+
+async def redirect_if_user_is_authenticated(request: Request) -> None:
+    """Redirect authenticated users to homepage.
+
+    This dependency function checks if the session cookie is set in the request and,
+    if so, redirects the authenticated user to the homepage.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :raises HTTPRedirectException: If the session cookie is set.
+    """
+    if request.cookies.get(sep_settings.SESSION.COOKIE_NAME):
+        raise HTTPRedirectException("/", status_code=status.HTTP_303_SEE_OTHER)
+
+
+IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 
 CsrfProtectDep = Annotated[CsrfProtect, Depends()]
 
@@ -171,7 +150,7 @@ async def validate_csrf(
     :param request: The HTTP request object.
     :type request: Request
     :param csrf_protect: The CSRF protection mechanism dependency.
-    :type csrf_protect: Annotated[CsrfProtect, Depends]
+    :type csrf_protect: CsrfProtect
     """
     await csrf_protect.validate_csrf(request)
 

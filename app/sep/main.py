@@ -5,13 +5,13 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
-from app.core.auth.exceptions import HTTPTemporaryRedirectException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
@@ -24,7 +24,10 @@ from app.sep.deps import (
     get_default_context,
     get_tasks_index_context,
     IsAuthenticated,
+    IsCsrfValidated,
+    IsNotAuthenticated,
 )
+from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware
 
 logger = logging.getLogger(__name__)
@@ -77,7 +80,7 @@ async def custom_error_handler(
     try:
         # TODO: Refactor  # noqa: TD002, TD003
         user = await get_current_user(request)
-    except HTTPTemporaryRedirectException as redirect_exc:
+    except LoginRedirectException as redirect_exc:
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
@@ -100,7 +103,7 @@ async def custom_404_handler(
     base_url = get_base_url(request)
     try:
         user = await get_current_user(request)
-    except HTTPTemporaryRedirectException as redirect_exc:
+    except LoginRedirectException as redirect_exc:
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
@@ -119,12 +122,25 @@ async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> N
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
-@sep_app.get("/oauth/callback")
-async def callback(code: str) -> RedirectResponse:
-    """Define callback route for OAuth."""
-    # TODO: Treat possible exceptions here  # noqa: TD002, TD003
-    oauth_token = await User.get_oauth_token(code)
-    response = RedirectResponse(url=sep_settings.OAUTH.POST_LOGIN_URI)
+@sep_app.get("/login", dependencies=[IsNotAuthenticated])
+async def login_form(request: Request) -> HTMLResponse:
+    """Display login form."""
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"csrf_token": request.state.csrf_token},
+    )
+
+
+@sep_app.post("/login", dependencies=[IsNotAuthenticated, IsCsrfValidated])
+async def login(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+) -> RedirectResponse:
+    """Authenticate user from their username and password."""
+    oauth_token = await User.get_oauth_token(
+        username=form_data.username, password=form_data.password
+    )
+    response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         **sep_settings.SESSION.model_dump(by_alias=True),
         value=crypto_timestamp_serializer.dumps(oauth_token.access_token),

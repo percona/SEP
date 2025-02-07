@@ -7,10 +7,9 @@ from fastapi import APIRouter, Body, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 
-from app.core.auth.exceptions import HTTPUnauthorizedException
+from app.core.auth.exceptions import HTTPUnauthorizedException, InactiveUserException
 from app.core.auth.models import OAuthToken
 from app.core.auth.utils import get_user_model
-from app.core.exceptions import InactiveUserException
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ User = get_user_model()
 # TODO: Prevent malicious account lockout  # noqa: TD002, TD003
 @router.post("/token")
 async def create_oauth_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),  # noqa: B008
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> OAuthToken:
     """Generate an OAuth token for a user from their username and password.
 

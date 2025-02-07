@@ -30,16 +30,4 @@ class HTTPForbiddenException(HTTPException):
         super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
-class HTTPTemporaryRedirectException(HTTPException):
-    """Exception raised for temporary redirect (HTTP 307).
-
-    :param location: The URL to which the client should be redirected.
-    :type location: str
-    """
-
-    def __init__(self, location: str) -> None:
-        self.location = location
-        super().__init__(
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": location},
-        )
+InactiveUserException = HTTPForbiddenException("User is not active")
