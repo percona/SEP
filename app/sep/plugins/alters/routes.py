@@ -32,7 +32,6 @@ async def alters_index(
     context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
 ) -> HTMLResponse:
     """Homepage of alters plugin."""
-    context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
         name="alters/index.html",

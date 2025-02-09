@@ -158,9 +158,13 @@ async def validate_csrf(
 IsCsrfValidated = Depends(validate_csrf)
 
 
-def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
+def get_default_context(
+    request: Request, user: CurrentUser, base_uri: BaseURL
+) -> dict[str, Any]:
     """Return the default context for templates.
 
+    :param request: The HTTP request object.
+    :type request: Request
     :param user: The authenticated user.
     :type user: User
     :param base_uri: The base URI of the application.
@@ -174,6 +178,7 @@ def get_default_context(user: CurrentUser, base_uri: BaseURL) -> dict[str, Any]:
         "base_uri": base_uri,
         "plugins": sep_settings.PLUGINS,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
+        "csrf_token": request.state.csrf_token,
     }
 
 

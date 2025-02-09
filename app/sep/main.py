@@ -149,10 +149,9 @@ async def login(
     return response
 
 
-@sep_app.post("/logout", dependencies=[IsAuthenticated])
+@sep_app.post("/logout", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
-    # TODO: CSRF protection  # noqa: TD002, TD003
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
     try:
