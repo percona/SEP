@@ -7,6 +7,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
+__all__ = ["CSRFMiddleware"]
+
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     """Manage CSRF protection for HTTP requests and responses."""

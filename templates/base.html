@@ -16,6 +16,8 @@
               type="image/x-icon"
               href="{{ url_for('static', path='/img/favicon.ico') }}" />
         <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/messages.css') }}">
         {% block style %}
         {% endblock style %}
         {% block behaviours %}
@@ -71,6 +73,17 @@
                 </h1>
             {% endblock header %}
         </header>
+        {% if messages %}
+            <section id="messages">
+                {% for msg in messages %}
+                    <div class="message{% if msg.sticky %} sticky{% endif %}"
+                         data-level="{{ msg.level.name.lower() }}">
+                        <span class="message-text">{{ msg.text }}</span>
+                        <button type="button" class="close-button icons">close</button>
+                    </div>
+                {% endfor %}
+            </section>
+        {% endif %}
         {% block sidebar %}
             {% include "menus/partials/sidebar.html" %}
         {% endblock sidebar %}
@@ -108,6 +121,8 @@
         </footer>
         {% block behaviours_optimized %}
             <script src="{{ url_for('static', path='/js/jquery-3.7.1.min.js') }}"
+                    nonce="{{ request.state.csp_nonce }}"></script>
+            <script src="{{ url_for('static', path='/js/messages.js') }}"
                     nonce="{{ request.state.csp_nonce }}"></script>
             <script nonce="{{ request.state.csp_nonce }}">
                 $('.submitNextForm').click(function(e) {

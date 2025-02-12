@@ -8,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 __all__ = ["json_serializer"]
 
 
-def json_serializer(data: Any) -> str:
+def json_serializer(data: Any, **kwargs: Any) -> str:
     """Serialize a Python object into a JSON-formatted string.
 
     This function encodes a given Python object using `jsonable_encoder`
@@ -18,7 +18,9 @@ def json_serializer(data: Any) -> str:
         data type, such as dictionaries, lists, or primitive data types like
         integers, strings, and booleans.
     :type data: Any
+    :param kwargs: Additional keyword arguments to pass to :func:`json.dumps`.
+    :type kwargs: Any
     :return: A JSON-formatted string representing the serialized form of the input data.
     :rtype: str
     """
-    return json.dumps(jsonable_encoder(data))
+    return json.dumps(jsonable_encoder(data), **kwargs)

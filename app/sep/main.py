@@ -29,6 +29,7 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware
+from app.sep.middleware.messages import MessagesMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,7 @@ async def read_root(
 
 
 sep_app.add_middleware(CSRFMiddleware)
+sep_app.add_middleware(MessagesMiddleware)
 
 
 # TODO: take all these logics from routes layer  # noqa: TD002, TD003

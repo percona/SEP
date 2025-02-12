@@ -31,6 +31,7 @@ from app.sep.inventory import (
     CreatedTable,
     ENTITY_MAPPING,
 )
+from app.sep.middleware.messages import get_messages
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
@@ -179,6 +180,7 @@ def get_default_context(
         "plugins": sep_settings.PLUGINS,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": request.state.csrf_token,
+        "messages": get_messages(request),
     }
 
 
