@@ -182,7 +182,13 @@ async def init_tasks_db() -> None:
     async_session = get_async_session_maker()
     async with async_session() as session:
         for task in SYSTEM_TASKS:
-            await TaskManager.get_or_create(session, task, {"name"})
+            created_task, created = await TaskManager.get_or_create(
+                session, task, {"name"}
+            )
+            if not created and created_task.data != task.data:
+                await TaskManager.update(
+                    session, created_task, task, flag_modified_fields=["data"]
+                )
 
 
 async def init_periodic_tasks_db() -> None:
