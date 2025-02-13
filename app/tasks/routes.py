@@ -16,6 +16,8 @@ from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     CreatedTaskHistory,
     ExecutableTaskDep,
+    PreparedExistingGeneratedTask,
+    PreparedNewGeneratedTask,
     SessionDep,
     TaskDep,
     TaskExecutor,
@@ -23,11 +25,7 @@ from app.tasks.deps import (
 from app.tasks.models import (
     GeneratedTask,
     Task,
-    TaskBackendEnum,
     TaskExecutionRequest,
-    TaskGroup,
-    TaskGroupTask,
-    TaskGroupTaskTemplate,
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -92,6 +90,7 @@ async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     logger.debug("Creating task %s", task.name)
     return await TaskManager.create(session, task)
 
+
 @router.put(
     "/{task_name}",
     dependencies=[IsAuthenticatedDep],
@@ -99,31 +98,26 @@ async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     response_model=TaskResponse,
 )
 async def update_task(
-    task_name: str, 
-    session: SessionDep, 
-    task_update: TaskWrite
+    task_name: str, session: SessionDep, task_update: TaskWrite
 ) -> Task:
     """Update an existing task."""
     logger.debug("Updating task %s", task_update.name)
-    
     existing_task = await TaskManager.retrieve_by_name(session, task_name)
     if not existing_task:
         raise HTTPNotFoundException("Task not found")
     update_values = task_update.model_dump(exclude_unset=True)
-    
-    result = await TaskManager.update_where(
-        session,
-        values=update_values,
-        name=task_name
-    )
-    
-    if result.rowcount == 0:
-        raise HTTPException(status_code=400, detail="Task update failed or no changes applied")
-    
-    updated_task = await TaskManager.retrieve_by_name(session, task_name)
 
-    return updated_task
-    
+    result = await TaskManager.update_where(
+        session, values=update_values, name=task_name
+    )
+
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=400, detail="Task update failed or no changes applied"
+        )
+
+    return await TaskManager.retrieve_by_name(session, task_name)
+
 
 @router.get(
     "/{task_name}/periodic/",
@@ -167,7 +161,7 @@ async def create_periodic_task_for_task_name(
 async def generate_task(
     session: SessionDep,
     generated_task: GeneratedTask,
-    executor: TaskExecutor,
+    prepared_task: PreparedNewGeneratedTask,
 ) -> TaskHistory:
     """Generate a new task execution using a template."""
     logger.debug(
@@ -175,74 +169,11 @@ async def generate_task(
         generated_task.name,
         generated_task.template,
     )
-    template = await TaskManager.retrieve_by_name(
-        session=session,
-        name=f"generic-nomad-{generated_task.template}",
-        is_template=True,
-    )
-
-    # TODO: enhance options for generating tasks  # noqa: TD002, TD003
-    task = Task(
-        name=generated_task.name,
-        owner=generated_task.app,
-        backend=template.backend,
-        data=template.data,
-    )
-    tpl = task.data
-
-    # TODO: currently Nomad-only, with restricted customisation  # noqa: TD002, TD003
-    tg = TaskGroup(
-        engine=task.backend.name,
-        name="execution",
-        tasks=[],
-        parallel=generated_task.parallel and len(generated_task.commands) > 1,
-    )
-    for i, cmd in enumerate(generated_task.commands):
-        templates = [
-            TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])
-        ]
-        tg.tasks.append(
-            TaskGroupTask(
-                name=f"step{i + 1}" if not cmd.get("name") else cmd["name"],
-                config={
-                    "args": cmd.get("args"),
-                    "command": cmd.get("command"),
-                },
-                meta=cmd.get("meta", {}),
-                templates=templates,
-            ),
-        )
-    tpl.update(tg.to_payload())
-
-    # TODO: delete Periodic for now  # noqa: TD002, TD003
-    if "Periodic" in tpl:
-        if generated_task.schedule and not generated_task.schedule.get("save_only"):
-            tpl["Periodic"] = generated_task.schedule
-        else:
-            del tpl["Periodic"]
-
-    match task.backend:
-        case TaskBackendEnum.NOMAD:
-            match tpl["Type"]:
-                case "batch":
-                    # TODO: handle more than one constraint  # noqa: TD002, TD003
-                    if generated_task.target in ["all", "*"]:
-                        tpl["Constraints"][0]["RTarget"] = ".*"
-                        tpl["Constraints"][0]["Operand"] = "regexp"
-                    else:
-                        tpl["Constraints"][0]["RTarget"] = generated_task.target
-                        tpl["Constraints"][0]["Operand"] = "="
-            task.data = await executor.validate_job(tpl)
-        case _:
-            raise NotImplementedError(
-                f"{task.backend} is currently unsupported",
-            )
-
     if generated_task.persist:
-        task = await TaskManager.save(session, task)
+        prepared_task = await TaskManager.save(session, prepared_task)
 
     return TaskHistory(
-        task_id=task.id,
+        task_id=prepared_task.id,
         execution_request=TaskExecutionRequest(
             task=generated_task.name,
             target=generated_task.target,
@@ -251,6 +182,35 @@ async def generate_task(
         ),
         status=TaskHistoryStatusEnum.PENDING,
     )
+
+
+@router.put(
+    "/generate/{task_name}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+    response_model=TaskResponse,
+)
+async def update_generated_task(
+    session: SessionDep,
+    prepared_task: PreparedExistingGeneratedTask,
+) -> Task:
+    """Update an existing generated task.
+
+    The dependency `prepare_existing_generated_task` reuses the same serialization logic
+    as for task generation, updating the existing task's payload.
+    """
+    update_values = prepared_task.model_dump(exclude_unset=True)
+    result = await TaskManager.update_where(
+        session, values=update_values, name=prepared_task.name
+    )
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=400, detail="Task update failed or no changes applied"
+        )
+    updated_task = await TaskManager.retrieve_by_name(session, prepared_task.name)
+    if not updated_task:
+        raise HTTPNotFoundException("Task not found after update")
+    return updated_task
 
 
 @router.post(

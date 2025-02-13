@@ -94,7 +94,7 @@ async def archives_execute(
     "/{task_name}/update",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
-) 
+)
 async def archives_update(
     task_update: ArchivesGeneratedTask,
     tasks_api: TaskAPI,
@@ -104,7 +104,7 @@ async def archives_update(
     await tasks_api.put(
         f"/{task_update.name}",
         json=task_update.model_dump(),
-    ) 
+    )
     return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
 
 

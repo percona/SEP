@@ -325,5 +325,4 @@ async def get_archives_detail_context(
             "stats": stats,
         }
     )
-
     return context

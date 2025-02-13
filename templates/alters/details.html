@@ -61,6 +61,9 @@
         </section>
     {% endif %}
     <section>
+        {% include "alters/partials/edit-form.html" %}
+    </section>
+    <section>
         <h2>Execution</h2>
         <h3>Command</h3>
         <code>{{ task.cmd }}</code>

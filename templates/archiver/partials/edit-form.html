@@ -55,7 +55,9 @@
         pointer-events: none;
     }
 </style>
-<form action="{{ request.url.path }}/update" method="post" class="{{ form_class }}">
+<form action="{{ request.url.path }}/update"
+      method="post"
+      class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main options</legend>
     <fieldset>
