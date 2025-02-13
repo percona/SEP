@@ -92,20 +92,27 @@ def test_alters_detail(
     test_client,
     created_task,
     mock_task_api_dep,
+    mock_inventory_api_dep
 ):
     """Test retrieving an alters' detail page."""
+    mock_task_api_dep.get.side_effect = [
+        {}, # for /{task.name}/history/
+        {}, # for /{task.name}/history/
+        {}, # for /stats/{task.name}/
+        {"127.0.0.1": "mock_host"} # for /hosts/
+    ]
     mock_data = {
         "TaskGroups": [
             {
                 "Tasks": [
                     {
                         "Config": {
-                            "command": "echo",
-                            "args": ["hello", "world"],
+                            "command": "pt-online-schema-change",
+                            "args": ['--alter=ADD CLOUDM SDF', 'P=3666,D=OOOO,t=OPOP', '--recursion-method=none'],
                         },
                         "Meta": {
-                            "schema_name": "public",
-                            "table_name": "example_table",
+                            'schema_name': 'OOOO', 
+                            'table_name': 'OPOP'
                         },
                     }
                 ]
@@ -114,7 +121,7 @@ def test_alters_detail(
         "Constraints": [{"RTarget": "mock_hostname"}],
     }
     created_task.data = mock_data
-    response = test_client.get(f"/alters/{created_task.name}")
+    response = test_client.get(f"/alters/{created_task.name}?")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
