@@ -58,7 +58,7 @@ class ChecksumsCreate(BaseModel):
     databases: str = ""
     table_id: set[int] = None
     tables: str = ""
-    recursion_method: RequiredStr
+    recursion_method: str
     dsn_table: str = ""
     pause_file: str = ""
     binary_index: bool = False

@@ -51,28 +51,36 @@ async def build_checksums_task_payload(
         dsn = f"h={service.node.address},{dsn}"
 
     if form.recursion_method == "dsn":
-        form.recursion_method = f"dsn={form.dsn_table}"
+        stripped_dsn = dsn.rstrip(",")
+        form.recursion_method = f"dsn={stripped_dsn},{form.dsn_table}"
 
     args = [
-        dsn,
-        f"--recursion-method={form.recursion_method}",
+        dsn
     ]
+
+    if form.recursion_method is not None and len(form.recursion_method) > 0:
+        args.append(f"--recursion-method={form.recursion_method}")
 
     # --databases and --tables options
     databases = ""
-    for s in form.schema_id:
-        schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            s,
-            service_id=service.id,
-        )
-        databases += f"{schema.name},"
+    if form.schema_id is not None and len(form.schema_id) > 0:
+        for s in form.schema_id:
+            if s < 0:
+                continue
+            schema = await get_created_entity(
+                inventory_api,
+                SyncInventoryEntityTypeEnum.SCHEMA,
+                s,
+                service_id=service.id,
+            )
+            databases += f"{schema.name},"
     form.databases = databases.rstrip(",")
 
     tables = ""
-    if len(form.schema_id) == 1 and form.table_id is not None:
+    if form.schema_id is not None and len(form.schema_id) == 1 and form.table_id is not None:
         for t in form.table_id:
+            if t < 0:
+                continue
             table = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.TABLE,
