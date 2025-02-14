@@ -231,8 +231,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         ):
             nonce = token_urlsafe(32)
             request.state.csp_nonce = nonce
-            # TODO(yan): Separate/differentiate CSP for APIs and for SEP
-            # SEP-204
             extra_headers["Content-Security-Policy"] = (
                 f"script-src 'nonce-{nonce}' 'strict-dynamic'; object-src 'none'; "
                 f"base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
