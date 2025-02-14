@@ -134,6 +134,10 @@ async def login(
     oauth_token = await User.get_oauth_token(
         username=form_data.username, password=form_data.password
     )
+    if not settings.ALLOW_CONCURRENT_SESSIONS:
+        await User.invalidate_tokens_for_user(
+            form_data.username, exclude_tokens=[oauth_token.access_token]
+        )
     response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         **sep_settings.SESSION.model_dump(by_alias=True),

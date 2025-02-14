@@ -1,7 +1,9 @@
 """Provide the CasdoorSDK for interacting with Casdoor services."""
 
 from base64 import b64encode
+from collections.abc import AsyncGenerator
 from functools import cached_property
+from math import ceil
 from typing import Any, Literal, Self
 
 from fastapi import HTTPException
@@ -283,7 +285,70 @@ class CasdoorSDK(RemoteAPI):
         :return: The token details retrieved from Casdoor.
         :rtype: dict[str, Any]
         """
-        return await self.get("/api/get-token", params={"id": token_id})
+        response = await self.get("/api/get-token", params={"id": token_id})
+        return response["data"]
+
+    async def get_tokens(
+        self, username: str, **params: Any
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Retrieve the tokens for a username.
+
+        Retrieves the tokens details from Casdoor from the provided username and yields
+        each token data.
+
+        :param username: The username to retrieve tokens for.
+        :type username: str
+        :param params: Additional query parameters.
+        :type params: Any
+        :yield: The tokens details retrieved from Casdoor.
+        :rtype: dict[str, Any]
+        """
+        page_size = 100
+        params |= {
+            "owner": username,
+            "organization": self.organization_name,
+            "pageSize": page_size,
+            "p": 1,
+        }
+        tokens = await self.get(
+            "/api/get-tokens",
+            params=params,
+        )
+        max_page = ceil(tokens["data2"] / page_size)
+        while params["p"] <= max_page:
+            if tokens is None:
+                tokens = await self.get("/api/get-tokens", params=params)
+            for token in tokens["data"]:
+                yield token
+            params["p"] += 1
+            tokens = None
+
+    async def get_active_tokens(
+        self, username: str
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Retrieve the active tokens for a username.
+
+        Retrieves the active tokens details from Casdoor from the provided username and
+        yields each token data.
+
+        :param username: The username to retrieve tokens for.
+        :type username: str
+        :yield: The tokens details retrieved from Casdoor.
+        :rtype: dict[str, Any]
+        """
+        async for token in self.get_tokens(username, field="codeExpireIn", value=0):
+            yield token
+
+    async def delete_token(self, token: dict[str, Any]) -> bool:
+        """Delete a token from Casdoor.
+
+        :param token: The token to delete.
+        :type token: dict[str, Any]
+        :return: Whether the token was deleted.
+        :rtype: bool
+        """
+        response = await self.post("/api/delete-token", json=token)
+        return response["data"].lower() == "affected"
 
     async def get_users(self) -> list[dict[str, Any]]:
         """Retrieve a list of users from Casdoor.
