@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
-    BaseYamlExtraSettings,
+    BaseYamlAppSettings,
     default_lifespan,
     Settings,
     YamlPrefixConfigSettingsSource,
@@ -61,9 +61,9 @@ def test_yaml_prefix_config_settings_source_multiple_prefixes(mock_yaml_file):
         "key4": "env2_nested_value4",
     }
 
-    assert (
-        settings_source.yaml_data == expected_data
-    ), f"Expected {expected_data} but got {settings_source.yaml_data}"
+    assert settings_source.yaml_data == expected_data, (
+        f"Expected {expected_data} but got {settings_source.yaml_data}"
+    )
 
 
 class MockSettings(BaseSettings):
@@ -107,7 +107,7 @@ def mock_yaml_prefix_source():
 def settings_class():
     """Mock settings class."""
 
-    class TestSettings(BaseYamlExtraSettings):
+    class TestSettings(BaseYamlAppSettings):
         SETTINGS_PREFIXES = ["prefix"]
 
     return TestSettings

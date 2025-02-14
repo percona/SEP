@@ -1,0 +1,62 @@
+<div class="tasks-table-container">
+    <table class="responsive-table tasks-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Target</th>
+                <th>Start At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if running_tasks %}
+                {% for task in running_tasks %}
+                    {% set task_name = task["task"]["name"] %}
+                    <tr class="previous-log-row">
+                        <td>{{ task_name }}</td>
+                        <td>{{ task['execution_request']['target'] }}</td>
+                        <td class="relativeTime">{{ task['updated_at'] }}</td>
+                        <td>
+                            {% if is_task_manager_enabled %}
+                                <a href="{{ url_for('tasks_detail', task_name=task_name) }}"><i class="icons">visibility</i></a>
+                            {% else %}
+                                <a class="tooltip">
+                                    <i class="icons">visibility_off</i>
+                                    <span class="tooltiptext">Enable the Task Manager plugin or navigate to the "{{ task["task"]["owner"] }}"
+                                    plugin to view details of this task.</span>
+                                </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr class="log-row" data-task-id="{{ task.id }}">
+                        <td colspan="4">
+                            <div class="log-console streaming-console" data-task-id="{{ task.id }}">
+                                <div class="log-top-bar">
+                                    <div class="log-tabs">
+                                        <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
+                                        <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
+                                    </div>
+                                    <div class="word-wrap-toggle">
+                                        <label class="switch">
+                                            <input type="checkbox" class="word-wrap-checkbox">
+                                            <span class="slider round"></span>
+                                        </label>
+                                        <span class="toggle-label">Word Wrap</span>
+                                    </div>
+                                </div>
+                                <div class="log-content"></div>
+                                <div class="log-bottom-bar">
+                                    <div class="log-tabs"></div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="4" class="no-tasks">No tasks running</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

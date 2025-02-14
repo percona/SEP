@@ -1,16 +1,43 @@
 {% extends "base.html" %}
-
-{% block title %}Services Enablement Platform{% endblock %}
-
-{% block home_link %}{% endblock %}
-{% block title_prefix %}{% endblock %}
-
+{% block title -%}
+    Services Enablement Platform
+{%- endblock title %}
+{% block home_link %}
+{% endblock home_link %}
+{% block title_prefix %}
+{% endblock title_prefix %}
 {% block main %}
-    {% if widgets is defined and widgets|length > 0 %}
-    <section id="widgets">
-        {% for widget in widgets %}
-            {% include "widget.html" %}
-        {% endfor %}
-    </section>
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/homepage.css') }}">
+    {% if history or running_tasks %}
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
-{% endblock %}
+    {% if periodic_tasks %}
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/scheduled.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/select2.min.css') }}">
+    {% endif %}
+    <section id="running-tasks">
+        <h2>Running</h2>
+        {% include "homepage/running-tasks.html" %}
+    </section>
+    <section id="pending-tasks">
+        <h2>Pending</h2>
+        {% include "homepage/pending-tasks.html" %}
+    </section>
+    <section id="periodic-tasks">
+        <h2>Periodic Tasks</h2>
+        {% include "homepage/scheduled-tasks.html" %}
+    </section>
+    {% include "inventory/partials/inventory-metrics.html" %}
+    {% include "tasks/partials/host-metrics.html" %}
+{% endblock main %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history_tasks or running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+{% endblock behaviours_optimized_extra %}

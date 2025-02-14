@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseSQLModelManager
-from app.core.utils.datetime import utc_now
+from app.core.utils.date_time import utc_now
 from app.tasks.models import (
     Task,
     TaskHistory,

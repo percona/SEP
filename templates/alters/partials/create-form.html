@@ -15,7 +15,7 @@
         align-items: center;
     }
 
-    fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1)) > .field {
+    fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1))>.field {
         flex: 0 0 48%;
     }
 
@@ -30,8 +30,8 @@
     }
 
 
-    label + select,
-    label + input {
+    label+select,
+    label+input {
         vertical-align: middle;
         margin-right: 0px;
     }
@@ -44,12 +44,14 @@
         width: 130px;
     }
 
-    .selection-panel, .result-panel {
+    .selection-panel,
+    .result-panel {
         background-color: #fff;
         padding-left: 20px;
         padding-right: 20px;
         border-radius: 5px;
     }
+
     #toggleCreateTable {
         padding: 10px 20px;
     }
@@ -63,6 +65,7 @@
         max-height: 1000px;
         font-family: monospace;
         line-height: 1.4em;
+        white-space: pre-wrap;
     }
 
     #statusMessage {
@@ -94,179 +97,313 @@
         flex: none;
         margin-right: 0.5em;
     }
+
+    pre {
+        white-space: break-spaces;
+    }
+
+    {{ syntax_highlight_css(style="monokai") }}
 </style>
 {% set form_class = "modal" if modal_required else "" %}
-<form action="" method="post" class="{{ form_class }}" style="padding-left: 0;">
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+<form action=""
+      method="post"
+      class="{{ form_class }}"
+      style="padding-left: 0">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend style="margin-bottom: 0.8em;">Main options</legend>
         <fieldset>
             <legend>Executor Host</legend>
             <div class="field">
-                <label for="hostname">Select host</label>
+                {% set hostname_title = "Select the hostname of the target system for task execution." %}
+                <label for="hostname" title="{{ hostname_title }}">Select host</label>
                 {% if executor_hosts|length == 1 %}
                     {% set single_service = executor_hosts[0] %}
-                    <select id="hostname" name="hostname" disabled>
+                    <select id="hostname" name="hostname" disabled title="{{ hostname_title }}">
                         <option value="{{ single_service }}" selected>{{ single_service }}</option>
                     </select>
                     <input type="hidden" name="hostname" value="{{ single_service }}">
                 {% else %}
                     <select id="hostname" name="hostname">
-                    {% for executor_host in executor_hosts %}
-                        <option value="{{ executor_host }}">{{ executor_host }}</option>
-                    {% endfor %}
-                </select>
+                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                    </select>
                 {% endif %}
             </div>
         </fieldset>
         <fieldset>
             <legend>Change details</legend>
             <div class="field">
-                <label for="task_name">Task name</label>
-                <input type="text" id="task_name" name="task_name" class="validate" required>
+                {% set task_name_title = "Type the name of task to be created." %}
+                <label for="task_name" title="{{ task_name_title }}">Task name</label>
+                <input type="text"
+                       id="task_name"
+                       name="task_name"
+                       class="validate"
+                       required
+                       title="{{ task_name_title }}"
+                       placeholder="Enter a unique task name">
             </div>
             <div class="field">
-                <label for="service_id">Database host</label>
+                {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                <label for="service_id" title="{{ service_id_title }}">Database host</label>
                 {% if mysql_services|length == 1 %}
                     {% set single_service = mysql_services[0] %}
-                    <select id="service_id" name="service_id" disabled>
+                    <select id="service_id"
+                            name="service_id"
+                            title="{{ service_id_title }}"
+                            disabled>
                         <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
                     </select>
                     <input type="hidden" name="service_id" value="{{ single_service.id }}">
                 {% else %}
-                    <select id="service_id" name="service_id" required>
+                    <select id="service_id"
+                            name="service_id"
+                            title="{{ service_id_title }}"
+                            required>
                         <option value="" selected>Select a database host</option>
                         {% for service in mysql_services %}
-                        <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                         {% endfor %}
                     </select>
                 {% endif %}
             </div>
         </fieldset>
-            <fieldset style="margin-bottom: 0;">
-                <legend>Data</legend>
-                <div class="field">
-                    <label for="schema_id">Schema</label>
-                    <select id="schema_id" name="schema_id" disabled required>
-                        <option value="">Select a schema</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="table_id">Table</label>
-                    <select id="table_id" name="table_id" disabled required>
-                        <option value="">Select a table</option>
-                    </select>
-                </div>
-            </fieldset>
-            <fieldset style="padding-top: 0; padding-bottom: 0;">
-                <div id="result-panel" class="fade" style="width: 98%">
-                    <pre id="createTableOutput" class="hidden"></pre>
-                    <div id="statusMessage"></div>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="alter">Alter</label>
-                    <input type="text" id="alter" name="alter" class="validate" size="70"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <legend>Advanced options</legend>
-                <div class="field">
-                    <label for="recursion_method">Recursion method</label>
-                    <select id="recursion_method" name="recursion_method">
-                        <option value="processlist" selected>processlist</option>
-                        <option value="host">host</option>
-                        <option value="dsn">dsn</option>
-                        <option value="none">none</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="dsn_table">DSN Table</label>
-                    <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="schema.table" />
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="pause_file">Pause file</label>
-                    <input type="text" id="pause_file" name="pause_file" class="validate"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="new_table_id">New Table Name</label>
-                    <input type="text" id="new_table_id" name="new_table_id" class="validate" size="30"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <input type="checkbox" id="print_arg" name="print_arg" checked="true" class="validate"/>
-                    <label for="print_arg">Print</label>
-                </div>
-                <div class="field">
-                    <label for="progress">Progress</label>
-                    <input type="text" id="progress" name="progress" class="validate" size="15" value="time,10"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <input type="checkbox" id="no_swap_tables" name="no_swap_tables" class="validate"/>
-                    <label for="no_swap_tables">no-swap-tables</label>
-                </div>
-                <div class="field">
-                    <input type="checkbox" id="no_drop_old_table" name="no_drop_old_table" class="validate"/>
-                    <label for="no_drop_old_table">no-drop-old-table</label>
-                </div>
-                <div class="field">
-                    <input type="checkbox" id="no_drop_new_table" name="no_drop_new_table" class="validate"/>
-                    <label for="no_drop_new_table">no-drop-new-table</label>
-                </div>
-                <div class="field">
-                    <input type="checkbox" id="no_drop_triggers" name="no_drop_triggers" class="validate"/>
-                    <label for="no_drop_triggers">no-drop-triggers</label>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="tries">Tries</label>
-                    <input type="text" id="tries" name="tries" class="validate" value="create_triggers:10000:1,drop_triggers:10000:1,copy_rows:10000:1" size="70"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="set_vars">Set Vars</label>
-                    <input type="text" id="set_vars" name="set_vars" class="validate" value="tx_isolation='READ-COMMITTED',lock_wait_timeout=5" size="70"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="critical_load">Critical Load</label>
-                    <input type="text" id="critical_load" name="critical_load" class="validate" value="threads_running=99999" size="30"/>
-                </div>
-                <div class="field">
-                    <label for="max_load">Max Load</label>
-                    <input type="text" id="max_load" name="max_load" class="validate" value="Threads_running=50" size="30"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="chunk_time">Chunk Time</label>
-                    <input type="text" id="chunk_time" name="chunk_time" class="validate" value="0.5" size="5"/>
-                </div>
-            </fieldset>
-            <fieldset>
-                <div class="field">
-                    <label for="max_lag">Max Lag</label>
-                    <input type="text" id="max_lag" name="max_lag" class="validate" value="150" size="5"/>
-                </div>
-            </fieldset>
+        <fieldset style="margin-bottom: 0;">
+            <legend>Data</legend>
+            <div class="field">
+                {% set schema_id_title = "Select the database schema on which the task will operate." %}
+                <label for="schema_id" title="{{ schema_id_title }}">Schema</label>
+                <select id="schema_id"
+                        name="schema_id"
+                        title="{{ schema_id_title }}"
+                        disabled
+                        required>
+                    <option value="">Select a schema</option>
+                </select>
+            </div>
+            <div class="field">
+                {% set schema_id_title = "Select the table within the schema to be altered." %}
+                <label for="table_id" title="{{ schema_id_title }}">Table</label>
+                <select id="table_id"
+                        name="table_id"
+                        title="{{ schema_id_title }}"
+                        disabled
+                        required>
+                    <option value="">Select a table</option>
+                </select>
+            </div>
+        </fieldset>
+        <fieldset style="padding-top: 0; padding-bottom: 0;">
+            <div id="result-panel" class="fade" style="width: 98%">
+                <pre id="createTableOutput" class="hidden"></pre>
+                <div id="statusMessage"></div>
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set alter_title = "Specify schema modifications (excluding ALTER TABLE keywords). Separate multiple modifications with commas." %}
+                <label for="alter" title="{{ alter_title }}">Alter</label>
+                <input type="text"
+                       id="alter"
+                       name="alter"
+                       class="validate"
+                       size="70"
+                       title="{{ alter_title }}"
+                       placeholder="ADD COLUMN new_col INT, DROP COLUMN old_col" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend>Advanced options</legend>
+            <div class="field">
+                {% set recursion_method_title = "Select the method for handling recursion to discover replicas (e.g., processlist, hosts, dsn)." %}
+                <label for="recursion_method" title="{{ recursion_method_title }}">Recursion method</label>
+                <select id="recursion_method"
+                        name="recursion_method"
+                        title="{{ recursion_method_title }}">
+                    <option value="processlist" selected>processlist</option>
+                    <option value="host">host</option>
+                    <option value="dsn">dsn</option>
+                    <option value="none">none</option>
+                </select>
+            </div>
+            <div class="field">
+                {% set dsn_table_title = "Type the DSN table to use for the recursion method when set to 'dsn'." %}
+                <label for="dsn_table" title="{{ dsn_table_title }}">DSN Table</label>
+                <input type="text"
+                       id="dsn_table"
+                       name="dsn_table"
+                       class="validate"
+                       placeholder="schema.dsns"
+                       title="{{ dsn_table_title }}" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set pause_file_title = "Type a file path. Execution will pause while this file exists." %}
+                <label for="pause_file" title="{{ pause_file_title }}">Pause file</label>
+                <input type="text"
+                       id="pause_file"
+                       name="pause_file"
+                       class="validate"
+                       title="{{ pause_file_title }}"
+                       placeholder="/tmp/pause_file.txt" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set new_table_name_title = "Type the new table name before it is swapped. Use %T to include the original table name." %}
+                <label for="new_table_name" title="{{ new_table_name_title }}">New Table Name</label>
+                <input type="text"
+                       id="new_table_name"
+                       name="new_table_name"
+                       class="validate"
+                       size="30"
+                       title="{{ new_table_name_title }}"
+                       placeholder=" %T_new_table" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set print_arg_title = "Enable to print SQL statements to STDOUT. Useful for reviewing executed statements, especially with --dry-run." %}
+                <input type="checkbox"
+                       id="print_arg"
+                       name="print_arg"
+                       checked="true"
+                       class="validate"
+                       title="{{ print_arg_title }}" />
+                <label for="print_arg" title="{{ print_arg_title }}">Print</label>
+            </div>
+            <div class="field">
+                {% set progress_title = "Type progress report settings. Use a comma-separated value: the first part defines the type (percentage, time, or iterations), and the second part specifies the frequency (percentage, seconds, or iterations)." %}
+                <label for="progress" title="{{ progress_title }}">Progress</label>
+                <input type="text"
+                       id="progress"
+                       name="progress"
+                       class="validate"
+                       size="15"
+                       value="time,10"
+                       title="{{ progress_title }}"
+                       placeholder="time,30 or percentage,10" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set no_swap_tables_title = "Enable to simulate the process without making the swap. Disable to swap the original table with the new altered table." %}
+                <input type="checkbox"
+                       id="no_swap_tables"
+                       name="no_swap_tables"
+                       class="validate"
+                       title="{{ no_swap_tables_title }}" />
+                <label for="no_swap_tables" title="{{ no_swap_tables_title }}">no-swap-tables</label>
+            </div>
+            <div class="field">
+                {% set no_drop_old_table_title = "Enable to keep the original table after the swap. Disable to drop the original table after it is renamed." %}
+                <input type="checkbox"
+                       id="no_drop_old_table"
+                       name="no_drop_old_table"
+                       class="validate"
+                       title="{{ no_drop_old_table_title }}" />
+                <label for="no_drop_old_table" title="{{ no_drop_old_table_title }}">no-drop-old-table</label>
+            </div>
+            <div class="field">
+                {% set no_drop_new_table_title = "Enable to keep the new table without modifying the original. Disable to drop the new table if copying the original table fails." %}
+                <input type="checkbox"
+                       id="no_drop_new_table"
+                       name="no_drop_new_table"
+                       class="validate"
+                       title="{{ no_drop_new_table_title }}" />
+                <label for="no_drop_new_table" title="{{ no_drop_new_table_title }}">no-drop-new-table</label>
+            </div>
+            <div class="field">
+                {% set no_drop_triggers_title = "Enabling forces the tool to keep the old table (no-drop-old-table). Disable to drop triggers on the old table." %}
+                <input type="checkbox"
+                       id="no_drop_triggers"
+                       name="no_drop_triggers"
+                       class="validate"
+                       title="{{ no_drop_triggers_title }}" />
+                <label for="no_drop_triggers" title="{{ no_drop_triggers_title }}">no-drop-triggers</label>
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set tries_title = "Type the number of retries and wait times for critical operations in the format: operation:tries:wait. Defaults: create_triggers:10:1, drop_triggers:10:1, copy_rows:10:0.25." %}
+                <label for="tries" title="{{ tries_title }}">Tries</label>
+                <input type="text"
+                       id="tries"
+                       name="tries"
+                       class="validate"
+                       placeholder="create_triggers:10000:1,drop_triggers:10000:1,copy_rows:10000:1"
+                       size="70"
+                       title="{{ tries_title }}" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set set_vars_titlie = "Set MySQL variables as a comma-separated list of variable=value pairs. Defaults: wait_timeout=10000, innodb_lock_wait_timeout=1, lock_wait_timeout=60." %}
+                <label for="set_vars" title="{{ set_vars_titlie }}">Set Vars</label>
+                <input type="text"
+                       id="set_vars"
+                       name="set_vars"
+                       class="validate"
+                       title="{{ set_vars_titlie }}"
+                       placeholder="tx_isolation='READ-COMMITTED',lock_wait_timeout=5"
+                       size="70" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set critical_load_title = "Type a comma-separated list of MySQL status variables and thresholds to monitor. The tool will abort if the load exceeds these thresholds." %}
+                <label for="critical_load" title="{{ critical_load_title }}">Critical Load</label>
+                <input type="text"
+                       id="critical_load"
+                       name="critical_load"
+                       class="validate"
+                       title="{{ critical_load_title }}"
+                       placeholder="Threads_running=99999,Connections=200"
+                       size="30" />
+            </div>
+            <div class="field">
+                {% set max_load_title = "Type a comma-separated list of MySQL load thresholds to pause operation if exceeded. Default: Threads_running=25." %}
+                <label for="max_load" title="{{ max_load_title }}">Max Load</label>
+                <input type="text"
+                       id="max_load"
+                       name="max_load"
+                       class="validate"
+                       title="{{ max_load_title }}"
+                       placeholder="Threads_running=30,Threads_connected=120"
+                       size="30" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set chunk_time_title = "Set the target execution time (in seconds) for each data-copy query. Default: 0.5 seconds." %}
+                <label for="chunk_time" title="{{ chunk_time_title }}">Chunk Time</label>
+                <input type="text"
+                       id="chunk_time"
+                       name="chunk_time"
+                       class="validate"
+                       title="{{ chunk_time_title }}"
+                       placeholder="0.5"
+                       size="5" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <div class="field">
+                {% set max_lag_title = "Set the maximum allowed replica lag before pausing data copy. Default: 1s." %}
+                <label for="max_lag" title="{{ max_lag_title }}">Max Lag</label>
+                <input type="text"
+                       id="max_lag"
+                       name="max_lag"
+                       class="validate"
+                       title="{{ max_lag_title }}"
+                       placeholder="150"
+                       size="5" />
+            </div>
         </fieldset>
     </fieldset>
-
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
 </form>
-
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}
     {% set schemas = {} %}
@@ -274,19 +411,18 @@
         {% set tables = {} %}
         {% for table in schema.tables %}
             {% do tables.update({
-                table.id: {
-                    "name": table.name,
-                    "create": table.create,
-                    "keys": table['keys']
-                }
+            table.id: {
+            "name": table.name,
+            "create": table.create|syntax_highlight("sql", style="monokai"),
+            "keys": table['keys']
+            }
             }) %}
         {% endfor %}
         {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
     {% endfor %}
     {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
-
-<script type="text/javascript">
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas|tojson }};
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
@@ -408,7 +544,7 @@
     }
 
     function displayCreateTable(sql) {
-        createTableOutput.textContent = sql;
+        createTableOutput.innerHTML = sql;
         createTableOutput.classList.remove('hidden');
     }
 

@@ -2,12 +2,34 @@ default_language_version:
   python: python3.11
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 75b98813cfb7e663870a28c74366a1e99d7bfe79
+    rev: 871f3bcae4fe473cd7109c3a068db975dc035e3b # 0.9.4
     hooks:
       - id: ruff
       - id: ruff-format
+  - repo: https://github.com/djlint/djLint
+    rev: 9112cb64851c95a7802358af285d21ad8b7f6437 # v1.36.4
+    hooks:
+      - id: djlint
+      - id: djlint-reformat
+  - repo: local
+    hooks:
+      - id: js-beautify
+        name: JS Beautify
+        description: "Run js-beautify (from jsbeautifier) on .js files"
+        entry: js-beautify --end-with-newline --replace
+        language: python
+        additional_dependencies: ["jsbeautifier==1.15.1"]
+        files: ^(?!.*\.min\.js$).*\.js$
+      - id: css-beautify
+        name: CSS Beautify
+        description: "Run css-beautify (from cssbeautifier) on .css files"
+        entry: css-beautify --end-with-newline --replace
+        language: python
+        additional_dependencies: ["cssbeautifier==1.15.1"]
+        files: ^(?!.*\.min\.css$).*\.css$
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
     hooks:
       - id: check-ast
       - id: check-case-conflict

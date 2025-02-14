@@ -2,8 +2,8 @@
 
 SHELL=/usr/bin/bash
 
-PYTHON=python3
-RELEASE_VER?=
+PYTHON?=python3
+RELEASE_VER?=HEAD
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
 else
@@ -47,12 +47,19 @@ image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
 	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
 
-format:
+format: venv
 	@"${VENV_BIN}"/ruff format .
+	@"${VENV_BIN}"/djlint . --reformat
 
-lint: venv
+ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
+
+djlint: venv
+	@"${VENV_BIN}"/djlint .
+	@"${VENV_BIN}"/djlint . --check
+
+lint: ruff djlint
 
 audit: run-pre-commit bandit pip-audit
 
@@ -98,4 +105,4 @@ migrate: venv alembic.ini app/tasks/migrations/versions
 	done
 
 test: venv
-	@"${VENV_BIN}"/pytest -v --cov=app tests/
+	@"${VENV_BIN}"/pytest -v -r a --cov=app tests/

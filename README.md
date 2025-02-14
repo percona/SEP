@@ -119,7 +119,8 @@ These are some, but not all, the possible settings you can have, per app:
 
 | Name                       | App       | Required | Default                                             | settings.yaml (development)                      |
 |----------------------------|-----------|----------|-----------------------------------------------------|--------------------------------------------------|
-| BASE_URI                   | all       | no       | Built from the user's request                       | N/A                                              |
+| BASE_URL                   | all       | no       | Built from the user's request                       | N/A                                              |
+| ALLOWED_HOSTS              | all       | yes      | N/A                                                 | `["*.localhost", "127.0.0.1", "[::1]"]`          |
 | CASDOOR__ENDPOINT          | all       | yes      | N/A                                                 | `http://localhost:9999`                          |
 | CASDOOR__FRONT_ENDPOINT    | all       | no       | The same as `CASDOOR__ENDPOINT`                     | N/A                                              |
 | CASDOOR__CERTIFICATE_PATH  | all       | no       | N/A                                                 | N/A                                              |

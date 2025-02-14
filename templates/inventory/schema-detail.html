@@ -1,118 +1,131 @@
-<style>
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    th, td {
-      padding: 8px;
-      text-align: left;
-    }
-
-    .create_statement, .keys {
-      width: 35%;
-      word-wrap: break-word;
-    }
-
-    td, th {
-      width: auto;
-    }
-
-    .ellipse {
-      display: -webkit-box;
-      overflow: hidden;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 4;
-    }
-
-    .ellipse-btn {
-      color: black;
-      background: none;
-      text-decoration: underline;
-      font-weight: 200;
-      font-size: .9em;
-    }
-
-    .ellipse-btn:hover {
-      background: none !important ;
-    }
-
-  </style>
 {% extends "inventory/base-inventory.html" %}
+{% block title -%}
+    Schema {{ schema.name }} ({{ schema.service_id }})
+{%- endblock title %}
+{% block style %}
+    {{ super() }}
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
 
-{% block title %}Schema {{ schema.name }} ({{ schema.service_id }}){% endblock %}
+        th,
+        td {
+            text-align: left;
+        }
 
+        .create_statement,
+        .keys {
+            width: 35%;
+            word-wrap: break-word;
+        }
+
+        td,
+        th {
+            width: auto;
+        }
+
+        .ellipse {
+            display: -webkit-box;
+            overflow: hidden;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 4;
+        }
+
+        .ellipse-btn {
+            color: black;
+            background: none;
+            text-decoration: underline;
+            font-weight: 200;
+            font-size: .9em;
+        }
+
+        .ellipse-btn:hover {
+            background: none !important;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        pre {
+            white-space: break-spaces;
+        }
+
+        {{ syntax_highlight_css(style="sas") }}
+    </style>
+{% endblock style %}
 {% block inventory_entity_details %}
-{% with inventory_table_title = "Schema Details", inventory_sync_route = "/inventory/schemas/" ~  schema.id ~ "/sync/" %}
-    {% include "inventory/partials/sync-button.html" %}
-{% endwith %}
-<dl>
-    <dt>ID</dt>
-    <dd>{{ schema.id }}</dd>
-    <dt>Name</dt>
-    <dd>{{ schema.name }}</dd>
-    <dt>Service ID</dt>
-    <dd>{{ schema.service_id }}</dd>
-</dl>
-{% endblock %}
-
+    {% with inventory_table_title = "Schema Details", inventory_sync_route = "/inventory/schemas/" ~ schema.id ~ "/sync/" %}
+        {% include "inventory/partials/sync-button.html" %}
+    {% endwith %}
+    <dl>
+        <dt>ID</dt>
+        <dd>
+            {{ schema.id }}
+        </dd>
+        <dt>Name</dt>
+        <dd>
+            {{ schema.name }}
+        </dd>
+        <dt>Service ID</dt>
+        <dd>
+            {{ schema.service_id }}
+        </dd>
+    </dl>
+{% endblock inventory_entity_details %}
 {% block inventory_table %}
-<h3>Tables in this Schema</h3>
-<table>
-    <thead>
-        <tr>
-            <th style="width: 30px">ID</th>
-            <th>Name</th>
-            <th class="create_statement">Create Statement</th>
-            <th class="keys">Keys</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for table in schema.tables %}
-        <tr>
-            <td>{{ table.id }}</td>
-            <td>{{ table.name }}</td>
-            <td class="create_statement">
-              <div class="ellipse" id="create-{{ table.id }}">{{ table.create }}</div>
-              <button class="toggle-btn ellipse-btn" onclick="toggleContent('create-{{ table.id}}', this)">>>More</button>
-            </td>
-            <td>
-              {% if table.keys %}
-                <div class="ellipse" id="keys-{{ table.id }}">{{ table.keys }}</div>
-                <button class="toggle-btn ellipse-btn" onclick="toggleContent('keys-{{ table.id }}', this)">>>More</button>
-              {% endif %}
-            </td>
-            <td>
-                <form action="/inventory/tables/{{ table.id }}/delete" method="post" style="display:inline;">
-                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
-                    <button name="location" class="icons" style="width: 2em">delete forever</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-<script>
-  function toggleContent(id, button) {
-    const element = document.getElementById(id);
-    if (!element) {
-        console.error(`Element with ID '${id}' not found.`);
-        return;
-    }
-    if (element.classList.contains('ellipse')) {
-        element.classList.remove('ellipse');
-        button.textContent = '<<Less';
-    } else {
-        element.classList.add('ellipse');
-        button.textContent = '>>More';
-    }
-}
-</script>
-{% endblock %}
-
+    <h3>Tables in this Schema</h3>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 30px">ID</th>
+                <th>Name</th>
+                <th class="create_statement">Create Statement</th>
+                <th class="keys">Keys</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for table in schema.tables %}
+                <tr>
+                    <td>{{ table.id }}</td>
+                    <td>{{ table.name }}</td>
+                    <td class="create_statement">
+                        <div class="ellipse" id="create-{{ table.id }}">{{ table.create|syntax_highlight("sql", style="sas") |safe }}</div>
+                        <button class="toggle-btn ellipse-btn hidden"
+                                id="create-btn-{{ table.id }}"
+                                data-target="create-{{ table.id }}">&gt;&gt;More</button>
+                    </td>
+                    <td>
+                        {% if table.keys %}
+                            <div class="ellipse" id="keys-{{ table.id }}">
+                                {{ table.keys|tojson(2) |syntax_highlight("json", style="sas")|safe }}
+                            </div>
+                            <button class="toggle-btn ellipse-btn hidden"
+                                    id="keys-btn-{{ table.id }}"
+                                    data-target="keys-{{ table.id }}">&gt;&gt;More</button>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form action="{{ url_for('table_delete', table_id=table.id) }}"
+                              method="post"
+                              style="display:inline"
+                              class="confirmable-form"
+                              data-confirm-message="Are you sure you want to delete table '{{ schema.name }}.{{ table.name }}' (#{{ table.id }})?">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                            <button name="location" class="icons submitButton" style="width: 2em">delete forever</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <script src="{{ url_for('static', path='/js/schemaDetail.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock inventory_table %}
 {% block inventory_create %}
-<h3>Add a New Table</h3>
-{% include "inventory/partials/table-create-form.html" %}
-{% endblock %}
+    <h3>Add a New Table</h3>
+    {% include "inventory/partials/table-create-form.html" %}
+{% endblock inventory_create %}

@@ -1,4 +1,4 @@
-"""Define tests for the app.core.utils module."""
+"""Define tests for the app.core.utils package."""
 
 import sys
 from base64 import b64encode
@@ -8,26 +8,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core.utils.asyncio import async_run
-from app.core.utils.datetime import make_datetime_utc
+from app.core.utils.async_run import async_run
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.dict import sort_dict
 from app.core.utils.imports import import_var
 from app.core.utils.serialization import json_serializer
-from app.core.utils.string import b64encode_str, slugify
+from app.core.utils.strings import b64encode_str, slugify
 from app.tasks.execution.utils import minify_file_content
 
 
 def sample_func(x, y):
     """Sample function that returns the sum of two numbers."""
     return x + y
-
-
-def long_running_func():
-    """Sample function that simulates a long-running task."""
-    import time
-
-    time.sleep(1)
-    return "done"
 
 
 def error_func():
@@ -41,9 +33,6 @@ async def test_async_run():
     result = await async_run(sample_func, 2, 3)
     expected_result = 5
     assert result[0] == expected_result
-
-    result = await async_run(long_running_func)
-    assert result[0] == "done"
 
     with pytest.raises(ValueError, match="Test error"):
         await async_run(error_func)

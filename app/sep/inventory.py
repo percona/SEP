@@ -37,9 +37,9 @@ class CreatedEntityBase(BaseSQLModel):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     """
 
     CHILDREN_FIELD: ClassVar[str | None] = None
@@ -137,9 +137,9 @@ class CreatedNode(CreatedEntityBase, Node):
     :type id: int | None
     :param created_at: The timestamp when the node was created. Defaults to the current
         time in UTC.
-    :type created_at: datetime | None
+    :type created_at: UTCDatetime | None
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param address: The network address of the node.
     :type address: RequiredStr
     :param external_id: The external identifier for the node, aliased as "node_id".
@@ -208,9 +208,9 @@ class CreatedService(CreatedEntityBase, Service):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
     :type environment: str | None
@@ -286,9 +286,9 @@ class CreatedSchema(CreatedEntityBase, Schema):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
     :type name: RequiredStr
     :param service_id: The ID of the service to which the schema belongs.
@@ -322,7 +322,7 @@ class Table(BaseInventoryModel):
 
     name: RequiredStr
     create: RequiredStr
-    keys: dict[str, Any]
+    keys: dict[str, Any] = Field(default_factory=dict)
 
 
 class CreatedTable(CreatedEntityBase, Table):
@@ -338,9 +338,9 @@ class CreatedTable(CreatedEntityBase, Table):
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: datetime
+    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: datetime | None
+    :type updated_at: UTCDatetime | None
     :param name: The name of the table.
     :type name: RequiredStr
     :param create: The SQL statement used to create the table.

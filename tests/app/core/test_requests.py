@@ -39,12 +39,15 @@ async def test_context_manager_open_close(remote_api, base_url):
     with aioresponses() as m:
         m.get(base_url, status=200, payload={})
 
-        async with remote_api as api:
-            assert isinstance(api.session, ClientSession)
-            response = await api.session.get(base_url)
+        assert remote_api.session is None
+
+        async with remote_api:
+            assert remote_api.session is not None
+            assert isinstance(remote_api.session, ClientSession)
+            response = await remote_api.session.get("/")
             assert response.status == HTTPStatus.OK
 
-        assert api.session.closed
+        assert remote_api.session is None
 
 
 @pytest.mark.asyncio
@@ -69,15 +72,15 @@ async def test_request_methods(
 
         async with remote_api:
             if method == "GET":
-                response = await remote_api.get(full_url)
+                response = await remote_api.get(test_path)
             elif method == "POST":
-                response = await remote_api.post(full_url, json=request_payload)
+                response = await remote_api.post(test_path, json=request_payload)
             elif method == "PUT":
-                response = await remote_api.put(full_url, json=request_payload)
+                response = await remote_api.put(test_path, json=request_payload)
             elif method == "PATCH":
-                response = await remote_api.patch(full_url, json=request_payload)
+                response = await remote_api.patch(test_path, json=request_payload)
             elif method == "DELETE":
-                response = await remote_api.delete(full_url)
+                response = await remote_api.delete(test_path)
 
             assert response == response_data
 

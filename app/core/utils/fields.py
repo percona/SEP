@@ -25,7 +25,7 @@ from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema, Url
 from starlette.datastructures import URL as StarletteURL  # noqa: N811
 
-from app.core.utils.datetime import make_datetime_utc
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.imports import (
     validate_attribute_is_importable,
     validate_module_is_importable,
@@ -53,32 +53,24 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
         :type value_or_name: Any
         :return: The {enum_class} found.
         :rtype: {enum_class}
-        :raises ExceptionGroup[ValueError, TypeError]: If `value_or_name` is not a value
-            in {enum_class} and `value_or_name` is not a valid name for an Enum (not a
-            string).
-        :raises ExceptionGroup[ValueError, KeyError]: If `value_or_name` is neither a
-            value nor a name in {enum_class}.
+        :raises ValueError: If `value_or_name` is not a value in {enum_class} and
+            `value_or_name` is not a valid name for an Enum (not a string).
+        :raises ValueError: If `value_or_name` is neither a value nor a name in
+            {enum_class}.
         """
         try:
             return enum_class(value_or_name)
-        except ValueError as exc_enum_value:
+        except ValueError:
             if not isinstance(value_or_name, str):
-                raise ExceptionGroup(
-                    f"Value not found and is not a valid name for {enum_class_name}: {value_or_name!r}",
-                    [
-                        exc_enum_value,
-                        TypeError(
-                            f"{value_or_name!r} is not a valid name for {enum_class_name}"
-                        ),
-                    ],
+                raise ValueError(
+                    f"Value not found and is not a valid name for {enum_class_name}: {value_or_name!r}"
                 ) from None
             enum_dict = {enum_obj.name.upper(): enum_obj for enum_obj in enum_class}
             try:
                 return enum_dict[value_or_name.upper()]
-            except KeyError as exc_enum_name:
-                raise ExceptionGroup(
-                    f"Value and name not found for {enum_class_name}: {value_or_name!r}",
-                    [exc_enum_value, exc_enum_name],
+            except KeyError:
+                raise ValueError(
+                    f"Value and name not found for {enum_class_name}: {value_or_name!r}"
                 ) from None
 
     get_enum_from_value_or_name.__doc__ = get_enum_from_value_or_name.__doc__.format(

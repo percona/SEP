@@ -3,464 +3,30 @@
 
 <head>
     {# TODO: success/error messages on top #}
-    <title>SEP {% block title %}The page with no name{% endblock %}</title>
+    {# djlint:off #}
+    <title>SEP {% block title %}The page with no name{% endblock title %}</title>
+    {# djlint:on #}
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="Percona Services Enablement Platform">
+    <meta name="keywords" content="Percona,Services,SEP,Database,MySQL">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     {% block meta %}
-    <!-- Default meta block -->
-    <!-- End meta block -->
-    {% endblock %}
-    <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
-    <!--<link rel="stylesheet" href="/static/themes/materialize/css/base.css" media="screen,projection" />-->
-    <link rel="stylesheet" href="/static/themes/materialize/css/custom.css" media="screen,projection" />
+    {% endblock meta %}
+    <link rel="shortcut icon" type="image/x-icon" href="{{ url_for('static', path='/img/favicon.ico') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
     {% block style %}
-    {% endblock %}
-    <style>
-        @font-face {
-            font-family: "Material Icons";
-            font-style: normal;
-            font-weight: 400;
-            src: url(/static/themes/materialize/icons.ttf) format("truetype");
-        }
-
-        @font-face {
-            font-family: "Poppins", sans-serif;
-            font-style: normal;
-            src: url(/static/themes/materialize/Poppins.ttf) format("truetype");
-        }
-
-        .icons {
-            font-family: "Material Icons";
-            font-weight: normal;
-            font-style: normal;
-            font-size: 1.2em;
-            line-height: 1;
-            letter-spacing: normal;
-            text-transform: none;
-            display: inline-block;
-            white-space: nowrap;
-            word-wrap: normal;
-            direction: ltr;
-        }
-
-        body {
-            background-color: white;
-            color: #303642;
-            font: 100% "Poppins", sans-serif;
-            /*padding: 1em;*/
-            text-align: left;
-            border-radius: unset;
-            padding: 5px;
-        }
-
-        body>header:nth-child(1) {
-            border-radius: unset;
-        }
-
-        body>footer:nth-child(4) {
-            border-radius: unset;
-        }
-
-        #sep {
-            border-radius: unset;
-        }
-
-        h1,
-        h2,
-        h3,
-        h4,
-        h5,
-        h6 {
-            font-weight: 600
-        }
-
-        h1 {
-            font-size: 2.5em;
-        }
-
-        h2 {
-            font-size: 1.6666666667em;
-        }
-
-        h3 {
-            font-size: 1.25em;
-        }
-
-        h4 {
-            font-size: 1em;
-        }
-
-        h5 {
-            font-size: 0.8333333333em;
-        }
-
-        h6 {
-            font-size: 0.7142857143em;
-        }
-
-        table {
-            width: 100%;
-        }
-
-        .notice {
-            font-weight: bolder;
-            font-style: normal
-        }
-
-        @media screen and (max-device-width: 1279px) {
-            h1 {
-                color: red;
-            }
-        }
-
-        @media screen and (min-device-width: 1280px) {
-            * {
-                margin: 0;
-                padding: 0;
-            }
-
-            html,
-            body {
-                height: 98%;
-                overflow-y: scroll
-            }
-
-            html {
-                background-color: #303642;
-            }
-
-            body {
-                margin: 0 auto auto auto;
-                max-width: 98%;
-                min-width: 62em;
-                width: 130em;
-                display: grid;
-                grid-template-areas: "head head" "nav  main" "nav  foot";
-                grid-template-rows: 10em 1fr 5em;
-                grid-template-columns: 15em 1fr;
-            }
-
-            body>header {
-                grid-area: head;
-                background-color: #2C323E;
-                border-radius: 4.5em 4.5em 0 0;
-                color: #fff;
-                padding: 1em
-            }
-
-            body>nav {
-                grid-area: nav;
-                background-color: #F0F1F4;
-                border-radius: 0 0 0 4.5em;
-                padding: 1em
-            }
-
-            body>main {
-                grid-area: main;
-                padding: 1em
-            }
-
-            body>footer {
-                grid-area: foot;
-                background-color: #2C323E;
-                border-radius: 0 0 4.5em 0;
-                color: #fff;
-                padding: 1em
-            }
-
-            nav ul {
-                display: block;
-                list-style: none;
-                line-height: 2em;
-                margin-left: -.5em
-            }
-
-            nav li>a {
-                display: block;
-                margin-bottom: .5em;
-                text-decoration: none;
-                padding: .5em .5em .5em .75em;
-                border-radius: 2em;
-            }
-
-            nav a:link,
-            nav a:visited {
-                background-color: #4b5468;
-                color: #fff;
-            }
-
-            nav a:link:after {
-                margin-left: .5em;
-                color: #F0F1F4
-            }
-
-            nav a[href]:hover {
-                background-color: #3a4151;
-                color: #fff;
-            }
-
-            nav a:active,
-            nav a.selected {
-                background-color: #2C323E;
-            }
-
-            nav a.selected {
-                color: #fff;
-            }
-
-            nav a.selected:after {
-                content: "arrow_right";
-                font-family: "Material Icons";
-                font-size: 2em;
-                vertical-align: middle;
-            }
-
-            .archive a:before,
-            .tasks a:before,
-            .alters a:before,
-            .backups a:before,
-            .inventory a:before,
-            .casdoor a:before,
-            .checksums a:before,
-            .signout a:before {
-                font-family: "Material Icons";
-                padding-right: .5em;
-                vertical-align: middle;
-            }
-
-            .alters a:before {
-                content: "adjust"
-            }
-
-            .backups a:before {
-                content: "backup"
-            }
-
-            .inventory a:before {
-                content: "inventory"
-            }
-
-            .archive a:before {
-                content: "archive";
-            }
-
-            .casdoor a:before {
-                content: "key"
-            }
-
-            .signout a:before {
-                content: "logout"
-            }
-
-            .tasks a:before {
-                content: "task";
-            }
-
-            .checksums a:before {
-                content: "summarize";
-            }
-
-            header {
-                display: grid;
-                grid-template-areas: "icon title";
-                grid-template-columns: 15em 1fr
-            }
-
-            header svg {
-                grid-area: icon;
-                margin-top: -1em
-            }
-
-            header h1 {
-                grid-area: title;
-                margin-top: 2em
-            }
-
-            svg {
-                height: 90%;
-                width: 90%;
-                grid-area: icon;
-            }
-
-            svg path.cls-2 {
-                fill: rgb(255, 255, 255) !important
-            }
-
-            form,
-            fieldset {
-                padding: 1em
-            }
-
-            form>fieldset,
-            input,
-            select,
-            textarea {
-                border: .2em solid #F0F1F4
-            }
-
-            form>fieldset>fieldset {
-                border: 0;
-                column-gap: 1em;
-                display: flex;
-                flex-flow: row wrap;
-                flex-wrap: wrap;
-                justify-content: left;
-                row-gap: 1em;
-            }
-
-            form>fieldset>fieldset label {
-                flex-basis: fit-content(100%);
-            }
-
-            form>fieldset>fieldset input,
-            form>fieldset>fieldset select,
-            form>fieldset>fieldset textarea {
-                margin-left: .5em;
-            }
-
-            input,
-            select {
-                padding: .5em
-            }
-
-            legend {
-                font-weight: 600
-            }
-
-            textarea {
-                display: block;
-            }
-
-            button {
-                background-color: #2C323E;
-                border: 0;
-                border-radius: 2em;
-                color: #93C7FF;
-                line-height: 1;
-                font-size: 1.1em;
-                font-weight: bolder;
-                margin-top: 1em;
-                padding: .5em;
-            }
-
-            button:not([disabled]):hover {
-                cursor: pointer;
-                background-color: #93C7FF;
-                color: #2C323E;
-            }
-
-            button[disabled] {
-                background-color: #93C7FF;
-                color: #2C323E;
-            }
-
-            table {
-                table-layout: fixed;
-                border-collapse: collapse;
-                width: 100%
-            }
-
-            td.flex {
-                border-color: transparent;
-                column-gap: 1em;
-                display: flex;
-                flex-flow: row wrap;
-                flex-wrap: wrap;
-                justify-content: left;
-                row-gap: 1em;
-            }
-
-            .flex form {
-                overflow: hidden;
-            }
-
-            .flex button.icons {
-                width: 2em;
-            }
-
-            table button {
-                margin-top: inherit
-            }
-
-            thead tr,
-            tbody tr {
-                border-bottom: .2em solid #F0F1F4
-            }
-
-            th {
-                font-weight: 500;
-            }
-
-            td,
-            th {
-                padding: .5em 0;
-                overflow: scroll;
-                text-overflow: ellipsis;
-                vertical-align: top;
-            }
-
-            caption {
-                caption-side: top;
-                text-align: left;
-                font-weight: 600;
-            }
-
-            main h1,
-            main h2,
-            main h3,
-            main h4,
-            main h5,
-            main h6,
-            main p {
-                margin: 1em 0 0.5em 0
-            }
-
-            main section,
-            main table {
-                margin-bottom: 1em
-            }
-
-            main a:link {
-                color: #2c415b;
-            }
-
-            main a:link {
-                color: #2C323E;
-            }
-
-            main dl {
-                display: grid;
-                grid-template-areas: "dt dd";
-                grid-template-rows: auto;
-                grid-template-columns: 15em 1fr;
-
-            }
-
-            main dt {
-                font-weight: 500;
-                grid: "dt";
-            }
-
-            main dd {
-                grid: "dd";
-            }
-
-            footer {
-                text-align: center;
-                vertical-align: middle
-            }
-        }
-    </style>
-    {% block behaviours %}{% endblock %}
+    {% endblock style %}
+    {% block behaviours %}
+    {% endblock behaviours %}
 </head>
 
 <body class="has-fixed-sidenav">
     <header>
         {% block home %}
         {% block home_link %}
-        <a href="/">
-            {% endblock %}
+        <a href="{{ url_for('read_root') }}">
+            {% endblock home_link %}
             <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="Layer_2"
                 width="1104.09" height="235.3" viewBox="0 0 1104.09 235.3">
                 <defs>
@@ -505,44 +71,58 @@
                 </g>
             </svg>
         </a>
-        {% endblock %}
+        {% endblock home %}
         {% block header %}
-        <h1>{% block title_prefix %}SEP: {% endblock %}{{ self.title() }}</h1>
-        {% endblock %}
+        <h1>
+            {% block title_prefix %}
+            SEP:
+            {% endblock title_prefix %}
+            {{ self.title() }}
+        </h1>
+        {% endblock header %}
     </header>
-
     {% block sidebar %}
     {% include "menus/partials/sidebar.html" %}
-    {% endblock %}
-
+    {% endblock sidebar %}
     <main>
+        {% include "confirm_modal.html" %}
         {% block main %}
         <p>Nothing to see here, move along</p>
-        {% endblock %}
-
+        {% endblock main %}
     </main>
-
     <footer>
         {% block footer %}
-        {% endblock %}
-        <p><em class="notice">Copyright &copy; Percona LLC</em></p>
+        {% endblock footer %}
+        <div style="display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        margin-bottom: 10px">
+            <a href="https://github.com/percona/SEP" target="_blank">
+                <svg fill="white" width="24" height="24" viewBox="0 0 24 24" version="1.1"
+                    xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                    <path
+                        d="M12,2C6.477,2,2,6.477,2,12c0,4.419,2.865,8.166,6.839,9.489c0.5,0.09,0.682-0.218,0.682-0.484 c0-0.236-0.009-0.866-0.014-1.699c-2.782,0.602-3.369-1.34-3.369-1.34c-0.455-1.157-1.11-1.465-1.11-1.465 c-0.909-0.62,0.069-0.608,0.069-0.608c1.004,0.071,1.532,1.03,1.532,1.03c0.891,1.529,2.341,1.089,2.91,0.833 c0.091-0.647,0.349-1.086,0.635-1.337c-2.22-0.251-4.555-1.111-4.555-4.943c0-1.091,0.39-1.984,1.03-2.682 C6.546,8.54,6.202,7.524,6.746,6.148c0,0,0.84-0.269,2.75,1.025C10.295,6.95,11.15,6.84,12,6.836 c0.85,0.004,1.705,0.114,2.504,0.336c1.909-1.294,2.748-1.025,2.748-1.025c0.546,1.376,0.202,2.394,0.1,2.646 c0.64,0.699,1.026,1.591,1.026,2.682c0,3.841-2.337,4.687-4.565,4.935c0.359,0.307,0.679,0.917,0.679,1.852 c0,1.335-0.012,2.415-0.012,2.741c0,0.269,0.18,0.579,0.688,0.481C19.138,20.161,22,16.416,22,12C22,6.477,17.523,2,12,2z">
+                    </path>
+                </svg>
+            </a>
+            <p style="font-size: 10pt; margin-left: 8px;">v0.3.2-beta</p>
+        </div>
+        <p>
+            <em class="notice">Copyright © Percona LLC</em>
+        </p>
     </footer>
-
     {% block behaviours_optimized %}
-    <script src="/static/jquery-3.1.1.min.js"></script>
-    <!--<script src="/static/themes/materialize/js/materialize.js"></script>
-      <script>
-          $(document).ready(function(){
-              //$('.sidenav').sidenav();
-              //$(".modal").modal();
-              //$('.collapsible').collapsible();
-              //$('.tabs').tabs();
-              $('.dropdown-trigger').dropdown({ constrainWidth: false });
-          });
-      </script>-->
+    <script src="{{ url_for('static', path='/js/jquery-3.7.1.min.js') }}"
+        nonce="{{ request.state.csp_nonce }}"></script>
+    <script nonce="{{ request.state.csp_nonce }}">
+        $('.submitNextForm').click(function (e) {
+            e.preventDefault();
+            $(this).next('form').submit();
+        });
+    </script>
     {% block behaviours_optimized_extra %}
-    {% endblock %}
-    {% endblock %}
+    {% endblock behaviours_optimized_extra %}
+    {% endblock behaviours_optimized %}
 </body>
 
 </html>

@@ -1,0 +1,39 @@
+<div class="tasks-table-container">
+    <table class="responsive-table tasks-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Target</th>
+                <th>Created At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if pending_tasks %}
+                {% for task in pending_tasks %}
+                    {% set task_name = task["task"]["name"] %}
+                    <tr>
+                        <td>{{ task_name }}</td>
+                        <td>{{ task['execution_request']['target'] }}</td>
+                        <td class="relativeTime">{{ task['created_at'] }}</td>
+                        <td>
+                            {% if is_task_manager_enabled %}
+                                <a href="{{ url_for('tasks_detail', task_name=task_name) }}"><i class="icons">visibility</i></a>
+                            {% else %}
+                                <a class="tooltip">
+                                    <i class="icons">visibility_off</i>
+                                    <span class="tooltiptext">Enable the Task Manager plugin or navigate to the "{{ task["task"]["owner"] }}"
+                                    plugin to view details of this task.</span>
+                                </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="4" class="no-tasks">No tasks pending</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

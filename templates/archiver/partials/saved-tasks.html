@@ -1,26 +1,26 @@
 {% if tasks %}
-<table>
-    <thead>
-        <tr>
-            <th style="width: 200px;">Name</th>
-            <th style="width: 200px;">Host</th>
-            <th>Source Table</th>
-            <th>Destination</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for task in tasks %}
-        <tr id="{{ task.name }}">
-            <td>{{ task.name }}</td>
-            <td>{{ task.hostname }}</td>
-            <td>{{ task.source_table }} {{ task.source_query }}</td>
-            <td>{{ task.dest_table }} {{ task.dest_file }}</td>
-            {% include "tasks/partials/saved-tasks-actions-column.html" %}
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 200px;">Name</th>
+                <th style="width: 200px;">Host</th>
+                <th>Source Table</th>
+                <th>Destination</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in tasks %}
+                <tr id="{{ task.name }}">
+                    <td>{{ task.name }}</td>
+                    <td>{{ task.hostname }}</td>
+                    <td>{{ task.source_table }} {{ task.source_query }}</td>
+                    <td>{{ task.dest_table }} {{ task.dest_file }}</td>
+                    {% include "tasks/partials/saved-tasks-actions-column.html" %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 {% else %}
-<p>No data</p>
+    <p>No data</p>
 {% endif %}

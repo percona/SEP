@@ -1,4 +1,7 @@
 default:
+  ALLOWED_HOSTS:
+    - "localhost"
+    - "127.0.0.1"
   AUTH_USER_MODEL: app.models.CasdoorUser
   CASDOOR:
     ENDPOINT: http://localhost:9999
@@ -69,6 +72,7 @@ development:
     RESULT_BACKEND: file://data/celery/results
     RESULT_PERSISTENT: true
     BEAT_DBURI: "sqlite:///schedule.db"
+    MAX_RETRIES: 3
 
 production_docker:
   CASDOOR:
@@ -110,6 +114,6 @@ production_docker:
     SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
   BACKEND_CORS_ORIGINS:
-    - https://localhost:8003
-    - https://127.0.0.1:8003
+    - https://localhost:9000
+    - https://127.0.0.1:9000
   SSL_CAFILE: data/certs/sep-ca.pem

@@ -10,3 +10,4 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ["CASDOOR__CLIENT_ID"] = "test-client-id"
     os.environ["CASDOOR__CLIENT_SECRET"] = "test-client-secret"
     os.environ["CASDOOR__ALLOWED_ISSUERS"] = '["https://allowed-issuer.com"]'
+    os.environ["ALLOWED_HOSTS"] = '["testserver", "test"]'

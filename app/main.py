@@ -12,7 +12,13 @@ from app.sep.main import sep_app
 from app.tasks.celery import celery as celery_app
 from app.tasks.main import tasks_app, tasks_lifespan
 
-app = create_app(api_router, lifespan=tasks_lifespan, add_cors_middleware=True)
+app = create_app(
+    api_router,
+    lifespan=tasks_lifespan,
+    backend_cors_origins=sep_settings.BACKEND_CORS_ORIGINS,
+    allowed_hosts=sep_settings.ALLOWED_HOSTS,
+    security_headers=sep_settings.SECURITY_HEADERS,
+)
 app.mount("/api/inventory", inventory_app)
 app.mount("/api/tasks", tasks_app)
 app.mount("/", sep_app)

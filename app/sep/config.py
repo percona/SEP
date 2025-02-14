@@ -20,7 +20,7 @@ from pydantic import (
 )
 
 from app.core.config import (
-    BaseYamlExtraSettings,
+    BaseYamlAppSettings,
     settings,
 )
 from app.core.db.config import DatabaseOptions
@@ -35,6 +35,7 @@ from app.core.utils.fields import (
     URL,
 )
 from app.sep.models import Plugin
+from app.sep.utils.jinja import syntax_highlight, syntax_highlight_css
 
 
 class OAuthOptions(BaseModel):
@@ -97,7 +98,7 @@ class SessionOptions(BaseModel):
     :param SAMESITE: SameSite policy for the session cookie. Defaults to 'lax'.
     :type SAMESITE: Literal["lax", "strict", "none"]
     :param SECURE: Whether the session cookie should be accessible only via HTTPS.
-        Defaults to False.
+        Defaults to True.
     :type SECURE: bool
     """
 
@@ -109,7 +110,7 @@ class SessionOptions(BaseModel):
     COOKIE_NAME: str = Field(default="authToken", serialization_alias="key")
     MAX_AGE: TimedeltaSeconds = timedelta(days=7)
     SAMESITE: Literal["lax", "strict", "none"] = "lax"
-    SECURE: bool = False
+    SECURE: bool = True
 
 
 class CsrfSettings(BaseModel):
@@ -131,8 +132,8 @@ class CsrfSettings(BaseModel):
     SECRET_KEY: str = settings.SECRET_KEY
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "none"
-    TOKEN_KEY: str = "csrf-token"
-    TOKEN_LOCATION: str = "body"
+    TOKEN_KEY: str = "csrf-token"  # noqa: S105
+    TOKEN_LOCATION: str = "body"  # noqa: S105
 
 
 class SyncOptions(BaseLowercaseModel):
@@ -174,7 +175,7 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
-class SEPSettings(BaseYamlExtraSettings):
+class SEPSettings(BaseYamlAppSettings):
     """Settings for SEP.
 
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
@@ -230,6 +231,28 @@ class SEPSettings(BaseYamlExtraSettings):
 
     @computed_field
     @cached_property
+    def JINJA_ENVIRONMENT(self) -> Environment:
+        """Return a Jinja2 Environment object for templates.
+
+        This property creates, caches, and returns a
+        :class:`jinja2.environment.Environment` object configured with the
+        `jinja2.ext.do` extension, the `syntax_highlight` filter, and the
+        `syntax_highlight_css` utility function as global.
+
+        :return: The Environment configured for Jinja2.
+        :rtype: Environment
+        """
+        env = Environment(
+            loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
+            autoescape=True,
+            extensions=["jinja2.ext.do"],
+        )
+        env.filters["syntax_highlight"] = syntax_highlight
+        env.globals["syntax_highlight_css"] = syntax_highlight_css
+        return env
+
+    @computed_field
+    @cached_property
     def TEMPLATES(self) -> Jinja2Templates:
         """Return a Jinja2Templates object for template rendering.
 
@@ -240,11 +263,7 @@ class SEPSettings(BaseYamlExtraSettings):
         :rtype: Jinja2Templates
         """
         return Jinja2Templates(
-            env=Environment(
-                loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
-                autoescape=True,
-                extensions=["jinja2.ext.do"],
-            )
+            env=self.JINJA_ENVIRONMENT,
         )
 
     @model_validator(mode="after")

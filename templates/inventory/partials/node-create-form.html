@@ -1,31 +1,24 @@
 <form action="" method="post">
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}"/>
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Create New Node</legend>
         <label for="address">Address:</label>
         <input type="text" name="address" id="address" required>
-
         <label for="name">Name:</label>
         <input type="text" name="name" id="name" required>
-
         <label for="source">Source:</label>
         <select id="source" name="source">
             <option value="" selected>Select a source</option>
-            {% for source in source_enum %}
-            <option value="{{ source }}">{{ source }}</option>
-            {% endfor %}
+            {% for source in source_enum %}<option value="{{ source }}">{{ source }}</option>{% endfor %}
         </select>
-
         <label for="external_id">External ID:</label>
         <input type="text" name="external_id" id="external_id">
-
         <label for="type">Type:</label>
         <input type="text" name="type" id="type" value="generic">
     </fieldset>
     <button type="submit">Create Node</button>
 </form>
-
-<script type="text/javascript">
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const sourceSelect = document.getElementById('source');
     const externalIdInput = document.getElementById('external_id');
 
