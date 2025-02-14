@@ -28,6 +28,7 @@ from app.sep.plugins.backup.models import (
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -193,3 +194,88 @@ async def get_backups_index_context(
     return await get_tasks_context(
         inventory_api, tasks_api, get_backups_task_info, context, TaskOwner.BACKUPS
     )
+
+
+async def get_backup_detail_context(
+    task: BackupsTask,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+    context: DefaultContext,
+) -> dict[str, Any]:
+    """Assemble the context for the Backups detail view.
+
+    This dependency extracts task details, retrieves associated service,
+    and also gathers history and stats data.
+
+    :param task: The BackupsTask instance resolved by the task name.
+    :param inventory_api: The Inventory API client.
+    :param tasks_api: The Tasks API client.
+    :param context: The default context dictionary.
+    :return: A dictionary containing all data needed for the detail view template.
+    :rtype: dict[str, Any]
+    """
+    data = task.data
+    meta = data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    server_config = task_config["SERVER_LIST"][0]
+
+    task_data = {
+        "name": task.name,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+        "hostname": meta["target"],
+        "meta": meta,
+        "host": server_config["HOST"],
+        "port": server_config.get("PORT") or 3306,
+        "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
+    }
+
+    backup_data = {}
+
+    if task_data["host"] and task_data["port"]:
+        service_response = await inventory_api.get(
+            "/services/id",
+            params={"address": task_data["host"], "port": task_data["port"]},
+        )
+        service_id = service_response["service_id"]
+        backup_data["service_id"] = service_id
+
+    all_servers_config = task_config.get("ALL_SERVERS", {})
+    backup_data.update(all_servers_config)
+    backup_data["backup_type"] = BackupType(server_config["BACKUP_TYPE"]).value
+
+    if "dir_encrypt_config" in server_config:
+        backup_data["encryption_recipient"] = server_config["dir_encrypt_config"].get(
+            "encryption_recipient"
+        )
+    else:
+        backup_data["encryption_recipient"] = ""
+
+    upload = server_config.get("UPLOAD", [])
+
+    backup_data["is_s3"] = bool("S3" in upload or UploadProvider.S3 in upload)
+    backup_data["is_rsync"] = bool("RSYNC" in upload or UploadProvider.RSYNC in upload)
+
+    backup_data = {key.lower(): value for key, value in backup_data.items()}
+
+    context["task"] = task_data
+    context["backup_data"] = backup_data
+    context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["running_tasks"] = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+
+    executor_hosts = await tasks_api.get("/hosts/")
+    mysql_services = await inventory_api.get(
+        "/services/",
+        params={"service_type": ServiceTypeEnum.MYSQL},
+    )
+    for service in mysql_services:
+        service["schemas"] = await inventory_api.get(
+            f"/services/{service['id']}/schemas/"
+        )
+    context["executor_hosts"] = list(executor_hosts.values())
+    context["mysql_services"] = mysql_services
+
+    return context

@@ -110,14 +110,17 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
 
 
 @pytest.mark.usefixtures("_mock_get_backups_task_dep")
-def test_backups_detail(test_client, mock_task_api_dep, created_task):
+def test_backups_detail(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
+):
     """Test GET /backups/{task_name} route."""
-    expected_call_count = 3
+    expected_call_count = 4
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
             [],  # history
             [],  # running tasks
             [],  # stats
+            {"127.0.0.1": "mock_host"},  # for /hosts/
         ]
     )
 

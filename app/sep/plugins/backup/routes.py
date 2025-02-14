@@ -3,14 +3,12 @@
 import logging
 from typing import Annotated, Any
 
-import yaml
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
-    DefaultContext,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -18,10 +16,9 @@ from app.sep.deps import (
 from app.sep.plugins.backup.deps import (
     BackupGeneratedTask,
     BackupsTask,
+    get_backup_detail_context,
     get_backups_index_context,
 )
-from app.sep.plugins.backup.models import BackupType
-from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -63,38 +60,35 @@ async def backups_create(
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def backups_detail(
-    task: BackupsTask,
     request: Request,
-    context: DefaultContext,
-    tasks_api: TaskAPI,
+    context: Annotated[dict[str, Any], Depends(get_backup_detail_context)],
 ) -> HTMLResponse:
     """Retrieve backups task."""
-    data = task.data
-    meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    server_config = task_config["SERVER_LIST"][0]
-    task_data = {
-        "name": task.name,
-        "created_at": task.created_at,
-        "updated_at": task.updated_at,
-        "hostname": meta["target"],
-        "meta": meta,
-        "host": server_config["HOST"],
-        "port": server_config.get("PORT") or 3306,
-        "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
-    }
-
-    context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
-        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
-    )
-    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+    context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
         name="backups/details.html",
         context=context,
     )
+
+
+@router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def backups_update(
+    task_name: str,
+    task_update: BackupGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update backups task."""
+    logger.debug("Updating backups task: %s", task_update)
+    await tasks_api.put(
+        f"/{task_name}",
+        json=task_update.model_dump(),
+    )
+    return RedirectResponse("/backups", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(

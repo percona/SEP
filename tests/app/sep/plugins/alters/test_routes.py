@@ -89,17 +89,14 @@ def test_alters_create(
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep")
 def test_alters_detail(
-    test_client,
-    created_task,
-    mock_task_api_dep,
-    mock_inventory_api_dep
+    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
 ):
     """Test retrieving an alters' detail page."""
     mock_task_api_dep.get.side_effect = [
-        {}, # for /{task.name}/history/
-        {}, # for /{task.name}/history/
-        {}, # for /stats/{task.name}/
-        {"127.0.0.1": "mock_host"} # for /hosts/
+        {},  # for /{task.name}/history/
+        {},  # for /{task.name}/history/
+        {},  # for /stats/{task.name}/
+        {"127.0.0.1": "mock_host"},  # for /hosts/
     ]
     mock_data = {
         "TaskGroups": [
@@ -108,12 +105,13 @@ def test_alters_detail(
                     {
                         "Config": {
                             "command": "pt-online-schema-change",
-                            "args": ['--alter=ADD CLOUDM SDF', 'P=3666,D=OOOO,t=OPOP', '--recursion-method=none'],
+                            "args": [
+                                "--alter=ADD CLOUDM SDF",
+                                "P=3666,D=OOOO,t=OPOP",
+                                "--recursion-method=none",
+                            ],
                         },
-                        "Meta": {
-                            'schema_name': 'OOOO', 
-                            'table_name': 'OPOP'
-                        },
+                        "Meta": {"schema_name": "OOOO", "table_name": "OPOP"},
                     }
                 ]
             }

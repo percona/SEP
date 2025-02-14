@@ -490,7 +490,7 @@
                 if (!usedInitialSchema && initialSchemaId !== undefined && schemas.some(([id]) => id === String(initialSchemaId))) {
                     defaultSchemaId = String(initialSchemaId);
                     usedInitialSchema = true;
-                }          
+                }
                 else if (schemas.length >= 1) {
                     const [singleSchemaId, _] = schemas[0]
                     defaultSchemaId = singleSchemaId;
@@ -522,13 +522,13 @@
                     tableSelect.appendChild(option);
                 }
                 tableSelect.disabled = false;
-                
+
                 let defaultTableId = null;
                 if (!usedInitialTable && initialTableId !== undefined && tables.some(([id]) => id === String(initialTableId))) {
                     defaultTableId = String(initialTableId);
                     usedInitialTable = true;
                 }
-                
+
                 else if (tables.length >= 1) {
                     const [singleTableId, _] = tables[0]
                     defaultTableId = singleTableId;
@@ -631,5 +631,5 @@
             selectedService = initialServiceId;
             populateSchemas(initialServiceId);
         }
-    }); 
+    });
 </script>

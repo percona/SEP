@@ -116,7 +116,7 @@ async def update_task(
             status_code=400, detail="Task update failed or no changes applied"
         )
 
-    return await TaskManager.retrieve_by_name(session, task_name)
+    return await TaskManager.retrieve_by_name(session, task_update.name)
 
 
 @router.get(

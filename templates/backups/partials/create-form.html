@@ -10,12 +10,14 @@
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 0;
+        display: none;
         max-height: 0;
         pointer-events: none;
     }
 
     .visible {
         opacity: 1;
+        display: block;
         max-height: 1000px; /* Large enough to show all content */
         pointer-events: auto;
     }
