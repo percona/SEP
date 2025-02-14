@@ -122,7 +122,7 @@ table {
     }
 
     body {
-        border-radius: 4.5em;
+        border-radius: unset;
     }
 
     body>header {
@@ -305,7 +305,6 @@ table {
         background-color: #2C323E;
         border: 0;
         border-radius: 2em;
-        color: #93C7FF;
         line-height: 1;
         font-size: 1.1em;
         font-weight: bolder;
@@ -315,12 +314,10 @@ table {
 
     button:not([disabled]):hover {
         cursor: pointer;
-        background-color: #93C7FF;
         color: #2C323E;
     }
 
     button[disabled] {
-        background-color: #93C7FF;
         color: #2C323E;
     }
 
@@ -342,10 +339,6 @@ table {
 
     .flex form {
         overflow: hidden;
-    }
-
-    .flex button.icons {
-        width: 2em;
     }
 
     table button {
@@ -424,54 +417,67 @@ table {
 
 /* Custom CSS from WebTeam */
 
-/*form fieldset div {*/
-/*    margin-bottom: 10px;*/
-/*}*/
+form fieldset div {
+    margin-bottom: 10px;
+}
 
-/*#name {*/
-/*    margin-left: 10px;*/
-/*}*/
+#name {
+    margin-left: 10px;
+}
 
-/*#payload {*/
-/*    height: 200px;*/
-/*    margin-top: 10px;*/
-/*}*/
+#payload {
+    height: 200px;
+    margin-top: 10px;
+}
 
-/*form fieldset fieldset {*/
-/*    margin-left: -15px;*/
-/*    margin-top: 10px;*/
+form fieldset fieldset {
+    margin-left: -15px;
+    margin-top: 10px;
+}
 
-/*}*/
+main form button {
+    background-color: #4B5468;
+    color: white;
+    padding-left: 28px;
+    padding-right: 30px;
+    padding-bottom: 10px;
+    font-weight: normal;
+    border: solid 2px white;
+}
 
-/*main form button {*/
-/*    background-color: #4B5468;*/
-/*    color: white;*/
-/*    padding-left: 28px;*/
-/*    padding-right: 30px;*/
-/*    padding-bottom: 10px;*/
-/*    font-weight: normal;*/
-/*}*/
+main form button:hover, td button:hover, button.confirm-btn:hover {
+    background-color: white;
+    border: solid 2px #4B5468;
+    color: #4B5468;
+}
 
-/*main form button:hover {*/
-/*    background-color: #3a4151 !important;*/
-/*}*/
+button.icons, button.confirm-btn {
+    width: 2.2em;
+    height: 2.2em;
+    border: solid 2px white;
+    color: white;
+    background-color: #4B5468;
+    padding-left: 0.5em !important;
+    padding-right: 0.5em !important;
+    padding-bottom: 0.5em !important;
+}
 
-/*body > main:nth-child(3) > p:nth-child(3) {*/
-/*    font-size: 50px;*/
-/*    text-align: center;*/
-/*}*/
+body > main:nth-child(3) > p:nth-child(3) {
+    font-size: 50px;
+    text-align: center;
+}
 
-/*#sep > ul > li.signout > a {*/
-/*    background-color: #fc3519;*/
-/*}*/
+#sep > ul > li.signout > a {
+    background-color: #fc3519;
+}
 
-/*body > main:nth-child(3) > form:nth-child(4) > fieldset:nth-child(1) {*/
-/*    display: flex;*/
-/*    flex-direction: column;*/
-/*    width: 20.833vw;*/
-/*    gap: 0.5em;*/
-/*}*/
+body > main:nth-child(3) > form:nth-child(4) > fieldset:nth-child(1) {
+    display: flex;
+    flex-direction: column;
+    width: 20.833vw;
+    gap: 0.5em;
+}
 
-/*html.zglea.idc0_350 body.has-fixed-sidenav main form fieldset input#name {*/
-/*    margin-left: unset;*/
-/*}*/
+html.zglea.idc0_350 body.has-fixed-sidenav main form fieldset input#name {
+    margin-left: unset;
+}
