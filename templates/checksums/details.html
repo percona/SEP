@@ -18,17 +18,15 @@
     }
 </style>
 {% if history or running_tasks %}
-<link rel="stylesheet" href="/static/logs.css">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
 {% endif %}
-{% endblock %}
-
+{% endblock style %}
 {% block behaviours_optimized_extra %}
+<script src="{{ url_for('static', path='/js/relativeTime.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 {% if history or running_tasks %}
-<script>const logsPath = "/checksums/logs/";</script>
-<script src="/static/logs.js"></script>
+<script src="{{ url_for('static', path='/js/logs.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
 {% endif %}
-{% endblock %}
-
+{% endblock behaviours_optimized_extra %}
 {% block main %}
 <table class="row section">
     <caption>Overview</caption>
@@ -42,8 +40,8 @@
     <tbody>
         <tr>
             <td>{{ task.hostname }}</td>
-            <td>{{ task.created_at }}</td>
-            <td>{{ task.updated_at }}</td>
+            <td class="relativeTime">{{ task.created_at }}</td>
+            <td class="relativeTime">{{ task.updated_at }}</td>
         </tr>
     </tbody>
     <tfoot>
@@ -131,4 +129,4 @@
     {% set history_tasks = history %}
     {% include "tasks/partials/completed-tasks.html" %}
 </section>
-{% endblock %}
+{% endblock main %}

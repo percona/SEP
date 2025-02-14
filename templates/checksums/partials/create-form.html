@@ -73,6 +73,16 @@
         flex: none;
         margin-right: 0.5em;
     }
+
+    pre {
+        white-space: break-spaces;
+    }
+
+        {
+            {
+            syntax_highlight_css(style="monokai")
+        }
+    }
 </style>
 {% set form_class = "modal" if modal_required else "" %}
 <form action="" method="post" class="{{ form_class }}" style="padding-left: 0;">
@@ -82,17 +92,19 @@
         <fieldset>
             <legend>Executor Host</legend>
             <div class="field">
-                <label for="hostname">Select host</label>
+                {% set hostname_title = "Select the hostname of the target system for task execution." %}
+                <label for="hostname" title="{{ hostname_title }}">Select host</label>
                 {% if executor_hosts|length == 1 %}
                 {% set single_service = executor_hosts[0] %}
-                <select id="hostname" name="hostname" disabled>
+                <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
                     <option value="{{ single_service }}" selected>{{ single_service }}</option>
                 </select>
                 <input type="hidden" name="hostname" value="{{ single_service }}">
                 {% else %}
                 <select id="hostname" name="hostname">
                     {% for executor_host in executor_hosts %}
-                    <option value="{{ executor_host }}">{{ executor_host }}</option>
+                    <option value="{{ executor_host }}">{{ executor_host }}
+                    </option>
                     {% endfor %}
                 </select>
                 {% endif %}
@@ -102,22 +114,25 @@
         <fieldset>
             <legend>Checksum details</legend>
             <div class="field">
-                <label for="task_name">Task name</label>
-                <input type="text" id="task_name" name="task_name" class="validate" required>
+                {% set task_name_title = "Type the name of task to be created." %}
+                <label for="task_name" title="{{ task_name_title }}">Task name</label>
+                <input type="text" + id="task_name" + name="task_name" + class="validate" + required +
+                    title="{{ task_name_title }}" + placeholder="Enter a unique task name">
             </div>
             <div class="field">
-                <label for="service_id">Database host</label>
+                {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                <label for="service_id" title="{{ service_id_title }}">Database host</label>
                 {% if mysql_services|length == 1 %}
                 {% set single_service = mysql_services[0] %}
-                <select id="service_id" name="service_id" disabled>
+                <select id="service_id" name="service_id" title="{{ service_id_title }}" disabled>
                     <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
                 </select>
                 <input type="hidden" name="service_id" value="{{ single_service.id }}">
                 {% else %}
-                <select id="service_id" name="service_id" required>
+                <select id="service_id" name="service_id" title="{{ service_id_title }}" required>
                     <option value="" selected>Select a database host</option>
                     {% for service in mysql_services %}
-                    <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                    <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                     {% endfor %}
                 </select>
                 {% endif %}
@@ -264,7 +279,7 @@ table.id: {
 {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
 
-<script type="text/javascript">
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas| tojson }};
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
@@ -278,9 +293,10 @@ table.id: {
         schemaSelect.disabled = true;
         schemaSelect.innerHTML = '<option value="-1"> </option>';
         selectedSchema = null;
+        selectedServiceNum = Number(selectedService);
 
-        if (selectedService && serviceSchemas[selectedService]) {
-            const schemas = Object.entries(serviceSchemas[selectedService]);
+        if (selectedService && serviceSchemas[selectedServiceNum]) {
+            const schemas = Object.entries(serviceSchemas[selectedServiceNum]);
             if (schemas.length > 0) {
                 for (const [schemaId, schema] of schemas) {
                     const option = document.createElement('option');
@@ -305,10 +321,10 @@ table.id: {
         tableSelect.disabled = true;
         tableSelect.innerHTML = '<option value="-1"> </option>';
         selectedTable = null;
-        //alert(selectedSchema);
+        selectedServiceNum = Number(selectedService);
 
-        if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
-            const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
+        if (selectedSchema && serviceSchemas[selectedServiceNum][selectedSchema]) {
+            const tables = Object.entries(serviceSchemas[selectedServiceNum][selectedSchema]["tables"]);
             console.log(tables)
             if (tables.length > 0) {
                 for (const [tableId, table] of tables) {
@@ -317,13 +333,6 @@ table.id: {
                     option.textContent = table.name;
                     tableSelect.appendChild(option);
                     tableSelect.disabled = false;
-                }
-                if (tables.length === 1) {
-                    const [singleTableId, _] = tables[0]
-                    // tableSelect.value = singleTableId;
-                    tableSelect.disabled = false;
-                    //tableSelect.insertAdjacentHTML("afterend", `<input id="table_id_hidden" type="hidden" name="table_id" value="${tableSelect.value}">`)
-                    // selectedTable = singleTableId;
                 }
             }
         }

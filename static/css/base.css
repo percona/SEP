@@ -234,6 +234,10 @@ table {
         content: "task";
     }
 
+    .checksums a:before {
+        content: "summarize";
+    }
+
     header {
         display: grid;
         grid-template-areas: "icon title";
