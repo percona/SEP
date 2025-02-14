@@ -260,15 +260,15 @@
         </fieldset>
         <fieldset>
             <div class="field">
-                {% set new_table_id_title = "Type the new table name before it is swapped. Use %T to include the original table name." %}
-                <label for="new_table_id" title="{{ new_table_id_title }}">New Table Name</label>
+                {% set new_table_name_title = "Type the new table name before it is swapped. Use %T to include the original table name." %}
+                <label for="new_table_name" title="{{ new_table_name_title }}">New Table Name</label>
                 <input type="text"
-                       id="new_table_id"
-                       name="new_table_id"
+                       id="new_table_name"
+                       name="new_table_name"
                        class="validate"
                        size="30"
-                       title="{{ new_table_id_title }}"
-                       value="{{ alter_data['new_table_id'] }}"
+                       title="{{ new_table_name_title }}"
+                       value="{{ alter_data['new_table_name'] }}"
                        placeholder=" %T_new_table" />
             </div>
         </fieldset>
