@@ -94,6 +94,11 @@
               action="{{ url_for('tasks_delete', task_name=task.name) }}">
             <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
         </form>
+        <form class="edit-form"
+              id="edit-form"
+              method="get"
+              action="{%- if task.owner == 'alters' -%} {{ request.url_for('alters_detail', task_name=task.name) }} {%- elif task.owner == 'archiver' -%} {{ request.url_for('archives_detail', task_name=task.name) }} {%- elif task.owner == 'backup' -%} {{ request.url_for('backups_detail', task_name=task.name) }} {%- else -%} # {%- endif -%}">
+        </form>
     {% endif %}
     {% if not task.is_template %}
         <section>

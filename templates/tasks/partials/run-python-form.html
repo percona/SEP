@@ -72,6 +72,7 @@
         <input type="datetime-local" class="eta-input" disabled>
         <button type="submit" class="icons send-button submitButton">send</button>
         {% if not task.protected %}
+            <button class="icons edit-button" form="edit-form">edit</button>
             <button class="icons delete-button submitButton delete-tasks-button"
                     form="delete-form">delete forever</button>
         {% endif %}
