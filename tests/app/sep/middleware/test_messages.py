@@ -25,15 +25,6 @@ from app.sep.middleware.messages import (
 
 
 @pytest.fixture
-def dummy_request() -> Request:
-    """Create a dummy Request with a messages attribute in its state."""
-    scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80")}
-    req = Request(scope)
-    req.state.messages = []
-    return req
-
-
-@pytest.fixture
 def app_with_middleware() -> FastAPI:
     """Create an app with the MessagesMiddleware installed."""
     app = FastAPI()
@@ -102,7 +93,7 @@ class TestMessage:
 class TestMessageFunctions:
     """Test add_message, get_messages, and convenience functions."""
 
-    def test_add_message(self, dummy_request: Request):
+    def test_add_message(self, dummy_request):
         """Assert add_message appends a message to the state."""
         add_message(dummy_request, MessageLevel.WARNING, "Warning message", sticky=True)
         msgs = dummy_request.state.messages
@@ -121,7 +112,7 @@ class TestMessageFunctions:
             (error, MessageLevel.ERROR),
         ],
     )
-    def test_convenience_functions(self, dummy_request: Request, func, expected_level):
+    def test_convenience_functions(self, dummy_request, func, expected_level):
         """Assert convenience functions add the correct message."""
         func(dummy_request, "Convenience test", sticky=False)
         msgs = dummy_request.state.messages
@@ -130,7 +121,7 @@ class TestMessageFunctions:
         assert msg.level == expected_level
         assert msg.text == "Convenience test"
 
-    def test_get_messages_all(self, dummy_request: Request):
+    def test_get_messages_all(self, dummy_request):
         """Assert get_messages returns and clears all messages."""
         msgs = [
             Message(level=MessageLevel.INFO, text="Msg 1"),
@@ -141,7 +132,7 @@ class TestMessageFunctions:
         assert ret == msgs
         assert dummy_request.state.messages == []
 
-    def test_get_messages_partial(self, dummy_request: Request):
+    def test_get_messages_partial(self, dummy_request):
         """Assert get_messages returns partial messages."""
         msgs = [
             Message(level=MessageLevel.INFO, text="Msg 1"),

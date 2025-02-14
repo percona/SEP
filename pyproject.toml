@@ -221,6 +221,7 @@ ignore = [
     "TRY003",
     "RUF007",
     "RUF012", # Too much false positives with Pydantic subclasses (https://github.com/astral-sh/ruff/issues/5639)
+    "PLR0913",
 ]
 task-tags = ["TODO"]
 
@@ -239,9 +240,8 @@ order-by-type = false
 "app/core/config.py" = ["ARG003"]
 "app/core/utils/fields.py" = ["TRY004"] # Pydantic validation code should raise ValueError
 "app/tasks/celery.py" = ["ARG001"]
-"app/sep/plugins/inventory/routes.py" = ["PLR0913"]
-"test_*.py" = ["S", "ARG001", "ARG002", "PLR0913", "ANN"]
-"conftest.py" = ["S", "ARG001", "ARG002", "PLR0913"]
+"test_*.py" = ["S", "ARG001", "ARG002", "ANN"]
+"conftest.py" = ["S", "ARG001", "ARG002"]
 
 
 [tool.ruff.format]

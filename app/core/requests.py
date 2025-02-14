@@ -10,7 +10,7 @@ from typing import Any, Self
 from urllib.parse import urljoin
 
 from aiohttp import ClientResponse, ClientResponseError, ClientSession
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from pydantic import computed_field, HttpUrl
 
 from app.core.models import BaseCaseInsensitiveModel
@@ -274,10 +274,18 @@ class RemoteAPI(BaseRemoteAPI):
     :param auth_scheme: The authentication scheme to use (e.g., "Bearer", "Basic").
         Defaults to "Bearer".
     :type auth_scheme: RequiredStr
+    :param error_detail_key: The key to expect error details to be. Defaults to
+        "detail".
+    :type error_detail_key: RequiredStr
+    :param error_code_key: The key to expect error codes to be, or None if no error
+        code is expected. Defaults to None.
+    :type error_code_key: RequiredStr | None
     """
 
     api_key: str | None = None
     auth_scheme: RequiredStr = "Bearer"
+    error_detail_key: RequiredStr = "detail"
+    error_code_key: RequiredStr | None = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -312,9 +320,7 @@ class RemoteAPI(BaseRemoteAPI):
         :type kwargs: Any
         :return: The JSON response as a Python object.
         :rtype: dict[str, Any] | list[dict[str, Any]]
-        :raises HTTPException: If the request fails due to a server error.
-        :raises ClientResponseError: If the response contains invalid JSON or
-            another low-level error occurs while processing the response.
+        :raises HTTPException: If the request returns an error response.
         """
         async with self._request(method, path, **kwargs) as response:
             try:
@@ -329,24 +335,16 @@ class RemoteAPI(BaseRemoteAPI):
                 )
                 response.raise_for_status()
             except ClientResponseError as e:
-                error_response = {
-                    "error": "ClientResponseError",
-                    "status_code": e.status,
-                    "message": e.message,
-                }
-
-                if e.status == status.HTTP_500_INTERNAL_SERVER_ERROR:
-                    error_response.update(
-                        {"details": "An unexpected error occurred on the server."}
-                    )
-                else:
-                    error_detail = response_data.get(
-                        "detail", "No additional details available."
-                    )
-                    error_response.update({"details": error_detail})
-
+                error_detail = response_data.get(
+                    self.error_detail_key, "An unexpected error occurred on the server."
+                )
+                error_headers = None
+                if self.error_code_key and (
+                    error_code := response_data.get(self.error_code_key)
+                ):
+                    error_headers = {"X-Error-Code": error_code}
                 raise HTTPException(
-                    status_code=e.status, detail=error_response
+                    status_code=e.status, detail=error_detail, headers=error_headers
                 ) from None
 
             return response_data

@@ -7,7 +7,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel
 from sqlalchemy import CursorResult, delete, func, inspect, ScalarResult, Select
 from sqlalchemy.engine import TupleResult
-from sqlalchemy.exc import IntegrityError, NoResultFound
+from sqlalchemy.exc import DatabaseError, NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import ColumnExpressionArgument
@@ -288,18 +288,16 @@ class BaseManager:
         :type flag_modified_fields: Sequence[str]
         :return: The saved instance.
         :rtype: T
-        :raises HTTPConflictException: If an integrity error occurs during commit.
+        :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
         """
         for field in flag_modified_fields:
             flag_modified(instance, field)
         session.add(instance)
         try:
             await session.commit()
-        except IntegrityError as exc:
-            logger.info("IntegrityError saving instance %s", instance, exc_info=True)
-            raise HTTPConflictException(
-                exc.args[0],
-            ) from None  # TODO: Improve error message  # noqa: TD002, TD003
+        except DatabaseError:
+            logger.exception("DatabaseError saving instance %s", instance)
+            raise HTTPBadRequestException from None
         else:
             logger.debug("Saved instance of %s: %s", cls.Model.__name__, instance)
         await session.refresh(instance)
@@ -543,6 +541,50 @@ class BaseSQLModelManager(BaseManager):
         ):
             extra_fields[pk_column.name] = None
         return cls.Model.model_validate(instance_create, update=extra_fields)
+
+    @classmethod
+    async def save(
+        cls,
+        session: AsyncSession,
+        instance: T,
+        *,
+        flag_modified_fields: Sequence[str] = (),
+    ) -> T:
+        """Save a model instance to the database.
+
+        This method overrides `BaseManager.save()` to check for duplicate errors for
+        each unique index of the Model.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance: The model instance to be saved.
+        :type instance: T
+        :param flag_modified_fields: Fields to be flagged as modified before saving.
+        :type flag_modified_fields: Sequence[str]
+        :return: The saved instance.
+        :rtype: T
+        :raises HTTPConflictException: If saving the instance would cause a duplicate
+            entry database error.
+        :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
+        """
+        for index in inspect(cls.Model).local_table.indexes:
+            if index.unique:
+                equal_filters = {
+                    column.name: getattr(instance, column.name, None)
+                    for column in index.columns
+                }
+                if all(equal_filters.values()):
+                    duplicate = await cls.first(
+                        session, col(cls.Model.id) != instance.id, **equal_filters
+                    )
+                    if duplicate is not None:
+                        raise HTTPConflictException(
+                            f"{cls.Model.__name__} with the same {', '.join(equal_filters)} already exists."
+                        )
+        return await super().save(
+            session, instance, flag_modified_fields=flag_modified_fields
+        )
 
     @classmethod
     async def update(

@@ -2,6 +2,7 @@
 
 import pytest
 import pytest_asyncio
+from fastapi import Request
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
@@ -30,3 +31,12 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
         yield client
 
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def dummy_request() -> Request:
+    """Create a dummy Request with a messages attribute in its state."""
+    scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80")}
+    req = Request(scope)
+    req.state.messages = []
+    return req

@@ -4,8 +4,10 @@ from base64 import b64encode
 from functools import cached_property
 from typing import Any, Literal, Self
 
+from fastapi import HTTPException
 from pydantic import computed_field, model_validator
 
+from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.requests import RemoteAPI
 from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
 
@@ -54,6 +56,12 @@ class CasdoorSDK(RemoteAPI):
     :param allowed_issuers: The allowed token issuers (iss) for JWT validation.
         Defaults to an empty list.
     :type allowed_issuers: set[StrHttpUrl] | Literal["*"]
+    :param error_detail_key: The key to expect errors details to be. Defaults to
+        "message".
+    :type error_detail_key: RequiredStr
+    :param error_code_key: The key to expect error codes to be, or None if no error
+        code is expected. Defaults to "code".
+    :type error_code_key: RequiredStr | None
     """
 
     logger_name: str = __name__
@@ -65,6 +73,8 @@ class CasdoorSDK(RemoteAPI):
     front_endpoint: URL = URL()
     certificate_path: RelativeFilePath | None = None
     allowed_issuers: set[StrHttpUrl] | Literal["*"] = set()
+    error_detail_key: RequiredStr = "error_description"
+    error_code_key: RequiredStr | None = "error"
 
     @computed_field
     @cached_property
@@ -194,20 +204,31 @@ class CasdoorSDK(RemoteAPI):
         :type password: str | None
         :return: The OAuth token response from Casdoor.
         :rtype: dict[str, Any]
+        :raises HTTPUnauthorizedException: If authentication fails due to incorrect
+            credentials.
+        :raises HTTPException: If Casdoor responds with an unexpected error.
         """
         data = {
             "grant_type": "client_credentials",
             "client_id": self.client_id,
             "client_secret": self.client_secret,
         }
+        invalid_grant_message = "Invalid credentials."
         if code:
             data["code"] = code
             data["grant_type"] = "authorization_code"
+            invalid_grant_message = "Invalid authorization code."
         elif username and password:
             data["username"] = username
             data["password"] = password
             data["grant_type"] = "password"
-        return await self.post("/api/login/oauth/access_token", json=data)
+            invalid_grant_message = "Invalid username or password."
+        try:
+            return await self.post("/api/login/oauth/access_token", json=data)
+        except HTTPException as exc:
+            if exc.headers.get("X-Error-Code") == "invalid_grant":
+                raise HTTPUnauthorizedException(invalid_grant_message) from None
+            raise
 
     async def get_version_info(self) -> dict[str, Any]:
         """Retrieve the current version information from Casdoor.

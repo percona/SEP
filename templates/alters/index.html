@@ -63,7 +63,11 @@
             <h2>Saved</h2>
             {% include "alters/partials/saved-tasks.html" %}
             <h3>Configure a schema change</h3>
-            {% include "alters/partials/create-form.html" %}
+            {% if executor_hosts|length < 1 %}
+                <p>Unable to find suitable executor hosts.</p>
+            {% else %}
+                {% include "alters/partials/create-form.html" %}
+            {% endif %}
         </section>
         <section id="pending-tasks">
             <h2>Pending</h2>

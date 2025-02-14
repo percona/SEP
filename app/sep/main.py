@@ -28,8 +28,7 @@ from app.sep.deps import (
     IsNotAuthenticated,
 )
 from app.sep.exceptions import LoginRedirectException
-from app.sep.middleware import CSRFMiddleware
-from app.sep.middleware.messages import MessagesMiddleware
+from app.sep.middleware import CSRFMiddleware, messages
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +38,8 @@ sep_app = create_app(
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
 )
+sep_app.add_middleware(CSRFMiddleware)
+sep_app.add_middleware(messages.MessagesMiddleware)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 
@@ -69,30 +70,7 @@ User = get_user_model()
 templates = sep_settings.TEMPLATES
 
 
-# TODO: Improve exception handlers, maybe use it for redirects  # noqa: TD002, TD003
 # TODO: better errors for external services -- pmm, nomad, casdoor  # noqa: TD002, TD003
-@sep_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
-async def custom_error_handler(
-    request: Request,
-    exc: BaseException,
-) -> Response:
-    """Load custom error page."""
-    base_url = get_base_url(request)
-    try:
-        # TODO: Refactor  # noqa: TD002, TD003
-        user = await get_current_user(request)
-    except LoginRedirectException as redirect_exc:
-        return RedirectResponse(
-            redirect_exc.location,
-            status_code=redirect_exc.status_code,
-        )
-    status_code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return templates.TemplateResponse(
-        request=request,
-        status_code=status_code,
-        name="error.html",
-        context={"exception": exc, **get_default_context(request, user, base_url)},
-    )
 
 
 @sep_app.exception_handler(status.HTTP_404_NOT_FOUND)
@@ -123,13 +101,28 @@ async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> N
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
+@sep_app.exception_handler(HTTPException)
+async def default_exception_handler(
+    request: Request, exc: HTTPException
+) -> RedirectResponse:
+    """Define default exception handler."""
+    error_detail = exc.detail
+    messages.error(request, error_detail)
+    return RedirectResponse(
+        request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
 @sep_app.get("/login", dependencies=[IsNotAuthenticated])
 async def login_form(request: Request) -> HTMLResponse:
     """Display login form."""
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={"csrf_token": request.state.csrf_token},
+        context={
+            "csrf_token": request.state.csrf_token,
+            "messages": messages.get_messages(request),
+        },
     )
 
 
@@ -174,12 +167,6 @@ async def read_root(
         context=context,
     )
 
-
-sep_app.add_middleware(CSRFMiddleware)
-sep_app.add_middleware(MessagesMiddleware)
-
-
-# TODO: take all these logics from routes layer  # noqa: TD002, TD003
 
 if __name__ == "__main__":
     logging.config.dictConfig(settings.LOGGING_CONFIG)

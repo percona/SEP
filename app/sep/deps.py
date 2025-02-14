@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
-from fastapi import Depends, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
 from jwt import InvalidTokenError
@@ -31,7 +31,7 @@ from app.sep.inventory import (
     CreatedTable,
     ENTITY_MAPPING,
 )
-from app.sep.middleware.messages import get_messages
+from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
@@ -180,7 +180,7 @@ def get_default_context(
         "plugins": sep_settings.PLUGINS,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": request.state.csrf_token,
-        "messages": get_messages(request),
+        "messages": messages.get_messages(request),
     }
 
 
@@ -379,6 +379,7 @@ CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
 async def get_tasks_context(
+    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
@@ -391,6 +392,8 @@ async def get_tasks_context(
     Inventory and Tasks APIs. It organizes tasks based on their status and integrates
     them into the provided context.
 
+    :param request: The HTTP request object.
+    :type request: Request
     :param inventory_api: The API client used to interact with the inventory service.
     :type inventory_api: RemoteAPI
     :param tasks_api: The API client used to interact with the tasks service.
@@ -434,7 +437,13 @@ async def get_tasks_context(
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
     periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
-    executor_hosts = await tasks_api.get("/hosts/")
+
+    try:
+        executor_hosts = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        executor_hosts = {}
+        messages.error(request, exc.detail)
+
     context = default_context or {}
     context.update(
         {
@@ -452,7 +461,10 @@ async def get_tasks_context(
 
 
 async def get_tasks_index_context(
-    inventory_api: InventoryAPI, tasks_api: TaskAPI, default_context: DefaultContext
+    request: Request,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+    default_context: DefaultContext,
 ) -> dict[str, Any]:
     """Assemble the context for the Homepage.
 
@@ -460,6 +472,8 @@ async def get_tasks_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
+    :param request: The HTTP request object.
+    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
@@ -481,7 +495,11 @@ async def get_tasks_index_context(
     for periodic_task in periodic_tasks:
         task_name = periodic_task.get("task")
         periodic_task["owner"] = task_owner_mapping.get(task_name)
-    executor_hosts = await tasks_api.get("/hosts/")
+    try:
+        executor_hosts = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        executor_hosts = {}
+        messages.error(request, exc.detail)
     inventories = await inventory_api.get("/summary/")
     plugins = sep_settings.PLUGINS
     is_task_manager_enabled = any(

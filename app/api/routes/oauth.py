@@ -29,19 +29,12 @@ async def create_oauth_token(
     :type form_data: OAuth2PasswordRequestForm
     :return: The OAuth token for the user.
     :rtype: OAuthToken
-    :raises HTTPUnauthorizedException: If authentication fails due to incorrect
-        credentials.
     :raises InactiveUserException: If the user is not active.
     """
-    try:
-        oauth_token = await User.get_oauth_token(
-            username=form_data.username,
-            password=form_data.password,
-        )
-    except ValidationError:
-        logger.exception("Failed to authenticate user")
-        raise HTTPUnauthorizedException("Incorrect username or password") from None
-
+    oauth_token = await User.get_oauth_token(
+        username=form_data.username,
+        password=form_data.password,
+    )
     user = await User.from_jwt(oauth_token.access_token)
     if not user.is_active:
         raise InactiveUserException

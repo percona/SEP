@@ -1,6 +1,7 @@
 """Define reusable exceptions."""
 
 from fastapi import HTTPException, status
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class HTTPNotFoundException(HTTPException):
@@ -39,7 +40,7 @@ class HTTPBadRequestException(HTTPException):
         super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
-class HTTPRedirectException(HTTPException):
+class HTTPRedirectException(StarletteHTTPException):
     """Define exception raised for redirects.
 
     :param location: The URL to which the client should be redirected.
