@@ -54,17 +54,22 @@ class TestLogin:
         to verify credentials, (b) serialize the access token, (c) set a cookie,
         and (d) return a redirect response.
         """
+        username = "testuser"
         fake_access_token = "fake_access_token"
         get_oauth_token_patch = mocker.patch(
             "app.sep.main.User.get_oauth_token",
             new_callable=mocker.AsyncMock,
             return_value=OAuthTokenFactory.build(access_token=fake_access_token),
         )
+        invalidate_tokens_for_user_patch = mocker.patch(
+            "app.sep.main.User.invalidate_tokens_for_user",
+            new_callable=mocker.AsyncMock,
+        )
         dumps_patch = mocker.patch(
             "app.sep.main.crypto_timestamp_serializer.dumps",
             return_value="serialized_fake_token",
         )
-        form_data = {"username": "testuser", "password": "secret"}
+        form_data = {"username": username, "password": "secret"}
 
         response = test_client.post("/login", data=form_data, allow_redirects=False)
 
@@ -74,7 +79,10 @@ class TestLogin:
         assert sep_settings.SESSION.COOKIE_NAME in cookie_header
         assert "serialized_fake_token" in cookie_header
         get_oauth_token_patch.assert_awaited_once_with(
-            username="testuser", password="secret"
+            username=username, password="secret"
+        )
+        invalidate_tokens_for_user_patch.assert_awaited_once_with(
+            username, exclude_tokens=[fake_access_token]
         )
         dumps_patch.assert_called_once_with(fake_access_token)
 
@@ -184,7 +192,7 @@ def test_default_error_handler(mocker, test_client):
     """Test that HTTPExceptions are caught and properly handled."""
     error_detail = "Internal Server Error"
     fake_referer = "/fake-page"
-    sep_app.dependency_overrides[get_tasks_index_context] = dict
+    sep_app.dependency_overrides[get_tasks_index_context] = lambda: {"message": "hi"}
     mocker.patch(
         "app.sep.main.templates.TemplateResponse",
         side_effect=HTTPException(
