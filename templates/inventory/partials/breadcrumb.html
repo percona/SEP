@@ -1,23 +1,77 @@
-{% if schema is defined %}
-    <nav>
-        Inventory >
-        {{ schema.service.node.name }} >
-        {{ schema.service.name }} >
-        {{ schema.name }}
-    </nav>
-{% elif service is defined %}
-    <nav>
-        Inventory >
-        {{ service.node.name }} >
-        {{ service.name }}
-    </nav>
-{% elif node is defined %}
-    <nav>
-        Inventory >
-        {{ node.name }}
+<style>
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    gap: 8px;
+}
+
+.breadcrumb li {
+    display: flex;
+    align-items: center;
+}
+
+.breadcrumb li a {
+    text-decoration: none;
+    background: none;
+    color: #303642;
+    display: flex;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+}
+
+.breadcrumb li a:hover {
+    background: none;
+    color: #007bff;
+}
+
+.breadcrumb li a i {
+    font-size: 1.2em;
+}
+
+.breadcrumb li:not(:last-child)::after {
+    content: " > ";
+    padding: 0 6px;
+    color: #888;
+}
+</style>
+{% if schema is defined or service is defined or node is defined %}
+    <nav aria-label="breadcrumb">
+        <ul class="breadcrumb">
+            <li>
+                <a href="{{ url_for('read_root') }}"><i class="icons">home</i></a>
+            </li>
+            <li>
+                <a href="{{ url_for('node_list') }}">Inventory</a>
+            </li>
+            {% if schema is defined %}
+                <li>
+                    <a href="{{ url_for('node_detail', node_id=schema.service.node.id) }}">{{ schema.service.node.name }}</a>
+                </li>
+                <li>
+                    <a href="{{ url_for('service_detail', service_id=schema.service.id) }}">{{ schema.service.name }}</a>
+                </li>
+                <li>{{ schema.name }}</li>
+            {% elif service is defined %}
+                <li>
+                    <a href="{{ url_for('node_detail', node_id=service.node.id) }}">{{ service.node.name }}</a>
+                </li>
+                <li>{{ service.name }}</li>
+            {% elif node is defined %}
+                <li>{{ node.name }}</li>
+            {% endif %}
+        </ul>
     </nav>
 {% else %}
-    <nav>
-        Inventory
+    <nav aria-label="breadcrumb">
+        <ul class="breadcrumb">
+            <li>
+                <a href="{{ url_for('read_root') }}"><i class="icons">home</i></a>
+            </li>
+            <li>Inventory</li>
+        </ul>
     </nav>
 {% endif %}
