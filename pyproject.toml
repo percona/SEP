@@ -51,7 +51,7 @@ python-nomad = "^2.0.0"
 SQLAlchemy = "^2.0.34"
 urllib3 = "^2.2.2"
 uvicorn = {extras = ["standard"], version = "^0.32.0"}
-cryptography = "^43.0.1"
+cryptography = "^44.0.1"
 pyjwt = "^2.10.1"
 yarl = "^1.9.2"
 jinja2 = "^3.1.5"
