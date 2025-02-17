@@ -445,13 +445,16 @@ main form button {
     border: solid 2px white;
 }
 
-main form button:hover, td button:hover, button.confirm-btn:hover {
+main form button:hover,
+td button:hover,
+button.confirm-btn:hover {
     background-color: white;
     border: solid 2px #4B5468;
     color: #4B5468;
 }
 
-button.icons, button.confirm-btn {
+button.icons,
+button.confirm-btn {
     width: 2.2em;
     height: 2.2em;
     border: solid 2px white;
@@ -462,16 +465,16 @@ button.icons, button.confirm-btn {
     padding-bottom: 0.5em !important;
 }
 
-body > main:nth-child(3) > p:nth-child(3) {
+body>main:nth-child(3)>p:nth-child(3) {
     font-size: 50px;
     text-align: center;
 }
 
-#sep > ul > li.signout > a {
+#sep>ul>li.signout>a {
     background-color: #fc3519;
 }
 
-body > main:nth-child(3) > form:nth-child(4) > fieldset:nth-child(1) {
+body>main:nth-child(3)>form:nth-child(4)>fieldset:nth-child(1) {
     display: flex;
     flex-direction: column;
     width: 20.833vw;

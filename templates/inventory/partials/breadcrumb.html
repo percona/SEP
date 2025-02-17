@@ -1,0 +1,23 @@
+{% if schema is defined %}
+    <nav>
+        Inventory >
+        {{ schema.service.node.name }} >
+        {{ schema.service.name }} >
+        {{ schema.name }}
+    </nav>
+{% elif service is defined %}
+    <nav>
+        Inventory >
+        {{ service.node.name }} >
+        {{ service.name }}
+    </nav>
+{% elif node is defined %}
+    <nav>
+        Inventory >
+        {{ node.name }}
+    </nav>
+{% else %}
+    <nav>
+        Inventory
+    </nav>
+{% endif %}

@@ -32,6 +32,7 @@
     {% endif %}
 {% endblock behaviours %}
 {% block main %}
+    {% include "inventory/partials/breadcrumb.html" %}
     {% block inventory_entity_details %}
     {% endblock inventory_entity_details %}
     {% block inventory_table %}

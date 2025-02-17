@@ -363,9 +363,16 @@ async def get_created_schema(
     :return: The validated `CreatedSchema` instance.
     :rtype: CreatedSchema
     """
-    return await get_created_entity(
+    schema = await get_created_entity(
         inventory_api, SyncInventoryEntityTypeEnum.SCHEMA, schema_id
     )
+
+    if schema.service and schema.service.node_id and not schema.service.node:
+        node = await get_created_entity(
+            inventory_api, SyncInventoryEntityTypeEnum.NODE, schema.service.node_id
+        )
+        schema.service.node = node
+    return schema
 
 
 CreatedSchemaDep = Annotated[CreatedSchema, Depends(get_created_schema)]
