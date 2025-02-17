@@ -15,10 +15,11 @@
 
 .close-button {
     position: absolute;
-    top: 0.5em;
+    top: 0.4em;
     right: 1em;
-    background: none;
-    color: inherit;
+    background: none !important;
+    color: inherit !important;
+    border: 0 !important;
     margin-top: 0;
 }
 
