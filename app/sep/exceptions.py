@@ -20,7 +20,8 @@ class LoginRedirectException(HTTPRedirectException):
 
     def __init__(self, request: Request) -> None:
         super().__init__(
-            request.url_for("login").path, status_code=status.HTTP_303_SEE_OTHER
+            f"{request.url_for('login').path}?next={request.url.path}",
+            status_code=status.HTTP_303_SEE_OTHER,
         )
         cookie = SimpleCookie()
         cookie[sep_settings.SESSION.COOKIE_NAME] = ""

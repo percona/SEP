@@ -1,9 +1,10 @@
 """Define SEP routes."""
 
 import logging.config
+from traceback import format_exception
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
@@ -12,10 +13,12 @@ from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
+from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
-from app.core.utils import import_var
+from app.core.utils import import_var, run_pydantic_type_validator
+from app.core.utils.fields import URIPath
 from app.sep.config import CsrfSettings, sep_settings
 from app.sep.deps import (
     AccessTokenCookie,
@@ -70,7 +73,29 @@ User = get_user_model()
 templates = sep_settings.TEMPLATES
 
 
-# TODO: better errors for external services -- pmm, nomad, casdoor  # noqa: TD002, TD003
+@sep_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
+async def internal_error_handler(
+    request: Request,
+    exc: BaseException,
+) -> HTMLResponse:
+    """Load custom error page."""
+    base_url = get_base_url(request)
+    logger.exception("Unhandled exception:", exc_info=exc)
+    user = await get_current_user(request)
+    messages.error(
+        request,
+        "Internal Server Error. Please contact the administrators for help.",
+        sticky=True,
+    )
+    return templates.TemplateResponse(
+        request=request,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        name="error.html",
+        context={
+            "exception": "".join(format_exception(exc, limit=-1, chain=False)),
+            **get_default_context(request, user, base_url),
+        },
+    )
 
 
 @sep_app.exception_handler(status.HTTP_404_NOT_FOUND)
@@ -101,6 +126,24 @@ async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> N
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
+@sep_app.exception_handler(BaseAuthProviderException)
+async def auth_provider_exception_handler(
+    request: Request, exc: BaseAuthProviderException
+) -> RedirectResponse:
+    """Handle exceptions raised by auth providers."""
+    logger.exception("Error connecting to auth provider:", exc_info=exc)
+    messages.error(request, exc.detail, sticky=True)
+    next_path = request.query_params.get("next", request.url.path)
+    redirect_location = request.url_for("login").path
+    if next_path and next_path != redirect_location:
+        redirect_location += f"?next={next_path}"
+    response = RedirectResponse(
+        redirect_location, status_code=status.HTTP_303_SEE_OTHER
+    )
+    response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
+    return response
+
+
 @sep_app.exception_handler(HTTPException)
 async def default_exception_handler(
     request: Request, exc: HTTPException
@@ -114,7 +157,9 @@ async def default_exception_handler(
 
 
 @sep_app.get("/login", dependencies=[IsNotAuthenticated])
-async def login_form(request: Request) -> HTMLResponse:
+async def login_form(
+    request: Request, next_path: Annotated[str, Query(alias="next")] = "/"
+) -> HTMLResponse:
     """Display login form."""
     return templates.TemplateResponse(
         request=request,
@@ -122,6 +167,7 @@ async def login_form(request: Request) -> HTMLResponse:
         context={
             "csrf_token": request.state.csrf_token,
             "messages": messages.get_messages(request),
+            "next_path": next_path,
         },
     )
 
@@ -129,6 +175,7 @@ async def login_form(request: Request) -> HTMLResponse:
 @sep_app.post("/login", dependencies=[IsNotAuthenticated, IsCsrfValidated])
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    next_path: Annotated[str, Query(alias="next")] = "/",
 ) -> RedirectResponse:
     """Authenticate user from their username and password."""
     oauth_token = await User.get_oauth_token(
@@ -138,7 +185,11 @@ async def login(
         await User.invalidate_tokens_for_user(
             form_data.username, exclude_tokens=[oauth_token.access_token]
         )
-    response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+    try:
+        next_path = run_pydantic_type_validator(URIPath, next_path)
+    except ValidationError:
+        next_path = "/"
+    response = RedirectResponse(next_path, status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         **sep_settings.SESSION.model_dump(by_alias=True),
         value=crypto_timestamp_serializer.dumps(oauth_token.access_token),

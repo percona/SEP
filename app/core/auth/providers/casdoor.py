@@ -6,12 +6,35 @@ from functools import cached_property
 from math import ceil
 from typing import Any, Literal, Self
 
-from fastapi import HTTPException
+from aiohttp import ClientConnectionError
+from fastapi import HTTPException, status
 from pydantic import computed_field, model_validator
 
-from app.core.auth.exceptions import HTTPUnauthorizedException
+from app.core.auth.exceptions import (
+    BaseAuthProviderException,
+    HTTPUnauthorizedException,
+)
 from app.core.requests import RemoteAPI
 from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
+
+
+class CasdoorException(BaseAuthProviderException):
+    """Define exception for Casdoor connection errors.
+
+    :param status_code: The HTTP status code for the error response. Defaults to
+        502 (Bad Gateway).
+    :type status_code: int
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Casdoor error".
+    :type detail: str
+    """
+
+    def __init__(
+        self,
+        status_code: int = status.HTTP_502_BAD_GATEWAY,
+        detail: str = "Casdoor error",
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail)
 
 
 # TODO: Make Casdoor optional, custom auth backend model selectable in settings  # noqa: TD002, TD003
@@ -157,6 +180,32 @@ class CasdoorSDK(RemoteAPI):
         }
         return self.front_endpoint.replace(**url_data)
 
+    async def request(
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Perform an HTTP request and return the JSON response.
+
+        :param method: The HTTP method to use for the request.
+        :type method: str
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :raises HTTPException: If the request returns an error response.
+        """
+        try:
+            return await super().request(method, path, **kwargs)
+        except ClientConnectionError:
+            self.logger.exception("Failed to connect to Casdoor.")
+            raise CasdoorException(
+                detail=f"Cannot connect to Casdoor at {self.endpoint}"
+            ) from None
+
     async def refresh_token_request(
         self,
         refresh_token: str,
@@ -228,7 +277,7 @@ class CasdoorSDK(RemoteAPI):
         try:
             return await self.post("/api/login/oauth/access_token", json=data)
         except HTTPException as exc:
-            if exc.headers.get("X-Error-Code") == "invalid_grant":
+            if exc.headers and exc.headers.get("X-Error-Code") == "invalid_grant":
                 raise HTTPUnauthorizedException(invalid_grant_message) from None
             raise
 

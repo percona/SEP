@@ -9,7 +9,7 @@
           href="{{ url_for('static', path='/css/login.css') }}">
     <section id="login-form">
         <h2>Login</h2>
-        <form method="post" action="{{ url_for('login') }}">
+        <form method="post" action="{{ url_for("login") }}?next={{ next_path }}">
             <fieldset>
                 <legend>Credentials</legend>
                 <label for="username">Username:</label>

@@ -16,7 +16,7 @@ def test_client(regular_user: CasdoorUser) -> TestClient:
     """Create an authenticated test client for the app."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    yield TestClient(sep_app)
+    yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
 
