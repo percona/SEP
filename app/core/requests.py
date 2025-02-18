@@ -9,7 +9,7 @@ from types import TracebackType
 from typing import Any, Self
 from urllib.parse import urljoin
 
-from aiohttp import ClientResponse, ClientResponseError, ClientSession
+from aiohttp import ClientResponse, ClientResponseError, ClientSession, ContentTypeError
 from fastapi import HTTPException
 from pydantic import computed_field, HttpUrl
 
@@ -334,7 +334,20 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                 )
                 response.raise_for_status()
-            except ClientResponseError as e:
+            except ContentTypeError as err:
+                response_content = response.content
+                self.logger.exception(
+                    "%s request to %s%s response content: %s, status: %s",
+                    method,
+                    self.base_url,
+                    path,
+                    response_content,
+                    response.status,
+                )
+                raise HTTPException(
+                    err.status, detail="An unexpected error occurred on the server."
+                ) from None
+            except ClientResponseError as err:
                 error_detail = response_data.get(
                     self.error_detail_key, "An unexpected error occurred on the server."
                 )
@@ -344,7 +357,7 @@ class RemoteAPI(BaseRemoteAPI):
                 ):
                     error_headers = {"X-Error-Code": error_code}
                 raise HTTPException(
-                    status_code=e.status, detail=error_detail, headers=error_headers
+                    status_code=err.status, detail=error_detail, headers=error_headers
                 ) from None
 
             return response_data
