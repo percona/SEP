@@ -178,6 +178,8 @@ async def login(
     next_path: Annotated[str, Query(alias="next")] = "/",
 ) -> RedirectResponse:
     """Authenticate user from their username and password."""
+    # TODO(yan): Prevent malicious account lockout
+    # SEP-277
     oauth_token = await User.get_oauth_token(
         username=form_data.username, password=form_data.password
     )

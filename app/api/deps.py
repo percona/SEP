@@ -18,7 +18,6 @@ from app.core.auth.utils import get_user_model
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# TODO: Consider what grant types to allow  # noqa: TD002, TD003
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/oauth/token")
 
 AuthToken = Annotated[str, Depends(oauth2_scheme)]

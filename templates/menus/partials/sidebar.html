@@ -11,7 +11,6 @@
                     <a href="{{ plugin.uri_path }}/">{{ plugin.name }}</a>
                 </li>
             {% endfor %}
-            {#   TODO: logout route with CSRF post     #}
             <li class="signout sidebar-button">
                 <a href="#" class="submitNextForm">Sign out</a>
                 <form action="{{ url_for('logout') }}"
