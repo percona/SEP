@@ -142,8 +142,8 @@ cat > "$data_dir/casdoor_init_data.json" <<EOL
         "https://localhost/oauth/callback",
         "https://127.0.0.1/oauth/callback"
       ],
-      "tokenFormat": "JWT",
-      "tokenFields": [],
+      "tokenFormat": "JWT-Custom",
+      "tokenFields": ["Owner", "Name", "Id"],
       "expireInHours": 168,
       "failedSigninLimit": 5,
       "failedSigninFrozenTime": 15

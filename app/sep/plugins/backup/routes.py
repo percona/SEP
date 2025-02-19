@@ -34,7 +34,6 @@ async def backups_index(
     context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
 ) -> HTMLResponse:
     """Homepage of backups plugin."""
-    context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
         name="backups/index.html",

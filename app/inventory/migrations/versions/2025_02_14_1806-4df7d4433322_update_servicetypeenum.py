@@ -1,7 +1,7 @@
 """Update ServiceTypeEnum
 
 Revision ID: 4df7d4433322
-Revises: 83707159e945
+Revises: b422e3cb9b35
 Create Date: 2025-02-14 18:06:35.318220
 
 """
@@ -14,7 +14,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = '4df7d4433322'
-down_revision: Union[str, None] = '83707159e945'
+down_revision: Union[str, None] = 'b422e3cb9b35'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

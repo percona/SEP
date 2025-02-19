@@ -1,6 +1,7 @@
 """Define the base auth models."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import datetime
 from functools import cached_property
 from typing import Literal, Self
@@ -190,6 +191,22 @@ class BaseUser(BaseModel, ABC):
 
         :param access_token: The access token to invalidate.
         :type access_token: str
+        """
+
+    @staticmethod
+    @abstractmethod
+    async def invalidate_tokens_for_user(
+        username: str, exclude_tokens: Sequence[str] = ()
+    ) -> None:
+        """Invalidate all OAuth tokens for a user.
+
+        This method must be overridden in subclasses to provide specific logic for
+        invalidating OAuth tokens.
+
+        :param username: The username to invalidate OAuth tokens for.
+        :type username: str
+        :param exclude_tokens: A sequence of access tokens to exclude from invalidation.
+        :type exclude_tokens: Sequence[str]
         """
 
     @classmethod

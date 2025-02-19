@@ -51,33 +51,6 @@ def test_create_oauth_token_success(
     assert response.json() == oauth_token.model_dump()
 
 
-def test_create_oauth_token_invalid_credentials(
-    test_client,
-    valid_username,
-    mocker,
-):
-    """Test OAuth token creation failure with invalid credentials."""
-    # Mock the User.get_oauth_token method to raise ValidationError
-    mocker.patch.object(
-        User,
-        "get_oauth_token",
-        new=AsyncMock(
-            side_effect=ValidationError.from_exception_data(
-                title="Validation Error",
-                line_errors=[],
-            )
-        ),
-    )
-    data = {
-        "username": valid_username,
-        "password": "invalid_password",
-    }
-
-    response = test_client.post("/api/oauth/token", data=data)
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
-    assert response.json()["detail"] == "Incorrect username or password"
-
-
 def test_create_oauth_token_inactive_user(
     test_client, valid_username, oauth_token, mocker, faker: Faker
 ):

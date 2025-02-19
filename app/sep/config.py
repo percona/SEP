@@ -4,7 +4,6 @@ from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
-from urllib.parse import urlencode
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
@@ -31,61 +30,9 @@ from app.core.utils.fields import (
     StrImportableAttribute,
     TimedeltaSeconds,
     UniqueList,
-    URIPath,
-    URL,
 )
 from app.sep.models import Plugin
 from app.sep.utils.jinja import syntax_highlight, syntax_highlight_css
-
-
-class OAuthOptions(BaseModel):
-    """Configuration options for OAuth2 authentication.
-
-    :param REDIRECT_URI: The URI to redirect from OAuth.
-    :type REDIRECT_URI: HttpUrl | URIPath
-    :param POST_LOGIN_URI: The URI to redirect to after login. Defaults to "/".
-    :type POST_LOGIN_URI: HttpUrl | URIPath
-    :param AUTH_LINK: The OAuth link for authentication. Defaults to an empty string.
-    :type AUTH_LINK: str
-    """
-
-    REDIRECT_URI: HttpUrl | URIPath
-    POST_LOGIN_URI: HttpUrl | URIPath = "/"
-    AUTH_LINK: str = ""
-
-    def get_auth_url(self, base_url: URL | None = None) -> str:
-        """Return the OAuth2 authorization URL for user authentication.
-
-        If `self.AUTH_LINK` is defined and not empty, return it. Otherwise, construct
-        the OAuth2 authorization URL with `settings.CASDOOR.get_frontend_url(base_url)`.
-
-        :param base_url: The base URL to be used for constructing the authorization URL.
-            If `REDIRECT_URI` is a relative path, it will use `base_url` as its base.
-        :type base_url: Any
-        :return: The full OAuth2 authorization URL, containing query parameters for
-            Client ID, response type, redirect URI, scope, and state.
-        :rtype: str
-        """
-        if self.AUTH_LINK:
-            return self.AUTH_LINK
-
-        redirect_uri = self.REDIRECT_URI
-
-        if base_url is not None and isinstance(self.REDIRECT_URI, str):
-            redirect_uri = base_url.replace(path=redirect_uri)
-
-        params = {
-            "client_id": settings.CASDOOR.client_id,
-            "response_type": "code",
-            "redirect_uri": redirect_uri,
-            "scope": "read",
-            "state": settings.CASDOOR.application_name,
-        }
-        url = settings.CASDOOR.get_frontend_url(base_url).replace(
-            path="/login/oauth/authorize",
-            query=urlencode(params),
-        )
-        return str(url)
 
 
 class SessionOptions(BaseModel):
@@ -183,8 +130,6 @@ class SEPSettings(BaseYamlAppSettings):
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
     :type UVICORN_PORT: int
-    :param OAUTH: OAuth configuration options.
-    :type OAUTH: OAuthOptions
     :param SESSION: Session configuration options.
     :type SESSION: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
@@ -216,7 +161,6 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
-    OAUTH: OAuthOptions
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
     STATIC_DIR: RelativeDirectoryPath = Path("static")

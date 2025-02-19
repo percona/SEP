@@ -37,7 +37,6 @@ async def tasks_list(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
-    context["csrf_token"] = request.state.csrf_token
     context["tasks"] = await tasks_api.get("/")
     context["running_tasks"] = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
@@ -79,7 +78,6 @@ async def tasks_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve task."""
-    context["csrf_token"] = request.state.csrf_token
     context["task"] = task
     if not task.is_template:
         context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")

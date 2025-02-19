@@ -50,7 +50,34 @@ class PMMRemoteAPI(RemoteAPI):
 
     Provides methods to interact with the PMM inventory system, including fetching nodes
     and services, and managing service associations.
+
+    :param endpoint: The base URL for the external API endpoint.
+    :type endpoint: HttpUrl
+    :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
+    :type verify_ssl: bool
+    :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
+    :type ssl_cafile: RelativeFilePath | None
+    :param ssl_keyfile: Path to the SSL key file. Defaults to None.
+    :type ssl_keyfile: RelativeFilePath | None
+    :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
+    :type ssl_certfile: RelativeFilePath | None
+    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :type logger_name: str
+    :param api_key: The API key for authentication. Defaults to None.
+    :type api_key: str | None
+    :param auth_scheme: The authentication scheme to use (e.g., "Bearer", "Basic").
+        Defaults to "Bearer".
+    :type auth_scheme: RequiredStr
+    :param error_detail_key: The key to expect errors details to be. Defaults to
+        "message".
+    :type error_detail_key: RequiredStr
+    :param error_code_key: The key to expect error codes to be, or None if no error
+        code is expected. Defaults to "code".
+    :type error_code_key: RequiredStr | None
     """
+
+    error_detail_key: RequiredStr = "message"
+    error_code_key: RequiredStr | None = "code"
 
     async def get_node(self, node_id: str) -> Node:
         """Retrieve a PMM node by its external ID.

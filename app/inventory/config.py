@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
+from app.core.middleware.security_headers import SecurityHeadersOptions
 
 
 class InventorySettings(BaseYamlAppSettings):
@@ -18,11 +19,17 @@ class InventorySettings(BaseYamlAppSettings):
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name "inventory.db".
     :type DATABASE: DatabaseOptions
+    :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
+        Use `False` to disable the middleware completely.
+    :type SECURITY_HEADERS: SecurityHeadersOptions | None
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["INVENTORY"]
     UVICORN_PORT: int = 8001
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="inventory.db")
+    SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
+        content_security_policy_strict=False
+    )
 
 
 inventory_settings = InventorySettings()
