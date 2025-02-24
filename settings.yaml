@@ -34,9 +34,14 @@ default:
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
+      - NAME: PBM - Percona Backup for MongoDB
+        MODULE_NAME: backup_mongo
+        URI_PATH: /backup_mongo
+        CSS_CLASS: backup_mongo
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
+
 
 development:
   SEP:
@@ -56,6 +61,7 @@ development:
         PMM:
           ENDPOINT: https://127.0.0.1:8443
           VERIFY_SSL: false
+          SYNCER_EXTRA_KWARGS: eyJrIjoidThFNjZPbUJ5eFN6NTRnbHUzVThFaWdXdFRPU0NGNGkiLCJuIjoic2VwIiwiaWQiOjF9
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
