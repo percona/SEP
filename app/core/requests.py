@@ -16,6 +16,7 @@ from pydantic import computed_field, HttpUrl
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
 from app.core.utils.fields import RelativeFilePath, RequiredStr
+from app.core.utils.logger import PresidioRemoteAPIFilter
 
 
 class BaseRemoteAPI(BaseCaseInsensitiveModel):
@@ -91,7 +92,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             `self.logger_name`.
         :rtype: logging.Logger
         """
-        return logging.getLogger(self.logger_name)
+        logger = logging.getLogger(self.logger_name)
+        logger.level = logger.root.level
+        if not any(isinstance(f, PresidioRemoteAPIFilter) for f in logger.filters):
+            logger.addFilter(PresidioRemoteAPIFilter(logger_name=self.logger_name))
+        return logger
 
     @property
     def session(self) -> ClientSession:

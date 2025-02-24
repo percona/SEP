@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Debug app.main",
+            "type": "python",
+            "request": "launch",
+            "module": "app.main",
+            "env": {
+                "LOGGING": "debug"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Debug Python Tests",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["tests", "-v"],
+            "justMyCode": false,
+            "console": "integratedTerminal"
+          }
+      
+    ]
+}
