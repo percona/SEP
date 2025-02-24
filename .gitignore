@@ -360,6 +360,9 @@ ASALocalRun/
 # Visual Studio History (VSHistory) files
 .vshistory/
 
+# Ignore Visual Studio Code workspace settings
+.vscode/
+
 # BeatPulse healthcheck temp database
 healthchecksdb
 
