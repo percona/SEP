@@ -20,7 +20,7 @@ from app.sep.plugins.backup_mongo.deps import (
     BackupsTask,
     get_backups_index_context,
 )
-from app.sep.plugins.backup.models import BackupType
+from app.sep.plugins.backup_mongo.models import BackupType
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)

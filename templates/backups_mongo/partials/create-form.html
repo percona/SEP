@@ -21,18 +21,7 @@
     }
 
     /* Smaller containers might have less content, adjust accordingly if needed */
-    #mydumper_container,
-    #xtrabackup_container,
-    #s3_container,
-    #rsync_container {
-        overflow: hidden;
-        transition: opacity 0.5s ease, max-height 0.5s ease;
-        opacity: 0;
-        max-height: 0;
-    }
 
-    #mydumper_container.visible,
-    #xtrabackup_container.visible,
     #s3_container.visible,
     #rsync_container.visible {
         opacity: 1;
