@@ -179,7 +179,7 @@ def get_default_context(
         "base_uri": base_uri,
         "plugins": sep_settings.PLUGINS,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
-        "csrf_token": request.state.csrf_token,
+        "csrf_token": getattr(request.state, "csrf_token", ""),
         "messages": messages.get_messages(request),
     }
 
