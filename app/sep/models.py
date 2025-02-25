@@ -9,10 +9,11 @@ from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
-from app.core.db.models import BaseUUIDSQLModel
+from app.core.db import BaseSQLModel
+from app.core.db.models import BaseUUIDSQLModel, DateTimeWithTimezone
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import slugify
-from app.core.utils.fields import RequiredStr, StrImportableModule, URIPath
+from app.core.utils.fields import RequiredStr, StrImportableModule, URIPath, UTCDatetime
 
 
 class Plugin(BaseCaseInsensitiveModel):
@@ -285,3 +286,28 @@ class SyncItemWrite(SyncItemBase):
         instance.
     :type sync_instance_id: UUID4
     """
+
+
+class Snippet(BaseSQLModel, table=True):
+    """Represent a support snippet stored in the database.
+
+    :param filename: The snippet filename. Must be unique.
+    :type filename: str
+    :param md5_digest: The MD5 hash digest of the snippet file.
+    :type md5_digest: str
+    :param approved_at: The approval time for the snippet, or None if the snippet is not
+        approved.
+    :type approved_at: UTCDatetime | None
+    :param reason: The reason for the approval or disapproval of the snippet, if any.
+        Defaults to "New snippet".
+    :type reason: str
+    """
+
+    filename: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
+    md5_digest: str = SQLField(min_length=32, max_length=32)
+    approved_at: UTCDatetime | None = SQLField(
+        sa_type=DateTimeWithTimezone,
+        default=None,
+        index=True,
+    )
+    reason: str = "New snippet"
