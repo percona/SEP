@@ -4,16 +4,22 @@ import json
 import logging
 
 from presidio_analyzer import AnalyzerEngine, PatternRecognizer
-from presidio_anonymizer import AnonymizerEngine, OperatorConfig
+from presidio_anonymizer import (
+    AnonymizerEngine,
+    ConflictResolutionStrategy,
+    OperatorConfig,
+)
 
 SECRET_FIELDS = {
     "client_secret": "<CLIENT_SECRET>",
-    "access_token": "<ACCESS_TOKEN>",
-    "accessToken": "<ACCESS_TOKEN>",
-    "refresh_token": "<REFRESH_TOKEN>",
-    "refreshToken": "<REFRESH_TOKEN>",
-    "id_token": "<ID_TOKEN>",
+    "access_token": "<TOKEN>",
+    "accessToken": "<TOKEN>",
+    "refresh_token": "<TOKEN>",
+    "refreshToken": "<TOKEN>",
+    "id_token": "<TOKEN>",
     "token": "<TOKEN>",
+    "client_id": "<TOKEN>",
+    "sub": "<TOKEN>",
     "password": "***",
 }
 
@@ -34,11 +40,19 @@ class PresidioRemoteAPIFilter(logging.Filter):
     anonymizer (e.g., hashing) for PII fields. It only processes records coming from the target logger.
     """
 
-    def __init__(self, logger_name: str, hashing_salt: str = "SECRET_KEY") -> None:
+    def __init__(
+        self,
+        logger_name: str,
+        *,
+        console_log_masking: bool,
+        hashing_salt: str = "SECRET_KEY",
+    ) -> None:
         """Initialize the PresidioRemoteAPIFilter.
 
         :param logger_name: The name of the logger to filter.
         :type logger_name: str
+        :param console_log_masking: Whether to mask logs in the console output.
+        :type console_log_masking: bool
         :param hashing_salt: Salt to use for hashing PII values.
         :type hashing_salt: str
         """
@@ -46,12 +60,9 @@ class PresidioRemoteAPIFilter(logging.Filter):
         super().__init__(logger_name)
         self.logger_name = logger_name
         self.hashing_salt = hashing_salt
+        self.console_log_masking = console_log_masking
         self.analyzer = AnalyzerEngine()
         self.anonymizer = AnonymizerEngine()
-
-        logging.getLogger("presidio").setLevel(logging.WARNING)
-        logging.getLogger("presidio-analyzer").setLevel(logging.WARNING)
-        logging.getLogger("presidio-anonymizer").setLevel(logging.WARNING)
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Filter and sanitize log record arguments.
@@ -64,6 +75,9 @@ class PresidioRemoteAPIFilter(logging.Filter):
         :return: True if the record should be logged, False otherwise.
         :rtype: bool
         """
+        if not self.console_log_masking:
+            return True
+
         for include in INCLUDE_CLASSES:
             if include.lower() not in record.name.lower():
                 return True
@@ -104,7 +118,10 @@ class PresidioRemoteAPIFilter(logging.Filter):
         )
 
         anonymized = self.anonymizer.anonymize(
-            text, results, operators=operators_config
+            text,
+            results,
+            operators=operators_config,
+            conflict_resolution=ConflictResolutionStrategy.REMOVE_INTERSECTIONS,
         )
         return anonymized.text
 

@@ -92,10 +92,18 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             `self.logger_name`.
         :rtype: logging.Logger
         """
+        from app.core.config import settings
+
         logger = logging.getLogger(self.logger_name)
         logger.level = logger.root.level
         if not any(isinstance(f, PresidioRemoteAPIFilter) for f in logger.filters):
-            logger.addFilter(PresidioRemoteAPIFilter(logger_name=self.logger_name))
+            logger.addFilter(
+                PresidioRemoteAPIFilter(
+                    logger_name=self.logger_name,
+                    hashing_salt=settings.SECRET_KEY,
+                    console_log_masking=settings.MASK_CONSOLE_LOGS,
+                )
+            )
         return logger
 
     @property
