@@ -46,9 +46,9 @@ class DirEncryptConfig(BaseModel):
 class BackupConfigAll(BaseCaseInsensitiveModel):
     """Represent the general configuration for the backup task."""
 
-    hardlink: bool = True
-    compress: bool = True
-    check_disk_space: bool = True
+    hardlink: bool = False
+    compress: bool = False
+    check_disk_space: bool = False
     encrypt: bool = False
     encrypt_using_tmpdir: bool = False
     only_if_running_slave: bool = False
