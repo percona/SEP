@@ -12,7 +12,7 @@ default:
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
-  MASK_CONSOLE_LOGS: False
+  MASK_CONSOLE_LOGS: True
   SEP:
     OAUTH:
       REDIRECT_URI: /oauth/callback
