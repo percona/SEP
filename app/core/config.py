@@ -104,6 +104,9 @@ LOGGING_CONFIG = {
             "level": "INFO",
             "propagate": False,
         },
+        "presidio": {"level": "WARNING"},
+        "presidio-analyzer": {"level": "WARNING"},
+        "presidio-anonymizer": {"level": "WARNING"},
     },
 }
 
@@ -247,6 +250,8 @@ class Settings(BaseYamlSettings):
     :type LOGGING: LogLevel
     :param LOGGING_CONFIG: dictConfig logging configuration.
     :type LOGGING_CONFIG: dict[str, Any]
+    :param MASK_CONSOLE_LOGS: Whether to mask sensitive data in console logs.
+    :type MASK_CONSOLE_LOGS: bool
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
     :type SSL_CAFILE: RelativeFilePath | None
     :param BASE_URL: The application's base URL.
@@ -269,6 +274,7 @@ class Settings(BaseYamlSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
+    MASK_CONSOLE_LOGS: bool = Field(default=True)
     SSL_CAFILE: RelativeFilePath | None = None
     BASE_URL: URL | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
