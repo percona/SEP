@@ -99,7 +99,10 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
         "/backups/", data=backup_create.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/backups"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+    )
 
     mock_task_api_dep.post.assert_called_once()
     called_args, called_kwargs = mock_task_api_dep.post.call_args
@@ -140,7 +143,10 @@ def test_backups_execute(test_client, mock_task_api_dep, created_task):
     response = test_client.post(f"/backups/{created_task.name}", follow_redirects=False)
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["Location"] == "/backups"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backups/{created_task.name}"
+    )
 
     mock_task_api_dep.post.assert_called_once()
     called_args, called_kwargs = mock_task_api_dep.post.call_args
