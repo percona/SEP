@@ -16,6 +16,9 @@ ENV FASTAPI_ENV production_docker
 # Use an official Python runtime as a parent image
 FROM docker.io/library/python:3.11-alpine
 
+# Install required system dependencies
+RUN apk update && apk add --no-cache netcat-openbsd g++ gcc musl-dev python3-dev
+
 # Create the sep system user
 RUN addgroup --gid 1001 -S sep && \
     adduser -G sep --shell /bin/false --disabled-password -h /home/sep --uid 1001 sep
