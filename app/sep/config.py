@@ -157,6 +157,12 @@ class SEPSettings(BaseYamlAppSettings):
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty dictionary.
     :type SYNCER_EXTRA_KWARGS: dict[str, Any]
+    :param SYNC_REFRESH_TIME: Time (in seconds) to wait until page refresh while
+        inventory sync is in progress. Defaults to 5 seconds.
+    :type SYNC_REFRESH_TIME: int
+    :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
+        `Path("snippets")`.
+    :type SNIPPETS_DIR: RelativeDirectoryPath
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -172,6 +178,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
+    SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
 
     @computed_field
     @cached_property

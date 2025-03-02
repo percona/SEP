@@ -32,6 +32,7 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.sep.utils.static import AuthenticatedStaticFiles
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,11 @@ sep_app = create_app(
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
+sep_app.mount(
+    "/static/snippets",
+    AuthenticatedStaticFiles(directory=sep_settings.SNIPPETS_DIR),
+    name="snippets_files",
+)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 
