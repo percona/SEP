@@ -175,7 +175,7 @@ def main() -> None:
                 pymysql.connect(
                     host=host,
                     port=port,
-                    read_default_file="~/.my.cnf",
+                    read_default_file='~/.my.cnf',
                 ) as connection,
                 connection.cursor(DictCursor) as cursor,
             ):

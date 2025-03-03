@@ -1,0 +1,398 @@
+<style>
+    fieldset {
+        width: 95%;
+        justify-content: flex-start;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        margin-bottom: 0.5em;
+    }
+
+    .field {
+        flex: 0 0 48%;
+        box-sizing: border-box;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+    }
+
+    fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1))>.field {
+        flex: 0 0 48%;
+    }
+
+    .field label {
+        width: 135px;
+        margin-right: 10px;
+    }
+
+    .field input,
+    .field select {
+        flex: 1;
+    }
+
+
+    label+select,
+    label+input {
+        vertical-align: middle;
+        margin-right: 0px;
+    }
+
+    label:has(+ select),
+    label:has(+ input) {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0px !important;
+        width: 130px;
+    }
+
+    .selection-panel,
+    .result-panel {
+        background-color: #fff;
+        padding-left: 20px;
+        padding-right: 20px;
+        border-radius: 5px;
+    }
+
+    #toggleCreateTable {
+        padding: 10px 20px;
+    }
+
+    #result-panel {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 1000px;
+    }
+
+    #result-panel.fade {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    input[type="checkbox"] {
+        flex: none;
+        margin-right: 0.5em;
+    }
+
+    pre {
+        white-space: break-spaces;
+    }
+
+        {
+            {
+            syntax_highlight_css(style="monokai")
+        }
+    }
+</style>
+{% set form_class = "modal" if modal_required else "" %}
+<form action="" method="post" class="{{ form_class }}" style="padding-left: 0;">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <fieldset>
+        <legend style="margin-bottom: 0.8em;">Main options</legend>
+        <fieldset>
+            <legend>Executor Host</legend>
+            <div class="field">
+                {% set hostname_title = "Select the hostname of the target system for task execution." %}
+                <label for="hostname" title="{{ hostname_title }}">Select host</label>
+                {% if executor_hosts|length == 1 %}
+                {% set single_service = executor_hosts[0] %}
+                <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                </select>
+                <input type="hidden" name="hostname" value="{{ single_service }}">
+                {% else %}
+                <select id="hostname" name="hostname">
+                    {% for executor_host in executor_hosts %}
+                    <option value="{{ executor_host }}">{{ executor_host }}
+                    </option>
+                    {% endfor %}
+                </select>
+                {% endif %}
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Checksum details</legend>
+            <div class="field">
+                {% set task_name_title = "Type the name of task to be created." %}
+                <label for="task_name" title="{{ task_name_title }}">Task name</label>
+                <input type="text" + id="task_name" + name="task_name" + class="validate" + required +
+                    title="{{ task_name_title }}" + placeholder="Enter a unique task name">
+            </div>
+            <div class="field">
+                {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                <label for="service_id" title="{{ service_id_title }}">Database host</label>
+                {% if mysql_services|length == 1 %}
+                {% set single_service = mysql_services[0] %}
+                <select id="service_id" name="service_id" title="{{ service_id_title }}" disabled>
+                    <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                </select>
+                <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                {% else %}
+                <select id="service_id" name="service_id" title="{{ service_id_title }}" required>
+                    <option value="" selected>Select a database host</option>
+                    {% for service in mysql_services %}
+                    <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
+            </div>
+        </fieldset>
+    </fieldset>
+
+    <fieldset style="margin-bottom: 0;">
+        <legend>Data</legend>
+        <div class="field">
+            <label for="schema_id">Include Schemas</label>
+            <select multiple id="schema_id" name="schema_id">
+                <!-- <option value=""> </option> -->
+            </select>
+        </div>
+        <div class="field">
+            <label for="table_id">Include Tables</label>
+            <select multiple id="table_id" name="table_id" disabled>
+                <!-- <option value=""> </option> -->
+            </select>
+        </div>
+
+        <fieldset>
+            <legend>Flags</legend>
+            <div class="field">
+                <input type="checkbox" id="binary_index" name="binary_index" class="validate" />
+                <label for="binary_index">Binary Index</label>
+            </div>
+
+            <div class="field">
+                <input type="checkbox" id="explain_arg" name="explain_arg" class="validate" />
+                <label for="explain_arg">Explain</label>
+            </div>
+
+            <div class="field">
+                <input type="checkbox" id="fail_on_stopped_replication" name="fail_on_stopped_replication"
+                    class="validate" />
+                <label for="fail_on_stopped_replication">Fail on stopped replication</label>
+            </div>
+
+            <div class="field">
+                <input type="checkbox" id="truncate_replicate_table" name="truncate_replicate_table" class="validate" />
+                <label for="truncate_replicate_table">Truncate replicate table</label>
+            </div>
+        </fieldset>
+    </fieldset>
+
+    <!-- 
+--chunk-index
+--chunk-index-columns
+
+--ignore-databases
+--ignore-tables
+
+--columns
+--ignore-columns
+
+--engines
+--ignore-engines
+
+--where
+-->
+    <fieldset>
+        <legend>Advanced options</legend>
+        <fieldset>
+            <legend>Recursion Method</legend>
+            <div class="field">
+                <label for="recursion_method">Recursion method</label>
+                <select id="recursion_method" name="recursion_method">
+                    <option value="" selected>default</option>
+                    <option value="processlist">processlist</option>
+                    <option value="hosts">hosts</option>
+                    <option value="dsn">dsn</option>
+                    <option value="none">none</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="dsn_table">DSN Table</label>
+                <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="D=schema,t=table"
+                    disabled />
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Customization</legend>
+            <div class="field">
+                <label for="pause_file">Pause file</label>
+                <input type="text" id="pause_file" name="pause_file" class="validate" />
+            </div>
+
+            <div class="field">
+                <label for="progress">Progress</label>
+                <input type="text" id="progress" name="progress" class="validate" size="15" value="time,10" />
+            </div>
+
+            <div class="field">
+                <label for="set_vars">Set Vars</label>
+                <input type="text" id="set_vars" name="set_vars" class="validate"
+                    value="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5" size="70" />
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Performance</legend>
+
+            <div class="field">
+                <label for="max_load">Max Load</label>
+                <input type="text" id="max_load" name="max_load" class="validate" value="Threads_running=50"
+                    size="30" />
+            </div>
+
+            <div class="field">
+                <label for="chunk_time">Chunk Time</label>
+                <input type="text" id="chunk_time" name="chunk_time" class="validate" value="0.5" size="5" />
+            </div>
+
+            <div class="field">
+                <label for="max_lag">Max Lag</label>
+                <input type="text" id="max_lag" name="max_lag" class="validate" value="150" size="5" />
+            </div>
+        </fieldset>
+    </fieldset>
+
+    <button type="submit">Create</button>
+    <button type="reset">Reset</button>
+</form>
+
+{% set serviceSchemas = {} %}
+{% for service in mysql_services %}
+{% set schemas = {} %}
+{% for schema in service.schemas %}
+{% set tables = {} %}
+{% for table in schema.tables %}
+{% do tables.update({
+table.id: {
+"name": table.name,
+"create": table.create,
+"keys": table['keys']
+}
+}) %}
+{% endfor %}
+{% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
+{% endfor %}
+{% do serviceSchemas.update({service.id: schemas}) %}
+{% endfor %}
+
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    const serviceSchemas = {{ serviceSchemas| tojson }};
+    const connectToSelect = document.getElementById('service_id');
+    const schemaSelect = document.getElementById('schema_id');
+    const tableSelect = document.getElementById('table_id');
+
+    let selectedService = null;
+    let selectedSchema = null;
+    let selectedTable = null;
+
+    function populateSchemas(selectedService) {
+        schemaSelect.disabled = true;
+        schemaSelect.innerHTML = '<option value="-1"> </option>';
+        selectedSchema = null;
+        selectedServiceNum = Number(selectedService);
+
+        if (selectedService && serviceSchemas[selectedServiceNum]) {
+            const schemas = Object.entries(serviceSchemas[selectedServiceNum]);
+            if (schemas.length > 0) {
+                for (const [schemaId, schema] of schemas) {
+                    const option = document.createElement('option');
+                    option.value = schemaId;
+                    option.textContent = schema.name;
+                    schemaSelect.appendChild(option);
+                    schemaSelect.disabled = false;
+                }
+                if (schemas.length === 1) {
+                    const [singleSchemaId, _] = schemas[0]
+                    //schemaSelect.value = singleSchemaId;
+                    schemaSelect.disabled = false;
+                    //schemaSelect.insertAdjacentHTML("afterend", `<input id="schema_id_hidden" type="hidden" name="schema_id" value="${schemaSelect.value}">`)
+                    //selectedSchema = singleSchemaId;
+                    populateTables(selectedService, singleSchemaId);
+                }
+            }
+        }
+    }
+
+    function populateTables(selectedService, selectedSchema) {
+        tableSelect.disabled = true;
+        tableSelect.innerHTML = '<option value="-1"> </option>';
+        selectedTable = null;
+        selectedServiceNum = Number(selectedService);
+
+        if (selectedSchema && serviceSchemas[selectedServiceNum][selectedSchema]) {
+            const tables = Object.entries(serviceSchemas[selectedServiceNum][selectedSchema]["tables"]);
+            console.log(tables)
+            if (tables.length > 0) {
+                for (const [tableId, table] of tables) {
+                    const option = document.createElement('option');
+                    option.value = tableId;
+                    option.textContent = table.name;
+                    tableSelect.appendChild(option);
+                    tableSelect.disabled = false;
+                }
+            }
+        }
+    }
+
+    connectToSelect.addEventListener('change', function () {
+        const hiddenSchemaInput = document.getElementById("schema_id_hidden");
+        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
+        selectedService = this.value;
+        populateSchemas(selectedService);
+    });
+
+    schemaSelect.addEventListener('change', function () {
+        selectedSchema = null
+        //const hiddenTableInput = document.getElementById("table_id_hidden");
+        schemas = Array.from(this.selectedOptions).map(({ value }) => value);
+        //hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
+        if (schemas.length === 1) {
+            selectedSchema = this.value;
+        }
+        populateTables(selectedService, selectedSchema);
+    });
+
+    window.addEventListener('DOMContentLoaded', function () {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            selectedService = singleHost;
+            populateSchemas(singleHost);
+        }
+    });
+
+    recursion_method.addEventListener('change', function () {
+        if (this.value === 'dsn') {
+            dsn_table.disabled = false;
+            dsn_table.required = true;
+        } else {
+            dsn_table.disabled = true;
+            dsn_table.required = false;
+        }
+    });
+
+    // Flags explain_arg and truncate_replicate_table are mutually exclusive
+    explain_arg.addEventListener('change', function () {
+        if (this.checked) {
+            truncate_replicate_table.checked = false;
+            truncate_replicate_table.disabled = true;
+        } else {
+            truncate_replicate_table.disabled = false;
+        }
+    });
+
+
+    // Flags explain_arg and truncate_replicate_table are mutually exclusive
+    truncate_replicate_table.addEventListener('change', function () {
+        if (this.checked) {
+            explain_arg.checked = false;
+            explain_arg.disabled = true;
+        } else {
+            explain_arg.disabled = false;
+        }
+    });
+
+</script>
