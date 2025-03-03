@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated, Any
 
-from fastapi import Depends, Form
+from fastapi import Depends, Form, Request
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -54,9 +54,7 @@ async def build_checksums_task_payload(
         stripped_dsn = dsn.rstrip(",")
         form.recursion_method = f"dsn={stripped_dsn},{form.dsn_table}"
 
-    args = [
-        dsn
-    ]
+    args = [dsn]
 
     if form.recursion_method is not None and len(form.recursion_method) > 0:
         args.append(f"--recursion-method={form.recursion_method}")
@@ -65,8 +63,6 @@ async def build_checksums_task_payload(
     databases = ""
     if form.schema_id is not None and len(form.schema_id) > 0:
         for s in form.schema_id:
-            if s < 0:
-                continue
             schema = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.SCHEMA,
@@ -77,15 +73,17 @@ async def build_checksums_task_payload(
     form.databases = databases.rstrip(",")
 
     tables = ""
-    if form.schema_id is not None and len(form.schema_id) == 1 and form.table_id is not None:
+    if (
+        form.schema_id is not None
+        and len(form.schema_id) == 1
+        and form.table_id is not None
+    ):
         for t in form.table_id:
-            if t < 0:
-                continue
             table = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.TABLE,
                 t,
-                schema_id=list(form.schema_id)[0],
+                schema_id=next(iter(form.schema_id)),
             )
             tables += f"{table.name},"
     form.tables = tables.rstrip(",")
@@ -107,10 +105,10 @@ async def build_checksums_task_payload(
 
     # Adding flag arguments (no value needed, just presence)
     flag_args = {
-        "binary_index": f"--binary-index",
-        "explain_arg": f"--explain",
-        "fail_on_stopped_replication": f"--fail-on-stopped-replication",
-        "truncate_replicate_table": f"--truncate-replicate-table",
+        "binary_index": "--binary-index",
+        "explain_arg": "--explain",
+        "fail_on_stopped_replication": "--fail-on-stopped-replication",
+        "truncate_replicate_table": "--truncate-replicate-table",
     }
 
     # Adding flag arguments if set to True
@@ -171,17 +169,20 @@ def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
-    service_name = ''
+    service_name = ""
     if "service_name" in meta:
-        service_name = meta['service_name']
+        service_name = meta["service_name"]
     return {
         "hostname": data["Constraints"][0]["RTarget"],
-        "service_name": f'{service_name}',
+        "service_name": f"{service_name}",
     }
 
 
 async def get_checksums_index_context(
-    inventory_api: InventoryAPI, tasks_api: TaskAPI, context: DefaultContext
+    request: Request,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+    context: DefaultContext,
 ) -> dict[str, Any]:
     """Assemble the context for the Checksums plugin index view.
 
@@ -189,6 +190,8 @@ async def get_checksums_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
+    :param request: The HTTP request object.
+    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
@@ -199,5 +202,10 @@ async def get_checksums_index_context(
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        inventory_api, tasks_api, get_checksums_task_info, context, TaskOwner.CHECKSUMS
+        request,
+        inventory_api,
+        tasks_api,
+        get_checksums_task_info,
+        context,
+        TaskOwner.CHECKSUMS,
     )
