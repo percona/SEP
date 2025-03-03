@@ -2,6 +2,13 @@
 
 from enum import IntEnum
 
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine, OperatorConfig
+
+
+# Initialize Presidio engines.
+analyzer = AnalyzerEngine()
+anonymizer = AnonymizerEngine()
 
 class Entity(IntEnum):
     """Enumeration of sensitive data types represented as bitmask flags.
@@ -24,7 +31,6 @@ class Entity(IntEnum):
     US_ITIN = 1 << 11
     US_PASSPORT = 1 << 12
     US_SSN = 1 << 13
-    API_KEY = 1 << 14
 
 
 def encode_selection(selected_entities: list[Entity]) -> int:
@@ -50,3 +56,38 @@ def decode_selection(number: int) -> list[Entity]:
     :rtype: list[Entity]
     """
     return [entity for entity in Entity if number & entity.value]
+
+
+
+def presidio_anonymize_log(log_text: str, anonymize_bitmask: int) -> str:
+    """
+    Anonymize the log text using Microsoft Presidio based on the anonymize bitmask.
+    
+    :param log_text: The original log text.
+    :param anonymize_bitmask: Bitmask indicating which entities to anonymize.
+    :return: The anonymized log text.
+    """
+    # Decode the bitmask into a list of Entity enum members.
+    selected_entities = decode_selection(anonymize_bitmask)
+    
+    # Use each entity's name directly as the PII type.
+    pii_types = [entity.name for entity in selected_entities]
+    
+    all_results = []
+    for pii_type in pii_types:
+        results = analyzer.analyze(text=log_text, entities=[pii_type], language="en")
+        all_results.extend(results)
+    
+    # Configure anonymization for each detected PII type.
+    anonymizers_config = {
+        result.entity_type: OperatorConfig("replace", {"new_value": f"<{result.entity_type}>"})
+        for result in all_results
+    }
+    
+    anonymized_result = anonymizer.anonymize(
+        text=log_text,
+        analyzer_results=all_results,
+        operators=anonymizers_config
+    )
+    
+    return anonymized_result.text

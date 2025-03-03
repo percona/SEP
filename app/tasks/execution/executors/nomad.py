@@ -25,6 +25,7 @@ from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
 from app.core.utils import async_run, sort_dict
 from app.tasks.crud import TaskHistoryManager
+from app.tasks.entity import presidio_anonymize_log
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
@@ -356,20 +357,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     if task_states:
                         for step in task_states:
                             try:
+                                raw_stdout = self.backend.client.stream_logs.stream(
+                                    alloc["ID"],
+                                    task=step,
+                                    type_="stdout",
+                                    plain=True,
+                                )
+                                raw_stderr = self.backend.client.stream_logs.stream(
+                                    alloc["ID"],
+                                    task=step,
+                                    type_="stderr",
+                                    plain=True,
+                                )
+                                
+                                # TODO(peter): Anonymize stdout and stderr 
+                                anonymized_stdout = presidio_anonymize_log(raw_stdout, queue_item.task.anonymize)
+                                anonymized_stderr = presidio_anonymize_log(raw_stderr, queue_item.task.anonymize)
+                                
                                 task_logs[step] = {
                                     "allocation_id": alloc["ID"],
-                                    "stdout": self.backend.client.stream_logs.stream(
-                                        alloc["ID"],
-                                        task=step,
-                                        type_="stdout",
-                                        plain=True,
-                                    ),
-                                    "stderr": self.backend.client.stream_logs.stream(
-                                        alloc["ID"],
-                                        task=step,
-                                        type_="stderr",
-                                        plain=True,
-                                    ),
+                                    "stdout": anonymized_stdout,
+                                    "stderr": anonymized_stderr,
                                 }
                             except BaseNomadException:
                                 task_logs[step] = {
@@ -495,6 +503,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     timeout=timeout,
                 ) as response:
                     logger.debug("Log response status: %s", response.status)
+                    
                     if (
                         response.status == status.HTTP_404_NOT_FOUND
                         and alloc["TaskStates"][step]["StartedAt"] is None
