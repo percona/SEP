@@ -1,8 +1,8 @@
-"""use_bitmasked_anonymize
+"""use_bitmasked_anonymize_field
 
-Revision ID: bae1b97deaee
+Revision ID: 4fb0425ef003
 Revises: d15d7ea76f80
-Create Date: 2025-03-03 09:54:18.610205
+Create Date: 2025-03-03 11:26:59.675351
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'bae1b97deaee'
+revision: str = '4fb0425ef003'
 down_revision: Union[str, None] = 'd15d7ea76f80'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

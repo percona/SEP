@@ -5,7 +5,7 @@ from enum import auto, StrEnum
 from functools import cached_property
 from pathlib import Path
 from statistics import mean
-from typing import Any, Literal, Optional, Self
+from typing import Any, Literal, Self
 
 from pydantic import (
     AliasGenerator,
@@ -23,10 +23,6 @@ from sqlmodel import Relationship, SQLModel
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, UTCDatetime
-from app.tasks.config import tasks_settings
-from app.tasks.utils import Entity, encode_selection
-
-
 
 TASK_ALIAS_LENGTH = 100
 
@@ -385,38 +381,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
         default=None,
         index=True,
     )
-    
-    anonymize: int = Field(default=1, nullable=False) 
 
-    @model_validator(mode="before")
-    def fill_anonymize_bitmask(cls, data: Any) -> Any:
-        """Popluate the anonymize bitmask before validation.
-        
-        This uses the tasks_settings.LOG_ANON configuration to determine which
-        entities should be masked by default.
-        
-        :param data: The input data containing task details.
-        :type data: Any
-        :return: The modified data with bitmasked anonymize value.
-        :rtype: Any
-        """
-        from app.tasks.config import tasks_settings
-        from app.tasks.utils import Entity, encode_selection
-        
-        config_value = tasks_settings.LOG_ANON
-        if isinstance(config_value, bool):
-            entities = list(Entity) if config_value else []
-        elif isinstance(config_value, list):
-            entities = []
-            for name in config_value:
-                try:
-                    entities.append(Entity[name])
-                except KeyError:
-                    return
-        else:
-            entities = []
-        data["anonymize"] = encode_selection(entities)
-        return data
 
 class TaskResponse(TaskBase, BaseSQLModel):
     """Represent a task API response.
@@ -703,4 +668,3 @@ class TaskLog(BaseModel):
     step: str
     type: Literal["stdout", "stderr"]
     msg: str | None
-

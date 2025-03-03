@@ -1,6 +1,6 @@
 """Define settings for the Tasks app."""
 
-from typing import ClassVar, Union
+from typing import ClassVar
 
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
