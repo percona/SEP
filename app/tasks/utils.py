@@ -1,5 +1,6 @@
 """Define utilities for the tasks app."""
 
+from enum import IntEnum
 from sqlalchemy_celery_beat import PeriodicTask
 from sqlalchemy_celery_beat.models import Period
 
@@ -212,3 +213,33 @@ async def init_periodic_tasks_db() -> None:
             )
             celery_beat_session.add(periodic_task)
             await celery_beat_session.commit()
+
+class Entity(IntEnum):
+    CREDIT_CARD = 1 << 0
+    EMAIL_ADDRESS = 1 << 1
+    IBAN_CODE = 1 << 2
+    IP_ADDRESS = 1 << 3
+    NRP = 1 << 4
+    LOCATION = 1 << 5
+    PERSON = 1 << 6
+    PHONE_NUMBER = 1 << 7
+    MEDICAL_LICENSE = 1 << 8
+    US_BANK_NUMBER = 1 << 9
+    US_DRIVER_LICENSE = 1 << 10
+    US_ITIN = 1 << 11
+    US_PASSPORT = 1 << 12
+    US_SSN = 1 << 13
+    API_KEY = 1 << 14
+
+def encode_selection(selected_entities: list[Entity]) -> int:
+    number = 0
+    for entity in selected_entities:
+        number |= entity.value
+    return number
+
+def decode_selection(number: int) -> list[Entity]:
+    selected = []
+    for entity in Entity:
+        if number & entity.value:
+            selected.append(entity)
+    return selected

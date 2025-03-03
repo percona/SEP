@@ -1,6 +1,6 @@
 """Define settings for the Tasks app."""
 
-from typing import ClassVar
+from typing import ClassVar, Union
 
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
@@ -37,6 +37,6 @@ class TasksSettings(BaseYamlAppSettings):
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
         content_security_policy_strict=False
     )
-
+    LOG_ANON: Union[bool, list[str]] = True
 
 tasks_settings = TasksSettings()
