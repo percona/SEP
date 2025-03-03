@@ -26,6 +26,7 @@ from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, UTCDatetime
 from app.tasks.config import tasks_settings
 from app.tasks.utils import Entity, encode_selection
 
+
 TASK_ALIAS_LENGTH = 100
 
 
@@ -369,6 +370,8 @@ class Task(TaskBase, BaseSQLModel, table=True):
         :return: The modified data with bitmasked anonymize value.
         :rtype: Any
         """
+        from app.tasks.config import tasks_settings
+        from app.tasks.utils import Entity, encode_selection
         config_value = tasks_settings.LOG_ANON
         if isinstance(config_value, bool):
             entities = list(Entity) if config_value else []
