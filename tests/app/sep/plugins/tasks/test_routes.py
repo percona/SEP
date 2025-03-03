@@ -73,7 +73,10 @@ def test_task_create(
 
     response = test_client.post("/tasks/", data=form_data, follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/tasks"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/tasks/{task_data['name']}"
+    )
     mock_task_api_dep.post.assert_any_await(
         "/transform/", json=transform_data, params={"backend": TaskBackendEnum.NOMAD}
     )
@@ -126,7 +129,10 @@ def test_task_execute(
 
     response = test_client.post(f"/tasks/{created_task.name}", follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/tasks"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/tasks/{created_task.name}"
+    )
     mock_task_api_dep.post.assert_awaited_once_with(
         f"/execute/{created_task.name}", json=execute_data
     )

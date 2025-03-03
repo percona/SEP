@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, Request
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -193,7 +193,10 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
 
 
 async def get_archives_index_context(
-    inventory_api: InventoryAPI, tasks_api: TaskAPI, context: DefaultContext
+    request: Request,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+    context: DefaultContext,
 ) -> dict[str, Any]:
     """Assemble the context for the Archives plugin index view.
 
@@ -201,6 +204,8 @@ async def get_archives_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
+    :param request: The HTTP request object.
+    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
@@ -211,5 +216,10 @@ async def get_archives_index_context(
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        inventory_api, tasks_api, get_archives_task_info, context, TaskOwner.ARCHIVER
+        request,
+        inventory_api,
+        tasks_api,
+        get_archives_task_info,
+        context,
+        TaskOwner.ARCHIVER,
     )

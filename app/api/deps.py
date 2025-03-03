@@ -8,14 +8,16 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 
-from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
+from app.core.auth.exceptions import (
+    HTTPForbiddenException,
+    HTTPUnauthorizedException,
+    InactiveUserException,
+)
 from app.core.auth.utils import get_user_model
-from app.core.exceptions import InactiveUserException
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# TODO: Consider what grant types to allow  # noqa: TD002, TD003
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/oauth/token")
 
 AuthToken = Annotated[str, Depends(oauth2_scheme)]

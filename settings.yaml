@@ -46,6 +46,10 @@ development:
   SEP:
     INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
+    SECURITY_HEADERS:
+      CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+        - /api/inventory/docs
+        - /api/tasks/docs
     PLUGINS:
       - NAME: Task Manager
         MODULE_NAME: tasks

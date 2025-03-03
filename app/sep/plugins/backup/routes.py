@@ -34,7 +34,6 @@ async def backups_index(
     context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
 ) -> HTMLResponse:
     """Homepage of backups plugin."""
-    context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
         name="backups/index.html",
@@ -46,6 +45,7 @@ async def backups_index(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
 async def backups_create(
+    request: Request,
     task: BackupGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
@@ -55,8 +55,9 @@ async def backups_create(
         "/",
         json=task.model_dump(),
     )
+    task_path = request.url_for("backups_detail", task_name=task.name)
     return RedirectResponse(
-        "/backups",
+        task_path,
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
@@ -103,6 +104,7 @@ async def backups_detail(
     response_class=RedirectResponse,
 )
 async def backups_execute(
+    request: Request,
     task: BackupsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
@@ -112,7 +114,8 @@ async def backups_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    return RedirectResponse("/backups", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("backups_detail", task_name=task.name)
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(

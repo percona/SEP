@@ -1,12 +1,11 @@
 """Define reusable exceptions."""
 
 from fastapi import HTTPException, status
-
-from app.core.auth.exceptions import HTTPForbiddenException
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class HTTPNotFoundException(HTTPException):
-    """Exception raised for resource not found (HTTP 404).
+    """Define exception raised for resource not found (HTTP 404).
 
     :param detail: A message providing additional details about the exception.
         Defaults to "Not Found".
@@ -18,7 +17,7 @@ class HTTPNotFoundException(HTTPException):
 
 
 class HTTPConflictException(HTTPException):
-    """Exception raised for resource conflict (HTTP 409).
+    """Define exception raised for resource conflict (HTTP 409).
 
     :param detail: A message providing additional details about the exception.
         Defaults to "Conflict".
@@ -30,7 +29,7 @@ class HTTPConflictException(HTTPException):
 
 
 class HTTPBadRequestException(HTTPException):
-    """Exception raised for bad request (HTTP 400).
+    """Define exception raised for bad request (HTTP 400).
 
     :param detail: A message providing additional details about the exception.
         Defaults to "Bad Request".
@@ -41,4 +40,19 @@ class HTTPBadRequestException(HTTPException):
         super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
-InactiveUserException = HTTPForbiddenException("User is not active")
+class HTTPRedirectException(StarletteHTTPException):
+    """Define exception raised for redirects.
+
+    :param location: The URL to which the client should be redirected.
+    :type location: str
+    :param status_code: The HTTP status code for the redirect response. Defaults to
+        307 (Temporary Redirect).
+    :type status_code: int
+    """
+
+    def __init__(
+        self, location: str, status_code: int = status.HTTP_307_TEMPORARY_REDIRECT
+    ) -> None:
+        self.location = location
+        super().__init__(status_code=status_code)
+        self.headers = {"Location": location}

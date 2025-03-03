@@ -115,3 +115,13 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog
         """
+
+    @abstractmethod
+    async def is_task_running(self, queue_item: TaskHistory) -> bool:
+        """Check if a TaskHistory is currently running.
+
+        :param queue_item: The task history record to check.
+        :type queue_item: TaskHistory
+        :return: A boolean indicating if the task history is currently running.
+        :rtype: bool
+        """

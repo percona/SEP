@@ -94,7 +94,7 @@ COMPRESSION_ALGORITHMS = {
     "G": [""],
     "L": [""],
     "M": ["gzip"],  # TODO: add support for zstd later
-    "X": ["quicklz", "zstd", "lz4"],
+    "X": ["zstd", "quicklz", "lz4"],
     "T": [""],
     "R": [""],
     "MC": [""],

@@ -581,3 +581,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             await asyncio.gather(*push_logs_tasks)
         else:
             yield None
+
+    async def is_task_running(self, queue_item: TaskHistory) -> bool:
+        """Check if a TaskHistory is currently running.
+
+        :param queue_item: The task history record to check.
+        :type queue_item: TaskHistory
+        :return: A boolean indicating if the task history is currently running.
+        :rtype: bool
+        """
+        job_id = queue_item.execution_request.tracking.get("job_id")
+        eval_id = queue_item.execution_request.tracking.get("evaluation_id")
+        if not job_id or not eval_id:
+            return False
+        try:
+            self.get_allocation(job_id, eval_id)
+        except IndexError:
+            return False
+        return True

@@ -8,6 +8,7 @@ from sqlmodel import SQLModel
 
 from alembic import context
 
+from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
 from app.sep.models import *
 
@@ -51,6 +52,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         version_table="alembic_version_sep",
+        compare_type=compare_type,
     )
 
     with context.begin_transaction():
@@ -58,7 +60,12 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, version_table="alembic_version_sep")
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table="alembic_version_sep",
+        compare_type=compare_type,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

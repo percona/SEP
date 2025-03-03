@@ -20,18 +20,14 @@
 {% block behaviours %}
     {% if sync_is_running %}
         <script nonce="{{ request.state.csp_nonce }}">
-            setTimeout(function() {
-                window.location.reload();
-            }, {
-                {
-                    sync_refresh_time |
-                        default (5, true) * 1000
-                }
-            });
+        setTimeout(function(){
+            window.location.reload();
+        }, {{ sync_refresh_time|default(5, true) * 1000}});
         </script>
     {% endif %}
 {% endblock behaviours %}
 {% block main %}
+    {% include "inventory/partials/breadcrumb.html" %}
     {% block inventory_entity_details %}
     {% endblock inventory_entity_details %}
     {% block inventory_table %}

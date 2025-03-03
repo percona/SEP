@@ -63,7 +63,11 @@
             <h2>Periodic Tasks</h2>
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create an archiving process</h3>
-            {% include "archiver/partials/create-form.html" %}
+            {% if executor_hosts|length < 1 %}
+                <p>Unable to find suitable executor hosts.</p>
+            {% else %}
+                {% include "archiver/partials/create-form.html" %}
+            {% endif %}
         </section>
         <section id="pending-tasks">
             <h2>Pending</h2>

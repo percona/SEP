@@ -80,7 +80,10 @@ def test_alters_create(
         "/alters/", data=created_alters.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/alters"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/alters/{generated_task.name}"
+    )
     mock_task_api_dep.post.assert_any_await(
         "/generate/",
         json=generated_task.model_dump(),
@@ -138,7 +141,10 @@ def test_alters_execute(
         f"/alters/{created_task.name}", data={"eta": str(eta)}, follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/alters"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/alters/{created_task.name}"
+    )
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep")
