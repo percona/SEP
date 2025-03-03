@@ -37,6 +37,7 @@ class TasksSettings(BaseYamlAppSettings):
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
         content_security_policy_strict=False
     )
-    LOG_ANON: Union[bool, list[str]] = True
+    LOG_ANON: bool | list[str] = True
+
 
 tasks_settings = TasksSettings()

@@ -27,6 +27,7 @@ from app.tasks.config import tasks_settings
 from app.tasks.utils import Entity, encode_selection
 
 
+
 TASK_ALIAS_LENGTH = 100
 
 
@@ -285,6 +286,8 @@ class TaskBase(SQLModel):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
+    :param anonymize: The bitmask for entities to be anonymized in logs.
+    :type anonymize: int
     """
 
     name: str = SQLField(max_length=255, unique=True, index=True)
@@ -301,6 +304,31 @@ class TaskBase(SQLModel):
     )
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
+
+    def compute_default_anonymize() -> int:
+        """Compute and return the default anonymize bitmask.
+
+        :return: The integer bitmask based on current LOG_ANON settings.
+        :rtype: int
+        """
+        from app.tasks.config import tasks_settings
+        from app.tasks.entity import encode_selection, Entity
+
+        config_value = tasks_settings.LOG_ANON
+        if isinstance(config_value, bool):
+            entities = list(Entity) if config_value else []
+        elif isinstance(config_value, list):
+            entities = []
+            for name in config_value:
+                try:
+                    entities.append(Entity[name])
+                except KeyError:
+                    continue
+        else:
+            entities = []
+        return encode_selection(entities)
+
+    anonymize: int = SQLField(default_factory=compute_default_anonymize, nullable=False)
 
     @model_validator(mode="after")
     def validate_data_for_backend(self) -> Self:
@@ -337,6 +365,8 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :type history: list[TaskHistory]
     :param deleted_at: The deletion timestamp, if applicable.
     :type deleted_at: UTCDatetime | None
+    :param anonymize: The bitmask for entities to be anonymized in logs.
+    :type anonymize: int
     """
 
     __table_args__ = (
@@ -356,7 +386,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
         index=True,
     )
     
-    anonymize: Optional[int] = Field(default=None, nullable=False) 
+    anonymize: int = Field(default=1, nullable=False) 
 
     @model_validator(mode="before")
     def fill_anonymize_bitmask(cls, data: Any) -> Any:
@@ -372,6 +402,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
         """
         from app.tasks.config import tasks_settings
         from app.tasks.utils import Entity, encode_selection
+        
         config_value = tasks_settings.LOG_ANON
         if isinstance(config_value, bool):
             entities = list(Entity) if config_value else []
