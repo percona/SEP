@@ -6,7 +6,7 @@ from app.core.utils.fields import RequiredStr
 
 
 class ChecksumsCreate(BaseModel):
-    """Represent an Checksums creation form.
+    """Represent a Checksums creation form.
 
     :param task_name: The name of the task to be created.
     :type task_name: RequiredStr
@@ -32,7 +32,7 @@ class ChecksumsCreate(BaseModel):
     :param progress: Print progress reports to STDERR while copying rows.
     :type progress: str
     :param binary_index: Modify the behavior of --create-replicate-table such that the replicate
-        table’s upper and lower boundary columns are created with the BLOB data type.
+        table's upper and lower boundary columns are created with the BLOB data type.
     :type binary_index: bool
     :param explain_arg: Show, but do not execute, checksum queries.
     :type explain_arg: bool

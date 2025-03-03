@@ -85,7 +85,10 @@
     }
 </style>
 {% set form_class = "modal" if modal_required else "" %}
-<form action="" method="post" class="{{ form_class }}" style="padding-left: 0;">
+<form action=""
+      method="post"
+      class="{{ form_class }}"
+      style="padding-left: 0">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend style="margin-bottom: 0.8em;">Main options</legend>
@@ -95,51 +98,57 @@
                 {% set hostname_title = "Select the hostname of the target system for task execution." %}
                 <label for="hostname" title="{{ hostname_title }}">Select host</label>
                 {% if executor_hosts|length == 1 %}
-                {% set single_service = executor_hosts[0] %}
-                <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
-                </select>
-                <input type="hidden" name="hostname" value="{{ single_service }}">
+                    {% set single_service = executor_hosts[0] %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                    </select>
+                    <input type="hidden" name="hostname" value="{{ single_service }}">
                 {% else %}
-                <select id="hostname" name="hostname">
-                    {% for executor_host in executor_hosts %}
-                    <option value="{{ executor_host }}">{{ executor_host }}
-                    </option>
-                    {% endfor %}
-                </select>
+                    <select id="hostname" name="hostname">
+                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                    </select>
                 {% endif %}
             </div>
         </fieldset>
-
         <fieldset>
             <legend>Checksum details</legend>
             <div class="field">
                 {% set task_name_title = "Type the name of task to be created." %}
                 <label for="task_name" title="{{ task_name_title }}">Task name</label>
-                <input type="text" + id="task_name" + name="task_name" + class="validate" + required +
-                    title="{{ task_name_title }}" + placeholder="Enter a unique task name">
+                <input type="text"
+                       id="task_name"
+                       name="task_name"
+                       class="validate"
+                       required
+                       title="{{ task_name_title }}"
+                       placeholder="Enter a unique task name">
             </div>
             <div class="field">
                 {% set service_id_title = "Select the database host from the inventory to connect to." %}
                 <label for="service_id" title="{{ service_id_title }}">Database host</label>
                 {% if mysql_services|length == 1 %}
-                {% set single_service = mysql_services[0] %}
-                <select id="service_id" name="service_id" title="{{ service_id_title }}" disabled>
-                    <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                </select>
-                <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% set single_service = mysql_services[0] %}
+                    <select id="service_id"
+                            name="service_id"
+                            title="{{ service_id_title }}"
+                            disabled>
+                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                    </select>
+                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
                 {% else %}
-                <select id="service_id" name="service_id" title="{{ service_id_title }}" required>
-                    <option value="" selected>Select a database host</option>
-                    {% for service in mysql_services %}
-                    <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                    {% endfor %}
-                </select>
+                    <select id="service_id"
+                            name="service_id"
+                            title="{{ service_id_title }}"
+                            required>
+                        <option value="" selected>Select a database host</option>
+                        {% for service in mysql_services %}
+                            <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                        {% endfor %}
+                    </select>
                 {% endif %}
             </div>
         </fieldset>
     </fieldset>
-
     <fieldset style="margin-bottom: 0;">
         <legend>Data</legend>
         <div class="field">
@@ -154,33 +163,36 @@
                 <!-- <option value=""> </option> -->
             </select>
         </div>
-
         <fieldset>
             <legend>Flags</legend>
             <div class="field">
-                <input type="checkbox" id="binary_index" name="binary_index" class="validate" />
+                <input type="checkbox"
+                       id="binary_index"
+                       name="binary_index"
+                       class="validate" />
                 <label for="binary_index">Binary Index</label>
             </div>
-
             <div class="field">
                 <input type="checkbox" id="explain_arg" name="explain_arg" class="validate" />
                 <label for="explain_arg">Explain</label>
             </div>
-
             <div class="field">
-                <input type="checkbox" id="fail_on_stopped_replication" name="fail_on_stopped_replication"
-                    class="validate" />
+                <input type="checkbox"
+                       id="fail_on_stopped_replication"
+                       name="fail_on_stopped_replication"
+                       class="validate" />
                 <label for="fail_on_stopped_replication">Fail on stopped replication</label>
             </div>
-
             <div class="field">
-                <input type="checkbox" id="truncate_replicate_table" name="truncate_replicate_table" class="validate" />
+                <input type="checkbox"
+                       id="truncate_replicate_table"
+                       name="truncate_replicate_table"
+                       class="validate" />
                 <label for="truncate_replicate_table">Truncate replicate table</label>
             </div>
         </fieldset>
     </fieldset>
-
-    <!-- 
+    <!--
 --chunk-index
 --chunk-index-columns
 
@@ -211,74 +223,91 @@
             </div>
             <div class="field">
                 <label for="dsn_table">DSN Table</label>
-                <input type="text" id="dsn_table" name="dsn_table" class="validate" placeholder="D=schema,t=table"
-                    disabled />
+                <input type="text"
+                       id="dsn_table"
+                       name="dsn_table"
+                       class="validate"
+                       placeholder="D=schema,t=table"
+                       disabled />
             </div>
         </fieldset>
-
         <fieldset>
             <legend>Customization</legend>
             <div class="field">
                 <label for="pause_file">Pause file</label>
                 <input type="text" id="pause_file" name="pause_file" class="validate" />
             </div>
-
             <div class="field">
                 <label for="progress">Progress</label>
-                <input type="text" id="progress" name="progress" class="validate" size="15" value="time,10" />
+                <input type="text"
+                       id="progress"
+                       name="progress"
+                       class="validate"
+                       size="15"
+                       value="time,10" />
             </div>
-
             <div class="field">
                 <label for="set_vars">Set Vars</label>
-                <input type="text" id="set_vars" name="set_vars" class="validate"
-                    value="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5" size="70" />
+                <input type="text"
+                       id="set_vars"
+                       name="set_vars"
+                       class="validate"
+                       value="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5"
+                       size="70" />
             </div>
         </fieldset>
-
         <fieldset>
             <legend>Performance</legend>
-
             <div class="field">
                 <label for="max_load">Max Load</label>
-                <input type="text" id="max_load" name="max_load" class="validate" value="Threads_running=50"
-                    size="30" />
+                <input type="text"
+                       id="max_load"
+                       name="max_load"
+                       class="validate"
+                       value="Threads_running=50"
+                       size="30" />
             </div>
-
             <div class="field">
                 <label for="chunk_time">Chunk Time</label>
-                <input type="text" id="chunk_time" name="chunk_time" class="validate" value="0.5" size="5" />
+                <input type="text"
+                       id="chunk_time"
+                       name="chunk_time"
+                       class="validate"
+                       value="0.5"
+                       size="5" />
             </div>
-
             <div class="field">
                 <label for="max_lag">Max Lag</label>
-                <input type="text" id="max_lag" name="max_lag" class="validate" value="150" size="5" />
+                <input type="text"
+                       id="max_lag"
+                       name="max_lag"
+                       class="validate"
+                       value="150"
+                       size="5" />
             </div>
         </fieldset>
     </fieldset>
-
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
 </form>
-
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}
-{% set schemas = {} %}
-{% for schema in service.schemas %}
-{% set tables = {} %}
-{% for table in schema.tables %}
-{% do tables.update({
-table.id: {
-"name": table.name,
-"create": table.create,
-"keys": table['keys']
-}
-}) %}
+    {% set schemas = {} %}
+    {% for schema in service.schemas %}
+        {% set tables = {} %}
+        {% for table in schema.tables %}
+            {% do tables.update({
+            table.id: {
+            "name": table.name,
+            "create": table.create,
+            "keys": table['keys']
+            }
+            }) %}
+        {% endfor %}
+        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
+    {% endfor %}
+    {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
-{% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-{% endfor %}
-{% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
-
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas| tojson }};
     const connectToSelect = document.getElementById('service_id');
