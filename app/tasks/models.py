@@ -486,7 +486,10 @@ class TaskHistory(BaseSQLModel, table=True):
         sa_column=Column(EnumField(TaskHistoryStatusEnum), nullable=False, index=True),
     )
     task_id: int = SQLField(foreign_key="task.id", index=True)
-    task: Task = Relationship(back_populates="history")
+    task: Task = Relationship(
+        back_populates="history",
+        sa_relationship_kwargs={"lazy": "joined"}
+    )
 
     @computed_field
     @property
