@@ -9,25 +9,35 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.tasks.config import tasks_settings
-from app.tasks.models import TaskExecutionRequest
+from app.tasks.models import AnonymizedEntity, TaskExecutionRequest
 
 
 def json_deserialize(raw_data: str) -> Any:
     """Deserialize a JSON string into a Python object.
 
-    Attempts to deserialize the input string into a `TaskExecutionRequest` model.
-    If validation fails, the raw JSON data is returned as a dictionary.
+    If the JSON data is a dict, attempts to deserialize it into a `TaskExecutionRequest` object.
+    If the JSON data is a list, attempts to deserialize each element into an `AnonymizedEntity` object.
+    If validation fails in either case, the raw deserialized data is returned.
 
     :param raw_data: The JSON string to deserialize.
     :type raw_data: str
-    :return: A `TaskExecutionRequest` object if deserialization is successful,
-        otherwise the raw data.
+    :return: A `TaskExecutionRequest` object if data is a dict,
+             or a list of `AnonymizedEntity` objects if data is a list.
+             If deserialization fails, returns the raw data.
     :rtype: Any
     """
     data = json.loads(raw_data)
-    try:
-        return TaskExecutionRequest(**data)
-    except ValidationError:
+    if isinstance(data, dict):
+        try:
+            return TaskExecutionRequest(**data)
+        except ValidationError:
+            return data
+    elif isinstance(data, list):
+        try:
+            return [AnonymizedEntity(**item) for item in data]
+        except ValidationError:
+            return data
+    else:
         return data
 
 

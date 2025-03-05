@@ -349,6 +349,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         attempts = 0
         alloc = self.get_allocation(job["ID"], eval_id)
         while alloc:
+            if attempts > 0:
+                queue_item.anonymized_items = None
             match job["Type"]:
                 case "service":
                     raise NotImplementedError("Service job support is TBD")
@@ -369,16 +371,58 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                     type_="stderr",
                                     plain=True,
                                 )
-                                
-                                # TODO(peter): Anonymize stdout and stderr 
-                                anonymized_stdout = presidio_anonymize_log(raw_stdout, queue_item.task.anonymize)
-                                anonymized_stderr = presidio_anonymize_log(raw_stderr, queue_item.task.anonymize)
-                                
+
+                                # TODO(peter): Anonymize stdout and stderr
+                                anonymized_stdout, anonymized_stdout_items = (
+                                    presidio_anonymize_log(
+                                        raw_stdout, queue_item.task.anonymize
+                                    )
+                                )
+                                anonymized_stderr, anonymized_stderr_items = (
+                                    presidio_anonymize_log(
+                                        raw_stderr, queue_item.task.anonymize
+                                    )
+                                )
+
                                 task_logs[step] = {
                                     "allocation_id": alloc["ID"],
                                     "stdout": anonymized_stdout,
                                     "stderr": anonymized_stderr,
                                 }
+
+                                reinforced_items = []
+
+                                if anonymized_stdout_items:
+                                    for item in anonymized_stdout_items:
+                                        reinforced_item = {
+                                            "start": item.start,
+                                            "end": item.end,
+                                            "entity_type": item.entity_type,
+                                            "text": item.text,
+                                            "operator": item.operator,
+                                            "log_type": "stdout",
+                                            "step": step,
+                                            "allocation_id": alloc["ID"],
+                                        }
+                                        reinforced_items.append(reinforced_item)
+
+                                if anonymized_stderr_items:
+                                    for item in anonymized_stderr_items:
+                                        reinforced_item = {
+                                            "start": item.start,
+                                            "end": item.end,
+                                            "entity_type": item.entity_type,
+                                            "text": item.text,
+                                            "operator": item.operator,
+                                            "log_type": "stderr",
+                                            "step": step,
+                                            "allocation_id": alloc["ID"],
+                                        }
+                                        reinforced_items.append(reinforced_item)
+
+                                if queue_item.anonymized_items is None:
+                                    queue_item.anonymized_items = []
+                                queue_item.anonymized_items.extend(reinforced_items)
                             except BaseNomadException:
                                 task_logs[step] = {
                                     "allocation_id": alloc["ID"],
@@ -503,7 +547,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     timeout=timeout,
                 ) as response:
                     logger.debug("Log response status: %s", response.status)
-                    
+
                     if (
                         response.status == status.HTTP_404_NOT_FOUND
                         and alloc["TaskStates"][step]["StartedAt"] is None
@@ -584,6 +628,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
                     active_streams.remove(stream)
                     continue
+                # encrypted_text, encrypted_items = presidio_anonymize_log(log_line.msg, queue_item.task.anonymize)
+                # log_line.msg = encrypted_text
                 yield log_line
                 queue.task_done()
 

@@ -3,12 +3,12 @@
 from enum import IntEnum
 
 from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine, OperatorConfig
-
+from presidio_anonymizer import AnonymizerEngine, InvalidParamError, OperatorConfig
 
 # Initialize Presidio engines.
 analyzer = AnalyzerEngine()
 anonymizer = AnonymizerEngine()
+
 
 class Entity(IntEnum):
     """Enumeration of sensitive data types represented as bitmask flags.
@@ -58,36 +58,46 @@ def decode_selection(number: int) -> list[Entity]:
     return [entity for entity in Entity if number & entity.value]
 
 
+def presidio_anonymize_log(
+    log_text: str, anonymize_bitmask: int
+) -> tuple[str, list[dict]]:
+    """Anonymize the log text using Microsoft Presidio based on the anonymize bitmask.
 
-def presidio_anonymize_log(log_text: str, anonymize_bitmask: int) -> str:
-    """
-    Anonymize the log text using Microsoft Presidio based on the anonymize bitmask.
-    
     :param log_text: The original log text.
+    :type log_text: str
     :param anonymize_bitmask: Bitmask indicating which entities to anonymize.
-    :return: The anonymized log text.
+    :type anonymize_bitmask: int
+    :return: A tuple containing the encrypted log text and a list of encrypted items.
+    :rtype: tuple[str, list[dict]]
     """
+    from app.tasks.config import tasks_settings
+
     # Decode the bitmask into a list of Entity enum members.
     selected_entities = decode_selection(anonymize_bitmask)
-    
+
     # Use each entity's name directly as the PII type.
     pii_types = [entity.name for entity in selected_entities]
-    
+
     all_results = []
     for pii_type in pii_types:
         results = analyzer.analyze(text=log_text, entities=[pii_type], language="en")
         all_results.extend(results)
-    
+
     # Configure anonymization for each detected PII type.
     anonymizers_config = {
-        result.entity_type: OperatorConfig("replace", {"new_value": f"<{result.entity_type}>"})
+        result.entity_type: OperatorConfig(
+            "encrypt", {"key": tasks_settings.SECRET_KEY}
+        )
         for result in all_results
     }
-    
-    anonymized_result = anonymizer.anonymize(
-        text=log_text,
-        analyzer_results=all_results,
-        operators=anonymizers_config
-    )
-    
-    return anonymized_result.text
+
+    try:
+        anonymized_result = anonymizer.anonymize(
+            text=log_text, analyzer_results=all_results, operators=anonymizers_config
+        )
+    except InvalidParamError as ipe:
+        raise ValueError(
+            f"Invalid parameter error in presidio_encrypt_log: {ipe}"
+        ) from ipe
+
+    return anonymized_result.text, anonymized_result.items

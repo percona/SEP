@@ -2,7 +2,10 @@
 
 from typing import ClassVar
 
-from app.core.config import BaseYamlAppSettings
+from app.core.config import (
+    BaseYamlAppSettings,
+    settings,
+)
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -27,6 +30,8 @@ class TasksSettings(BaseYamlAppSettings):
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
         Use `False` to disable the middleware completely.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
+    :param secret_key: Secret key used for encryption of logs.
+    :type secret_key: str
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -38,6 +43,7 @@ class TasksSettings(BaseYamlAppSettings):
         content_security_policy_strict=False
     )
     LOG_ANON: bool | list[str] = True
+    SECRET_KEY: str = settings.SECRET_KEY
 
 
 tasks_settings = TasksSettings()

@@ -78,6 +78,34 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUPS = auto()
 
 
+class AnonymizedEntity(BaseModel):
+    """Represent an anonymized entity within a task execution.
+
+    :param start: The starting index of the entity in the original text.
+    :type start: int
+    :param end: The ending index of the entity in the original text.
+    :type end: int
+    :param entity_type: The type of entity that has been anonymized.
+    :type entity_type: str
+    :param text: The original text of the entity before anonymization.
+    :type text: str
+    :param operator: The operator or method used for anonymization.
+    :type operator: str
+    :param step: The processing step at which anonymization was applied.
+    :type step: str
+    :param log_type: The type of log where this entity was found.
+    :type log_type: str
+    """
+
+    start: int
+    end: int
+    entity_type: str
+    text: str
+    operator: str
+    step: str
+    log_type: str
+
+
 class TaskExecutionRequest(BaseModel):
     """Represent an execution request.
 
@@ -475,6 +503,8 @@ class TaskHistory(BaseSQLModel, table=True):
     :type task_id: int
     :param task: The task associated with this execution history.
     :type task: Task
+    :param anonymized_items: The list of anonymized entities related to the task execution.
+    :type anonymized_items: list[AnonymizedEntity] | None
     """
 
     __table_args__ = (Index("ix_taskhistory_task_id_status", "task_id", "status"),)
@@ -487,8 +517,10 @@ class TaskHistory(BaseSQLModel, table=True):
     )
     task_id: int = SQLField(foreign_key="task.id", index=True)
     task: Task = Relationship(
-        back_populates="history",
-        sa_relationship_kwargs={"lazy": "joined"}
+        back_populates="history", sa_relationship_kwargs={"lazy": "joined"}
+    )
+    anonymized_items: list[AnonymizedEntity] | None = SQLField(
+        sa_column=Column(JSON, nullable=True),
     )
 
     @computed_field
@@ -524,12 +556,15 @@ class TaskHistoryResponse(BaseSQLModel):
     :type task: Task
     :param errors: A list of errors encountered during the task execution.
     :type errors: list[str]
+    :param anonymized_items: The list of anonymized entities related to the task execution.
+    :type anonymized_items: list[AnonymizedEntity] | None
     """
 
     execution_request: TaskExecutionRequest
     status: TaskHistoryStatusEnum
     task: TaskResponse
     errors: list
+    anonymized_items: list[AnonymizedEntity]
 
 
 class TaskStats(BaseModel):
