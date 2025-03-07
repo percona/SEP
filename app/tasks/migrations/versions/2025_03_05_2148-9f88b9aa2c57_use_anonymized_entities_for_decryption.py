@@ -1,8 +1,8 @@
-"""use_anonymized_items_for_decrypt
+"""use_anonymized_entities_for_decryption
 
-Revision ID: f8a865c2bc92
+Revision ID: 9f88b9aa2c57
 Revises: 4fb0425ef003
-Create Date: 2025-03-04 20:20:05.602077
+Create Date: 2025-03-05 21:48:13.179627
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f8a865c2bc92'
+revision: str = '9f88b9aa2c57'
 down_revision: Union[str, None] = '4fb0425ef003'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

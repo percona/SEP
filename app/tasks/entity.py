@@ -1,9 +1,17 @@
-"""Define an enumeration for sensitive data types and provide functions."""
+"""Define an enumeration for sensitive data types and log anonymization functions."""
 
 from enum import IntEnum
 
 from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine, InvalidParamError, OperatorConfig
+from presidio_anonymizer import (
+    AnonymizerEngine,
+    DeanonymizeEngine,
+    InvalidParamError,
+    OperatorConfig,
+    OperatorResult,
+)
+
+from app.tasks.models import TaskHistory
 
 # Initialize Presidio engines.
 analyzer = AnalyzerEngine()
@@ -72,10 +80,8 @@ def presidio_anonymize_log(
     """
     from app.tasks.config import tasks_settings
 
-    # Decode the bitmask into a list of Entity enum members.
     selected_entities = decode_selection(anonymize_bitmask)
 
-    # Use each entity's name directly as the PII type.
     pii_types = [entity.name for entity in selected_entities]
 
     all_results = []
@@ -83,7 +89,6 @@ def presidio_anonymize_log(
         results = analyzer.analyze(text=log_text, entities=[pii_type], language="en")
         all_results.extend(results)
 
-    # Configure anonymization for each detected PII type.
     anonymizers_config = {
         result.entity_type: OperatorConfig(
             "encrypt", {"key": tasks_settings.SECRET_KEY}
@@ -101,3 +106,65 @@ def presidio_anonymize_log(
         ) from ipe
 
     return anonymized_result.text, anonymized_result.items
+
+
+def presidio_decrypt_log(anonymized_text: str, anonymized_items: list[dict]) -> str:
+    """Decrypt previously anonymized log text.
+
+    :param anonymized_text: The anonymized log text.
+    :type anonymized_text: str
+    :param anonymized_items: List of anonymized entities from the anonymization step.
+    :type anonymized_items: List[Dict]
+    :return: The decrypted log text.
+    :rtype: str
+    """
+    if not anonymized_items:
+        return anonymized_text
+    from app.tasks.config import tasks_settings
+
+    crypto_key = tasks_settings.SECRET_KEY
+    deanonymize_engine = DeanonymizeEngine()
+    operators_config = {"DEFAULT": OperatorConfig("decrypt", {"key": crypto_key})}
+    try:
+        deanonymized_result = deanonymize_engine.deanonymize(
+            text=anonymized_text,
+            entities=[OperatorResult(**result) for result in anonymized_items],
+            operators=operators_config,
+        )
+    except TypeError as e:
+        raise ValueError(f"Error during presidio decryption: {e}") from e
+
+    return deanonymized_result.text
+
+
+def decrypt_task_histories(task_histories: list[TaskHistory]) -> None:
+    """Decrypt task logs in a list of TaskHistory records.
+
+    :param task_histories: A list of TaskHistory objects to be processed.
+    :type task_histories: list[TaskHistory]
+    :returns: None. The function modifies the task_histories in place.
+    """
+    for history in task_histories:
+        req = getattr(history, "execution_request", None)
+        if not req or not isinstance(req.tracking, dict):
+            continue
+
+        logs = req.tracking.get("task_logs")
+        if not isinstance(logs, dict):
+            continue
+
+        stage_map = {
+            "prepare-env": history.anonymized_items.prepare_env,
+            "run-script": history.anonymized_items.run_script,
+            "clean-up": history.anonymized_items.clean_up,
+        }
+        for stage, log in logs.items():
+            if not isinstance(log, dict):
+                continue
+            anonymized = stage_map.get(stage)
+            if not anonymized:
+                continue
+            if log.get("stdout") is not None:
+                log["stdout"] = presidio_decrypt_log(log["stdout"], anonymized.stdout)
+            if log.get("stderr") is not None:
+                log["stderr"] = presidio_decrypt_log(log["stderr"], anonymized.stderr)

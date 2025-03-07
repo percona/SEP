@@ -78,32 +78,38 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUPS = auto()
 
 
-class AnonymizedEntity(BaseModel):
-    """Represent an anonymized entity within a task execution.
+class TaskOutput(BaseModel):
+    """Represents stdout and stderr for a given task execution.
 
-    :param start: The starting index of the entity in the original text.
-    :type start: int
-    :param end: The ending index of the entity in the original text.
-    :type end: int
-    :param entity_type: The type of entity that has been anonymized.
-    :type entity_type: str
-    :param text: The original text of the entity before anonymization.
-    :type text: str
-    :param operator: The operator or method used for anonymization.
-    :type operator: str
-    :param step: The processing step at which anonymization was applied.
-    :type step: str
-    :param log_type: The type of log where this entity was found.
-    :type log_type: str
+    :param stdout: A list of dictionaries representing standard output logs.
+    :type stdout: list[dict]
+    :param stderr: A list of dictionaries representing standard error logs.
+    :type stderr: list[dict]
     """
 
-    start: int
-    end: int
-    entity_type: str
-    text: str
-    operator: str
-    step: str
-    log_type: str
+    stdout: list[dict] | None
+    stderr: list[dict] | None
+
+
+class TaskExecutionResult(BaseModel):
+    """Represents the overall execution result with different task outputs.
+
+    :param prepare_env: The output of the 'prepare-env' task.
+    :type prepare_env: TaskOutput
+    :param clean_up: The output of the 'clean-up' task.
+    :type clean_up: TaskOutput
+    :param run_script: The output of the 'run-script' task.
+    :type run_script: TaskOutput
+    :param step1: The output of the alters task.
+    :type step1: TaskOutput
+    """
+
+    prepare_env: TaskOutput | None = Field(alias="prepare-env")
+    clean_up: TaskOutput | None = Field(alias="clean-up")
+    run_script: TaskOutput | None = Field(alias="run-script")
+    step: TaskOutput | None = Field(alias="step1")
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 class TaskExecutionRequest(BaseModel):
@@ -519,7 +525,7 @@ class TaskHistory(BaseSQLModel, table=True):
     task: Task = Relationship(
         back_populates="history", sa_relationship_kwargs={"lazy": "joined"}
     )
-    anonymized_items: list[AnonymizedEntity] | None = SQLField(
+    anonymized_items: dict | None = SQLField(
         sa_column=Column(JSON, nullable=True),
     )
 
@@ -564,7 +570,7 @@ class TaskHistoryResponse(BaseSQLModel):
     status: TaskHistoryStatusEnum
     task: TaskResponse
     errors: list
-    anonymized_items: list[AnonymizedEntity]
+    anonymized_items: TaskExecutionResult | None
 
 
 class TaskStats(BaseModel):

@@ -9,36 +9,29 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.tasks.config import tasks_settings
-from app.tasks.models import AnonymizedEntity, TaskExecutionRequest
+from app.tasks.models import TaskExecutionRequest, TaskExecutionResult
 
 
 def json_deserialize(raw_data: str) -> Any:
     """Deserialize a JSON string into a Python object.
 
-    If the JSON data is a dict, attempts to deserialize it into a `TaskExecutionRequest` object.
-    If the JSON data is a list, attempts to deserialize each element into an `AnonymizedEntity` object.
-    If validation fails in either case, the raw deserialized data is returned.
+    This function attempts to parse the given JSON string into one of the following models
+    (in order): TaskExecutionRequest or TaskExecutionResult. If the JSON does not match
+    either model, the parsed JSON dictionary is returned as-is.
 
     :param raw_data: The JSON string to deserialize.
     :type raw_data: str
-    :return: A `TaskExecutionRequest` object if data is a dict,
-             or a list of `AnonymizedEntity` objects if data is a list.
-             If deserialization fails, returns the raw data.
+    :return: A TaskExecutionRequest or TaskExecutionResult object if deserialization
+             succeeds, otherwise the parsed JSON data as a dictionary.
     :rtype: Any
     """
     data = json.loads(raw_data)
-    if isinstance(data, dict):
+    for model in (TaskExecutionRequest, TaskExecutionResult):
         try:
-            return TaskExecutionRequest(**data)
+            return model(**data)
         except ValidationError:
-            return data
-    elif isinstance(data, list):
-        try:
-            return [AnonymizedEntity(**item) for item in data]
-        except ValidationError:
-            return data
-    else:
-        return data
+            continue
+    return data
 
 
 def get_async_engine() -> AsyncEngine:

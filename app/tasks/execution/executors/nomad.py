@@ -349,86 +349,26 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         attempts = 0
         alloc = self.get_allocation(job["ID"], eval_id)
         while alloc:
-            if attempts > 0:
-                queue_item.anonymized_items = None
             match job["Type"]:
                 case "service":
                     raise NotImplementedError("Service job support is TBD")
                 case "batch" | "system" | "sysbatch":
                     task_states = alloc["TaskStates"]
                     if task_states:
+                        queue_item.anonymized_items = {
+                            "prepare-env": None,
+                            "run-script": None,
+                            "clean-up": None,
+                            "step1": None,
+                        }
                         for step in task_states:
-                            try:
-                                raw_stdout = self.backend.client.stream_logs.stream(
-                                    alloc["ID"],
-                                    task=step,
-                                    type_="stdout",
-                                    plain=True,
-                                )
-                                raw_stderr = self.backend.client.stream_logs.stream(
-                                    alloc["ID"],
-                                    task=step,
-                                    type_="stderr",
-                                    plain=True,
-                                )
-
-                                # TODO(peter): Anonymize stdout and stderr
-                                anonymized_stdout, anonymized_stdout_items = (
-                                    presidio_anonymize_log(
-                                        raw_stdout, queue_item.task.anonymize
-                                    )
-                                )
-                                anonymized_stderr, anonymized_stderr_items = (
-                                    presidio_anonymize_log(
-                                        raw_stderr, queue_item.task.anonymize
-                                    )
-                                )
-
-                                task_logs[step] = {
-                                    "allocation_id": alloc["ID"],
-                                    "stdout": anonymized_stdout,
-                                    "stderr": anonymized_stderr,
-                                }
-
-                                reinforced_items = []
-
-                                if anonymized_stdout_items:
-                                    for item in anonymized_stdout_items:
-                                        reinforced_item = {
-                                            "start": item.start,
-                                            "end": item.end,
-                                            "entity_type": item.entity_type,
-                                            "text": item.text,
-                                            "operator": item.operator,
-                                            "log_type": "stdout",
-                                            "step": step,
-                                            "allocation_id": alloc["ID"],
-                                        }
-                                        reinforced_items.append(reinforced_item)
-
-                                if anonymized_stderr_items:
-                                    for item in anonymized_stderr_items:
-                                        reinforced_item = {
-                                            "start": item.start,
-                                            "end": item.end,
-                                            "entity_type": item.entity_type,
-                                            "text": item.text,
-                                            "operator": item.operator,
-                                            "log_type": "stderr",
-                                            "step": step,
-                                            "allocation_id": alloc["ID"],
-                                        }
-                                        reinforced_items.append(reinforced_item)
-
-                                if queue_item.anonymized_items is None:
-                                    queue_item.anonymized_items = []
-                                queue_item.anonymized_items.extend(reinforced_items)
-                            except BaseNomadException:
-                                task_logs[step] = {
-                                    "allocation_id": alloc["ID"],
-                                    "stdout": None,
-                                    "stderr": None,
-                                }
+                            await self.anonymize_logs(
+                                alloc["ID"],
+                                step,
+                                queue_item.task.anonymize,
+                                queue_item,
+                                task_logs,
+                            )
                 case _:
                     raise NotImplementedError(f'Unrecognized job type "{job["Type"]}"')
             match alloc["ClientStatus"]:
@@ -456,6 +396,62 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             ),
         )
         return queue_item
+
+    async def anonymize_logs(
+        self,
+        alloc_id: str,
+        task_name: str,
+        anonymize_config: Any,
+        queue_item: TaskHistory,
+        task_logs: dict,
+    ) -> None:
+        """Fetch and anonymize logs for a specific task.
+
+        :param alloc_id: Allocation ID for the task.
+        :type alloc_id: str
+        :param task_name: Name of the task.
+        :type task_name: str
+        :param anonymize_config: Configuration for anonymizing logs.
+        :type anonymize_config: Any
+        :param queue_item: The task history record being updated.
+        :type queue_item: TaskHistory
+        :param task_logs: Dictionary to store anonymized logs.
+        :type task_logs: dict
+        """
+        try:
+            raw_stdout = self.backend.client.stream_logs.stream(
+                alloc_id, task=task_name, type_="stdout", plain=True
+            )
+            raw_stderr = self.backend.client.stream_logs.stream(
+                alloc_id, task=task_name, type_="stderr", plain=True
+            )
+            anonymized_stdout, stdout_items = presidio_anonymize_log(
+                raw_stdout, anonymize_config
+            )
+            anonymized_stderr, stderr_items = presidio_anonymize_log(
+                raw_stderr, anonymize_config
+            )
+
+            task_logs[task_name] = {
+                "allocation_id": alloc_id,
+                "stdout": anonymized_stdout,
+                "stderr": anonymized_stderr,
+            }
+
+            if stdout_items or stderr_items:
+                if queue_item.anonymized_items is None:
+                    queue_item.anonymized_items = {}
+
+                queue_item.anonymized_items[task_name] = {
+                    "stdout": stdout_items or None,
+                    "stderr": stderr_items or None,
+                }
+        except BaseNomadException:
+            task_logs[task_name] = {
+                "allocation_id": alloc_id,
+                "stdout": None,
+                "stderr": None,
+            }
 
     def task_needs_new_job(self, task: Task) -> bool:
         """Determine whether a new job needs to be created for the task.
