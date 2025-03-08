@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
 from app.sep.models import (
+    Snippet,
     SyncInstance,
     SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
@@ -250,3 +251,13 @@ class SyncInstanceManager(BaseSQLModelManager):
             item.status = SyncStatusEnum.FAILED
         await SyncItemManager.save_batch(session, *hanging_items)
         return hanging_items
+
+
+class SnippetManager(BaseSQLModelManager):
+    """Manage Snippet operations, including retrieval, listing, and deletion.
+
+    :ivar Model: The SQLModel class this manager is responsible for (`Snippet`).
+    :vartype Model: type[Snippet]
+    """
+
+    Model = Snippet
