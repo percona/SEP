@@ -23,16 +23,87 @@ from app.core.config import (
     settings,
 )
 from app.core.db.config import DatabaseOptions
-from app.core.models import BaseLowercaseModel
-from app.core.utils import deep_dict_update
+from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
+from app.core.utils import deep_dict_update, slugify
 from app.core.utils.fields import (
     RelativeDirectoryPath,
     StrImportableAttribute,
+    StrImportableModule,
     TimedeltaSeconds,
     UniqueList,
+    URIPath,
 )
-from app.sep.models import Plugin
 from app.sep.utils.jinja import syntax_highlight, syntax_highlight_css
+
+
+class Plugin(BaseCaseInsensitiveModel):
+    """Represent a SEP plugin.
+
+    This model defines the structure for a plugin, including its name, module,
+    URI path, and CSS class. It includes custom validators to resolve the module
+    path and set default values based on the plugin's name.
+
+    :param name: The name of the plugin.
+    :type name: str
+    :param module_name: The name of the module associated with the plugin. This field is
+        automatically prefixed with "app.sep.plugins." during validation.
+    :type module_name: StrImportableModule
+    :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
+        string, but is automatically set to a slugified version of the plugin name if
+        not provided.
+    :type uri_path: HttpUrl | URIPath
+    :param css_class: The CSS class associated with the plugin. Defaults to an empty
+        string, but is automatically set to a slugified version of the plugin name if
+        not provided.
+    :type css_class: str
+    :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
+    :type sidebar: bool
+    """
+
+    name: str
+    module_name: StrImportableModule
+    uri_path: HttpUrl | URIPath = ""
+    css_class: str = ""
+    sidebar: bool = True
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, Plugin):
+            return self.module_name == other.module_name
+        raise NotImplementedError
+
+    @field_validator("module_name", mode="before")
+    @classmethod
+    def resolve_module_path(cls, v: str) -> str:
+        """Resolve the full module path for the plugin.
+
+        This method takes the module name provided and prefixes it with
+        "app.sep.plugins." to resolve the full import path.
+
+        :param v: The module name to resolve.
+        :type v: str
+        :return: The full module path with the "app.sep.plugins." prefix.
+        :rtype: str
+        """
+        return f"app.sep.plugins.{v}"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _set_default_from_name(cls, data: Any) -> Any:
+        if isinstance(data, dict) and (name := data.get("name")):
+            slug = slugify(name)
+            data["uri_path"] = data.get("uri_path") or f"/{slug}"
+            data["css_class"] = data.get("css_class") or slug
+        return data
+
+    @computed_field
+    @property
+    def router_path(self) -> str:
+        """Return the plugin's router path.
+
+        :return: The router path derived from the module name.
+        :rtype: str
+        """
+        return f"{self.module_name}.router"
 
 
 class SessionOptions(BaseModel):

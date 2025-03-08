@@ -1,9 +1,13 @@
 """Define models for the SEP app."""
 
 from enum import auto, IntEnum, StrEnum
-from typing import Any, Self
+from functools import cached_property
+from hashlib import file_digest
+from os import PathLike
+from pathlib import Path
+from typing import Self
 
-from pydantic import computed_field, field_validator, HttpUrl, model_validator, UUID4
+from pydantic import computed_field, model_validator, UUID4
 from sqlalchemy import Column, Index
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -11,79 +15,8 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import BaseUUIDSQLModel, DateTimeWithTimezone
-from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils import slugify
-from app.core.utils.fields import RequiredStr, StrImportableModule, URIPath, UTCDatetime
-
-
-class Plugin(BaseCaseInsensitiveModel):
-    """Represent a SEP plugin.
-
-    This model defines the structure for a plugin, including its name, module,
-    URI path, and CSS class. It includes custom validators to resolve the module
-    path and set default values based on the plugin's name.
-
-    :param name: The name of the plugin.
-    :type name: str
-    :param module_name: The name of the module associated with the plugin. This field is
-        automatically prefixed with "app.sep.plugins." during validation.
-    :type module_name: StrImportableModule
-    :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
-        string, but is automatically set to a slugified version of the plugin name if
-        not provided.
-    :type uri_path: HttpUrl | URIPath
-    :param css_class: The CSS class associated with the plugin. Defaults to an empty
-        string, but is automatically set to a slugified version of the plugin name if
-        not provided.
-    :type css_class: str
-    :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
-    :type sidebar: bool
-    """
-
-    name: str
-    module_name: StrImportableModule
-    uri_path: HttpUrl | URIPath = ""
-    css_class: str = ""
-    sidebar: bool = True
-
-    def __eq__(self, other: Any) -> bool:
-        if isinstance(other, Plugin):
-            return self.module_name == other.module_name
-        raise NotImplementedError
-
-    @field_validator("module_name", mode="before")
-    @classmethod
-    def resolve_module_path(cls, v: str) -> str:
-        """Resolve the full module path for the plugin.
-
-        This method takes the module name provided and prefixes it with
-        "app.sep.plugins." to resolve the full import path.
-
-        :param v: The module name to resolve.
-        :type v: str
-        :return: The full module path with the "app.sep.plugins." prefix.
-        :rtype: str
-        """
-        return f"app.sep.plugins.{v}"
-
-    @model_validator(mode="before")
-    @classmethod
-    def _set_default_from_name(cls, data: Any) -> Any:
-        if isinstance(data, dict) and (name := data.get("name")):
-            slug = slugify(name)
-            data["uri_path"] = data.get("uri_path") or f"/{slug}"
-            data["css_class"] = data.get("css_class") or slug
-        return data
-
-    @computed_field
-    @property
-    def router_path(self) -> str:
-        """Return the plugin's router path.
-
-        :return: The router path derived from the module name.
-        :rtype: str
-        """
-        return f"{self.module_name}.router"
+from app.core.utils.fields import RequiredStr, UTCDatetime
+from app.sep.config import sep_settings
 
 
 class SyncInventoryEntityTypeEnum(IntEnum):
@@ -311,3 +244,51 @@ class Snippet(BaseSQLModel, table=True):
         index=True,
     )
     reason: str = "New snippet"
+
+    def __hash__(self) -> int:
+        return hash((self.filename, self.md5_digest))
+
+    def __fspath__(self) -> str:
+        return str(sep_settings.SNIPPETS_DIR / self.filename)
+
+    @computed_field
+    @property
+    def is_approved(self) -> bool:
+        """Determine whether the snippet has been approved.
+
+        :return: True if the snippet is approved (i.e. approved_at is not None), else
+            False.
+        :rtype: bool
+        """
+        return self.approved_at is not None
+
+    @computed_field
+    @cached_property
+    def size(self) -> int:
+        """Return the size of the snippet file in bytes.
+
+        This cached property calculates the file size by reading the file from its
+        filesystem path.
+
+        :return: The size of the snippet file in bytes.
+        :rtype: int
+        """
+        return Path(self).stat().st_size
+
+    @classmethod
+    def from_path(cls, path: PathLike) -> Self:
+        """Create a new Snippet instance from a file path.
+
+        This method computes the MD5 hash digest of the file at the specified path and
+        instantiates a new Snippet with the filename and computed MD5 hash.
+
+        :param path: A path-like object pointing to the snippet file.
+        :type path: PathLike
+        :return: A new instance of Snippet with the corresponding filename and
+            md5_digest.
+        :rtype: Snippet
+        """
+        path = sep_settings.SNIPPETS_DIR / Path(path)
+        with path.open("rb") as f:
+            md5_digest = file_digest(f, "md5")
+        return cls(filename=path.name, md5_digest=md5_digest.hexdigest())
