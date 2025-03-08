@@ -12,6 +12,7 @@ from jwt import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
@@ -121,6 +122,24 @@ async def get_current_user(
 
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
+
+
+async def get_current_admin(current_user: CurrentUser) -> User:
+    """Return the authenticated admin.
+
+    :param current_user: The current logged-in user.
+    :type current_user: CurrentUser
+    :return: The authenticated admin user.
+    :rtype: User
+    :raises HTTPForbiddenException: If the user is not an admin.
+    """
+    if not current_user.is_admin:
+        raise HTTPForbiddenException
+    return current_user
+
+
+IsAdminDep = Depends(get_current_admin)
+AdminUser = Annotated[User, IsAdminDep]
 
 
 async def redirect_if_user_is_authenticated(request: Request) -> None:

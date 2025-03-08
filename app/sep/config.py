@@ -33,7 +33,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
-from app.sep.utils.jinja import syntax_highlight, syntax_highlight_css
+from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
 
 class Plugin(BaseCaseInsensitiveModel):
@@ -269,7 +269,7 @@ class SEPSettings(BaseYamlAppSettings):
             autoescape=True,
             extensions=["jinja2.ext.do"],
         )
-        env.filters["syntax_highlight"] = syntax_highlight
+        env.filters |= DEFAULT_FILTERS
         env.globals["syntax_highlight_css"] = syntax_highlight_css
         return env
 

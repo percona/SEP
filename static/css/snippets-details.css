@@ -1,0 +1,35 @@
+.highlight {
+    color: #F8F8F2;
+    background: #272822;
+}
+
+.highlight pre {
+    max-height: 400px;
+}
+
+.linenos {
+    width: max-content;
+    padding-right: 15px;
+}
+
+.linenos pre {
+    overflow: hidden;
+    color: #90918B;
+}
+
+.code pre {
+    overflow: auto;
+}
+
+.downloadSnippet {
+    display: none;
+}
+
+#actions form {
+    padding: 0;
+}
+
+#actions {
+    display: inline-flex;
+    gap: 1em;
+}

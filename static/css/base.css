@@ -234,6 +234,10 @@ table {
         content: "task";
     }
 
+    .snippets a:before {
+        content: "snippet_folder";
+    }
+
     header {
         display: grid;
         grid-template-areas: "icon title";
@@ -483,4 +487,17 @@ body>main:nth-child(3)>form:nth-child(4)>fieldset:nth-child(1) {
 
 html.zglea.idc0_350 body.has-fixed-sidenav main form fieldset input#name {
     margin-left: unset;
+}
+
+.unselectable {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.iconTextLine>* {
+    vertical-align: middle;
 }

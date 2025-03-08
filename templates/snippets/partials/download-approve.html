@@ -1,0 +1,27 @@
+<a class="downloadSnippet"
+   href="{{ url_for('snippets_files', path=snippet.filename) }}"
+   download>download</a>
+<form class="downloadSnippetForm">
+    <button title="Download snippet" class="icons">download</button>
+</form>
+{% if user.is_admin -%}
+    {%- if snippet.is_approved -%}
+        {%- set action_route = "snippets_remove_approval" -%}
+        {%- set action_verb = "remove the approval of" -%}
+        {%- set icon = "remove_done" -%}
+    {%- else -%}
+        {%- set action_route = "snippets_approve" -%}
+        {%- set action_verb = "approve" -%}
+        {%- set icon = "done_all" -%}
+    {%- endif -%}
+    <form id="{{ snippet.filename }}-approval"
+          method="post"
+          class="confirmable-form"
+          data-confirm-message='Are you sure you want to {{ action_verb }} snippet "{{ snippet.filename }}"?'
+          action="{{ url_for(action_route, snippet_filename=snippet.filename) }}">
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+        <button title="{{ action_verb.capitalize() }} snippet"
+                type="submit"
+                class="icons approval-button submitButton">{{ icon }}</button>
+    </form>
+{%- endif %}

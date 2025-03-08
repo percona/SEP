@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title -%}
+    Support Snippets
+{%- endblock title %}
+{% block style %}
+    {% if snippets %}
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/snippets.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/saved.css') }}">
+    {% endif %}
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/snippets.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock behaviours_optimized_extra %}
+{% block main %}
+    <section id="savedSnippets">
+        <h2>Saved</h2>
+        {% include "snippets/partials/saved-snippets.html" %}
+    </section>
+{% endblock main %}

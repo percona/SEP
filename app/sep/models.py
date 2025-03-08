@@ -1,13 +1,14 @@
 """Define models for the SEP app."""
 
+import hashlib
 from enum import auto, IntEnum, StrEnum
-from functools import cached_property
-from hashlib import file_digest
 from os import PathLike
 from pathlib import Path
 from typing import Self
 
-from pydantic import computed_field, model_validator, UUID4
+import aiofiles
+from aiofiles.ospath import getsize
+from pydantic import computed_field, model_validator, PositiveInt, UUID4
 from sqlalchemy import Column, Index
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -15,6 +16,7 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import BaseUUIDSQLModel, DateTimeWithTimezone
+from app.core.utils import utc_now
 from app.core.utils.fields import RequiredStr, UTCDatetime
 from app.sep.config import sep_settings
 
@@ -237,6 +239,7 @@ class Snippet(BaseSQLModel, table=True):
     """
 
     filename: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
+    size: PositiveInt
     md5_digest: str = SQLField(min_length=32, max_length=32)
     approved_at: UTCDatetime | None = SQLField(
         sa_type=DateTimeWithTimezone,
@@ -244,6 +247,12 @@ class Snippet(BaseSQLModel, table=True):
         index=True,
     )
     reason: str = "New snippet"
+
+    def __repr__(self) -> str:
+        return f"'{self.filename}' ({self.md5_digest})"
+
+    def __str__(self) -> str:
+        return self.filename
 
     def __hash__(self) -> int:
         return hash((self.filename, self.md5_digest))
@@ -262,21 +271,16 @@ class Snippet(BaseSQLModel, table=True):
         """
         return self.approved_at is not None
 
-    @computed_field
-    @cached_property
-    def size(self) -> int:
+    async def get_size(self) -> int:
         """Return the size of the snippet file in bytes.
-
-        This cached property calculates the file size by reading the file from its
-        filesystem path.
 
         :return: The size of the snippet file in bytes.
         :rtype: int
         """
-        return Path(self).stat().st_size
+        return await getsize(self)
 
     @classmethod
-    def from_path(cls, path: PathLike) -> Self:
+    async def from_path(cls, path: PathLike) -> Self:
         """Create a new Snippet instance from a file path.
 
         This method computes the MD5 hash digest of the file at the specified path and
@@ -289,6 +293,35 @@ class Snippet(BaseSQLModel, table=True):
         :rtype: Snippet
         """
         path = sep_settings.SNIPPETS_DIR / Path(path)
-        with path.open("rb") as f:
-            md5_digest = file_digest(f, "md5")
-        return cls(filename=path.name, md5_digest=md5_digest.hexdigest())
+        file_hash = hashlib.md5(usedforsecurity=False)
+        chunk_size = 8192
+        async with aiofiles.open(path, "rb") as f:
+            while chunk := await f.read(chunk_size):
+                file_hash.update(chunk)
+        return cls(
+            filename=path.name,
+            md5_digest=file_hash.hexdigest(),
+            size=await getsize(path),
+        )
+
+    def approve(self, reason: str) -> None:
+        """Mark the snippet as approved.
+
+        Set the snippet's approved_at to the current time and change the reason.
+
+        :param reason: The reason for the approval of the snippet.
+        :type reason: str
+        """
+        self.approved_at = utc_now()
+        self.reason = reason
+
+    def remove_approval(self, reason: str) -> None:
+        """Mark the snippet as unapproved.
+
+        Set the snippet's approved_at to None and change the reason.
+
+        :param reason: The reason for the approval removal of the snippet.
+        :type reason: str
+        """
+        self.approved_at = None
+        self.reason = reason

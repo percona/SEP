@@ -1,0 +1,44 @@
+{% if snippets %}
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 30px;"></th>
+                <th>Filename</th>
+                <th>Size</th>
+                <th>Created at</th>
+                <th>Reason</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for snippet in snippets %}
+                <tr id="{{ snippet.filename }}"
+                    {% if snippet.is_approved %}class="relativeTime" data-relative-date-value="{{ snippet.approved_at|utc_isoformat }}" data-relative-date-title-prefix="Approved "{% else %}title="Not approved"{% endif %}>
+                    <td class="snippetsCol1">
+                        {% if snippet.is_approved %}
+                            <i class="icons unselectable" style="color: #8ACE00;">check_circle</i>
+                        {% else %}
+                            <i class="icons unselectable" style="color: gray;">unpublished</i>
+                        {% endif %}
+                    </td>
+                    <td>{{ snippet.filename }}</td>
+                    <td>{{ snippet.size|humanize_bytes }}</td>
+                    <td class="relativeTime">{{ snippet.created_at|utc_isoformat }}</td>
+                    <td>{{ snippet.reason }}</td>
+                    <td class="actions-cell flex">
+                        <div class="info-delete-container">
+                            <form id="{{ snippet.filename }}-info"
+                                  method="get"
+                                  action="{{ snippet.filename }}">
+                                <button title="Detail" class="icons info-button">info</button>
+                            </form>
+                            {% include "snippets/partials/download-approve.html" %}
+                        </div>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <p>No data</p>
+{% endif %}

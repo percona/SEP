@@ -44,12 +44,6 @@ sep_app = create_app(
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
-sep_app.mount(
-    "/static/snippets",
-    AuthenticatedStaticFiles(directory=sep_settings.SNIPPETS_DIR),
-    name="snippets_files",
-)
-sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 
 @CsrfProtect.load_config
@@ -74,6 +68,14 @@ if {"alters", "archives", "tasks"} & imported_plugins:
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
+
+if "snippets" in imported_plugins:
+    sep_app.mount(
+        "/static/snippets",
+        AuthenticatedStaticFiles(directory=sep_settings.SNIPPETS_DIR),
+        name="snippets_files",
+    )
+sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 User = get_user_model()
 templates = sep_settings.TEMPLATES
