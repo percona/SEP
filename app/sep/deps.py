@@ -12,6 +12,7 @@ from jwt import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
@@ -121,6 +122,24 @@ async def get_current_user(
 
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
+
+
+async def get_current_admin(current_user: CurrentUser) -> User:
+    """Return the authenticated admin from a cookie token.
+
+    :param current_user: The current logged-in user.
+    :type current_user: CurrentUser
+    :return: The authenticated admin user.
+    :rtype: User
+    :raises HTTPForbiddenException: If the user is not an admin.
+    """
+    if not current_user.is_admin:
+        logger.debug("User %s doesn't have admin role", current_user.username)
+        raise HTTPForbiddenException
+    return current_user
+
+
+IsAdminDep = Depends(get_current_admin)
 
 
 async def redirect_if_user_is_authenticated(request: Request) -> None:
@@ -561,7 +580,10 @@ async def get_task_by_name(
 # TODO(yan): Put get_task_history in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_history(
-    tasks_api: TaskAPI, task_history_id: int, owner: TaskOwner | None = None
+    tasks_api: TaskAPI,
+    task_history_id: int,
+    owner: TaskOwner | None = None,
+    decrypted: bool | None = None,
 ) -> TaskHistoryResponse:
     """Fetch and validate a task history by ID.
 
@@ -581,9 +603,12 @@ async def get_task_history(
     :raises HTTPNotFoundException: If the task history is not found or the validation
         fails.
     """
+    params = {}
+    if decrypted is not None:
+        params["decrypted"] = str(decrypted).lower()
     try:
         task_history = TaskHistoryResponse.model_validate(
-            await tasks_api.get(f"/history/{task_history_id}")
+            await tasks_api.get(f"/history/{task_history_id}", params=params)
         )
     except ValidationError:
         logger.debug("ValidationError retrieving task history.", exc_info=True)

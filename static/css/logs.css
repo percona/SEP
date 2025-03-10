@@ -43,10 +43,22 @@
     border-bottom: 1px solid #1e1e1e;
 }
 
-.word-wrap-toggle {
+.toggle-row {
     display: flex;
     align-items: center;
     margin-left: auto;
+}
+
+.decrypt-toggle {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+}
+
+.word-wrap-toggle {
+    display: flex;
+    align-items: center;
+    margin-left: 1em;
 }
 
 .toggle-label {

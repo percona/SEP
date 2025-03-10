@@ -148,6 +148,77 @@ $(document).ready(function() {
     });
     $('.word-wrap-checkbox').trigger("change");
 
+    $('.decrypt-checkbox').change(function() {
+        const historyId = $(this).attr('history_id');
+        const isChecked = $(this).is(':checked');
+
+        $.ajax({
+            url: `/decrypt-logs/${historyId}`,
+            type: 'GET',
+            data: {
+                decrypted: isChecked
+            },
+            success: function(response) {
+                console.log("Decryption request succeeded:", response);
+
+                const $logContent = $('.log-content[data-history-id="' + historyId + '"]');
+                $logContent.empty();
+
+                const $logTabs = $logContent.next('.log-bottom-bar').find('.log-tabs');
+                $logTabs.empty();
+
+                const $logTypeTabs = $logContent.prev('.log-top-bar').find('.log-tabs');
+
+                let isFirstStep = true;
+                $.each(response.task_logs, function(stepName, logs) {
+                    const displayStyle = isFirstStep ? "block" : "none";
+
+                    const $stepDiv = $('<div/>', {
+                        class: 'log-step-content',
+                        'data-step-name': stepName,
+                        style: "display:" + displayStyle + ";"
+                    });
+
+                    const $stdoutPre = $('<pre/>', {
+                        class: 'log-output',
+                        'data-log-type': 'stdout',
+                        style: "display:" + displayStyle + ";"
+                    }).text(logs.stdout);
+
+                    const $stderrPre = $('<pre/>', {
+                        class: 'log-output',
+                        'data-log-type': 'stderr',
+                        style: "display:none;"
+                    }).text(logs.stderr);
+
+                    $stepDiv.append($stdoutPre, $stderrPre);
+                    $logContent.append($stepDiv);
+
+                    const $stepTab = $('<a/>', {
+                        href: "#",
+                        class: 'log-step-tab' + (isFirstStep ? " selected" : ""),
+                        'data-step-name': stepName,
+                        text: stepName
+                    });
+                    $logTabs.append($stepTab);
+                    isFirstStep = false;
+                });
+
+                $logTabs.find('.log-step-tab').removeClass('selected');
+                $logTabs.find('.log-step-tab:first').addClass('selected');
+
+                $logTypeTabs.find('.log-type-tab').removeClass('selected');
+                $logTypeTabs.find('.log-type-tab:first').addClass('selected');
+
+                $logContent.find('.log-step-content').hide();
+                $logContent.find('.log-step-content:first').show();
+            },
+            error: function(xhr, status, error) {
+                console.error("Decryption request failed:", error);
+            }
+        });
+    });
+
     $('.toggle-label').click(function(e) {
         $(this).prev(".switch").click();
     });

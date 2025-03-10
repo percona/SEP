@@ -20,6 +20,7 @@ from app.tasks.deps import (
     TaskDep,
     TaskExecutor,
 )
+from app.tasks.entity import decrypt_task_history
 from app.tasks.models import (
     GeneratedTask,
     Task,
@@ -274,16 +275,18 @@ async def get_task_history(
 
 @router.get("/history/{task_history_id}", dependencies=[IsAuthenticatedDep])
 async def retrieve_task_history(
-    session: SessionDep,
-    task_history_id: int,
+    session: SessionDep, task_history_id: int, decrypted: bool | None = None
 ) -> TaskHistoryResponse:
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history_id)
-    return await TaskHistoryManager.get_or_404(
+    task_history = await TaskHistoryManager.get_or_404(
         session=session,
         select_related=(TaskHistory.task,),
         id=task_history_id,
     )
+    if decrypted is True:
+        decrypt_task_history(task_history)
+    return task_history
 
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])

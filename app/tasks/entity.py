@@ -137,34 +137,34 @@ def presidio_decrypt_log(anonymized_text: str, anonymized_items: list[dict]) -> 
     return deanonymized_result.text
 
 
-def decrypt_task_histories(task_histories: list[TaskHistory]) -> None:
-    """Decrypt task logs in a list of TaskHistory records.
+def decrypt_task_history(task_history: TaskHistory) -> None:
+    """Decrypt task logs in a TaskHistory record.
 
-    :param task_histories: A list of TaskHistory objects to be processed.
-    :type task_histories: list[TaskHistory]
-    :returns: None. The function modifies the task_histories in place.
+    :param task_history:TaskHistory objects to be processed.
+    :type task_history:TaskHistory
+    :returns: None. The function modifies the task_history in place.
     """
-    for history in task_histories:
-        req = getattr(history, "execution_request", None)
-        if not req or not isinstance(req.tracking, dict):
-            continue
+    req = getattr(task_history, "execution_request", None)
+    if not req or not isinstance(req.tracking, dict):
+        return
 
-        logs = req.tracking.get("task_logs")
-        if not isinstance(logs, dict):
-            continue
+    logs = req.tracking.get("task_logs")
+    if not isinstance(logs, dict):
+        return
 
-        stage_map = {
-            "prepare-env": history.anonymized_items.prepare_env,
-            "run-script": history.anonymized_items.run_script,
-            "clean-up": history.anonymized_items.clean_up,
-        }
-        for stage, log in logs.items():
-            if not isinstance(log, dict):
-                continue
-            anonymized = stage_map.get(stage)
-            if not anonymized:
-                continue
-            if log.get("stdout") is not None:
-                log["stdout"] = presidio_decrypt_log(log["stdout"], anonymized.stdout)
-            if log.get("stderr") is not None:
-                log["stderr"] = presidio_decrypt_log(log["stderr"], anonymized.stderr)
+    stage_map = {
+        "prepare-env": task_history.anonymized_items.prepare_env,
+        "run-script": task_history.anonymized_items.run_script,
+        "clean-up": task_history.anonymized_items.clean_up,
+        "step1": task_history.anonymized_items.step,
+    }
+    for stage, log in logs.items():
+        if not isinstance(log, dict):
+            continue
+        anonymized = stage_map.get(stage)
+        if not anonymized:
+            continue
+        if log.get("stdout") is not None:
+            log["stdout"] = presidio_decrypt_log(log["stdout"], anonymized.stdout)
+        if log.get("stderr") is not None:
+            log["stderr"] = presidio_decrypt_log(log["stderr"], anonymized.stderr)

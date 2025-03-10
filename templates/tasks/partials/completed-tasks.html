@@ -49,15 +49,28 @@
                                         <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
                                         <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
                                     </div>
-                                    <div class="word-wrap-toggle">
-                                        <label class="switch">
-                                            <input type="checkbox" class="word-wrap-checkbox">
-                                            <span class="slider round"></span>
-                                        </label>
-                                        <span class="toggle-label">Word Wrap</span>
+                                    <div class="toggle-row">
+                                        {% if user.is_admin %}
+                                            <div class="decrypt-toggle">
+                                                <label class="switch">
+                                                    <input type="checkbox"
+                                                           class="decrypt-checkbox"
+                                                           history_id="{{ task_history.id }}">
+                                                    <span class="slider round"></span>
+                                                </label>
+                                                <span class="toggle-label">Decrypt</span>
+                                            </div>
+                                        {% endif %}
+                                        <div class="word-wrap-toggle">
+                                            <label class="switch">
+                                                <input type="checkbox" class="word-wrap-checkbox">
+                                                <span class="slider round"></span>
+                                            </label>
+                                            <span class="toggle-label">Word Wrap</span>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="log-content">
+                                <div class="log-content" data-history-id="{{ task_history.id }}">
                                     {% for step_name, logs in task_history.execution_request.tracking.task_logs.items() %}
                                         <div class="log-step-content"
                                              data-step-name="{{ step_name }}"
