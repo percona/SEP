@@ -35,6 +35,10 @@ default:
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
+      - NAME: Checksums
+        MODULE_NAME: checksums
+        URI_PATH: /checksums
+        CSS_CLASS: checksums
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646

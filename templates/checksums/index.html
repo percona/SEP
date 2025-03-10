@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title -%}
+    Table Checksum
+{%- endblock title %}
+{% block style %}
+    <style>
+    label+input[type=text] {
+        display: block
+    }
+
+    table form {
+        display: inline-block
+    }
+
+    table button {
+        width: 2.2rem;
+        height: 2.2rem
+    }
+    </style>
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    {% endif %}
+    {% if tasks %}
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/saved.css') }}">
+    {% endif %}
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history_tasks or running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    {% if tasks %}
+        <script src="{{ url_for('static', path='/js/saved.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+{% endblock behaviours_optimized_extra %}
+{% block main %}
+    <p>
+        Perform a checksum, currently only supporting MySQL with <a href="https://docs.percona.com/percona-toolkit/pt-table-checksum.html">pt-table-checksum</a>.
+    </p>
+    {% if not tasks and not history_tasks %}
+        {% set modal_required = False %}
+        <h2>Configure a table checksum</h2>
+        {% if mysql_services|length < 1 %}
+            <p>Unable to find suitable database instances.</p>
+        {% elif executor_hosts|length < 1 %}
+            <p>Unable to find suitable executor hosts.</p>
+        {% else %}
+            {% include "checksums/partials/create-form.html" %}
+        {% endif %}
+    {% else %}
+        {% set modal_required = True %}
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html" %}
+            </section>
+        {% endif %}
+        <section id="saved-tasks">
+            <h2>Saved</h2>
+            {% include "checksums/partials/saved-tasks.html" %}
+            <h3>Configure a table checksum</h3>
+            {% include "checksums/partials/create-form.html" %}
+        </section>
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html" %}
+        </section>
+        <section id="completed-tasks">
+            <h2>History</h2>
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
+    {% endif %}
+{% endblock main %}
