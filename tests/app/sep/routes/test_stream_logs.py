@@ -37,7 +37,7 @@ def task_history_response(faker, created_task):
         status=TaskHistoryStatusEnum.SUCCESS,
         task=created_task,
         errors=[],
-        anonymized_items=None
+        anonymized_items=None,
     )
 
 
