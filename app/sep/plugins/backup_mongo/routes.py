@@ -36,7 +36,7 @@ async def backups_index(
     """Homepage of backups plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/index.html",
+        name="backup_mongo/index.html",
         context=context,
     )
 

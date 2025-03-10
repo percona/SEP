@@ -1,1 +1,1 @@
-from app.sep.plugins.backup.routes import router
+from app.sep.plugins.backup_mongo.routes import router

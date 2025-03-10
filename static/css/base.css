@@ -214,6 +214,10 @@ table {
         content: "backup"
     }
 
+    .backup_mongo a:before {
+        content: "backup_mongo"
+    }
+
     .inventory a:before {
         content: "inventory"
     }
