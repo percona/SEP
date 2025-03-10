@@ -39,16 +39,14 @@
 {% endblock behaviours_optimized_extra %}
 {% block main %}
     <p>
-        Generate a MongoDB backup, currently only supporting Logical, Physical and Snapshot<a href="https://github.com/percona/percona-backup-mongodb">PBM</a>
-        (physical) and
-        <a href="https://github.com/mydumper/mydumper">MyDumper</a> (logical).
+        Generate a <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backup, currently only supporting Logical, Physical and Snapshot methods.
     </p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure a backup task</h2>
-        ## {% if mongodb_services|length < 1 %} does not exist
-        ##    <p>Unable to find suitable database instances.</p> 
-        {% if executor_hosts|length < 1 %}
+        {% if mongodb_services|length != 1 %}
+           <p>Unable to find suitable database instances.</p> 
+        {% elif executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
             {% include "backups/partials/create-form.html" %}
