@@ -159,13 +159,10 @@ $(document).ready(function() {
                 decrypted: isChecked
             },
             success: function(response) {
-                console.log("Decryption request succeeded:", response);
-
                 const $logContent = $('.log-content[data-history-id="' + historyId + '"]');
                 $logContent.empty();
 
                 const $logTabs = $logContent.next('.log-bottom-bar').find('.log-tabs');
-                $logTabs.empty();
 
                 const $logTypeTabs = $logContent.prev('.log-top-bar').find('.log-tabs');
 
@@ -194,24 +191,18 @@ $(document).ready(function() {
                     $stepDiv.append($stdoutPre, $stderrPre);
                     $logContent.append($stepDiv);
 
-                    const $stepTab = $('<a/>', {
-                        href: "#",
-                        class: 'log-step-tab' + (isFirstStep ? " selected" : ""),
-                        'data-step-name': stepName,
-                        text: stepName
-                    });
-                    $logTabs.append($stepTab);
                     isFirstStep = false;
                 });
 
-                $logTabs.find('.log-step-tab').removeClass('selected');
-                $logTabs.find('.log-step-tab:first').addClass('selected');
-
-                $logTypeTabs.find('.log-type-tab').removeClass('selected');
-                $logTypeTabs.find('.log-type-tab:first').addClass('selected');
-
                 $logContent.find('.log-step-content').hide();
-                $logContent.find('.log-step-content:first').show();
+                $logContent.find('.log-step-content').find('.log-output:first').hide();
+                const selectedBottomIndex = $logTabs.find('.log-step-tab.selected').index();
+                const selectedTopIndex = $logTypeTabs.find('.log-type-tab.selected').index();
+
+                $selectedContent = $logContent.find('.log-step-content').eq(selectedBottomIndex)
+                $selectedContent.css("display", "block")
+                $selectedContent.find('.log-output').eq(selectedTopIndex).css("display", "block")
+
             },
             error: function(xhr, status, error) {
                 console.error("Decryption request failed:", error);
