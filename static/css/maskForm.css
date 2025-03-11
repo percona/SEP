@@ -1,7 +1,15 @@
+.entity-fieldset,
+.entity-fieldset fieldset {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
 .entity-container {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .entity-checkbox-item {
@@ -12,4 +20,9 @@
 
 .entity-checkbox-item input {
     margin-right: 5px;
+    margin-top: 0;
+}
+
+.entity-checkbox-item label {
+    margin-left: 0 !important;
 }

@@ -20,6 +20,7 @@ from app.sep.plugins.archives.deps import (
     ArchivesTask,
     get_archives_index_context,
 )
+from app.tasks.entity import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ async def archives_detail(
     """Retrieve archives task."""
     data = task.data
     meta = data["meta"]
+    decoded_entities = decode_selection(task.anonymize)
     task_config = yaml.safe_load(meta["config"])
     purge_item = task_config["PURGE_LIST"][0]
     task_data = {
@@ -79,6 +81,7 @@ async def archives_detail(
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
     }
 
     source_db = purge_item.get("SOURCE_DB")
