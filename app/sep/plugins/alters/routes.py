@@ -19,6 +19,7 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
+from app.tasks.entity import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ async def alters_detail(
     data = task.data
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    decoded_entities = decode_selection(task.anonymize)
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -79,6 +81,7 @@ async def alters_detail(
         "table": f"{meta['schema_name']}.{meta['table_name']}",
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
     }
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003

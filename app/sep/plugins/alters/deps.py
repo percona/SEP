@@ -116,6 +116,7 @@ async def build_alters_task_payload(
         ],
         name=form.task_name,
         target=form.hostname,
+        anonymize=form.anonymize,
     )
 
 

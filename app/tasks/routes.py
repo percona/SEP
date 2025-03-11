@@ -20,7 +20,7 @@ from app.tasks.deps import (
     TaskDep,
     TaskExecutor,
 )
-from app.tasks.entity import decrypt_task_history
+from app.tasks.entity import decrypt_task_history, Entity
 from app.tasks.models import (
     GeneratedTask,
     Task,
@@ -154,6 +154,7 @@ async def generate_task(
     task = Task(
         name=generated_task.name,
         owner=generated_task.app,
+        anonymize=generated_task.anonymize,
         backend=template.backend,
         data=template.data,
     )
@@ -364,3 +365,9 @@ async def transform_payload(
 ) -> dict[str, Any]:
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
+
+
+@router.get("/entities/", dependencies=[IsAuthenticatedDep])
+async def get_supported_entities() -> dict[str, int]:
+    """Retrives a dict of supported entity names and values."""
+    return {entity.name: entity.value for entity in Entity}

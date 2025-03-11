@@ -302,6 +302,7 @@ class GeneratedTask(BaseModel):
     persist: bool = True
     schedule: dict = {"save_only": True}
     template: str = "batch"
+    anonymize: int = 0
 
 
 class TaskBase(SQLModel):

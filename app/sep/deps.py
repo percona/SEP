@@ -470,12 +470,15 @@ async def get_tasks_context(
         executor_hosts = {}
         messages.error(request, exc.detail)
 
+    entities = await tasks_api.get("/entities/")
+
     context = default_context or {}
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
             "mysql_services": mysql_services,
             "tasks": tasks,
+            "entities": entities,
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,

@@ -1,0 +1,26 @@
+<fieldset>
+    <legend style="margin-bottom: 0.8em;">Mask options</legend>
+    <fieldset>
+        <input type="hidden" id="anonymize" name="anonymize" value="0">
+        <div>
+            <div>
+                <label for="encrypt_all_entities">
+                    <input type="checkbox" id="encrypt_all_entities">
+                    <strong>Encrypt All Entities</strong>
+                </label>
+            </div>
+            <br />
+            <div class="entity-container">
+                {% for key, value in entities.items() %}
+                    <div class="entity-checkbox-item">
+                        <input type="checkbox"
+                               id="encrypt_{{ key }}"
+                               value="{{ value }}"
+                               class="entity-encrypt-checkbox">
+                        <label for="encrypt_{{ key }}">{{ key.replace('_', ' ').title() }}</label>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </fieldset>
+</fieldset>

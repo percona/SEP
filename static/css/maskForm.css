@@ -1,0 +1,15 @@
+.entity-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.entity-checkbox-item {
+    width: calc(100% / 6 - 10px);
+    display: flex;
+    align-items: center;
+}
+
+.entity-checkbox-item input {
+    margin-right: 5px;
+}
