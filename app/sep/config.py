@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Literal, Self
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
+from jinja2.ext import loopcontrols
 from pydantic import (
     AliasGenerator,
     BaseModel,
@@ -189,7 +190,7 @@ class SEPSettings(BaseYamlAppSettings):
         env = Environment(
             loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
             autoescape=True,
-            extensions=["jinja2.ext.do"],
+            extensions=["jinja2.ext.do", loopcontrols],
         )
         env.filters["syntax_highlight"] = syntax_highlight
         env.globals["syntax_highlight_css"] = syntax_highlight_css

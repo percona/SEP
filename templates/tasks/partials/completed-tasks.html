@@ -9,8 +9,9 @@
                 <th style="width: 200px;">
                     Duration (<abbr>s</abbr>)
                 </th>
+                <th style="width: 150px;">Encrypted</th>
                 <th style="width: 150px;">Logs</th>
-                <th>Errors</th>
+                <th style="width: 150px;">Errors</th>
             </tr>
         </thead>
         <tbody>
@@ -29,6 +30,16 @@
                         <td class="relativeTime">{{ task_history.execution_request.tracking.finished_at }}</td>
                         <td>{{ task_history.execution_request.tracking.duration|round(3) }}</td>
                         <td>
+                            {% set ns = namespace(found_non_empty=false) %}
+                            {% for key, val in task_history.anonymized_items.items() %}
+                                {% if val %}
+                                    {% set ns.found_non_empty = true %}
+                                    {% break %}
+                                {% endif %}
+                            {% endfor %}
+                            {% if ns.found_non_empty %}<i class="icons">lock</i>{% endif %}
+                        </td>
+                        <td>
                             <button class="logs-button icons" data-log-id="{{ loop.index0 }}">visibility</button>
                         </td>
                         <td>
@@ -42,7 +53,7 @@
                         </td>
                     </tr>
                     <tr class="log-row" data-log-id="{{ loop.index0 }}" style="display:none;">
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="log-console">
                                 <div class="log-top-bar">
                                     <div class="log-tabs">
@@ -50,7 +61,7 @@
                                         <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
                                     </div>
                                     <div class="toggle-row">
-                                        {% if user.is_admin %}
+                                        {% if user.is_admin and ns.found_non_empty %}
                                             <div class="decrypt-toggle">
                                                 <label class="switch">
                                                     <input type="checkbox"
