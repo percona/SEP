@@ -1,4 +1,4 @@
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", function() {
     const encryptAllCheckbox = document.getElementById("encrypt_all_entities");
     const entityCheckboxes = document.querySelectorAll(".entity-encrypt-checkbox");
     const oneValueInput = document.getElementById("anonymize");
@@ -11,13 +11,13 @@ document.addEventListener("DOMContentLoaded", function () {
         oneValueInput.value = selectedValues.length > 0 ? selectedValues.reduce((a, b) => a + b, 0) : 0;
     }
 
-    encryptAllCheckbox.addEventListener("change", function () {
+    encryptAllCheckbox.addEventListener("change", function() {
         entityCheckboxes.forEach(checkbox => checkbox.checked = encryptAllCheckbox.checked);
         updateOneValue();
     });
 
     entityCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener("change", function () {
+        checkbox.addEventListener("change", function() {
             const anyChecked = [...entityCheckboxes].some(cb => cb.checked);
             encryptAllCheckbox.checked = anyChecked;
             updateOneValue();
