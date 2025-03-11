@@ -106,96 +106,24 @@
             Backup Type:
             <select id="backup_type" name="backup_type" required>
                 <option value="">Select a backup type</option>
-                <option value="M">Mydumper</option>
-                <option value="X">Xtrabackup</option>
+                <option value="L">Logical</option>
+                <option value="P">Physical</option>
             </select>
-        </label>
-        {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
-        <label for="encryption_recipient" title="{{ encryption_recipient_title }}">
-            Encryption Recipient (optional):
-            <input type="text"
-                   id="encryption_recipient"
-                   name="encryption_recipient"
-                   placeholder="Recipient email or key ID" />
         </label>
     </fieldset>
     <fieldset>
         <legend>General Backup Configuration</legend>
         <div class="checkbox-group">
-            {% set hardlink_title = "Enable hardlinks to save storage space by linking identical files instead of duplicating them." %}
-            <label for="hardlink" title="{{ hardlink_title }}">
-                <input type="checkbox" id="hardlink" name="hardlink" value="1" checked />
-                Hardlink
-            </label>
             {% set compress_title = "Enable compression to reduce backup file size and save storage space." %}
             <label for="compress" title="{{ compress_title }}">
                 <input type="checkbox" id="compress" name="compress" value="1" checked />
                 Compress
-            </label>
-            {% set check_disk_space_title = "Verify available disk space before starting the backup to prevent failures." %}
-            <label for="check_disk_space" title="{{ check_disk_space_title }}">
-                <input type="checkbox"
-                       id="check_disk_space"
-                       name="check_disk_space"
-                       value="1"
-                       checked />
-                Check Disk Space
             </label>
             {% set encrypt_title = "Enable encryption to secure backup data from unauthorized access." %}
             <label for="encrypt" title="{{ encrypt_title }}">
                 <input type="checkbox" id="encrypt" name="encrypt" value="1" />
                 Encrypt
             </label>
-            {% set encrypt_using_tmpdir_title = "Use a temporary directory for encryption to optimize performance and avoid direct disk writes." %}
-            <label for="encrypt_using_tmpdir" title="{{ encrypt_using_tmpdir_title }}">
-                <input type="checkbox"
-                       id="encrypt_using_tmpdir"
-                       name="encrypt_using_tmpdir"
-                       value="1" />
-                Encrypt using tmpdir
-            </label>
-            {% set only_if_running_slave_title = "Enable this option to apply the backup only if the server is running as a replication slave." %}
-            <label for="only_if_running_slave" title="{{ only_if_running_slave_title }}">
-                <input type="checkbox"
-                       id="only_if_running_slave"
-                       name="only_if_running_slave"
-                       value="1" />
-                Only if running slave
-            </label>
-            {% set only_if_read_only_title = "Enable this option to perform the backup only if the database is in read-only mode." %}
-            <label for="only_if_read_only" title="{{ only_if_read_only_title }}">
-                <input type="checkbox"
-                       id="only_if_read_only"
-                       name="only_if_read_only"
-                       value="1" />
-                Only if read-only
-            </label>
-        </div>
-        {% set backup_dir_title = "Type the directory where backup files will be stored." %}
-        <label for="backup_dir" title="{{ backup_dir_title }}">
-            Backup Directory:
-            <input type="text"
-                   id="backup_dir"
-                   name="backup_dir"
-                   placeholder="/path/to/backups"
-                   required>
-        </label>
-        {% set logging_dir_title = "Type the directory where log files will be stored for backup operations." %}
-        <label for="logging_dir" title="{{ logging_dir_title }}">
-            Logging Directory (optional):
-            <input type="text"
-                   id="logging_dir"
-                   name="logging_dir"
-                   placeholder="/path/to/logs" />
-        </label>
-        {% set defaults_file_title = "the path to the defaults file containing preset configuration values for the backup process." %}
-        <label for="defaults_file" title="{{ defaults_file_title }}">
-            Defaults File (optional):
-            <input type="text"
-                   id="defaults_file"
-                   name="defaults_file"
-                   placeholder="/path/to/defaults.cnf" />
-        </label>
     </fieldset>
     <fieldset id="mydumper_container">
         <legend>Mydumper Configuration</legend>
