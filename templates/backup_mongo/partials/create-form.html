@@ -125,82 +125,9 @@
                 Encrypt
             </label>
     </fieldset>
-    <fieldset id="mydumper_container">
-        <legend>Mydumper Configuration</legend>
-        {% set mydumper_daily_purge_title = "Set the number of days after which old backups will be automatically deleted." %}
-        <label for="mydumper_daily_purge" title="{{ mydumper_daily_purge_title }}">
-            Daily Purge (days):
-            <input type="number"
-                   id="mydumper_daily_purge"
-                   name="mydumper_daily_purge"
-                   placeholder="e.g. 7" />
-        </label>
-        {% set mydumper_weekly_purge_title = "Set the number of weeks after which old backups will be automatically deleted on a weekly basis." %}
-        <label for="mydumper_weekly_purge" title="{{ mydumper_weekly_purge_title }}">
-            Weekly Purge (weeks):
-            <input type="number"
-                   id="mydumper_weekly_purge"
-                   name="mydumper_weekly_purge"
-                   placeholder="e.g. 4" />
-        </label>
-        <div class="checkbox-group">
-            {% set mydumper_dump_triggers_title = "Include database triggers in the backup to preserve trigger functionality." %}
-            <label for="mydumper_dump_triggers"
-                   title="{{ mydumper_dump_triggers_title }}">
-                <input type="checkbox"
-                       id="mydumper_dump_triggers"
-                       name="mydumper_dump_triggers"
-                       value="1"
-                       checked>
-                Dump Triggers
-            </label>
-            {% set mydumper_desync_pxc_title = "Temporarily desynchronize the Percona XtraDB Cluster (PXC) node during backup to reduce replication lag." %}
-            <label for="mydumper_desync_pxc" title="{{ mydumper_desync_pxc_title }}">
-                <input type="checkbox"
-                       id="mydumper_desync_pxc"
-                       name="mydumper_desync_pxc"
-                       value="1" />
-                Desync PXC
-            </label>
-            {% set mydumper_less_locking_title = "Minimize table locking during backup to reduce impact on database performance." %}
-            <label for="mydumper_less_locking" title="{{ mydumper_less_locking_title }}">
-                <input type="checkbox"
-                       id="mydumper_less_locking"
-                       name="mydumper_less_locking"
-                       value="1"
-                       checked>
-                Less Locking
-            </label>
-            {% set mydumper_use_numa_title = "Enable NUMA (Non-Uniform Memory Access) awareness to optimize memory allocation for backup processes." %}
-            <label for="mydumper_use_numa" title="{{ mydumper_use_numa_title }}">
-                <input type="checkbox"
-                       id="mydumper_use_numa"
-                       name="mydumper_use_numa"
-                       value="1" />
-                Use NUMA
-            </label>
-            {% set use_ftwrl_guardian_title = "Enable FTWRL (Flush Tables with Read Lock) Guardian to manage table locks and prevent long lock times during backup." %}
-            <label for="use_ftwrl_guardian" title="{{ use_ftwrl_guardian_title }}">
-                <input type="checkbox"
-                       id="use_ftwrl_guardian"
-                       name="use_ftwrl_guardian"
-                       value="1"
-                       checked>
-                Use FTWRL Guardian
-            </label>
-        </div>
-        {% set mydumper_extra_args_title = "Type additional command-line arguments for the backup process to customize its behavior." %}
-        <label for="mydumper_extra_args" title="{{ mydumper_extra_args_title }}">
-            Extra Arguments (optional):
-            <input type="text"
-                   id="mydumper_extra_args"
-                   name="mydumper_extra_args"
-                   placeholder="e.g. --verbose=3" />
-        </label>
-    </fieldset>
-    <fieldset id="xtrabackup_container">
-        <legend>Xtrabackup Configuration</legend>
-        {% set xtrabackup_copies_title = "Set the number of backup copies to retain for redundancy and recovery." %}
+    <fieldset id="pbm_container">
+        <legend>PBM Configuration</legend>
+        {% set pbm_copies_title = "Set the number of backup copies to retain for redundancy and recovery." %}
         <label for="xtrabackup_copies" title="{{ xtrabackup_copies_title }}">
             Number of Copies:
             <input type="number"
@@ -209,168 +136,6 @@
                    placeholder="e.g. 2" />
         </label>
         <div class="checkbox-group">
-            {% set xtrabackup_kill_queries_title = "Terminate long-running queries that may block the XtraBackup process to ensure a smooth backup." %}
-            <label for="xtrabackup_kill_queries"
-                   title="{{ xtrabackup_kill_queries_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_kill_queries"
-                       name="xtrabackup_kill_queries"
-                       value="1" />
-                Kill Queries
-            </label>
-            {% set xtrabackup_verify_title = "Enable verification of the XtraBackup process to ensure data integrity and consistency." %}
-            <label for="xtrabackup_verify" title="{{ xtrabackup_verify_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_verify"
-                       name="xtrabackup_verify"
-                       value="1"
-                       checked>
-                Verify Backup
-            </label>
-            {% set xtrabackup_prepare_title = "Prepare the XtraBackup files for restoration by applying redo logs and ensuring consistency." %}
-            <label for="xtrabackup_prepare" title="{{ xtrabackup_prepare_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_prepare"
-                       name="xtrabackup_prepare"
-                       value="1" />
-                Prepare Backup
-            </label>
-            {% set xtrabackup_desync_pxc_title = "Desynchronize the Percona XtraDB Cluster (PXC) node during XtraBackup to minimize replication impact." %}
-            <label for="xtrabackup_desync_pxc" title="{{ xtrabackup_desync_pxc_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_desync_pxc"
-                       name="xtrabackup_desync_pxc"
-                       value="1" />
-                Desync PXC
-            </label>
-            {% set xtrabackup_rsync_title = "Use rsync to optimize file transfers during XtraBackup, reducing disk I/O and improving performance." %}
-            <label for="xtrabackup_rsync" title="{{ xtrabackup_rsync_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_rsync"
-                       name="xtrabackup_rsync"
-                       value="1" />
-                Use Rsync
-            </label>
-            {% set xtrabackup_slave_info_title = "Include replication slave information in the backup to assist with replication recovery." %}
-            <label for="xtrabackup_slave_info" title="{{ xtrabackup_slave_info_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_slave_info"
-                       name="xtrabackup_slave_info"
-                       value="1"
-                       checked>
-                Include Slave Info
-            </label>
-            {% set xtrabackup_stop_slave_title = "Stop the replication slave before starting the backup to ensure data consistency." %}
-            <label for="xtrabackup_stop_slave" title="{{ xtrabackup_stop_slave_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_stop_slave"
-                       name="xtrabackup_stop_slave"
-                       value="1" />
-                Stop Slave Before Backup
-            </label>
-            {% set xtrabackup_lock_ddl_title = "Lock Data Definition Language (DDL) operations during backup to prevent schema changes." %}
-            <label for="xtrabackup_lock_ddl" title="{{ xtrabackup_lock_ddl_title }}">
-                <input type="checkbox"
-                       id="xtrabackup_lock_ddl"
-                       name="xtrabackup_lock_ddl"
-                       value="1" />
-                Lock DDL
-            </label>
-        </div>
-        {% set xtrabackup_kill_queries_timeout_title = "Set the maximum time (in seconds) to wait before forcibly terminating long-running queries that block the backup process." %}
-        <label for="xtrabackup_kill_queries_timeout"
-               title="{{ xtrabackup_kill_queries_timeout_title }}">
-            Kill Queries Timeout (seconds):
-            <input type="number"
-                   id="xtrabackup_kill_queries_timeout"
-                   name="xtrabackup_kill_queries_timeout"
-                   placeholder="e.g. 30" />
-        </label>
-        {% set xtrabackup_kill_query_type_title = "Choose which type of queries should be terminated to prevent backup interruptions." %}
-        <label for="xtrabackup_kill_query_type"
-               title="{{ xtrabackup_kill_query_type_title }}">
-            Query Type to Kill:
-            <select id="xtrabackup_kill_query_type" name="xtrabackup_kill_query_type">
-                <option value="">Select one</option>
-                <option value="select">select</option>
-                <option value="all">all</option>
-            </select>
-        </label>
-        {% set xtrabackup_prepare_memory_title = "Set the amount of memory to allocate for the prepare phase of XtraBackup. Leave empty for default." %}
-        <label for="xtrabackup_prepare_memory"
-               title="{{ xtrabackup_prepare_memory_title }}">
-            Prepare Memory (optional):
-            <input type="text"
-                   id="xtrabackup_prepare_memory"
-                   name="xtrabackup_prepare_memory"
-                   placeholder="e.g. 1G" />
-        </label>
-        {% set xtrabackup_defaults_file_title = "Type the path to the optional defaults file for predefined configuration settings." %}
-        <label for="xtrabackup_defaults_file"
-               title="{{ xtrabackup_defaults_file_title }}">
-            Defaults File (optional):
-            <input type="text"
-                   id="xtrabackup_defaults_file"
-                   name="xtrabackup_defaults_file"
-                   placeholder="/path/to/my.cnf" />
-        </label>
-        {% set xtrabackup_extra_args_title = "Type additional command-line arguments for XtraBackup to customize its behavior." %}
-        <label for="xtrabackup_extra_args" title="{{ xtrabackup_extra_args_title }}">
-            Extra Arguments (optional):
-            <input type="text"
-                   id="xtrabackup_extra_args"
-                   name="xtrabackup_extra_args"
-                   placeholder="e.g. --compact" />
-        </label>
-        {% set xtrabackup_incremental_method_title = "Choose the incremental backup method: 'less_space' (reduces storage usage) or 'fast_restore' (accelerates restoration)." %}
-        <label for="xtrabackup_incremental_method"
-               title="{{ xtrabackup_incremental_method_title }}">
-            Incremental Method:
-            <select id="xtrabackup_incremental_method"
-                    name="xtrabackup_incremental_method">
-                <option value="">Select one</option>
-                <option value="less_space">less_space</option>
-                <option value="fast_restore">fast_restore</option>
-            </select>
-        </label>
-        {% set xtrabackup_incremental_cycle_title = "Select the frequency for incremental backups: 'daily' for daily backups or 'weekly' for weekly backups." %}
-        <label for="xtrabackup_incremental_cycle"
-               title="{{ xtrabackup_incremental_cycle_title }}">
-            Incremental Cycle:
-            <select id="xtrabackup_incremental_cycle" name="xtrabackup_incremental_cycle">
-                <option value="">Select one</option>
-                <option value="daily">daily</option>
-                <option value="weekly">weekly</option>
-            </select>
-        </label>
-        {% set xtrabackup_local_ssh_destination_title = "Type the SSH destination for storing backups remotely. Format: user@host:/path" %}
-        <label for="xtrabackup_local_ssh_destination"
-               title="{{ xtrabackup_local_ssh_destination_title }}">
-            Local SSH Destination (optional):
-            <input type="text"
-                   id="xtrabackup_local_ssh_destination"
-                   name="xtrabackup_local_ssh_destination"
-                   placeholder="user@host:/path" />
-        </label>
-        {% set xtrabackup_aes256_keyfile_title = "Type the path to the AES-256 encryption key file for securing backups." %}
-        <label for="xtrabackup_aes256_keyfile"
-               title="{{ xtrabackup_aes256_keyfile_title }}">
-            AES256 Keyfile (optional):
-            <input type="text"
-                   id="xtrabackup_aes256_keyfile"
-                   name="xtrabackup_aes256_keyfile"
-                   placeholder="/path/to/keyfile" />
-        </label>
-        {% set xtrabackup_bin_cmd_title = "Select the backup tool to use: 'xtrabackup' (default for Percona), 'mariadb-backup' (MariaDB compatibility), or 'innobackupex' (legacy tool)." %}
-        <label for="xtrabackup_bin_cmd" title="{{ xtrabackup_bin_cmd_title }}">
-            Binary Command:
-            <select id="xtrabackup_bin_cmd" name="xtrabackup_bin_cmd">
-                <option value="">Select one</option>
-                <option value="xtrabackup">xtrabackup</option>
-                <option value="mariadb-backup">mariadb-backup</option>
-                <option value="innobackupex">innobackupex</option>
-            </select>
-        </label>
     </fieldset>
     <fieldset>
         <legend>Additional Upload Options</legend>
@@ -418,8 +183,7 @@
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
-    const mydumperContainer = document.getElementById('mydumper_container');
-    const xtrabackupContainer = document.getElementById('xtrabackup_container');
+    const xtrabackupContainer = document.getElementById('pbm_container');
 
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
@@ -431,10 +195,6 @@
 
     const s3BucketInput = document.getElementById('s3_bucket');
     const rsyncPathInput = document.getElementById('rsync_path');
-
-    function disableAllMydumperFields(disabled) {
-        mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
-    }
 
     function disableAllXtrabackupFields(disabled) {
         xtrabackupContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
