@@ -21,6 +21,7 @@ from app.sep.plugins.backup.deps import (
     get_backups_index_context,
 )
 from app.sep.plugins.backup.models import BackupType
+from app.tasks.entity import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ async def backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
+    decoded_entities = decode_selection(task.anonymize)
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
     task_data = {
@@ -83,6 +85,7 @@ async def backups_detail(
         "host": server_config["HOST"],
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
     }
 
     context["task"] = task_data

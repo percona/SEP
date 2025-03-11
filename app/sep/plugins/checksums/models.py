@@ -49,6 +49,8 @@ class ChecksumsCreate(BaseModel):
     :type chunk_time: str
     :param max_lag: Pause the data copy until all replicas lag is less than this value.
     :type max_lag: str
+    :param anonymize: The bitmask for entities to be anonymized in logs.
+    :type anonymize: int
     """
 
     task_name: RequiredStr
@@ -70,3 +72,4 @@ class ChecksumsCreate(BaseModel):
     max_load: str = ""
     chunk_time: str = ""
     max_lag: str = ""
+    anonymize: int = 0

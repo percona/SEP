@@ -127,6 +127,7 @@ async def build_checksums_task_payload(
         ],
         name=form.task_name,
         target=form.hostname,
+        anonymize=form.anonymize,
     )
 
 

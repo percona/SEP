@@ -4,6 +4,10 @@
     padding-bottom: 0;
 }
 
+#encrypt_all_entities {
+    display: inline;
+}
+
 .entity-container {
     display: flex;
     flex-wrap: wrap;

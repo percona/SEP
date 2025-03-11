@@ -19,6 +19,7 @@ from app.sep.plugins.checksums.deps import (
     ChecksumsTask,
     get_checksums_index_context,
 )
+from app.tasks.entity import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ async def checksums_detail(
 ) -> HTMLResponse:
     """Retrieve checksums task."""
     data = task.data
+    decoded_entities = decode_selection(task.anonymize)
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
     task_data = {
@@ -77,6 +79,7 @@ async def checksums_detail(
         "hostname": data["Constraints"][0]["RTarget"],
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
     }
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003

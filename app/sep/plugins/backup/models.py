@@ -100,6 +100,7 @@ class BackupCreate(BackupConfigAll):
     hostname: RequiredStr
     service_id: int
     backup_type: BackupType
+    anonymize: int = 0
     encryption_recipient: RequiredStr | EmptyStrToNone = None
 
 

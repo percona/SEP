@@ -88,6 +88,17 @@
         </table>
     </section>
     <section>
+        <h2>Mask</h2>
+        <p>The following sensitive data types are selected for anonymization:</p>
+        {% if task.entities %}
+            <ul>
+                {% for entity, value in task.entities.items() %}<code>{{ entity }},</code>{% endfor %}
+            </ul>
+        {% else %}
+            <p>No entities selected.</p>
+        {% endif %}
+    </section>
+    <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
             <table class="responsive-table">

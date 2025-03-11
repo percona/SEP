@@ -118,6 +118,7 @@ async def build_backup_task_payload(
             },
             "payload": f"file://{payload_path}",
         },
+        anonymize=form.anonymize,
     )
 
 
