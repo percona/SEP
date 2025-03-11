@@ -50,7 +50,7 @@
            {% elif executor_hosts|length < 1 %}
            <p>Unable to find suitable executor hosts.</p>
            {% else %}
-            {% include "backups/partials/create-form.html" %}
+            {% include "backup_mongo/partials/create-form.html" %}
         {% endif %}
     #}
     {% else %}
@@ -63,14 +63,14 @@
         {% endif %}
         <section id="saved-tasks">
             <h2>Saved</h2>
-            {% include "backups/partials/saved-tasks.html" %}
+            {% include "backup_mongo/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a backup process</h3>
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "backups/partials/create-form.html" %}
+                {% include "backup_mongo/partials/create-form.html" %}
             {% endif %}
         </section>
         <section id="pending-tasks">
