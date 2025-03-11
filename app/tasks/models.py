@@ -220,6 +220,8 @@ class TaskGroup(BaseModel):
                         data["TaskGroups"].append(
                             {
                                 "Name": f"{self.name}{i + 1}",
+                                "RestartPolicy": {"Attempts": 0},
+                                "ReschedulePolicy": {"Attempts": 0},
                                 "Tasks": [task.model_dump(by_alias=True)],
                             },
                         )
@@ -227,6 +229,8 @@ class TaskGroup(BaseModel):
                     data["TaskGroups"].append(
                         {
                             "Name": self.name,
+                            "RestartPolicy": {"Attempts": 0},
+                            "ReschedulePolicy": {"Attempts": 0},
                             "Tasks": [
                                 task.model_dump(by_alias=True) for task in self.tasks
                             ],
