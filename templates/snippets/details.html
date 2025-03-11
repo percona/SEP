@@ -40,6 +40,7 @@
                 <span>Approved at {{ snippet.approved_at|utc_isoformat }}</span> <i class="icons unselectable" style="color: #8ACE00;">check_circle</i>
             </dd>
         {%- else -%}
+            {%- set download_before_approval = snippet_code_is_sliced or not snippet_code -%}
             <dd class="iconTextLine">
                 <span>Not approved</span> <i class="icons unselectable" style="color: gray;">unpublished</i>
             </dd>
@@ -64,12 +65,16 @@
             {{ snippet_code|syntax_highlight(style="monokai", linenos=True, wrapcode=True) |safe }}
             {% if snippet_code_is_sliced -%}
                 <p class="iconTextLine">
-                    <i class="icons unselectable" style="color: #e0b731;">warning</i> <span>File is too large to preview. Please <a href="{{ url_for('snippets_files', path=snippet.filename) }}"
+                    <i class="icons unselectable" style="color: #e0b731;">warning</i> <span>File is too large to preview. Please <a class="downloadSnippet"
+    href="{{ url_for('snippets_files', path=snippet.filename) }}"
+    data-snippet-filename="{{ snippet.filename }}"
     download>download the snippet</a> to inspect its full contents.</span>
                 </p>
             {%- endif -%}
         {%- else -%}
-            No preview available. Please <a href="{{ url_for('snippets_files', path=snippet.filename) }}"
+            No preview available. Please <a class="downloadSnippet"
+    href="{{ url_for('snippets_files', path=snippet.filename) }}"
+    data-snippet-filename="{{ snippet.filename }}"
     download>download the snippet</a> to inspect its contents.
         {%- endif -%}
     </section>

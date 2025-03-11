@@ -1,5 +1,6 @@
-<a class="downloadSnippet"
+<a class="downloadSnippet hidden"
    href="{{ url_for('snippets_files', path=snippet.filename) }}"
+   data-snippet-filename="{{ snippet.filename }}"
    download>download</a>
 <form class="downloadSnippetForm">
     <button title="Download snippet" class="icons">download</button>
@@ -14,13 +15,14 @@
         {%- set action_verb = "approve" -%}
         {%- set icon = "done_all" -%}
     {%- endif -%}
+    {%- set submit_title = action_verb.capitalize() ~ " snippet" -%}
     <form id="{{ snippet.filename }}-approval"
           method="post"
           class="confirmable-form"
           data-confirm-message='Are you sure you want to {{ action_verb }} snippet "{{ snippet.filename }}"?'
           action="{{ url_for(action_route, snippet_filename=snippet.filename) }}">
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-        <button title="{{ action_verb.capitalize() }} snippet"
+        <button {% if download_before_approval %}disabled title="Please download and inspect the full snippet before approving it" data-next-title="{{ submit_title }}"{% else %}title="{{ submit_title }}"{% endif %}
                 type="submit"
                 class="icons approval-button submitButton">{{ icon }}</button>
     </form>

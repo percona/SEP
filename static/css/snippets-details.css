@@ -21,10 +21,6 @@
     overflow: auto;
 }
 
-.downloadSnippet {
-    display: none;
-}
-
 #actions form {
     padding: 0;
 }

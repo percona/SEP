@@ -18,6 +18,7 @@
                         {% if snippet.is_approved %}
                             <i class="icons unselectable" style="color: #8ACE00;">check_circle</i>
                         {% else %}
+                            {%- set download_before_approval = True -%}
                             <i class="icons unselectable" style="color: gray;">unpublished</i>
                         {% endif %}
                     </td>
