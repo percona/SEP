@@ -53,6 +53,7 @@
             {% include "backup_mongo/partials/create-form.html" %}
         {% endif %}
     #}
+    {% include "backup_mongo/partials/create-form.html" %}
     {% else %}
         {% set modal_required = True %}
         {% if running_tasks %}
