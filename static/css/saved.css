@@ -34,3 +34,7 @@
 table form {
     display: inline-block;
 }
+
+.delete-task-form {
+    padding: 0;
+}
