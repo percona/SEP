@@ -135,6 +135,10 @@ input:checked+.slider:before {
     border: 2px solid #8ACE00;
 }
 
+.log-console.failed {
+    border: 2px solid #CE2900;
+}
+
 .tab-notification {
     position: relative;
 }

@@ -10,7 +10,7 @@ from starlette.responses import StreamingResponse
 
 from app.sep.deps import get_task_history, IsAuthenticated, TaskAPI
 from app.sep.utils.decorators import csrf_exempt
-from app.tasks.models import TaskHistoryResponse
+from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,4 +57,9 @@ async def task_history_logs_event_stream(
                 log_data["id"] = i
                 yield f"data: {json.dumps(log_data)}\n\n"
                 i += 1
-    yield "event: finish\ndata: true\n\n"
+    task_history = await tasks_api.get(f"/history/{task_history_id}")
+
+    final_status = (
+        "success" if task_history.status == TaskHistoryStatusEnum.SUCCESS else "failed"
+    )
+    yield f"event: finish\ndata: {json.dumps({'status': final_status})}\n\n"
