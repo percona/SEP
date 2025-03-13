@@ -55,7 +55,7 @@ async def backups_create(
         json=task.model_dump(),
     )
     return RedirectResponse(
-        "/backups",
+        "/backup_mongo",
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
@@ -91,7 +91,7 @@ async def backups_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="backups/details.html",
+        name="backup_mongo/details.html",
         context=context,
     )
 

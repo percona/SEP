@@ -167,7 +167,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "hostname": meta["target"],
         "host": backup_server.get("HOST"),
         "port": backup_server.get("PORT") or 3306,
-        "upload": ", ".join(backup_server.get("UPLOAD")),
+        "upload": ", ".join(backup_server.get("UPLOAD")) or ['UPLOAD'],
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
     }
 
