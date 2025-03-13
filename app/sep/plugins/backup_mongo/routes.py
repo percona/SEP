@@ -111,7 +111,7 @@ async def backups_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    return RedirectResponse("/backups", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse("/backup_mongo", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(
