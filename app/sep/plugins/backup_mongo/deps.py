@@ -95,7 +95,7 @@ async def build_backup_task_payload(
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUPS,
+        owner=TaskOwner.BACKUP_MONGO,
         data={
             "task": "run-python",
             "meta": {
