@@ -86,20 +86,14 @@
         {% set service_id_title = "Select the database host from the inventory to connect to." %}
         <label for="service_id" title="{{ service_id_title }}">
             Select a Database Host:
-            {% if mysql_services|length == 1 %}
-                {% set single_service = mysql_services[0] %}
-                <select id="service_id" name="service_id" disabled>
-                    <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                </select>
-                <input type="hidden" name="service_id" value="{{ single_service.id }}">
-            {% else %}
                 <select id="service_id" name="service_id" required>
                     <option value="" selected>Select a database host</option>
-                    {% for service in mysql_services %}
+                    {$ set mongodb_services = "deb-1"}
+                    {% for service in mongodb_services %}
                         <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                     {% endfor %}
+                        <option value="1">deb-1 1</option>
                 </select>
-            {% endif %}
         </label>
         {% set backup_type_title = "Select the type of backup: Logical or Physical." %}
         <label for="backup_type" title="{{ backup_type_title }}">
