@@ -28,7 +28,6 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Topic :: Database",
     "Topic :: System :: Monitoring",
     "Topic :: System :: Systems Administration",
@@ -39,7 +38,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.14"
+python = ">=3.11,<3.13"
 aiohttp = "^3.11.10"
 aioresponses = "^0.7.7"
 idna = "^3.7"
@@ -269,7 +268,7 @@ show_missing = true
 skip_empty = true
 
 [tool.tox]
-env_list = ["3.11", "3.12", "3.13"]
+env_list = ["3.11", "3.12"]
 
 [tool.tox.env_run_base]
 allowlist_externals = ["make"]
