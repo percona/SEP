@@ -23,10 +23,14 @@
 
         {{ syntax_highlight_css(style="sas") }}
     </style>
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/saved.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/saved.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     {% if history %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
@@ -60,6 +64,7 @@
             </tr>
         </tfoot>
     </table>
+    {% include "tasks/partials/run-python-form.html" %}
     {% if running_tasks %}
         <section id="running-tasks">
             <h2>Running</h2>

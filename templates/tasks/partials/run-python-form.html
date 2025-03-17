@@ -7,7 +7,7 @@
              flex-direction: column;
              align-items: start">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-    {% if task_data.get("ParameterizedJob") %}
+    {% if task_data and task_data.get("ParameterizedJob") %}
         <fieldset style="width: 90%;">
             <legend style="font-size: 1.5em; font-weight: bold; color: #333;">Configuration</legend>
             {% if task_data.ParameterizedJob %}
@@ -73,8 +73,15 @@
         <button type="submit" class="icons send-button submitButton">send</button>
         {% if not task.protected %}
             <button class="icons delete-button submitButton delete-tasks-button"
-                    form="delete-form">delete forever</button>
+                    form="delete-task-form">delete forever</button>
         {% endif %}
         <input type="hidden" name="eta" class="eta-value" disabled>
     </div>
+</form>
+<form class="delete-task-form"
+      id="delete-task-form"
+      data-confirm-message='Are you sure you want to delete task "{{ task.name }}"?'
+      method="post"
+      action="{{ url_for('tasks_delete', task_name=task.name) }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
