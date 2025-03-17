@@ -274,7 +274,7 @@ class Settings(BaseYamlSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
-    MASK_CONSOLE_LOGS: bool = Field(default=True)
+    MASK_CONSOLE_LOGS: bool = True
     SSL_CAFILE: RelativeFilePath | None = None
     BASE_URL: URL | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None

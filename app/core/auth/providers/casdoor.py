@@ -1,5 +1,6 @@
 """Provide the CasdoorSDK for interacting with Casdoor services."""
 
+import logging
 from base64 import b64encode
 from collections.abc import AsyncGenerator
 from functools import cached_property
@@ -16,6 +17,7 @@ from app.core.auth.exceptions import (
 )
 from app.core.requests import RemoteAPI
 from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
+from app.core.utils.logger import PresidioRemoteAPIFilter
 
 
 class CasdoorException(BaseAuthProviderException):
@@ -179,6 +181,27 @@ class CasdoorSDK(RemoteAPI):
             "path": self.front_endpoint.path or base_url.path,
         }
         return self.front_endpoint.replace(**url_data)
+
+    @cached_property
+    def logger(self) -> logging.Logger:
+        """Return a logger with debug level and a security filter.
+
+        :return: Configured logger with debug level and filter.
+        :rtype: logging.Logger
+        """
+        from app.core.config import settings
+
+        logger = logging.getLogger(self.logger_name)
+        logger.level = logger.root.level
+        if not any(isinstance(f, PresidioRemoteAPIFilter) for f in logger.filters):
+            logger.addFilter(
+                PresidioRemoteAPIFilter(
+                    logger_name=self.logger_name,
+                    hashing_salt=settings.SECRET_KEY,
+                    console_log_masking=settings.MASK_CONSOLE_LOGS,
+                )
+            )
+        return logger
 
     async def request(
         self,

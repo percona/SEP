@@ -45,7 +45,7 @@ class PresidioRemoteAPIFilter(logging.Filter):
         logger_name: str,
         *,
         console_log_masking: bool,
-        hashing_salt: str = "SECRET_KEY",
+        hashing_salt: str,
     ) -> None:
         """Initialize the PresidioRemoteAPIFilter.
 
@@ -78,9 +78,8 @@ class PresidioRemoteAPIFilter(logging.Filter):
         if not self.console_log_masking:
             return True
 
-        for include in INCLUDE_CLASSES:
-            if include.lower() not in record.name.lower():
-                return True
+        if record.name.lower() not in INCLUDE_CLASSES:
+            return True
 
         sanitized_args = []
         for arg in record.args:
@@ -144,13 +143,16 @@ class PresidioRemoteAPIFilter(logging.Filter):
         return sanitized_list
 
     def _create_recognizers_and_operator_config(
-        self, data: list, ad_hoc_recognizers: list, operators_config: dict
+        self, data: dict | list, ad_hoc_recognizers: list, operators_config: dict
     ) -> None:
         """Recursively traverse data to create ad-hoc recognizers and operator configurations for sensitive keys.
 
-        :param data: The data structure (dict or list) to traverse.
+        :param data: The data structure to traverse.
+        :type data: dict | list
         :param ad_hoc_recognizers: The list to append recognizers to.
+        :type ad_hoc_recognizers: list
         :param operators_config: The dictionary to populate with operator configurations.
+        :type operators_config: dict
         :return: None
         """
         if isinstance(data, dict):

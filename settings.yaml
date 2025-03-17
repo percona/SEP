@@ -12,7 +12,7 @@ default:
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
-  MASK_CONSOLE_LOGS: True
+  MASK_CONSOLE_LOGS: true
   SEP:
     OAUTH:
       REDIRECT_URI: /oauth/callback
@@ -40,6 +40,7 @@ default:
       ENDPOINT: http://127.0.0.1:4646
 
 development:
+  MASK_CONSOLE_LOGS: false
   SEP:
     INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
