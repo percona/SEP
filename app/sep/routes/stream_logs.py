@@ -60,6 +60,8 @@ async def task_history_logs_event_stream(
     task_history = await tasks_api.get(f"/history/{task_history_id}")
 
     final_status = (
-        "success" if task_history.status == TaskHistoryStatusEnum.SUCCESS else "failed"
+        "success"
+        if task_history and task_history.get("status") == TaskHistoryStatusEnum.SUCCESS
+        else "failed"
     )
     yield f"event: finish\ndata: {json.dumps({'status': final_status})}\n\n"
