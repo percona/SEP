@@ -363,7 +363,7 @@ class CasdoorSDK(RemoteAPI):
             "/api/get-tokens",
             params=params,
         )
-        max_page = ceil(tokens["data2"] / page_size)
+        max_page = ceil(tokens.get("data2") or 0 / page_size)
         while params["p"] <= max_page:
             if tokens is None:
                 tokens = await self.get("/api/get-tokens", params=params)
