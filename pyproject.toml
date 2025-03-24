@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sep"
-version = "0.4.0-beta"
+version = "0.4.1-beta"
 description = "SEP: Services Enablement Platform"
 authors = [
     "Ceri Williams <ceri.williams@percona.com>",
@@ -54,7 +54,7 @@ uvicorn = {extras = ["standard"], version = "^0.32.0"}
 cryptography = "^44.0.1"
 pyjwt = "^2.10.1"
 yarl = "^1.9.2"
-jinja2 = "^3.1.5"
+jinja2 = "^3.1.6"
 pydantic-settings = "^2.4.0"
 email-validator = "^2.2.0"
 greenlet = "^3.0.3"
