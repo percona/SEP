@@ -322,7 +322,7 @@ table {
     }
 
     button[disabled] {
-        color: #2C323E;
+        background-color: #CCC !important;
     }
 
     table {
@@ -449,9 +449,9 @@ main form button {
     border: solid 2px white;
 }
 
-main form button:hover,
-td button:hover,
-button.confirm-btn:hover {
+main form button:not([disabled]):hover,
+td button:not([disabled]):hover,
+button.confirm-btn:not([disabled]):hover {
     background-color: white;
     border: solid 2px #4B5468;
     color: #4B5468;
