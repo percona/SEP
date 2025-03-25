@@ -131,7 +131,7 @@ async def get_backups_task(
     :rtype: Task
     :raises HTTPNotFoundException: If the task is not found or is not owned by Backups.
     """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUPS)
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUP_MONGO)
 
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
@@ -189,5 +189,5 @@ async def get_backups_index_context(
         tasks_api,
         get_backups_task_info,
         context,
-        TaskOwner.BACKUPS,
+        TaskOwner.BACKUP_MONGO,
     )

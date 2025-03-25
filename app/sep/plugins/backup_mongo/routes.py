@@ -33,7 +33,7 @@ async def backups_index(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
 ) -> HTMLResponse:
-    """Homepage of backups plugin."""
+    """Homepage of PBM backup mongo plugin."""
     return templates.TemplateResponse(
         request=request,
         name="backup_mongo/index.html",
@@ -125,4 +125,4 @@ async def backups_delete(
 ) -> RedirectResponse:
     """Delete backups task."""
     await tasks_api.delete(f"/{task.name}")
-    return RedirectResponse("/backups", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse("/backup_mongo", status_code=status.HTTP_303_SEE_OTHER)
