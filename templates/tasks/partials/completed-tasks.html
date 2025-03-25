@@ -27,7 +27,7 @@
                         </td>
                         <td class="relativeTime">{{ task_history.execution_request.tracking.started_at }}</td>
                         <td class="relativeTime">{{ task_history.execution_request.tracking.finished_at }}</td>
-                        <td>{{ task_history.execution_request.tracking.duration|round(3) }}</td>
+                        <td>{{ task_history.execution_request.tracking.duration or 0|round(3) }}</td>
                         <td>
                             <button class="logs-button icons" data-log-id="{{ loop.index0 }}">visibility</button>
                         </td>
