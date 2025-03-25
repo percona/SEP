@@ -322,7 +322,7 @@ table {
     }
 
     button[disabled] {
-        color: #2C323E;
+        background-color: #CCC !important;
     }
 
     table {
