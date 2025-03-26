@@ -12,22 +12,16 @@ from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""
 
-    LOGICAL = "L"
-    PHYSICAL = "P"
-    SNAPSHOT = "S"
+    LOGICAL = "logical"
+    PHYSICAL = "physical"
+    SNAPSHOT = "snapshot"
 
 class BackupConfigAll(BaseCaseInsensitiveModel):
     """Represent the general configuration for the backup task."""
 
-    backup_dir: RequiredStr | EmptyStrToNone = None
-    defaults_file: RequiredStr | EmptyStrToNone = None
     pbm_bin_cmd: (
-        Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
+        Literal["pbm"] | EmptyStrToNone
     ) = None
-    s3_bucket: RequiredStr | EmptyStrToNone = None
-    s3_storage_class: RequiredStr | EmptyStrToNone = None
-    skip_s3_safety_check: bool = False
-    rsync_path: RequiredStr | EmptyStrToNone = None
 
 
 class BackupCreate(BackupConfigAll):

@@ -5,7 +5,7 @@ import logging
 def pbm():
     # Using subprocess.run (Recommended modern way)
     
-    command = ['bash', '/root/pbm_create_physical.sh']
+    command = ['bash', '/root/pbm_create_logical.sh']
     try:
         # Simple command
         result = subprocess.run(command, 

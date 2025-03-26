@@ -22,12 +22,6 @@
 
     /* Smaller containers might have less content, adjust accordingly if needed */
 
-    #s3_container.visible,
-    #rsync_container.visible {
-        opacity: 1;
-        max-height: 1000px;
-    }
-
     button {
         margin-top: 1em;
         margin-right: 1em;
@@ -92,7 +86,7 @@
                     {% for service in mongodb_services %}
                         <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                     {% endfor %}
-                        <option value="1">deb-1 1</option>
+                        <option value="1">deb-1</option>
                 </select>
         </label>
         {% set backup_type_title = "Select the type of backup: Logical or Physical." %}
@@ -100,8 +94,8 @@
             Backup Type:
             <select id="backup_type" name="backup_type" required>
                 <option value="">Select a backup type</option>
-                <option value="L">Logical</option>
-                <option value="P">Physical</option>
+                <option value="logical">Logical</option>
+                <option value="physical">Physical</option>
             </select>
         </label>
     </fieldset>
@@ -139,95 +133,8 @@
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
-    const xtrabackupContainer = document.getElementById('pbm_container');
-
-    const s3Container = document.getElementById('s3_container');
-    const toggleS3Btn = document.getElementById('toggle_s3_btn');
-    let s3Visible = false;
-
-    const rsyncContainer = document.getElementById('rsync_container');
-    const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
-    let rsyncVisible = false;
-
-    const s3BucketInput = document.getElementById('s3_bucket');
-    const rsyncPathInput = document.getElementById('rsync_path');
-
-    function disableAllXtrabackupFields(disabled) {
-        xtrabackupContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
-    }
-
-    function showContainer(container, show) {
-        if (show) {
-            container.classList.add('visible');
-            container.classList.remove('hidden');
-        } else {
-            container.classList.add('hidden');
-            container.classList.remove('visible');
-        }
-    }
-
-    function updateBackupTypeUI() {
-        const backupType = backupTypeSelect.value;
-        if (backupType === 'L') {
-            // Show mydumper, hide xtrabackup
-            showContainer(physicalContainer, true);
-            disableAllMydumperFields(false);
-
-            showContainer(physicalContainer, false);
-            disableAllXtrabackupFields(true);
-        } else if (backupType === 'X') {
-            // Show xtrabackup, hide mydumper
-            showContainer(xtrabackupContainer, true);
-            disableAllXtrabackupFields(false);
-
-            showContainer(mydumperContainer, false);
-            disableAllMydumperFields(true);
-        } else {
-            // No selection
-            showContainer(mydumperContainer, false);
-            disableAllMydumperFields(true);
-
-            showContainer(xtrabackupContainer, false);
-            disableAllXtrabackupFields(true);
-        }
-    }
-
-    function toggleS3() {
-        s3Visible = !s3Visible;
-        if (s3Visible) {
-            showContainer(s3Container, true);
-            s3BucketInput.required = true;
-            toggleS3Btn.textContent = "- Remove S3 upload";
-        } else {
-            showContainer(s3Container, false);
-            s3BucketInput.required = false;
-            s3BucketInput.value = '';
-            document.getElementById('s3_storage_class').value = '';
-            document.getElementById('skip_s3_safety_check').checked = false;
-            toggleS3Btn.textContent = "+ Add S3 upload";
-        }
-    }
-
-    function toggleRsync() {
-        rsyncVisible = !rsyncVisible;
-        if (rsyncVisible) {
-            showContainer(rsyncContainer, true);
-            rsyncPathInput.required = true;
-            toggleRsyncBtn.textContent = "- Remove Rsync upload";
-        } else {
-            showContainer(rsyncContainer, false);
-            rsyncPathInput.required = false;
-            rsyncPathInput.value = '';
-            toggleRsyncBtn.textContent = "+ Add Rsync upload";
-        }
-    }
-
+    const physicalContainer = document.getElementById('pbm_container');
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
-    toggleS3Btn.addEventListener('click', toggleS3);
-    toggleRsyncBtn.addEventListener('click', toggleRsync);
-
     // Initialize
     updateBackupTypeUI();
-    showContainer(s3Container, false);
-    showContainer(rsyncContainer, false);
 </script>
