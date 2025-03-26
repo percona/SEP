@@ -119,6 +119,7 @@
                 <option value="">Select a backup type</option>
                 <option value="M">Mydumper</option>
                 <option value="X">Xtrabackup</option>
+                <option value="B">Binlog</option>
             </select>
         </label>
         {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
@@ -455,6 +456,49 @@
             </select>
         </label>
     </fieldset>
+    <fieldset id="binlog_container">
+        <legend>Binlog Configuration</legend>
+        {% set binlog_prefix_title = "" %}
+        <label for="binlog_prefix" title="{{ binlog_prefix_title }}">
+            Binglog Prefix:
+            <select id="binlog_prefix" name="binlog_prefix">
+                <option value="mysql-bin">Mysql Bin</option>
+            </select>
+        </label>
+        {% set binlog_purge_days_title = "" %}
+        <label for="binlog_purge_days" title="{{ binlog_purge_days_title }}">
+            Binglog Purge Days:
+            <input type="number"
+                   id="binlog_purge_days"
+                   name="binlog_purge_days"
+                   placeholder="e.g. 30" />
+        </label>
+        {% set binlog_extra_args_title = "" %}
+        <label for="binlog_extra_args" title="{{ binlog_extra_args_title }}">
+            Binglog Purge Days:
+            <input type="text"
+                   id="binlog_extra_args"
+                   name="binlog_extra_args"
+                   placeholder="e.g. --compress" />
+        </label>
+        {% set binlog_compress_cmd_title = "" %}
+        <label for="binlog_compress_cmd" title="{{ binlog_compress_cmd_title }}">
+            Binglog Compress Command:
+            <input type="text"
+                   id="binlog_compress_cmd"
+                   name="binlog_compress_cmd"
+                   placeholder="e.g. /usr/bin/pigz -p 3" />
+        </label>
+        {% set binlog_cmd_title = "" %}
+        <label for="binlog_cmd" title="{{ binlog_cmd_title }}">
+            Binglog Command:
+            <input type="text"
+                   size="55"
+                   id="binlog_cmd"
+                   name="binlog_cmd"
+                   placeholder="e.g. /usr/local/percona/msp/backup/bin/mysqlbinlog" />
+        </label>
+    </fieldset>
     <fieldset>
         <legend>Additional Upload Options</legend>
         <button type="button" id="toggle_s3_btn">+ Add S3 upload</button>
@@ -503,6 +547,7 @@
     const backupTypeSelect = document.getElementById('backup_type');
     const mydumperContainer = document.getElementById('mydumper_container');
     const xtrabackupContainer = document.getElementById('xtrabackup_container');
+    const binlogContainer = document.getElementById('binlog_container');
 
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
@@ -523,6 +568,10 @@
         xtrabackupContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
     }
 
+    function disableAllBinlogFields(disabled) {
+        binlogContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+    }
+
     function showContainer(container, show) {
         if (show) {
             container.classList.add('visible');
@@ -536,26 +585,45 @@
     function updateBackupTypeUI() {
         const backupType = backupTypeSelect.value;
         if (backupType === 'M') {
-            // Show mydumper, hide xtrabackup
+            // Show mydumper, hide xtrabackup and binlog
             showContainer(mydumperContainer, true);
             disableAllMydumperFields(false);
 
             showContainer(xtrabackupContainer, false);
             disableAllXtrabackupFields(true);
+
+            showContainer(binlogContainer, false);
+            disableAllBinlogFields(true);
         } else if (backupType === 'X') {
-            // Show xtrabackup, hide mydumper
+            // Show xtrabackup, hide mydumper and binlog
             showContainer(xtrabackupContainer, true);
             disableAllXtrabackupFields(false);
 
             showContainer(mydumperContainer, false);
             disableAllMydumperFields(true);
-        } else {
+
+            showContainer(binlogContainer, false);
+            disableAllBinlogFields(true);
+        } else if (backupType === 'B') {
+            showContainer(binlogContainer, true);
+            disableAllBinlogFields(false);
+
+            showContainer(mydumperContainer, false);
+            disableAllMydumperFields(true);
+
+            showContainer(xtrabackupContainer, false);
+            disableAllXtrabackupFields(true);
+        }
+        else {
             // No selection
             showContainer(mydumperContainer, false);
             disableAllMydumperFields(true);
 
             showContainer(xtrabackupContainer, false);
             disableAllXtrabackupFields(true);
+
+            showContainer(binlogContainer, false);
+            disableAllBinlogFields(true);
         }
     }
 
