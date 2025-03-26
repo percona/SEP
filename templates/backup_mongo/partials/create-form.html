@@ -99,24 +99,11 @@
             </select>
         </label>
     </fieldset>
-    <fieldset id="pbm_container">
-        <legend>PBM Configuration</legend>
-        {% set pbm_retention_title = "Set the number of backup copies to retain for redundancy and recovery." %}
-        <label for="pbm_retention" title="{{ pbm_retention_title }}">
-            Number of Copies:
-            <input type="number"
-                   id="pbm_retention"
-                   name="pbm_retention"
-                   placeholder="e.g. 2" />
-        </label>
-        <div class="checkbox-group">
-    </fieldset>
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
-    const pbmContainer = document.getElementById('pbm_container');
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     // Initialize
     updateBackupTypeUI();
