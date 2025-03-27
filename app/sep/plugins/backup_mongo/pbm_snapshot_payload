@@ -5,8 +5,8 @@ import logging
 def pbm():
     # Using subprocess.run (Recommended modern way)
     
-    command = ['bash', '/root/pbm_create_snapshot.sh']
-    #command = ['env']
+    command = ['bash', '/home/admin/bin/pbm_create_snapshot.sh']
+
     try:
         # Simple command
         result = subprocess.run(command, 

@@ -4,8 +4,8 @@ import logging
 
 def pbm():
     # Using subprocess.run (Recommended modern way)
-    
-    command = ['bash', '/root/pbm_create_physical.sh']
+
+    command = ['bash', '/home/admin/bin/pbm_create_physical.sh']
     try:
         # Simple command
         result = subprocess.run(command, 
