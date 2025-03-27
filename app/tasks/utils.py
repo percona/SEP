@@ -131,7 +131,7 @@ NOMAD_RUN_PYTHON = {
                         "args": [
                             "-c",
                             "gzip -d ${NOMAD_TASK_DIR}/script.py.gz;"
-                            "${NOMAD_ALLOC_DIR}/venv/bin/python3 -u ${NOMAD_TASK_DIR}/script.py --config script_config",
+                            "${NOMAD_ALLOC_DIR}/venv/bin/python3 -u ${NOMAD_TASK_DIR}/script.py --config script_config --run-all",
                         ],
                     },
                     "Meta": {},

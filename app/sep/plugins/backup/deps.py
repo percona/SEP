@@ -99,6 +99,9 @@ async def build_backup_task_payload(
     elif form.backup_type == BackupType.XTRABACKUP:
         payload_name = "xtrabackup_payload"
         requirements += "\nfilelock"
+    elif form.backup_type == BackupType.BINLOG:
+        payload_name = "binlog_payload"
+        requirements += "\nfilelock"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
     payload_path = Path(__file__).parent / payload_name
