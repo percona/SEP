@@ -20,17 +20,17 @@ import time
 import uuid
 from enum import auto, Enum, IntEnum
 from getpass import getuser
-from pathlib import Path    
+from pathlib import Path
 from typing import Any
 
 import pymysql
 import pymysql.cursors
 import yaml
-from filelock import FileLock
 from pymysql import InternalError, OperationalError, ProgrammingError
 
 try:
     import pymysql as MySQLdb
+
     MySQLdb.install_as_MySQLdb()
 except ImportError:
     import MySQLdb
@@ -956,7 +956,7 @@ def run_binlog_backup(server_data, command_queue):
         server_data["HOST"],
         server_data["PORT"],
     )
-    lock_file = FileLock(lockfile_name, timeout=600)
+
     lock_file = LockFile(lockfile_name, timeout=600)
     try:
         lock_file.get_lock()
@@ -1444,6 +1444,10 @@ def main() -> None:
     """Run main program."""
     preflight_check()
     run_all, config, alias, parser = parse_args()
+
+    run_all = (
+        LocalConfig(config).raw_cfg_data["ALL_SERVERS"].get("BINLOG_RUN_ALL", False)
+    )
 
     if (alias and run_all) or not (alias or run_all):
         sys.stderr.write("must only specify server or run-all\n")

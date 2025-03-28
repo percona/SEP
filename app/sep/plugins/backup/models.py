@@ -93,6 +93,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     binlog_extra_args: RequiredStr | EmptyStrToNone = None
     binlog_compress_cmd: RequiredStr | EmptyStrToNone = None
     binlog_cmd: RequiredStr | EmptyStrToNone = None
+    binlog_run_all: bool = True
     s3_bucket: RequiredStr | EmptyStrToNone = None
     s3_storage_class: RequiredStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
