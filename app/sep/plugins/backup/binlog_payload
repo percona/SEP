@@ -20,7 +20,7 @@ import time
 import uuid
 from enum import auto, Enum, IntEnum
 from getpass import getuser
-from pathlib import Path
+from pathlib import Path    
 from typing import Any
 
 import pymysql
@@ -656,7 +656,7 @@ class BaseBackup:
         self.logging_dir = Path(
             self.server_data.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
         )
-        self.logger = logger
+        self.logger = LOGGER
 
         self.compress = self.server_data.get("COMPRESS", True)
         self.compression_algorithm = self.server_data.get(
@@ -938,7 +938,7 @@ class Backup(BaseBackup):
 
 def run_binlog_backup(server_data, command_queue):
     alias = server_data.get("ALIAS", server_data["HOST"])
-    logging_dir = server_data.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+    logging_dir = Path(server_data.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
 
     if server_data.get("DEBUG"):
         logging_lvl = logging.DEBUG
