@@ -458,6 +458,14 @@
     </fieldset>
     <fieldset id="binlog_container">
         <legend>Binlog Configuration</legend>
+        {% set binlog_secondary_host_title = "" %}
+        <label for="binlog_secondary_host" title="{{ binlog_secondary_host_title }}">
+            Secondary Host:
+            <input type="text"
+                   id="binlog_secondary_host"
+                   name="binlog_secondary_host"
+                   placeholder="e.g. localhost" />
+        </label>
         {% set binlog_prefix_title = "" %}
         <label for="binlog_prefix" title="{{ binlog_prefix_title }}">
             Binglog Prefix:
@@ -475,7 +483,7 @@
         </label>
         {% set binlog_extra_args_title = "" %}
         <label for="binlog_extra_args" title="{{ binlog_extra_args_title }}">
-            Binglog Purge Days:
+            Binlog Extra Args:
             <input type="text"
                    id="binlog_extra_args"
                    name="binlog_extra_args"
