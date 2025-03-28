@@ -499,7 +499,7 @@
                    placeholder="e.g. /usr/local/percona/msp/backup/bin/mysqlbinlog" />
         </label>
     </fieldset>
-    <fieldset>
+    <fieldset id="upload_container">
         <legend>Additional Upload Options</legend>
         <button type="button" id="toggle_s3_btn">+ Add S3 upload</button>
         <div id="s3_container">
@@ -548,6 +548,7 @@
     const mydumperContainer = document.getElementById('mydumper_container');
     const xtrabackupContainer = document.getElementById('xtrabackup_container');
     const binlogContainer = document.getElementById('binlog_container');
+    const uploadContainer = document.getElementById('upload_container');
 
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
@@ -572,6 +573,10 @@
         binlogContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
     }
 
+    function disableAllUploadFields(disabled) {
+        uploadContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+    }
+
     function showContainer(container, show) {
         if (show) {
             container.classList.add('visible');
@@ -589,6 +594,9 @@
             showContainer(mydumperContainer, true);
             disableAllMydumperFields(false);
 
+            showContainer(uploadContainer, true);
+            disableAllUploadFields(false);
+
             showContainer(xtrabackupContainer, false);
             disableAllXtrabackupFields(true);
 
@@ -598,6 +606,9 @@
             // Show xtrabackup, hide mydumper and binlog
             showContainer(xtrabackupContainer, true);
             disableAllXtrabackupFields(false);
+
+            showContainer(uploadContainer, true);
+            disableAllUploadFields(false);
 
             showContainer(mydumperContainer, false);
             disableAllMydumperFields(true);
@@ -613,11 +624,17 @@
 
             showContainer(xtrabackupContainer, false);
             disableAllXtrabackupFields(true);
+
+            showContainer(uploadContainer, false);
+            disableAllUploadFields(true);
         }
         else {
             // No selection
             showContainer(mydumperContainer, false);
             disableAllMydumperFields(true);
+
+            showContainer(uploadContainer, true);
+            disableAllUploadFields(false);
 
             showContainer(xtrabackupContainer, false);
             disableAllXtrabackupFields(true);
