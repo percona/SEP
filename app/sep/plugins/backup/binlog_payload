@@ -628,6 +628,34 @@ class BinlogRunner(multiprocessing.Process):
             procs.append(proc)
             queues.append(server_command_queue)
 
+        exit_initiated = None
+        while procs:
+            if exit_initiated is None:
+                command = queue_get_maybe(self.command_queue, 60)
+                if command is not None:
+                    if command == "exit":
+                        self.logger.info("BinlogRunner received exit command")
+                        for que in queues:
+                            que.put("exit")
+                        exit_initiated = time.time()
+                    else:
+                        self.logger.error("invalid command received: %r", command)
+            else:
+                time.sleep(1)
+
+            alive_procs = []
+            for proc in procs:
+                if proc.is_alive():
+                    alive_procs.append(proc)
+                else:
+                    proc.join()
+            procs = alive_procs
+
+            if exit_initiated is not None and time.time() - exit_initiated >= 10:
+                for proc in procs:
+                    proc.terminate()
+                return
+
 
 class BaseBackup:
     """Base class for shared functionality across backup and restore operations."""
