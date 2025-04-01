@@ -108,7 +108,7 @@ class BackupCreate(BackupConfigAll):
     service_id: int
     backup_type: BackupType
     encryption_recipient: RequiredStr | EmptyStrToNone = None
-    binlog_secondary_host: RequiredStr | EmptyStrToNone = Field(default="localhost")
+    binlog_alternative_host: RequiredStr | EmptyStrToNone = None
 
 
 class BackupConfigServer(BaseCaseInsensitiveModel):
