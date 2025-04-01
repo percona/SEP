@@ -469,9 +469,11 @@
         {% set binlog_prefix_title = "" %}
         <label for="binlog_prefix" title="{{ binlog_prefix_title }}">
             Binglog Prefix:
-            <select id="binlog_prefix" name="binlog_prefix">
-                <option value="mysql-bin">Mysql Bin</option>
-            </select>
+            <input type="text"
+                   id="binlog_prefix"
+                   name="binlog_prefix"
+                   placeholder="e.g. mysql-bin"
+                   value="mysql-bin" />
         </label>
         {% set binlog_purge_days_title = "" %}
         <label for="binlog_purge_days" title="{{ binlog_purge_days_title }}">
