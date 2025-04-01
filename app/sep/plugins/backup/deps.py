@@ -82,8 +82,8 @@ async def build_backup_task_payload(
         "host": (
             "localhost"
             if form.backup_type == "X"
-            else form.binlog_secondary_host
-            if form.backup_type == "B"
+            else form.binlog_alternative_host
+            if form.backup_type == "B" and form.binlog_alternative_host
             else service.node.address
         ),
         "port": service.port,
