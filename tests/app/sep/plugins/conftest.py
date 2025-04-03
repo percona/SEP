@@ -2,11 +2,11 @@
 
 import pytest
 
-from app.tasks.models import GeneratedTask
-from tests.app.factories import GeneratedTaskFactory
+from app.tasks.models import TaskWrite
+from tests.app.factories import TaskWriteFactory
 
 
 @pytest.fixture
-def generated_task() -> GeneratedTask:
+def generated_task() -> TaskWrite:
     """Return a fake generated task while creating alters."""
-    return GeneratedTaskFactory.build()
+    return TaskWriteFactory.build(data={"task": "mock-task"})

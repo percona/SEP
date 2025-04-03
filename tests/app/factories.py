@@ -10,7 +10,7 @@ from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.archives.models import ArchivesCreate
-from app.tasks.models import GeneratedTask, Task, TaskBackendEnum
+from app.tasks.models import Task, TaskBackendEnum, TaskWrite
 
 MOCK_CREATED_NODE_ID = 1
 MOCK_CREATED_SERVICE_ID = 1
@@ -37,7 +37,6 @@ class CasdoorUserFactory(ModelFactory[CasdoorUser]):
 class TaskFactory(ModelFactory[Task]):
     """Define factory for Task instances."""
 
-    is_template: bool = False
     backend: TaskBackendEnum = TaskBackendEnum.NOMAD
 
 
@@ -45,8 +44,10 @@ class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
     """Define factory for PeriodicTasks instances."""
 
 
-class GeneratedTaskFactory(ModelFactory[GeneratedTask]):
-    """Define factory for GenerateTask instances."""
+class TaskWriteFactory(ModelFactory[TaskWrite]):
+    """Define factory for TaskWrite instances."""
+
+    protected: bool = False
 
 
 class AltersCreateFactory(ModelFactory[AltersCreate]):

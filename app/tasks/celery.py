@@ -163,9 +163,7 @@ async def process_queue_item(queue_id: int) -> TaskHistory:
             raise HTTPConflictException("Queue item is not in a pending state.")
 
         if task.backend == TaskBackendEnum.PROXY:
-            task = await TaskManager.retrieve_by_name(
-                session=session, name=task.data["task"]
-            )
+            task = await TaskManager.get_or_404(session, name=task.data["task"])
 
         match task.backend:
             case TaskBackendEnum.NOMAD:

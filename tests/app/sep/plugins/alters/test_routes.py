@@ -82,7 +82,7 @@ def test_alters_create(
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/alters"
     mock_task_api_dep.post.assert_any_await(
-        "/generate/",
+        "/",
         json=generated_task.model_dump(),
     )
 

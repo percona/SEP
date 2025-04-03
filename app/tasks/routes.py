@@ -15,17 +15,12 @@ from app.tasks.celery import execute_task_queue
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     CreatedTaskHistory,
-    ExecutableTaskDep,
-    PreparedExistingGeneratedTask,
-    PreparedNewGeneratedTask,
     SessionDep,
     TaskDep,
     TaskExecutor,
 )
 from app.tasks.models import (
-    GeneratedTask,
     Task,
-    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -102,7 +97,7 @@ async def update_task(
 ) -> Task:
     """Update an existing task."""
     logger.debug("Updating task %s", task_update.name)
-    existing_task = await TaskManager.retrieve_by_name(session, task_name)
+    existing_task = await TaskManager.get_or_404(session, name=task_name)
     if not existing_task:
         raise HTTPNotFoundException("Task not found")
     update_values = task_update.model_dump(exclude_unset=True)
@@ -125,7 +120,7 @@ async def update_task(
     response_model=list[PeriodicTaskResponse],
 )
 async def list_periodic_tasks_by_task_name(
-    celery_beat_session: CeleryBeatSessionDep, task: ExecutableTaskDep
+    celery_beat_session: CeleryBeatSessionDep, task: TaskDep
 ) -> list[PeriodicTask]:
     """List periodic tasks by task name."""
     return await PeriodicTaskManager.list_by_task_names(celery_beat_session, task.name)
@@ -139,7 +134,7 @@ async def list_periodic_tasks_by_task_name(
 )
 async def create_periodic_task_for_task_name(
     celery_beat_session: CeleryBeatSessionDep,
-    task: ExecutableTaskDep,
+    task: TaskDep,
     periodic_task: PeriodicTaskCreate,
 ) -> PeriodicTask:
     """Create a new periodic task for the specified task name."""
@@ -153,64 +148,6 @@ async def create_periodic_task_for_task_name(
     return await PeriodicTaskManager.create(
         celery_beat_session, periodic_task, kwargs=json.dumps(kwargs)
     )
-
-
-@router.post(
-    "/generate/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
-)
-async def generate_task(
-    session: SessionDep,
-    generated_task: GeneratedTask,
-    prepared_task: PreparedNewGeneratedTask,
-) -> TaskHistory:
-    """Generate a new task execution using a template."""
-    logger.debug(
-        "Generating task %s from %s",
-        generated_task.name,
-        generated_task.template,
-    )
-    if generated_task.persist:
-        prepared_task = await TaskManager.save(session, prepared_task)
-
-    return TaskHistory(
-        task_id=prepared_task.id,
-        execution_request=TaskExecutionRequest(
-            task=generated_task.name,
-            target=generated_task.target,
-            meta={},
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-
-
-@router.put(
-    "/generate/{task_name}",
-    dependencies=[IsAuthenticatedDep],
-    status_code=status.HTTP_201_CREATED,
-    response_model=TaskResponse,
-)
-async def update_generated_task(
-    session: SessionDep,
-    prepared_task: PreparedExistingGeneratedTask,
-) -> Task:
-    """Update an existing generated task.
-
-    The dependency `prepare_existing_generated_task` reuses the same serialization logic
-    as for task generation, updating the existing task's payload.
-    """
-    update_values = prepared_task.model_dump(exclude_unset=True)
-    result = await TaskManager.update_where(
-        session, values=update_values, name=prepared_task.name
-    )
-    if result.rowcount == 0:
-        raise HTTPException(
-            status_code=400, detail="Task update failed or no changes applied"
-        )
-    updated_task = await TaskManager.retrieve_by_name(session, prepared_task.name)
-    if not updated_task:
-        raise HTTPNotFoundException("Task not found after update")
-    return updated_task
 
 
 @router.post(

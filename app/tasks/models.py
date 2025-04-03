@@ -8,7 +8,6 @@ from statistics import mean
 from typing import Any, Literal, Self
 
 from pydantic import (
-    AliasGenerator,
     BaseModel,
     computed_field,
     ConfigDict,
@@ -23,8 +22,6 @@ from sqlmodel import Relationship, SQLModel
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, UTCDatetime
-
-TASK_ALIAS_LENGTH = 100
 
 
 class TaskBackendEnum(StrEnum):
@@ -123,150 +120,6 @@ class TaskExecutionRequest(BaseModel):
         return self.payload
 
 
-class TaskGroupTaskTemplate(BaseModel):
-    """Represent a task group for controlling task templates.
-
-    :param content: The content of the task template.
-    :type content: str | bytes
-    :param path: The file path where the template will be applied.
-    :type path: str
-    :param mode: The execution mode of the task. Defaults to "restart".
-    :type mode: str
-    :param perms: The file permissions for the template. Defaults to "0644".
-    :type perms: str
-    """
-
-    content: str | bytes
-    path: str
-    mode: str = "restart"
-    perms: str = "0644"
-
-    _transform_fields = {
-        "nomad": {
-            "content": "EmbeddedTmpl",
-            "mode": "ChangeMode",
-            "path": "DestPath",
-            "perms": "Perms",
-        },
-    }
-
-
-class TaskGroupTask(BaseModel):
-    """Represent a task that belongs to a job task group.
-
-    :param name: The name of the task.
-    :type name: str
-    :param driver: The driver to be used for task execution. Defaults to "raw_exec".
-    :type driver: str
-    :param user: The user who will execute the task. Defaults to an empty string.
-    :type user: str
-    :param config: The configuration details for the task.
-    :type config: dict | list | str | bytes
-    :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-    :type meta: dict
-    :param restart: Task restart policy. Defaults to a dictionary specifying no retries.
-    :type restart: dict
-    :param templates: A list of task templates to be applied. Defaults to an empty list.
-    :type templates: list[TaskGroupTaskTemplate]
-    """
-
-    model_config = ConfigDict(
-        alias_generator=AliasGenerator(
-            serialization_alias=lambda field_name: field_name.title(),
-        ),
-    )  # TODO: Reuse  # noqa: TD002, TD003
-    name: str
-    driver: str = "raw_exec"
-    user: str = ""
-    config: dict | list | str | bytes
-    meta: dict = {}  # TODO  # noqa: TD002, TD003, TD004
-    restart: dict = {"attempts": 0, "mode": "fail"}  # TODO  # noqa: TD002, TD003, TD004
-    templates: list[TaskGroupTaskTemplate] = []  # TODO  # noqa: TD002, TD003, TD004
-
-
-class TaskGroup(BaseModel):
-    """Represent a task group.
-
-    :param engine: The backend engine for task execution. Defaults to "nomad".
-    :type engine: str
-    :param name: The name of the task group. Defaults to "execution".
-    :type name: str
-    :param parallel: Whether tasks should be executed in parallel. Defaults to False.
-    :type parallel: bool
-    :param tasks: A list of tasks in the group.
-    :type tasks: list[TaskGroupTask]
-    """
-
-    engine: str = "nomad"
-    name: str = "execution"
-    parallel: bool = False
-    tasks: list[TaskGroupTask] = []
-
-    # TODO: Return Pydantic model  # noqa: TD002, TD003
-    def to_payload(self) -> dict[str, list[dict]]:
-        """Convert to a backend-specific payload format.
-
-        :return: A dictionary representing the payload for the task group.
-        :rtype: dict[str, list[dict[str, Any]]]
-        """
-        data = {"TaskGroups": []}
-        match self.engine:
-            case _:  # Nomad by default and parallelisation is controlled here for now
-                if self.parallel:
-                    for i, task in enumerate(self.tasks):
-                        data["TaskGroups"].append(
-                            {
-                                "Name": f"{self.name}{i + 1}",
-                                "Tasks": [task.model_dump(by_alias=True)],
-                            },
-                        )
-                else:
-                    data["TaskGroups"].append(
-                        {
-                            "Name": self.name,
-                            "Tasks": [
-                                task.model_dump(by_alias=True) for task in self.tasks
-                            ],
-                        },
-                    )
-        return data
-
-
-class GeneratedTask(BaseModel):
-    """Represent a generated task.
-
-    :param app: The application name associated with the task.
-    :type app: TaskOwner
-    :param commands: A list of commands to execute the task.
-    :type commands: list
-    :param name: The task name.
-    :type name: str
-    :param target: The target system for task execution.
-    :type target: str
-    :param artifacts: Artifacts produced by the task. Defaults to None.
-    :type artifacts: list | None
-    :param parallel: Whether the task will run in parallel. Defaults to False.
-    :type parallel: bool
-    :param persist: Whether the task should persist after completion. Defaults to True.
-    :type persist: bool
-    :param schedule: The scheduling configuration for the task. Defaults to
-        {"save_only": True}.
-    :type schedule: dict
-    :param template: The task template type. Defaults to "batch".
-    :type template: str
-    """
-
-    app: TaskOwner
-    commands: list
-    name: str
-    target: str
-    artifacts: list | None = None
-    parallel: bool = False
-    persist: bool = True
-    schedule: dict = {"save_only": True}
-    template: str = "batch"
-
-
 class TaskBase(SQLModel):
     """Define the base structure for task-related operations.
 
@@ -278,8 +131,6 @@ class TaskBase(SQLModel):
     :type backend: TaskBackendEnum
     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
     :type owner: TaskOwner
-    :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
     """
@@ -296,7 +147,6 @@ class TaskBase(SQLModel):
             EnumField(TaskOwner, native_enum=False), nullable=False, index=True
         ),
     )
-    is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
 
     @model_validator(mode="after")
@@ -326,8 +176,6 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :type backend: TaskBackendEnum
     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
     :type owner: TaskOwner
-    :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
     :param history: The history of task executions.
@@ -339,12 +187,6 @@ class Task(TaskBase, BaseSQLModel, table=True):
     __table_args__ = (
         Index("ix_task_deleted_at_owner", "deleted_at", "owner"),
         Index("ix_task_deleted_at_name", "deleted_at", "name"),
-        Index(
-            "ix_task_deleted_at_name_is_template",
-            "deleted_at",
-            "name",
-            "is_template",
-        ),
     )
     history: list["TaskHistory"] = Relationship(back_populates="task")
     deleted_at: UTCDatetime | None = SQLField(
@@ -365,8 +207,6 @@ class TaskResponse(TaskBase, BaseSQLModel):
     :type backend: TaskBackendEnum
     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
     :type owner: TaskOwner
-    :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
     :param deleted_at: The deletion timestamp, if applicable.
@@ -387,8 +227,6 @@ class TaskWrite(TaskBase):
     :type backend: TaskBackendEnum
     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
     :type owner: TaskOwner
-    :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
     """

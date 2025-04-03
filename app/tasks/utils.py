@@ -1,72 +1,64 @@
 """Define utilities for the tasks app."""
 
+import logging
+
 from sqlalchemy_celery_beat import PeriodicTask
 from sqlalchemy_celery_beat.models import Period
+from sqlmodel import col
 
 from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManager
 from app.core.celery.db import (
     get_async_session_maker as get_celery_beat_async_session_maker,
 )
+from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task
 from app.tasks.periodic.models import IntervalSchedule
 
-GENERIC_NOMAD_BATCH_TEMPLATE = {
-    "ID": "generic-nomad-batch",
-    "Name": "generic-nomad-batch",
+logger = logging.getLogger(__name__)
+
+NOMAD_RUN_COMMAND = {
+    "ID": "run-command",
+    "Name": "run-command",
     "Type": "batch",
     "Datacenters": ["dc1"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",
-            "RTarget": "valid_node_required",
+            "RTarget": "${NOMAD_META_target}",
             "Operand": "=",
         },
     ],
-    "Periodic": None,
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": ["target", "command"],
+        "MetaOptional": ["args"],
+    },
     "TaskGroups": [
         {
             "Name": "execution",
             "Tasks": [
                 {
-                    "Name": "generic-task",
+                    "Name": "run-script",
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
-                        "args": [],
-                        "command": "",
+                        "command": "xargs",
+                        "args": [
+                            "--arg-file",
+                            "args_file",
+                            "${NOMAD_META_command}",
+                        ],
                     },
                     "Meta": {},
-                    "Restart": {"attempts": 0, "mode": "fail"},
-                    "Templates": [],
-                },
-            ],
-        },
-    ],
-}
-
-GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
-    "ID": "generic-nomad-sysbatch",
-    "Name": "generic-nomad-sysbatch",
-    "Type": "sysbatch",
-    "Datacenters": ["dc1"],
-    "Periodic": None,
-    "TaskGroups": [
-        {
-            "Name": "execution",
-            "Tasks": [
-                {
-                    "Name": "generic-task",
-                    "Driver": "raw_exec",
-                    "User": "",
-                    "Config": {
-                        "args": [],
-                        "command": "",
-                    },
-                    "Meta": {},
-                    "Restart": {"attempts": 0, "mode": "fail"},
-                    "Templates": [],
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_args" }}',
+                            "DestPath": "args_file",
+                        },
+                    ],
                 },
             ],
         },
@@ -161,19 +153,8 @@ NOMAD_RUN_PYTHON = {
 }
 
 SYSTEM_TASKS = [
-    Task(
-        name="generic-nomad-batch",
-        data=GENERIC_NOMAD_BATCH_TEMPLATE,
-        is_template=True,
-        protected=True,
-    ),
-    Task(
-        name="generic-nomad-sysbatch",
-        data=GENERIC_NOMAD_SYSBATCH_TEMPLATE,
-        is_template=True,
-        protected=True,
-    ),
-    Task(name="run-python", data=NOMAD_RUN_PYTHON, is_template=False, protected=True),
+    Task(name="run-command", data=NOMAD_RUN_COMMAND, protected=True),
+    Task(name="run-python", data=NOMAD_RUN_PYTHON, protected=True),
 ]
 
 
@@ -181,14 +162,42 @@ async def init_tasks_db() -> None:
     """Initialize the database with generic Nomad task templates."""
     async_session = get_async_session_maker()
     async with async_session() as session:
+        system_tasks_names = []
         for task in SYSTEM_TASKS:
+            system_tasks_names.append(task.name)
             created_task, created = await TaskManager.get_or_create(
                 session, task, {"name"}
             )
-            if not created and created_task.data != task.data:
+            if created:
+                logger.info("Created system task %s", created_task.name)
+            elif created_task.data != task.data:
                 await TaskManager.update(
                     session, created_task, task, flag_modified_fields=["data"]
                 )
+                logger.info(
+                    "Updated system task %s with new data: %s",
+                    created_task.name,
+                    task.data,
+                )
+        delete_result = await TaskManager.delete_unattached_system_tasks(
+            session, system_tasks_names
+        )
+        if delete_result.rowcount:
+            logger.info(
+                "Deleted %s system tasks that are no longer needed.",
+                delete_result.rowcount,
+            )
+        update_delete_result = await TaskManager.update_where(
+            session,
+            {"deleted_at": utc_now()},
+            col(Task.name).not_in(system_tasks_names),
+            col(Task.protected).is_(True),
+        )
+        if update_delete_result.rowcount:
+            logger.info(
+                "Marked %s unused system tasks with attached runs as deleted.",
+                update_delete_result.rowcount,
+            )
 
 
 async def init_periodic_tasks_db() -> None:

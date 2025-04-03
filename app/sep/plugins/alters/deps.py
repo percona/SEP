@@ -2,6 +2,7 @@
 
 import logging
 import re
+import shlex
 from typing import Annotated, Any
 
 from fastapi import Depends, Form
@@ -17,7 +18,13 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +32,7 @@ logger = logging.getLogger(__name__)
 async def build_alters_task_payload(
     form: Annotated[AltersCreate, Form()],
     inventory_api: InventoryAPI,
-) -> GeneratedTask:
+) -> TaskWrite:
     """Build the alter task payload from form.
 
     Build the payload for an Alters task to be executed, including the
@@ -35,9 +42,9 @@ async def build_alters_task_payload(
     :type form: AltersCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `GeneratedTask` object containing all the necessary
+    :return: A fully constructed `TaskWrite` object containing all the necessary
         commands and parameters for the Alters task execution.
-    :rtype: GeneratedTask
+    :rtype: TaskWrite
     """
     service = await get_created_entity(
         inventory_api,
@@ -104,24 +111,27 @@ async def build_alters_task_payload(
     if form.print_arg:
         args.append(f"--progress={form.progress}")
 
-    return GeneratedTask(
-        app=TaskOwner.ALTERS,
-        commands=[
-            {
-                "args": [*args, "--execute"],
+    args.append("--execute")
+
+    return TaskWrite(
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        data={
+            "task": "run-command",
+            "meta": {
                 "command": "pt-online-schema-change",
-                "meta": {
-                    "schema_name": schema.name,
-                    "table_name": table.name,
-                },
+                "args": shlex.join(args),
+                "target": form.hostname,
+                "_schema_name": schema.name,
+                "_table_name": table.name,
             },
-        ],
+        },
         name=form.task_name,
         target=form.hostname,
     )
 
 
-AltersGeneratedTask = Annotated[GeneratedTask, Depends(build_alters_task_payload)]
+AltersGeneratedTask = Annotated[TaskWrite, Depends(build_alters_task_payload)]
 
 
 async def get_alters_task(
@@ -158,11 +168,10 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :return: A dictionary containing hostname and table information.
     :rtype: dict[str, Any]
     """
-    data = task["data"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = task["data"]["meta"]
     return {
-        "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
+        "hostname": meta["target"],
+        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
     }
 
 

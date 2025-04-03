@@ -75,21 +75,6 @@ class BaseManager:
         return query
 
     @classmethod
-    def _build_query(
-        cls,
-        *whereclause: ColumnExpressionArgument[bool],
-        select_related: Sequence = (),
-        **equal_filters: Any,
-    ) -> W:
-        query = select(cls.Model)
-        return cls._filter_query(
-            query,
-            *whereclause,
-            select_related=select_related,
-            **equal_filters,
-        )
-
-    @classmethod
     async def _exec(
         cls,
         session: AsyncSession,
@@ -106,7 +91,8 @@ class BaseManager:
         select_related: Sequence = (),
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
-        query = cls._build_query(
+        query = cls._filter_query(
+            select(cls.Model),
             *whereclause,
             select_related=select_related,
             **equal_filters,
