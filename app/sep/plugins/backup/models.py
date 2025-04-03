@@ -22,6 +22,7 @@ class BackupType(EnumFieldMixin, StrEnum):
 
     MYDUMPER = "M"
     XTRABACKUP = "X"
+    BINLOG = "B"
 
 
 class UploadProvider(EnumFieldMixin, StrEnum):
@@ -87,6 +88,12 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_bin_cmd: (
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     ) = None
+    binlog_prefix: RequiredStr | EmptyStrToNone = None
+    binlog_purge_days: int | EmptyStrToNone = None
+    binlog_extra_args: RequiredStr | EmptyStrToNone = None
+    binlog_compress_cmd: RequiredStr | EmptyStrToNone = None
+    binlog_cmd: RequiredStr | EmptyStrToNone = None
+    binlog_run_all: bool = True
     s3_bucket: RequiredStr | EmptyStrToNone = None
     s3_storage_class: RequiredStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
@@ -101,6 +108,7 @@ class BackupCreate(BackupConfigAll):
     service_id: int
     backup_type: BackupType
     encryption_recipient: RequiredStr | EmptyStrToNone = None
+    binlog_alternative_host: RequiredStr | EmptyStrToNone = None
 
 
 class BackupConfigServer(BaseCaseInsensitiveModel):
