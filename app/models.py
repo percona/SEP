@@ -190,7 +190,10 @@ class CasdoorUser(BaseUser):
         :param exclude_tokens: A sequence of access tokens to exclude from invalidation.
         :type exclude_tokens: Sequence[str]
         """
-        async for active_token in settings.CASDOOR.get_active_tokens(username):
+        app_data = await settings.CASDOOR.get_user_application(username)
+        async for active_token in settings.CASDOOR.get_active_tokens(
+            app_data["owner"], username
+        ):
             if active_token["accessToken"] not in exclude_tokens:
                 await settings.CASDOOR.delete_token(active_token)
 

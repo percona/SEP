@@ -15,6 +15,7 @@
         </thead>
         <tbody>
             {% for task_history in history_tasks %}
+                {%- set task_logs = task_history.execution_request.tracking.task_logs or {} -%}
                 {% if task_history.status in ['success', 'failed'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>
@@ -27,9 +28,11 @@
                         </td>
                         <td class="relativeTime">{{ task_history.execution_request.tracking.started_at }}</td>
                         <td class="relativeTime">{{ task_history.execution_request.tracking.finished_at }}</td>
-                        <td>{{ task_history.execution_request.tracking.duration|round(3) }}</td>
+                        <td>{{ task_history.execution_request.tracking.duration or 0|round(3) }}</td>
                         <td>
-                            <button class="logs-button icons" data-log-id="{{ loop.index0 }}">visibility</button>
+                            <button class="logs-button icons"
+                                    data-log-id="{{ loop.index0 }}"
+                                    {% if not task_logs %}disabled{% endif %}>visibility</button>
                         </td>
                         <td>
                             {% if task_history.status != 'success' %}
@@ -41,46 +44,48 @@
                             {% endif %}
                         </td>
                     </tr>
-                    <tr class="log-row" data-log-id="{{ loop.index0 }}" style="display:none;">
-                        <td colspan="7">
-                            <div class="log-console">
-                                <div class="log-top-bar">
-                                    <div class="log-tabs">
-                                        <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
-                                        <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
-                                    </div>
-                                    <div class="word-wrap-toggle">
-                                        <label class="switch">
-                                            <input type="checkbox" class="word-wrap-checkbox">
-                                            <span class="slider round"></span>
-                                        </label>
-                                        <span class="toggle-label">Word Wrap</span>
-                                    </div>
-                                </div>
-                                <div class="log-content">
-                                    {% for step_name, logs in task_history.execution_request.tracking.task_logs.items() %}
-                                        <div class="log-step-content"
-                                             data-step-name="{{ step_name }}"
-                                             {% if loop.first %}style="display:block;" {% else %}style="display:none;"{% endif %}>
-                                            <pre class="log-output"
-                                                 data-log-type="stdout"
-                                                 {% if loop.first %}style="display:block;" {% else %}style="display:none;"{% endif %}>{{ logs.stdout|e }}</pre>
-                                            <pre class="log-output" data-log-type="stderr" style="display:none;">{{ logs.stderr|e }}</pre>
+                    {%- if task_logs %}
+                        <tr class="log-row" data-log-id="{{ loop.index0 }}" style="display:none;">
+                            <td colspan="7">
+                                <div class="log-console">
+                                    <div class="log-top-bar">
+                                        <div class="log-tabs">
+                                            <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
+                                            <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
                                         </div>
-                                    {% endfor %}
-                                </div>
-                                <div class="log-bottom-bar">
-                                    <div class="log-tabs">
-                                        {% for step_name in task_history.execution_request.tracking.task_logs.keys() %}
-                                            <a href="#"
-                                               class="log-step-tab {% if loop.first %}selected{% endif %}"
-                                               data-step-name="{{ step_name }}">{{ step_name }}</a>
+                                        <div class="word-wrap-toggle">
+                                            <label class="switch">
+                                                <input type="checkbox" class="word-wrap-checkbox">
+                                                <span class="slider round"></span>
+                                            </label>
+                                            <span class="toggle-label">Word Wrap</span>
+                                        </div>
+                                    </div>
+                                    <div class="log-content">
+                                        {%- for step_name, logs in task_logs.items() %}
+                                            <div class="log-step-content"
+                                                 data-step-name="{{ step_name }}"
+                                                 {% if loop.first %}style="display:block;" {% else %}style="display:none;"{% endif %}>
+                                                <pre class="log-output"
+                                                     data-log-type="stdout"
+                                                     {% if loop.first %}style="display:block;" {% else %}style="display:none;"{% endif %}>{{ logs.stdout|e }}</pre>
+                                                <pre class="log-output" data-log-type="stderr" style="display:none;">{{ logs.stderr|e }}</pre>
+                                            </div>
                                         {% endfor %}
                                     </div>
+                                    <div class="log-bottom-bar">
+                                        <div class="log-tabs">
+                                            {% for step_name in task_logs.keys() %}
+                                                <a href="#"
+                                                   class="log-step-tab {% if loop.first %}selected{% endif %}"
+                                                   data-step-name="{{ step_name }}">{{ step_name }}</a>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </td>
-                    </tr>
+                            </td>
+                        </tr>
+                    {%- endif -%}
                 {% endif %}
             {% endfor %}
         </tbody>
