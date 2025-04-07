@@ -1,24 +1,31 @@
 {% if tasks %}
-    <table>
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Host</th>
-                <th>Table</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for task in tasks %}
-                <tr id="{{ task.name }}">
-                    <td>{{ task.name }}</td>
-                    <td>{{ task.hostname }}</td>
-                    <td>{{ task.table }}</td>
-                    {% include "tasks/partials/saved-tasks-actions-column.html" %}
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+
+<table data-table="saved-tasks">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Host</th>
+            <th>Table</th>
+            <th>Options</th>
+        </tr>
+    </thead>
+    <tbody>
+
+        {% for task in tasks %}
+        <tr id="{{ task.name }}">
+            <td>{{ task.name }}</td>
+            <td>{{ task.hostname }}</td>
+            <td>{{ task.table }}</td>
+            {% include "tasks/partials/saved-tasks-actions-column.html" %}
+        </tr>
+        {% endfor %}
+
+    </tbody>
+</table>
+
 {% else %}
-    <p>No data</p>
+
+<!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
+<p>No data</p>
+
 {% endif %}

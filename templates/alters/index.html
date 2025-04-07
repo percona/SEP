@@ -1,7 +1,5 @@
 {% extends "base.html" %}
-{% block title -%}
-    Schema Change
-{%- endblock title %}
+{% block title %}Schema Change{% endblock title %}
 {% block style %}
     <style>
         label+input[type=text] {
@@ -18,64 +16,111 @@
         }
     </style>
     {% if history_tasks or running_tasks %}
-        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
     {% if tasks %}
-        <link rel="stylesheet"
-              href="{{ url_for('static', path='/css/saved.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/saved.css') }}">
     {% endif %}
 {% endblock style %}
+
 {% block behaviours_optimized_extra %}
-    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
-            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     {% if history_tasks or running_tasks %}
-        <script src="{{ url_for('static', path='/js/logs.js') }}"
-                nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/logs.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
     {% if tasks %}
-        <script src="{{ url_for('static', path='/js/saved.js') }}"
-                nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/saved.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}
+
 {% block main %}
-    <p>
-        Perform a schema change, currently only supporting MySQL with <a href="https://docs.percona.com/percona-toolkit/pt-online-schema-change.html">pt-online-schema-change</a>.
-    </p>
+
+    <!-- Introduction: Help users understand what's this plugin about -->
+    <section class="app-intro">
+        <h1>Schema Change</h1>
+        <p>Perform safe, online schema changes for MySQL databases using <a href="https://docs.percona.com/percona-toolkit/pt-online-schema-change.html" target="_blank">pt-online-schema-change</a>. For more details, please check the documentation. If you run into an issue, please submit it in Github.
+        </p>
+    </section>
+    
+    <section class="app-stage">
+    
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
-        <h2>Configure a schema change</h2>
-        {% if mysql_services|length < 1 %}
-            <p>Unable to find suitable database instances.</p>
-        {% elif executor_hosts|length < 1 %}
-            <p>Unable to find suitable executor hosts.</p>
-        {% else %}
-            {% include "alters/partials/create-form.html" %}
-        {% endif %}
-    {% else %}
-        {% set modal_required = True %}
-        {% if running_tasks %}
-            <section id="running-tasks">
-                <h2>Running</h2>
-                {% include "tasks/partials/running-tasks.html" %}
-            </section>
-        {% endif %}
-        <section id="saved-tasks">
-            <h2>Saved</h2>
-            {% include "alters/partials/saved-tasks.html" %}
-            <h3>Configure a schema change</h3>
-            {% if executor_hosts|length < 1 %}
+
+        <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
+        <section>
+            <h2>Configure a schema change</h2>
+            {% if mysql_services|length < 1 %}
+                <p>Unable to find suitable database instances.</p>
+            {% elif executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
                 {% include "alters/partials/create-form.html" %}
             {% endif %}
         </section>
-        <section id="pending-tasks">
-            <h2>Pending</h2>
-            {% include "tasks/partials/pending-tasks.html" %}
-        </section>
-        <section id="completed-tasks">
-            <h2>History</h2>
-            {% include "tasks/partials/completed-tasks.html" %}
-        </section>
+
+    {% else %}
+        {% set modal_required = True %}
+
+        <!-- Tabs to navigate between different parts of the plugin -->
+        {% if running_tasks %}
+            {% set default_tab = "running-tasks" %}
+        {% else %}
+            {% set default_tab = "saved-tasks" %}
+        {% endif %}
+        <nav class="tabs" role="tablist" aria-label="Navigation between different parts of the app">
+            {% if running_tasks %}
+            <button id="tab-running-tasks" class="large" role="tab" aria-controls="running-tasks" aria-selected="true">
+                <span class="label">Running tasks</span>
+            </button>
+            {% endif %}
+            <button id="tab-saved-tasks" class="large" role="tab" aria-controls="saved-tasks"{% if default_tab == 'saved-tasks' %} aria-selected="true"{% endif %}>
+                <span class="label">Saved tasks</span>
+            </button>
+            <button id="tab-pending-tasks" class="large" role="tab" aria-controls="pending-tasks" aria-selected="false">
+                <span class="label">Pending</span>
+            </button>
+            <button id="tab-completed-tasks" class="large" role="tab" aria-controls="completed-tasks" aria-selected="false">
+                <span class="label">History</span>
+            </button>
+        </nav>
+        
+        <div class="tabs-container card">
+
+            <!-- Running Tasks -->
+            {% if running_tasks %}
+            <section id="running-tasks" role="tabpanel" aria-hidden="false" aria-labelledby="tab-running-tasks">
+                {% include "tasks/partials/running-tasks.html" %}
+            </section>
+            {% endif %}
+
+            <!-- Saved Tasks -->
+            <section id="saved-tasks" role="tabpanel" {% if default_tab == 'saved-tasks' %} aria-hidden="false"{% endif %} aria-labelledby="tab-saved-tasks">
+                {% include "alters/partials/saved-tasks.html" %}
+                
+                <!-- Create New Tasks -->
+                {# <h3>Configure a schema change</h3>
+                {% if executor_hosts|length < 1 %}
+                    <p>Unable to find suitable executor hosts.</p>
+                {% else %}
+                    {% include "alters/partials/create-form.html" %}
+                {% endif %} #}
+
+            </section>
+
+            <!-- Pending Tasks -->
+            <section id="pending-tasks" role="tabpanel" aria-hidden="true" aria-labelledby="tab-pending-tasks">
+                {% include "tasks/partials/pending-tasks.html" %}
+            </section>
+
+            <!-- History -->
+            <section id="completed-tasks" role="tabpanel" aria-hidden="true" aria-labelledby="tab-completed-tasks">
+                {% include "tasks/partials/completed-tasks.html" %}
+            </section>
+        </div>
+        
     {% endif %}
+
+    </section>
+
 {% endblock main %}
