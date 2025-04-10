@@ -16,7 +16,7 @@ GENERIC_NOMAD_BATCH_TEMPLATE = {
     "ID": "generic-nomad-batch",
     "Name": "generic-nomad-batch",
     "Type": "batch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",
@@ -52,7 +52,7 @@ GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
     "ID": "generic-nomad-sysbatch",
     "Name": "generic-nomad-sysbatch",
     "Type": "sysbatch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Periodic": None,
     "TaskGroups": [
         {
@@ -81,7 +81,7 @@ NOMAD_RUN_PYTHON = {
     "ID": "run-python",
     "Name": "run-python",
     "Type": "batch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",
