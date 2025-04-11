@@ -806,7 +806,7 @@ class BaseBackup:
             self.check_compression_algorithm(self.compression_algorithm)
 
         # Dynamically set
-        self.is_slave = False
+        self.is_replica = False
         self.last_backup_dir = None
 
     def check_compression_algorithm(self, algorithm: str) -> None:
@@ -836,7 +836,7 @@ class BaseBackup:
         if len(output) > 300:
             output = f"{output[:300]}..."
 
-        if isinstance(self, Backup) and self.is_slave:
+        if isinstance(self, Backup) and self.is_replica:
             output = f"Host {self.alias}. {output}"
 
         self.report_options["end_time"] = time.strftime(DATETIME_FORMAT, time.gmtime())
@@ -942,7 +942,7 @@ class Backup(BaseBackup):
         self.dir_encrypt_config = server_data.get("DIR_ENCRYPT_CONFIG", {})
         self.post_run_encrypt = server_data.get("POST_RUN_ENCRYPT", False)
         self.only_if_read_only = server_data.get("ONLY_IF_READ_ONLY")
-        self.only_if_running_slave = server_data.get("ONLY_IF_RUNNING_SLAVE")
+        self.only_if_running_replica = server_data.get("ONLY_IF_RUNNING_REPLICA")
         self.upload_type = server_data.get("UPLOAD", set())
         if isinstance(self.upload_type, str):
             self.upload_type = {self.upload_type}
@@ -1003,23 +1003,30 @@ class Backup(BaseBackup):
             msg = f'Error running query "{sql}": {err}'
             raise BackupError(msg) from err
 
-    def _is_running_slave(self) -> bool:
-        """Check if MySQL slave is running.
+    def _is_running_replica(self) -> bool:
+        """Check if MySQL replica is running.
 
-        :return: True if slave is running, False otherwise.
+        Supports both legacy `SHOW SLAVE STATUS` and newer `SHOW REPLICA STATUS` (MySQL 8.0.22+).
+
+        :return: True if replica is running, False otherwise.
         """
         result = None
-        for word in ["NONBLOCKING", "NOLOCK", ""]:
-            try:
-                result = self._query_mysql(f"SHOW SLAVE STATUS {word}")
-            except ProgrammingError:
-                pass
-            else:
+        # Try newer MySQL syntax first
+        for query in ["SHOW REPLICA STATUS", "SHOW SLAVE STATUS"]:
+            for suffix in [" NONBLOCKING", " NOLOCK", ""]:
+                try:
+                    result = self._query_mysql(f"{query}{suffix}")
+                except ProgrammingError:
+                    continue
+                if result:
+                    break
+            if result:
                 break
 
-        if result and result["Slave_IO_Running"] == "Yes":
-            self.logger.info("MySQL slave is running.")
+        if result and result.get("Replica_IO_Running", result.get("Slave_IO_Running")) == "Yes":
+            self.logger.info("MySQL replication is running.")
             return True
+
         return False
 
     def _is_read_only(self) -> bool:
@@ -1655,15 +1662,15 @@ class MyDumper(Backup):
         """Start the backup for the individual server."""
         start_time = time.time()
 
-        if self.only_if_running_slave:
-            self.is_slave = self._is_running_slave()
-            if not self.is_slave:
-                self.logger.info("Not running slave, ignoring this host.")
+        if self.only_if_running_replica:
+            self.is_replica = self._is_running_replica()
+            if not self.is_replica:
+                self.logger.info("Not running replica, ignoring this host.")
                 return
 
         if self.only_if_read_only:
-            self.is_slave = self._is_read_only()
-            if not self.is_slave:
+            self.is_replica = self._is_read_only()
+            if not self.is_replica:
                 self.logger.info("Not read_only, ignoring this host.")
                 return
 
