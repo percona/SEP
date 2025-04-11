@@ -52,7 +52,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     check_disk_space: bool = False
     encrypt: bool = False
     encrypt_using_tmpdir: bool = False
-    only_if_running_slave: bool = False
+    only_if_running_replica: bool = False
     only_if_read_only: bool = False
     logging_dir: RequiredStr | EmptyStrToNone = None
     backup_dir: RequiredStr | EmptyStrToNone = None
@@ -74,7 +74,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_prepare_memory: RequiredStr | EmptyStrToNone = None
     xtrabackup_desync_pxc: bool = False
     xtrabackup_rsync: bool = False
-    xtrabackup_slave_info: bool = False
+    xtrabackup_replica_info: bool = True
     xtrabackup_defaults_file: RequiredStr | EmptyStrToNone = None
     xtrabackup_extra_args: RequiredStr | EmptyStrToNone = None
     xtrabackup_incremental_method: (

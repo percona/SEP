@@ -166,13 +166,13 @@
                        value="1" />
                 Encrypt using tmpdir
             </label>
-            {% set only_if_running_slave_title = "Enable this option to apply the backup only if the server is running as a replication slave." %}
-            <label for="only_if_running_slave" title="{{ only_if_running_slave_title }}">
+            {% set only_if_running_replica_title = "Enable this option to apply the backup only if the server is running as a replica." %}
+            <label for="only_if_running_replica" title="{{ only_if_running_replica_title }}">
                 <input type="checkbox"
-                       id="only_if_running_slave"
-                       name="only_if_running_slave"
+                       id="only_if_running_replica"
+                       name="only_if_running_replica"
                        value="1" />
-                Only if running slave
+                Only if running replica
             </label>
             {% set only_if_read_only_title = "Enable this option to perform the backup only if the database is in read-only mode." %}
             <label for="only_if_read_only" title="{{ only_if_read_only_title }}">
@@ -335,22 +335,22 @@
                        value="1" />
                 Use Rsync
             </label>
-            {% set xtrabackup_slave_info_title = "Include replication slave information in the backup to assist with replication recovery." %}
-            <label for="xtrabackup_slave_info" title="{{ xtrabackup_slave_info_title }}">
+            {% set xtrabackup_replica_info_title = "Include replica information in the backup to assist with replication recovery." %}
+            <label for="xtrabackup_replica_info" title="{{ xtrabackup_replica_info_title }}">
                 <input type="checkbox"
-                       id="xtrabackup_slave_info"
-                       name="xtrabackup_slave_info"
+                       id="xtrabackup_replica_info"
+                       name="xtrabackup_replica_info"
                        value="1"
                        checked>
-                Include Slave Info
+                Include Replica Info
             </label>
-            {% set xtrabackup_stop_slave_title = "Stop the replication slave before starting the backup to ensure data consistency." %}
-            <label for="xtrabackup_stop_slave" title="{{ xtrabackup_stop_slave_title }}">
+            {% set xtrabackup_stop_replica_title = "Stop replication before starting the backup to ensure data consistency." %}
+            <label for="xtrabackup_stop_replica" title="{{ xtrabackup_stop_replica_title }}">
                 <input type="checkbox"
-                       id="xtrabackup_stop_slave"
-                       name="xtrabackup_stop_slave"
+                       id="xtrabackup_stop_replica"
+                       name="xtrabackup_stop_replica"
                        value="1" />
-                Stop Slave Before Backup
+                Stop Replica Before Backup
             </label>
             {% set xtrabackup_lock_ddl_title = "Lock Data Definition Language (DDL) operations during backup to prevent schema changes." %}
             <label for="xtrabackup_lock_ddl" title="{{ xtrabackup_lock_ddl_title }}">
