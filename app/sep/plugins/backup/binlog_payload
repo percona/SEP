@@ -694,7 +694,7 @@ class BaseBackup:
             self.check_compression_algorithm(self.compression_algorithm)
 
         # Dynamically set
-        self.is_slave = False
+        self.is_replica = False
         self.last_backup_dir = None
 
     def check_compression_algorithm(self, algorithm: str) -> None:
@@ -724,7 +724,7 @@ class BaseBackup:
         if len(output) > 300:
             output = f"{output[:300]}..."
 
-        if isinstance(self, Backup) and self.is_slave:
+        if isinstance(self, Backup) and self.is_replica:
             output = f"Host {self.alias}. {output}"
 
         self.report_options["end_time"] = time.strftime(DATETIME_FORMAT, time.gmtime())
@@ -830,7 +830,7 @@ class Backup(BaseBackup):
         self.dir_encrypt_config = server_data.get("DIR_ENCRYPT_CONFIG", {})
         self.post_run_encrypt = server_data.get("POST_RUN_ENCRYPT", False)
         self.only_if_read_only = server_data.get("ONLY_IF_READ_ONLY")
-        self.only_if_running_slave = server_data.get("ONLY_IF_RUNNING_SLAVE")
+        self.only_if_running_replica = server_data.get("ONLY_IF_RUNNING_REPLICA")
         self.upload_type = server_data.get("UPLOAD", set())
         if isinstance(self.upload_type, str):
             self.upload_type = {self.upload_type}
@@ -891,23 +891,30 @@ class Backup(BaseBackup):
             msg = f'Error running query "{sql}": {err}'
             raise BackupError(msg) from err
 
-    def _is_running_slave(self) -> bool:
-        """Check if MySQL slave is running.
+    def _is_running_replica(self) -> bool:
+        """Check if MySQL replica is running.
 
-        :return: True if slave is running, False otherwise.
+        Supports both legacy `SHOW SLAVE STATUS` and newer `SHOW REPLICA STATUS` (MySQL 8.0.22+).
+
+        :return: True if replica is running, False otherwise.
         """
         result = None
-        for word in ["NONBLOCKING", "NOLOCK", ""]:
-            try:
-                result = self._query_mysql(f"SHOW SLAVE STATUS {word}")
-            except ProgrammingError:
-                pass
-            else:
+        # Try newer MySQL syntax first
+        for query in ["SHOW REPLICA STATUS", "SHOW SLAVE STATUS"]:
+            for suffix in [" NONBLOCKING", " NOLOCK", ""]:
+                try:
+                    result = self._query_mysql(f"{query}{suffix}")
+                except ProgrammingError:
+                    continue
+                if result:
+                    break
+            if result:
                 break
 
-        if result and result["Slave_IO_Running"] == "Yes":
-            self.logger.info("MySQL slave is running.")
+        if result and result.get("Replica_IO_Running", result.get("Slave_IO_Running")) == "Yes":
+            self.logger.info("MySQL replication is running.")
             return True
+
         return False
 
     def _is_read_only(self) -> bool:
@@ -1059,7 +1066,7 @@ def run_binlog_process(server_data, lock_file, command_queue):
     killed = False
     restart_now = False
     exit_now = False
-    last_master_status = None
+    last_source_status = None
 
     if time.time() - server_data["last_success"] > 60 * 50:
         send_notifications(
@@ -1100,25 +1107,25 @@ def run_binlog_process(server_data, lock_file, command_queue):
                     )
                     server_data["last_success"] = time.time()
                 else:
-                    # If the logs on the master haven't moved, infer the
+                    # If the logs on the source haven't moved, infer the
                     # mysqlbinlog process is still OK even though the local
                     # logs haven't grown
-                    master_status = get_master_status(server_data)
-                    if master_status is not None:
+                    source_status = get_source_status(server_data)
+                    if source_status is not None:
                         binlog_name = os.path.basename(cur_last_binlog)
                         if (
-                            master_status[0] == binlog_name
-                            and last_master_status == master_status
+                            source_status[0] == binlog_name
+                            and last_source_status == source_status
                         ):
                             last_binlog_write = time.time()
                             server_data["last_success"] = time.time()
                             send_notifications(
                                 0,
                                 server_data,
-                                "OK Last binlog: %s; no recent master writes"
+                                "OK Last binlog: %s; no recent source writes"
                                 % (last_binlog,),
                             )
-                        last_master_status = master_status
+                        last_source_status = source_status
             else:
                 last_binlog = cur_last_binlog
                 last_binlog_size = cur_last_binlog_size
@@ -1273,7 +1280,7 @@ def start_mysqlbinlog(server_data):
         cmd.append("--port=%s" % (server_data["PORT"],))
     if "BINLOG_SERVER_ID" in server_data:
         cmd.append(
-            "--stop-never-slave-server-id=%s" % (server_data["BINLOG_SERVER_ID"],)
+            "--stop-never-slave-server-id=%s" % (server_data["BINLOG_SERVER_ID"],) # Still present in mysqlbinlog for 8.4
         )
     else:
         cmd.append(
@@ -1422,10 +1429,9 @@ def queue_get_maybe(queue, timeout=None):
     return item
 
 
-def get_master_status(server_data):
-    """Return a tuple of binlog name and position from the master we're currently
+def get_source_status(server_data):
+    """Return a tuple of binlog name and position from the source we're currently
     connecting to.
-
     """
     try:
         conn = MySQLdb.connect(
@@ -1435,16 +1441,20 @@ def get_master_status(server_data):
             read_default_group="client",
         )
     except Exception:
-        LOGGER.exception("problem connecting to master")
+        LOGGER.exception("problem connecting to source")
         return None
 
     cursor = conn.cursor()
-    cursor.execute("SHOW MASTER STATUS")
-    master_status = cursor.fetchone()
+    for query in ["SHOW BINARY LOG STATUS", "SHOW MASTER STATUS"]:
+        try:
+            cursor.execute(query)
+        except ProgrammingError:
+            continue
+    source_status = cursor.fetchone()
 
     conn.close()
 
-    return master_status
+    return source_status
 
 
 def get_dir_size(start_path: Path) -> int:
