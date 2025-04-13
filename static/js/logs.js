@@ -20,25 +20,25 @@ $(document).ready(function() {
             const step = data.step;
             const type = data.type;
 
-            if ($logConsole.find('.log-step-content[data-step-name="' + step + '"]').length === 0) {
+            if ($logConsole.find('.log-content-step[data-step-name="' + step + '"]').length === 0) {
                 const stepTab = $('<a href="#" class="log-step-tab" data-step-name="' + step + '">' + step + '</a>');
-                $logConsole.find('.log-bottom-bar .log-tabs').append(stepTab);
+                $logConsole.find('.log-footer .log-tabs').append(stepTab);
 
                 if ($logConsole.find('.log-step-tab').length === 1) {
                     stepTab.addClass('selected');
                 }
 
-                const stepContent = $('<div class="log-step-content" data-step-name="' + step + '"></div>');
-                if ($logConsole.find('.log-step-content').length === 0) {
+                const stepContent = $('<div class="log-content-step" data-step-name="' + step + '"></div>');
+                if ($logConsole.find('.log-content-step').length === 0) {
                     stepContent.show();
                 } else {
                     stepContent.hide();
                 }
 
-                const stdoutPre = $('<pre class="log-output" data-log-type="stdout" style="display: none;"></pre>');
-                const stderrPre = $('<pre class="log-output" data-log-type="stderr" style="display: none;"></pre>');
+                const stdoutPre = $('<pre class="log-output" data-logs-type="stdout" style="display: none;"></pre>');
+                const stderrPre = $('<pre class="log-output" data-logs-type="stderr" style="display: none;"></pre>');
 
-                const selectedLogType = $logConsole.find('.log-type-tab.selected').data('log-type');
+                const selectedLogType = $logConsole.find('.log-tab.selected').data('log-type');
                 if (selectedLogType === 'stdout') {
                     stdoutPre.css("display", "block");
                 } else {
@@ -50,15 +50,15 @@ $(document).ready(function() {
                 $logConsole.find('.log-content').append(stepContent);
             }
 
-            const preElement = $logConsole.find('.log-step-content[data-step-name="' + step + '"] .log-output[data-log-type="' + type + '"]');
+            const preElement = $logConsole.find('.log-content-step[data-step-name="' + step + '"] .log-output[data-logs-type="' + type + '"]');
             preElement.append(document.createTextNode(msg));
 
             const $logContent = $logConsole.find('.log-content');
             $logContent.scrollTop($logContent[0].scrollHeight);
 
-            const selectedLogType = $logConsole.find('.log-type-tab.selected').data('log-type');
+            const selectedLogType = $logConsole.find('.log-tab.selected').data('log-type');
             if (type !== selectedLogType) {
-                const $typeTab = $logConsole.find('.log-type-tab[data-log-type="' + type + '"]');
+                const $typeTab = $logConsole.find('.log-tab[data-logs-type="' + type + '"]');
                 $typeTab.addClass('tab-notification');
             }
 
@@ -78,11 +78,11 @@ $(document).ready(function() {
                 console.log(`Log stream for ${taskId} finished`);
                 if (finishData.status === 'success') {
                     const completedIcon = $('<i class="icons unselectable" style="color: #8ACE00; margin-left: auto;" title="Task completed">check_circle</i>');
-                    $logConsole.find('.log-bottom-bar').append(completedIcon);
+                    $logConsole.find('.log-footer').append(completedIcon);
                     $logConsole.addClass('completed');
                 } else if (finishData.status === 'failed') {
                     const completedIcon = $('<i class="icons unselectable" style="color: #CE2900; margin-left: auto;" title="Task failed">error_outline</i>');
-                    $logConsole.find('.log-bottom-bar').append(completedIcon);
+                    $logConsole.find('.log-footer').append(completedIcon);
                     $logConsole.addClass('failed');
                 }
                 delete lastMessagesIds[taskId];
@@ -110,17 +110,17 @@ $(document).ready(function() {
         }
     });
 
-    $('.log-type-tab').click(function(e) {
+    $('.log-tab').click(function(e) {
         e.preventDefault();
         const $this = $(this);
         const logType = $this.data('log-type');
         const $logConsole = $this.closest('.log-console');
 
-        $this.closest('.log-tabs').find('.log-type-tab').removeClass('selected');
+        $this.closest('.log-tabs').find('.log-tab').removeClass('selected');
         $this.addClass('selected');
 
         $logConsole.find('.log-output').hide();
-        $logConsole.find('.log-step-content:visible .log-output[data-log-type="' + logType + '"]').show();
+        $logConsole.find('.log-content-step:visible .log-output[data-logs-type="' + logType + '"]').show();
 
         $this.removeClass('tab-notification');
     });
@@ -134,12 +134,12 @@ $(document).ready(function() {
         $this.closest('.log-tabs').find('.log-step-tab').removeClass('selected');
         $this.addClass('selected');
 
-        $logConsole.find('.log-step-content').hide();
-        $logConsole.find('.log-step-content[data-step-name="' + stepName + '"]').show();
+        $logConsole.find('.log-content-step').hide();
+        $logConsole.find('.log-content-step[data-step-name="' + stepName + '"]').show();
 
-        const selectedLogType = $logConsole.find('.log-type-tab.selected').data('log-type');
+        const selectedLogType = $logConsole.find('.log-tab.selected').data('log-type');
         $logConsole.find('.log-output').hide();
-        $logConsole.find('.log-step-content[data-step-name="' + stepName + '"] .log-output[data-log-type="' + selectedLogType + '"]').show();
+        $logConsole.find('.log-content-step[data-step-name="' + stepName + '"] .log-output[data-logs-type="' + selectedLogType + '"]').show();
 
         $this.removeClass('tab-notification');
     });

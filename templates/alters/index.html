@@ -1,20 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Schema Change{% endblock title %}
 {% block style %}
-    <style>
-        label+input[type=text] {
-            display: block
-        }
-
-        table form {
-            display: inline-block
-        }
-
-        table button {
-            width: 2.2rem;
-            height: 2.2rem
-        }
-    </style>
     {% if history_tasks or running_tasks %}
     <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
@@ -24,13 +10,17 @@
 {% endblock style %}
 
 {% block behaviours_optimized_extra %}
+
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+
     {% if history_tasks or running_tasks %}
     <script src="{{ url_for('static', path='/js/logs.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
+
     {% if tasks %}
     <script src="{{ url_for('static', path='/js/saved.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
+
 {% endblock behaviours_optimized_extra %}
 
 {% block main %}
@@ -42,7 +32,7 @@
         </p>
     </section>
     
-    <section class="app-stage">
+    <section class="app-stage tabs-wrapper">
     
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
@@ -78,7 +68,7 @@
                 <span class="label">Saved tasks</span>
             </button>
             <button id="tab-pending-tasks" class="large" role="tab" aria-controls="pending-tasks" aria-selected="false">
-                <span class="label">Pending</span>
+                <span class="label">Scheduled for execution</span>
             </button>
             <button id="tab-completed-tasks" class="large" role="tab" aria-controls="completed-tasks" aria-selected="false">
                 <span class="label">History</span>
@@ -108,7 +98,7 @@
 
             </section>
 
-            <!-- Pending Tasks -->
+            <!-- Scheduled Tasks -->
             <section id="pending-tasks" role="tabpanel" aria-hidden="true" aria-labelledby="tab-pending-tasks">
                 {% include "tasks/partials/pending-tasks.html" %}
             </section>

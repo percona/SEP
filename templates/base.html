@@ -96,7 +96,7 @@
                                 <span class="label">Sign out</span>
                                 <span class="material-symbols-outlined">logout</span>
                             </a>
-                            <form id="logoutForm" action="{{ url_for('logout') }}" method="post" style="display: none">
+                            <form id="logoutForm" action="{{ url_for('logout') }}" method="post" aria-hidden="true">
                                 <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
                             </form>
                         </li>
@@ -161,6 +161,7 @@
         <script src="{{ url_for('static', path='/js/jquery-3.7.1.min.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
         <script src="{{ url_for('static', path='/js/floating-ui.core.umd.min.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
         <script src="{{ url_for('static', path='/js/floating-ui.dom.umd.min.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/moment.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
         <script src="{{ url_for('static', path='/js/simple-datatables.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
         <script src="{{ url_for('static', path='/js/messages.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
         <script src="{{ url_for('static', path='/js/app.js') }}" nonce="{{ request.state.csp_nonce }}"></script>

@@ -1,3 +1,7 @@
+
+
+
+/* 
 .log-console {
     border: 1px solid #333;
     font-family: monospace;
@@ -5,19 +9,13 @@
     color: #d4d4d4;
 }
 
-.log-top-bar,
-.log-bottom-bar {
+.logs-footer {
     display: flex;
     align-items: center;
     background-color: #f5f5f5;
 }
 
-.log-top-bar {
-    border-bottom: 1px solid #444;
-    padding: 0.5em;
-}
-
-.log-bottom-bar {
+.logs-footer {
     border-top: 1px solid #444;
     padding: 0.5em;
 }
@@ -104,7 +102,7 @@ input:checked+.slider:before {
     transform: translateX(26px);
 }
 
-.log-content {
+.logs-content {
     max-height: 400px;
     overflow: auto;
 }
@@ -162,4 +160,4 @@ input:checked+.slider:before {
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
-}
+} */

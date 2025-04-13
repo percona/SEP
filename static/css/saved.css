@@ -1,15 +1,6 @@
-.actions-cell {
-    align-items: center;
-}
-
-.schedule-button.toggled-on {
+/* .schedule-button.toggled-on {
     background-color: #93C7FF;
     color: #2C323E;
-}
-
-.send-form {
-    display: flex;
-    align-items: center;
 }
 
 .eta-input {
@@ -29,12 +20,4 @@
     margin-right: 0.5em;
     opacity: 1;
     transition: width 0.5s ease, padding 0.5s ease, margin-right 0.5s ease, opacity 0.5s ease;
-}
-
-table form {
-    display: inline-block;
-}
-
-.delete-task-form {
-    padding: 0;
-}
+} */
