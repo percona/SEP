@@ -93,9 +93,10 @@
         <label for="backup_type" title="{{ backup_type_title }}">
             Backup Type:
             <select id="backup_type" name="backup_type" required>
-                <option value="">Select a backup type</option>
-                <option value="logical">Logical</option>
+                <option value="" disabled>Select a backup type</option>
+                <option value="logical" selected>Logical</option>
                 <option value="physical">Physical</option>
+                <option value="physical">Configuration Change</option>
             </select>
         </label>
     </fieldset>
@@ -103,8 +104,5 @@
     <button type="reset">Reset</button>
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const backupTypeSelect = document.getElementById('backup_type');
-    backupTypeSelect.addEventListener('change', updateBackupTypeUI);
-    // Initialize
-    updateBackupTypeUI();
+    const backupTypeSelect = document.getElementById('backup_type');;
 </script>

@@ -88,6 +88,8 @@ async def build_backup_task_payload(
         payload_name = "pbm_physical_payload"
     elif form.backup_type == BackupType.SNAPSHOT:
         payload_name = "pbm_snapshot_payload"
+    elif form.backup_type == BackupType.CONFIG:
+        payload_name = "pbm_config_payload"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
     payload_path = Path(__file__).parent / payload_name
@@ -148,6 +150,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     data = task["data"]
+    print(data)
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
     backup_server = task_config["SERVER_LIST"][0]

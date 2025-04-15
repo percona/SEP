@@ -15,6 +15,7 @@ class BackupType(EnumFieldMixin, StrEnum):
     LOGICAL = "logical"
     PHYSICAL = "physical"
     SNAPSHOT = "snapshot"
+    CONFIG = "config"
 
 class BackupConfigAll(BaseCaseInsensitiveModel):
     """Represent the general configuration for the backup task."""
