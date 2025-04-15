@@ -208,10 +208,11 @@
                    name="defaults_file"
                    placeholder="/path/to/defaults.cnf" />
         </label>
-        <label id="compression_algorithm_wrapper" for="compression_algorithm" style="display:none;">
+        <label id="compression_algorithm_wrapper"
+               for="compression_algorithm"
+               style="display:none">
             Compression Algorithm:
-            <select id="compression_algorithm" name="compression_algorithm" title="">
-            </select>
+            <select id="compression_algorithm" name="compression_algorithm" title=""></select>
         </label>
     </fieldset>
     <fieldset id="mydumper_container">
@@ -609,7 +610,7 @@
             ]
         }
     };
-    
+
 
 
     function disableAllMydumperFields(disabled) {
@@ -729,14 +730,14 @@
     function updateCompressionOptions() {
         const isCompressChecked = compressCheckbox.checked;
         const backupType = backupTypeSelect.value;
-    
+
         if (isCompressChecked && compressionOptions[backupType]) {
             const { title, options } = compressionOptions[backupType];
-    
+
             compressionSelect.innerHTML = options
                 .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
                 .join('');
-    
+
             compressionSelect.title = title;
             compressionWrapper.title = title;
             compressionWrapper.style.display = 'block';
