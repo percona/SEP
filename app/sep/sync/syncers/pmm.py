@@ -75,13 +75,17 @@ class PMMRemoteAPI(RemoteAPI):
     :param error_code_key: The key to expect error codes to be, or None if no error
         code is expected. Defaults to "code".
     :type error_code_key: RequiredStr | None
+    :param default_to_v3: Whether to default to PMM v3 API endpoints if the API version
+        cannot be determined. Defaults to True.
+    :type default_to_v3: bool
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     error_detail_key: RequiredStr = "message"
     error_code_key: RequiredStr | None = "code"
+    default_to_v3: bool = True
 
-    @alru_cache
+    @alru_cache(ttl=600)
     async def is_older_than_v3(self) -> bool:
         """Check if the PMM version is older than 3.
 
@@ -91,8 +95,25 @@ class PMMRemoteAPI(RemoteAPI):
         :rtype: bool
         """
         v3_major = 3
-        version = await self.get_version()
-        is_older = int(version.split(".")[0]) < v3_major
+        try:
+            version = await self.get_version()
+        except (TypeError, KeyError):
+            self.logger.exception(
+                "Failed to retrieve PMM version, defaulting to %s",
+                "v3" if self.default_to_v3 else "v2",
+            )
+            return not self.default_to_v3
+
+        try:
+            is_older = int(version.split(".")[0]) < v3_major
+        except (AttributeError, ValueError):
+            self.logger.exception(
+                "Failed to parse PMM version, defaulting to %s: %s",
+                "v3" if self.default_to_v3 else "v2",
+                version,
+            )
+            return not self.default_to_v3
+
         if is_older:
             self.logger.warning(
                 "Deprecation Warning: Support for PMM version < 3.0.0 is deprecated and will be removed in a future version (version found is %s).",
