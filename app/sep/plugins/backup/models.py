@@ -57,6 +57,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     logging_dir: RequiredStr | EmptyStrToNone = None
     backup_dir: RequiredStr | EmptyStrToNone = None
     defaults_file: RequiredStr | EmptyStrToNone = None
+    compression_algorithm: RequiredStr | EmptyStrToNone = None
     mydumper_daily_purge: int | EmptyStrToNone = None
     mydumper_weekly_purge: int | EmptyStrToNone = None
     mydumper_dump_triggers: bool = False

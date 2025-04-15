@@ -208,6 +208,11 @@
                    name="defaults_file"
                    placeholder="/path/to/defaults.cnf" />
         </label>
+        <label id="compression_algorithm_wrapper" for="compression_algorithm" style="display:none;">
+            Compression Algorithm:
+            <select id="compression_algorithm" name="compression_algorithm" title="">
+            </select>
+        </label>
     </fieldset>
     <fieldset id="mydumper_container">
         <legend>Mydumper Configuration</legend>
@@ -573,6 +578,40 @@
     const s3BucketInput = document.getElementById('s3_bucket');
     const rsyncPathInput = document.getElementById('rsync_path');
 
+    const compressionWrapper = document.getElementById('compression_algorithm_wrapper');
+    const compressCheckbox = document.getElementById('compress');
+    const compressionSelect = document.getElementById('compression_algorithm');
+
+
+    const compressionOptions = {
+        M: {
+            title: "Select the compression algorithm to use for backups: 'gzip' or 'zstd'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'gzip', label: 'gzip' },
+                { value: 'zstd', label: 'zstd' }
+            ]
+        },
+        X: {
+            title: "Select the compression algorithm to use for backups: 'zstd', 'quicklz', or 'lz4'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'zstd', label: 'zstd' },
+                { value: 'quicklz', label: 'quicklz' },
+                { value: 'lz4', label: 'lz4' }
+            ]
+        },
+        B: {
+            title: "Select the compression algorithm to use for backups: 'gzip'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'gzip', label: 'gzip' }
+            ]
+        }
+    };
+    
+
+
     function disableAllMydumperFields(disabled) {
         mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
     }
@@ -685,6 +724,31 @@
             toggleRsyncBtn.textContent = "+ Add Rsync upload";
         }
     }
+
+
+    function updateCompressionOptions() {
+        const isCompressChecked = compressCheckbox.checked;
+        const backupType = backupTypeSelect.value;
+    
+        if (isCompressChecked && compressionOptions[backupType]) {
+            const { title, options } = compressionOptions[backupType];
+    
+            compressionSelect.innerHTML = options
+                .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+                .join('');
+    
+            compressionSelect.title = title;
+            compressionWrapper.title = title;
+            compressionWrapper.style.display = 'block';
+        } else {
+            compressionWrapper.style.display = 'none';
+            compressionSelect.innerHTML = '';
+        }
+    }
+
+    // Event listeners
+    compressCheckbox.addEventListener('change', updateCompressionOptions);
+    backupTypeSelect.addEventListener('change', updateCompressionOptions);
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
