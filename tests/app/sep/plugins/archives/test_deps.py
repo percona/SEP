@@ -143,7 +143,8 @@ def test_get_archives_task_info(created_task):
     """Test for extracting relevant information from a task for the Archives plugin."""
     expected_output = {
         "hostname": "mock_target",
-        "source_table": "mock_source_db.mock_source_table",
+        "source": "mock_source_db.mock_source_table",
+        "dest": None,
     }
     result = get_archives_task_info(created_task.model_dump())
     assert result == expected_output

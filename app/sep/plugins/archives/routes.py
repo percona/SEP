@@ -16,6 +16,7 @@ from app.sep.deps import (
 from app.sep.plugins.archives.deps import (
     ArchivesGeneratedTask,
     ArchivesTask,
+    ArchivesUpdatedTask,
     get_archives_detail_context,
     get_archives_index_context,
 )
@@ -96,16 +97,21 @@ async def archives_execute(
     response_class=RedirectResponse,
 )
 async def archives_update(
-    task_update: ArchivesGeneratedTask,
+    request: Request,
+    task_name: str,
+    updated_task: ArchivesUpdatedTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Update archives task."""
-    logger.debug("Updating archives task: %s", task_update)
+    logger.debug("Updating archives task: %s", updated_task)
     await tasks_api.put(
-        f"/{task_update.name}",
-        json=task_update.model_dump(),
+        f"/{task_name}",
+        json=updated_task.model_dump(),
     )
-    return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        request.url_for("archives_detail", task_name=updated_task.name),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post(

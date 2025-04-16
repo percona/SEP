@@ -20,8 +20,10 @@ from app.sep.deps import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
+    ArchivesUpdate,
     PurgeConfig,
     PurgeConfigAll,
+    PurgeConfigItem,
 )
 from app.tasks.models import (
     Task,
@@ -32,6 +34,39 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def build_task_write(
+    task_name: str, target: str, purge_config: PurgeConfig
+) -> TaskWrite:
+    """Build the task write object for the Archives plugin.
+
+    :param task_name: The name of the task to be created.
+    :type task_name: str
+    :param target: The target host for the task.
+    :type target: str
+    :param purge_config: The configuration for the purge operation.
+    :type purge_config: PurgeConfig
+    :return: A `TaskWrite` object containing the task configuration.
+    :rtype: TaskWrite
+    """
+    payload_path = Path(__file__).parent / "payload"
+    return TaskWrite(
+        name=task_name,
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.ARCHIVER,
+        data={
+            "task": "run-python",
+            "meta": {
+                "config": yaml.dump(
+                    purge_config.model_dump(by_alias=True, exclude_none=True)
+                ),
+                "target": target,
+                "requirements": "PyMySQL\nfilelock\nPyYAML",
+            },
+            "payload": f"file://{payload_path}",
+        },
+    )
 
 
 async def build_archives_task_payload(
@@ -110,26 +145,9 @@ async def build_archives_task_payload(
         all=PurgeConfigAll(
             source_host=service.node.address, source_port=service.port or 3306
         ),
-        purge_list=[purge_item_data],
-        alias=form.alias,
+        purge_list=[PurgeConfigItem.model_validate(purge_item_data)],
     )
-    payload_path = Path(__file__).parent / "payload"
-    return TaskWrite(
-        name=form.alias,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.ARCHIVER,
-        data={
-            "task": "run-python",
-            "meta": {
-                "config": yaml.dump(
-                    purge_config.model_dump(by_alias=True, exclude_none=True)
-                ),
-                "target": form.hostname,
-                "requirements": "PyMySQL\nfilelock\nPyYAML",
-            },
-            "payload": f"file://{payload_path}",
-        },
-    )
+    return build_task_write(form.alias, form.hostname, purge_config)
 
 
 ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
@@ -159,6 +177,39 @@ async def get_archives_task(
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
 
 
+async def build_archives_updated_task_payload(
+    task: ArchivesTask,
+    form: Annotated[ArchivesUpdate, Form()],
+) -> TaskWrite:
+    """Build the archive task payload from form.
+
+    Build the payload for an Archives task to be executed, including the
+    necessary command arguments for performing archive.
+
+    :param task: The ArchivesTask instance resolved by the task name.
+    :type task: ArchivesTask
+    :param form: The form data for the Archives creation.
+    :type form: ArchivesCreate
+    :return: A fully constructed `TaskWrite` object containing all the necessary
+        configuration to create the Archives task.
+    :rtype: TaskWrite
+    """
+    purge_item_data = {
+        **form.model_dump(
+            exclude={"hostname"},
+            by_alias=True,
+        ),
+    }
+    meta = task.data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    task_config["PURGE_LIST"][0].update(purge_item_data)
+    purge_config = PurgeConfig.model_validate(task_config)
+    return build_task_write(form.alias, form.hostname, purge_config)
+
+
+ArchivesUpdatedTask = Annotated[TaskWrite, Depends(build_archives_updated_task_payload)]
+
+
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant information from a task for the Archives plugin.
 
@@ -177,19 +228,18 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     source_db = purge_item.get("SOURCE_DB")
     source_table = purge_item.get("SOURCE_TABLE")
     dest_table = purge_item.get("DEST_TABLE")
-    source_query = purge_item.get("SOURCE_QUERY")
-    dest_file = purge_item.get("DEST_FILE")
 
     result = {"hostname": meta["target"]}
 
     if source_db and source_table:
-        result["source_table"] = f"{source_db}.{source_table}"
+        result["source"] = f"{source_db}.{source_table}"
+    else:
+        result["source"] = purge_item.get("SOURCE_QUERY")
+
     if source_db and dest_table:
-        result["dest_table"] = f"{source_db}.{dest_table}"
-    if source_query:
-        result["source_query"] = source_query
-    if dest_file:
-        result["dest_file"] = dest_file
+        result["dest"] = f"{source_db}.{dest_table}"
+    else:
+        result["dest"] = purge_item.get("DEST_FILE")
 
     return result
 
@@ -229,9 +279,13 @@ async def get_archives_detail_context(
     and table information, and also gathers history and stats data.
 
     :param task: The ArchivesTask instance resolved by the task name.
+    :type task: ArchivesTask
     :param inventory_api: The Inventory API client.
+    :type inventory_api: InventoryAPI
     :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
     :param context: The default context dictionary.
+    :type context: DefaultContext
     :return: A dictionary containing all data needed for the detail view template.
     :rtype: dict[str, Any]
     """
@@ -246,52 +300,30 @@ async def get_archives_detail_context(
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
+        "dest_file": purge_item.get("DEST_FILE"),
     }
 
-    source_host = host_data.get("SOURCE_HOST")
-    source_port = host_data.get("SOURCE_PORT")
+    if source_host := host_data.get("SOURCE_HOST"):
+        address = source_host
+        if source_port := host_data.get("SOURCE_PORT"):
+            address += f":{source_port}"
+        task_data["db_address"] = address
+
     source_db = purge_item.get("SOURCE_DB")
     source_table = purge_item.get("SOURCE_TABLE")
     dest_table = purge_item.get("DEST_TABLE")
-    source_query = purge_item.get("SOURCE_QUERY")
-    dest_file = purge_item.get("DEST_FILE")
 
     if source_db and source_table:
-        task_data["source_table"] = f"{source_db}.{source_table}"
+        task_data["source"] = f"{source_db}.{source_table}"
+    else:
+        task_data["source"] = purge_item.get("SOURCE_QUERY")
+
     if source_db and dest_table:
-        task_data["dest_table"] = f"{source_db}.{dest_table}"
-    if source_query:
-        task_data["source_query"] = source_query
-    if dest_file:
-        task_data["dest_file"] = dest_file
+        task_data["dest"] = f"{source_db}.{dest_table}"
+    else:
+        task_data["dest"] = purge_item.get("DEST_FILE")
 
-    archive_data = {key.lower(): value for key, value in purge_item.items()}
-
-    if source_host and source_port:
-        service_response = await inventory_api.get(
-            "/services/id", params={"address": source_host, "port": source_port}
-        )
-        service_id = service_response["service_id"]
-        archive_data["service_id"] = service_id
-
-        if source_db and service_id:
-            schema_response = await inventory_api.get(
-                "/schemas/id", params={"name": source_db, "service_id": service_id}
-            )
-            schema_id = schema_response["schema_id"]
-            archive_data["source_db_id"] = schema_id
-
-            if source_table and schema_id:
-                table_response = await inventory_api.get(
-                    "/tables/id", params={"name": source_table, "schema_id": schema_id}
-                )
-                archive_data["source_table_id"] = table_response["table_id"]
-
-            if dest_table and schema_id:
-                dest_table_response = await inventory_api.get(
-                    "/tables/id", params={"name": dest_table, "schema_id": schema_id}
-                )
-                archive_data["dest_table_id"] = dest_table_response["table_id"]
+    archive_data = PurgeConfigItem.model_validate(purge_item)
 
     mysql_services = await inventory_api.get(
         "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
@@ -316,7 +348,11 @@ async def get_archives_detail_context(
     executor_hosts = await tasks_api.get("/hosts/")
     context.update(
         {
-            "executor_hosts": list(executor_hosts.values()),
+            "executor_hosts": [
+                host
+                for host in executor_hosts.values()
+                if host != task_data["meta"]["target"]
+            ],
             "mysql_services": mysql_services,
             "archive_data": archive_data,
             "task": task_data,

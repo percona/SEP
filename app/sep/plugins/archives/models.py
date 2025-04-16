@@ -7,7 +7,7 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import EmptyStrToNone, RequiredStr
 
 
 class SwapDropEnum(IntEnum):
@@ -18,7 +18,46 @@ class SwapDropEnum(IntEnum):
     SWAP_ARCHIVE_DROP = 2
 
 
-class ArchivesCreate(BaseCaseInsensitiveModel):
+class BaseArchivesForm(BaseCaseInsensitiveModel):
+    """Base class for defining common fields and validation for archives forms.
+
+    :param alias: The alias name for the task being created. This name is used for
+        identifying the task in the backend.
+    :type alias: RequiredStr
+    :param hostname: The source hostname where the task will be executed.
+    :type hostname: RequiredStr
+    :param where: Optional; The WHERE condition that defines which data will be purged
+        from the source table. Must be None when swap_drop is SWAP_DROP.
+    :type where: RequiredStr | None
+    :param swp_table_suffix: Optional; Date suffix for the swap table.
+    :type swp_table_suffix: date | None
+    :param use_index: Optional; The index to be used for optimizing the query.
+    :type use_index: RequiredStr | None
+    :param extra_args: Optional; Additional arguments for the archive task.
+    :type extra_args: RequiredStr | None
+    :param limit: Optional; The maximum number of records to be processed.
+    :type limit: int | None
+    :param sleep: Optional; Sleep duration between operations for rate limiting.
+    :type sleep: int | None
+    :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
+        Default is 0 (binary logging enabled).
+    :type disable_binlog: int
+    """
+
+    alias: RequiredStr
+    hostname: RequiredStr
+    where: RequiredStr | EmptyStrToNone = None
+    swp_table_suffix: date | None = None
+    use_index: RequiredStr | EmptyStrToNone = None
+    extra_args: RequiredStr | EmptyStrToNone = None
+    limit: int | None = None
+    sleep: int | None = None
+    disable_binlog: int | None = Field(
+        None, ge=0, le=1, description="Optional flag to disable binary logging."
+    )
+
+
+class ArchivesCreate(BaseArchivesForm):
     """Represent an Archives creation form with proper case-insensitive fields.
 
     :param alias: The alias name for the task being created. This name is used for
@@ -67,24 +106,13 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type delete_data: int | None
     """
 
-    alias: RequiredStr
-    hostname: RequiredStr
     service_id: int
     source_db_id: int | None = None
     source_table_id: int | None = None
-    source_query: RequiredStr | None = None
-    where: RequiredStr | None = None
+    source_query: RequiredStr | EmptyStrToNone = None
     dest_table_id: int | None = None
-    dest_file: RequiredStr | None = None
+    dest_file: RequiredStr | EmptyStrToNone = None
     swap_drop: int = Field(..., ge=0, le=2)
-    swp_table_suffix: date | None = None
-    use_index: RequiredStr | None = None
-    extra_args: RequiredStr | None = None
-    limit: int | None = None
-    sleep: int | None = None
-    disable_binlog: int | None = Field(
-        None, ge=0, le=1, description="Optional flag to disable binary logging."
-    )
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
     )
@@ -178,6 +206,33 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
             raise ValueError("When swap_drop is not SWAP_DROP, 'where' must be set.")
 
         return self
+
+
+class ArchivesUpdate(BaseArchivesForm):
+    """Represent an Archive task update form with proper case-insensitive fields.
+
+    :param alias: The alias name for the task being created. This name is used for
+        identifying the task in the backend.
+    :type alias: RequiredStr
+    :param hostname: The source hostname where the task will be executed.
+    :type hostname: RequiredStr
+    :param where: Optional; The WHERE condition that defines which data will be purged
+        from the source table. Must be None when swap_drop is SWAP_DROP.
+    :type where: RequiredStr | None
+    :param swp_table_suffix: Optional; Date suffix for the swap table.
+    :type swp_table_suffix: date | None
+    :param use_index: Optional; The index to be used for optimizing the query.
+    :type use_index: RequiredStr | None
+    :param extra_args: Optional; Additional arguments for the archive task.
+    :type extra_args: RequiredStr | None
+    :param limit: Optional; The maximum number of records to be processed.
+    :type limit: int | None
+    :param sleep: Optional; Sleep duration between operations for rate limiting.
+    :type sleep: int | None
+    :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
+        Default is 0 (binary logging enabled).
+    :type disable_binlog: int
+    """
 
 
 class PurgeConfigAll(BaseCaseInsensitiveModel):

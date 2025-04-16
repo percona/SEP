@@ -1,77 +1,21 @@
 {% set form_class = "modal" if modal_required else "" %}
-<style>
-    fieldset input,
-    select {
-        margin-top: 1em;
-    }
-
-    fieldset div>label:nth-child(n+2) {
-        margin-left: 1.5em;
-    }
-
-    #source_query_container,
-    #dest_file_container,
-    #delete_data_container {
-        overflow: hidden;
-        transition: opacity 0.5s ease, max-height 0.5s ease;
-        opacity: 1;
-        max-height: 100px; /* Adjust based on actual content */
-    }
-
-    #source_query_container.hidden,
-    #dest_file_container.hidden,
-    #delete_data_container.hidden {
-        opacity: 0;
-        max-height: 0;
-        pointer-events: none;
-    }
-
-    #destination_container,
-    #purge_options_container{
-        overflow: hidden;
-        transition: opacity 0.5s ease, max-height 0.5s ease;
-        opacity: 1;
-        max-height: 500px; /* Adjust based on actual content height */
-    }
-
-    #destination_container.hidden,
-    #purge_options_container.hidden {
-        opacity: 0;
-        max-height: 0;
-        pointer-events: none;
-    }
-
-
-    #swp_table_suffix_container {
-        overflow: hidden;
-        transition: opacity 0.5s ease, max-height 0.5s ease;
-        opacity: 1;
-        max-height: 100px; /* Adjust based on actual content */
-    }
-
-    #swp_table_suffix_container.hidden {
-        opacity: 0;
-        max-height: 0;
-        pointer-events: none;
-    }
-</style>
-<form action="{{ request.url.path }}/update"
+<form action="{{ url_for('archives_update', task_name=task.name) }}"
       method="post"
       class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
-        {% set hostname_title = "Select the hostname of the target system for task execution." %}
-        <label for="hostname" title="{{ hostname_title }}">Select host</label>
-        {% if executor_hosts|length == 1 %}
-            {% set single_service = executor_hosts[0] %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                <option value="{{ single_service }}" selected>{{ single_service }}</option>
+        <label for="hostname"
+               title="Select the hostname of the target system for task execution.">Select host</label>
+        {% if executor_host|length == 0 %}
+            <select id="hostname" disabled>
+                <option selected>{{ task.meta.target }}</option>
             </select>
-            <input type="hidden" name="hostname" value="{{ single_service }}">
+            <input type="hidden" name="hostname" value="{{ task.meta.target }}">
         {% else %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}">
+            <select id="hostname" name="hostname">
+                <option value="{{ task.meta.target }}" selected>{{ task.meta.target }}</option>
                 {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
             </select>
         {% endif %}
@@ -85,20 +29,15 @@
                 <input type="text"
                        id="alias"
                        name="alias"
-                       class="validate"
                        placeholder="Enter a unique task name"
-                       value="{{ archive_data['alias'] }}"
+                       value="{{ task.name }}"
                        required />
             </label>
-            {% set swap_drop_title = "Select the drop behavior: 'Standard Purge' for basic purging, 'Swap and Drop' to replace and drop the original table, or 'Swap-Archive-Drop' to archive before dropping." %}
-            <label for="swap_drop" title="{{ swap_drop_title }}">
+            <label for="swap_drop" title="Editing archiving type is disabled">
                 Type
-                <select id="swap_drop" name="swap_drop">
-                    {% set options = {0: 'Standard purge', 1: 'Swap and drop', 2: 'Swap-archive-drop'} %}
-                    {% for value, label in options.items() %}
-                        <option value="{{ value }}"
-                                {% if value == archive_data['swap_drop'] %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
+                <select id="swap_drop" name="swap_drop" disabled>
+                    {%- set swap_drop_options = {0: 'Standard purge', 1: 'Swap and drop', 2: 'Swap-archive-drop'} -%}
+                    <option>{{ swap_drop_options[archive_data.swap_drop] }}</option>
                 </select>
             </label>
         </div>
@@ -106,594 +45,163 @@
     <fieldset>
         <legend>Source details</legend>
         <div>
-            {% set service_id_title = "Select the database host from the inventory to connect to." %}
-            <label for="service_id" title="{{ service_id_title }}">
+            <label for="service_id" title="Source editing is disabled">
                 Database host
-                {% if mysql_services|length == 1 and mysql_services[0].id == archive_data['service_id'] %}
-                    {% set single_service = mysql_services[0] %}
-                    <select id="service_id" name="service_id" disabled>
-                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                    </select>
-                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
-                {% else %}
-                    <select id="service_id" name="service_id" required>
-                        <option value="">Select a database host</option>
-                        {% for service in mysql_services %}
-                            <option value="{{ service.id }}"
-                                    {% if service.id == archive_data['service_id'] %}selected{% endif %}>
-                                {{ service.name }} ({{ service.node_id }})
-                            </option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
+                <select id="service_id" disabled>
+                    <option>{{ task.db_address }}</option>
+                </select>
             </label>
         </div>
         <div>
-            {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
-            <label for="source_db_id" title="{{ source_db_id_title }}">
-                Schema
-                <select id="source_db_id" name="source_db_id" class="validate" required>
-                    <option value="">Select a schema</option>
-                </select>
-            </label>
-            {% set source_table_id_title = "Select the source table from which data will be purged." %}
-            <label for="source_table_id" title="{{ source_table_id_title }}">
-                Table
-                <select id="source_table_id" name="source_table_id" class="validate" required>
-                    <option value="">Select a table</option>
-                </select>
-            </label>
-            <br />
-            <div id="source_query_container"
-                 style="width: fit-content;
-                        margin-left: 1em">
-                <label>OR</label>
-                {% set source_query_title = "Type an optional query to define the source data to be purged." %}
-                <label for="source_query" title="{{ source_query_title }}">
-                    Source Query
-                    <input type="text"
-                           id="source_query"
-                           name="source_query"
-                           class="validate"
-                           placeholder="SELECT ..."
-                           value="{{ archive_data['source_query'] }}"
+            {% if archive_data.source_query %}
+                <div id="source_query_container"
+                     style="width: fit-content;
+                            margin-left: 1em">
+                    <label for="source_query" title="Source editing is disabled">
+                        Source Query
+                        <input type="text"
+                               id="source_query"
+                               name="source_query"
+                               placeholder="SELECT ..."
+                               disabled
+                               value="{{ archive_data.source_query }}"
+                               style="width: 25em" />
+                    </label>
+                </div>
+            {% else %}
+                <label for="source_db_id" title="Source editing is disabled">
+                    Schema
+                    <select id="source_db_id" name="source_db_id" disabled>
+                        <option value="">{{ archive_data.source_db }}</option>
+                    </select>
+                </label>
+                <label for="source_table_id" title="Source editing is disabled">
+                    Table
+                    <select id="source_table_id" name="source_table_id" disabled>
+                        <option value=" ">{{ archive_data.source_table }}</option>
+                    </select>
+                </label>
+            {% endif %}
+        </div>
+        {% if archive_data.swap_drop == 2 %}
+            <div id="swp_table_suffix_container">
+                <label for="swp_table_suffix"
+                       title="Select a date suffix for the swap table.">
+                    Swap Table Suffix
+                    <input type="date"
+                           id="swp_table_suffix"
+                           name="swp_table_suffix"
                            required
-                           style="width: 25em" />
+                           {% if archive_data.swp_table_suffix %}value="{{ archive_data.swp_table_suffix }}"{% endif %}>
                 </label>
             </div>
-        </div>
-        <div id="swp_table_suffix_container">
-            {% set swp_table_suffix_title = "Select an date suffix for the swap table." %}
-            <label for="swp_table_suffix" title="{{ swp_table_suffix_title }}">
-                Swap Table Suffix
-                <input type="date"
-                       id="swp_table_suffix"
-                       name="swp_table_suffix"
-                       class="validate"
-                       value="{{ archive_data['swp_table_suffix'] }}"
-                       required />
-            </label>
-        </div>
-        <div id="purge_options_container">
-            {% set where_title = "Type a WHERE clause to limit rows for archiving (exclude the keyword 'WHERE')." %}
-            <label for="where" title="{{ where_title }}">
-                Where condition
-                <input type="text"
-                       id="where"
-                       name="where"
-                       class="validate"
-                       value="{{ archive_data['where'] }}"
-                       required
-                       style="width: 25em"
-                       placeholder="ts < current_date - interval 90 day" />
-            </label>
-            <br />
-            {% set use_index_title = "Optionally specify an index to optimize the query execution." %}
-            <label for="use_index" title="{{ use_index_title }}">
-                Use Index
-                <input type="text"
-                       id="use_index"
-                       name="use_index"
-                       value="{{ archive_data['use_index'] }}"
-                       class="validate"
-                       placeholder="created_date" />
-            </label>
-            {% set limit_title = "Set the number of rows to fetch and archive per statement." %}
-            <label for="limit" title="{{ limit_title }}">
-                Limit
-                <input type="number"
-                       id="limit"
-                       name="limit"
-                       class="validate"
-                       value="{{ archive_data['limit'] }}"
-                       placeholder="100"
-                       style="width:5em" />
-            </label>
-            {% set sleep_title = "Set the sleep time (in seconds) between fetch operations. Default: 0 (no sleep)." %}
-            <label for="sleep" title="{{ sleep_title }}">
-                Sleep
-                <input type="number"
-                       id="sleep"
-                       name="sleep"
-                       class="validate"
-                       value="{{ archive_data['sleep'] }}"
-                       value="1"
-                       placeholder="1"
-                       style="width: 3em" />
-            </label>
-            <br />
-            {% set extra_args_title = "Type optional additional arguments for the archive task." %}
-            <label for="extra_args" title="{{ extra_args_title }}">
-                Extra args
-                <input type="text"
-                       id="extra_args"
-                       name="extra_args"
-                       value="{{ archive_data['extra_args'] }}"
-                       class="validate"
-                       placeholder="--quick"
-                       style="width: 25em" />
-            </label>
-            <br />
-            {% set disable_binlog_title = "Disable binary logging for the operation." %}
-            <label for="disable_binlog" title="{{ disable_binlog_title }}">
-                Disable Binlog
+        {% endif %}
+        {% if archive_data.swap_drop != 1 %}
+            <div id="purge_options_container">
+                {% set where_title = "Type a WHERE clause to limit rows for archiving (exclude the keyword 'WHERE')." %}
+                <label for="where" title="{{ where_title }}">
+                    Where condition
+                    <input type="text"
+                           id="where"
+                           name="where"
+                           required
+                           style="width: 25em"
+                           {% if archive_data.where %}value="{{ archive_data.where }}"{% endif %}
+                           placeholder="ts < current_date - interval 90 day" />
+                </label>
+                <br />
+                {% set use_index_title = "Optionally specify an index to optimize the query execution." %}
+                <label for="use_index" title="{{ use_index_title }}">
+                    Use Index
+                    <input type="text"
+                           id="use_index"
+                           name="use_index"
+                           {% if archive_data and archive_data.use_index %}value="{{ archive_data.use_index }}"{% endif %}
+                           placeholder="created_date" />
+                </label>
+                <label for="limit"
+                       title="Set the number of rows to fetch and archive per statement.">
+                    Limit
+                    <input type="number"
+                           id="limit"
+                           name="limit"
+                           {% if archive_data.limit is defined %} value="{{ archive_data.limit }}" {% else %} value="1000" {% endif %}
+                           placeholder="100"
+                           style="width:5em" />
+                </label>
+                <label for="sleep"
+                       title="Set the sleep time (in seconds) between fetch operations. Default: 0 (no sleep).">
+                    Sleep
+                    <input type="number"
+                           id="sleep"
+                           name="sleep"
+                           {% if archive_data.sleep is defined %} value="{{ archive_data.sleep }}" {% else %} value="1" {% endif %}
+                           placeholder="1"
+                           style="width: 3em" />
+                </label>
+                <br />
+                <label for="extra_args"
+                       title="Type optional additional arguments for the archive task.">
+                    Extra args
+                    <input type="text"
+                           id="extra_args"
+                           name="extra_args"
+                           placeholder="--quick"
+                           {% if archive_data.extra_args %}value="{{ archive_data.extra_args }}"{% endif %}
+                           style="width: 25em" />
+                </label>
+                <br />
+                <label for="disable_binlog"
+                       title="Disable binary logging for the operation.">
+                    Disable Binlog
+                    <input type="checkbox"
+                           id="disable_binlog"
+                           name="disable_binlog"
+                           {% if archive_data.disable_binlog %}checked{% endif %}
+                           value="1" />
+                </label>
+            </div>
+            <label for="delete_data"
+                   id="delete_data_container"
+                   title="Editing DELETE_DATA is disabled">
+                DELETE_DATA
                 <input type="checkbox"
-                       id="disable_binlog"
-                       name="disable_binlog"
-                       {% if archive_data['disable_binlog'] %}checked{% endif %}
-                       class="validate"
+                       id="delete_data"
+                       name="delete_data"
+                       {% if archive_data.delete_data %}checked{% endif %}
+                       disabled
                        value="1" />
             </label>
-        </div>
-        {% set delete_data_title = "Enable to delete the rows after they are archived." %}
-        <label for="delete_data"
-               id="delete_data_container"
-               title="{{ delete_data_title }}">
-            DELETE_DATA
-            <input type="checkbox"
-                   id="delete_data"
-                   name="delete_data"
-                   {% if archive_data['delete_data'] %}checked{% endif %}
-                   class="validate"
-                   value="1" />
-        </label>
-    </fieldset>
-    <fieldset id="destination_fieldset">
-        <legend>Destination details</legend>
-        <div id="destination_container">
-            {% set dest_table_id_title = "Select the destination table for the archived data." %}
-            <label for="dest_table_id" title="{{ dest_table_id_title }}">
-                Destination Database
-                <select id="dest_table_id"
-                        name="dest_table_id"
-                        class="validate"
-                        disabled
-                        required>
-                    <option value="">Select a table</option>
-                </select>
-            </label>
-            <br />
-            <div id="dest_file_container" style="width: fit-content;">
-                <label>OR</label>
-                {% set dest_file_title = "Type the file path where the archived data will be stored." %}
-                <label for="dest_file" title="{{ dest_file_title }}">
-                    Destination File
-                    <input type="text"
-                           id="dest_file"
-                           name="dest_file"
-                           value="{{ archive_data['dest_file'] }}"
-                           class="validate"
-                           placeholder="/path/to/detination/file.txt"
-                           required
-                           style="width: 25em" />
-                </label>
-            </div>
-        </div>
-    </fieldset>
+        </fieldset>
+        {% if not archive_data.delete_data %}
+            <fieldset id="destination_fieldset">
+                <legend>Destination details</legend>
+                <div id="destination_container">
+                    {% if archive_data.dest_table %}
+                        <label for="dest_table_id" title="Destination editing is disabled">
+                            Destination Database
+                            <select id="dest_table_id" name="dest_table_id" disabled>
+                                <option value="">{{ archive_data.dest_table }}</option>
+                            </select>
+                        </label>
+                    {% else %}
+                        <div id="dest_file_container" style="width: fit-content;">
+                            <label for="dest_file" title="Destination editing is disabled">
+                                Destination File
+                                <input type="text"
+                                       id="dest_file"
+                                       name="dest_file"
+                                       placeholder="/path/to/destination/file.txt"
+                                       disabled
+                                       value="{{ archive_data.dest_file }}"
+                                       style="width: 25em" />
+                            </label>
+                        </div>
+                    {% endif %}
+                </div>
+            </fieldset>
+        {% endif %}
+    {% endif %}
     <button type="submit">Edit</button>
-    <button type="reset">Reset</button>
+    <button id="reset-form" type="reset">Reset</button>
 </form>
-{% set serviceSchemas = {} %}
-{% for service in mysql_services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% set tables = {} %}
-        {% for table in schema.tables %}
-            {% do tables.update({table.id: table.name}) %}
-        {% endfor %}
-        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
-{% set initialServiceId = archive_data.get('service_id', 'undefined') %}
-{% set initialSchemaId = archive_data.get('source_db_id', 'undefined') %}
-{% set initialTableId = archive_data.get('source_table_id', 'undefined') %}
-{% set initialDestTableId = archive_data.get('dest_table_id', 'undefined') %}
-<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const initialServiceId = {{ initialServiceId }};
-    const initialSchemaId = {{ initialSchemaId }};
-    const initialTableId = {{ initialTableId }};
-    const initialDestTableId = {{ initialDestTableId }};
-    const serviceSchemas = {{ serviceSchemas | tojson }};
-
-    const connectToSelect = document.getElementById('service_id');
-    const schemaSelect = document.getElementById('source_db_id');
-    const sourceTableSelect = document.getElementById('source_table_id');
-    const destTableSelect = document.getElementById('dest_table_id');
-    const dstFileInput = document.getElementById('dest_file');
-    const swapDropSelect = document.getElementById('swap_drop');
-    const destinationFieldset = document.getElementById('destination_fieldset');
-    const dstFileContainer = document.getElementById('dest_file_container');
-    const srcQueryInput = document.getElementById('source_query');
-    const srcQueryContainer = document.getElementById('source_query_container');
-    const destinationContainer = document.getElementById('destination_container');
-    const deleteDataContainer = document.getElementById('delete_data_container');
-    const prgPurgeCheckbox = document.getElementById('delete_data');
-    const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
-    const swpTableSuffixInput = document.getElementById('swp_table_suffix');
-    const useIndexInput = document.getElementById('use_index');
-    const limitInput = document.getElementById('limit');
-    const sleepInput = document.getElementById('sleep');
-    const extraArgsInput = document.getElementById('extra_args');
-    const whereInput = document.getElementById('where');
-    const purgeConfigOptionsContainer = document.getElementById('purge_options_container');
-
-    function populateSchemas(selectedService) {
-        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
-        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
-
-        if (selectedService && serviceSchemas[selectedService]) {
-            const schemas = Object.entries(serviceSchemas[selectedService]);
-            if (schemas.length > 0) {
-                for (const [schemaId, schema] of schemas) {
-                    const option = document.createElement('option');
-                    if (schemaId === initialSchemaId)
-                        option.selected = true;
-                    option.value = schemaId;
-                    option.textContent = schema.name;
-                    schemaSelect.appendChild(option);
-                    if (srcQueryInput.value === '')
-                        schemaSelect.disabled = false;
-                }
-                if (schemas.length === 1 || initialSchemaId != undefined) {
-                    const [singleSchemaId, _] = schemas[0]
-                    schemaSelect.value = singleSchemaId;
-                    // addHiddenInput(schemaSelect);
-                    if (singleSchemaId == initialSchemaId)
-                        populateSourceTables(selectedService, initialSchemaId);
-                    else
-                        populateSourceTables(selectedService, singleSchemaId);
-                }
-            }
-        }
-    }
-
-    function populateTables(tableSelect, tables) {
-        if (tables.length > 0) {
-            for (const [tableId, tableName] of tables) {
-                const option = document.createElement('option');
-                if (tableId == initialTableId || tableId == initialDestTableId)
-                    option.selected = true;
-                option.value = tableId;
-                option.textContent = tableName;
-                tableSelect.appendChild(option);
-                tableSelect.disabled = false;
-            }
-            if (tables.length === 1) {
-                const [singleTableId, _] = tables[0]
-                tableSelect.value = singleTableId;
-            }
-        }
-    }
-
-    function populateSourceTables(selectedService, selectedSchema) {
-        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
-
-        if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
-            const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
-            populateTables(sourceTableSelect, tables);
-            if (tables.length === 1 || initialDestTableId != undefined) {
-                const [singleTableId, _] = tables[0]
-                sourceTableSelect.value = singleTableId;
-                // addHiddenInput(sourceTableSelect);
-                if (singleTableId === initialDestTableId)
-                    populateDestTables(selectedService, selectedSchema, initialDestTableId);
-                else
-                    populateDestTables(selectedService, selectedSchema, singleTableId);
-            }
-        }
-    }
-
-    function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
-
-        if (selectedSchema && selectedSourceTable && serviceSchemas[selectedService][selectedSchema]) {
-            let tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
-            tables = tables.filter(table => table[0] !== selectedSourceTable)
-            populateTables(destTableSelect, tables);
-
-            if (tables.length === 1) {
-                const [singleTableId, _] = tables[0];
-                destTableSelect.value = singleTableId;
-            }
-        }
-    }
-
-    connectToSelect.addEventListener('change', function() {
-        const selectedService = this.value;
-        const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
-        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
-        populateSchemas(this.value);
-        toggleSourceQueryInput();
-        toggleDstFileContainer();
-        toggleDestTableSelect()
-        updateDestinationFieldset();
-    });
-
-    schemaSelect.addEventListener('change', function() {
-        const selectedService = connectToSelect.value;
-        const selectedSchema = this.value;
-        const hiddenTableInput = document.getElementById("source_table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateSourceTables(connectToSelect.value, this.value);
-        updateDestinationFieldset();
-    });
-
-
-
-    sourceTableSelect.addEventListener('change', function() {
-        const selectedService = connectToSelect.value;
-        const selectedSchema = schemaSelect.value;
-        const selectedTable = this.value;
-        const hiddenTableInput = document.getElementById("dest_table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
-        toggleDstFileContainer();
-        updateDestinationFieldset();
-        toggleDestTableSelect()
-    });
-
-
-
-    function updateDestinationFieldset() {
-        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
-            destinationContainer.classList.add('hidden');
-            destTableSelect.disabled = true;
-            dstFileInput.disabled = true;
-            removeHiddenInput('dest_table_id');
-            removeHiddenInput('dest_file');
-        } else {
-            destinationContainer.classList.remove('hidden');
-            if (!dstFileInput.value)
-                destTableSelect.disabled = false;
-            if (!destTableSelect.value)
-                dstFileInput.disabled = false;
-
-            destTableSelect.setAttribute('name', 'dest_table_id');
-            dstFileInput.setAttribute('name', 'dest_file');
-        }
-    }
-
-    function removeHiddenInput(inputName) {
-        const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
-        if (hiddenInput) {
-            hiddenInput.parentNode.removeChild(hiddenInput);
-        }
-    }
-
-    function addHiddenInput(inputElement) {
-        removeHiddenInput(inputElement.name);
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = inputElement.name;
-        hiddenInput.value = inputElement.value;
-        hiddenInput.id = `${inputElement.id}_hidden`;
-        inputElement.insertAdjacentElement('afterend', hiddenInput);
-    }
-
-
-    function toggleSchemaAndTable() {
-        if (srcQueryInput.value.trim() !== '') {
-            schemaSelect.disabled = true;
-            sourceTableSelect.disabled = true;
-            schemaSelect.removeAttribute('required');
-            sourceTableSelect.removeAttribute('required');
-            schemaSelect.value = '';
-            sourceTableSelect.value = '';
-            schemaSelect.removeAttribute('name');
-            sourceTableSelect.removeAttribute('name');
-            removeHiddenInput('source_db_id')
-            removeHiddenInput('source_table_id')
-        } else {
-            schemaSelect.disabled = false;
-            sourceTableSelect.disabled = false;
-            schemaSelect.setAttribute('required', 'required');
-            sourceTableSelect.setAttribute('required', 'required');
-            schemaSelect.name = 'source_db_id';
-            sourceTableSelect.name = 'source_table_id';
-        }
-    }
-
-    function toggleSourceQueryInput() {
-        if (schemaSelect.value !== '' && sourceTableSelect.value !== '') {
-            srcQueryInput.disabled = true;
-            srcQueryInput.removeAttribute('required');
-            srcQueryInput.value = '';
-            srcQueryInput.removeAttribute('name');
-            srcQueryContainer.classList.add('hidden');
-        } else {
-            srcQueryInput.disabled = false;
-            srcQueryInput.setAttribute('required', 'required');
-            srcQueryInput.name = 'source_query';
-            srcQueryContainer.classList.remove('hidden');
-        }
-    }
-
-    function togglePrgPurgeCheckbox() {
-        if (swapDropSelect.value !== '1') {
-            prgPurgeCheckbox.disabled = false
-            deleteDataContainer.classList.remove('hidden');
-            return;
-        }
-        prgPurgeCheckbox.disabled = true;
-        deleteDataContainer.classList.add('hidden');
-    }
-
-    function toggleSwpTableSuffix() {
-        if (swapDropSelect.value === '2') {
-            swpTableSuffixContainer.classList.remove('hidden');
-            swpTableSuffixInput.disabled = false;
-            swpTableSuffixInput.setAttribute('name', 'swp_table_suffix');
-        } else {
-            swpTableSuffixContainer.classList.add('hidden');
-            swpTableSuffixInput.disabled = true;
-            swpTableSuffixInput.removeAttribute('name');
-        }
-    }
-    function toggleDstFileContainer() {
-        if (destTableSelect.value !== '') {
-            dstFileContainer.classList.add('hidden');
-            dstFileInput.disabled = true;
-            dstFileInput.value = '';
-            dstFileInput.removeAttribute('name');
-        } else {
-            if(!prgPurgeCheckbox.checked) {
-                dstFileContainer.classList.remove('hidden');
-                prgPurgeCheckbox.checked
-                dstFileInput.disabled = false;
-                dstFileInput.setAttribute('name', 'dest_file');
-            }
-        }
-    }
-
-    function toggleDestTableSelect() {
-        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
-            destTableSelect.disabled = true;
-            destTableSelect.value = '';
-            destTableSelect.removeAttribute('name');
-            removeHiddenInput('dest_table_id')
-        } else {
-            destTableSelect.disabled = false;
-            destTableSelect.setAttribute('name', 'dest_table_id');
-        }
-    }
-
-    function toggleOptionalInputName(inputElement) {
-        if (inputElement.value.trim() === '') {
-            inputElement.removeAttribute('name');
-        } else {
-            inputElement.setAttribute('name', inputElement.id);
-        }
-    }
-
-    function toggleWhereInput() {
-        if (swapDropSelect.value === '1') {
-            whereInput.classList.add('hidden');
-            whereInput.removeAttribute('name');
-            whereInput.disabled = true
-            useIndexInput.removeAttribute('name');
-            useIndexInput.disabled = true
-            limitInput.removeAttribute('name');
-            limitInput.disabled = true
-            sleepInput.removeAttribute('name');
-            sleepInput.disabled = true
-            extraArgsInput.removeAttribute('name');
-            extraArgsInput.disabled = true
-            whereInput.removeAttribute('required');
-        } else {
-            whereInput.classList.remove('hidden');
-            whereInput.setAttribute('name', 'where');
-            whereInput.disabled = false;
-            useIndexInput.setAttribute('name', 'use_index');
-            useIndexInput.disabled = false;
-            limitInput.setAttribute('name', 'limit');
-            limitInput.disabled = false;
-            sleepInput.setAttribute('name', 'sleep');
-            sleepInput.disabled = false;
-            extraArgsInput.setAttribute('name', 'extra_args');
-            extraArgsInput.disabled = false;
-            whereInput.setAttribute('required', 'required')
-        }
-        toggleOptionalInputNames();
-    }
-
-    function togglePurgeOptionsContainer() {
-        if (swapDropSelect.value === '1') {
-            purgeConfigOptionsContainer.classList.add('hidden');
-        } else {
-            purgeConfigOptionsContainer.classList.remove('hidden');
-        }
-    }
-
-    swapDropSelect.addEventListener('change', function() {
-        togglePrgPurgeCheckbox()
-        updateDestinationFieldset();
-        toggleSwpTableSuffix();
-        toggleWhereInput();
-        togglePurgeOptionsContainer();
-    });
-
-
-    srcQueryInput.addEventListener('input', function() {
-        toggleSchemaAndTable();
-    });
-
-    schemaSelect.addEventListener('change', function() {
-        toggleSourceQueryInput();
-    });
-
-    sourceTableSelect.addEventListener('change', function() {
-        toggleSourceQueryInput();
-    });
-
-    prgPurgeCheckbox.addEventListener('change', function() {
-        updateDestinationFieldset();
-    });
-
-    destTableSelect.addEventListener('change', function() {
-        toggleDstFileContainer();
-    });
-
-    dstFileInput.addEventListener('input', function() {
-        toggleDestTableSelect();
-    });
-
-    useIndexInput.addEventListener('input', function() {
-        toggleOptionalInputName(useIndexInput);
-    });
-    limitInput.addEventListener('input', function() {
-        toggleOptionalInputName(limitInput);
-    });
-    sleepInput.addEventListener('input', function() {
-        toggleOptionalInputName(sleepInput);
-    });
-    extraArgsInput.addEventListener('input', function() {
-        toggleOptionalInputName(extraArgsInput);
-    });
-
-    function toggleOptionalInputNames() {
-        toggleOptionalInputName(useIndexInput);
-        toggleOptionalInputName(limitInput);
-        toggleOptionalInputName(sleepInput);
-        toggleOptionalInputName(extraArgsInput);
-    }
-
-    window.addEventListener('DOMContentLoaded', function() {
-        if (connectToSelect.options.length === 1 || initialServiceId != undefined) {
-            const singleHost = connectToSelect.options[0].value;
-            populateSchemas(initialServiceId);
-        }
-        updateDestinationFieldset();
-        toggleSchemaAndTable();
-        toggleSourceQueryInput();
-        toggleDstFileContainer();
-        toggleDestTableSelect();
-        toggleSwpTableSuffix();
-        toggleWhereInput();
-        togglePurgeOptionsContainer();
-        toggleOptionalInputNames();
-        togglePrgPurgeCheckbox()
-    });
-</script>
