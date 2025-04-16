@@ -140,18 +140,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const templateBase = (options, dom) => `
     <div class='${options.classes.top}'>
         ${options.searchable ? `
-        <div class='${options.classes.search}'>
+        <div class="${options.classes.search} input icon-left">
             <span class="material-symbols-outlined">pageview</span>
             <label aria-label="${options.labels.searchTitle}">
-                <input class='${options.classes.input}' placeholder='${options.labels.placeholder}' type='search' title='${options.labels.searchTitle}'${dom.id ? ` aria-controls="${dom.id}"` : ""}>
+                <input class='${options.classes.input}' placeholder="${options.labels.placeholder}" type='search' title='${options.labels.searchTitle}'${dom.id ? ` aria-controls="${dom.id}"` : ""}>
             </label>
         </div>` : ""}
         ${options.paging && options.perPageSelect ? `
-        <div class='${options.classes.dropdown}'>
+        <div class="${options.classes.dropdown} select">
             <label>
                 <span class="material-symbols-outlined">arrow_drop_down</span>
                 <span class="label">${options.labels.perPage}</span>
-                <select class='${options.classes.selector}'></select>
+                <select class="${options.classes.selector}"></select>
             </label>
         </div>` : ""}
     </div>

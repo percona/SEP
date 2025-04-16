@@ -64,16 +64,27 @@
         </fieldset>
     {% endif %}
     <div class="actions-cell flex">
+        <input type="datetime-local" class="eta-input" disabled>
         <button title="Toggle scheduler mode"
                 type="button"
-                class="icons schedule-button"
+                class="text medium"
                 data-task="{{ task.name }}"
-                aria-expanded="false">schedule</button>
-        <input type="datetime-local" class="eta-input" disabled>
-        <button type="submit" class="icons send-button submitButton">send</button>
+                aria-expanded="false">
+                <span class="material-symbols-outlined">schedule</span>
+                <span class="label">Schedule</span>
+        </button>
+        &nbsp;&nbsp;&nbsp;
+        <button type="submit" class="text medium send-button submitButton">
+            <span class="material-symbols-outlined">send</span>
+            <span class="label">Send</span>
+        </button>
+        &nbsp;&nbsp;&nbsp;
         {% if not task.protected %}
-            <button class="icons delete-button submitButton delete-tasks-button"
-                    form="delete-task-form">delete forever</button>
+            <button class="text medium delete-button submitButton delete-tasks-button"
+                    form="delete-task-form">
+                <span class="material-symbols-outlined">delete_forever</span>
+                <span class="label">Delete</span>
+            </button>
         {% endif %}
         <input type="hidden" name="eta" class="eta-value" disabled>
     </div>
@@ -85,3 +96,5 @@
       action="{{ url_for('tasks_delete', task_name=task.name) }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
+<hr>
+<br>

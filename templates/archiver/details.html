@@ -38,7 +38,7 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <table class="row section">
+    <table data-table>
         <caption>Overview</caption>
         <thead>
             <tr>
@@ -73,7 +73,8 @@
     {% endif %}
     <section>
         <h2>Execution</h2>
-        <h3>Parameters</h3>
+        <br>
+        <h5>Parameters</h5>
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
@@ -98,10 +99,11 @@
             </tbody>
         </table>
     </section>
+    <br><br><br>
     <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
-            <table class="responsive-table">
+            <table data-table>
                 <caption>Aggregated statistics for {{ task_name }}</caption>
                 <thead>
                     <tr>
@@ -132,6 +134,7 @@
             <p>No data</p>
         {% endif %}
     </section>
+    <br><br><br>
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}

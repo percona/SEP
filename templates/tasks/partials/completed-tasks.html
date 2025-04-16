@@ -88,9 +88,7 @@
                                 <div id="log-{{ task_history.task.name }}-{{ loop.index }}-stdout" role="tabpanel" aria-labelledby="tab-{{ task_history.task.name }}-{{ loop.index }}-stdout">
                                     {%- for step_name, logs in task_logs.items() %}
                                     <div class="log-content-step" data-step-name="{{ step_name }}" {% if loop.first %}style="display:block;" {% else %}style="display:none;" {% endif %}>
-                                        <pre class="log-output" data-soft-wrap="container" data-log-type="stdout" {% if loop.first %}style="display:block;" {% else %}style="display:none;" {% endif %}>
-{{ logs.stdout|e }}
-                                        </pre>
+                                        <pre class="log-output" data-soft-wrap="container" data-log-type="stdout" {% if loop.first %}style="display:block;" {% else %}style="display:none;" {% endif %}>{{ logs.stdout|e }}</pre>
                                     </div>
                                     {%- endfor %}
                                 </div>
@@ -98,9 +96,7 @@
                                 <div id="log-{{ task_history.task.name }}-{{ loop.index }}-stderr" role="tabpanel" aria-labelledby="tab-{{ task_history.task.name }}-{{ loop.index }}-stderr" aria-hidden="true">
                                     {%- for step_name, logs in task_logs.items() %}
                                     <div class="log-content-step" data-step-name="{{ step_name }}" {% if loop.first %}style="display:block;" {% else %}style="display:none;" {% endif %}>
-                                        <pre class="log-output" data-soft-wrap="container" data-log-type="stderr">
-{{ logs.stderr|e }}
-                                        </pre>
+                                        <pre class="log-output" data-soft-wrap="container" data-log-type="stderr">{{ logs.stderr|e }}</pre>
                                     </div>
                                     {%- endfor %}
                                 </div>

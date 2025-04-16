@@ -706,8 +706,9 @@ select,
 
 input[type="search"]:hover,
 input[type="datetime-local"]:hover,
-select:hover {
+select:not([disabled]):hover {
     border-color: var(--lineDividerStrong);
+    cursor: pointer;
 }
 
 input[type="search"]:focus,
@@ -723,6 +724,51 @@ select {
     width: -webkit-fit-content;
     width: -moz-fit-content;
     width: fit-content;
+}
+
+select[disabled] {
+    color: var(--textDisabled);
+    background: var(--actionDisabled);
+}
+
+.input .material-symbols-outlined,
+.select .material-symbols-outlined {
+    font-size: 1.5rem;
+    pointer-events: none;
+}
+
+.input,
+.select > * {
+    display: inline-block;
+    position: relative;
+    max-width: 100%;
+}
+
+.input.icon-left .material-symbols-outlined {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.75rem;
+}
+
+.select .material-symbols-outlined,
+.input.icon-right .material-symbols-outlined {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+}
+
+.select select,
+.input.icon-right {
+    padding-right: 2.625em;
+}
+
+.input.icon-left input {
+    padding-left: 2.625em;
+}
+
+.select .label {
+    color: var(--textSecondary);
+    pointer-events: none;
 }
 
 .checkbox {
@@ -1275,45 +1321,13 @@ tbody tr:not(:last-child) td {
 
 /* Simple-DataTables header components */
 
-.datatable-search .material-symbols-outlined,
-.datatable-dropdown .material-symbols-outlined {
-    font-size: 1.5rem;
-    pointer-events: none;
-}
-
-.datatable-search,
-.datatable-dropdown > label {
-    display: inline-block;
-    position: relative;
-    max-width: 100%;
-}
-
 .datatable-search .datatable-input {
     width: 20em;
     max-width: 100%;
-    padding-left: 2.625em;
-}
-
-.datatable-search .material-symbols-outlined {
-    position: absolute;
-    top: 0.5rem;
-    left: 0.75rem;
 }
 
 .datatable-dropdown .datatable-selector {
-    padding-right: 2.625em;
     margin-left: 0.25em;
-}
-
-.datatable-dropdown .material-symbols-outlined {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.75rem;
-}
-
-.datatable-dropdown .label {
-    color: var(--textSecondary);
-    pointer-events: none;
 }
 
 /* Simple-DataTables footer components */

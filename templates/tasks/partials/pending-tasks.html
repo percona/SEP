@@ -18,9 +18,12 @@
             <td>{{ task['execution_request']['target'] }}</td>
             <td class="relativeTime">{{ task['created_at'] }}</td>
             <td>
-                <a href="{{ task_name }}"><i class="icons">visibility</i></a>
+                <a href="{{ task_name }}">
+                    <span class="material-symbols-outlined">visibility</span>
+                </a>
                 <a href="#" class="submitNextForm">
-                    <i class="icons">delete forever</i></a>
+                    <span class="material-symbols-outlined">delete_forever</span>
+                </a>
                 <form action="{{ task_path }}/delete"
                         method="post"
                         style="display:none"

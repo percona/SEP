@@ -18,10 +18,10 @@
                         <td class="relativeTime">{{ task['updated_at'] }}</td>
                         <td>
                             {% if is_task_manager_enabled %}
-                                <a href="{{ url_for('tasks_detail', task_name=task_name) }}"><i class="icons">visibility</i></a>
+                                <a href="{{ url_for('tasks_detail', task_name=task_name) }}"><span class="material-symbols-outlined">visibility</span></a>
                             {% else %}
                                 <a class="tooltip">
-                                    <i class="icons">visibility_off</i>
+                                    <span class="material-symbols-outlined">visibility_off</span>
                                     <span class="tooltiptext">Enable the Task Manager plugin or navigate to the "{{ task["task"]["owner"] }}"
                                     plugin to view details of this task.</span>
                                 </a>

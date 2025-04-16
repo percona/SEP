@@ -1,9 +1,5 @@
 {% set form_class = "modal" if modal_required else "" %}
 <style>
-    fieldset input,
-    select {
-        margin-top: 1em;
-    }
 
     fieldset div>label:nth-child(n+2) {
         margin-left: 1.5em;
@@ -57,29 +53,35 @@
 </style>
 <form action="" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-    <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
         {% set hostname_title = "Select the hostname of the target system for task execution." %}
-        <label for="hostname" title="{{ hostname_title }}">Select host</label>
-        {% if executor_hosts|length == 1 %}
-            {% set single_service = executor_hosts[0] %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                <option value="{{ single_service }}" selected>{{ single_service }}</option>
-            </select>
-            <input type="hidden" name="hostname" value="{{ single_service }}">
-        {% else %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}">
-                {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
-            </select>
-        {% endif %}
+        <div class="select">
+            <label for="hostname" title="{{ hostname_title }}">
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Select host</span>
+                {% if executor_hosts|length == 1 %}
+                    {% set single_service = executor_hosts[0] %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                    </select>
+                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                {% else %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}">
+                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                    </select>
+                {% endif %}
+            </label>
+        </div>
     </fieldset>
+    <br>
     <fieldset style="display: flex; flex-flow: column;">
         <legend>Archive Type</legend>
+        <br>
+        <br>&nbsp;
         <div>
             {% set task_name_title = "Type the name of task to be created." %}
-            <label for="alias" title="{{ task_name_title }}">
-                Task name
+            <label for="alias" title="{{ task_name_title }}">Task name
                 <input type="text"
                        id="alias"
                        name="alias"
@@ -88,54 +90,75 @@
                        required />
             </label>
             {% set swap_drop_title = "Select the drop behavior: 'Standard Purge' for basic purging, 'Swap and Drop' to replace and drop the original table, or 'Swap-Archive-Drop' to archive before dropping." %}
-            <label for="swap_drop" title="{{ swap_drop_title }}">
-                Type
-                <select id="swap_drop" name="swap_drop">
-                    <option value="0">Standard purge</option>
-                    <option value="1">Swap and drop</option>
-                    <option value="2">Swap-archive-drop</option>
-                </select>
-            </label>
+            <br>
+            <br>
+            <div class="select">
+                <label for="swap_drop" title="{{ swap_drop_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Type</span>
+                    <select id="swap_drop" name="swap_drop">
+                        <option value="0">Standard purge</option>
+                        <option value="1">Swap and drop</option>
+                        <option value="2">Swap-archive-drop</option>
+                    </select>
+                </label>
+            </div>
+            <br>
         </div>
     </fieldset>
+    <br>
     <fieldset>
         <legend>Source details</legend>
+        <br>
         <div>
             {% set service_id_title = "Select the database host from the inventory to connect to." %}
-            <label for="service_id" title="{{ service_id_title }}">
-                Database host
-                {% if mysql_services|length == 1 %}
-                    {% set single_service = mysql_services[0] %}
-                    <select id="service_id" name="service_id" disabled>
-                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                    </select>
-                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
-                {% else %}
-                    <select id="service_id" name="service_id" required>
-                        <option value="" selected>Select a database host</option>
-                        {% for service in mysql_services %}
-                            <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
-            </label>
+            <div class="select">
+                <label for="service_id" title="{{ service_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Database host</span>
+                    {% if mysql_services|length == 1 %}
+                        {% set single_service = mysql_services[0] %}
+                        <select id="service_id" name="service_id" disabled>
+                            <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                        </select>
+                        <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% else %}
+                        <select id="service_id" name="service_id" required>
+                            <option value="" selected>Select a database host</option>
+                            {% for service in mysql_services %}
+                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
+            </div>
         </div>
-        <div>
-            {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
-            <label for="source_db_id" title="{{ source_db_id_title }}">
-                Schema
-                <select id="source_db_id" name="source_db_id" class="validate" required>
-                    <option value="">Select a schema</option>
-                </select>
-            </label>
+        <br>
+        <div style="
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap
+            ">
+            <div class="select">
+                {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
+                <label for="source_db_id" title="{{ source_db_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Schema</span>
+                    <select id="source_db_id" name="source_db_id" class="validate" required>
+                        <option value="">Select a schema</option>
+                    </select>
+                </label>
+            </div>
             {% set source_table_id_title = "Select the source table from which data will be purged." %}
-            <label for="source_table_id" title="{{ source_table_id_title }}">
-                Table
-                <select id="source_table_id" name="source_table_id" class="validate" required>
-                    <option value="">Select a table</option>
-                </select>
-            </label>
-            <br />
+            <div class="select">
+                <label for="source_table_id" title="{{ source_table_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Table</span>
+                    <select id="source_table_id" name="source_table_id" class="validate" required>
+                        <option value="">Select a table</option>
+                    </select>
+                </label>
+            </div>
             <div id="source_query_container"
                  style="width: fit-content;
                         margin-left: 1em">
@@ -153,6 +176,7 @@
                 </label>
             </div>
         </div>
+        <br>
         <div id="swp_table_suffix_container">
             {% set swp_table_suffix_title = "Select an date suffix for the swap table." %}
             <label for="swp_table_suffix" title="{{ swp_table_suffix_title }}">
@@ -164,6 +188,7 @@
                        required />
             </label>
         </div>
+        <br>
         <div id="purge_options_container">
             {% set where_title = "Type a WHERE clause to limit rows for archiving (exclude the keyword 'WHERE')." %}
             <label for="where" title="{{ where_title }}">
@@ -176,7 +201,7 @@
                        style="width: 25em"
                        placeholder="ts < current_date - interval 90 day" />
             </label>
-            <br />
+            <br><br>
             {% set use_index_title = "Optionally specify an index to optimize the query execution." %}
             <label for="use_index" title="{{ use_index_title }}">
                 Use Index
@@ -186,6 +211,7 @@
                        class="validate"
                        placeholder="created_date" />
             </label>
+            <br><br>
             {% set limit_title = "Set the number of rows to fetch and archive per statement." %}
             <label for="limit" title="{{ limit_title }}">
                 Limit
@@ -208,7 +234,7 @@
                        placeholder="1"
                        style="width: 3em" />
             </label>
-            <br />
+            <br><br>
             {% set extra_args_title = "Type optional additional arguments for the archive task." %}
             <label for="extra_args" title="{{ extra_args_title }}">
                 Extra args
@@ -219,46 +245,51 @@
                        placeholder="--quick"
                        style="width: 25em" />
             </label>
-            <br />
+            <br><br>
             {% set disable_binlog_title = "Disable binary logging for the operation." %}
-            <label for="disable_binlog" title="{{ disable_binlog_title }}">
-                Disable Binlog
-                <input type="checkbox"
-                       id="disable_binlog"
-                       name="disable_binlog"
-                       class="validate"
-                       value="1" />
+            <label for="disable_binlog" class="checkbox" title="{{ disable_binlog_title }}">
+                <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Disable Binlog</span>
             </label>
         </div>
         {% set delete_data_title = "Enable to delete the rows after they are archived." %}
-        <label for="delete_data"
-               id="delete_data_container"
-               title="{{ delete_data_title }}">
-            DELETE_DATA
-            <input type="checkbox"
-                   id="delete_data"
-                   name="delete_data"
-                   class="validate"
-                   value="1" />
+        <label for="delete_data" class="checkbox" title="{{ delete_data_title }}">
+            <input type="checkbox" id="delete_data" name="delete_data" class="validate" value="1">
+            <div class="checkmark">
+                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                <span class="material-symbols-outlined checked">check_box</span>
+            </div>
+            <span class="label">DELETE_DATA</span>
         </label>
     </fieldset>
+    <br>
     <fieldset id="destination_fieldset">
         <legend>Destination details</legend>
-        <div id="destination_container">
+        <div id="destination_container" style="
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap
+            ">
             {% set dest_table_id_title = "Select the destination table for the archived data." %}
-            <label for="dest_table_id" title="{{ dest_table_id_title }}">
-                Destination Database
-                <select id="dest_table_id"
-                        name="dest_table_id"
-                        class="validate"
-                        disabled
-                        required>
-                    <option value="">Select a table</option>
-                </select>
-            </label>
-            <br />
+            <div class="select">
+                <label for="dest_table_id" title="{{ dest_table_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Destination Database</span>
+                    <select id="dest_table_id"
+                            name="dest_table_id"
+                            class="validate"
+                            disabled
+                            required>
+                        <option value="">Select a table</option>
+                    </select>
+                </label>
+            </div>
             <div id="dest_file_container" style="width: fit-content;">
-                <label>OR</label>
+                &nbsp; &nbsp; &nbsp; &nbsp;<label>OR</label>
                 {% set dest_file_title = "Type the file path where the archived data will be stored." %}
                 <label for="dest_file" title="{{ dest_file_title }}">
                     Destination File
@@ -273,8 +304,14 @@
             </div>
         </div>
     </fieldset>
-    <button type="submit">Create</button>
-    <button type="reset">Reset</button>
+    <div style="
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 1em 0">
+        <button class="contained large" type="submit">Create</button> &nbsp;&nbsp;
+        <button class="text large" type="reset">Reset</button>
+    </div>
 </form>
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}
