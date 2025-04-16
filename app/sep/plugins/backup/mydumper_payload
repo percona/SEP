@@ -47,8 +47,8 @@ BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
     / "low-resolution",
 )
 BACKUP_TYPE = "Mydumper"
-DEFAULT_COMPRESSION_ALGORITHM = "gzip"
-AVAILABLE_COMPRESSION_ALGORITHMS = ["gzip"]
+DEFAULT_COMPRESSION_ALGORITHM = "GZIP"
+AVAILABLE_COMPRESSION_ALGORITHMS = ["GZIP", "ZSTD"]
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_CFG_DIR = Path(
     os.getenv(
@@ -1877,7 +1877,7 @@ class MyDumper(Backup):
 
             if self.compress:
                 mydumper_cmd.append("--compress")
-                mydumper_cmd.append(self.compression_algorithm)
+                mydumper_cmd.append(self.compression_algorithm.upper())
 
             if self.updated_since > 0:
                 mydumper_cmd.append(f"--updated-since={self.updated_since}")

@@ -586,10 +586,11 @@
 
     const compressionOptions = {
         M: {
-            title: "Select the compression algorithm to use for backups: 'gzip'.",
+            title: "Select the compression algorithm to use for backups: 'gzip' or 'zstd'.",
             options: [
                 { value: '', label: 'Select one' },
-                { value: 'gzip', label: 'gzip' }
+                { value: 'gzip', label: 'gzip' },
+                { value: 'zstd', label: 'zstd' }
             ]
         },
         X: {

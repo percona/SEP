@@ -1,9 +1,9 @@
 """Define models for the Backups plugin."""
 
 from enum import auto, IntEnum, StrEnum
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
@@ -23,6 +23,14 @@ class BackupType(EnumFieldMixin, StrEnum):
     MYDUMPER = "M"
     XTRABACKUP = "X"
     BINLOG = "B"
+
+
+class CompressionAlgorithm(EnumFieldMixin, StrEnum):
+    """Enumeration for Compression Algorithms."""
+
+    ZSTD = "zstd"
+    LZ4 = "lz4"
+    GZIP = "gzip"
 
 
 class UploadProvider(EnumFieldMixin, StrEnum):
@@ -110,6 +118,43 @@ class BackupCreate(BackupConfigAll):
     backup_type: BackupType
     encryption_recipient: RequiredStr | EmptyStrToNone = None
     binlog_alternative_host: RequiredStr | EmptyStrToNone = None
+
+    @model_validator(mode="after")
+    def validate_compression_algorithm(self) -> Self:
+        """Validate that the compression_algorithm is compatible with the selected backup_type.
+
+        :return: The validated instance
+        :rtype: self
+        :raises ValueError: If the compression_algorithm is not valid for the specified backup_type.
+        """
+        if self.compression_algorithm is None:
+            return self
+
+        if (
+            self.backup_type == BackupType.MYDUMPER
+            and self.compression_algorithm == CompressionAlgorithm.LZ4
+        ):
+            raise ValueError(
+                f"When backup_type is 'MYDUMPER', compression_algorithm must be one of: "
+                f"GZIP, ZSTD. Got: {self.compression_algorithm}"
+            )
+        if (
+            self.backup_type == BackupType.XTRABACKUP
+            and self.compression_algorithm == CompressionAlgorithm.GZIP
+        ):
+            raise ValueError(
+                f"When backup_type is 'XTRABACKUP', compression_algorithm must be one of: "
+                f"ZSTD, LZ4. Got: {self.compression_algorithm}"
+            )
+        if (
+            self.backup_type == BackupType.BINLOG
+            and self.compression_algorithm != CompressionAlgorithm.GZIP
+        ):
+            raise ValueError(
+                f"When backup_type is 'BINLOG', compression_algorithm must be GZIP. "
+                f"Got: {self.compression_algorithm}"
+            )
+        return self
 
 
 class BackupConfigServer(BaseCaseInsensitiveModel):
