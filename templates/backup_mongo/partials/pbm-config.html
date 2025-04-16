@@ -50,13 +50,16 @@
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <input type="hidden" name="backup_type" value="config">
     <fieldset>
-        <legend>1. Storage Configuration</legend>
-        <label for="storage_type">Storage Type:</label>
-        <select id="storage_type" name="storage_type">
-            <option value="s3">S3-compatible Storage</option>
-            <option value="filesystem">Filesystem</option>
-            <option value="azure">Azure Blob Storage</option>
-        </select>
+        <div id="storage_configuration">
+            <legend>1. Storage Configuration</legend>
+            <label for="storage_type">Storage Type:</label>
+            <select id="storage_type" name="storage_type">
+                <option value="s3">S3-compatible Storage</option>
+                <option value="filesystem">Filesystem</option>
+                <option value="azure">Azure Blob Storage</option>
+            </select>
+        </div>
+
 
         <div id="s3_options">
             <label for="s3_provider">S3 Provider:</label>

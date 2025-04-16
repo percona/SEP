@@ -1,11 +1,14 @@
 import subprocess
 import os
-import logging
+all_env_vars = os.environ
 
-def pbm():
+def pbm(env):
     
-    command = ['bash', '/home/admin/bin/pbm_create_snapshot.sh']
-
+    PBM_CONFIG = env
+    
+    print(PBM_CONFIG)
+    return None
+    command = ['bash', '/home/admin/bin/pbm_create_logical.sh']
     try:
         result = subprocess.run(command, 
                               capture_output=True,  # Captures stdout and stderr
@@ -19,4 +22,4 @@ def pbm():
     except subprocess.CalledProcessError as e:
         print(f"Command failed with error: {e}")
 
-pbm()
+pbm(all_env_vars)

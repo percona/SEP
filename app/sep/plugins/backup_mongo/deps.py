@@ -151,6 +151,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     print(data)
+    print('golfinho')
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
     backup_server = task_config["SERVER_LIST"][0]

@@ -3,11 +3,9 @@ import os
 import logging
 
 def pbm():
-    # Using subprocess.run (Recommended modern way)
 
     command = ['bash', '/home/admin/bin/pbm_create_physical.sh']
     try:
-        # Simple command
         result = subprocess.run(command, 
                               capture_output=True,  # Captures stdout and stderr
                               text=True,           # Returns strings instead of bytes
