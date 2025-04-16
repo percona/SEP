@@ -1,6 +1,6 @@
 """Define tests for the app.sep.sync.syncers.pmm module."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -45,174 +45,313 @@ def created_service(created_node) -> CreatedService:
     return created_service
 
 
-@pytest.mark.asyncio
-async def test_get_node(mocker):
-    """Test retrieving a PMM node by its external ID."""
-    mock_post = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMRemoteAPI.post", new_callable=AsyncMock
+class TestPMMRemoteAPI:
+    """Test the PMMRemoteAPI class."""
+
+    @pytest.fixture
+    def created_services(self) -> list[CreatedService]:
+        """Return a list with fake created services."""
+        created_services = []
+        for service_id in range(1, 6):
+            service = CreatedServiceFactory.build(id=service_id)
+            service.node_id = str(service_id)
+            created_services.append(service)
+        return created_services
+
+    @pytest.fixture
+    def mock_get_services(self, mocker, created_services) -> AsyncMock:
+        """Mock get_services method."""
+        return mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMRemoteAPI.get_services",
+            new=AsyncMock(return_value=created_services),
+        )
+
+    @pytest.fixture
+    def mock_request(self, mocker) -> AsyncMock:
+        """Mock request object."""
+        return mocker.patch.object(PMMRemoteAPI, "request", new_callable=AsyncMock)
+
+    @pytest.fixture
+    def mock_logger(self, mocker) -> Mock:
+        """Mock logger object."""
+        return mocker.patch("app.sep.sync.syncers.pmm.PMMRemoteAPI.logger")
+
+    @pytest.fixture
+    def mock_get_version(self, mocker) -> AsyncMock:
+        """Mock get_version method."""
+        return mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMRemoteAPI.get_version", new_callable=AsyncMock
+        )
+
+    @pytest.fixture
+    def pmm_remote_api(self) -> PMMRemoteAPI:
+        """Return a PMMRemoteAPI instance."""
+        return PMMRemoteAPI(endpoint="http://localhost")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_method", "expected_path", "expected_kwargs"),
+        [
+            (
+                "2.0.0",
+                "POST",
+                "/v1/inventory/Nodes/Get",
+                {"json": {"node_id": "node-123"}},
+            ),
+            ("3.0.0", "GET", "/v1/inventory/nodes/node-123", {}),
+        ],
     )
-    node_id = "node-123"
-    mock_post.side_effect = [
-        {"Generic": {"node_id": node_id, "name": "Test Node", "address": "localhost"}},
-        {
+    async def test_get_node(
+        self,
+        mock_request,
+        mock_get_version,
+        mock_get_services,
+        created_services,
+        pmm_remote_api,
+        pmm_version,
+        expected_method,
+        expected_path,
+        expected_kwargs,
+    ):
+        """Test retrieving a PMM node by its external ID."""
+        mock_get_version.return_value = pmm_version
+        node_id = "node-123"
+        mock_request.return_value = {
+            "Generic": {"node_id": node_id, "name": "Test Node", "address": "localhost"}
+        }
+
+        node = await pmm_remote_api.get_node(node_id)
+
+        assert node.external_id == node_id
+        assert node.name == "Test Node"
+        assert node.type == "Generic"
+        assert node.source == SourceEnum.PMM
+        assert len(node.services) == len(created_services)
+        mock_get_version.assert_awaited_once()
+        mock_request.assert_awaited_once_with(
+            expected_method, expected_path, **expected_kwargs
+        )
+        mock_get_services.assert_awaited_once_with(node_id=node_id)
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_method", "expected_path", "expected_kwargs"),
+        [
+            (
+                "2.0.0",
+                "POST",
+                "/v1/inventory/Services/Get",
+                {"json": {"service_id": "service-123"}},
+            ),
+            ("3.0.0", "GET", "/v1/inventory/services/service-123", {}),
+        ],
+    )
+    async def test_get_service(
+        self,
+        mock_request,
+        mock_get_version,
+        pmm_remote_api,
+        pmm_version,
+        expected_method,
+        expected_path,
+        expected_kwargs,
+    ):
+        """Test retrieving a PMM service by its ID."""
+        mock_get_version.return_value = pmm_version
+        service_id = "service-123"
+        mock_request.return_value = {
+            "mysql": {
+                "service_id": service_id,
+                "name": "Test Service",
+                "node_id": "node-123",
+            },
+        }
+
+        service = await pmm_remote_api.get_service(service_id)
+
+        assert service.external_id == service_id
+        assert service.type == "mysql"
+        mock_get_version.assert_awaited_once()
+        mock_request.assert_awaited_once_with(
+            expected_method, expected_path, **expected_kwargs
+        )
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_method", "expected_path", "expected_kwargs"),
+        [
+            ("2.0.0", "POST", "/v1/inventory/Services/List", {"json": {}}),
+            ("3.0.0", "GET", "/v1/inventory/services", {"params": {}}),
+        ],
+    )
+    async def test_get_services(
+        self,
+        mock_request,
+        mock_get_version,
+        pmm_remote_api,
+        pmm_version,
+        expected_method,
+        expected_path,
+        expected_kwargs,
+    ):
+        """Test fetching services from the PMM API."""
+        mock_get_version.return_value = pmm_version
+        mock_request.return_value = {
+            "postgresql": [
+                {"service_id": "service-1", "name": "Service 1", "node_id": "node-1"},
+                {"service_id": "service-2", "name": "Service 2", "node_id": "node-2"},
+            ],
+            "mysql": [
+                {"service_id": "service-3", "name": "Service 3", "node_id": "node-3"},
+            ],
+        }
+
+        services = await pmm_remote_api.get_services()
+        services.sort(key=lambda service: service.external_id)
+
+        assert services[0].type == "postgresql"
+        assert services[1].type == "postgresql"
+        assert services[2].type == "mysql"
+        mock_get_version.assert_awaited_once()
+        mock_request.assert_awaited_once_with(
+            expected_method, expected_path, **expected_kwargs
+        )
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_services_by_node_external_id(
+        self, created_services, pmm_remote_api, mock_get_services
+    ):
+        """Test the get_services_by_node_external_id method."""
+        services_by_node = await pmm_remote_api.get_services_by_node_external_id()
+
+        assert set(services_by_node) == {
+            service.node_id for service in created_services
+        }
+        assert all(len(services) == 1 for services in services_by_node.values())
+        assert {
+            node_id: services[0].external_id
+            for node_id, services in services_by_node.items()
+        } == {service.node_id: service.external_id for service in created_services}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_method", "expected_path", "expected_kwargs"),
+        [
+            ("2.0.0", "POST", "/v1/inventory/Nodes/List", {"json": {}}),
+            ("3.0.0", "GET", "/v1/inventory/nodes", {"params": {}}),
+        ],
+    )
+    async def test_get_nodes(
+        self,
+        mock_request,
+        mock_get_version,
+        mock_get_services,
+        created_services,
+        pmm_remote_api,
+        pmm_version,
+        expected_method,
+        expected_path,
+        expected_kwargs,
+    ):
+        """Test fetching nodes from the PMM API."""
+        mock_get_version.return_value = pmm_version
+        mock_request.return_value = {
             "Generic": [
                 {
-                    "service_id": "service-1",
-                    "name": "Service 1",
-                    "node_id": node_id,
-                    "type": "mysql",
+                    "node_id": str(service.node_id),
+                    "name": f"Node {service.node_id}",
+                    "address": "localhost",
                 }
+                for service in created_services
             ]
-        },
-    ]
+        }
 
-    pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost")
-    node = await pmm_remote_api.get_node(node_id)
+        nodes = await pmm_remote_api.get_nodes()
 
-    assert node.external_id == node_id
-    assert node.name == "Test Node"
-    assert node.type == "Generic"
-    assert node.source == SourceEnum.PMM
-    assert len(node.services) == 1
+        assert len(nodes) == len(created_services)
+        assert {node.external_id for node in nodes} == {
+            str(service.node_id) for service in created_services
+        }
+        assert all(len(node.services) == 1 for node in nodes)
+        mock_get_version.assert_awaited_once()
+        mock_request.assert_awaited_once_with(
+            expected_method, expected_path, **expected_kwargs
+        )
+        mock_get_services.assert_awaited_once()
 
-    pmm_remote_api.post.assert_any_call(
-        "/v1/inventory/Nodes/Get",
-        json={"node_id": node_id},
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("exception", "default_to_v3", "expected_result", "log_arg"),
+        [(TypeError, False, True, "v2"), (KeyError, True, False, "v3")],
     )
-    pmm_remote_api.post.assert_any_call(
-        "/v1/inventory/Services/List",
-        json={"node_id": node_id, "service_type": "", "external_group": ""},
+    async def test_is_older_than_v3_get_version_error(
+        self,
+        mock_get_version,
+        mock_logger,
+        pmm_remote_api,
+        exception,
+        default_to_v3,
+        expected_result,
+        log_arg,
+    ):
+        """Test the is_older_than_v3 properly handles expected errors by get_version."""
+        mock_get_version.side_effect = exception
+        pmm_remote_api.default_to_v3 = default_to_v3
+
+        result = await pmm_remote_api.is_older_than_v3()
+        mock_logger.exception.assert_called_once_with(
+            "Failed to retrieve PMM version, defaulting to %s", log_arg
+        )
+        assert result is expected_result
+        mock_get_version.assert_awaited_once()
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("version", "default_to_v3", "expected_result", "log_arg"),
+        [(3, False, True, "v2"), ("invalid", True, False, "v3")],
     )
+    async def test_is_older_than_v3_version_parse_error(
+        self,
+        mock_get_version,
+        mock_logger,
+        pmm_remote_api,
+        version,
+        default_to_v3,
+        expected_result,
+        log_arg,
+    ):
+        """Test the is_older_than_v3 properly handles expected parse errors by get_version."""
+        mock_get_version.return_value = version
+        pmm_remote_api.default_to_v3 = default_to_v3
 
+        result = await pmm_remote_api.is_older_than_v3()
+        mock_logger.exception.assert_called_once_with(
+            "Failed to parse PMM version, defaulting to %s: %s", log_arg, version
+        )
+        assert result is expected_result
+        mock_get_version.assert_awaited_once()
 
-@pytest.mark.asyncio
-async def test_get_service(mocker):
-    """Test retrieving a PMM service by its ID."""
-    mock_post = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMRemoteAPI.post", new_callable=AsyncMock
-    )
-    service_id = "service-123"
-    service_data = {
-        "mysql": {
-            "service_id": service_id,
-            "name": "Test Service",
-            "node_id": "node-123",
-        },
-    }
+        pmm_remote_api.is_older_than_v3.cache_clear()
 
-    mock_post.side_effect = [service_data]
+    @pytest.mark.asyncio
+    async def test_get_version(self, mock_request, pmm_remote_api):
+        """Test getting the PMM version from the PMM API."""
+        mock_request.return_value = {"version": "3.0.0"}
 
-    pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost")
-    service = await pmm_remote_api.get_service(service_id)
+        version = await pmm_remote_api.get_version()
 
-    assert service.external_id == service_id
-    assert service.type == "mysql"
-
-    pmm_remote_api.post.assert_called_once_with(
-        "/v1/inventory/Services/Get",
-        json={"service_id": service_id},
-    )
-
-
-@pytest.mark.asyncio
-async def test_get_services(mocker):
-    """Test fetching services from the PMM API."""
-    mock_post = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMRemoteAPI.post", new_callable=AsyncMock
-    )
-    services_data = {
-        "postgresql": [
-            {"service_id": "service-1", "name": "Service 1", "node_id": "node-1"},
-            {"service_id": "service-2", "name": "Service 2", "node_id": "node-2"},
-        ],
-        "mysql": [
-            {"service_id": "service-3", "name": "Service 3", "node_id": "node-3"},
-        ],
-    }
-
-    mock_post.side_effect = [services_data]
-
-    pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost")
-    services = await pmm_remote_api.get_services()
-
-    assert services[0].type == "postgresql"
-    assert services[1].type == "postgresql"
-    assert services[2].type == "mysql"
-
-    pmm_remote_api.post.assert_called_once_with(
-        "/v1/inventory/Services/List",
-        json={"node_id": "", "service_type": "", "external_group": ""},
-    )
-
-
-@pytest.mark.asyncio
-async def test_get_services_by_node_external_id(mocker):
-    """Test fetching and grouping services by node ID from the PMM API."""
-    mock_post = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMRemoteAPI.post", new_callable=AsyncMock
-    )
-    services_data = {
-        "postgresql": [
-            {"service_id": "service-1", "name": "Service 1", "node_id": "node-1"},
-            {"service_id": "service-2", "name": "Service 2", "node_id": "node-2"},
-        ],
-        "mysql": [
-            {"service_id": "service-3", "name": "Service 3", "node_id": "node-3"},
-        ],
-    }
-
-    mock_post.side_effect = [services_data]
-
-    pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost")
-    services_by_node = await pmm_remote_api.get_services_by_node_external_id()
-
-    assert len(services_by_node["node-1"]) == 1
-    assert len(services_by_node["node-2"]) == 1
-
-    pmm_remote_api.post.assert_called_once_with(
-        "/v1/inventory/Services/List",
-        json={"node_id": "", "service_type": "", "external_group": ""},
-    )
-
-
-@pytest.mark.asyncio
-async def test_get_nodes(mocker):
-    """Test fetching nodes from the PMM API."""
-    mock_post = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMRemoteAPI.post", new_callable=AsyncMock
-    )
-    nodes_data = {
-        "Generic": [
-            {"node_id": "node-1", "name": "Node 1", "address": "localhost"},
-            {"node_id": "node-2", "name": "Node 2", "address": "localhost"},
-        ]
-    }
-    services_data = {
-        "postgresql": [{"service_id": "service-1", "node_id": "node-1"}],
-        "mysql": [{"service_id": "service-2", "node_id": "node-2"}],
-    }
-
-    mock_post.side_effect = [
-        {"postgresql": services_data["postgresql"], "mysql": services_data["mysql"]},
-        nodes_data,
-    ]
-
-    pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost")
-    nodes = await pmm_remote_api.get_nodes()
-
-    assert nodes[0].external_id == "node-1"
-    assert nodes[1].external_id == "node-2"
-    assert len(nodes[0].services) == 1
-    assert len(nodes[1].services) == 1
-
-    pmm_remote_api.post.assert_any_call(
-        "/v1/inventory/Services/List",
-        json={"node_id": "", "service_type": "", "external_group": ""},
-    )
-    pmm_remote_api.post.assert_any_call(
-        "/v1/inventory/Nodes/List",
-        json={"node_type": ""},
-    )
+        assert version == "3.0.0"
+        mock_request.assert_awaited_once_with("GET", "/v1/version")
 
 
 @pytest.mark.asyncio
