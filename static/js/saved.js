@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Select all scheduling trigger buttons and their targets
     const scheduleButtons = document.querySelectorAll('.triggerScheduleExec[data-modal-target="modalScheduleExec"]');
     scheduleButtons.forEach(scheduleButton => {
-        scheduleButton.addEventListener('click', function (e) {
+        scheduleButton.addEventListener('click', function(e) {
             const taskName = this.getAttribute('data-task');
             if (!taskName) return;
             // Find form and submit button
@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dateTimeInput = scheduleModal.querySelector('#dateTimeInput');
         const modalEtaInput = scheduleModal.querySelector('#modalEtaValue');
         if (dateTimeInput && modalEtaInput) {
-            dateTimeInput.addEventListener('change', function () {
+            dateTimeInput.addEventListener('change', function() {
                 const etaValue = this.value;
                 if (etaValue) {
                     const isoStr = new Date(etaValue).toISOString();

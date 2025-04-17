@@ -81,17 +81,17 @@
                 <label for="hostname" title="{{ hostname_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Select host</span>
-                {% if executor_hosts|length == 1 %}
-                    {% set single_service = executor_hosts[0] %}
-                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
-                    </select>
-                    <input type="hidden" name="hostname" value="{{ single_service }}">
-                {% else %}
-                    <select id="hostname" name="hostname">
-                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
-                    </select>
-                {% endif %}
+                    {% if executor_hosts|length == 1 %}
+                        {% set single_service = executor_hosts[0] %}
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                        </select>
+                        <input type="hidden" name="hostname" value="{{ single_service }}">
+                    {% else %}
+                        <select id="hostname" name="hostname">
+                            {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                        </select>
+                    {% endif %}
                 </label>
             </div>
         </fieldset>
@@ -113,26 +113,26 @@
                 <label for="service_id" title="{{ service_id_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Database host</span>
-                {% if mysql_services|length == 1 %}
-                    {% set single_service = mysql_services[0] %}
-                    <select id="service_id"
-                            name="service_id"
-                            title="{{ service_id_title }}"
-                            disabled>
-                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                    </select>
-                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
-                {% else %}
-                    <select id="service_id"
-                            name="service_id"
-                            title="{{ service_id_title }}"
-                            required>
-                        <option value="" selected>Select a database host</option>
-                        {% for service in mysql_services %}
-                            <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
+                    {% if mysql_services|length == 1 %}
+                        {% set single_service = mysql_services[0] %}
+                        <select id="service_id"
+                                name="service_id"
+                                title="{{ service_id_title }}"
+                                disabled>
+                            <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                        </select>
+                        <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% else %}
+                        <select id="service_id"
+                                name="service_id"
+                                title="{{ service_id_title }}"
+                                required>
+                            <option value="" selected>Select a database host</option>
+                            {% for service in mysql_services %}
+                                <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
                 </label>
             </div>
         </fieldset>
@@ -300,11 +300,10 @@
             </div>
         </fieldset>
     </fieldset>
-    <div style="
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.5em">
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.5em">
         <button class="contained large" type="submit">Create</button>
         <button class="text large" type="reset">Reset</button>
     </div>

@@ -11,12 +11,10 @@
         <input type="text" name="name" id="name" required>
         <br>
         <br>
-        
         <div class="select">
             <label>
                 <span class="material-symbols-outlined">arrow_drop_down</span>
                 <span class="label">Source:</span>
-
                 <select id="source" name="source">
                     <option value="" selected>Select a source</option>
                     {% for source in source_enum %}<option value="{{ source }}">{{ source }}</option>{% endfor %}

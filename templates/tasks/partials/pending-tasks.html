@@ -1,51 +1,44 @@
 {% if pending_tasks %}
-
-<table data-table="pending-tasks">
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Host</th>
-            <th>Created at</th>
-            <th>Options</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for task in pending_tasks %}
-
-        {% set task_name = task["task"]["name"] %}
-        <tr>
-            <td>{{ task_name }}</td>
-            <td>{{ task['execution_request']['target'] }}</td>
-            <td class="relativeTime">{{ task['created_at'] }}</td>
-            <td>
-                <a href="{{ task_name }}">
-                    <span class="material-symbols-outlined">visibility</span>
-                </a>
-                <a href="#" class="submitNextForm">
-                    <span class="material-symbols-outlined">delete_forever</span>
-                </a>
-                <form action="{{ task_path }}/delete"
-                        method="post"
-                        style="display:none"
-                        id="deleteTaskForm">
-                </form>
-            </td>
-        </tr>
-
-        {% endfor %}
-
-        <tr>
-            <td>No tasks pending</td>
-            <td></td>
-            <td></td>
-            <td></td>
-        </tr>
-    </tbody>
-</table>
-
+    <table data-table="pending-tasks">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Host</th>
+                <th>Created at</th>
+                <th>Options</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in pending_tasks %}
+                {% set task_name = task["task"]["name"] %}
+                <tr>
+                    <td>{{ task_name }}</td>
+                    <td>{{ task['execution_request']['target'] }}</td>
+                    <td class="relativeTime">{{ task['created_at'] }}</td>
+                    <td>
+                        <a href="{{ task_name }}">
+                            <span class="material-symbols-outlined">visibility</span>
+                        </a>
+                        <a href="#" class="submitNextForm">
+                            <span class="material-symbols-outlined">delete_forever</span>
+                        </a>
+                        <form action="{{ task_path }}/delete"
+                              method="post"
+                              style="display:none"
+                              id="deleteTaskForm">
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            <tr>
+                <td>No tasks pending</td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
 {% else %}
-
-<!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
-<span>No data</span>
-
+    <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
+    <span>No data</span>
 {% endif %}

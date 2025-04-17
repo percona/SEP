@@ -432,7 +432,7 @@ pre {
 /*=============================================*/
 
 :focus-visible,
-input[type="checkbox"]:focus-visible ~ .checkmark {
+input[type="checkbox"]:focus-visible~.checkmark {
     outline: 0.1875rem solid var(--lineFocus);
     outline-offset: 0.125rem;
 }
@@ -682,7 +682,7 @@ button[role="tab"][aria-selected="true"]:focus-visible {
 
 /* Inputs global */
 
-label + input {
+label+input {
     margin-top: 0.5em;
 }
 
@@ -738,7 +738,7 @@ select[disabled] {
 }
 
 .input,
-.select > * {
+.select>* {
     display: inline-block;
     position: relative;
     max-width: 100%;
@@ -804,18 +804,18 @@ input[type="checkbox"] {
     color: var(--primaryMain);
 }
 
-input[type="checkbox"]:focus-visible ~ .checkmark {
+input[type="checkbox"]:focus-visible~.checkmark {
     background: var(--primaryFocus);
     outline-offset: -0.1875rem;
 }
 
-input[type="checkbox"] ~ .checkmark .checked,
-input[type="checkbox"]:checked ~ .checkmark .unchecked {
+input[type="checkbox"]~.checkmark .checked,
+input[type="checkbox"]:checked~.checkmark .unchecked {
     display: none;
 }
 
-input[type="checkbox"] ~ .checkmark .unchecked,
-input[type="checkbox"]:checked ~ .checkmark .checked {
+input[type="checkbox"]~.checkmark .unchecked,
+input[type="checkbox"]:checked~.checkmark .checked {
     display: block;
 }
 
@@ -888,7 +888,7 @@ a.app-logo:active {
     transition: text-decoration .2s, -webkit-text-decoration .2s;
 }
 
-.app-breadcrumbs > * {
+.app-breadcrumbs>* {
     flex-grow: 0;
 }
 
@@ -1058,7 +1058,7 @@ dialog .title {
     margin: 0;
 }
 
-dialog section > :last-child {
+dialog section> :last-child {
     margin-bottom: 0;
 }
 
@@ -1266,7 +1266,7 @@ footer .link svg {
     margin-bottom: 0;
 }
 
-.app-stage > .tabs {
+.app-stage>.tabs {
     margin: 0 1em 0.0625em;
     border: none;
 }
@@ -1396,13 +1396,13 @@ tbody tr:not(:last-child) td {
 
 /* Simple-DataTables table styling */
 
-.datatable-table > thead > tr > th {
+.datatable-table>thead>tr>th {
     border-bottom: 0.0625rem solid var(--lineDivider);
 }
 
-.datatable-table > tbody > tr > th,
-.datatable-table > tfoot > tr > th,
-.datatable-table > thead > tr > th,
+.datatable-table>tbody>tr>th,
+.datatable-table>tfoot>tr>th,
+.datatable-table>thead>tr>th,
 .datatable-sorter {
     font-weight: 500;
     line-height: 1.25;
@@ -1410,15 +1410,15 @@ tbody tr:not(:last-child) td {
     vertical-align: middle;
 }
 
-.datatable-table > tbody > tr > th[data-sortable="true"],
-.datatable-table > tfoot > tr > th[data-sortable="true"],
-.datatable-table > thead > tr > th[data-sortable="true"] {
+.datatable-table>tbody>tr>th[data-sortable="true"],
+.datatable-table>tfoot>tr>th[data-sortable="true"],
+.datatable-table>thead>tr>th[data-sortable="true"] {
     padding: 0;
 }
 
-.datatable-table > tbody > tr > td,
-.datatable-table > tfoot > tr > td,
-.datatable-table > thead > tr > td {
+.datatable-table>tbody>tr>td,
+.datatable-table>tfoot>tr>td,
+.datatable-table>thead>tr>td {
     line-height: 1.375;
     padding: 0.8125em 0.5em;
 }
@@ -1478,15 +1478,15 @@ tbody tr:not(:last-child) td {
 
 /* Simple-DataTables SEP styling flavors */
 
-.datatable-table > thead > tr > th.options,
-.datatable-table > tbody > tr > td.options {
+.datatable-table>thead>tr>th.options,
+.datatable-table>tbody>tr>td.options {
     text-align: right;
     padding-top: 0.25em;
     padding-bottom: 0.25em;
 }
 
-.datatable-table > thead > tr > th.number,
-.datatable-table > tbody > tr > td.number {
+.datatable-table>thead>tr>th.number,
+.datatable-table>tbody>tr>td.number {
     text-align: right;
 }
 
@@ -1499,12 +1499,12 @@ button.icon:focus-visible {
     outline-offset: 0;
 }
 
-th.options > *:not(dialog),
-td.options > *:not(dialog) {
+th.options>*:not(dialog),
+td.options>*:not(dialog) {
     display: inline-flex;
 }
 
-.datatable-table > tbody > tr > td.code {
+.datatable-table>tbody>tr>td.code {
     font-family: 'Roboto Mono', monospace;
     font-size: 1em;
     line-height: 1;
@@ -1512,7 +1512,7 @@ td.options > *:not(dialog) {
     padding-bottom: 1em;
 }
 
-.datatable-table > tbody > tr > td.status {
+.datatable-table>tbody>tr>td.status {
     padding: 0.625em 0.5em;
 }
 
@@ -1554,6 +1554,6 @@ td.errors ul {
     background: var(--surfaceElevation0);
 }
 
-.log-content > * {
+.log-content>* {
     width: 100%;
 }

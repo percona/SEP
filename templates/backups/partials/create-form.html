@@ -70,18 +70,18 @@
             <label for="hostname" title="{{ hostname_title }}">
                 <span class="material-symbols-outlined">arrow_drop_down</span>
                 <span class="label">Select Executor Host:</span>
-            {% if executor_hosts|length == 1 %}
-                {% set single_service = executor_hosts[0] %}
-                <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
-                </select>
-                <input type="hidden" name="hostname" value="{{ single_service }}">
-            {% else %}
-                <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
-                    <option value="" selected>Select a host</option>
-                    {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
-                </select>
-            {% endif %}
+                {% if executor_hosts|length == 1 %}
+                    {% set single_service = executor_hosts[0] %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                    </select>
+                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                {% else %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+                        <option value="" selected>Select a host</option>
+                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                    </select>
+                {% endif %}
             </label>
         </div>
     </fieldset>
@@ -98,7 +98,8 @@
                    required
                    placeholder="Enter a unique task name" />
         </label>
-        <br><br>
+        <br>
+        <br>
         {% set service_id_title = "Select the database host from the inventory to connect to." %}
         <div class="select">
             <label for="service_id" title="{{ service_id_title }}">
@@ -134,7 +135,8 @@
                 </select>
             </label>
         </div>
-        <br><br>
+        <br>
+        <br>
         {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
         <label for="encryption_recipient" title="{{ encryption_recipient_title }}">
             Encryption Recipient (optional):
@@ -143,7 +145,8 @@
                    name="encryption_recipient"
                    placeholder="Recipient email or key ID" />
         </label>
-        <br><br>
+        <br>
+        <br>
     </fieldset>
     <fieldset>
         <legend>General Backup Configuration</legend>
@@ -167,7 +170,9 @@
                 <span class="label">Compress</span>
             </label>
             {% set check_disk_space_title = "Verify available disk space before starting the backup to prevent failures." %}
-            <label class="checkbox" for="check_disk_space" title="{{ check_disk_space_title }}">
+            <label class="checkbox"
+                   for="check_disk_space"
+                   title="{{ check_disk_space_title }}">
                 <input type="checkbox"
                        id="check_disk_space"
                        name="check_disk_space"
@@ -189,7 +194,9 @@
                 <span class="label">Encrypt</span>
             </label>
             {% set encrypt_using_tmpdir_title = "Use a temporary directory for encryption to optimize performance and avoid direct disk writes." %}
-            <label class="checkbox" for="encrypt_using_tmpdir" title="{{ encrypt_using_tmpdir_title }}">
+            <label class="checkbox"
+                   for="encrypt_using_tmpdir"
+                   title="{{ encrypt_using_tmpdir_title }}">
                 <input type="checkbox"
                        id="encrypt_using_tmpdir"
                        name="encrypt_using_tmpdir"
@@ -201,7 +208,9 @@
                 <span class="label">Encrypt using tmpdir</span>
             </label>
             {% set only_if_running_slave_title = "Enable this option to apply the backup only if the server is running as a replication slave." %}
-            <label class="checkbox" for="only_if_running_slave" title="{{ only_if_running_slave_title }}">
+            <label class="checkbox"
+                   for="only_if_running_slave"
+                   title="{{ only_if_running_slave_title }}">
                 <input type="checkbox"
                        id="only_if_running_slave"
                        name="only_if_running_slave"
@@ -213,7 +222,9 @@
                 <span class="label">Only if running slave</span>
             </label>
             {% set only_if_read_only_title = "Enable this option to perform the backup only if the database is in read-only mode." %}
-            <label class="checkbox" for="only_if_read_only" title="{{ only_if_read_only_title }}">
+            <label class="checkbox"
+                   for="only_if_read_only"
+                   title="{{ only_if_read_only_title }}">
                 <input type="checkbox"
                        id="only_if_read_only"
                        name="only_if_read_only"
@@ -235,7 +246,8 @@
                    placeholder="/path/to/backups"
                    required>
         </label>
-        <br><br>
+        <br>
+        <br>
         {% set logging_dir_title = "Type the directory where log files will be stored for backup operations." %}
         <label for="logging_dir" title="{{ logging_dir_title }}">
             Logging Directory (optional):
@@ -244,7 +256,8 @@
                    name="logging_dir"
                    placeholder="/path/to/logs" />
         </label>
-        <br><br>
+        <br>
+        <br>
         {% set defaults_file_title = "the path to the defaults file containing preset configuration values for the backup process." %}
         <label for="defaults_file" title="{{ defaults_file_title }}">
             Defaults File (optional):
@@ -253,12 +266,13 @@
                    name="defaults_file"
                    placeholder="/path/to/defaults.cnf" />
         </label>
-        <br><br>
+        <br>
+        <br>
     </fieldset>
-    <fieldset id="mydumper_container" style="
-        display: flex;
-        flex-direction: column;
-        gap: 1em">
+    <fieldset id="mydumper_container"
+              style="display: flex;
+                     flex-direction: column;
+                     gap: 1em">
         <legend>Mydumper Configuration</legend>
         {% set mydumper_daily_purge_title = "Set the number of days after which old backups will be automatically deleted." %}
         <label for="mydumper_daily_purge" title="{{ mydumper_daily_purge_title }}">
@@ -278,7 +292,8 @@
         </label>
         <div class="checkbox-group">
             {% set mydumper_dump_triggers_title = "Include database triggers in the backup to preserve trigger functionality." %}
-            <label class="checkbox" for="mydumper_dump_triggers"
+            <label class="checkbox"
+                   for="mydumper_dump_triggers"
                    title="{{ mydumper_dump_triggers_title }}">
                 <input type="checkbox"
                        id="mydumper_dump_triggers"
@@ -292,7 +307,9 @@
                 <span class="label">Dump Triggers</span>
             </label>
             {% set mydumper_desync_pxc_title = "Temporarily desynchronize the Percona XtraDB Cluster (PXC) node during backup to reduce replication lag." %}
-            <label calss="checkbox" for="mydumper_desync_pxc" title="{{ mydumper_desync_pxc_title }}">
+            <label calss="checkbox"
+                   for="mydumper_desync_pxc"
+                   title="{{ mydumper_desync_pxc_title }}">
                 <input type="checkbox"
                        id="mydumper_desync_pxc"
                        name="mydumper_desync_pxc"
@@ -304,7 +321,9 @@
                 <span class="label">Desync PXCs</span>
             </label>
             {% set mydumper_less_locking_title = "Minimize table locking during backup to reduce impact on database performance." %}
-            <label class="checkbox" for="mydumper_less_locking" title="{{ mydumper_less_locking_title }}">
+            <label class="checkbox"
+                   for="mydumper_less_locking"
+                   title="{{ mydumper_less_locking_title }}">
                 <input type="checkbox"
                        id="mydumper_less_locking"
                        name="mydumper_less_locking"
@@ -317,7 +336,9 @@
                 <span class="label">Less Locking</span>
             </label>
             {% set mydumper_use_numa_title = "Enable NUMA (Non-Uniform Memory Access) awareness to optimize memory allocation for backup processes." %}
-            <label class="checkbox" for="mydumper_use_numa" title="{{ mydumper_use_numa_title }}">
+            <label class="checkbox"
+                   for="mydumper_use_numa"
+                   title="{{ mydumper_use_numa_title }}">
                 <input type="checkbox"
                        id="mydumper_use_numa"
                        name="mydumper_use_numa"
@@ -329,7 +350,9 @@
                 <span class="label">Use NUMA</span>
             </label>
             {% set use_ftwrl_guardian_title = "Enable FTWRL (Flush Tables with Read Lock) Guardian to manage table locks and prevent long lock times during backup." %}
-            <label class="checkbox" for="use_ftwrl_guardian" title="{{ use_ftwrl_guardian_title }}">
+            <label class="checkbox"
+                   for="use_ftwrl_guardian"
+                   title="{{ use_ftwrl_guardian_title }}">
                 <input type="checkbox"
                        id="use_ftwrl_guardian"
                        name="use_ftwrl_guardian"
@@ -351,10 +374,10 @@
                    placeholder="e.g. --verbose=3" />
         </label>
     </fieldset>
-    <fieldset id="xtrabackup_container" style="
-        display: flex;
-        flex-direction: column;
-        gap: 1em">
+    <fieldset id="xtrabackup_container"
+              style="display: flex;
+                     flex-direction: column;
+                     gap: 1em">
         <legend>Xtrabackup Configuration</legend>
         {% set xtrabackup_copies_title = "Set the number of backup copies to retain for redundancy and recovery." %}
         <label for="xtrabackup_copies" title="{{ xtrabackup_copies_title }}">
@@ -366,7 +389,8 @@
         </label>
         <div class="checkbox-group">
             {% set xtrabackup_kill_queries_title = "Terminate long-running queries that may block the XtraBackup process to ensure a smooth backup." %}
-            <label class="checkbox" for="xtrabackup_kill_queries"
+            <label class="checkbox"
+                   for="xtrabackup_kill_queries"
                    title="{{ xtrabackup_kill_queries_title }}">
                 <input type="checkbox"
                        id="xtrabackup_kill_queries"
@@ -379,7 +403,9 @@
                 <span class="label">Kill Queries</span>
             </label>
             {% set xtrabackup_verify_title = "Enable verification of the XtraBackup process to ensure data integrity and consistency." %}
-            <label class="cehckbox" for="xtrabackup_verify" title="{{ xtrabackup_verify_title }}">
+            <label class="cehckbox"
+                   for="xtrabackup_verify"
+                   title="{{ xtrabackup_verify_title }}">
                 <input type="checkbox"
                        id="xtrabackup_verify"
                        name="xtrabackup_verify"
@@ -392,7 +418,9 @@
                 <span class="label">Verify Backup</span>
             </label>
             {% set xtrabackup_prepare_title = "Prepare the XtraBackup files for restoration by applying redo logs and ensuring consistency." %}
-            <label class="checkbox" for="xtrabackup_prepare" title="{{ xtrabackup_prepare_title }}">
+            <label class="checkbox"
+                   for="xtrabackup_prepare"
+                   title="{{ xtrabackup_prepare_title }}">
                 <input type="checkbox"
                        id="xtrabackup_prepare"
                        name="xtrabackup_prepare"
@@ -404,7 +432,9 @@
                 <span class="label">Prepare Backup</span>
             </label>
             {% set xtrabackup_desync_pxc_title = "Desynchronize the Percona XtraDB Cluster (PXC) node during XtraBackup to minimize replication impact." %}
-            <label class="checkbox" for="xtrabackup_desync_pxc" title="{{ xtrabackup_desync_pxc_title }}">
+            <label class="checkbox"
+                   for="xtrabackup_desync_pxc"
+                   title="{{ xtrabackup_desync_pxc_title }}">
                 <input type="checkbox"
                        id="xtrabackup_desync_pxc"
                        name="xtrabackup_desync_pxc"
@@ -416,7 +446,9 @@
                 <span class="label">Desync PXC</span>
             </label>
             {% set xtrabackup_rsync_title = "Use rsync to optimize file transfers during XtraBackup, reducing disk I/O and improving performance." %}
-            <label class="checkbox" for="xtrabackup_rsync" title="{{ xtrabackup_rsync_title }}">
+            <label class="checkbox"
+                   for="xtrabackup_rsync"
+                   title="{{ xtrabackup_rsync_title }}">
                 <input type="checkbox"
                        id="xtrabackup_rsync"
                        name="xtrabackup_rsync"
@@ -428,7 +460,9 @@
                 <span class="label">Use Rsync</span>
             </label>
             {% set xtrabackup_slave_info_title = "Include replication slave information in the backup to assist with replication recovery." %}
-            <label class="checkbox" for="xtrabackup_slave_info" title="{{ xtrabackup_slave_info_title }}">
+            <label class="checkbox"
+                   for="xtrabackup_slave_info"
+                   title="{{ xtrabackup_slave_info_title }}">
                 <input type="checkbox"
                        id="xtrabackup_slave_info"
                        name="xtrabackup_slave_info"
@@ -441,7 +475,9 @@
                 <span class="label">Include Slave Info</span>
             </label>
             {% set xtrabackup_stop_slave_title = "Stop the replication slave before starting the backup to ensure data consistency." %}
-            <label class="checkbox" for="xtrabackup_stop_slave" title="{{ xtrabackup_stop_slave_title }}">
+            <label class="checkbox"
+                   for="xtrabackup_stop_slave"
+                   title="{{ xtrabackup_stop_slave_title }}">
                 <input type="checkbox"
                        id="xtrabackup_stop_slave"
                        name="xtrabackup_stop_slave"
@@ -453,7 +489,9 @@
                 <span class="label">Stop Slave Before Backup</span>
             </label>
             {% set xtrabackup_lock_ddl_title = "Lock Data Definition Language (DDL) operations during backup to prevent schema changes." %}
-            <label class="checkbox" for="xtrabackup_lock_ddl" title="{{ xtrabackup_lock_ddl_title }}">
+            <label class="checkbox"
+                   for="xtrabackup_lock_ddl"
+                   title="{{ xtrabackup_lock_ddl_title }}">
                 <input type="checkbox"
                        id="xtrabackup_lock_ddl"
                        name="xtrabackup_lock_ddl"
@@ -477,7 +515,7 @@
         {% set xtrabackup_kill_query_type_title = "Choose which type of queries should be terminated to prevent backup interruptions." %}
         <div class="select">
             <label for="xtrabackup_kill_query_type"
-                title="{{ xtrabackup_kill_query_type_title }}">
+                   title="{{ xtrabackup_kill_query_type_title }}">
                 <span class="material-symbols-outlined">arrow_drop_down</span>
                 <span class="label">Query Type to Kill:</span>
                 <select id="xtrabackup_kill_query_type" name="xtrabackup_kill_query_type">
@@ -516,7 +554,7 @@
         {% set xtrabackup_incremental_method_title = "Choose the incremental backup method: 'less_space' (reduces storage usage) or 'fast_restore' (accelerates restoration)." %}
         <div class="select">
             <label for="xtrabackup_incremental_method"
-                title="{{ xtrabackup_incremental_method_title }}">
+                   title="{{ xtrabackup_incremental_method_title }}">
                 <span class="material-symbols-outlined">arrow_drop_down</span>
                 <span class="label">Incremental Method:</span>
                 <select id="xtrabackup_incremental_method"
@@ -530,7 +568,7 @@
         {% set xtrabackup_incremental_cycle_title = "Select the frequency for incremental backups: 'daily' for daily backups or 'weekly' for weekly backups." %}
         <div class="select">
             <label for="xtrabackup_incremental_cycle"
-                title="{{ xtrabackup_incremental_cycle_title }}">
+                   title="{{ xtrabackup_incremental_cycle_title }}">
                 <span class="material-symbols-outlined">arrow_drop_down</span>
                 <span class="label">Incremental Cycle:</span>
                 <select id="xtrabackup_incremental_cycle" name="xtrabackup_incremental_cycle">
@@ -572,10 +610,10 @@
             </label>
         </div>
     </fieldset>
-    <fieldset id="binlog_container" style="
-        display: flex;
-        flex-direction: column;
-        gap: 1em">
+    <fieldset id="binlog_container"
+              style="display: flex;
+                     flex-direction: column;
+                     gap: 1em">
         <legend>Binlog Configuration</legend>
         {% set binlog_alternative_host_title = "" %}
         <label for="binlog_alternative_host"
@@ -643,7 +681,8 @@
                        name="s3_bucket"
                        placeholder="e.g. my-backup-bucket" />
             </label>
-            <br><br>
+            <br>
+            <br>
             {% set s3_storage_class_title = "Type the S3 storage class for backups." %}
             <label for="s3_storage_class" title="{{ s3_storage_class_title }}">
                 S3 Storage Class (optional):
@@ -652,9 +691,12 @@
                        name="s3_storage_class"
                        placeholder="STANDARD, GLACIER, etc." />
             </label>
-            <br><br>
+            <br>
+            <br>
             {% set skip_s3_safety_check_title = "Disable safety checks before uploading backups to S3. Use with caution to avoid accidental data loss." %}
-            <label class="checkbox" for="skip_s3_safety_check" title="{{ skip_s3_safety_check_title }}">
+            <label class="checkbox"
+                   for="skip_s3_safety_check"
+                   title="{{ skip_s3_safety_check_title }}">
                 <input type="checkbox"
                        id="skip_s3_safety_check"
                        name="skip_s3_safety_check"
@@ -678,13 +720,13 @@
                        placeholder="user@host:/path" />
             </label>
         </div>
-        <br><br>
+        <br>
+        <br>
     </fieldset>
-    <div style="
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.25em">
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.25em">
         <button class="contained large" type="submit">Create</button>
         <button class="text large" type="reset">Reset</button>
     </div>

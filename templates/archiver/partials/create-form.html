@@ -78,10 +78,12 @@
     <fieldset style="display: flex; flex-flow: column;">
         <legend>Archive Type</legend>
         <br>
-        <br>&nbsp;
+        <br>
+        &nbsp;
         <div>
             {% set task_name_title = "Type the name of task to be created." %}
-            <label for="alias" title="{{ task_name_title }}">Task name
+            <label for="alias" title="{{ task_name_title }}">
+                Task name
                 <input type="text"
                        id="alias"
                        name="alias"
@@ -134,11 +136,7 @@
             </div>
         </div>
         <br>
-        <div style="
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap
-            ">
+        <div style=" display: flex; align-items: center; flex-wrap: wrap ">
             <div class="select">
                 {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
                 <label for="source_db_id" title="{{ source_db_id_title }}">
@@ -201,7 +199,8 @@
                        style="width: 25em"
                        placeholder="ts < current_date - interval 90 day" />
             </label>
-            <br><br>
+            <br>
+            <br>
             {% set use_index_title = "Optionally specify an index to optimize the query execution." %}
             <label for="use_index" title="{{ use_index_title }}">
                 Use Index
@@ -211,7 +210,8 @@
                        class="validate"
                        placeholder="created_date" />
             </label>
-            <br><br>
+            <br>
+            <br>
             {% set limit_title = "Set the number of rows to fetch and archive per statement." %}
             <label for="limit" title="{{ limit_title }}">
                 Limit
@@ -234,7 +234,8 @@
                        placeholder="1"
                        style="width: 3em" />
             </label>
-            <br><br>
+            <br>
+            <br>
             {% set extra_args_title = "Type optional additional arguments for the archive task." %}
             <label for="extra_args" title="{{ extra_args_title }}">
                 Extra args
@@ -245,10 +246,17 @@
                        placeholder="--quick"
                        style="width: 25em" />
             </label>
-            <br><br>
+            <br>
+            <br>
             {% set disable_binlog_title = "Disable binary logging for the operation." %}
-            <label for="disable_binlog" class="checkbox" title="{{ disable_binlog_title }}">
-                <input type="checkbox" id="disable_binlog" name="disable_binlog" class="validate" value="1">
+            <label for="disable_binlog"
+                   class="checkbox"
+                   title="{{ disable_binlog_title }}">
+                <input type="checkbox"
+                       id="disable_binlog"
+                       name="disable_binlog"
+                       class="validate"
+                       value="1">
                 <div class="checkmark">
                     <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                     <span class="material-symbols-outlined checked">check_box</span>
@@ -258,7 +266,11 @@
         </div>
         {% set delete_data_title = "Enable to delete the rows after they are archived." %}
         <label for="delete_data" class="checkbox" title="{{ delete_data_title }}">
-            <input type="checkbox" id="delete_data" name="delete_data" class="validate" value="1">
+            <input type="checkbox"
+                   id="delete_data"
+                   name="delete_data"
+                   class="validate"
+                   value="1">
             <div class="checkmark">
                 <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                 <span class="material-symbols-outlined checked">check_box</span>
@@ -269,11 +281,10 @@
     <br>
     <fieldset id="destination_fieldset">
         <legend>Destination details</legend>
-        <div id="destination_container" style="
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap
-            ">
+        <div id="destination_container"
+             style="display: flex;
+                    align-items: center;
+                    flex-wrap: wrap">
             {% set dest_table_id_title = "Select the destination table for the archived data." %}
             <div class="select">
                 <label for="dest_table_id" title="{{ dest_table_id_title }}">
@@ -289,7 +300,8 @@
                 </label>
             </div>
             <div id="dest_file_container" style="width: fit-content;">
-                &nbsp; &nbsp; &nbsp; &nbsp;<label>OR</label>
+                &nbsp; &nbsp; &nbsp; &nbsp;
+                <label>OR</label>
                 {% set dest_file_title = "Type the file path where the archived data will be stored." %}
                 <label for="dest_file" title="{{ dest_file_title }}">
                     Destination File
@@ -304,12 +316,12 @@
             </div>
         </div>
     </fieldset>
-    <div style="
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        padding: 1em 0">
-        <button class="contained large" type="submit">Create</button> &nbsp;&nbsp;
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                padding: 1em 0">
+        <button class="contained large" type="submit">Create</button>
+        &nbsp;&nbsp;
         <button class="text large" type="reset">Reset</button>
     </div>
 </form>

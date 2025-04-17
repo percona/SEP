@@ -178,14 +178,17 @@ document.addEventListener('DOMContentLoaded', () => {
             info: "{start}–{end} entries of {rows}",
             noResults: "No results match your search query",
         },
-        columns: [
-            { select: 0, sort: "asc" },
-        ],
+        columns: [{
+            select: 0,
+            sort: "asc"
+        }, ],
     };
 
     // Applying the previous configurations...
     document.querySelectorAll('[data-table]').forEach(table => {
-        let config = { ...tableDefault };
+        let config = {
+            ...tableDefault
+        };
 
         const dataTable = new simpleDatatables.DataTable(table, config);
         if (typeof dataTable.on === 'function') {
@@ -231,9 +234,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 middleware: [
                     FloatingUIDOM.offset(4),
                     FloatingUIDOM.flip(),
-                    FloatingUIDOM.shift({ padding: 16 }),
+                    FloatingUIDOM.shift({
+                        padding: 16
+                    }),
                 ],
-            }).then(({ x, y }) => {
+            }).then(({
+                x,
+                y
+            }) => {
                 Object.assign(content.style, {
                     position: 'absolute',
                     left: `${x}px`,
@@ -330,9 +338,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     middleware: [
                         FloatingUIDOM.offset(8),
                         FloatingUIDOM.flip(),
-                        FloatingUIDOM.shift({ padding: 5 }),
+                        FloatingUIDOM.shift({
+                            padding: 5
+                        }),
                     ],
-                }).then(({ x, y }) => {
+                }).then(({
+                    x,
+                    y
+                }) => {
                     Object.assign(tooltipElem.style, {
                         position: 'absolute',
                         left: `${x}px`,
@@ -348,9 +361,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         middleware: [
                             FloatingUIDOM.offset(8),
                             FloatingUIDOM.flip(),
-                            FloatingUIDOM.shift({ padding: 5 }),
+                            FloatingUIDOM.shift({
+                                padding: 5
+                            }),
                         ],
-                    }).then(({ x, y }) => {
+                    }).then(({
+                        x,
+                        y
+                    }) => {
                         Object.assign(tooltipElem.style, {
                             position: 'absolute',
                             left: `${x}px`,
@@ -360,6 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }, delay);
         }
+
         function hideTooltip() {
             clearTimeout(tooltipTimeout);
             if (tooltipElem) {
@@ -408,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Attach a change listener to each trigger
     softWrapTriggers.forEach(trigger => {
-        trigger.addEventListener('change', function () {
+        trigger.addEventListener('change', function() {
             // When one trigger is changed, update all triggers and containers to match its state
             setGlobalSoftWrapState(this.checked);
         });
@@ -451,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // Add a keydown listener to trap focus and enable Escape closing.
-                const trapFocus = function (e) {
+                const trapFocus = function(e) {
                     if (e.key === 'Escape') {
                         e.preventDefault();
                         closeModal(modal);

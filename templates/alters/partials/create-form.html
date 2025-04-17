@@ -128,9 +128,7 @@
                         <input type="hidden" name="hostname" value="{{ single_service }}">
                     {% else %}
                         <select id="hostname" name="hostname">
-                            {% for executor_host in executor_hosts %}
-                            <option value="{{ executor_host }}">{{ executor_host }}</option>
-                            {% endfor %}
+                            {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
                         </select>
                     {% endif %}
                 </label>

@@ -16,9 +16,7 @@
                     <td>{{ task.host }} ({{ task.port }})</td>
                     <td>{{ task.backup_type }}</td>
                     <td>{{ task.upload }}</td>
-                    <td>
-                        {% include "tasks/partials/saved-tasks-actions-column.html" %}
-                    </td>
+                    <td>{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
             {% endfor %}
         </tbody>

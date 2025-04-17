@@ -14,9 +14,7 @@
                     <td>{{ task.name }}</td>
                     <td>{{ task.hostname }}</td>
                     <td>{{ task.service_name }}</td>
-                    <td>
-                        {% include "tasks/partials/saved-tasks-actions-column.html" %}
-                    </td>
+                    <td>{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
             {% endfor %}
         </tbody>
@@ -24,4 +22,5 @@
 {% else %}
     <p>No data</p>
 {% endif %}
-<br><br>
+<br>
+<br>
