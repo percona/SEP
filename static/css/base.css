@@ -726,6 +726,24 @@ select {
     width: fit-content;
 }
 
+select[multiple] {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+    height: fit-content;
+    max-height: 10em;
+    padding: 0.25em;
+}
+
+select[multiple] option {
+    padding: 0.25em 0.5em;
+    border-radius: var(--cornerExtraSmall);
+}
+
+select[multiple] option + option {
+    margin-top: 0.25em;
+}
+
 select[disabled] {
     color: var(--textDisabled);
     background: var(--actionDisabled);
@@ -757,7 +775,7 @@ select[disabled] {
     right: 0.75rem;
 }
 
-.select select,
+.select select:not([multiple]),
 .input.icon-right {
     padding-right: 2.625em;
 }
