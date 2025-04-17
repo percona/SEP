@@ -143,7 +143,6 @@ $(document).ready(function() {
 
         $this.removeClass('tab-notification');
     });
-
     $('.word-wrap-checkbox').change(function() {
         const $this = $(this);
         const $logConsole = $this.closest('.log-console');
@@ -157,5 +156,37 @@ $(document).ready(function() {
 
     $('.toggle-label').click(function(e) {
         $(this).prev(".switch").click();
+    });
+    $('[role="tab"]').click(function() {
+        const $tab = $(this);
+        const $tabGroup = $tab.closest('[role="tablist"]');
+        const $dialog = $tab.closest('dialog');
+        const targetPanelId = $tab.attr('aria-controls');
+
+        $tabGroup.find('[role="tab"]').attr('aria-selected', 'false');
+        $tab.attr('aria-selected', 'true');
+
+        $dialog.find('[role="tabpanel"]').hide().attr('aria-hidden', 'true');
+
+        $dialog.find('#' + targetPanelId).show().attr('aria-hidden', 'false');
+    });
+    $('.modal-log .log-step-tab').click(function() {
+        const $this = $(this);
+        const stepName = $this.data('step-name');
+        const $dialog = $this.closest('dialog');
+
+        $this.siblings('.log-step-tab').removeClass('selected');
+        $this.addClass('selected');
+
+        $dialog.find('.log-content-step').hide();
+
+        const $selectedStep = $dialog.find('.log-content-step[data-step-name="' + stepName + '"]');
+        $selectedStep.show();
+
+        const activeTab = $dialog.find('[role="tab"][aria-selected="true"]');
+        const logType = activeTab.length ? activeTab.attr('aria-controls').split('-').pop() : 'stdout';
+
+        $selectedStep.find('.log-output').hide();
+        $selectedStep.find('.log-output[data-log-type="' + logType + '"]').show();
     });
 });
