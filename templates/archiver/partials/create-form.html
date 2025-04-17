@@ -265,7 +265,10 @@
             </label>
         </div>
         {% set delete_data_title = "Enable to delete the rows after they are archived." %}
-        <label for="delete_data" class="checkbox" title="{{ delete_data_title }}">
+        <label id="delete_data_container"
+               for="delete_data"
+               class="checkbox"
+               title="{{ delete_data_title }}">
             <input type="checkbox"
                    id="delete_data"
                    name="delete_data"
