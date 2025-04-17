@@ -93,10 +93,10 @@
                             </ul>
                             <ul role="menu">
                                 <li role="none">
-                                    <a class="list-item submitNextForm" role="menuitem">
+                                    <button form="logoutForm" type="submit" class="list-item" role="menuitem">
                                         <span class="label">Sign out</span>
                                         <span class="material-symbols-outlined">logout</span>
-                                    </a>
+                                    </button>
                                     <form id="logoutForm"
                                           action="{{ url_for('logout') }}"
                                           method="post"
