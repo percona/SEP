@@ -1557,3 +1557,9 @@ td.errors ul {
 .log-content>* {
     width: 100%;
 }
+
+.log-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+}

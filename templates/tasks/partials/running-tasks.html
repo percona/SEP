@@ -1,53 +1,94 @@
 <div class="tasks-table-container">
-    <table class="responsive-table tasks-table">
+    <table data-table>
         <thead>
             <tr>
                 <th>Name</th>
                 <th>Host</th>
                 <th>Start At</th>
-                <th>Actions</th>
+                <th class="options">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% if running_tasks %}
-                {% for task in running_tasks %}
-                    {% set task_name = task["task"]["name"] %}
-                    <tr class="previous-log-row">
-                        <td>{{ task_name }}</td>
-                        <td>{{ task['execution_request']['target'] }}</td>
-                        <td class="relativeTime">{{ task['updated_at'] }}</td>
-                        <td>
-                            <a href="{{ task_name }}"><i class="icons">visibility</i></a>
-                        </td>
-                    </tr>
-                    <tr class="log-row" data-task-id="{{ task.id }}">
-                        <td colspan="4">
-                            <div class="log-console streaming-console" data-task-id="{{ task.id }}">
-                                <div class="log-top-bar">
-                                    <div class="log-tabs">
-                                        <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
-                                        <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
+            {% for task in running_tasks %}
+            {% set task_name = task["task"]["name"] %}
+            <tr class="previous-log-row">
+                <td>{{ task_name }}</td>
+                <td>{{ task['execution_request']['target'] }}</td>
+                <td class="relativeTime">{{ task['updated_at'] }}</td>
+                <td class="options">
+                    <button type="button" class="icon medium" aria-label="View logs" data-tooltip data-modal="trigger" data-modal-target="modal-{{ task.id }}">
+                        <span class="material-symbols-outlined">visibility</span>
+                    </button>
+                    <section>
+                        <dialog id="modal-{{ task.id }}" aria-modal="true" aria-labelledby="modal-title-{{ task.id }}" data-modal="target" class="fullwidth modal-log tabs-wrapper">
+                            <div class="window log-console streaming-console" data-task-id="{{ task.id }}">
+                                <header>
+                                    <h3 id="modal-title-{{ task.id }}" class="h5 title">
+                                        Logs for {{ task["task"]["name"] }}
+                                    </h3>
+                                    <div class="log-header">
+                                        <nav class="tabs" role="tablist" aria-label="Choose the output format">
+                                            <label class="checkbox">
+                                                <input type="checkbox" data-soft-wrap="trigger">
+                                                <div class="checkmark">
+                                                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                                    <span class="material-symbols-outlined checked">check_box</span>
+                                                </div>
+                                                <span class="label">Soft wrap</span>
+                                            </label>
+                                            <button id="tab-stdout-{{ task.id }}" class="large" role="tab" aria-controls="log-stdout-{{ task.id }}" aria-selected="true">
+                                                <span class="label">Output</span>
+                                            </button>
+                                            <button id="tab-stderr-{{ task.id }}" class="large" role="tab" aria-controls="log-stderr-{{ task.id }}" aria-selected="false">
+                                                <span class="label">Error</span>
+                                            </button>
+                                        </nav>
                                     </div>
-                                    <div class="word-wrap-toggle">
-                                        <label class="switch">
-                                            <input type="checkbox" class="word-wrap-checkbox">
-                                            <span class="slider round"></span>
-                                        </label>
-                                        <span class="toggle-label">Word Wrap</span>
-                                    </div>
-                                </div>
-                                <div class="log-content"></div>
-                                <div class="log-bottom-bar">
+                                </header>
+                                <section class="log-content terminal" data-theme="dark">
+                                    <div id="log-stdout-{{ task.id }}" role="tabpanel" aria-labelledby="tab-stdout-{{ task.id }}" style="display:block;"></div>
+                                    <div id="log-stderr-{{ task.id }}" role="tabpanel" aria-labelledby="tab-stderr-{{ task.id }}" aria-hidden="true" style="display:none;"></div>
+                                </section>
+                                <footer class="log-footer">
                                     <div class="log-tabs"></div>
-                                </div>
+                                    <button type="button" class="text large" data-modal-close>
+                                        Close<sup>ESC</sup>
+                                    </button>
+                                </footer>
                             </div>
-                        </td>
-                    </tr>
-                {% endfor %}
+                        </dialog>
+                    </section>
+                </td>
+            </tr>
+            {# <tr class="log-row" data-task-id="{{ task.id }}">
+                <td colspan="4">
+                    <div class="log-console streaming-console" data-task-id="{{ task.id }}">
+                        <div class="log-top-bar">
+                            <div class="log-tabs">
+                                <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
+                                <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
+                            </div>
+                            <div class="word-wrap-toggle">
+                                <label class="switch">
+                                    <input type="checkbox" class="word-wrap-checkbox">
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="toggle-label">Word Wrap</span>
+                            </div>
+                        </div>
+                        <div class="log-content"></div>
+                        <div class="log-bottom-bar">
+                            <div class="log-tabs"></div>
+                        </div>
+                    </div>
+                </td>
+            </tr> #}
+            {% endfor %}
             {% else %}
-                <tr>
-                    <td colspan="4" class="no-tasks">No tasks running</td>
-                </tr>
+            <tr>
+                <td colspan="4" class="no-tasks">No tasks running</td>
+            </tr>
             {% endif %}
         </tbody>
     </table>

@@ -21,7 +21,7 @@ $(document).ready(function() {
             const type = data.type;
 
             if ($logConsole.find('.log-content-step[data-step-name="' + step + '"]').length === 0) {
-                const stepTab = $('<a href="#" class="log-step-tab" data-step-name="' + step + '">' + step + '</a>');
+                const stepTab = $('<button type="button" class="text large log-step-tab" data-step-name="' + step + '">' + step + '</button>');
                 $logConsole.find('.log-footer .log-tabs').append(stepTab);
 
                 if ($logConsole.find('.log-step-tab').length === 1) {
@@ -77,12 +77,12 @@ $(document).ready(function() {
             } else {
                 console.log(`Log stream for ${taskId} finished`);
                 if (finishData.status === 'success') {
-                    const completedIcon = $('<i class="icons unselectable" style="color: #8ACE00; margin-left: auto;" title="Task completed">check_circle</i>');
-                    $logConsole.find('.log-footer').append(completedIcon);
+                    const completedIcon = $('<div class="status"><div class="success"><span class="badge material-symbols-outlined">check</span> <span class="label">Done</span></div></div>');
+                    $logConsole.find('.log-tabs').append(completedIcon);
                     $logConsole.addClass('completed');
                 } else if (finishData.status === 'failed') {
-                    const completedIcon = $('<i class="icons unselectable" style="color: #CE2900; margin-left: auto;" title="Task failed">error_outline</i>');
-                    $logConsole.find('.log-footer').append(completedIcon);
+                    const completedIcon = $('<div class="status"><div class="error"><span class="badge material-symbols-outlined">report</span> <span class="label">Failed</span></div></div>');
+                    $logConsole.find('.log-tabs').append(completedIcon);
                     $logConsole.addClass('failed');
                 }
                 delete lastMessagesIds[taskId];
