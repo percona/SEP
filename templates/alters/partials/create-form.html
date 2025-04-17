@@ -299,7 +299,7 @@
         </fieldset>
         <br>
         <fieldset>
-            <div class="field">
+            <label class="checkbox">
                 {% set print_arg_title = "Enable to print SQL statements to STDOUT. Useful for reviewing executed statements, especially with --dry-run." %}
                 <input type="checkbox"
                        id="print_arg"
@@ -307,8 +307,12 @@
                        checked="true"
                        class="validate"
                        title="{{ print_arg_title }}" />
-                <label for="print_arg" title="{{ print_arg_title }}">Print</label>
-            </div>
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Print</span>
+            </label>
             <div class="field">
                 {% set progress_title = "Type progress report settings. Use a comma-separated value: the first part defines the type (percentage, time, or iterations), and the second part specifies the frequency (percentage, seconds, or iterations)." %}
                 <label for="progress" title="{{ progress_title }}">Progress</label>
@@ -324,42 +328,58 @@
         </fieldset>
         <br>
         <fieldset>
-            <div class="field">
+            <label class="checkbox">
                 {% set no_swap_tables_title = "Enable to simulate the process without making the swap. Disable to swap the original table with the new altered table." %}
                 <input type="checkbox"
                        id="no_swap_tables"
                        name="no_swap_tables"
                        class="validate"
                        title="{{ no_swap_tables_title }}" />
-                <label for="no_swap_tables" title="{{ no_swap_tables_title }}">no-swap-tables</label>
-            </div>
-            <div class="field">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">no-swap-tables</span>
+            </label>
+            <label class="checkbox">
                 {% set no_drop_old_table_title = "Enable to keep the original table after the swap. Disable to drop the original table after it is renamed." %}
                 <input type="checkbox"
                        id="no_drop_old_table"
                        name="no_drop_old_table"
                        class="validate"
                        title="{{ no_drop_old_table_title }}" />
-                <label for="no_drop_old_table" title="{{ no_drop_old_table_title }}">no-drop-old-table</label>
-            </div>
-            <div class="field">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">no-drop-old-table</span>
+            </label>
+            <label class="checkbox">
                 {% set no_drop_new_table_title = "Enable to keep the new table without modifying the original. Disable to drop the new table if copying the original table fails." %}
                 <input type="checkbox"
                        id="no_drop_new_table"
                        name="no_drop_new_table"
                        class="validate"
                        title="{{ no_drop_new_table_title }}" />
-                <label for="no_drop_new_table" title="{{ no_drop_new_table_title }}">no-drop-new-table</label>
-            </div>
-            <div class="field">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">no-drop-new-table</span>
+            </label>
+            <label class="checkbox">
                 {% set no_drop_triggers_title = "Enabling forces the tool to keep the old table (no-drop-old-table). Disable to drop triggers on the old table." %}
                 <input type="checkbox"
                        id="no_drop_triggers"
                        name="no_drop_triggers"
                        class="validate"
                        title="{{ no_drop_triggers_title }}" />
-                <label for="no_drop_triggers" title="{{ no_drop_triggers_title }}">no-drop-triggers</label>
-            </div>
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">no-drop-triggers</span>
+            </label>
         </fieldset>
         <br>
         <fieldset>
