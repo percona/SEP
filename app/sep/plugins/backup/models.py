@@ -3,7 +3,7 @@
 from enum import auto, IntEnum, StrEnum
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
@@ -31,6 +31,13 @@ class CompressionAlgorithm(EnumFieldMixin, StrEnum):
     ZSTD = "zstd"
     LZ4 = "lz4"
     GZIP = "gzip"
+
+
+allowed_compressions = {
+    BackupType.MYDUMPER: [CompressionAlgorithm.GZIP, CompressionAlgorithm.ZSTD],
+    BackupType.XTRABACKUP: [CompressionAlgorithm.ZSTD, CompressionAlgorithm.LZ4],
+    BackupType.BINLOG: [CompressionAlgorithm.GZIP],
+}
 
 
 class UploadProvider(EnumFieldMixin, StrEnum):
@@ -65,7 +72,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     logging_dir: RequiredStr | EmptyStrToNone = None
     backup_dir: RequiredStr | EmptyStrToNone = None
     defaults_file: RequiredStr | EmptyStrToNone = None
-    compression_algorithm: RequiredStr | EmptyStrToNone = None
+    compression_algorithm: CompressionAlgorithm | EmptyStrToNone = None
     mydumper_daily_purge: int | EmptyStrToNone = None
     mydumper_weekly_purge: int | EmptyStrToNone = None
     mydumper_dump_triggers: bool = False
@@ -108,6 +115,22 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     skip_s3_safety_check: bool = False
     rsync_path: RequiredStr | EmptyStrToNone = None
 
+    @field_validator("compression_algorithm", mode="after")
+    @classmethod
+    def convert_compression_algorithm(
+        cls, v: CompressionAlgorithm | None
+    ) -> str | None:
+        """Convert the compression algorithm to its corresponding value.
+
+        :param v: The compression algorithm to potentially convert.
+        :type v: CompressionAlgorithm or EmptyStrToNone
+        :return: The converted compression algorithm value or the original value.
+        :rtype: String | None
+        """
+        if isinstance(v, CompressionAlgorithm):
+            return v.value
+        return v
+
 
 class BackupCreate(BackupConfigAll):
     """Represent a Backup creation form with proper case-insensitive fields."""
@@ -127,33 +150,18 @@ class BackupCreate(BackupConfigAll):
         :rtype: self
         :raises ValueError: If the compression_algorithm is not valid for the specified backup_type.
         """
-        if self.compression_algorithm is None:
-            return self
+        allowed_algorithms = allowed_compressions.get(self.backup_type)
+        if (
+            allowed_algorithms is not None
+            and self.compression_algorithm is not None
+            and self.compression_algorithm not in allowed_algorithms
+        ):
+            allowed_str = ", ".join(algo.name for algo in allowed_algorithms)
+            raise ValueError(
+                f"When backup_type is '{self.backup_type.name}', compression_algorithm must be one of: "
+                f"{allowed_str}. Got: {self.compression_algorithm.name}"
+            )
 
-        if (
-            self.backup_type == BackupType.MYDUMPER
-            and self.compression_algorithm == CompressionAlgorithm.LZ4
-        ):
-            raise ValueError(
-                f"When backup_type is 'MYDUMPER', compression_algorithm must be one of: "
-                f"GZIP, ZSTD. Got: {self.compression_algorithm}"
-            )
-        if (
-            self.backup_type == BackupType.XTRABACKUP
-            and self.compression_algorithm == CompressionAlgorithm.GZIP
-        ):
-            raise ValueError(
-                f"When backup_type is 'XTRABACKUP', compression_algorithm must be one of: "
-                f"ZSTD, LZ4. Got: {self.compression_algorithm}"
-            )
-        if (
-            self.backup_type == BackupType.BINLOG
-            and self.compression_algorithm != CompressionAlgorithm.GZIP
-        ):
-            raise ValueError(
-                f"When backup_type is 'BINLOG', compression_algorithm must be GZIP. "
-                f"Got: {self.compression_algorithm}"
-            )
         return self
 
 
