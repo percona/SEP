@@ -1,5 +1,6 @@
 """Define SEP settings."""
 
+import re
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
@@ -27,6 +28,7 @@ from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.utils import deep_dict_update, slugify
 from app.core.utils.fields import (
     RelativeDirectoryPath,
+    RequiredStr,
     StrImportableAttribute,
     StrImportableModule,
     TimedeltaSeconds,
@@ -193,6 +195,40 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
+class SnippetsMetaOptions(BaseModel):
+    """Metadata options for snippets.
+
+    :param LINE_PATTERN: Regular expression to match metadata lines in the snippet file.
+        Use a group named "line" to capture only a part of the line. Defaults to
+        `^# (?P<line>.+)$`.
+    :type LINE_PATTERN: re.Pattern[str]
+    :param DELIMITER: The delimiter indicating the start/end of metadata in a snippet.
+        Defaults to "---".
+    :type DELIMITER: RequiredStr
+    :param STOP_SEARCH_PATTERN: Regular expression to stop searching for metadata lines.
+        Defaults to `^[^#].+$`.
+    :type STOP_SEARCH_PATTERN: re.Pattern[str]
+    """
+
+    LINE_PATTERN: re.Pattern[str] = re.compile(r"^# (?P<line>.+)$")
+    DELIMITER: RequiredStr = "---"
+    STOP_SEARCH_PATTERN: re.Pattern[str] = re.compile(r"^[^#].+$")
+
+
+class SnippetsOptions(BaseModel):
+    """Define configuration options for support snippets.
+
+    :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
+        `Path("snippets")`.
+    :type SNIPPETS_DIR: RelativeDirectoryPath
+    :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
+    :type META: SnippetsMetaOptions
+    """
+
+    SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
+    META: SnippetsMetaOptions = SnippetsMetaOptions()
+
+
 class SEPSettings(BaseYamlAppSettings):
     """Settings for SEP.
 
@@ -231,9 +267,8 @@ class SEPSettings(BaseYamlAppSettings):
     :param SYNC_REFRESH_TIME: Time (in seconds) to wait until page refresh while
         inventory sync is in progress. Defaults to 5 seconds.
     :type SYNC_REFRESH_TIME: int
-    :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
-        `Path("snippets")`.
-    :type SNIPPETS_DIR: RelativeDirectoryPath
+    :param SNIPPETS: Snippets configuration options.
+    :type SNIPPETS: SnippetsOptions
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -249,7 +284,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
-    SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
+    SNIPPETS: SnippetsOptions = SnippetsOptions()
 
     @computed_field
     @cached_property

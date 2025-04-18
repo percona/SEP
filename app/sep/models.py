@@ -4,12 +4,13 @@ import hashlib
 from enum import auto, IntEnum, StrEnum
 from os import PathLike
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 
 import aiofiles
+import yaml
 from aiofiles.ospath import getsize
 from pydantic import computed_field, model_validator, PositiveInt, UUID4
-from sqlalchemy import Column, Index
+from sqlalchemy import Column, Index, JSON
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -236,6 +237,9 @@ class Snippet(BaseSQLModel, table=True):
     :param reason: The reason for the approval or disapproval of the snippet, if any.
         Defaults to "New snippet".
     :type reason: str
+    :param meta: Additional metadata about the snippet, such as title, description,
+        parameters, etc.
+    :type meta: dict[str, Any]
     """
 
     filename: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
@@ -247,6 +251,10 @@ class Snippet(BaseSQLModel, table=True):
         index=True,
     )
     reason: str = "New snippet"
+    meta: dict[str, Any] = SQLField(
+        sa_column=Column(JSON, nullable=False),
+        default_factory=dict,
+    )
 
     def __repr__(self) -> str:
         return f"'{self.filename}' ({self.md5_digest})"
@@ -258,7 +266,7 @@ class Snippet(BaseSQLModel, table=True):
         return hash((self.filename, self.md5_digest))
 
     def __fspath__(self) -> str:
-        return str(sep_settings.SNIPPETS_DIR / self.filename)
+        return str(sep_settings.SNIPPETS.SNIPPETS_DIR / self.filename)
 
     @computed_field
     @property
@@ -271,13 +279,41 @@ class Snippet(BaseSQLModel, table=True):
         """
         return self.approved_at is not None
 
-    async def get_size(self) -> int:
-        """Return the size of the snippet file in bytes.
+    @staticmethod
+    async def get_meta_by_path(path: PathLike) -> dict[str, Any]:
+        """Extract metadata from a snippet file.
 
-        :return: The size of the snippet file in bytes.
-        :rtype: int
+        This method reads the first few lines of the file and extracts metadata
+        according to the specified patterns. It returns a dictionary with the
+        extracted metadata.
+
+        :param path: The path to the snippet file.
+        :type path: PathLike
+        :return: A dictionary containing the extracted metadata.
+        :rtype: dict[str, Any]
         """
-        return await getsize(self)
+        try:
+            async with aiofiles.open(path) as f:
+                line = await f.readline()
+                front_matter_lines = None
+                while not sep_settings.SNIPPETS.META.STOP_SEARCH_PATTERN.match(line):
+                    match = sep_settings.SNIPPETS.META.LINE_PATTERN.match(line)
+                    if match:
+                        content = match.groupdict().get("line", match.group(0))
+                        if content == sep_settings.SNIPPETS.META.DELIMITER:
+                            if front_matter_lines is not None:
+                                break
+                            front_matter_lines = []
+                        elif front_matter_lines is not None:
+                            front_matter_lines.append(content)
+                    line = await f.readline()
+            return (
+                yaml.safe_load("\n".join(front_matter_lines))
+                if front_matter_lines
+                else {}
+            )
+        except UnicodeDecodeError:
+            return {}
 
     @classmethod
     async def from_path(cls, path: PathLike) -> Self:
@@ -292,7 +328,7 @@ class Snippet(BaseSQLModel, table=True):
             md5_digest.
         :rtype: Snippet
         """
-        path = sep_settings.SNIPPETS_DIR / Path(path)
+        path = sep_settings.SNIPPETS.SNIPPETS_DIR / Path(path)
         file_hash = hashlib.md5(usedforsecurity=False)
         chunk_size = 8192
         async with aiofiles.open(path, "rb") as f:
