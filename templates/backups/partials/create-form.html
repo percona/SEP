@@ -277,9 +277,7 @@
         <br>
         <br>
     </fieldset>
-    <fieldset id="mydumper_container"
-              style="flex-direction: column;
-                     gap: 1em">
+    <fieldset id="mydumper_container" style="flex-direction: column; gap: 1em">
         <legend>Mydumper Configuration</legend>
         {% set mydumper_daily_purge_title = "Set the number of days after which old backups will be automatically deleted." %}
         <label for="mydumper_daily_purge" title="{{ mydumper_daily_purge_title }}">
@@ -381,9 +379,7 @@
                    placeholder="e.g. --verbose=3" />
         </label>
     </fieldset>
-    <fieldset id="xtrabackup_container"
-              style="flex-direction: column;
-                     gap: 1em">
+    <fieldset id="xtrabackup_container" style="flex-direction: column; gap: 1em">
         <legend>Xtrabackup Configuration</legend>
         {% set xtrabackup_copies_title = "Set the number of backup copies to retain for redundancy and recovery." %}
         <label for="xtrabackup_copies" title="{{ xtrabackup_copies_title }}">
@@ -616,9 +612,7 @@
             </label>
         </div>
     </fieldset>
-    <fieldset id="binlog_container"
-              style="flex-direction: column;
-                     gap: 1em">
+    <fieldset id="binlog_container" style="flex-direction: column; gap: 1em">
         <legend>Binlog Configuration</legend>
         {% set binlog_alternative_host_title = "" %}
         <label for="binlog_alternative_host"
