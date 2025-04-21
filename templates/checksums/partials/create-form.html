@@ -336,7 +336,6 @@
 
     function populateSchemas(selectedService) {
         schemaSelect.disabled = true;
-        schemaSelect.innerHTML = '<option value="-1"> </option>';
         selectedSchema = null;
         selectedServiceNum = Number(selectedService);
 
@@ -364,7 +363,6 @@
 
     function populateTables(selectedService, selectedSchema) {
         tableSelect.disabled = true;
-        tableSelect.innerHTML = '<option value="-1"> </option>';
         selectedTable = null;
         selectedServiceNum = Number(selectedService);
 

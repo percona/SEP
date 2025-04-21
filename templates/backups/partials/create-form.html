@@ -6,12 +6,14 @@
         opacity: 0;
         max-height: 0;
         pointer-events: none;
+        display: none;
     }
 
     .visible {
         opacity: 1;
         max-height: 1000px; /* Large enough to show all content */
         pointer-events: auto;
+        display: flex;
     }
 
     /* Smaller containers might have less content, adjust accordingly if needed */
@@ -32,6 +34,12 @@
         opacity: 1;
         max-height: 1000px;
     }
+    #upload_container.visible,
+    #s3_container.visible,
+    #rsync_container.visible{
+        display: block;
+    }
+
 
     button {
         margin-top: 1em;
@@ -270,8 +278,7 @@
         <br>
     </fieldset>
     <fieldset id="mydumper_container"
-              style="display: flex;
-                     flex-direction: column;
+              style="flex-direction: column;
                      gap: 1em">
         <legend>Mydumper Configuration</legend>
         {% set mydumper_daily_purge_title = "Set the number of days after which old backups will be automatically deleted." %}
@@ -375,8 +382,7 @@
         </label>
     </fieldset>
     <fieldset id="xtrabackup_container"
-              style="display: flex;
-                     flex-direction: column;
+              style="flex-direction: column;
                      gap: 1em">
         <legend>Xtrabackup Configuration</legend>
         {% set xtrabackup_copies_title = "Set the number of backup copies to retain for redundancy and recovery." %}
@@ -611,8 +617,7 @@
         </div>
     </fieldset>
     <fieldset id="binlog_container"
-              style="display: flex;
-                     flex-direction: column;
+              style="flex-direction: column;
                      gap: 1em">
         <legend>Binlog Configuration</legend>
         {% set binlog_alternative_host_title = "" %}

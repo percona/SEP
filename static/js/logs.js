@@ -34,7 +34,7 @@ $(document).ready(function() {
                 const stdoutPre = $('<pre class="log-output" data-log-type="stdout" style="display: none;"></pre>');
                 const stderrPre = $('<pre class="log-output" data-log-type="stderr" style="display: none;"></pre>');
 
-                const selectedTab = $logConsole.find('[role="tab"][aria-selected="true"]');
+                const selectedTab = $logConsole.find('[role="log-tab"][aria-selected="true"]');
                 const selectedLogType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
                 if (selectedLogType === 'stdout') stdoutPre.show();
                 else stderrPre.show();
@@ -50,9 +50,9 @@ $(document).ready(function() {
             const $logContent = $logConsole.find('.log-content');
             $logContent.scrollTop($logContent[0].scrollHeight);
 
-            const selectedTabType = $logConsole.find('[role="tab"][aria-selected="true"]').attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
+            const selectedTabType = $logConsole.find('[role="log-tab"][aria-selected="true"]').attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
             if (type !== selectedTabType) {
-                $logConsole.find('[role="tab"][aria-controls="log-' + type + '-' + taskId + '"]').addClass('tab-notification');
+                $logConsole.find('[role="log-tab"][aria-controls="log-' + type + '-' + taskId + '"]').addClass('tab-notification');
             }
 
             const selectedStep = $logConsole.find('.log-step-tab.selected').data('step-name');
@@ -125,13 +125,13 @@ $(document).ready(function() {
     $('.toggle-label').click(function(e) {
         $(this).prev(".switch").click();
     });
-    $('.modal-log').on('click', 'button[role="tab"]', function(e) {
+    $('.modal-log').on('click', 'button[role="log-tab"]', function(e) {
         e.preventDefault();
         const $this = $(this);
         const $modal = $this.closest('.modal-log');
         const logType = $this.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
 
-        $this.attr('aria-selected', 'true').siblings('[role="tab"]').attr('aria-selected', 'false');
+        $this.attr('aria-selected', 'true').siblings('[role="log-tab"]').attr('aria-selected', 'false');
 
         $modal.find('.log-output').hide();
         $modal.find('.log-step-content:visible .log-output[data-log-type="' + logType + '"]').show();
@@ -149,7 +149,7 @@ $(document).ready(function() {
         const $selectedStep = $modal.find('.log-step-content[data-step-name="' + stepName + '"]');
         $selectedStep.show();
 
-        const selectedTab = $modal.find('[role="tab"][aria-selected="true"]');
+        const selectedTab = $modal.find('[role="log-tab"][aria-selected="true"]');
         const logType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
 
         $selectedStep.find('.log-output').hide();
