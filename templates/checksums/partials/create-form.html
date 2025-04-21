@@ -7,28 +7,9 @@
         margin-bottom: 0.5em;
     }
 
-    .field {
-        flex: 0 0 48%;
-        box-sizing: border-box;
-        padding: 5px;
-        display: flex;
-        align-items: center;
-    }
-
     fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1))>.field {
         flex: 0 0 48%;
     }
-
-    .field label {
-        width: 135px;
-        margin-right: 10px;
-    }
-
-    .field input,
-    .field select {
-        flex: 1;
-    }
-
 
     label+select,
     label+input {
@@ -69,11 +50,6 @@
         pointer-events: none;
     }
 
-    input[type="checkbox"] {
-        flex: none;
-        margin-right: 0.5em;
-    }
-
     pre {
         white-space: break-spaces;
     }
@@ -82,6 +58,12 @@
             {
             syntax_highlight_css(style="monokai")
         }
+    }
+    fieldset + fieldset {
+        margin: 1em 0;
+    }
+    fieldset > * {
+        margin: 0.25em 0 1em;
     }
 </style>
 {% set form_class = "modal" if modal_required else "" %}
@@ -94,20 +76,23 @@
         <legend style="margin-bottom: 0.8em;">Main options</legend>
         <fieldset>
             <legend>Executor Host</legend>
-            <div class="field">
+            <div class="select">
                 {% set hostname_title = "Select the hostname of the target system for task execution." %}
-                <label for="hostname" title="{{ hostname_title }}">Select host</label>
-                {% if executor_hosts|length == 1 %}
-                    {% set single_service = executor_hosts[0] %}
-                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
-                    </select>
-                    <input type="hidden" name="hostname" value="{{ single_service }}">
-                {% else %}
-                    <select id="hostname" name="hostname">
-                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
-                    </select>
-                {% endif %}
+                <label for="hostname" title="{{ hostname_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Select host</span>
+                    {% if executor_hosts|length == 1 %}
+                        {% set single_service = executor_hosts[0] %}
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                        </select>
+                        <input type="hidden" name="hostname" value="{{ single_service }}">
+                    {% else %}
+                        <select id="hostname" name="hostname">
+                            {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
             </div>
         </fieldset>
         <fieldset>
@@ -123,73 +108,96 @@
                        title="{{ task_name_title }}"
                        placeholder="Enter a unique task name">
             </div>
-            <div class="field">
+            <div class="select">
                 {% set service_id_title = "Select the database host from the inventory to connect to." %}
-                <label for="service_id" title="{{ service_id_title }}">Database host</label>
-                {% if mysql_services|length == 1 %}
-                    {% set single_service = mysql_services[0] %}
-                    <select id="service_id"
-                            name="service_id"
-                            title="{{ service_id_title }}"
-                            disabled>
-                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                    </select>
-                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
-                {% else %}
-                    <select id="service_id"
-                            name="service_id"
-                            title="{{ service_id_title }}"
-                            required>
-                        <option value="" selected>Select a database host</option>
-                        {% for service in mysql_services %}
-                            <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
+                <label for="service_id" title="{{ service_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Database host</span>
+                    {% if mysql_services|length == 1 %}
+                        {% set single_service = mysql_services[0] %}
+                        <select id="service_id"
+                                name="service_id"
+                                title="{{ service_id_title }}"
+                                disabled>
+                            <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                        </select>
+                        <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% else %}
+                        <select id="service_id"
+                                name="service_id"
+                                title="{{ service_id_title }}"
+                                required>
+                            <option value="" selected>Select a database host</option>
+                            {% for service in mysql_services %}
+                                <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
             </div>
         </fieldset>
     </fieldset>
     <fieldset style="margin-bottom: 0;">
         <legend>Data</legend>
-        <div class="field">
-            <label for="schema_id">Include Schemas</label>
-            <select multiple id="schema_id" name="schema_id">
-                <!-- <option value=""> </option> -->
-            </select>
+        <div class="select">
+            <label for="schema_id">
+                <span class="label">Include Schemas</span>
+                <select multiple id="schema_id" name="schema_id">
+                    <!-- <option value=""> </option> -->
+                </select>
+            </label>
         </div>
-        <div class="field">
-            <label for="table_id">Include Tables</label>
-            <select multiple id="table_id" name="table_id" disabled>
-                <!-- <option value=""> </option> -->
-            </select>
+        <div class="select">
+            <label for="table_id">
+                <span class="label">Include Tables</span>
+                <select multiple id="table_id" name="table_id" disabled>
+                    <!-- <option value=""> </option> -->
+                </select>
+            </label>
         </div>
         <fieldset>
             <legend>Flags</legend>
-            <div class="field">
+            <label class="checkbox">
                 <input type="checkbox"
                        id="binary_index"
                        name="binary_index"
                        class="validate" />
-                <label for="binary_index">Binary Index</label>
-            </div>
-            <div class="field">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Binary Index</span>
+            </label>
+            <label class="checkbox">
                 <input type="checkbox" id="explain_arg" name="explain_arg" class="validate" />
-                <label for="explain_arg">Explain</label>
-            </div>
-            <div class="field">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Explain</span>
+            </label>
+            <label class="checkbox">
                 <input type="checkbox"
                        id="fail_on_stopped_replication"
                        name="fail_on_stopped_replication"
                        class="validate" />
-                <label for="fail_on_stopped_replication">Fail on stopped replication</label>
-            </div>
-            <div class="field">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Fail on stopped replication</span>
+            </label>
+            <label class="checkbox">
                 <input type="checkbox"
                        id="truncate_replicate_table"
                        name="truncate_replicate_table"
                        class="validate" />
-                <label for="truncate_replicate_table">Truncate replicate table</label>
-            </div>
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Truncate replicate table</span>
+            </label>
         </fieldset>
     </fieldset>
     <!--
@@ -211,15 +219,18 @@
         <legend>Advanced options</legend>
         <fieldset>
             <legend>Recursion Method</legend>
-            <div class="field">
-                <label for="recursion_method">Recursion method</label>
-                <select id="recursion_method" name="recursion_method">
-                    <option value="" selected>default</option>
-                    <option value="processlist">processlist</option>
-                    <option value="hosts">hosts</option>
-                    <option value="dsn">dsn</option>
-                    <option value="none">none</option>
-                </select>
+            <div class="select">
+                <label for="recursion_method">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Recursion method</span>
+                    <select id="recursion_method" name="recursion_method">
+                        <option value="" selected>default</option>
+                        <option value="processlist">processlist</option>
+                        <option value="hosts">hosts</option>
+                        <option value="dsn">dsn</option>
+                        <option value="none">none</option>
+                    </select>
+                </label>
             </div>
             <div class="field">
                 <label for="dsn_table">DSN Table</label>
@@ -287,8 +298,13 @@
             </div>
         </fieldset>
     </fieldset>
-    <button type="submit">Create</button>
-    <button type="reset">Reset</button>
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.5em">
+        <button class="contained large" type="submit">Create</button>
+        <button class="text large" type="reset">Reset</button>
+    </div>
 </form>
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}
@@ -320,7 +336,6 @@
 
     function populateSchemas(selectedService) {
         schemaSelect.disabled = true;
-        schemaSelect.innerHTML = '<option value="-1"> </option>';
         selectedSchema = null;
         selectedServiceNum = Number(selectedService);
 
@@ -348,7 +363,6 @@
 
     function populateTables(selectedService, selectedSchema) {
         tableSelect.disabled = true;
-        tableSelect.innerHTML = '<option value="-1"> </option>';
         selectedTable = null;
         selectedServiceNum = Number(selectedService);
 

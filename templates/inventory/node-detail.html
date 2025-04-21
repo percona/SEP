@@ -36,10 +36,11 @@
             {% endif %}
         {% endif %}
     </dl>
+    <hr>
 {% endblock inventory_entity_details %}
 {% block inventory_table %}
     <h3>Services on this Node</h3>
-    <table>
+    <table data-table>
         <thead>
             <tr>
                 <th>ID</th>
@@ -65,7 +66,9 @@
                               class="confirmable-form"
                               data-confirm-message="Are you sure you want to delete service '{{ service.name }}' (#{{ service.id }})?">
                             <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-                            <button name="location" class="icons submitButton">delete forever</button>
+                            <button name="location" class="icon submitButton">
+                                <span class="material-symbols-outlined">delete_forever</span>
+                            </button>
                         </form>
                     </td>
                 </tr>
