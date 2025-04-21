@@ -126,6 +126,12 @@ faker = "^30.8.2"
 polyfactory = "^2.18.0"
 pytest-asyncio = "^0.24.0"
 
+[tool.poetry.group.magic]
+optional = true
+
+[tool.poetry.group.magic.dependencies]
+python-magic = "^0.4.27"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

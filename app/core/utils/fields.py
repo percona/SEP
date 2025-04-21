@@ -18,6 +18,7 @@ from pydantic import (
     GetCoreSchemaHandler,
     HttpUrl,
     PlainSerializer,
+    StringConstraints,
     TypeAdapter,
     UrlConstraints,
 )
@@ -473,4 +474,22 @@ UniqueList = Annotated[list[T], AfterValidator(remove_duplicates)]
 
 This class can be used with type parameters (e.g., `UniqueList[int]`) to create
 a list type where duplicates are automatically removed.
+"""
+
+LowercaseStr = Annotated[str, StringConstraints(to_lower=True)]
+"""A string field that is automatically converted to lowercase."""
+
+FilenameExtension = Annotated[
+    LowercaseStr, AfterValidator(lambda v: "." + v.lstrip("."))
+]
+"""A string field representing a filename extension.
+
+This annotated type ensures that the string is lowercase and starts with a single dot.
+"""
+
+MimeType = Annotated[LowercaseStr, Field(pattern=r"^\w+\/[-+.\w]+$")]
+"""A string field representing a MIME type.
+
+This annotated type ensures that the string is lowercase and matches the MIME type
+format.
 """

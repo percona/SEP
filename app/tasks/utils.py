@@ -7,10 +7,10 @@ from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManage
 from app.core.celery.db import (
     get_async_session_maker as get_celery_beat_async_session_maker,
 )
+from app.core.celery.models import IntervalSchedule
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task
-from app.tasks.periodic.models import IntervalSchedule
 
 GENERIC_NOMAD_BATCH_TEMPLATE = {
     "ID": "generic-nomad-batch",

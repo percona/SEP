@@ -13,6 +13,10 @@ default:
     - http://localhost:8000
     - http://127.0.0.1:8000
   SEP:
+    SNIPPETS:
+      SYNC_INTERVAL: 10 seconds
+      FILTER_EXTENSIONS:
+        - .sh
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:

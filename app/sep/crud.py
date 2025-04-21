@@ -261,3 +261,38 @@ class SnippetManager(BaseSQLModelManager):
     """
 
     Model = Snippet
+
+    @classmethod
+    async def get_or_create(
+        cls,
+        session: AsyncSession,
+        instance_create: Snippet,
+        filter_include: set[str] | None = None,
+        **extra_fields: Any,
+    ) -> tuple[Snippet, bool]:
+        """Retrieve an existing Snippet instance or create a new one if none exists.
+
+        This method overrides the default `get_or_create` method to generate the `meta`
+        field of the Snippet instance based on the snippet's path.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance_create: The data used to filter and possibly create the
+            instance.
+        :type instance_create: Snippet
+        :param filter_include: The set of fields of `instance_create` to be included in
+            the search filter. Use None (default) for all fields.
+        :param extra_fields: Additional fields to be set on the created instance.
+        :type extra_fields: Any
+        :return: The existing or newly created instance of `cls.Model`, and a bool
+            specifying whether a new instance was created.
+        :rtype: tuple[Snippet, bool]
+        """
+        existent_instance = await cls.first(
+            session, **instance_create.model_dump(include=filter_include)
+        )
+        if existent_instance:
+            return existent_instance, False
+        instance_create.meta = await Snippet.get_meta_by_path(instance_create)
+        return await cls.create(session, instance_create, **extra_fields), True

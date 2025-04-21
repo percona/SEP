@@ -18,15 +18,19 @@ from pydantic import (
     HttpUrl,
     model_validator,
 )
+from sqlalchemy_celery_beat.models import Period
 
+from app.core.celery.models import IntervalSchedule
 from app.core.config import (
     BaseYamlAppSettings,
     settings,
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
-from app.core.utils import deep_dict_update, slugify
+from app.core.utils import deep_dict_update, slugify, validate_module_is_importable
 from app.core.utils.fields import (
+    FilenameExtension,
+    MimeType,
     RelativeDirectoryPath,
     RequiredStr,
     StrImportableAttribute,
@@ -221,12 +225,40 @@ class SnippetsOptions(BaseModel):
     :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
         `Path("snippets")`.
     :type SNIPPETS_DIR: RelativeDirectoryPath
+    :param FILTER_EXTENSIONS: A list of file extensions to filter files by in
+        `SNIPPETS_DIR`. If `None`, no filtering is applied. Defaults to `None`.
+    :type FILTER_EXTENSIONS: list[FilenameExtension] | None
+    :param FILTER_MIME_TYPES: A list of MIME types to filter files by in
+        `SNIPPETS_DIR`. If `None`, no filtering is applied. Defaults to `None`.
+    :type FILTER_MIME_TYPES: list[MimeType] | None
+    :param USE_MAGIC: Whether to use the `python-magic` package to determine file types.
+        Defaults to `False`. If `True`, the `python-magic` package must be installed.
+    :type USE_MAGIC: bool
+    :param SYNC_INTERVAL: The interval schedule for synchronizing snippets. Defaults to
+        every 60 seconds.
+    :type SYNC_INTERVAL: IntervalSchedule
     :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
     :type META: SnippetsMetaOptions
     """
 
     SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
     META: SnippetsMetaOptions = SnippetsMetaOptions()
+    FILTER_EXTENSIONS: list[FilenameExtension] | None = None
+    FILTER_MIME_TYPES: list[MimeType] | None = None
+    USE_MAGIC: bool = False
+    SYNC_INTERVAL: IntervalSchedule = IntervalSchedule(every=60, period=Period.SECONDS)
+
+    @field_validator("USE_MAGIC")
+    @classmethod
+    def _validate_python_magic_is_installed(cls, v: bool) -> bool:  # noqa: FBT001
+        if v:
+            try:
+                validate_module_is_importable("magic")
+            except ImportError:
+                raise ValueError(
+                    "The 'python-magic' package is required for this feature."
+                ) from None
+        return v
 
 
 class SEPSettings(BaseYamlAppSettings):

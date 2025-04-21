@@ -3,7 +3,6 @@
 import json
 from datetime import datetime
 from typing import Any, Self
-from zoneinfo import available_timezones
 
 from pydantic import (
     BaseModel,
@@ -11,11 +10,10 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
-    PositiveInt,
 )
-from sqlalchemy_celery_beat.models import CrontabSchedule as BaseCrontabSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
+from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.models import TaskExecuteRequest
@@ -42,96 +40,6 @@ class PeriodicTaskExecuteRequest(TaskExecuteRequest):
         return
 
 
-class IntervalSchedule(BaseModel):
-    """Represent an interval schedule.
-
-    :param every: The number of periods between each execution.
-    :type every: PositiveInt
-    :param period: The period unit for the interval (e.g., hours, minutes).
-    :type period: Period
-    """
-
-    every: PositiveInt
-    period: Period
-
-    def __str__(self) -> str:
-        """Return a string representation of the interval schedule.
-
-        Formats the schedule as "every {every} {period}", handling singular forms
-        appropriately.
-
-        :return: A formatted string representing the interval schedule.
-        :rtype: str
-        """
-        str_schedule = f"every {self.every} {self.period.value}"
-        if self.every == 1:
-            return str_schedule[:-1]
-        return str_schedule
-
-
-class CrontabSchedule(BaseModel):
-    """Representing a crontab schedule.
-
-    :param minute: Represents the minute component in cron format. Defaults to `"*"`.
-    :type minute: str
-    :param hour: Represents the hour component in cron format. Defaults to `"*"`.
-    :type hour: str
-    :param day_of_week: Represents the day of the week component in cron format.
-        Defaults to `"*"`.
-    :type day_of_week: str
-    :param day_of_month: Represents the day of the month component in cron format.
-        Defaults to `"*"`.
-    :type day_of_month: str
-    :param month_of_year: Represents the month component in cron format.
-        Defaults to `"*"`.
-    :type month_of_year: str
-    :param timezone: The timezone for the cron schedule. Defaults to "UTC". Must be a
-        valid timezone as returned in `available_timezones()`
-    :type timezone: str
-    """
-
-    minute: str = "*"
-    hour: str = "*"
-    day_of_week: str = "*"
-    day_of_month: str = "*"
-    month_of_year: str = "*"
-    timezone: str = "UTC"
-
-    def __str__(self) -> str:
-        """Return a string representation of the crontab schedule.
-
-        Formats the schedule according to cron expression standards and includes the
-        timezone.
-
-        :return: A formatted string representing the crontab schedule.
-        :rtype: str
-        """
-        fmt_kwargs = {
-            field: BaseCrontabSchedule.cronexp(value)
-            for field, value in self.model_dump(exclude={"timezone"}).items()
-        }
-        return "{minute} {hour} {day_of_month} {month_of_year} {day_of_week}".format(
-            **fmt_kwargs
-        )
-
-    @field_validator("timezone")
-    @classmethod
-    def validate_timezone(cls, v: str) -> str:
-        """Validate the timezone field.
-
-        Ensures that the provided timezone is among the available timezones.
-
-        :param v: The timezone string to validate.
-        :type v: str
-        :return: The validated timezone string.
-        :rtype: str
-        :raises ValueError: If the timezone is not valid.
-        """
-        if v not in available_timezones():
-            raise ValueError(f"{v} is not a valid timezone")
-        return v
-
-
 class BasePeriodicTask(BaseModel):
     """Define the base model for periodic tasks.
 
@@ -150,9 +58,9 @@ class BasePeriodicTask(BaseModel):
     :param execute_request: The execution request details for the task.
     :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
+    :type interval: app.core.celery.models.IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
+    :type crontab: app.core.celery.models.CrontabSchedule | None
     """
 
     name: str

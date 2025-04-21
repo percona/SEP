@@ -1,10 +1,12 @@
 """Define SEP routes."""
 
 import logging.config
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from traceback import format_exception
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
@@ -19,6 +21,7 @@ from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
+from app.sep.celery import init_periodic_tasks_db
 from app.sep.config import CsrfSettings, sep_settings
 from app.sep.deps import (
     AccessTokenCookie,
@@ -36,7 +39,26 @@ from app.sep.utils.static import AuthenticatedStaticFiles
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage SEP's lifespan.
+
+    Initializes the SEP periodic task database.
+
+    :param app: The FastAPI application instance.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    await init_periodic_tasks_db()
+    async with default_lifespan(app):
+        yield
+
+
 lifespan = default_lifespan if __name__ == "__main__" else None
+
+
 sep_app = create_app(
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
@@ -72,7 +94,7 @@ if {"alters", "archives", "tasks"} & imported_plugins:
 if "snippets" in imported_plugins:
     sep_app.mount(
         "/static/snippets",
-        AuthenticatedStaticFiles(directory=sep_settings.SNIPPETS_DIR),
+        AuthenticatedStaticFiles(directory=sep_settings.SNIPPETS.SNIPPETS_DIR),
         name="snippets_files",
     )
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
