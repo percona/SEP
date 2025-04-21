@@ -43,6 +43,7 @@
     #confirmationMessage {
         margin-bottom: .8em;
         font-weight: 600;
+        color: black;
     }
 
     @keyframes popUp {
@@ -80,6 +81,7 @@
         const confirmYes = document.getElementById('confirmYes');
         const confirmNo = document.getElementById('confirmNo');
         const submitButtons = document.querySelectorAll('.submitButton');
+        const scheduleDialog = document.getElementById('modalScheduleExec');
 
         let currentForm = null;
 
@@ -117,6 +119,9 @@
                     }
                 });
                 if (allFieldsValid) {
+                    if (scheduleDialog && scheduleDialog.open) {
+                        scheduleDialog.close();
+                    }
                     showModal();
                 }
             });

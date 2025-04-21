@@ -63,105 +63,104 @@
                             </button>
                         </form>
                     </td>
-            </tr>
-        {% endfor %}
-            
-    </tbody>
-    <tfoot>
-        <!-- Row for new periodic task -->
-        <tr class="new-periodic-task-row show-on-create-mode">
-            <td>
-                <select name="task" form="new-periodic-task-form">
-                    {% for task in tasks %}<option value="{{ task.name }}">{{ task.name }}</option>{% endfor %}
-                </select>
-            </td>
-            <td>
-                <div class="interval-inputs period-inputs">
-                    <input type="number"
-                        name="interval_every"
-                        min="1"
-                        placeholder="every n"
-                        form="new-periodic-task-form"
-                        required>
-                    <select name="interval_period"
-                            form="new-periodic-task-form"
-                            style="padding: 0.2em">
-                        <option value="days">days</option>
-                        <option value="hours">hours</option>
-                        <option value="minutes">minutes</option>
+                </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <!-- Row for new periodic task -->
+            <tr class="new-periodic-task-row show-on-create-mode">
+                <td>
+                    <select name="task" form="new-periodic-task-form">
+                        {% for task in tasks %}<option value="{{ task.name }}">{{ task.name }}</option>{% endfor %}
                     </select>
-                </div>
-                <div class="cron-inputs hidden period-inputs">
-                    <div style="display: flex">
-                        <input type="text"
-                            name="cron_expression"
-                            placeholder="*/5 * * * *"
-                            form="new-periodic-task-form"
-                            disabled>
-                        <select name="cron_timezone" form="new-periodic-task-form" disabled>
-                            {% for timezone in AVAILABLE_TIMEZONES %}<option value="{{ timezone }}">{{ timezone }}</option>{% endfor %}
+                </td>
+                <td>
+                    <div class="interval-inputs period-inputs">
+                        <input type="number"
+                               name="interval_every"
+                               min="1"
+                               placeholder="every n"
+                               form="new-periodic-task-form"
+                               required>
+                        <select name="interval_period"
+                                form="new-periodic-task-form"
+                                style="padding: 0.2em">
+                            <option value="days">days</option>
+                            <option value="hours">hours</option>
+                            <option value="minutes">minutes</option>
                         </select>
                     </div>
-                    <div class="cron-description"></div>
-                </div>
-                <a href="#" class="change-period-mode" style="font-size: 11px;">change to
-                cron mode</a>
-            </td>
-            <td>
-                <input type="hidden"
-                    form="new-periodic-task-form"
-                    name="start_time"
-                    class="date-value">
-                <input type="datetime-local"
-                    class="start-time-input"
-                    title="Optional start time for the periodic task">
-            </td>
-            <td>
-                <input type="hidden"
-                    form="new-periodic-task-form"
-                    name="expires"
-                    class="date-value">
-                <input type="datetime-local"
-                    class="expires-input"
-                    title="Optional expiration time for the periodic task">
-            </td>
-            <td></td>
-            <td>0</td>
-            <td style="padding-left: 0.5em">
-                <input type="hidden"
-                    form="new-periodic-task-form"
-                    name="enabled"
-                    value="true">
-                <label class="switch">
-                    <input type="checkbox" class="new-periodic-task-enable-checkbox" checked>
-                    <span class="slider round"></span>
-                </label>
-            </td>
-            <td class="actions-cell flex">
-                <button type="submit"
-                        id="save-button"
-                        class="text medium"
-                        title="Save"
-                        form="new-periodic-task-form">
-                    <span class="material-symbols-outlined">save</span>
-                    <span class="label">Save</span>
-                </button>
-                <button type="button" class="discard-button text medium" title="Discard">
-                    <span class="material-symbols-outlined">remove</span>
-                    <span class="label">Remove</span>
-                </button>
-            </td>
-        </tr>
-        <tr id="add-periodic-task-row" class="hide-on-create-mode">
-            <td colspan="7"></td>
-            <td class="actions-cell flex">
-                <button id="add-periodic-task-button"
-                        title="Create new periodic task"
-                        class="text large">
-                    <span class="material-symbols-outlined">add</span>
-                    <span class="label">Add new</span>
-                </button>
-            </td>
-        </tr>
-    </tfoot>
-</table>
+                    <div class="cron-inputs hidden period-inputs">
+                        <div style="display: flex">
+                            <input type="text"
+                                   name="cron_expression"
+                                   placeholder="*/5 * * * *"
+                                   form="new-periodic-task-form"
+                                   disabled>
+                            <select name="cron_timezone" form="new-periodic-task-form" disabled>
+                                {% for timezone in AVAILABLE_TIMEZONES %}<option value="{{ timezone }}">{{ timezone }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="cron-description"></div>
+                    </div>
+                    <a href="#" class="change-period-mode" style="font-size: 11px;">change to
+                    cron mode</a>
+                </td>
+                <td>
+                    <input type="hidden"
+                           form="new-periodic-task-form"
+                           name="start_time"
+                           class="date-value">
+                    <input type="datetime-local"
+                           class="start-time-input"
+                           title="Optional start time for the periodic task">
+                </td>
+                <td>
+                    <input type="hidden"
+                           form="new-periodic-task-form"
+                           name="expires"
+                           class="date-value">
+                    <input type="datetime-local"
+                           class="expires-input"
+                           title="Optional expiration time for the periodic task">
+                </td>
+                <td></td>
+                <td>0</td>
+                <td style="padding-left: 0.5em">
+                    <input type="hidden"
+                           form="new-periodic-task-form"
+                           name="enabled"
+                           value="true">
+                    <label class="switch">
+                        <input type="checkbox" class="new-periodic-task-enable-checkbox" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </td>
+                <td class="actions-cell flex">
+                    <button type="submit"
+                            id="save-button"
+                            class="text medium"
+                            title="Save"
+                            form="new-periodic-task-form">
+                        <span class="material-symbols-outlined">save</span>
+                        <span class="label">Save</span>
+                    </button>
+                    <button type="button" class="discard-button text medium" title="Discard">
+                        <span class="material-symbols-outlined">remove</span>
+                        <span class="label">Remove</span>
+                    </button>
+                </td>
+            </tr>
+            <tr id="add-periodic-task-row" class="hide-on-create-mode">
+                <td colspan="7"></td>
+                <td class="actions-cell flex">
+                    <button id="add-periodic-task-button"
+                            title="Create new periodic task"
+                            class="text large">
+                        <span class="material-symbols-outlined">add</span>
+                        <span class="label">Add new</span>
+                    </button>
+                </td>
+            </tr>
+        </tfoot>
+    </table>

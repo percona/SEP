@@ -43,7 +43,7 @@
                     <button type="submit"
                             form="{{ task.name }}-send"
                             role="menuitem"
-                            class="list-item"
+                            class="list-item submitButton"
                             aria-label="Execute schema change">
                         <span class="material-symbols-outlined">play_arrow</span>
                         <span class="label">Execute now</span>
@@ -61,7 +61,7 @@
                     <button type="submit"
                             form="{{ task.name }}-delete"
                             role="menuitem"
-                            class="list-item"
+                            class="list-item submitButton"
                             aria-label="Permanently delete this task">
                         <span class="material-symbols-outlined">delete</span>
                         <span class="label">Delete</span>
@@ -70,6 +70,14 @@
             </li>
         </ul>
     </div>
+    <form id="schedule-task-form"
+          class="schedule-task-form"
+          class="window"
+          method="post"
+          action="{{ task.name }}"
+          data-confirm-message='Are you sure you want to schedule task "{{ task.name }}"?'>
+        {% include "tasks/partials/scheduled-execution-dialog.html" %}
+    </form>
 </div>
 {# <td class="actions-cell flex">
     <button title="Toggle scheduler mode" type="button" class="schedule-button icons" data-task="{{ task.name }}" aria-expanded="false">schedule</button>

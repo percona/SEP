@@ -740,7 +740,7 @@ select[multiple] option {
     border-radius: var(--cornerExtraSmall);
 }
 
-select[multiple] option + option {
+select[multiple] option+option {
     margin-top: 0.25em;
 }
 
@@ -1070,6 +1070,10 @@ dialog section {
     flex-direction: column;
     padding: 1em;
     overflow-y: auto;
+}
+
+input:disabled {
+    display: none;
 }
 
 dialog .title {

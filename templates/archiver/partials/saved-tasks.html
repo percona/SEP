@@ -16,7 +16,7 @@
                     <td>{{ task.hostname }}</td>
                     <td>{{ task.source_table }} {{ task.source_query }}</td>
                     <td>{{ task.dest_table }} {{ task.dest_file }}</td>
-                    <td>{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
+                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
             {% endfor %}
         </tbody>

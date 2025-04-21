@@ -27,9 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (sendButton) {
                     sendButton.setAttribute('title', 'Execute');
                 }
-                if (infoDeleteContainer) {
-                    infoDeleteContainer.style.display = '';
-                }
             } else {
                 this.classList.add('toggled-on');
                 this.setAttribute('aria-expanded', 'true');
@@ -37,9 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendForm.setAttribute('data-confirm-message', `Are you sure you want to schedule task "${taskName}"?`);
                 if (sendButton) {
                     sendButton.setAttribute('title', 'Schedule');
-                }
-                if (infoDeleteContainer) {
-                    infoDeleteContainer.style.display = 'none';
                 }
             }
         });
@@ -77,6 +71,39 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const scheduleForm = document.getElementById('schedule-task-form');
+        const dialog = document.getElementById('modalScheduleExec');
+        const etaInput = document.getElementById('dateTimeInput');
+        const etaHidden = document.getElementById('modalEtaValue');
+
+        scheduleForm.addEventListener('submit', function(event) {
+            // First: close the modal
+            dialog.close();
+
+            // Small delay to let modal hide before confirm appears
+            setTimeout(() => {
+                const confirmMessage = scheduleForm.dataset.confirmMessage || 'Are you sure?';
+                const confirmed = confirm(confirmMessage);
+
+                if (confirmed) {
+                    // Enable and set the hidden eta value
+                    etaHidden.value = etaInput.value;
+                    etaHidden.disabled = false;
+
+                    // Manually submit the form (since we previously prevented it)
+                    scheduleForm.submit();
+                } else {
+                    // If not confirmed, do nothing
+                }
+            }, 10); // Slight delay to allow dialog to disappear
+
+            // Stop the default form submission for now
+            event.preventDefault();
+        });
+    });
+
 });
 
 // $(document).ready(function() {
