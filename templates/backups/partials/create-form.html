@@ -218,7 +218,7 @@
             {% set only_if_running_replica_title = "Enable this option to apply the backup only if the server is running as a replication slave." %}
             <label class="checkbox"
                    for="only_if_running_replica"
-                   title="{{ only_if_running_replicatitle }}">
+                   title="{{ only_if_running_replica_title }}">
                 <input type="checkbox"
                        id="only_if_running_replica"
                        name="only_if_running_replica"
@@ -462,50 +462,34 @@
                 </div>
                 <span class="label">Use Rsync</span>
             </label>
-<<<<<<< HEAD
             {% set xtrabackup_replica_info_title = "Include replica information in the backup to assist with replication recovery." %}
-            <label for="xtrabackup_replica_info" title="{{ xtrabackup_replica_info_title }}">
-=======
-            {% set xtrabackup_slave_info_title = "Include replication slave information in the backup to assist with replication recovery." %}
             <label class="checkbox"
-                   for="xtrabackup_slave_info"
-                   title="{{ xtrabackup_slave_info_title }}">
->>>>>>> main
+                   for="xtrabackup_replica_info"
+                   title="{{ xtrabackup_replica_info_title }}">
                 <input type="checkbox"
                        id="xtrabackup_replica_info"
                        name="xtrabackup_replica_info"
                        value="1"
                        checked>
-<<<<<<< HEAD
-                Include Replica Info
-            </label>
-            {% set xtrabackup_stop_replica_title = "Stop replication before starting the backup to ensure data consistency." %}
-            <label for="xtrabackup_stop_replica" title="{{ xtrabackup_stop_replica_title }}">
-=======
                 <div class="checkmark">
                     <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                     <span class="material-symbols-outlined checked">check_box</span>
                 </div>
-                <span class="label">Include Slave Info</span>
+                <span class="label">Include Replica Info</span>
             </label>
-            {% set xtrabackup_stop_slave_title = "Stop the replication slave before starting the backup to ensure data consistency." %}
+            {% set xtrabackup_stop_replica_title = "Stop replication before starting the backup to ensure data consistency." %}
             <label class="checkbox"
-                   for="xtrabackup_stop_slave"
-                   title="{{ xtrabackup_stop_slave_title }}">
->>>>>>> main
+                   for="xtrabackup_stop_replica"
+                   title="{{ xtrabackup_stop_replica_title }}">
                 <input type="checkbox"
                        id="xtrabackup_stop_replica"
                        name="xtrabackup_stop_replica"
                        value="1" />
-<<<<<<< HEAD
-                Stop Replica Before Backup
-=======
                 <div class="checkmark">
                     <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                     <span class="material-symbols-outlined checked">check_box</span>
                 </div>
-                <span class="label">Stop Slave Before Backup</span>
->>>>>>> main
+                <span class="label">Stop Replica Before Backup</span>
             </label>
             {% set xtrabackup_lock_ddl_title = "Lock Data Definition Language (DDL) operations during backup to prevent schema changes." %}
             <label class="checkbox"
