@@ -173,6 +173,12 @@ def get_default_context(
     :return: The default context.
     :rtype: dict[str, Any]
     """
+    print(type(sep_settings.SYNCERS))
+    print(sep_settings.SYNCERS)
+    pmm_url = next(
+        (s.pmm["endpoint"] for s in sep_settings.SYNCERS if s.syncer.endswith("PMMSyncer") and hasattr(s, "pmm")),
+        None
+    )
     return {
         "user": user,
         "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
@@ -181,6 +187,7 @@ def get_default_context(
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "messages": messages.get_messages(request),
+        "pmm_url": pmm_url,
     }
 
 
