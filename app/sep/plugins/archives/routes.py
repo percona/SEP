@@ -32,7 +32,6 @@ async def archives_index(
     context: Annotated[dict[str, Any], Depends(get_archives_index_context)],
 ) -> HTMLResponse:
     """Homepage of archives plugin."""
-    context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
         name="archiver/index.html",
@@ -44,6 +43,7 @@ async def archives_index(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
 async def archives_create(
+    request: Request,
     task: ArchivesGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
@@ -53,8 +53,9 @@ async def archives_create(
         "/",
         json=task.model_dump(),
     )
+    task_path = request.url_for("archives_detail", task_name=task.name)
     return RedirectResponse(
-        "/archives",
+        task_path,
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
@@ -79,6 +80,7 @@ async def archives_detail(
     response_class=RedirectResponse,
 )
 async def archives_execute(
+    request: Request,
     task: ArchivesTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
@@ -88,7 +90,8 @@ async def archives_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    return RedirectResponse("/archives", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("archives_detail", task_name=task.name)
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(

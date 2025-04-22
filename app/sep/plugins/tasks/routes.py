@@ -37,7 +37,6 @@ async def tasks_list(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
-    context["csrf_token"] = request.state.csrf_token
     context["tasks"] = await tasks_api.get("/")
     context["running_tasks"] = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
@@ -56,6 +55,7 @@ async def tasks_list(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
 async def task_create(
+    request: Request,
     create_task_form: Annotated[TaskCreateRequest, Form()],
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
@@ -68,7 +68,8 @@ async def task_create(
         params={"backend": create_task_form.backend},
     )
     await tasks_api.post("/", json=task_data)
-    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("tasks_detail", task_name=create_task_form.name)
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -79,7 +80,6 @@ async def tasks_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve task."""
-    context["csrf_token"] = request.state.csrf_token
     context["task"] = task
     context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
@@ -100,13 +100,15 @@ async def tasks_detail(
 
 @router.post("/{task_name}", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def tasks_execute(
+    request: Request,
     task: TaskDep,
     tasks_api: TaskAPI,
     execute_data: Annotated[TaskExecuteRequest, Form()],
 ) -> RedirectResponse:
     """Execute task."""
     await tasks_api.post(f"/execute/{task.name}", json=execute_data.model_dump())
-    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("tasks_detail", task_name=task.name)
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(

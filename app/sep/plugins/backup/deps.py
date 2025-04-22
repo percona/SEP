@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, Request
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -80,7 +80,13 @@ async def build_backup_task_payload(
         "alias": service.node.address,
         "backup_type": form.backup_type,
         # for now only localhost allowed for X
-        "host": "localhost" if form.backup_type == "X" else service.node.address,
+        "host": (
+            "localhost"
+            if form.backup_type == "X"
+            else form.binlog_alternative_host
+            if form.backup_type == "B" and form.binlog_alternative_host
+            else service.node.address
+        ),
         "port": service.port,
         "upload": upload_providers,
     }
@@ -100,6 +106,8 @@ async def build_backup_task_payload(
     elif form.backup_type == BackupType.XTRABACKUP:
         payload_name = "xtrabackup_payload"
         requirements += "\nfilelock"
+    elif form.backup_type == BackupType.BINLOG:
+        payload_name = "binlog_payload"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
     payload_path = Path(__file__).parent / payload_name
@@ -174,7 +182,10 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
 
 
 async def get_backups_index_context(
-    inventory_api: InventoryAPI, tasks_api: TaskAPI, context: DefaultContext
+    request: Request,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+    context: DefaultContext,
 ) -> dict[str, Any]:
     """Assemble the context for the Backups plugin index view.
 
@@ -182,6 +193,8 @@ async def get_backups_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
+    :param request: The HTTP request object.
+    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
@@ -192,7 +205,12 @@ async def get_backups_index_context(
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        inventory_api, tasks_api, get_backups_task_info, context, TaskOwner.BACKUPS
+        request,
+        inventory_api,
+        tasks_api,
+        get_backups_task_info,
+        context,
+        TaskOwner.BACKUPS,
     )
 
 

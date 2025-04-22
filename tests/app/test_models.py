@@ -163,7 +163,9 @@ class TestCasdoorUser:
         casdoor_mock.get_token.assert_awaited_once_with(
             casdoor_token_payload_data["jti"]
         )
-        casdoor_mock.refresh_token_request.assert_awaited_once_with(refresh_token)
+        casdoor_mock.delete_token.assert_awaited_once_with(
+            {"data": {"refreshToken": refresh_token}}
+        )
 
     @pytest.mark.asyncio
     async def test_get_user(self, valid_username, casdoor_mock):

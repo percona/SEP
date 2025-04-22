@@ -7,10 +7,9 @@ from fastapi import APIRouter, Body, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 
-from app.core.auth.exceptions import HTTPUnauthorizedException
+from app.core.auth.exceptions import HTTPUnauthorizedException, InactiveUserException
 from app.core.auth.models import OAuthToken
 from app.core.auth.utils import get_user_model
-from app.core.exceptions import InactiveUserException
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +18,11 @@ router = APIRouter()
 User = get_user_model()
 
 
-# TODO: Prevent malicious account lockout  # noqa: TD002, TD003
+# TODO(yan): Prevent malicious account lockout
+# SEP-277
 @router.post("/token")
 async def create_oauth_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),  # noqa: B008
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> OAuthToken:
     """Generate an OAuth token for a user from their username and password.
 
@@ -30,19 +30,12 @@ async def create_oauth_token(
     :type form_data: OAuth2PasswordRequestForm
     :return: The OAuth token for the user.
     :rtype: OAuthToken
-    :raises HTTPUnauthorizedException: If authentication fails due to incorrect
-        credentials.
     :raises InactiveUserException: If the user is not active.
     """
-    try:
-        oauth_token = await User.get_oauth_token(
-            username=form_data.username,
-            password=form_data.password,
-        )
-    except ValidationError:
-        logger.exception("Failed to authenticate user")
-        raise HTTPUnauthorizedException("Incorrect username or password") from None
-
+    oauth_token = await User.get_oauth_token(
+        username=form_data.username,
+        password=form_data.password,
+    )
     user = await User.from_jwt(oauth_token.access_token)
     if not user.is_active:
         raise InactiveUserException
@@ -50,7 +43,6 @@ async def create_oauth_token(
     return oauth_token
 
 
-# TODO: refactor repeated code (refresh, token, maybe get_current_user)  # noqa: TD002, TD003
 @router.post("/refresh")
 async def refresh_token(token: Annotated[str, Body()]) -> OAuthToken:
     """Generate an OAuth token for a user from a refresh token.

@@ -113,7 +113,10 @@ def test_archives_create(
         "/archives/", data=created_archives.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/archives"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/archives/{generated_task.name}"
+    )
     mock_task_api_dep.post.assert_any_await(
         "/",
         json=generated_task.model_dump(),
@@ -166,7 +169,10 @@ def test_archives_execute(
         f"/archives/{created_task.name}", data={"eta": str(eta)}, follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/archives"
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/archives/{created_task.name}"
+    )
 
 
 @pytest.mark.usefixtures("_mock_get_archives_task_dep")

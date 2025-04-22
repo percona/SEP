@@ -22,7 +22,7 @@ NOMAD_RUN_COMMAND = {
     "ID": "run-command",
     "Name": "run-command",
     "Type": "batch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",
@@ -38,6 +38,8 @@ NOMAD_RUN_COMMAND = {
     "TaskGroups": [
         {
             "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
                     "Name": "run-script",
@@ -69,7 +71,7 @@ NOMAD_RUN_PYTHON = {
     "ID": "run-python",
     "Name": "run-python",
     "Type": "batch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",
@@ -85,6 +87,8 @@ NOMAD_RUN_PYTHON = {
     "TaskGroups": [
         {
             "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
                     "Name": "prepare-env",

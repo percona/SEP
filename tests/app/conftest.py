@@ -137,6 +137,10 @@ def casdoor_mock(
         "app.core.auth.providers.casdoor.CasdoorSDK.get_users",
         new=mocker.AsyncMock(return_value=[casdoor_user_data]),
     )
+    mocker.patch(
+        "app.core.auth.providers.casdoor.CasdoorSDK.delete_token",
+        new=mocker.AsyncMock(return_value=True),
+    )
     from app.core.config import settings
 
     return mocker.patch.object(settings, "CASDOOR", settings.CASDOOR)

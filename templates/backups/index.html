@@ -67,12 +67,20 @@
             <h2>Periodic Tasks</h2>
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a backup process</h3>
-            {% include "backups/partials/create-form.html" %}
+            {% if executor_hosts|length < 1 %}
+                <p>Unable to find suitable executor hosts.</p>
+            {% else %}
+                {% include "backups/partials/create-form.html" %}
+            {% endif %}
         </section>
+        <br>
+        <br>
         <section id="pending-tasks">
             <h2>Pending</h2>
             {% include "tasks/partials/pending-tasks.html" %}
         </section>
+        <br>
+        <br>
         <section id="completed-tasks">
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}

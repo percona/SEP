@@ -236,6 +236,10 @@ class Settings(BaseYamlSettings):
     :param AUTH_USER_MODEL: The full import path of the user model class.
         Defaults to "app.models.CasdoorUser".
     :type AUTH_USER_MODEL: StrImportableAttribute
+    :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
+        user. Defaults to False, meaning all previous sessions will be invalidated once
+        a new one is created.
+    :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         `secrets.token_urlsafe(32)`.
     :type SECRET_KEY: str
@@ -261,6 +265,7 @@ class Settings(BaseYamlSettings):
     CASDOOR: CasdoorSDK
     CELERY: CeleryOptions
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
+    ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}

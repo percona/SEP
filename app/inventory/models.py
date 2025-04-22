@@ -190,7 +190,7 @@ class ServiceBase(SQLModel):
     )  # TODO: validate external_id not null if node source is defined  # noqa: TD002, TD003
     name: RequiredStr
     type: ServiceTypeEnum = SQLField(
-        sa_column=Column(EnumField(ServiceTypeEnum), nullable=False),
+        sa_column=Column(EnumField(ServiceTypeEnum, native_enum=False), nullable=False),
     )
     port: int | None = None
     environment: str | None = (

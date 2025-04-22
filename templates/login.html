@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title -%}
+    Login
+{%- endblock title %}
+{% block sidebar %}
+{% endblock sidebar %}
+{% block main %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/login.css') }}">
+    <section id="login-form">
+        <h2>Login</h2>
+        <form method="post" action="{{ url_for("login") }}?next={{ next_path }}">
+            <fieldset>
+                <legend>Credentials</legend>
+                <label for="username">Username:</label>
+                <input type="text" name="username" id="username" required>
+                <br>
+                <br>
+                <label for="password">Password:</label>
+                <input type="password" name="password" id="password" required>
+                <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+            </fieldset>
+            <button type="submit">Login</button>
+        </form>
+    </section>
+{% endblock main %}

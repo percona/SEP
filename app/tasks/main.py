@@ -5,7 +5,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from celery.utils.log import get_task_logger
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, status
+from nomad.api.exceptions import BaseNomadException
 
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
@@ -45,6 +46,16 @@ tasks_app = create_app(
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,
     security_headers=tasks_settings.SECURITY_HEADERS,
 )
+
+
+@tasks_app.exception_handler(BaseNomadException)
+async def nomad_exception_handler(_: Request, exc: BaseNomadException) -> None:
+    """Handle exceptions raised by Nomad."""
+    logger.exception("Error getting a response from Nomad", exc_info=exc)
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Failed to get a response from Nomad, make sure the agent is online.",
+    )
 
 
 if __name__ == "__main__":

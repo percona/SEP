@@ -12,7 +12,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EnumFieldMixin
+from app.core.utils.fields import EnumFieldMixin, URIPath
 
 
 class PermissionsPolicyDirective(EnumFieldMixin, StrEnum):
@@ -155,6 +155,9 @@ class SecurityHeadersOptions(BaseCaseInsensitiveModel):
     :param content_security_policy_strict: Whether to enforce a strict Content Security
         Policy.
     :type content_security_policy_strict: bool
+    :param content_security_policy_exclude_paths: List of URI paths to not include the
+        CSP header.
+    :type content_security_policy_exclude_paths: list[URIPath]
     :param permissions_policy: Configuration options for the `Permissions-Policy`
         header. Defaults to denying access to all directives.
     :type permissions_policy: PermissionsPolicyOptions
@@ -165,6 +168,7 @@ class SecurityHeadersOptions(BaseCaseInsensitiveModel):
     referrer_policy_same_origin: bool = True
     strict_transport_security: StrictTransportSecurityOptions | None = None
     content_security_policy_strict: bool = True
+    content_security_policy_exclude_paths: list[URIPath] = []
     permissions_policy: PermissionsPolicyOptions = PermissionsPolicyOptions()
 
 
@@ -220,11 +224,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         :rtype: Response
         """
         extra_headers = {}
-        if self.options.content_security_policy_strict:
+        if (
+            self.options.content_security_policy_strict
+            and request.url.path
+            not in self.options.content_security_policy_exclude_paths
+        ):
             nonce = token_urlsafe(32)
             request.state.csp_nonce = nonce
-            # TODO(yan): Separate/differentiate CSP for APIs and for SEP
-            # SEP-204
             extra_headers["Content-Security-Policy"] = (
                 f"script-src 'nonce-{nonce}' 'strict-dynamic'; object-src 'none'; "
                 f"base-uri 'none'; frame-ancestors 'none'; form-action 'self'"

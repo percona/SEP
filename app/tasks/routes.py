@@ -213,12 +213,21 @@ async def stream_task_history_logs(
     )
     if task_history.status == TaskHistoryStatusEnum.PENDING:
         raise HTTPBadRequestException("Task history is pending.")
+    stream_logs_generator = None
     if task_history.status == TaskHistoryStatusEnum.RUNNING:
-        stream_logs_generator = (
-            f"{log_line.model_dump_json()}\n" if log_line else ""
-            async for log_line in executor.stream_logs(task_history)
-        )
-    else:
+        if await executor.is_task_running(task_history):
+            stream_logs_generator = (
+                f"{log_line.model_dump_json()}\n" if log_line else ""
+                async for log_line in executor.stream_logs(task_history)
+            )
+        else:
+            task_history.status = (
+                TaskHistoryStatusEnum.SUCCESS
+                if task_history.execution_request.tracking.get("finished_at")
+                else TaskHistoryStatusEnum.FAILED
+            )
+            task_history = await TaskHistoryManager.save(session, task_history)
+    if stream_logs_generator is None:
         stream_logs_generator = (
             f"{TaskLog(step=step, type=log_type, msg=log[log_type]).model_dump_json()}\n"
             for step, log in task_history.execution_request.tracking.get(

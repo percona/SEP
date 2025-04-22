@@ -1,21 +1,24 @@
 """Define SEP routes."""
 
 import logging.config
+from traceback import format_exception
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
-from app.core.auth.exceptions import HTTPTemporaryRedirectException
+from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
-from app.core.utils import import_var
+from app.core.utils import import_var, run_pydantic_type_validator
+from app.core.utils.fields import URIPath
 from app.sep.config import CsrfSettings, sep_settings
 from app.sep.deps import (
     AccessTokenCookie,
@@ -24,8 +27,11 @@ from app.sep.deps import (
     get_default_context,
     get_tasks_index_context,
     IsAuthenticated,
+    IsCsrfValidated,
+    IsNotAuthenticated,
 )
-from app.sep.middleware import CSRFMiddleware
+from app.sep.exceptions import LoginRedirectException
+from app.sep.middleware import CSRFMiddleware, messages
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +41,8 @@ sep_app = create_app(
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
 )
+sep_app.add_middleware(CSRFMiddleware)
+sep_app.add_middleware(messages.MessagesMiddleware)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 
@@ -65,29 +73,28 @@ User = get_user_model()
 templates = sep_settings.TEMPLATES
 
 
-# TODO: Improve exception handlers, maybe use it for redirects  # noqa: TD002, TD003
-# TODO: better errors for external services -- pmm, nomad, casdoor  # noqa: TD002, TD003
 @sep_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
-async def custom_error_handler(
+async def internal_error_handler(
     request: Request,
     exc: BaseException,
-) -> Response:
+) -> HTMLResponse:
     """Load custom error page."""
     base_url = get_base_url(request)
-    try:
-        # TODO: Refactor  # noqa: TD002, TD003
-        user = await get_current_user(request)
-    except HTTPTemporaryRedirectException as redirect_exc:
-        return RedirectResponse(
-            redirect_exc.location,
-            status_code=redirect_exc.status_code,
-        )
-    status_code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
+    logger.exception("Unhandled exception:", exc_info=exc)
+    user = await get_current_user(request)
+    messages.error(
+        request,
+        "Internal Server Error. Please contact the administrators for help.",
+        sticky=True,
+    )
     return templates.TemplateResponse(
         request=request,
-        status_code=status_code,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         name="error.html",
-        context={"exception": exc, **get_default_context(user, base_url)},
+        context={
+            "exception": "".join(format_exception(exc, limit=-1, chain=False)),
+            **get_default_context(request, user, base_url),
+        },
     )
 
 
@@ -100,7 +107,7 @@ async def custom_404_handler(
     base_url = get_base_url(request)
     try:
         user = await get_current_user(request)
-    except HTTPTemporaryRedirectException as redirect_exc:
+    except LoginRedirectException as redirect_exc:
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
@@ -109,7 +116,7 @@ async def custom_404_handler(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
         name="404.html",
-        context={"exception": exc, **get_default_context(user, base_url)},
+        context={"exception": exc, **get_default_context(request, user, base_url)},
     )
 
 
@@ -119,12 +126,72 @@ async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> N
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
-@sep_app.get("/oauth/callback")
-async def callback(code: str) -> RedirectResponse:
-    """Define callback route for OAuth."""
-    # TODO: Treat possible exceptions here  # noqa: TD002, TD003
-    oauth_token = await User.get_oauth_token(code)
-    response = RedirectResponse(url=sep_settings.OAUTH.POST_LOGIN_URI)
+@sep_app.exception_handler(BaseAuthProviderException)
+async def auth_provider_exception_handler(
+    request: Request, exc: BaseAuthProviderException
+) -> RedirectResponse:
+    """Handle exceptions raised by auth providers."""
+    logger.exception("Error connecting to auth provider:", exc_info=exc)
+    messages.error(request, exc.detail, sticky=True)
+    next_path = request.query_params.get("next", request.url.path)
+    redirect_location = request.url_for("login").path
+    if next_path and next_path != redirect_location:
+        redirect_location += f"?next={next_path}"
+    response = RedirectResponse(
+        redirect_location, status_code=status.HTTP_303_SEE_OTHER
+    )
+    response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
+    return response
+
+
+@sep_app.exception_handler(HTTPException)
+async def default_exception_handler(
+    request: Request, exc: HTTPException
+) -> RedirectResponse:
+    """Define default exception handler."""
+    error_detail = exc.detail
+    messages.error(request, error_detail)
+    return RedirectResponse(
+        request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@sep_app.get("/login", dependencies=[IsNotAuthenticated])
+async def login_form(
+    request: Request, next_path: Annotated[str, Query(alias="next")] = "/"
+) -> HTMLResponse:
+    """Display login form."""
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={
+            "csrf_token": request.state.csrf_token,
+            "messages": messages.get_messages(request),
+            "next_path": next_path,
+        },
+    )
+
+
+@sep_app.post("/login", dependencies=[IsNotAuthenticated, IsCsrfValidated])
+async def login(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    next_path: Annotated[str, Query(alias="next")] = "/",
+) -> RedirectResponse:
+    """Authenticate user from their username and password."""
+    # TODO(yan): Prevent malicious account lockout
+    # SEP-277
+    oauth_token = await User.get_oauth_token(
+        username=form_data.username, password=form_data.password
+    )
+    if not settings.ALLOW_CONCURRENT_SESSIONS:
+        await User.invalidate_tokens_for_user(
+            form_data.username, exclude_tokens=[oauth_token.access_token]
+        )
+    try:
+        next_path = run_pydantic_type_validator(URIPath, next_path)
+    except ValidationError:
+        next_path = "/"
+    response = RedirectResponse(next_path, status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         **sep_settings.SESSION.model_dump(by_alias=True),
         value=crypto_timestamp_serializer.dumps(oauth_token.access_token),
@@ -133,10 +200,9 @@ async def callback(code: str) -> RedirectResponse:
     return response
 
 
-@sep_app.post("/logout", dependencies=[IsAuthenticated])
+@sep_app.post("/logout", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
-    # TODO: CSRF protection  # noqa: TD002, TD003
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
     try:
@@ -158,11 +224,6 @@ async def read_root(
         context=context,
     )
 
-
-sep_app.add_middleware(CSRFMiddleware)
-
-
-# TODO: take all these logics from routes layer  # noqa: TD002, TD003
 
 if __name__ == "__main__":
     logging.config.dictConfig(settings.LOGGING_CONFIG)

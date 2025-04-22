@@ -43,7 +43,6 @@ async def node_list(
     inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """List Nodes."""
-    context["csrf_token"] = request.state.csrf_token
     context["inventory"] = await inventory_api.get("/")
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
@@ -77,7 +76,6 @@ async def node_detail(
     context: DefaultContext,
 ) -> HTMLResponse:
     """Retrieve Node Details."""
-    context["csrf_token"] = request.state.csrf_token
     context["node"] = node
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
@@ -138,7 +136,6 @@ async def service_detail(
     context: DefaultContext,
 ) -> HTMLResponse:
     """Retrieve Service Details."""
-    context["csrf_token"] = request.state.csrf_token
     context["service"] = service
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
@@ -213,7 +210,6 @@ async def schema_detail(
     context: DefaultContext,
 ) -> HTMLResponse:
     """Retrieve Schema Details."""
-    context["csrf_token"] = request.state.csrf_token
     context["schema"] = schema
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,

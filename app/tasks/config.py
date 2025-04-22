@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
+from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
@@ -23,7 +24,9 @@ class TasksSettings(BaseYamlAppSettings):
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
-
+    :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
+        Use `False` to disable the middleware completely.
+    :type SECURITY_HEADERS: SecurityHeadersOptions | None
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -31,6 +34,9 @@ class TasksSettings(BaseYamlAppSettings):
     NOMAD: NomadExecutor
     EXECUTE_MODE: str = "background"
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
+    SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
+        content_security_policy_strict=False
+    )
 
 
 tasks_settings = TasksSettings()

@@ -1,5 +1,6 @@
 """Define the app models."""
 
+from collections.abc import Sequence
 from typing import Annotated, Literal, Self
 
 from pydantic import AliasChoices, computed_field, ConfigDict, Field, field_validator
@@ -176,9 +177,25 @@ class CasdoorUser(BaseUser):
         """
         token_payload = await CasdoorTokenPayload.from_jwt(access_token)
         token_data = await settings.CASDOOR.get_token(token_payload.jti)
-        await CasdoorUser.get_oauth_token(
-            refresh_token=token_data["data"]["refreshToken"],
-        )
+        await settings.CASDOOR.delete_token(token_data)
+
+    @staticmethod
+    async def invalidate_tokens_for_user(
+        username: CasdoorUsernameField, exclude_tokens: Sequence[str] = ()
+    ) -> None:
+        """Invalidate all OAuth tokens for a user.
+
+        :param username: The username to invalidate OAuth tokens for.
+        :type username: str
+        :param exclude_tokens: A sequence of access tokens to exclude from invalidation.
+        :type exclude_tokens: Sequence[str]
+        """
+        app_data = await settings.CASDOOR.get_user_application(username)
+        async for active_token in settings.CASDOOR.get_active_tokens(
+            app_data["owner"], username
+        ):
+            if active_token["accessToken"] not in exclude_tokens:
+                await settings.CASDOOR.delete_token(active_token)
 
     @classmethod
     async def get_user(cls, username: CasdoorUsernameField) -> Self:

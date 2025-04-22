@@ -23,7 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.utils import async_run, sort_dict
+from app.core.utils import async_run, slugify, sort_dict
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
@@ -109,7 +109,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         task = queue_item.task if task is None else task
         # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD002, TD003
-        task.data["ID"] += f"-{queue_item.execution_request.target}"
+        task.data["ID"] += f"-{slugify(queue_item.execution_request.target)}"
         if queue_item.execution_request.meta:
             # TODO: target is currently pushed in to meta  # noqa: TD002, TD003
             queue_item.execution_request.meta["target"] = (
@@ -581,3 +581,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             await asyncio.gather(*push_logs_tasks)
         else:
             yield None
+
+    async def is_task_running(self, queue_item: TaskHistory) -> bool:
+        """Check if a TaskHistory is currently running.
+
+        :param queue_item: The task history record to check.
+        :type queue_item: TaskHistory
+        :return: A boolean indicating if the task history is currently running.
+        :rtype: bool
+        """
+        job_id = queue_item.execution_request.tracking.get("job_id")
+        eval_id = queue_item.execution_request.tracking.get("evaluation_id")
+        if not job_id or not eval_id:
+            return False
+        try:
+            self.get_allocation(job_id, eval_id)
+        except IndexError:
+            return False
+        return True

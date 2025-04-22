@@ -1,13 +1,40 @@
 """Provide the CasdoorSDK for interacting with Casdoor services."""
 
 from base64 import b64encode
+from collections.abc import AsyncGenerator
 from functools import cached_property
+from math import ceil
 from typing import Any, Literal, Self
 
+from aiohttp import ClientConnectionError
+from fastapi import HTTPException, status
 from pydantic import computed_field, model_validator
 
+from app.core.auth.exceptions import (
+    BaseAuthProviderException,
+    HTTPUnauthorizedException,
+)
 from app.core.requests import RemoteAPI
 from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
+
+
+class CasdoorException(BaseAuthProviderException):
+    """Define exception for Casdoor connection errors.
+
+    :param status_code: The HTTP status code for the error response. Defaults to
+        502 (Bad Gateway).
+    :type status_code: int
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Casdoor error".
+    :type detail: str
+    """
+
+    def __init__(
+        self,
+        status_code: int = status.HTTP_502_BAD_GATEWAY,
+        detail: str = "Casdoor error",
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail)
 
 
 # TODO: Make Casdoor optional, custom auth backend model selectable in settings  # noqa: TD002, TD003
@@ -54,6 +81,12 @@ class CasdoorSDK(RemoteAPI):
     :param allowed_issuers: The allowed token issuers (iss) for JWT validation.
         Defaults to an empty list.
     :type allowed_issuers: set[StrHttpUrl] | Literal["*"]
+    :param error_detail_key: The key to expect errors details to be. Defaults to
+        "message".
+    :type error_detail_key: RequiredStr
+    :param error_code_key: The key to expect error codes to be, or None if no error
+        code is expected. Defaults to "code".
+    :type error_code_key: RequiredStr | None
     """
 
     logger_name: str = __name__
@@ -65,6 +98,8 @@ class CasdoorSDK(RemoteAPI):
     front_endpoint: URL = URL()
     certificate_path: RelativeFilePath | None = None
     allowed_issuers: set[StrHttpUrl] | Literal["*"] = set()
+    error_detail_key: RequiredStr = "error_description"
+    error_code_key: RequiredStr | None = "error"
 
     @computed_field
     @cached_property
@@ -145,6 +180,32 @@ class CasdoorSDK(RemoteAPI):
         }
         return self.front_endpoint.replace(**url_data)
 
+    async def request(
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Perform an HTTP request and return the JSON response.
+
+        :param method: The HTTP method to use for the request.
+        :type method: str
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :return: The JSON response as a Python object.
+        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :raises HTTPException: If the request returns an error response.
+        """
+        try:
+            return await super().request(method, path, **kwargs)
+        except ClientConnectionError:
+            self.logger.exception("Failed to connect to Casdoor.")
+            raise CasdoorException(
+                detail=f"Cannot connect to Casdoor at {self.endpoint}"
+            ) from None
+
     async def refresh_token_request(
         self,
         refresh_token: str,
@@ -194,20 +255,31 @@ class CasdoorSDK(RemoteAPI):
         :type password: str | None
         :return: The OAuth token response from Casdoor.
         :rtype: dict[str, Any]
+        :raises HTTPUnauthorizedException: If authentication fails due to incorrect
+            credentials.
+        :raises HTTPException: If Casdoor responds with an unexpected error.
         """
         data = {
             "grant_type": "client_credentials",
             "client_id": self.client_id,
             "client_secret": self.client_secret,
         }
+        invalid_grant_message = "Invalid credentials."
         if code:
             data["code"] = code
             data["grant_type"] = "authorization_code"
+            invalid_grant_message = "Invalid authorization code."
         elif username and password:
             data["username"] = username
             data["password"] = password
             data["grant_type"] = "password"
-        return await self.post("/api/login/oauth/access_token", json=data)
+            invalid_grant_message = "Invalid username or password."
+        try:
+            return await self.post("/api/login/oauth/access_token", json=data)
+        except HTTPException as exc:
+            if exc.headers and exc.headers.get("X-Error-Code") == "invalid_grant":
+                raise HTTPUnauthorizedException(invalid_grant_message) from None
+            raise
 
     async def get_version_info(self) -> dict[str, Any]:
         """Retrieve the current version information from Casdoor.
@@ -262,7 +334,81 @@ class CasdoorSDK(RemoteAPI):
         :return: The token details retrieved from Casdoor.
         :rtype: dict[str, Any]
         """
-        return await self.get("/api/get-token", params={"id": token_id})
+        response = await self.get("/api/get-token", params={"id": token_id})
+        return response["data"]
+
+    async def get_tokens(
+        self, owner: str, username: str | None = None, **params: Any
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Retrieve the tokens for a username.
+
+        Retrieves the tokens details from Casdoor from the provided username and yields
+        each token data.
+
+        :param owner: The owner of the tokens.
+        :type owner: str
+        :param username: The username to retrieve tokens for, or None to retrieve all
+            tokens. Defaults to None.
+        :type username: str | None
+        :param params: Additional query parameters.
+        :type params: Any
+        :yield: The tokens details retrieved from Casdoor.
+        :rtype: dict[str, Any]
+        """
+        page_size = 100
+        params |= {
+            "owner": owner,
+            "organization": self.organization_name,
+            "pageSize": page_size,
+            "p": 1,
+        }
+        tokens = await self.get(
+            "/api/get-tokens",
+            params=params,
+        )
+        max_page = ceil(tokens.get("data2") or 0 / page_size)
+        while params["p"] <= max_page:
+            if tokens is None:
+                tokens = await self.get("/api/get-tokens", params=params)
+            for token in tokens["data"]:
+                if username is None or token["user"] == username:
+                    yield token
+            params["p"] += 1
+            tokens = None
+
+    async def get_active_tokens(
+        self, owner: str, username: str | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Retrieve the active tokens for a username.
+
+        Retrieves the active tokens details from Casdoor from the provided username and
+        yields each token data.
+
+        :param owner: The owner of the tokens.
+        :type owner: str
+        :param username: The username to retrieve tokens for, or None to retrieve all
+            tokens. Defaults to None.
+        :type username: str | None
+        :yield: The tokens details retrieved from Casdoor.
+        :rtype: dict[str, Any]
+        """
+        async for token in self.get_tokens(
+            owner, username, sortField="codeExpireIn", sortOrder="ascend"
+        ):
+            if token["codeExpireIn"] > 0:
+                break
+            yield token
+
+    async def delete_token(self, token: dict[str, Any]) -> bool:
+        """Delete a token from Casdoor.
+
+        :param token: The token to delete.
+        :type token: dict[str, Any]
+        :return: Whether the token was deleted.
+        :rtype: bool
+        """
+        response = await self.post("/api/delete-token", json=token)
+        return response["data"].lower() == "affected"
 
     async def get_users(self) -> list[dict[str, Any]]:
         """Retrieve a list of users from Casdoor.
@@ -277,18 +423,34 @@ class CasdoorSDK(RemoteAPI):
         )
         return users["data"]
 
-    async def get_user(self, user_id: str) -> dict[str, Any]:
+    async def get_user(self, username: str) -> dict[str, Any]:
         """Retrieve a specific user's information from Casdoor.
 
-        Fetches the details of a user identified by the provided user ID.
+        Fetches the details of a user identified by the provided username.
 
-        :param user_id: The ID of the user to retrieve.
-        :type user_id: str
+        :param username: The username of the user to retrieve.
+        :type username: str
         :return: A dictionary containing the user's information.
         :rtype: dict[str, Any]
         """
         user = await self.get(
             "/api/get-user",
-            params={"id": f"{self.organization_name}/{user_id}"},
+            params={"id": f"{self.organization_name}/{username}"},
+        )
+        return user["data"]
+
+    async def get_user_application(self, username: str) -> dict[str, Any]:
+        """Retrieve a specific user's application information from Casdoor.
+
+        Fetches the details of a user's application by username.
+
+        :param username: The username of the user to retrieve.
+        :type username: str
+        :return: A dictionary containing the user's information.
+        :rtype: dict[str, Any]
+        """
+        user = await self.get(
+            "/api/get-user-application",
+            params={"id": f"{self.organization_name}/{username}"},
         )
         return user["data"]

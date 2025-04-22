@@ -60,15 +60,26 @@
         <section id="saved-tasks">
             <h2>Saved</h2>
             {% include "archiver/partials/saved-tasks.html" %}
+            <br>
             <h2>Periodic Tasks</h2>
             {% include "tasks/partials/scheduled-tasks.html" %}
+            <br>
             <h3>Create an archiving process</h3>
-            {% include "archiver/partials/create-form.html" %}
+            <br>
+            {% if executor_hosts|length < 1 %}
+                <p>Unable to find suitable executor hosts.</p>
+            {% else %}
+                {% include "archiver/partials/create-form.html" %}
+            {% endif %}
         </section>
+        <br>
+        <br>
         <section id="pending-tasks">
             <h2>Pending</h2>
             {% include "tasks/partials/pending-tasks.html" %}
         </section>
+        <br>
+        <br>
         <section id="completed-tasks">
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}
