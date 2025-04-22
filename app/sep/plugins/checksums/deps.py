@@ -2,7 +2,7 @@
 
 import logging
 from typing import Annotated, Any
-
+import shlex
 from fastapi import Depends, Form, Request
 
 from app.inventory.models import ServiceTypeEnum
@@ -16,15 +16,20 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.checksums.models import ChecksumsCreate
-from app.tasks.models import GeneratedTask, Task, TaskOwner
-
+from app.tasks.models import (
+     Task,
+     TaskBackendEnum,
+     TaskHistoryStatusEnum,
+     TaskOwner,
+     TaskWrite,
+ )
 logger = logging.getLogger(__name__)
 
 
 async def build_checksums_task_payload(
     form: Annotated[ChecksumsCreate, Form()],
     inventory_api: InventoryAPI,
-) -> GeneratedTask:
+) -> TaskWrite:
     """Build the checksums task payload from form.
 
     Build the payload for an Checksums task to be executed, including the
@@ -34,9 +39,9 @@ async def build_checksums_task_payload(
     :type form: ChecksumsCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `GeneratedTask` object containing all the necessary
+    :return: A fully constructed `TaskWrite` object containing all the necessary
         commands and parameters for the Checksums task execution.
-    :rtype: GeneratedTask
+    :rtype: TaskWrite
     """
     service = await get_created_entity(
         inventory_api,
@@ -113,24 +118,26 @@ async def build_checksums_task_payload(
 
     # Adding flag arguments if set to True
     args.extend(arg for key, arg in flag_args.items() if getattr(form, key))
+    args.append("--execute")
 
-    return GeneratedTask(
-        app=TaskOwner.CHECKSUMS,
-        commands=[
-            {
-                "args": [*args],
-                "command": "pt-table-checksum",
-                "meta": {
-                    "service_name": service.name,
-                },
-            },
-        ],
-        name=form.task_name,
-        target=form.hostname,
-    )
+    return TaskWrite(
+         owner=TaskOwner.ALTERS,
+         backend=TaskBackendEnum.PROXY,
+         data={
+             "task": "run-command",
+             "meta": {
+                 "command": "pt-table-checksum",
+                 "args": shlex.join(args),
+                 "target": form.hostname,
+                 "_service_name": service.name
+             },
+             },
+         name=form.task_name,
+         target=form.hostname,
+     )
 
 
-ChecksumsGeneratedTask = Annotated[GeneratedTask, Depends(build_checksums_task_payload)]
+ChecksumsGeneratedTask = Annotated[TaskWrite, Depends(build_checksums_task_payload)]
 
 
 async def get_checksums_task(
@@ -167,13 +174,12 @@ def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :return: A dictionary containing hostname and table information.
     :rtype: dict[str, Any]
     """
-    data = task["data"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = task["data"]["meta"]
     service_name = ""
     if "service_name" in meta:
-        service_name = meta["service_name"]
+        service_name = meta["_service_name"]
     return {
-        "hostname": data["Constraints"][0]["RTarget"],
+        "hostname": meta["target"],
         "service_name": f"{service_name}",
     }
 
