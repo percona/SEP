@@ -126,7 +126,10 @@ def test_backups_detail(test_client, mock_task_api_dep, created_task):
 
     response = test_client.get(f"/backups/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
-    assert f"<title>Backups - {created_task.name} — Services Enablement Platform</title>" in response.text
+    assert (
+        f"<title>Backups - {created_task.name} — Services Enablement Platform</title>"
+        in response.text
+    )
 
     assert mock_task_api_dep.get.call_count == expected_call_count
     mock_task_api_dep.get.assert_any_call(f"/{created_task.name}/history/")
