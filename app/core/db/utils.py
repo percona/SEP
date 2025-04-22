@@ -1,11 +1,11 @@
 """Define database utilities."""
 
+from alembic.runtime.migration import MigrationContext
 from sqlalchemy import cast, Column, ColumnClause, func, Function, JSON, Text
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
-from sqlmodel import col, AutoString
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy.sql.type_api import TypeEngine
+from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
@@ -63,6 +63,8 @@ def func_json_extract(
     if db_engine.startswith("postgresql"):
         return func.json_extract_path_text(cast(col(json_column), JSON), *path_elems)
     return func.json_extract(col(json_column), json_join_path_elems(*path_elems))
+
+
 def compare_type(
     context: MigrationContext,  # noqa: ARG001
     inspected_column: Column,  # noqa: ARG001

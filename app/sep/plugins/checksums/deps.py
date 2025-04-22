@@ -1,8 +1,9 @@
 """Define dependencies for the Checksums plugin."""
 
 import logging
-from typing import Annotated, Any
 import shlex
+from typing import Annotated, Any
+
 from fastapi import Depends, Form, Request
 
 from app.inventory.models import ServiceTypeEnum
@@ -17,12 +18,12 @@ from app.sep.deps import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.checksums.models import ChecksumsCreate
 from app.tasks.models import (
-     Task,
-     TaskBackendEnum,
-     TaskHistoryStatusEnum,
-     TaskOwner,
-     TaskWrite,
- )
+    Task,
+    TaskBackendEnum,
+    TaskOwner,
+    TaskWrite,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,20 +122,20 @@ async def build_checksums_task_payload(
     args.append("--execute")
 
     return TaskWrite(
-         owner=TaskOwner.ALTERS,
-         backend=TaskBackendEnum.PROXY,
-         data={
-             "task": "run-command",
-             "meta": {
-                 "command": "pt-table-checksum",
-                 "args": shlex.join(args),
-                 "target": form.hostname,
-                 "_service_name": service.name
-             },
-             },
-         name=form.task_name,
-         target=form.hostname,
-     )
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-table-checksum",
+                "args": shlex.join(args),
+                "target": form.hostname,
+                "_service_name": service.name,
+            },
+        },
+        name=form.task_name,
+        target=form.hostname,
+    )
 
 
 ChecksumsGeneratedTask = Annotated[TaskWrite, Depends(build_checksums_task_payload)]
