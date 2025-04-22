@@ -1,5 +1,6 @@
 $(document).ready(function() {
     const lastMessagesIds = {};
+
     $('.log-console.streaming-console').each(function() {
         const $logConsole = $(this);
         const taskId = $logConsole.data('task-id');
@@ -9,94 +10,94 @@ $(document).ready(function() {
 
         eventSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
+            const logId = data.id;
 
-            const logId = data.id
-            if (logId <= lastMessagesIds[taskId]) {
-                return;
-            }
-            lastMessagesIds[taskId] = logId
+            if (logId <= lastMessagesIds[taskId]) return;
+            lastMessagesIds[taskId] = logId;
 
-            const msg = data.msg;
-            const step = data.step;
-            const type = data.type;
+            const {
+                msg,
+                step,
+                type
+            } = data;
 
             if ($logConsole.find('.log-step-content[data-step-name="' + step + '"]').length === 0) {
-                const stepTab = $('<a href="#" class="log-step-tab" data-step-name="' + step + '">' + step + '</a>');
-                $logConsole.find('.log-bottom-bar .log-tabs').append(stepTab);
+                const stepTab = $('<button type="button" class="text large log-step-tab" data-step-name="' + step + '">' + step + '</button>');
+                $logConsole.find('.log-footer .log-tabs').append(stepTab);
 
-                if ($logConsole.find('.log-step-tab').length === 1) {
-                    stepTab.addClass('selected');
-                }
+                if ($logConsole.find('.log-step-tab').length === 1) stepTab.addClass('selected');
 
                 const stepContent = $('<div class="log-step-content" data-step-name="' + step + '"></div>');
-                if ($logConsole.find('.log-step-content').length === 0) {
-                    stepContent.show();
-                } else {
-                    stepContent.hide();
-                }
+                if ($logConsole.find('.log-step-content').length === 0) stepContent.show();
+                else stepContent.hide();
 
                 const stdoutPre = $('<pre class="log-output" data-log-type="stdout" style="display: none;"></pre>');
                 const stderrPre = $('<pre class="log-output" data-log-type="stderr" style="display: none;"></pre>');
 
-                const selectedLogType = $logConsole.find('.log-type-tab.selected').data('log-type');
-                if (selectedLogType === 'stdout') {
-                    stdoutPre.css("display", "block");
-                } else {
-                    stderrPre.css("display", "block");
-                }
+                const selectedTab = $logConsole.find('[role="log-tab"][aria-selected="true"]');
+                const selectedLogType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
+                if (selectedLogType === 'stdout') stdoutPre.show();
+                else stderrPre.show();
 
                 stepContent.append(stdoutPre);
                 stepContent.append(stderrPre);
                 $logConsole.find('.log-content').append(stepContent);
             }
 
-            const preElement = $logConsole.find('.log-step-content[data-step-name="' + step + '"] .log-output[data-log-type="' + type + '"]');
-            preElement.append(document.createTextNode(msg));
+            const $pre = $logConsole.find('.log-step-content[data-step-name="' + step + '"] .log-output[data-log-type="' + type + '"]');
+            $pre.append(document.createTextNode(msg));
 
             const $logContent = $logConsole.find('.log-content');
             $logContent.scrollTop($logContent[0].scrollHeight);
 
-            const selectedLogType = $logConsole.find('.log-type-tab.selected').data('log-type');
-            if (type !== selectedLogType) {
-                const $typeTab = $logConsole.find('.log-type-tab[data-log-type="' + type + '"]');
-                $typeTab.addClass('tab-notification');
+            const selectedTabType = $logConsole.find('[role="log-tab"][aria-selected="true"]').attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
+            if (type !== selectedTabType) {
+                $logConsole.find('[role="log-tab"][aria-controls="log-' + type + '-' + taskId + '"]').addClass('tab-notification');
             }
 
-            const selectedStepName = $logConsole.find('.log-step-tab.selected').data('step-name');
-            if (step !== selectedStepName) {
-                const $stepTab = $logConsole.find('.log-step-tab[data-step-name="' + step + '"]');
-                $stepTab.addClass('tab-notification');
+            const selectedStep = $logConsole.find('.log-step-tab.selected').data('step-name');
+            if (step !== selectedStep) {
+                $logConsole.find('.log-step-tab[data-step-name="' + step + '"]').addClass('tab-notification');
             }
         };
 
         eventSource.addEventListener('finish', function(event) {
             eventSource.close();
             const finishData = JSON.parse(event.data);
+
             if (lastMessagesIds[taskId] === 0) {
                 window.location.reload();
             } else {
                 console.log(`Log stream for ${taskId} finished`);
-                if (finishData.status === 'success') {
-                    const completedIcon = $('<i class="icons unselectable" style="color: #8ACE00; margin-left: auto;" title="Task completed">check_circle</i>');
-                    $logConsole.find('.log-bottom-bar').append(completedIcon);
-                    $logConsole.addClass('completed');
-                } else if (finishData.status === 'failed') {
-                    const completedIcon = $('<i class="icons unselectable" style="color: #CE2900; margin-left: auto;" title="Task failed">error_outline</i>');
-                    $logConsole.find('.log-bottom-bar').append(completedIcon);
-                    $logConsole.addClass('failed');
-                }
+
+                const statusClass = finishData.status === 'success' ? 'success' : 'error';
+                const icon = finishData.status === 'success' ? 'check' : 'report';
+                const label = finishData.status === 'success' ? 'Done' : 'Failed';
+
+                const statusEl = $(`
+                    <div class="status">
+                        <div class="${statusClass}">
+                            <span class="badge material-symbols-outlined">${icon}</span>
+                            <span class="label">${label}</span>
+                        </div>
+                    </div>
+                `);
+
+                $logConsole.find('.log-footer .log-tabs').append(statusEl);
+                $logConsole.addClass(finishData.status);
                 delete lastMessagesIds[taskId];
             }
         });
 
         eventSource.onerror = function(e) {
-            console.error(`Error receiving SSE for task ${taskId}: ${e}`);
+            console.error(`Error receiving SSE for task ${taskId}:`, e);
             if (lastMessagesIds[taskId] === 0) {
                 eventSource.close();
                 window.location.reload();
             }
         };
     });
+
 
     $('.logs-button').click(function() {
         const logId = $(this).data('log-id');
@@ -108,40 +109,6 @@ $(document).ready(function() {
         } else {
             button.text('visibility');
         }
-    });
-
-    $('.log-type-tab').click(function(e) {
-        e.preventDefault();
-        const $this = $(this);
-        const logType = $this.data('log-type');
-        const $logConsole = $this.closest('.log-console');
-
-        $this.closest('.log-tabs').find('.log-type-tab').removeClass('selected');
-        $this.addClass('selected');
-
-        $logConsole.find('.log-output').hide();
-        $logConsole.find('.log-step-content:visible .log-output[data-log-type="' + logType + '"]').show();
-
-        $this.removeClass('tab-notification');
-    });
-
-    $('.log-console').on('click', '.log-step-tab', function(e) {
-        e.preventDefault();
-        const $this = $(this);
-        const stepName = $this.data('step-name');
-        const $logConsole = $this.closest('.log-console');
-
-        $this.closest('.log-tabs').find('.log-step-tab').removeClass('selected');
-        $this.addClass('selected');
-
-        $logConsole.find('.log-step-content').hide();
-        $logConsole.find('.log-step-content[data-step-name="' + stepName + '"]').show();
-
-        const selectedLogType = $logConsole.find('.log-type-tab.selected').data('log-type');
-        $logConsole.find('.log-output').hide();
-        $logConsole.find('.log-step-content[data-step-name="' + stepName + '"] .log-output[data-log-type="' + selectedLogType + '"]').show();
-
-        $this.removeClass('tab-notification');
     });
 
     $('.word-wrap-checkbox').change(function() {
@@ -158,4 +125,35 @@ $(document).ready(function() {
     $('.toggle-label').click(function(e) {
         $(this).prev(".switch").click();
     });
+    $('.modal-log').on('click', 'button[role="log-tab"]', function(e) {
+        e.preventDefault();
+        const $this = $(this);
+        const $modal = $this.closest('.modal-log');
+        const logType = $this.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
+
+        $this.attr('aria-selected', 'true').siblings('[role="log-tab"]').attr('aria-selected', 'false');
+
+        $modal.find('.log-output').hide();
+        $modal.find('.log-step-content:visible .log-output[data-log-type="' + logType + '"]').show();
+    });
+
+    $('.modal-log').on('click', '.log-step-tab', function(e) {
+        e.preventDefault();
+        const $this = $(this);
+        const $modal = $this.closest('.modal-log');
+        const stepName = $this.data('step-name');
+
+        $this.addClass('selected').siblings('.log-step-tab').removeClass('selected');
+
+        $modal.find('.log-step-content').hide();
+        const $selectedStep = $modal.find('.log-step-content[data-step-name="' + stepName + '"]');
+        $selectedStep.show();
+
+        const selectedTab = $modal.find('[role="log-tab"][aria-selected="true"]');
+        const logType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
+
+        $selectedStep.find('.log-output').hide();
+        $selectedStep.find('.log-output[data-log-type="' + logType + '"]').show();
+    });
+
 });

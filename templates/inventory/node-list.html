@@ -6,7 +6,8 @@
     {% with inventory_table_title = "Node List", inventory_sync_route = "/inventory/sync/" %}
         {% include "inventory/partials/sync-button.html" %}
     {% endwith %}
-    <table>
+    <br>
+    <table data-table>
         <thead>
             <tr>
                 <th>ID</th>
@@ -43,7 +44,9 @@
                               data-confirm-message="Are you sure you want to delete node {{ node.name }} (#{{ node.id }})?">
                             {#                    TODO: Fix button clickable size #}
                             <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-                            <button name="location" class="icons submitButton">delete forever</button>
+                            <button name="location" class="icons submitButton">
+                                <span class="material-symbols-outlined">delete_forever</span>
+                            </button>
                         </form>
                     </td>
                 </tr>
