@@ -3,16 +3,21 @@
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Enter a new task definition</legend>
+        <br>
         <div>
             <label>
                 Alias
                 <input id="name" name="name" maxlength="100" size="20" required>
             </label>
         </div>
+        <br>
         <label>
             Definition
+            <br>
             <textarea id="payload" name="payload" rows="40" cols="80" required></textarea>
         </label>
+        <br>
+        <br>
         <fieldset>
             <legend>Format</legend>
             <label title="Nomad-only">
@@ -28,20 +33,28 @@
                 <input type="radio" id="format-yaml" name="fmt" value="yaml">
             </label>
         </fieldset>
-        <label>
-            Engine
-            <select id="backend" name="backend" required>
-                {% for backend in available_backends %}<option value="{{ backend }}">{{ backend.capitalize() }}</option>{% endfor %}
-            </select>
-        </label>
-        <label>
-            Owner
-            <select id="owner" name="owner" required>
-                {% for owner in available_owners %}
-                    <option value="{{ owner }}" {% if loop.first %}selected{% endif %}>{{ owner.name.capitalize() }}</option>
-                {% endfor %}
-            </select>
-        </label>
+        <br>
+        <div class="input select">
+            <label>
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Engine</span>
+                <select id="backend" name="backend" required>
+                    {% for backend in available_backends %}<option value="{{ backend }}">{{ backend.capitalize() }}</option>{% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="input select">
+            <label>
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Owner</span>
+                <select id="owner" name="owner" required>
+                    {% for owner in available_owners %}
+                        <option value="{{ owner }}" {% if loop.first %}selected{% endif %}>{{ owner.name.capitalize() }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
     </fieldset>
-    <button type="submit" title="Add a new task">Create</button>
+    <br>
+    <button class="contained large" type="submit" title="Add a new task">Create</button>
 </form>

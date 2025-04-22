@@ -23,7 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.utils import async_run, sort_dict
+from app.core.utils import async_run, slugify, sort_dict
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
@@ -109,7 +109,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         task = queue_item.task if task is None else task
         # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD002, TD003
-        task.data["ID"] += f"-{queue_item.execution_request.target}"
+        task.data["ID"] += f"-{slugify(queue_item.execution_request.target)}"
         if queue_item.execution_request.meta:
             # TODO: target is currently pushed in to meta  # noqa: TD002, TD003
             queue_item.execution_request.meta["target"] = (
