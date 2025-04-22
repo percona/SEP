@@ -28,10 +28,13 @@
 {% endblock behaviours %}
 {% block main %}
     {% include "inventory/partials/breadcrumb.html" %}
+    <br>
     {% block inventory_entity_details %}
     {% endblock inventory_entity_details %}
+    <br>
     {% block inventory_table %}
     {% endblock inventory_table %}
+    <br>
     {% block inventory_create %}
     {% endblock inventory_create %}
 {% endblock main %}

@@ -24,7 +24,7 @@
         </section>
     {% endif %}
     <h2>Available tasks</h2>
-    <table>
+    <table data-table="available-tasks">
         <caption>Tasks available for reuse</caption>
         <thead>
             <tr>
@@ -50,5 +50,7 @@
             {% endfor %}
         </tbody>
     </table>
+    <br>
+    <br>
     {% include "tasks/partials/create-form.html" %}
 {% endblock main %}
