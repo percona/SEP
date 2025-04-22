@@ -49,11 +49,9 @@
 <form action="" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <input type="hidden" name="backup_type" value="config">
-    <input type="hidden"
-                   id="task_name"
-                   name="task_name"
-                   class="validate"
-                   value="run-python" />
+    <input type="hidden" id="task_name" name="task_name" class="validate" value="run-python" />
+    <input type="hidden" id="service_id" name="service_id" class="validate" value="1" />
+    <input type="hidden" id="hostname" name="hostname" class="validate" value="deb-1" />
     <fieldset>
         <div id="storage_configuration">
             <legend>1. Storage Configuration</legend>
