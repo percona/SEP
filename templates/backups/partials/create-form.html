@@ -274,12 +274,17 @@
                    name="defaults_file"
                    placeholder="/path/to/defaults.cnf" />
         </label>
-        <label id="compression_algorithm_wrapper"
-               for="compression_algorithm"
-               style="display:none">
-            Compression Algorithm:
-            <select id="compression_algorithm" name="compression_algorithm" title=""></select>
-        </label>
+        <br>
+        <br>
+        {% set compression_algorithm_title = "Select the type of compression algorithm" %}
+        <div class="select" style="display:none" id="compression_algorithm_wrapper">
+            <label for="compression_algorithm" title="{{ compression_algorithm_title }}">
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Compression Algorithm:</span>
+                <select id="compression_algorithm" name="compression_algorithm" >
+                </select>
+            </label>
+        </div>
     </fieldset>
     <fieldset id="mydumper_container" style="flex-direction: column; gap: 1em">
         <legend>Mydumper Configuration</legend>
