@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Set the active sidebar link
     sidebarLinks.forEach(link => {
+        if (link.target === '_blank') return;
+
         const linkPath = new URL(link.href, window.location.origin).pathname;
         if (linkPath === currentPath) {
             link.classList.add('active');
