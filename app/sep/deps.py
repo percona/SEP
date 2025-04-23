@@ -174,8 +174,12 @@ def get_default_context(
     :rtype: dict[str, Any]
     """
     pmm_url = next(
-        (s.pmm["endpoint"] for s in sep_settings.SYNCERS if s.syncer.endswith("PMMSyncer") and hasattr(s, "pmm")),
-        None
+        (
+            s.pmm["endpoint"]
+            for s in sep_settings.SYNCERS
+            if s.syncer.endswith("PMMSyncer") and hasattr(s, "pmm")
+        ),
+        None,
     )
     return {
         "user": user,
