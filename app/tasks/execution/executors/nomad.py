@@ -24,6 +24,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
 from app.core.utils import async_run, slugify, sort_dict
+from app.core.utils.strings import b64decode_str
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
@@ -480,8 +481,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params = {
             "task": step,
             "type": log_type,
-            "plain": "true",
             "follow": "true",
+            "offset": 0,
         }
         state = "running"
         while state == "running":
@@ -508,10 +509,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         await asyncio.sleep(self.wait_interval)
                         continue
                     response.raise_for_status()
-                    async for line in response.content:
-                        await queue.put(
-                            TaskLog(step=step, type=log_type, msg=line.decode("utf-8"))
-                        )
+                    async for chunk, _ in response.content.iter_chunks():
+                        data = json.loads(chunk)
+                        params["offset"] = data.get("Offset", params["offset"])
+                        if data and (msg := data.get("Data")):
+                            await queue.put(
+                                TaskLog(
+                                    step=step, type=log_type, msg=b64decode_str(msg)
+                                )
+                            )
             except SocketTimeoutError:
                 logger.info(
                     "Timeout occurred while fetching %s logs for %s (%s)",
