@@ -14,7 +14,6 @@ from uuid import uuid1
 from aiohttp import (
     ClientError,
     ClientTimeout,
-    SocketTimeoutError,
 )
 from fastapi import HTTPException, status
 from nomad import Nomad
@@ -500,7 +499,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         response.status == status.HTTP_404_NOT_FOUND
                         and alloc["TaskStates"][step]["StartedAt"] is None
                     ):
-                        logger.info(
+                        logger.debug(
                             "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
                             step,
                             alloc_id,
@@ -509,24 +508,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         await asyncio.sleep(self.wait_interval)
                         continue
                     response.raise_for_status()
+                    empty_data_count = 0
                     async for chunk, _ in response.content.iter_chunks():
                         data = json.loads(chunk)
                         params["offset"] = data.get("Offset", params["offset"])
                         if data and (msg := data.get("Data")):
+                            empty_data_count = 0
                             await queue.put(
                                 TaskLog(
                                     step=step, type=log_type, msg=b64decode_str(msg)
                                 )
                             )
-            except SocketTimeoutError:
-                logger.info(
-                    "Timeout occurred while fetching %s logs for %s (%s)",
-                    log_type,
-                    step,
-                    alloc_id,
-                )
-                alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
-                state = alloc["TaskStates"][step]["State"]
+                        elif empty_data_count >= self.log_socket_read_timeout:
+                            logger.debug(
+                                "No data received for %s seconds, rechecking job status...",
+                                self.log_socket_read_timeout,
+                            )
+                            alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
+                            state = alloc["TaskStates"][step]["State"]
+                            break
+                        else:
+                            empty_data_count += 1
             except ClientError:
                 logger.exception(
                     "An error occurred while fetching %s logs for %s (%s)",
