@@ -571,8 +571,14 @@
             </label>
         </div>
     </fieldset>
-    <button type="submit">Edit</button>
-    <button type="reset">Reset</button>
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                padding: 1em 0">
+        <button class="contained large" type="submit">Edit</button>
+        &nbsp;&nbsp;
+        <button class="text large" type="reset">Reset</button>
+    </div>
 </form>
 {% set is_s3_upload = backup_data.get('is_s3', False) %}
 {% set is_rsync_upload = backup_data.get('is_rsync', False) %}

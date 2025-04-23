@@ -423,8 +423,14 @@
             </div>
         </fieldset>
     </fieldset>
-    <button type="submit">Edit</button>
-    <button type="reset">Reset</button>
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                padding: 1em 0">
+        <button class="contained large" type="submit">Edit</button>
+        &nbsp;&nbsp;
+        <button class="text large" type="reset">Reset</button>
+    </div>
 </form>
 {% set serviceSchemas = {} %}
 {% for service in mysql_services %}

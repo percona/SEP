@@ -6,19 +6,23 @@
     <legend>Main options</legend>
     <fieldset>
         <legend>Executor Host</legend>
-        <label for="hostname"
-               title="Select the hostname of the target system for task execution.">Select host</label>
-        {% if executor_host|length == 0 %}
-            <select id="hostname" disabled>
-                <option selected>{{ task.meta.target }}</option>
-            </select>
-            <input type="hidden" name="hostname" value="{{ task.meta.target }}">
-        {% else %}
-            <select id="hostname" name="hostname">
-                <option value="{{ task.meta.target }}" selected>{{ task.meta.target }}</option>
-                {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
-            </select>
-        {% endif %}
+        {% set hostname_title = "Select the hostname of the target system for task execution." %}
+        <div class="select">
+            <label for="hostname" title="{{ hostname_title }}">
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Select host</span>
+                {% if executor_hosts|length == 0 %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                        <option selected>{{ task.meta.target }}</option>
+                    </select>
+                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                {% else %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}">
+                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                    </select>
+                {% endif %}
+            </label>
+        </div>
     </fieldset>
     <fieldset style="display: flex; flex-flow: column;">
         <legend>Archive Type</legend>
@@ -33,17 +37,24 @@
                        value="{{ task.name }}"
                        required />
             </label>
-            <label for="swap_drop" title="Editing archiving type is disabled">
-                Type
-                <select id="swap_drop" name="swap_drop" disabled>
-                    {%- set swap_drop_options = {0: 'Standard purge', 1: 'Swap and drop', 2: 'Swap-archive-drop'} -%}
-                    <option>{{ swap_drop_options[archive_data.swap_drop] }}</option>
-                </select>
-            </label>
+            <br>
+            <br>
+            <div class="select">
+                <label for="swap_drop" title="Editing archiving type is disabled">
+                    Type
+                    <select id="swap_drop" name="swap_drop" disabled>
+                        {%- set swap_drop_options = {0: 'Standard purge', 1: 'Swap and drop', 2: 'Swap-archive-drop'} -%}
+                        <option>{{ swap_drop_options[archive_data.swap_drop] }}</option>
+                    </select>
+                </label>
+            </div>
+            <br>
         </div>
     </fieldset>
+    <br>
     <fieldset>
         <legend>Source details</legend>
+        <br>
         <div>
             <label for="service_id" title="Source editing is disabled">
                 Database host
@@ -52,7 +63,8 @@
                 </select>
             </label>
         </div>
-        <div>
+        <br>
+        <div style=" display: flex; align-items: center; flex-wrap: wrap ">
             {% if archive_data.source_query %}
                 <div id="source_query_container"
                      style="width: fit-content;
@@ -69,21 +81,27 @@
                     </label>
                 </div>
             {% else %}
-                <label for="source_db_id" title="Source editing is disabled">
-                    Schema
-                    <select id="source_db_id" name="source_db_id" disabled>
-                        <option value="">{{ archive_data.source_db }}</option>
-                    </select>
-                </label>
-                <label for="source_table_id" title="Source editing is disabled">
-                    Table
-                    <select id="source_table_id" name="source_table_id" disabled>
-                        <option value=" ">{{ archive_data.source_table }}</option>
-                    </select>
-                </label>
+                <div class="select">
+                    <label for="source_db_id" title="Source editing is disabled">
+                        Schema
+                        <select id="source_db_id" name="source_db_id" disabled>
+                            <option value="">{{ archive_data.source_db }}</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="select">
+                    <label for="source_table_id" title="Source editing is disabled">
+                        Table
+                        <select id="source_table_id" name="source_table_id" disabled>
+                            <option value=" ">{{ archive_data.source_table }}</option>
+                        </select>
+                    </label>
+                </div>
             {% endif %}
         </div>
+        <br>
         {% if archive_data.swap_drop == 2 %}
+            <br>
             <div id="swp_table_suffix_container">
                 <label for="swp_table_suffix"
                        title="Select a date suffix for the swap table.">
@@ -95,6 +113,7 @@
                            {% if archive_data.swp_table_suffix %}value="{{ archive_data.swp_table_suffix }}"{% endif %}>
                 </label>
             </div>
+            <br>
         {% endif %}
         {% if archive_data.swap_drop != 1 %}
             <div id="purge_options_container">
@@ -109,7 +128,8 @@
                            {% if archive_data.where %}value="{{ archive_data.where }}"{% endif %}
                            placeholder="ts < current_date - interval 90 day" />
                 </label>
-                <br />
+                <br>
+                <br>
                 {% set use_index_title = "Optionally specify an index to optimize the query execution." %}
                 <label for="use_index" title="{{ use_index_title }}">
                     Use Index
@@ -119,6 +139,8 @@
                            {% if archive_data and archive_data.use_index %}value="{{ archive_data.use_index }}"{% endif %}
                            placeholder="created_date" />
                 </label>
+                <br>
+                <br>
                 <label for="limit"
                        title="Set the number of rows to fetch and archive per statement.">
                     Limit
@@ -139,7 +161,8 @@
                            placeholder="1"
                            style="width: 3em" />
                 </label>
-                <br />
+                <br>
+                <br>
                 <label for="extra_args"
                        title="Type optional additional arguments for the archive task.">
                     Extra args
@@ -150,7 +173,8 @@
                            {% if archive_data.extra_args %}value="{{ archive_data.extra_args }}"{% endif %}
                            style="width: 25em" />
                 </label>
-                <br />
+                <br>
+                <br>
                 <label for="disable_binlog"
                        title="Disable binary logging for the operation.">
                     Disable Binlog
@@ -191,6 +215,8 @@
                                 <input type="text"
                                        id="dest_file"
                                        name="dest_file"
+                                       Main
+                                       options
                                        placeholder="/path/to/destination/file.txt"
                                        disabled
                                        value="{{ archive_data.dest_file }}"
@@ -202,6 +228,12 @@
             </fieldset>
         {% endif %}
     {% endif %}
-    <button type="submit">Edit</button>
-    <button id="reset-form" type="reset">Reset</button>
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                padding: 1em 0">
+        <button class="contained large" type="submit">Edit</button>
+        &nbsp;&nbsp;
+        <button class="text large" type="reset">Reset</button>
+    </div>
 </form>
