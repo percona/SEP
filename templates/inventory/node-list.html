@@ -10,7 +10,6 @@
     <table data-table>
         <thead>
             <tr>
-                <th>ID</th>
                 <th>Name</th>
                 <th>Address</th>
                 <th>Type</th>
@@ -21,7 +20,6 @@
         <tbody>
             {% for node in inventory %}
                 <tr>
-                    <td>{{ node.id }}</td>
                     <td>
                         <a href="{{ node.id }}">{{ node.name }}</a>
                     </td>
