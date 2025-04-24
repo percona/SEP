@@ -181,6 +181,7 @@ def get_default_context(
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "messages": messages.get_messages(request),
+        "pmm_url": sep_settings.PMM_FRONTEND,
     }
 
 
