@@ -175,7 +175,7 @@ def get_default_context(
     """
     pmm_url = next(
         (
-            s.pmm["endpoint"]
+            s.pmm.get("external_url") or s.pmm.get("endpoint")
             for s in sep_settings.SYNCERS
             if s.syncer.endswith("PMMSyncer") and hasattr(s, "pmm")
         ),
