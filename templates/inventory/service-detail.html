@@ -7,10 +7,6 @@
         {% include "inventory/partials/sync-button.html" %}
     {% endwith %}
     <dl>
-        <dt>ID</dt>
-        <dd>
-            {{ service.id }}
-        </dd>
         <dt>Name</dt>
         <dd>
             {{ service.name }}
@@ -41,10 +37,6 @@
                 {{ service.environment }}
             </dd>
         {% endif %}
-        <dt>Node ID</dt>
-        <dd>
-            {{ service.node_id }}
-        </dd>
     </dl>
     <hr>
 {% endblock inventory_entity_details %}
@@ -53,7 +45,6 @@
     <table data-table>
         <thead>
             <tr>
-                <th>ID</th>
                 <th>Name</th>
                 <th>Actions</th>
             </tr>
@@ -61,7 +52,6 @@
         <tbody>
             {% for schema in service.schemas %}
                 <tr>
-                    <td>{{ schema.id }}</td>
                     <td>
                         <a href="{{ url_for('schema_detail', schema_id=schema.id) }}">{{ schema.name }}</a>
                     </td>
