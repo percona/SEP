@@ -7,10 +7,6 @@
         {% include "inventory/partials/sync-button.html" %}
     {% endwith %}
     <dl>
-        <dt>ID</dt>
-        <dd>
-            {{ node.id }}
-        </dd>
         <dt>Name</dt>
         <dd>
             {{ node.name }}
@@ -43,7 +39,6 @@
     <table data-table>
         <thead>
             <tr>
-                <th>ID</th>
                 <th>Name</th>
                 <th>Type</th>
                 <th>Port</th>
@@ -53,7 +48,6 @@
         <tbody>
             {% for service in node.services %}
                 <tr>
-                    <td>{{ service.id }}</td>
                     <td>
                         <a href="{{ url_for('service_detail', service_id=service.id) }}">{{ service.name }}</a>
                     </td>
