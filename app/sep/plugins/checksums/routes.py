@@ -44,6 +44,7 @@ async def checksums_index(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
 async def checksums_create(
+    request: Request,
     task: ChecksumsGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
@@ -53,8 +54,10 @@ async def checksums_create(
         "/generate/",
         json=task.model_dump(),
     )
+
+    task_path = request.url_for("checksums_detail", task_name=task.name)
     return RedirectResponse(
-        "/checksums",
+        task_path,
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
