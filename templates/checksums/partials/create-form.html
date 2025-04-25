@@ -69,6 +69,7 @@
 {% set form_class = "modal" if modal_required else "" %}
 <form action=""
       method="post"
+      id="checksum-create-form"
       class="{{ form_class }}"
       style="padding-left: 0">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
@@ -106,7 +107,8 @@
                        class="validate"
                        required
                        title="{{ task_name_title }}"
-                       placeholder="Enter a unique task name">
+                       placeholder="Enter a unique task name"
+                       required>
             </div>
             <div class="select">
                 {% set service_id_title = "Select the database host from the inventory to connect to." %}
@@ -329,6 +331,8 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
+    const form = document.getElementById('checksum-create-form');
+    const createButton = form.querySelector('button[type="submit"]');
 
     let selectedService = null;
     let selectedSchema = null;
@@ -381,6 +385,10 @@
         }
     }
 
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
+
     connectToSelect.addEventListener('change', function () {
         const hiddenSchemaInput = document.getElementById("schema_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
@@ -397,14 +405,6 @@
             selectedSchema = this.value;
         }
         populateTables(selectedService, selectedSchema);
-    });
-
-    window.addEventListener('DOMContentLoaded', function () {
-        if (connectToSelect.options.length === 1) {
-            const singleHost = connectToSelect.options[0].value;
-            selectedService = singleHost;
-            populateSchemas(singleHost);
-        }
     });
 
     recursion_method.addEventListener('change', function () {
@@ -436,6 +436,18 @@
         } else {
             explain_arg.disabled = false;
         }
+    });
+
+    form.addEventListener('input', updateCreateButtonState);
+    form.addEventListener('change', updateCreateButtonState);
+
+    window.addEventListener('DOMContentLoaded', function () {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            selectedService = singleHost;
+            populateSchemas(singleHost);
+        }
+        updateCreateButtonState();
     });
 
 </script>
