@@ -81,7 +81,7 @@ def test_backups_index(test_client):
     response = test_client.get("/backups/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    assert "Backups — Services Enablement Platform" in response.text
+    assert "<title>Backups — Services Enablement Platform</title>" in response.text
 
 
 def test_backups_create(test_client, mock_task_api_dep, backup_create):
