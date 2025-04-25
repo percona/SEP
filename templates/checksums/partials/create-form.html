@@ -388,12 +388,12 @@
         const isDisabled = !(selectedService && serviceSchemas[selectedService]);
         schemaSelect.disabled = isDisabled;
         schemaSelect.innerHTML = `<option value="-1" selected>${isDisabled ? "No schema" : "Not selected"}</option>`;
-    
+
         tableSelect.disabled = true;
         tableSelect.innerHTML = '<option value="-1" selected>No table</option>';
         selectedSchema = null;
         selectedTable = null;
-    
+
         if (!isDisabled) {
             const schemas = Object.entries(serviceSchemas[selectedService]);
             for (const [schemaId, schema] of schemas) {
@@ -404,14 +404,14 @@
             }
         }
     }
-    
+
     function populateTables(selectedService, selectedSchema) {
         const hasTables = selectedSchema && serviceSchemas[selectedService] && serviceSchemas[selectedService][selectedSchema];
         const isDisabled = !hasTables;
         tableSelect.disabled = isDisabled;
         tableSelect.innerHTML = `<option value="-1" selected>${isDisabled ? "No table" : "Not selected"}</option>`;
         selectedTable = null;
-    
+
         if (hasTables) {
             const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
             for (const [tableId, table] of tables) {
