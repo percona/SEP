@@ -129,8 +129,8 @@ class BackupCreate(BackupConfigAll):
     :type encrypt: bool
     :param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.
     :type encrypt_using_tmpdir: bool
-    :param only_if_running_slave: Only perform backup if the server is a replication slave.
-    :type only_if_running_slave: bool
+    :param only_if_running_replica: Only perform backup if the server is a replica.
+    :type only_if_running_replica: bool
     :param only_if_read_only: Only perform backup if the server is in read-only mode.
     :type only_if_read_only: bool
     :param logging_dir: Directory where logs are stored.
@@ -175,8 +175,8 @@ class BackupCreate(BackupConfigAll):
     :type xtrabackup_desync_pxc: bool
     :param xtrabackup_rsync: Whether to use rsync for file copying in xtrabackup.
     :type xtrabackup_rsync: bool
-    :param xtrabackup_slave_info: Whether to include slave info in xtrabackup.
-    :type xtrabackup_slave_info: bool
+    :param xtrabackup_replica_info: Whether to include replica info in xtrabackup.
+    :type xtrabackup_replica_info: bool
     :param xtrabackup_defaults_file: Path to the defaults file for xtrabackup.
     :type xtrabackup_defaults_file: RequiredStr | EmptyStrToNone
     :param xtrabackup_extra_args: Additional command-line arguments passed to xtrabackup.
@@ -189,8 +189,8 @@ class BackupCreate(BackupConfigAll):
     :type xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone
     :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.
     :type xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone
-    :param xtrabackup_stop_slave: Whether to stop the replication slave before xtrabackup.
-    :type xtrabackup_stop_slave: bool
+    :param xtrabackup_stop_replica: Whether to stop the replica before xtrabackup.
+    :type xtrabackup_stop_replica: bool
     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
     :type xtrabackup_lock_ddl: bool
     :param xtrabackup_bin_cmd: Backup tool to use.
@@ -250,7 +250,8 @@ class BackupCreate(BackupConfigAll):
             and self.compression_algorithm not in allowed_algorithms
         ):
             raise ValueError(
-                f"Invalid compression algorithm {self.compression_algorithm!r} for {self.backup_type.name} backup. Options are {allowed_algorithms}"
+                f"Invalid compression algorithm {self.compression_algorithm!r} for "
+                f"{self.backup_type.name} backup. Options are {allowed_algorithms}"
             )
 
         return self
