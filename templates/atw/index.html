@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}
+    Schema Change
+{% endblock title %}
+{% block style %}
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    {% endif %}
+    {% if tasks %}
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/saved.css') }}">
+    {% endif %}
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history_tasks or running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    {% if tasks %}
+        <script src="{{ url_for('static', path='/js/saved.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+{% endblock behaviours_optimized_extra %}
+{% block main %}
+    <!-- Introduction: Help users understand what's this plugin about -->
+    <section class="app-intro">
+        <h1>Answers That Works</h1>
+        <p>
+            Percona's Support Team solutions to collect information for troubleshooting different cases.
+        </p>
+        <!-- Create New Tasks -->
+        <br>
+        <h3>Collect new data</h3>
+        <br>
+        {% if executor_hosts|length < 1 %}
+            <p>Unable to find suitable executor hosts.</p>
+        {% else %}
+            {% include "atw/partials/create-form.html" %}
+        {% endif %}
+    </section>
+{% endblock main %}
