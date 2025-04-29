@@ -46,9 +46,6 @@
         margin-top: 0 !important;
     }
 </style>
-{% if 'csrf_token' in form %}
-{{form.csrf_token}}
-{% endif %}
 <form action="" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main Options</legend>
@@ -254,7 +251,6 @@
     </fieldset>
     <button type="submit">Create</button>
     <button type="reset">Reset</button>
-
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');

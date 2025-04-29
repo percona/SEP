@@ -173,6 +173,7 @@ def get_default_context(
     :return: The default context.
     :rtype: dict[str, Any]
     """
+    
     return {
         "user": user,
         "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
