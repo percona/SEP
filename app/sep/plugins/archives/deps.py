@@ -123,7 +123,7 @@ async def build_archives_task_payload(
                     purge_config.model_dump(by_alias=True, exclude_none=True)
                 ),
                 "target": form.hostname,
-                "requirements": "PyMySQL\nfilelock\nPyYAML",
+                "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
             },
             "payload": f"file://{payload_path}",
         },
