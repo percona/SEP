@@ -83,7 +83,6 @@
                 {% for service in mongodb_services %}
                 <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                 {% endfor %}
-                <option value="1">deb-1</option>
             </select>
         </label>
         {% set backup_type_title = "Select the type of backup task: Logical/Physical/Config" %}

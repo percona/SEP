@@ -410,10 +410,13 @@ async def get_tasks_context(
     :return: The assembled context dictionary containing tasks and services information.
     :rtype: dict[str, Any]
     """
-    mysql_services = await inventory_api.get(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    
+    service_type = ServiceTypeEnum.MONGODB if owner == TaskOwner.BACKUP_MONGO else ServiceTypeEnum.MYSQL
+    services = await inventory_api.get(
+        "/services/", params={"service_type": service_type}
     )
-    for service in mysql_services:
+
+    for service in services:
         service["schemas"] = await inventory_api.get(
             f"/services/{service['id']}/schemas/",
         )
@@ -449,7 +452,7 @@ async def get_tasks_context(
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
-            "mysql_services": mysql_services,
+            "services": services,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,

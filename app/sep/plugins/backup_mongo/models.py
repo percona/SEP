@@ -115,7 +115,7 @@ class LoggingOptions(BaseModel):
 
 
 class BackupConfigAll(BaseCaseInsensitiveModel):
-    backup_type: str
+    #backup_type: str
     #storage_configuration: StorageConfiguration
     pitr_configuration: Optional[PITRConfiguration] = None
     backup_options: Optional[BackupOptions] = None
