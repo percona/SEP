@@ -31,7 +31,7 @@ async def test_get_tasks_context(
     context = await get_tasks_context(
         dummy_request, mock_remote_api, mock_remote_api, get_task_info
     )
-    assert context["mysql_services"][0]["id"] == created_service.id
+    assert context["services"][0]["id"] == created_service.id
     assert context["executor_hosts"] == ["host1", "host2"]
     assert len(context["tasks"]) == 1
     task = context["tasks"][0]
