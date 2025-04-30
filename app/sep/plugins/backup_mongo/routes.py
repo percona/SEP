@@ -71,16 +71,13 @@ async def backups_detail(
     data = task.data
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
-    server_config = task_config["SERVER_LIST"][0]
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
-        "host": server_config["HOST"],
-        "port": server_config.get("PORT") or 3306,
-        "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
+        "backup_type": BackupType(task_config["BACKUP_TYPE"]).name or 'config',
     }
 
     context["task"] = task_data

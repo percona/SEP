@@ -19,8 +19,6 @@ from app.sep.deps import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
-    BackupConfigAll,
-    BackupConfigServer,
     BackupCreate,
     BackupType,
 )
@@ -57,30 +55,13 @@ async def build_backup_task_payload(
         type=ServiceTypeEnum.MONGODB,
     )
 
-    all_config = form.model_dump(
-        exclude={
-            "task_name",
-            "hostname",
-            "service_id",
-            "backup_type",
-            "encryption_recipient",
-        },
-        by_alias=True,
-    )
-
-    server_config = {
-        "alias": service.node.address,
-        "backup_type": form.backup_type,
-        # for now only localhost allowed for X
-        "host":  service.node.address,
-        "port": service.port
-    }
-
+    all_config = form.model_dump(by_alias=True)
+    print(all_config, 'all_config123')
 
     backup_config = BackupConfig(
-        all_servers=BackupConfigAll.model_validate(all_config),
-        server_list=[BackupConfigServer.model_validate(server_config)],
+        backup_config=[BackupConfig.model_validate(all_config)],
     )
+
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
     if form.backup_type == BackupType.LOGICAL:
         payload_name = "pbm_logical_payload"
@@ -149,17 +130,13 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :return: A dictionary containing hostname and tables information.
     :rtype: dict[str, Any]
     """
+    print(task, 'mytask')
     data = task["data"]
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
-    backup_server = task_config["SERVER_LIST"][0]
 
-    return {
-        "hostname": meta["target"],
-        "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT") or 27017,
-        "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
-    }
+
+    return task_config
 
 
 async def get_backups_index_context(

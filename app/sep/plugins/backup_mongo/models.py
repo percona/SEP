@@ -13,7 +13,6 @@ from enum import Enum
 
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""
-
     LOGICAL = "logical"
     PHYSICAL = "physical"
     SNAPSHOT = "snapshot"
@@ -113,23 +112,6 @@ class LoggingOptions(BaseModel):
     log_output: Optional[LogOutput] = Field(None, description="Log Output")
     log_file_options: Optional[LogFileOptions] = None
 
-
-class BackupConfigAll(BaseCaseInsensitiveModel):
-    #backup_type: str
-    #storage_configuration: StorageConfiguration
-    pitr_configuration: Optional[PITRConfiguration] = None
-    backup_options: Optional[BackupOptions] = None
-    restore_options: Optional[RestoreOptions] = None
-    logging_options: Optional[LoggingOptions] = None
-
-class BackupCreate(BackupConfigAll):
-    """Represent a Backup creation form with proper case-insensitive fields."""
-    task_name: RequiredStr
-    hostname: RequiredStr
-    service_id: int
-    backup_type: BackupType
-
-
 class BackupConfigServer(BaseCaseInsensitiveModel):
     """Represent an individual server configuration.
 
@@ -150,13 +132,16 @@ class BackupConfigServer(BaseCaseInsensitiveModel):
 
 
 class BackupConfig(BaseCaseInsensitiveModel):
-    """Represent the overall backup configuration.
-
-    :param all_servers: General settings for the backup.
-    :type all_servers: BackupConfigAll
-    :param server_list: A list of backup configuration for each server.
-    :type server_list: list[BackupConfigServer]
-    """
-
-    all_servers: BackupConfigAll
-    server_list: list[BackupConfigServer]
+    """Represent the overall backup configuration."""
+    pitr_configuration: Optional[PITRConfiguration] = None
+    backup_options: Optional[BackupOptions] = None
+    restore_options: Optional[RestoreOptions] = None
+    logging_options: Optional[LoggingOptions] = None
+    storage_configuration: Optional[StorageConfiguration] = None
+    
+class BackupCreate(BackupConfig):
+    """Represent a Backup creation form with proper case-insensitive fields."""
+    task_name: RequiredStr
+    hostname: RequiredStr
+    service_id: int
+    backup_type: BackupType
