@@ -59,13 +59,6 @@ async def build_backup_task_payload(
     )
 
     all_config = form.model_dump(
-        exclude={
-            "task_name",
-            "hostname",
-            "service_id",
-            "backup_type",
-            "encryption_recipient",
-        },
         by_alias=True,
     )
 

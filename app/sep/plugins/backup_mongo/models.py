@@ -117,7 +117,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
     backup_options: Optional[BackupOptions] = None
     restore_options: Optional[RestoreOptions] = None
     logging_options: Optional[LoggingOptions] = None
-    storage_configuration: Optional[StorageConfiguration] = None
+    storage: Optional[StorageConfiguration] = None
     
 class BackupCreate(BackupConfig):
     """Represent a Backup creation form with proper case-insensitive fields."""

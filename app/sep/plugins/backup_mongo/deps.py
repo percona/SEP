@@ -61,6 +61,7 @@ async def build_backup_task_payload(
     all_config = form.model_dump(by_alias=True)
 
     print(all_config, 'all_conffd')
+
     backup_config = BackupConfig(
         backup_config=[BackupConfig.model_validate(all_config)],
     )
@@ -92,6 +93,7 @@ async def build_backup_task_payload(
                 "requirements": requirements,
             },
             "payload": f"file://{payload_path}",
+            "backup_type": form.backup_type
         },
     )
 
