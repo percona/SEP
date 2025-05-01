@@ -1,22 +1,20 @@
 """Define models for the Backups plugin."""
 
 from enum import StrEnum
-from typing import Literal
-
 from pydantic import BaseModel,Field
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
-from typing import Optional, List
+from typing import Optional
 from enum import Enum
 
 
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""
-    LOGICAL = "logical"
-    PHYSICAL = "physical"
-    SNAPSHOT = "snapshot"
-    CONFIG = "config"
+    pbm_logical = "pbm_logical"
+    pbm_physical = "pbm_physical"
+    pbm_snapshot = "pbm_snapshot"
+    pbm_config = "pbm_config"
 
 class StorageType(str, Enum):
     s3 = "s3"
@@ -112,24 +110,6 @@ class LoggingOptions(BaseModel):
     log_output: Optional[LogOutput] = Field(None, description="Log Output")
     log_file_options: Optional[LogFileOptions] = None
 
-class BackupConfigServer(BaseCaseInsensitiveModel):
-    """Represent an individual server configuration.
-
-    :param alias: A unique alias for the server.
-    :type alias: RequiredStr
-    :param backup_type: The type of the backup.
-    :type backup_type: BackupType
-    :param host: The hostname or address of the server.
-    :type host: RequiredStr
-    :param port: The port number used to connect to the host.
-    :type port: int | None
-    """
-
-    alias: RequiredStr
-    backup_type: str
-    host: RequiredStr
-    port: int | None
-
 
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration."""
@@ -139,9 +119,16 @@ class BackupConfig(BaseCaseInsensitiveModel):
     logging_options: Optional[LoggingOptions] = None
     storage_configuration: Optional[StorageConfiguration] = None
     
-class BackupCreate(BackupConfig):
+class BackupCreate(BaseModel):
     """Represent a Backup creation form with proper case-insensitive fields."""
     task_name: RequiredStr
     hostname: RequiredStr
     service_id: int
     backup_type: BackupType
+    pitr_configuration: Optional[PITRConfiguration] = None
+    backup_options: Optional[BackupOptions] = None
+    restore_options: Optional[RestoreOptions] = None
+    logging_options: Optional[LoggingOptions] = None
+    storage_configuration: Optional[StorageConfiguration] = None
+    backup_config: BackupConfig
+

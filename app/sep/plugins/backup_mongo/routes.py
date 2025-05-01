@@ -71,13 +71,14 @@ async def backups_detail(
     data = task.data
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
+    print(task_config)
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
-        "backup_type": BackupType(task_config["BACKUP_TYPE"]).name or 'config',
+        "backup_type": BackupType(task_config["BACKUP_TYPE"]).name,
     }
 
     context["task"] = task_data

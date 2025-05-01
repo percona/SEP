@@ -85,14 +85,14 @@
                 {% endfor %}
             </select>
         </label>
-        {% set backup_type_title = "Select the type of backup task: Logical/Physical/Config" %}
+        {% set backup_method_title = "Select the type of backup type: Logical/Physical/Config" %}
         <label for="backup_type" title="{{ backup_type_title }}">
             Backup Type:
             <select id="backup_type" name="backup_type" required>
-                <option value="" disabled>Select a backup type</option>
-                <option value="logical">Logical</option>
-                <option value="physical">Physical</option>
-                <option value="config">Configuration Change</option>
+                <option value="" disabled>Select a backup method</option>
+                <option value="pbm_logical">Logical</option>
+                <option value="pbm_physical">Physical</option>
+                <option value="pbm_config">Configuration Change</option>
             </select>
         </label>
     </fieldset>

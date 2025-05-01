@@ -55,21 +55,23 @@ async def build_backup_task_payload(
         type=ServiceTypeEnum.MONGODB,
     )
 
+    print(service)
+    print(form,'bingo')
+
     all_config = form.model_dump(by_alias=True)
-    print(all_config, 'all_config123')
 
     backup_config = BackupConfig(
         backup_config=[BackupConfig.model_validate(all_config)],
     )
 
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
-    if form.backup_type == BackupType.LOGICAL:
+    if form.backup_type == BackupType.pbm_logical:
         payload_name = "pbm_logical_payload"
-    elif form.backup_type == BackupType.PHYSICAL:
+    elif form.backup_type == BackupType.pbm_physical:
         payload_name = "pbm_physical_payload"
-    elif form.backup_type == BackupType.SNAPSHOT:
+    elif form.backup_type == BackupType.pbm_snapshot:
         payload_name = "pbm_snapshot_payload"
-    elif form.backup_type == BackupType.CONFIG:
+    elif form.backup_type == BackupType.pbm_config:
         payload_name = "pbm_config_payload"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
@@ -130,7 +132,6 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :return: A dictionary containing hostname and tables information.
     :rtype: dict[str, Any]
     """
-    print(task, 'mytask')
     data = task["data"]
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
