@@ -94,7 +94,7 @@ COMPRESSION_ALGORITHMS = {
     "G": [""],
     "L": [""],
     "M": ["gzip"],  # TODO: add support for zstd later
-    "X": ["quicklz", "zstd", "lz4"],
+    "X": ["zstd", "quicklz", "lz4"],
     "T": [""],
     "R": [""],
     "MC": [""],
@@ -842,7 +842,7 @@ class BaseBackup:
             self.check_compression_algorithm(self.compression_algorithm)
 
         # Dynamically set
-        self.is_slave = False
+        self.is_replica = False
         self.last_backup_dir = ""
 
     def get_policy(self) -> str | None:
@@ -928,7 +928,7 @@ class BaseBackup:
         if len(output) > 300:
             output = f"{output[:300]}..."
 
-        if isinstance(self, Backup) and self.is_slave:
+        if isinstance(self, Backup) and self.is_replica:
             output = f"Host {self.alias}. {output}"
 
         self.report_options["end_time"] = time.strftime(DATETIME_FORMAT, time.gmtime())
@@ -1108,7 +1108,7 @@ class Backup(BaseBackup):
         self.dir_encrypt_config = server_data.get("DIR_ENCRYPT_CONFIG", {})
         self.post_run_encrypt = server_data.get("POST_RUN_ENCRYPT", False)
         self.only_if_read_only = server_data.get("ONLY_IF_READ_ONLY")
-        self.only_if_running_slave = server_data.get("ONLY_IF_RUNNING_SLAVE")
+        self.only_if_running_replica = server_data.get("ONLY_IF_RUNNING_REPLICA")
         self.upload_type = server_data.get("UPLOAD", set())
         if isinstance(self.upload_type, str):
             self.upload_type = {self.upload_type}
@@ -1272,23 +1272,30 @@ class Backup(BaseBackup):
             msg = f'Error running query "{sql}": {err}'
             raise BackupError(msg)
 
-    def _is_running_slave(self) -> bool:
-        """Check if MySQL slave is running.
+    def _is_running_replica(self) -> bool:
+        """Check if MySQL replica is running.
 
-        :return: True if slave is running, False otherwise.
+        Supports both legacy `SHOW SLAVE STATUS` and newer `SHOW REPLICA STATUS` (MySQL 8.0.22+).
+
+        :return: True if replica is running, False otherwise.
         """
         result = None
-        for word in ["NONBLOCKING", "NOLOCK", ""]:
-            try:
-                result = self._query_mysql(f"SHOW SLAVE STATUS {word}")
-            except ProgrammingError:
-                pass
-            else:
+        # Try newer MySQL syntax first
+        for query in ["SHOW REPLICA STATUS", "SHOW SLAVE STATUS"]:
+            for suffix in [" NONBLOCKING", " NOLOCK", ""]:
+                try:
+                    result = self._query_mysql(f"{query}{suffix}")
+                except ProgrammingError:
+                    continue
+                if result:
+                    break
+            if result:
                 break
 
-        if result and result["Slave_IO_Running"] == "Yes":
-            self.logger.info("MySQL slave is running.")
+        if result and result.get("Replica_IO_Running", result.get("Slave_IO_Running")) == "Yes":
+            self.logger.info("MySQL replication is running.")
             return True
+
         return False
 
     def _is_read_only(self) -> bool:
@@ -1317,28 +1324,31 @@ class Backup(BaseBackup):
             return True
         return False
 
-    def _stop_start_slave(self, new_status: int) -> bool:
-        """Stop or Start a MySQL slave SQL_THREAD.
+    def _stop_start_replica(self, new_status: int) -> bool:
+        """Stop or Start a MySQL replica SQL_THREAD.
+
+        Supports both legacy `SLAVE` and newer `REPLICA` commands (MySQL 8.0.22+).
 
         :param new_status: 0 to stop, 1 to start.
         :return: True if succeeded, False otherwise.
         """
-        if self._is_running_slave():
-            if new_status == 0:
-                try:
-                    self._query_mysql("STOP SLAVE SQL_THREAD")
-                except BackupError:
-                    return False
-
-            if new_status == 1:
-                try:
-                    self._query_mysql("START SLAVE SQL_THREAD")
-                except BackupError:
-                    return False
-        else:
+        if not self._is_running_replica():
             return False
 
-        return True
+        # Try both REPLICA and SLAVE versions of the command
+        base_cmds = {
+            0: ["STOP REPLICA SQL_THREAD", "STOP SLAVE SQL_THREAD"],
+            1: ["START REPLICA SQL_THREAD", "START SLAVE SQL_THREAD"]
+        }
+
+        for cmd in base_cmds.get(new_status, []):
+            try:
+                self._query_mysql(cmd)
+                return True
+            except BackupError:
+                continue
+
+        return False
 
     def _pxc_desync(self, new_status: int = 1) -> bool:
         """Change wsrep_desync of a Galera node.
@@ -1987,11 +1997,11 @@ class Xtrabackup(Backup):
         self.xtrabackup_extra_args = server_data.get('XTRABACKUP_EXTRA_ARGS')
         self.verify_innodb = server_data.get('XTRABACKUP_VERIFY', True)
         self.local_ssh_dest = server_data.get('XTRABACKUP_LOCAL_SSH_DESTINATION')
-        self.xtrabackup_slave_info = server_data.get('XTRABACKUP_SLAVE_INFO', True)
+        self.xtrabackup_replica_info = server_data.get('XTRABACKUP_REPLICA_INFO', True)
         self.xtrabackup_rsync = server_data.get('XTRABACKUP_RSYNC', True)
         self.xtrabackup_aes256_keyfile = server_data.get('XTRABACKUP_AES256_KEYFILE')
         self.xtrabackup_desync_pxc = server_data.get('XTRABACKUP_DESYNC_PXC', False)
-        self.xtrabackup_stop_slave = server_data.get('XTRABACKUP_STOP_SLAVE', False)
+        self.xtrabackup_stop_replica = server_data.get('XTRABACKUP_STOP_REPLICA', False)
         self.xtrabackup_lock_ddl = server_data.get('XTRABACKUP_LOCK_DDL', False)
         self.xtrabackup_lock_ddl_timeout = server_data.get('XTRABACKUP_LOCK_DDL_TIMEOUT', 60)
         self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', 'xtrabackup')
@@ -2031,29 +2041,29 @@ class Xtrabackup(Backup):
         self.is_pxc = self._is_pxc()
 
     def _clean_after_error(self):
-        """" check desync pxc and start slave"""
+        """" check desync pxc and start replica """
         # Desync PXC node
         if self.xtrabackup_desync_pxc:
             self._pxc_desync(new_status=0)
 
-        # Start Slave
-        if self.xtrabackup_stop_slave:
-            self._stop_start_slave(new_status=1)
+        # Start Replica
+        if self.xtrabackup_stop_replica:
+            self._stop_start_replica(new_status=1)
 
     def run(self):
         """Start backup for individual server."""
         start_time = time.time()
 
         # Check running conditions
-        if self.only_if_running_slave:
-            self.is_slave = self._is_running_slave()
-            if not self.is_slave:
-                self.logger.info('Not running slave, ignoring this host.')
+        if self.only_if_running_replica:
+            self.is_replica = self._is_running_replica()
+            if not self.is_replica:
+                self.logger.info('Not running replica, ignoring this host.')
                 return
 
         if self.only_if_read_only:
-            self.is_slave = self._is_read_only()
-            if not self.is_slave:
+            self.is_replica = self._is_read_only()
+            if not self.is_replica:
                 self.logger.info('Not read_only, ignoring this host.')
                 return
 
@@ -2080,9 +2090,9 @@ class Xtrabackup(Backup):
         if self.xtrabackup_desync_pxc:
             self._pxc_desync(new_status=1)
 
-        # Stop Slave
-        if self.xtrabackup_stop_slave:
-            self._stop_start_slave(new_status=0)
+        # Stop Replica
+        if self.xtrabackup_stop_replica:
+            self._stop_start_replica(new_status=0)
 
         # Run actual backup
         self._run_backup_cmd()
@@ -2097,9 +2107,9 @@ class Xtrabackup(Backup):
             else:
                 self.logger.error('Galera node left desynced.')
 
-        # Start Slave
-        if self.xtrabackup_stop_slave:
-            self._stop_start_slave(new_status=1)
+        # Start Replica
+        if self.xtrabackup_stop_replica:
+            self._stop_start_replica(new_status=1)
 
         # Backup other files
         if self.host == 'localhost' and not self.incremental:
@@ -2229,7 +2239,8 @@ class Xtrabackup(Backup):
         else:
             xtrabackup_cmd.append(self.backup_dir)
 
-        if self.xtrabackup_slave_info:
+        if self.xtrabackup_replica_info:
+            # xtrabackup 8.4 still uses this argument name
             xtrabackup_cmd.append('--slave-info')
 
         if self.builtin_kill:

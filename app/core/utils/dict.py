@@ -87,3 +87,37 @@ def sort_dict(unsorted_dict: dict, key: Callable[[Any], Any]) -> dict:
     :rtype: dict
     """
     return dict(sorted(unsorted_dict.items(), key=key))
+
+
+def filter_dict(
+    data: dict[Any, Any], filter_func: Callable[[Any], bool]
+) -> dict[Any, Any]:
+    """Filter a dictionary based on a specified filter function.
+
+    This function returns a new dictionary containing only the items for which the
+    provided `filter_func` returns `True`. The filtering is performed on the
+    dictionary's items.
+
+    :param data: The dictionary to be filtered.
+    :type data: dict[Any, Any]
+    :param filter_func: A function that takes a dictionary item and returns a boolean
+        indicating whether to include it in the result.
+    :type filter_func: Callable[[Any], bool]
+    :return: A new dictionary containing only the items that satisfy the filter
+        function.
+    :rtype: dict[Any, Any]
+    """
+    return {k: v for k, v in data.items() if filter_func(v)}
+
+
+def remove_falsy_values_from_dict(data: dict[Any, Any]) -> dict[Any, Any]:
+    """Remove all falsy values from a dictionary.
+
+    This function returns a new dictionary containing only the items with truthy values.
+
+    :param data: The dictionary to be filtered.
+    :type data: dict[Any, Any]
+    :return: A new dictionary with all falsy values removed.
+    :rtype: dict[Any, Any]
+    """
+    return filter_dict(data, lambda v: bool(v))

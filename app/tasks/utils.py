@@ -16,7 +16,7 @@ GENERIC_NOMAD_BATCH_TEMPLATE = {
     "ID": "generic-nomad-batch",
     "Name": "generic-nomad-batch",
     "Type": "batch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",
@@ -28,6 +28,8 @@ GENERIC_NOMAD_BATCH_TEMPLATE = {
     "TaskGroups": [
         {
             "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
                     "Name": "generic-task",
@@ -38,7 +40,7 @@ GENERIC_NOMAD_BATCH_TEMPLATE = {
                         "command": "",
                     },
                     "Meta": {},
-                    "Restart": {"attempts": 0, "mode": "fail"},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                     "Templates": [],
                 },
             ],
@@ -50,11 +52,13 @@ GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
     "ID": "generic-nomad-sysbatch",
     "Name": "generic-nomad-sysbatch",
     "Type": "sysbatch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Periodic": None,
     "TaskGroups": [
         {
             "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
                     "Name": "generic-task",
@@ -65,7 +69,7 @@ GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
                         "command": "",
                     },
                     "Meta": {},
-                    "Restart": {"attempts": 0, "mode": "fail"},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                     "Templates": [],
                 },
             ],
@@ -77,7 +81,7 @@ NOMAD_RUN_PYTHON = {
     "ID": "run-python",
     "Name": "run-python",
     "Type": "batch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",
@@ -93,6 +97,8 @@ NOMAD_RUN_PYTHON = {
     "TaskGroups": [
         {
             "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
                     "Name": "prepare-env",

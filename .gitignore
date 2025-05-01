@@ -7,6 +7,7 @@
 
 # User-specific stuff
 .idea/
+.DS_Store
 
 # CMake
 cmake-build-*/
@@ -315,7 +316,7 @@ orleans.codegen.cs
 # to a newer Visual Studio version. Backup files are not needed,
 # because we have git ;-)
 _UpgradeReport_Files/
-Backup*/
+#Backup*/
 UpgradeLog*.XML
 UpgradeLog*.htm
 ServiceFabricBackup/
@@ -359,6 +360,9 @@ ASALocalRun/
 
 # Visual Studio History (VSHistory) files
 .vshistory/
+
+# Ignore Visual Studio Code workspace settings
+.vscode/
 
 # BeatPulse healthcheck temp database
 healthchecksdb

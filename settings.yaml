@@ -34,6 +34,10 @@ default:
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
+      - NAME: Checksums
+        MODULE_NAME: checksums
+        URI_PATH: /checksums
+        CSS_CLASS: checksums
       - NAME: PBM - Percona Backup for MongoDB
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo

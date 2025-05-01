@@ -22,6 +22,7 @@ class BackupType(EnumFieldMixin, StrEnum):
 
     MYDUMPER = "M"
     XTRABACKUP = "X"
+    BINLOG = "B"
 
 
 class UploadProvider(EnumFieldMixin, StrEnum):
@@ -46,12 +47,12 @@ class DirEncryptConfig(BaseModel):
 class BackupConfigAll(BaseCaseInsensitiveModel):
     """Represent the general configuration for the backup task."""
 
-    hardlink: bool = True
-    compress: bool = True
-    check_disk_space: bool = True
+    hardlink: bool = False
+    compress: bool = False
+    check_disk_space: bool = False
     encrypt: bool = False
     encrypt_using_tmpdir: bool = False
-    only_if_running_slave: bool = False
+    only_if_running_replica: bool = False
     only_if_read_only: bool = False
     logging_dir: RequiredStr | EmptyStrToNone = None
     backup_dir: RequiredStr | EmptyStrToNone = None
@@ -73,7 +74,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_prepare_memory: RequiredStr | EmptyStrToNone = None
     xtrabackup_desync_pxc: bool = False
     xtrabackup_rsync: bool = False
-    xtrabackup_slave_info: bool = False
+    xtrabackup_replica_info: bool = False
     xtrabackup_defaults_file: RequiredStr | EmptyStrToNone = None
     xtrabackup_extra_args: RequiredStr | EmptyStrToNone = None
     xtrabackup_incremental_method: (
@@ -82,11 +83,17 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_incremental_cycle: Literal["daily", "weekly"] | EmptyStrToNone = None
     xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone = None
     xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone = None
-    xtrabackup_stop_slave: bool = False
+    xtrabackup_stop_replica: bool = False
     xtrabackup_lock_ddl: bool = False
     xtrabackup_bin_cmd: (
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     ) = None
+    binlog_prefix: RequiredStr | EmptyStrToNone = None
+    binlog_purge_days: int | EmptyStrToNone = None
+    binlog_extra_args: RequiredStr | EmptyStrToNone = None
+    binlog_compress_cmd: RequiredStr | EmptyStrToNone = None
+    binlog_cmd: RequiredStr | EmptyStrToNone = None
+    binlog_run_all: bool = True
     s3_bucket: RequiredStr | EmptyStrToNone = None
     s3_storage_class: RequiredStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
@@ -101,6 +108,7 @@ class BackupCreate(BackupConfigAll):
     service_id: int
     backup_type: BackupType
     encryption_recipient: RequiredStr | EmptyStrToNone = None
+    binlog_alternative_host: RequiredStr | EmptyStrToNone = None
 
 
 class BackupConfigServer(BaseCaseInsensitiveModel):

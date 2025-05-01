@@ -1,84 +1,134 @@
 {% if history_tasks is defined and history_tasks|length > 0 %}
-    <table class="responsive-table">
+    <table data-table="completed-tasks">
         <thead>
             <tr>
-                <th>Name</th>
-                <th style="width: 100px;">Status</th>
-                <th>Started at</th>
-                <th>Completed at</th>
-                <th style="width: 200px;">
-                    Duration (<abbr>s</abbr>)
-                </th>
-                <th style="width: 150px;">Logs</th>
-                <th>Errors</th>
+                <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Name</th>
+                <th data-sortable="false" data-searchable="false">Status</th>
+                <th data-sortable="false">Error messages</th>
+                <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Started at</th>
+                <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Completed at</th>
+                <th class="number"
+                    aria-label="Click to sort alphanumerically"
+                    data-tooltip="1000">Duration (s)</th>
+                <th class="options" data-sortable="false" data-searchable="false">View logs</th>
             </tr>
         </thead>
         <tbody>
             {% for task_history in history_tasks %}
+                {%- set task_logs = task_history.execution_request.tracking.task_logs or {} -%}
                 {% if task_history.status in ['success', 'failed'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>
-                        <td>
+                        <td class="status">
                             {% if task_history.status == 'success' %}
-                                <i class="icons">done</i>
+                                <div class="success">
+                                    <span class="badge material-symbols-outlined">check</span>
+                                    <span class="label">Done</span>
+                                </div>
                             {% else %}
-                                <i class="icons">error</i>
+                                <div class="error">
+                                    <span class="badge material-symbols-outlined">report</span>
+                                    <span class="label">Failed</span>
+                                </div>
                             {% endif %}
                         </td>
-                        <td class="relativeTime">{{ task_history.execution_request.tracking.started_at }}</td>
-                        <td class="relativeTime">{{ task_history.execution_request.tracking.finished_at }}</td>
-                        <td>{{ task_history.execution_request.tracking.duration|round(3) }}</td>
-                        <td>
-                            <button class="logs-button icons" data-log-id="{{ loop.index0 }}">visibility</button>
-                        </td>
-                        <td>
+                        <td class="errors">
                             {% if task_history.status != 'success' %}
-                                <ul>
-                                    {% for message in task_history.errors %}<li>{{ message }}</li>{% endfor %}
-                                </ul>
+                                {% if task_history.errors %}
+                                    <ul>
+                                        {% for message in task_history.errors %}<li>{{ message }}</li>{% endfor %}
+                                    </ul>
+                                {% else %}
+                                    None
+                                {% endif %}
                             {% else %}
                                 None
                             {% endif %}
                         </td>
-                    </tr>
-                    <tr class="log-row" data-log-id="{{ loop.index0 }}" style="display:none;">
-                        <td colspan="7">
-                            <div class="log-console">
-                                <div class="log-top-bar">
-                                    <div class="log-tabs">
-                                        <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
-                                        <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
-                                    </div>
-                                    <div class="word-wrap-toggle">
-                                        <label class="switch">
-                                            <input type="checkbox" class="word-wrap-checkbox">
-                                            <span class="slider round"></span>
-                                        </label>
-                                        <span class="toggle-label">Word Wrap</span>
-                                    </div>
-                                </div>
-                                <div class="log-content">
-                                    {% for step_name, logs in task_history.execution_request.tracking.task_logs.items() %}
-                                        <div class="log-step-content"
-                                             data-step-name="{{ step_name }}"
-                                             {% if loop.first %}style="display:block;" {% else %}style="display:none;"{% endif %}>
-                                            <pre class="log-output"
-                                                 data-log-type="stdout"
-                                                 {% if loop.first %}style="display:block;" {% else %}style="display:none;"{% endif %}>{{ logs.stdout|e }}</pre>
-                                            <pre class="log-output" data-log-type="stderr" style="display:none;">{{ logs.stderr|e }}</pre>
+                        <td class="date code">{{ task_history.execution_request.tracking.started_at }}</td>
+                        <td class="date code">{{ task_history.execution_request.tracking.finished_at }}</td>
+                        <td class="number code">{{ task_history.execution_request.tracking.duration }}</td>
+                        <td class="options">
+                            {%- if task_logs %}
+                                <button type="button"
+                                        class="icon medium"
+                                        data-task="{{ task_history.task.name }}"
+                                        aria-label="View logs"
+                                        data-tooltip
+                                        data-modal="trigger"
+                                        data-modal-target="modal-{{ task_history.task.name }}-{{ loop.index }}">
+                                    <span class="material-symbols-outlined">visibility</span>
+                                </button>
+                                <section>
+                                    <dialog id="modal-{{ task_history.task.name }}-{{ loop.index }}"
+                                            aria-modal="true"
+                                            aria-labelledby="modal-title-{{ task_history.task.name }}-{{ loop.index }}"
+                                            data-modal="target"
+                                            class="fullwidth modal-log tabs-wrapper">
+                                        <div class="window">
+                                            <header>
+                                                <h3 id="modal-title-{{ task_history.task.name }}-{{ loop.index }}"
+                                                    class="h5 title">Logs for {{ task_history.task.name }}</h3>
+                                                <div class="log-header">
+                                                    <nav class="tabs" role="tablist" aria-label="Choose the output format">
+                                                        <label class="checkbox">
+                                                            <input type="checkbox" data-soft-wrap="trigger">
+                                                            <div class="checkmark">
+                                                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                                                <span class="material-symbols-outlined checked">check_box</span>
+                                                            </div>
+                                                            <span class="label">Soft wrap</span>
+                                                        </label>
+                                                        <button id="tab-{{ task_history.task.name }}-{{ loop.index }}-stdout"
+                                                                class="large"
+                                                                role="log-tab"
+                                                                aria-controls="log-{{ task_history.task.name }}-{{ loop.index }}-stdout"
+                                                                aria-selected="true">
+                                                            <span class="label">Output</span>
+                                                        </button>
+                                                        <button id="tab-{{ task_history.task.name }}-{{ loop.index }}-stderr"
+                                                                class="large"
+                                                                role="log-tab"
+                                                                aria-controls="log-{{ task_history.task.name }}-{{ loop.index }}-stderr"
+                                                                aria-selected="false">
+                                                            <span class="label">Error</span>
+                                                        </button>
+                                                    </nav>
+                                                </div>
+                                            </header>
+                                            <section class="log-content terminal" data-theme="dark">
+                                                <div id="log-{{ task_history.task.name }}-{{ loop.index }}-stdout"
+                                                     role="tabpanel"
+                                                     aria-labelledby="tab-{{ task_history.task.name }}-{{ loop.index }}-stdout"
+                                                     style="display:block">
+                                                    {%- for step_name, logs in task_logs.items() %}
+                                                        <div class="log-step-content"
+                                                             data-step-name="{{ step_name }}"
+                                                             {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>
+                                                            <pre class="log-output" data-soft-wrap="container" data-log-type="stdout" {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>
+                                                                {{ logs.stdout|e }}
+                                                            </pre>
+                                                            <pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display:none;">
+                                                                {{ logs.stderr|e }}
+                                                            </pre>
+                                                        </div>
+                                                    {%- endfor %}
+                                                </div>
+                                            </section>
+                                            <footer>
+                                                {% for step_name in task_logs.keys() %}
+                                                    <button type="button"
+                                                            class="text large log-step-tab {% if loop.first %}selected{% endif %}"
+                                                            data-step-name="{{ step_name }}">{{ step_name }}</button>
+                                                {% endfor %}
+                                                <button type="button" class="text large" data-modal-close>
+                                                    Close<sup>ESC</sup>
+                                                </button>
+                                            </footer>
                                         </div>
-                                    {% endfor %}
-                                </div>
-                                <div class="log-bottom-bar">
-                                    <div class="log-tabs">
-                                        {% for step_name in task_history.execution_request.tracking.task_logs.keys() %}
-                                            <a href="#"
-                                               class="log-step-tab {% if loop.first %}selected{% endif %}"
-                                               data-step-name="{{ step_name }}">{{ step_name }}</a>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                            </div>
+                                    </dialog>
+                                </section>
+                            {%- endif -%}
                         </td>
                     </tr>
                 {% endif %}
@@ -86,5 +136,5 @@
         </tbody>
     </table>
 {% else %}
-    <p>No data</p>
+    <span>No data</span>
 {% endif %}

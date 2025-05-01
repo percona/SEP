@@ -1,25 +1,55 @@
 {% block sidebar %}
-    <nav class="sidebar" id="sep">
-        <ul>
-            {% if user.is_admin %}
-                <li class="casdoor sidebar-button">
-                    <a href="{{ casdoor_url }}" target="_blank">Casdoor</a>
-                </li>
-            {% endif %}
+    <nav class="sidebar"
+         aria-label="App's sidebar menu with navigation onto its main features">
+        <ul role="menu">
+            <li role="none">
+                <a href="{{ url_for('read_root') }}" class="list-item" role="menuitem">
+                    <span class="material-symbols-outlined">dashboard</span>
+                    <span class="label">Home Dashboard</span>
+                </a>
+            </li>
             {% for plugin in plugins %}
-                <li class="{{ plugin.css_class }} sidebar-button">
-                    <a href="{{ plugin.uri_path }}/">{{ plugin.name }}</a>
+                <li role="none">
+                    <a href="{{ plugin.uri_path }}/"
+                       class="list-item {{ plugin.css_class }}"
+                       role="menuitem">
+                        <span class="icon" title="{{ plugin.name }}"></span>
+                        <span class="label">{{ plugin.name }}</span>
+                    </a>
                 </li>
             {% endfor %}
-            <li class="signout sidebar-button">
-                <a href="#" class="submitNextForm">Sign out</a>
-                <form action="{{ url_for('logout') }}"
-                      method="post"
-                      style="display:none"
-                      id="logoutForm">
-                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
-                </form>
-            </li>
+            {% if pmm_url %}
+                <li role="none">
+                    <a href="{{ pmm_url }}"
+                       class="list-item pmm"
+                       role="menuitem"
+                       target="_blank">
+                        <span class="material-symbols-outlined">view_quilt</span>
+                        <span class="label">PMM</span>
+                    </a>
+                </li>
+            {% endif %}
         </ul>
+        <footer>
+            <ul role="menu">
+                <li role="none">Percona Services Enablement Platform v0.4.0-beta</li>
+                <li role="none">
+                    <a href="https://percona.com" class="link" target="_blank">
+                        <span class="material-symbols-outlined">book_2</span>
+                        <span class="label">Documentation</span>
+                    </a>
+                </li>
+                <li role="none">
+                    <a href="https://github.com/percona/SEP" class="link" target="_blank">
+                        <svg viewBox="0 0 96 96">
+                            <title>Github</title>
+                            <use xlink:href="#githubLogo" />
+                        </svg>
+                        <span class="label">Github</span>
+                    </a>
+                </li>
+                <li role="none">©2025 Percona LLC</li>
+            </ul>
+        </footer>
     </nav>
 {% endblock sidebar %}

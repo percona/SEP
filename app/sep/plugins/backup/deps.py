@@ -72,7 +72,13 @@ async def build_backup_task_payload(
         "alias": service.node.address,
         "backup_type": form.backup_type,
         # for now only localhost allowed for X
-        "host": "localhost" if form.backup_type == "X" else service.node.address,
+        "host": (
+            "localhost"
+            if form.backup_type == "X"
+            else form.binlog_alternative_host
+            if form.backup_type == "B" and form.binlog_alternative_host
+            else service.node.address
+        ),
         "port": service.port,
         "upload": upload_providers,
     }
@@ -86,12 +92,14 @@ async def build_backup_task_payload(
         all_servers=BackupConfigAll.model_validate(all_config),
         server_list=[BackupConfigServer.model_validate(server_config)],
     )
-    requirements = "packaging\nPyYAML\nPyMySQL\nboto3"
+    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
     if form.backup_type == BackupType.MYDUMPER:
         payload_name = "mydumper_payload"
     elif form.backup_type == BackupType.XTRABACKUP:
         payload_name = "xtrabackup_payload"
         requirements += "\nfilelock"
+    elif form.backup_type == BackupType.BINLOG:
+        payload_name = "binlog_payload"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
     payload_path = Path(__file__).parent / payload_name

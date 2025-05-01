@@ -46,6 +46,22 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     logger_name: str = __name__
     _session: ClientSession | None = None
 
+    def __hash__(self) -> int:
+        """Compute the hash based on the endpoint and SSL configuration.
+
+        :return: The hash value of the remote API instance.
+        :rtype: int
+        """
+        return hash(
+            (
+                self.endpoint,
+                self.verify_ssl,
+                self.ssl_cafile,
+                self.ssl_keyfile,
+                self.ssl_certfile,
+            )
+        )
+
     async def __aenter__(self) -> Self:
         """Enter the asynchronous context manager.
 
@@ -286,6 +302,24 @@ class RemoteAPI(BaseRemoteAPI):
     auth_scheme: RequiredStr = "Bearer"
     error_detail_key: RequiredStr = "detail"
     error_code_key: RequiredStr | None = None
+
+    def __hash__(self) -> int:
+        """Compute the hash based on the endpoint, SSL configuration, and auth data.
+
+        :return: The hash value of the remote API instance.
+        :rtype: int
+        """
+        return hash(
+            (
+                self.endpoint,
+                self.verify_ssl,
+                self.ssl_cafile,
+                self.ssl_keyfile,
+                self.ssl_certfile,
+                self.auth_scheme,
+                self.api_key,
+            )
+        )
 
     @property
     def headers(self) -> dict[str, str]:

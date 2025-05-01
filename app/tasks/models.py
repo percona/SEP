@@ -70,12 +70,15 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     :vartype ARCHIVER: str
     :cvar BACKUPS: Value for backup tasks.
     :vartype BACKUPS: str
+    :cvar CHECKSUMS: Value for checksum tasks.
+    :vartype CHECKSUMS: str
     """
 
     ANY = "*"
     ALTERS = auto()
     ARCHIVER = auto()
     BACKUPS = auto()
+    CHECKSUMS = auto()
     BACKUP_MONGO = auto()
 
 
@@ -218,6 +221,8 @@ class TaskGroup(BaseModel):
                         data["TaskGroups"].append(
                             {
                                 "Name": f"{self.name}{i + 1}",
+                                "RestartPolicy": {"Attempts": 0},
+                                "ReschedulePolicy": {"Attempts": 0},
                                 "Tasks": [task.model_dump(by_alias=True)],
                             },
                         )
@@ -225,6 +230,8 @@ class TaskGroup(BaseModel):
                     data["TaskGroups"].append(
                         {
                             "Name": self.name,
+                            "RestartPolicy": {"Attempts": 0},
+                            "ReschedulePolicy": {"Attempts": 0},
                             "Tasks": [
                                 task.model_dump(by_alias=True) for task in self.tasks
                             ],

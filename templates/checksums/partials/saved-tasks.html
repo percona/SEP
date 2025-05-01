@@ -1,0 +1,26 @@
+{% if tasks %}
+    <table data-table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Host</th>
+                <th>Service Name</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in tasks %}
+                <tr id="{{ task.name }}">
+                    <td>{{ task.name }}</td>
+                    <td>{{ task.hostname }}</td>
+                    <td>{{ task.service_name }}</td>
+                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <p>No data</p>
+{% endif %}
+<br>
+<br>

@@ -16,6 +16,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    ValidationError,
 )
 
 from app.core.config import (
@@ -24,9 +25,10 @@ from app.core.config import (
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseLowercaseModel
-from app.core.utils import deep_dict_update
+from app.core.utils import deep_dict_update, run_pydantic_type_validator
 from app.core.utils.fields import (
     RelativeDirectoryPath,
+    StrHttpUrl,
     StrImportableAttribute,
     TimedeltaSeconds,
     UniqueList,
@@ -157,6 +159,13 @@ class SEPSettings(BaseYamlAppSettings):
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty dictionary.
     :type SYNCER_EXTRA_KWARGS: dict[str, Any]
+    :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
+        synchronization. Defaults to 5 seconds.
+    :type SYNC_REFRESH_TIME: int
+    :param PMM_FRONTEND: The URL for the PMM frontend. Defaults to `None`. If not set,
+        it will be determined based on the `pmm.endpoint` from the `PMMSyncer` (if
+        available).
+    :type PMM_FRONTEND: StrHttpUrl | None
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -172,6 +181,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
+    PMM_FRONTEND: StrHttpUrl | None = None
 
     @computed_field
     @cached_property
@@ -212,10 +222,11 @@ class SEPSettings(BaseYamlAppSettings):
 
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:
-        """Integrate extra keyword arguments into synchronizers.
+        """Integrate extra keyword arguments into synchronizers and set PMM_FRONTEND.
 
         Merge additional keyword arguments from `SYNCER_EXTRA_KWARGS` into each
-        synchronizer in `SYNCERS` and update the list accordingly.
+        synchronizer in `SYNCERS` and update the list accordingly. If `PMM_FRONTEND` is
+        not already set, check if `PMMSyncer` is enabled and use the `pmm.endpoint`.
 
         :return: The updated `SEPSettings` instance with modified `SYNCERS`.
         :rtype: Self
@@ -225,6 +236,19 @@ class SEPSettings(BaseYamlAppSettings):
             syncer_data = syncer.model_dump()
             deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
             syncers.append(SyncOptions.model_validate(syncer_data))
+            try:
+                if (
+                    self.PMM_FRONTEND is None
+                    and syncer_data["syncer"].endswith("PMMSyncer")
+                    and (pmm_endpoint := syncer_data.get("pmm", {}).get("endpoint"))
+                ):
+                    self.PMM_FRONTEND = run_pydantic_type_validator(
+                        StrHttpUrl, pmm_endpoint
+                    )
+            except AttributeError:
+                continue
+            except ValidationError:
+                raise ValueError("PMM endpoint should be a valid HTTP URL") from None
         self.SYNCERS = syncers
         return self
 

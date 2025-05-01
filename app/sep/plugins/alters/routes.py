@@ -43,6 +43,7 @@ async def alters_index(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
 async def alters_create(
+    request: Request,
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
@@ -52,8 +53,9 @@ async def alters_create(
         "/generate/",
         json=task.model_dump(),
     )
+    task_path = request.url_for("alters_detail", task_name=task.name)
     return RedirectResponse(
-        "/alters",
+        task_path,
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
@@ -98,6 +100,7 @@ async def alters_detail(
     response_class=RedirectResponse,
 )
 async def alters_execute(
+    request: Request,
     task: AltersTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
@@ -107,7 +110,8 @@ async def alters_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("alters_detail", task_name=task.name)
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(

@@ -17,6 +17,8 @@
             height: 2.2rem
         }
     </style>
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/saved.css') }}">
     {% if history or running_tasks %}
         <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
@@ -24,14 +26,16 @@
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/saved.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     {% if history or running_tasks %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <table class="row section">
-        <caption>Overview</caption>
+    <h2>Overview</h2>
+    <table data-table>
         <thead>
             <tr>
                 <th>Hostname</th>
@@ -54,6 +58,7 @@
             </tr>
         </tfoot>
     </table>
+    {% include "tasks/partials/run-python-form.html" %}
     {% if running_tasks %}
         <section id="running-tasks">
             <h2>Running</h2>
@@ -62,9 +67,12 @@
     {% endif %}
     <section>
         <h2>Execution</h2>
-        <h3>Command</h3>
+        <br>
+        <h5>Command</h5>
         <code>{{ task.cmd }}</code>
-        <h3>Parameters</h3>
+        <br>
+        <br>
+        <h5>Parameters</h5>
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
@@ -89,10 +97,12 @@
             </tbody>
         </table>
     </section>
+    <br>
+    <br>
     <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
-            <table class="responsive-table">
+            <table data-table>
                 <caption>Aggregated statistics for {{ task_name }}</caption>
                 <thead>
                     <tr>
@@ -123,6 +133,8 @@
             <p>No data</p>
         {% endif %}
     </section>
+    <br>
+    <br>
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}

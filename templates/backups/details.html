@@ -8,25 +8,20 @@
             display: block
         }
 
-        table form {
-            display: inline-block
-        }
-
-        table button {
-            width: 2.2rem;
-            height: 2.2rem
-        }
-
         pre {
             white-space: break-spaces;
         }
 
         {{ syntax_highlight_css(style="sas") }}
     </style>
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/saved.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/saved.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     {% if history %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
@@ -34,7 +29,7 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <table class="row section">
+    <table data-table>
         <caption>Overview</caption>
         <thead>
             <tr>
@@ -60,6 +55,7 @@
             </tr>
         </tfoot>
     </table>
+    {% include "tasks/partials/run-python-form.html" %}
     {% if running_tasks %}
         <section id="running-tasks">
             <h2>Running</h2>
@@ -68,7 +64,7 @@
     {% endif %}
     <section>
         <h2>Execution</h2>
-        <h3>Parameters</h3>
+        <h5>Parameters</h5>
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
@@ -93,10 +89,12 @@
             </tbody>
         </table>
     </section>
+    <br>
+    <br>
     <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
-            <table class="responsive-table">
+            <table data-table>
                 <caption>Aggregated statistics for {{ task_name }}</caption>
                 <thead>
                     <tr>
@@ -127,6 +125,8 @@
             <p>No data</p>
         {% endif %}
     </section>
+    <br>
+    <br>
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}

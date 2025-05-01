@@ -3,16 +3,16 @@
       action="{{ url_for('periodic_task_create') }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
-<table id="scheduled-tasks-table">
+<table id="scheduled-tasks-table" data-table>
     <thead>
         <tr>
-            <th style="width: 250px;">Task</th>
+            <th>Task</th>
             <th id="period-header">Period</th>
             <th id="start-time-header">Start Time</th>
             <th id="expires-header">Expires</th>
             <th id="last-run-at-header">Last Run At</th>
-            <th style="width: 80px;">Runs</th>
-            <th style="width: 100px;">Enabled</th>
+            <th>Runs</th>
+            <th>Enabled</th>
             <th>Actions</th>
         </tr>
     </thead>
@@ -58,11 +58,15 @@
                               action="{{ url_for('periodic_task_delete', periodic_task_id=periodic_task.id) }}"
                               class="delete-form">
                             <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-                            <button type="submit" class="delete-button icons submitButton" title="Delete">delete forever</button>
+                            <button type="submit" class="delete-button icon submitButton" title="Delete">
+                                <span class="material-symbols-outlined">delete_forever</span>
+                            </button>
                         </form>
                     </td>
                 </tr>
             {% endfor %}
+        </tbody>
+        <tfoot>
             <!-- Row for new periodic task -->
             <tr class="new-periodic-task-row show-on-create-mode">
                 <td>
@@ -135,10 +139,16 @@
                 <td class="actions-cell flex">
                     <button type="submit"
                             id="save-button"
-                            class="save-button icons"
+                            class="text medium"
                             title="Save"
-                            form="new-periodic-task-form">save</button>
-                    <button type="button" class="discard-button icons" title="Discard">remove</button>
+                            form="new-periodic-task-form">
+                        <span class="material-symbols-outlined">save</span>
+                        <span class="label">Save</span>
+                    </button>
+                    <button type="button" class="discard-button text medium" title="Discard">
+                        <span class="material-symbols-outlined">remove</span>
+                        <span class="label">Remove</span>
+                    </button>
                 </td>
             </tr>
             <tr id="add-periodic-task-row" class="hide-on-create-mode">
@@ -146,8 +156,11 @@
                 <td class="actions-cell flex">
                     <button id="add-periodic-task-button"
                             title="Create new periodic task"
-                            class="icons">add</button>
+                            class="text large">
+                        <span class="material-symbols-outlined">add</span>
+                        <span class="label">Add new</span>
+                    </button>
                 </td>
             </tr>
-        </tbody>
+        </tfoot>
     </table>
