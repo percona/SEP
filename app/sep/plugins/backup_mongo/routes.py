@@ -54,6 +54,7 @@ async def backups_create(
         "/",
         json=task.model_dump(),
     )
+
     return RedirectResponse(
         "/backup_mongo",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -71,7 +72,7 @@ async def backups_detail(
     data = task.data
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
-    print(task_config)
+    print(task_config, 'there')
     task_data = {
         "name": task.name,
         "created_at": task.created_at,

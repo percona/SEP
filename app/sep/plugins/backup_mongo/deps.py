@@ -56,10 +56,11 @@ async def build_backup_task_payload(
     )
 
     print(service)
-    print(form,'bingo')
+
 
     all_config = form.model_dump(by_alias=True)
 
+    print(all_config, 'all_conffd')
     backup_config = BackupConfig(
         backup_config=[BackupConfig.model_validate(all_config)],
     )

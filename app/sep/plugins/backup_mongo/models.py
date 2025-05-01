@@ -119,16 +119,9 @@ class BackupConfig(BaseCaseInsensitiveModel):
     logging_options: Optional[LoggingOptions] = None
     storage_configuration: Optional[StorageConfiguration] = None
     
-class BackupCreate(BaseModel):
+class BackupCreate(BackupConfig):
     """Represent a Backup creation form with proper case-insensitive fields."""
     task_name: RequiredStr
     hostname: RequiredStr
     service_id: int
     backup_type: BackupType
-    pitr_configuration: Optional[PITRConfiguration] = None
-    backup_options: Optional[BackupOptions] = None
-    restore_options: Optional[RestoreOptions] = None
-    logging_options: Optional[LoggingOptions] = None
-    storage_configuration: Optional[StorageConfiguration] = None
-    backup_config: BackupConfig
-
