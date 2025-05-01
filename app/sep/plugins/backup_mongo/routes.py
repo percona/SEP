@@ -71,8 +71,6 @@ async def backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
-    print(data,'vampiro')
-    print(meta,'vampiro2')
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
