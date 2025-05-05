@@ -308,7 +308,7 @@ async def stream_task_history_logs(
         else:
             task_history.status = (
                 TaskHistoryStatusEnum.SUCCESS
-                if task_history.execution_request.tracking.get("finished_at")
+                if task_history.finished_at
                 else TaskHistoryStatusEnum.FAILED
             )
             task_history = await TaskHistoryManager.save(session, task_history)

@@ -26,6 +26,7 @@ def created_task() -> Task:
 @pytest.fixture
 def task_history_response(faker, created_task):
     """Return a valid TaskHistoryResponse object."""
+    started_at = faker.past_datetime(start_date="-15d")
     return TaskHistoryResponse(
         id=faker.random_int(min=1),
         execution_request=TaskExecutionRequest(
@@ -37,6 +38,8 @@ def task_history_response(faker, created_task):
         status=TaskHistoryStatusEnum.SUCCESS,
         task=created_task,
         errors=[],
+        started_at=started_at,
+        finished_at=started_at + faker.time_delta(end_datetime="+1h"),
     )
 
 

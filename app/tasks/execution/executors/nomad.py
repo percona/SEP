@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import time
 from binascii import b2a_base64
 from collections.abc import AsyncGenerator
 from datetime import datetime, UTC
@@ -24,6 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
 from app.core.utils import async_run, slugify, sort_dict
+from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
@@ -268,7 +268,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         task = self.prepare_task(queue_item, task)
 
-        start_ts, stop_ts = time.time_ns(), None
         job_status = {}
         job = None
         if self.task_needs_new_job(task):
@@ -290,31 +289,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if job is None:
             raise ValueError("The job could not be determined")
 
+        submit_timestamp = job.get("SubmitTime")
+        if submit_timestamp:
+            queue_item.started_at = datetime.fromtimestamp(
+                submit_timestamp / 10**9, UTC
+            )
+        else:
+            queue_item.started_at = utc_now()
         queue_item.execution_request.tracking.update(
             evaluation_id=job_status["EvalID"], job_id=job["ID"]
         )
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
         queue_item = await TaskHistoryManager.save(
             session,
             queue_item,
             flag_modified_fields=["execution_request"],
         )
 
-        queue_item.status = TaskHistoryStatusEnum.RUNNING
-        queue_item = await TaskHistoryManager.save(session, queue_item)
-
         queue_item = await self.wait_for_job_completion(
             job,
             queue_item,
             job_status["EvalID"],
-        )
-        stop_ts = time.time_ns()
-        duration = (stop_ts - start_ts) / 1000**3
-        queue_item.execution_request.tracking.update(
-            started_at_ns=start_ts,
-            finished_at_ns=stop_ts,
-            started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=UTC),
-            finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=UTC),
-            duration=duration,
         )
         return await TaskHistoryManager.save(
             session,
@@ -322,7 +317,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             flag_modified_fields=["execution_request"],
         )
 
-    async def wait_for_job_completion(
+    async def wait_for_job_completion(  # noqa: C901, PLR0912
         self,
         job: dict[str, Any],
         queue_item: TaskHistory,
@@ -396,6 +391,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 queue_item.status = TaskHistoryStatusEnum.SUCCESS
             case _:
                 queue_item.status = TaskHistoryStatusEnum.FAILED
+
+        last_modified_timestamp = alloc.get("ModifyTime")
+        if last_modified_timestamp:
+            queue_item.finished_at = datetime.fromtimestamp(
+                last_modified_timestamp / 10**9, UTC
+            )
+        else:
+            queue_item.finished_at = utc_now()
 
         queue_item.execution_request.tracking.update(
             task_states=task_states,

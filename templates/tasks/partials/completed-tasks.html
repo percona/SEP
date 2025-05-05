@@ -45,9 +45,9 @@
                                 None
                             {% endif %}
                         </td>
-                        <td class="date code">{{ task_history.execution_request.tracking.started_at }}</td>
-                        <td class="date code">{{ task_history.execution_request.tracking.finished_at }}</td>
-                        <td class="number code">{{ task_history.execution_request.tracking.duration }}</td>
+                        <td class="relativeTime code">{{ task_history.started_at }}</td>
+                        <td class="relativeTime code">{{ task_history.finished_at }}</td>
+                        <td class="number code">{{ task_history.duration }}</td>
                         <td class="options">
                             {%- if task_logs %}
                                 <button type="button"

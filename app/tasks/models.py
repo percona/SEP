@@ -441,21 +441,19 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
-# TODO: Create Base/Write models  # noqa: TD002, TD003
-class TaskHistory(BaseSQLModel, table=True):
-    """Represent a task execution history.
+class TaskHistoryBase(SQLModel):
+    """Define the base structure for a TaskHistory.
 
     :param execution_request: The request that triggered the task execution.
     :type execution_request: TaskExecutionRequest
     :param status: The status of the task execution. Defaults to pending.
     :type status: TaskHistoryStatusEnum
-    :param task_id: The ID of the task associated with the execution.
-    :type task_id: int
-    :param task: The task associated with this execution history.
-    :type task: Task
+    :param started_at: The datetime when the task execution started.
+    :type started_at: UTCDatetime | None
+    :param finished_at: The datetime when the task execution finished.
+    :type finished_at: UTCDatetime | None
     """
 
-    __table_args__ = (Index("ix_taskhistory_task_id_status", "task_id", "status"),)
     execution_request: TaskExecutionRequest = SQLField(
         sa_column=Column(JSON, nullable=False),
     )
@@ -463,8 +461,24 @@ class TaskHistory(BaseSQLModel, table=True):
         default=TaskHistoryStatusEnum.PENDING,
         sa_column=Column(EnumField(TaskHistoryStatusEnum), nullable=False, index=True),
     )
-    task_id: int = SQLField(foreign_key="task.id", index=True)
-    task: Task = Relationship(back_populates="history")
+    started_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    finished_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+
+    @computed_field
+    @property
+    def duration(self) -> float | None:
+        """Return the duration of the task execution in seconds.
+
+        :return: The duration in seconds, or None if not available.
+        :rtype: float | None
+        """
+        if self.started_at and self.finished_at:
+            return (self.finished_at - self.started_at).total_seconds()
+        return None
 
     @computed_field
     @property
@@ -488,23 +502,44 @@ class TaskHistory(BaseSQLModel, table=True):
         return list(errors)
 
 
-class TaskHistoryResponse(BaseSQLModel):
+class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
+    """Represent a task execution history.
+
+    :param execution_request: The request that triggered the task execution.
+    :type execution_request: TaskExecutionRequest
+    :param status: The status of the task execution. Defaults to pending.
+    :type status: TaskHistoryStatusEnum
+    :param started_at: The datetime when the task execution started.
+    :type started_at: UTCDatetime | None
+    :param finished_at: The datetime when the task execution finished.
+    :type finished_at: UTCDatetime | None
+    :param task_id: The ID of the task associated with the execution.
+    :type task_id: int
+    :param task: The task associated with this execution history.
+    :type task: Task
+    """
+
+    __table_args__ = (Index("ix_taskhistory_task_id_status", "task_id", "status"),)
+    task_id: int = SQLField(foreign_key="task.id", index=True)
+    task: Task = Relationship(back_populates="history")
+
+
+class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """Represent a task history API response.
 
     :param execution_request: The request that triggered the task execution.
     :type execution_request: TaskExecutionRequest
     :param status: The status of the task execution.
     :type status: TaskHistoryStatusEnum
+    :param started_at: The datetime when the task execution started.
+    :type started_at: UTCDatetime | None
+    :param finished_at: The datetime when the task execution finished.
+    :type finished_at: UTCDatetime | None
     :param task: The task associated with this execution history.
-    :type task: Task
-    :param errors: A list of errors encountered during the task execution.
-    :type errors: list[str]
+    :type task: TaskResponse
     """
 
-    execution_request: TaskExecutionRequest
-    status: TaskHistoryStatusEnum
     task: TaskResponse
-    errors: list
 
 
 class TaskStats(BaseModel):
@@ -590,14 +625,10 @@ class TaskStats(BaseModel):
         """Process the task data."""
 
         def _durations_from_tracking() -> None:
-            self._durations["tasks"][task.id] = (
-                task.execution_request.tracking[  # TODO: Use Pydantic models  # noqa: TD002, TD003
-                    "duration"
-                ]
-            )
-            self._raw["durations"].append(task.execution_request.tracking["duration"])
+            self._durations["tasks"][task.id] = task.duration
+            self._raw["durations"].append(task.duration)
             self._raw["finished_at"].append(
-                task.execution_request.tracking["finished_at"],
+                task.finished_at,
             )
 
         # TODO:  # noqa: TD002, TD003
