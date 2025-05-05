@@ -56,7 +56,7 @@ async def backups_create(
     )
 
     return RedirectResponse(
-        "/backup_mongo",
+        "/backups_detail",
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 

@@ -1589,3 +1589,8 @@ td.errors ul {
     flex-wrap: wrap;
     gap: 0.5em;
 }
+
+
+.list-item.backup_mongo .icon::before {
+    content: "nature";
+}
