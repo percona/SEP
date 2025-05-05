@@ -1,10 +1,4 @@
 <style>
-    fieldset input,
-    fieldset select,
-    fieldset textarea {
-        margin-top: 1em;
-        display: block;
-    }
 
     .hidden {
         overflow: hidden;
@@ -45,6 +39,10 @@
     .checkbox-group input {
         margin-top: 0 !important;
     }
+
+    fieldset + fieldset {
+        margin: 1em 0;
+    }
 </style>
 <form action="" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
@@ -71,6 +69,7 @@
         </fieldset>
         <fieldset>
             <legend>Basic Task Information</legend>
+            <br>
             {% set task_name_title = "Type the name of task to be created." %}
             <label for="task_name" title="{{ task_name_title }}">
                 Task Name:
@@ -81,6 +80,8 @@
                        required
                        placeholder="Enter a unique task name" />
             </label>
+            <br>
+            <br>
             {% set service_id_title = "Select the database host from the inventory to connect to." %}
             <label for="service_id" title="{{ service_id_title }}">
                 Select a Database Host:
@@ -91,6 +92,8 @@
                     {% endfor %}
                 </select>
             </label>
+            <br>
+            <br>
             {% set backup_type_title = "Select the type of backup type: Logical/Physical/Config" %}
             <label for="backup_type" title="{{ backup_type_title }}">
                 Backup Type:
@@ -101,10 +104,17 @@
                     <option value="pbm_config">Configuration Change</option>
                 </select>
             </label>
+            <br>
+            <br>
         </fieldset>
         {# % include "backup_mongo/partials/pbm-config.html" % #}
-        <button class="contained large" type="submit">Create</button>
-        <button class="text large" type="reset">Reset</button>
+        <div style="display: flex;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 0.25em">
+            <button class="contained large" type="submit">Create</button>
+            <button class="text large" type="reset">Reset</button>
+        </div>
     </form>
     <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
@@ -132,11 +142,11 @@
         logFileOptions.style.display = logOutputSelect.value === 'file' ? 'block' : 'none';
     }
 
-    storageTypeSelect.addEventListener('change', updateStorageOptionsVisibility);
-    logOutputSelect.addEventListener('change', updateLogFileOptionsVisibility);
+    // storageTypeSelect.addEventListener('change', updateStorageOptionsVisibility);
+    // logOutputSelect.addEventListener('change', updateLogFileOptionsVisibility);
 
     // Initial visibility
-    updateStorageOptionsVisibility();
-    updateLogFileOptionsVisibility();
+    // updateStorageOptionsVisibility();
+    // updateLogFileOptionsVisibility();
 
     </script>
