@@ -195,7 +195,4 @@ async def get_alters_index_context(
         context,
         TaskOwner.ALTERS,
     )
-    return {
-        **alters_context,
-        "mysql_services": alters_context["services"]
-    }
+    return {**alters_context, "mysql_services": alters_context["services"]}

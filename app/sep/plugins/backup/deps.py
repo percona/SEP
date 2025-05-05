@@ -211,7 +211,4 @@ async def get_backups_index_context(
         context,
         TaskOwner.BACKUPS,
     )
-    return {
-        **backups_context,
-        "mysql_services": backups_context["services"]
-    }
+    return {**backups_context, "mysql_services": backups_context["services"]}

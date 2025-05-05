@@ -173,7 +173,6 @@ def get_default_context(
     :return: The default context.
     :rtype: dict[str, Any]
     """
-    
     return {
         "user": user,
         "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
@@ -418,8 +417,11 @@ async def get_tasks_context(
     :return: The assembled context dictionary containing tasks and services information.
     :rtype: dict[str, Any]
     """
-    
-    service_type = ServiceTypeEnum.MONGODB if owner == TaskOwner.BACKUP_MONGO else ServiceTypeEnum.MYSQL
+    service_type = (
+        ServiceTypeEnum.MONGODB
+        if owner == TaskOwner.BACKUP_MONGO
+        else ServiceTypeEnum.MYSQL
+    )
     services = await inventory_api.get(
         "/services/", params={"service_type": service_type}
     )

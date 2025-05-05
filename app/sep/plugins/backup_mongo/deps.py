@@ -7,16 +7,13 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form, Request
 
-from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
-    get_created_entity,
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
     BackupCreate,
@@ -34,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 async def build_backup_task_payload(
     form: Annotated[BackupCreate, Form()],
-    inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build the backup task payload from form.
 
@@ -48,14 +44,6 @@ async def build_backup_task_payload(
         configuration to create the Backup task.
     :rtype: TaskWrite
     """
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MONGODB,
-    )
-
-
     all_config = form.model_dump(by_alias=True)
 
     backup_config = BackupConfig(
@@ -89,7 +77,7 @@ async def build_backup_task_payload(
                 "requirements": requirements,
             },
             "payload": f"file://{payload_path}",
-            "backup_type": form.backup_type
+            "backup_type": form.backup_type,
         },
     )
 
@@ -133,10 +121,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-
-
-    return task_config
+    return yaml.safe_load(meta["config"])
 
 
 async def get_backups_index_context(
@@ -172,5 +157,5 @@ async def get_backups_index_context(
     )
     return {
         **mongodb_backup_context,
-        "mongodb_services": mongodb_backup_context["services"]
+        "mongodb_services": mongodb_backup_context["services"],
     }

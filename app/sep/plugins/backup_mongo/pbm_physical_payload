@@ -6,7 +6,7 @@ def pbm():
 
     command = ['bash', '/home/admin/bin/pbm_create_physical.sh']
     try:
-        result = subprocess.run(command, 
+        result = subprocess.run(command,
                               capture_output=True,  # Captures stdout and stderr
                               text=True,           # Returns strings instead of bytes
                               check=True)

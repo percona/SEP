@@ -223,7 +223,4 @@ async def get_archives_index_context(
         context,
         TaskOwner.ARCHIVER,
     )
-    return {
-        **archives_context,
-        "mysql_services": archives_context["services"]
-    }
+    return {**archives_context, "mysql_services": archives_context["services"]}
