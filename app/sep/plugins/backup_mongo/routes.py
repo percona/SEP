@@ -3,7 +3,6 @@
 import logging
 from typing import Annotated, Any
 
-import yaml
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
@@ -20,7 +19,6 @@ from app.sep.plugins.backup_mongo.deps import (
     BackupsTask,
     get_backups_index_context,
 )
-from app.sep.plugins.backup_mongo.models import BackupType
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -29,7 +27,7 @@ templates = sep_settings.TEMPLATES
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def backups_index(
+async def pbm_backups_index(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
 ) -> HTMLResponse:
@@ -44,7 +42,8 @@ async def backups_index(
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
-async def backups_create(
+async def pbm_backups_create(
+    request: Request,
     task: BackupGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
@@ -54,15 +53,15 @@ async def backups_create(
         "/",
         json=task.model_dump(),
     )
-
+    task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(
-        "/backup_mongo",
+        task_path,
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def backups_detail(
+async def pbm_backups_detail(
     task: BackupsTask,
     request: Request,
     context: DefaultContext,
@@ -98,7 +97,7 @@ async def backups_detail(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def backups_execute(
+async def pbm_backups_execute(
     task: BackupsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
@@ -116,7 +115,7 @@ async def backups_execute(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def backups_delete(
+async def pbm_backups_delete(
     task: BackupsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
