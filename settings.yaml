@@ -30,7 +30,7 @@ default:
         MODULE_NAME: archives
         URI_PATH: /archives
         CSS_CLASS: archive
-      - NAME: Backups
+      - NAME: MySQL Backups
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
@@ -38,7 +38,7 @@ default:
         MODULE_NAME: checksums
         URI_PATH: /checksums
         CSS_CLASS: checksums
-      - NAME: PBM - Percona Backup for MongoDB
+      - NAME: MongoDB Backups
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo
         CSS_CLASS: backup_mongo
