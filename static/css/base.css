@@ -1156,6 +1156,10 @@ button.list-item:focus-visible {
     content: "history";
 }
 
+.list-item.restores .icon::before {
+    content: "refresh";
+}
+
 .list-item.checksums .icon::before {
     content: "new_releases";
 }
