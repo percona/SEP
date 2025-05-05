@@ -113,11 +113,11 @@ class LogOutput(str, Enum):
 
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration."""
-    pitr_configuration: Optional[PITRConfiguration] = None
-    backup_options: Optional[BackupOptions] = None
-    restore_options: Optional[RestoreOptions] = None
-    logging_options: Optional[LoggingOptions] = None
-    storage: Optional[StorageConfiguration] = None
+    #pitr_configuration: Optional[PITRConfiguration] = None
+    #backup_options: Optional[BackupOptions] = None
+    #restore_options: Optional[RestoreOptions] = None
+    #logging_options: Optional[LoggingOptions] = None
+    #storage: Optional[StorageConfiguration] = None
     
 class BackupCreate(BackupConfig):
     """Represent a Backup creation form with proper case-insensitive fields."""

@@ -8,15 +8,6 @@
             display: block
         }
 
-        table form {
-            display: inline-block
-        }
-
-        table button {
-            width: 2.2rem;
-            height: 2.2rem
-        }
-
         pre {
             white-space: break-spaces;
         }
@@ -34,7 +25,7 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <table class="row section">
+    <table data-table>
         <caption>Overview</caption>
         <thead>
             <tr>
@@ -68,7 +59,7 @@
     {% endif %}
     <section>
         <h2>Execution</h2>
-        <h3>Parameters</h3>
+        <h5>Parameters</h5>
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
@@ -96,7 +87,7 @@
     <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
-            <table class="responsive-table">
+            <table data-table>
                 <caption>Aggregated statistics for {{ task_name }}</caption>
                 <thead>
                     <tr>
