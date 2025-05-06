@@ -4,11 +4,8 @@ all_env_vars = os.environ
 
 def pbm(env):
 
-    PBM_CONFIG = env
-
-    print(PBM_CONFIG)
-    return None
-    command = ['bash', '/home/admin/bin/pbm_create_logical.sh']
+    pbm_create_config = os.environ['PBM_CREATE_CONFIG']
+    command = ['bash', pbm_create_config ]
     try:
         result = subprocess.run(command,
                               capture_output=True,  # Captures stdout and stderr

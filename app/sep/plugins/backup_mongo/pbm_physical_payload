@@ -4,7 +4,8 @@ import logging
 
 def pbm():
 
-    command = ['bash', '/home/admin/bin/pbm_create_physical.sh']
+    pbm_create_physical = os.environ['PBM_CREATE_PHYSICAL']
+    command = ['bash', pbm_create_physical ]
     try:
         result = subprocess.run(command,
                               capture_output=True,  # Captures stdout and stderr
