@@ -45,8 +45,8 @@
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure a backup task</h2>
-        {# Note: commented out until mongodb_services exists
-{% if mongodb_services|length != 1 %}
+        {# Note: commented out until services exists
+{% if services|length != 1 %}
 <p>Unable to find suitable database instances.</p>
 {% elif executor_hosts|length < 1 %} <p>Unable to find suitable executor hosts.</p>
     {% else %}

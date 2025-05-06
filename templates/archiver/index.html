@@ -42,7 +42,7 @@
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure an archiver task</h2>
-        {% if mysql_services|length < 1 %}
+        {% if services|length < 1 %}
             <p>Unable to find suitable database instances.</p>
         {% elif executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>

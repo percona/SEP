@@ -187,7 +187,7 @@ async def get_alters_index_context(
     :return: An updated context dictionary containing Alters-related data.
     :rtype: dict[str, Any]
     """
-    alters_context = await get_tasks_context(
+    return await get_tasks_context(
         request,
         inventory_api,
         tasks_api,
@@ -195,4 +195,3 @@ async def get_alters_index_context(
         context,
         TaskOwner.ALTERS,
     )
-    return {**alters_context, "mysql_services": alters_context["services"]}

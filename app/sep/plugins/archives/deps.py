@@ -215,7 +215,7 @@ async def get_archives_index_context(
     :return: An updated context dictionary containing Archives-related data.
     :rtype: dict[str, Any]
     """
-    archives_context = await get_tasks_context(
+    return await get_tasks_context(
         request,
         inventory_api,
         tasks_api,
@@ -223,4 +223,3 @@ async def get_archives_index_context(
         context,
         TaskOwner.ARCHIVER,
     )
-    return {**archives_context, "mysql_services": archives_context["services"]}

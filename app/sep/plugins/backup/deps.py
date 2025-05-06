@@ -203,7 +203,7 @@ async def get_backups_index_context(
     :return: An updated context dictionary containing Backups-related data.
     :rtype: dict[str, Any]
     """
-    backups_context = await get_tasks_context(
+    return await get_tasks_context(
         request,
         inventory_api,
         tasks_api,
@@ -211,4 +211,3 @@ async def get_backups_index_context(
         context,
         TaskOwner.BACKUPS,
     )
-    return {**backups_context, "mysql_services": backups_context["services"]}
