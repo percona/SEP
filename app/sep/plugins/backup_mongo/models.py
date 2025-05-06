@@ -1,6 +1,6 @@
 """Define models for the Backups plugin."""
 
-from enum import Enum, StrEnum
+from enum import StrEnum
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EnumFieldMixin, RequiredStr
@@ -9,54 +9,54 @@ from app.core.utils.fields import EnumFieldMixin, RequiredStr
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""
 
-    pbm_logical = "pbm_logical"
-    pbm_physical = "pbm_physical"
-    pbm_snapshot = "pbm_snapshot"
-    pbm_config = "pbm_config"
+    PBM_LOGICAL = "pbm_logical"
+    PBM_PHYSICAL = "pbm_physical"
+    PBM_SNAPSHOT = "pbm_snapshot"
+    PBM_CONFIG = "pbm_config"
 
 
-class StorageType(str, Enum):
+class StorageType(StrEnum):
     """Represents whe PBM should keep datafiles."""
 
-    s3 = "s3"
-    filesystem = "filesystem"
-    azure = "azure"
+    S3 = "s3"
+    FILESYSTEM = "filesystem"
+    AZUER = "azure"
 
 
-class S3Provider(str, Enum):
+class S3Provider(StrEnum):
     """Represents native s3 or plugins what use s3 protocol."""
 
-    aws = "aws"
-    minio = "minio"
-    gcp = "gcp"
+    AWS = "aws"
+    MINIO = "minio"
+    GCP = "gcp"
 
 
-class CompressionAlgorithm(str, Enum):
+class CompressionAlgorithm(StrEnum):
     """Represents algorithm of choice whem compressing wirteTiger datafiles."""
 
-    gzip = "gzip"
-    snappy = "snappy"
-    lz4 = "lz4"
-    s2 = "s2"
-    pgzip = "pgzip"
-    zstd = "zstd"
+    GZIP = "gzip"
+    SNAPPY = "snappy"
+    LZ4 = "lz4"
+    S2 = "s2"
+    PGZIP = "pgzip"
+    ZSTD = "zstd"
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     """Represents log verbosity of PBM service."""
 
-    debug = "debug"
-    info = "info"
-    warn = "warn"
-    error = "error"
+    DEBUG = "debug"
+    INFO = "info"
+    WARN = "warn"
+    ERROR = "error"
 
 
-class LogOutput(str, Enum):
+class LogOutput(StrEnum):
     """Determines output of log."""
 
-    stdout = "stdout"
-    file = "file"
-    syslog = "syslog"
+    STDOUT = "stdout"
+    FILE = "file"
+    SYSLOG = "syslog"
 
 
 class BackupConfig(BaseCaseInsensitiveModel):

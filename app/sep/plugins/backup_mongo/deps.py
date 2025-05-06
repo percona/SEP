@@ -17,7 +17,6 @@ from app.sep.deps import (
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
     BackupCreate,
-    BackupType,
 )
 from app.tasks.models import (
     Task,
@@ -51,17 +50,7 @@ async def build_backup_task_payload(
     )
 
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
-    if form.backup_type == BackupType.pbm_logical:
-        payload_name = "pbm_logical_payload"
-    elif form.backup_type == BackupType.pbm_physical:
-        payload_name = "pbm_physical_payload"
-    elif form.backup_type == BackupType.pbm_snapshot:
-        payload_name = "pbm_snapshot_payload"
-    elif form.backup_type == BackupType.pbm_config:
-        payload_name = "pbm_config_payload"
-    else:
-        raise ValueError(f"Invalid Backup Type {form.backup_type}")
-    payload_path = Path(__file__).parent / payload_name
+    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     return TaskWrite(
         name=form.task_name,

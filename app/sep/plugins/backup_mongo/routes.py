@@ -98,6 +98,7 @@ async def pbm_backups_detail(
     response_class=RedirectResponse,
 )
 async def pbm_backups_execute(
+    request: Request,
     task: BackupsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
@@ -107,7 +108,8 @@ async def pbm_backups_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    return RedirectResponse("/backup_mongo", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("pbm_backups_detail", task_name=task.name)
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(
@@ -116,9 +118,11 @@ async def pbm_backups_execute(
     response_class=RedirectResponse,
 )
 async def pbm_backups_delete(
+    request: Request,
     task: BackupsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete backups task."""
     await tasks_api.delete(f"/{task.name}")
-    return RedirectResponse("/backup_mongo", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("pbm_backups_index")
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

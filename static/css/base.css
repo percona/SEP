@@ -1158,6 +1158,10 @@ button.list-item:focus-visible {
     content: "new_releases";
 }
 
+.list-item.backup_mongo .icon::before {
+    content: "nature";
+}
+
 .list-item.inventory .icon::before {
     content: "graph_4";
 }
@@ -1588,9 +1592,4 @@ td.errors ul {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5em;
-}
-
-
-.list-item.backup_mongo .icon::before {
-    content: "nature";
 }
