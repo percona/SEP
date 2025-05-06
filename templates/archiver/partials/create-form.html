@@ -51,10 +51,7 @@
         pointer-events: none;
     }
 </style>
-<form action=""
-      method="post"
-      id="archiver-create-form"
-      class="{{ form_class }}">
+<form action="" method="post" id="create_form" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Executor Host</legend>
@@ -366,7 +363,7 @@
     const extraArgsInput = document.getElementById('extra_args');
     const whereInput = document.getElementById('where');
     const purgeConfigOptionsContainer = document.getElementById('purge_options_container');
-    const form = document.getElementById('archiver-create-form');
+    const form = document.getElementById('create_form');
     const createButton = form.querySelector('button[type="submit"]');
 
     function populateSchemas(selectedService) {
@@ -639,8 +636,7 @@
         createButton.disabled = !form.checkValidity();
     }
 
-    form.addEventListener('input', updateCreateButtonState);
-    form.addEventListener('change', updateCreateButtonState);
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
     swapDropSelect.addEventListener('change', function() {
         togglePrgPurgeCheckbox()

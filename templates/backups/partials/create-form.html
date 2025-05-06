@@ -67,10 +67,7 @@
         margin: 1em 0;
     }
 </style>
-<form action=""
-      id="backup-create-form"
-      method="post"
-      class="{{ form_class }}">
+<form action="" id="create_form" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main Options</legend>
     <br>
@@ -745,7 +742,7 @@
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
     const s3BucketInput = document.getElementById('s3_bucket');
     const rsyncPathInput = document.getElementById('rsync_path');
-    const form = document.getElementById('backup-create-form');
+    const form = document.getElementById('create_form');
     const createButton = form.querySelector('button[type="submit"]');
 
     let s3Visible = false;
@@ -872,8 +869,7 @@
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
-    form.addEventListener('input', updateCreateButtonState);
-    form.addEventListener('change', updateCreateButtonState);
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
     // Initialize
     window.addEventListener('DOMContentLoaded', function() {

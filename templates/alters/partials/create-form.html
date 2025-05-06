@@ -107,7 +107,7 @@
 {% set form_class = "modal" if modal_required else "" %}
 <form action=""
       method="post"
-      id="alter-create-form"
+      id="create_form"
       class="{{ form_class }}"
       style="padding-left: 0">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
@@ -498,7 +498,7 @@
     const createTableOutput = document.getElementById('createTableOutput');
     const statusMessage = document.getElementById('statusMessage');
     const resultPanel = document.getElementById('result-panel');
-    const form = document.getElementById('alter-create-form');
+    const form = document.getElementById('create_form');
     const createButton = form.querySelector('button[type="submit"]');
 
     let selectedService = null;
@@ -656,20 +656,16 @@
         }
     });
 
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
+
     window.addEventListener('DOMContentLoaded', function() {
         if (connectToSelect.options.length === 1) {
             const singleHost = connectToSelect.options[0].value;
             selectedService = singleHost;
             populateSchemas(singleHost);
         }
+        updateCreateButtonState();
     });
 
-    form.addEventListener('input', updateCreateButtonState);
-    form.addEventListener('change', updateCreateButtonState);
-
-
-    window.addEventListener('DOMContentLoaded', function() {
-    updateCreateButtonState();
-});
 
 </script>
