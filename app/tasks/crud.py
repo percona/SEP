@@ -90,6 +90,7 @@ class TaskManager(BaseSQLModelManager):
                 f"Task {name} is protected and cannot be deleted.",
             )
         task.deleted_at = utc_now()
+        task.name = f"{task.name}-{task.deleted_at.strftime('%Y%m%d%H%M%S')}"
         return await cls.save(session, task)
 
 
