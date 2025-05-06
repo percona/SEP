@@ -1587,11 +1587,14 @@ class MyDumperRunner(multiprocessing.Process):
                 self.logger.exception(exc.message)
                 self.logger.exception("Backup failed for this host.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                sys.exit(1)
             except:
                 self.logger.exception("Unhandled exception occurred.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                sys.exit(1)
 
             logging_set_host(None, LOGGING_NAME)
+
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         self.logger.info(
