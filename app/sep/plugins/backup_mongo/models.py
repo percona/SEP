@@ -61,7 +61,7 @@ class LogOutput(StrEnum):
 
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
-    :param pbm_config_yaml_payload: The recipient of the encryption key.
+    :param pbm_config_yaml_payload: The PBM yaml payload to parse from CLI.
     :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
     """
 
@@ -71,7 +71,16 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
 
 class BackupCreate(BackupConfig):
-    """Represent a Backup creation form with proper case-insensitive fields."""
+    """Represent a Backup creation form with proper case-insensitive fields.
+    :param task_name: The PBM yaml payload to parse from CLI.
+    :type task_name: RequiredStr
+    :param hostname: The PBM yaml payload to parse from CLI.
+    :type hostname: RequiredStr
+    :param service_id: Service for executing PBM.
+    :type service_id: int
+    :param backup_type: Type of backup activity on PBM.
+    :type backup_type: BackupType
+    """
 
     task_name: RequiredStr
     hostname: RequiredStr
