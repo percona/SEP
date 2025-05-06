@@ -3,7 +3,7 @@
 from enum import StrEnum
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EnumFieldMixin, RequiredStr, EmptyStrToNone, Field
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, Field, RequiredStr
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -61,6 +61,7 @@ class LogOutput(StrEnum):
 
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
+
     :param pbm_config_yaml_payload: The PBM yaml payload to parse from CLI.
     :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
     """
@@ -72,6 +73,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
 class BackupCreate(BackupConfig):
     """Represent a Backup creation form with proper case-insensitive fields.
+
     :param task_name: The PBM yaml payload to parse from CLI.
     :type task_name: RequiredStr
     :param hostname: The PBM yaml payload to parse from CLI.
