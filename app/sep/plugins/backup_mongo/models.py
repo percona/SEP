@@ -3,7 +3,7 @@
 from enum import StrEnum
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EnumFieldMixin, RequiredStr, EmptyStrToNone, Field
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -60,7 +60,14 @@ class LogOutput(StrEnum):
 
 
 class BackupConfig(BaseCaseInsensitiveModel):
-    """Represent the overall backup configuration."""
+    """Represent the overall backup configuration.
+    :param pbm_config_yaml_payload: The recipient of the encryption key.
+    :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
+    """
+
+    pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
+        None, serialization_alias="pbm_config_yaml_payload"
+    )
 
 
 class BackupCreate(BackupConfig):
