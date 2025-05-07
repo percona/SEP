@@ -277,6 +277,16 @@
         </label>
         <br>
         <br>
+        {% set compression_algorithm_title = "Select the type of compression algorithm" %}
+        <div class="select"
+             style="display:none"
+             id="compression_algorithm_wrapper">
+            <label for="compression_algorithm" title="{{ compression_algorithm_title }}">
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Compression Algorithm:</span>
+                <select id="compression_algorithm" name="compression_algorithm"></select>
+            </label>
+        </div>
     </fieldset>
     <fieldset id="mydumper_container" style="flex-direction: column; gap: 1em">
         <legend>Mydumper Configuration</legend>
@@ -751,6 +761,39 @@
 
 
 
+    const compressionWrapper = document.getElementById('compression_algorithm_wrapper');
+    const compressCheckbox = document.getElementById('compress');
+    const compressionSelect = document.getElementById('compression_algorithm');
+
+
+    const compressionOptions = {
+        M: {
+            title: "Select the compression algorithm to use for backups: 'gzip' or 'zstd'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'gzip', label: 'gzip' },
+                { value: 'zstd', label: 'zstd' }
+            ]
+        },
+        X: {
+            title: "Select the compression algorithm to use for backups: 'zstd' or 'lz4'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'zstd', label: 'zstd' },
+                { value: 'lz4', label: 'lz4' }
+            ]
+        },
+        B: {
+            title: "Select the compression algorithm to use for backups: 'gzip'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'gzip', label: 'gzip' }
+            ]
+        }
+    };
+
+
+
     function disableAllMydumperFields(disabled) {
         mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
     }
@@ -866,6 +909,31 @@
     function updateCreateButtonState() {
         createButton.disabled = !form.checkValidity();
     }
+
+
+    function updateCompressionOptions() {
+        const isCompressChecked = compressCheckbox.checked;
+        const backupType = backupTypeSelect.value;
+
+        if (isCompressChecked && compressionOptions[backupType]) {
+            const { title, options } = compressionOptions[backupType];
+
+            compressionSelect.innerHTML = options
+                .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+                .join('');
+
+            compressionSelect.title = title;
+            compressionWrapper.title = title;
+            compressionWrapper.style.display = 'block';
+        } else {
+            compressionWrapper.style.display = 'none';
+            compressionSelect.innerHTML = '';
+        }
+    }
+
+    // Event listeners
+    compressCheckbox.addEventListener('change', updateCompressionOptions);
+    backupTypeSelect.addEventListener('change', updateCompressionOptions);
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
