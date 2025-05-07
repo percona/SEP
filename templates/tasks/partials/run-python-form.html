@@ -9,7 +9,7 @@
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     {% if task_data and task_data.get("ParameterizedJob") %}
         <fieldset style="width: 90%;">
-            <legend style="font-size: 1.5em; font-weight: bold; color: #333;">Configuration</legend>
+            <legend style="font-size: 1.5em; font-weight: bold;">Configuration</legend>
             {% if task_data.ParameterizedJob %}
                 {% set optional = task_data.ParameterizedJob.get("MetaOptional", []) %}
                 {% set required = task_data.ParameterizedJob.get("MetaRequired", []) %}
