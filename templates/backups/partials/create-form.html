@@ -66,7 +66,7 @@
         margin: 1em 0;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form action="" id="create_form" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main Options</legend>
     <br>
@@ -735,17 +735,19 @@
     const xtrabackupContainer = document.getElementById('xtrabackup_container');
     const binlogContainer = document.getElementById('binlog_container');
     const uploadContainer = document.getElementById('upload_container');
-
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
-    let s3Visible = false;
-
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
-    let rsyncVisible = false;
-
     const s3BucketInput = document.getElementById('s3_bucket');
     const rsyncPathInput = document.getElementById('rsync_path');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
+
+    let s3Visible = false;
+    let rsyncVisible = false;
+
+
 
     function disableAllMydumperFields(disabled) {
         mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
@@ -859,13 +861,21 @@
             toggleRsyncBtn.textContent = "+ Add Rsync upload";
         }
     }
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
     // Initialize
-    updateBackupTypeUI();
-    showContainer(s3Container, false);
-    showContainer(rsyncContainer, false);
+    window.addEventListener('DOMContentLoaded', function() {
+        updateBackupTypeUI();
+        showContainer(s3Container, false);
+        showContainer(rsyncContainer, false);
+        updateCreateButtonState();
+    });
+
 </script>
