@@ -2,7 +2,7 @@
 
 import re
 import unicodedata
-from base64 import b64encode
+from base64 import b64decode, b64encode
 
 __all__ = [
     "b64encode_str",
@@ -59,3 +59,18 @@ def b64encode_str(value: str, encoding: str = "utf-8") -> str:
     :rtype: str
     """
     return b64encode(value.encode(encoding)).decode(encoding)
+
+
+def b64decode_str(value: str, encoding: str = "utf-8") -> str:
+    """Decode a Base64 string.
+
+    Decode the given string from Base64 format using the specified encoding.
+
+    :param value: The b64-encoded string.
+    :type value: str
+    :param encoding: The encoding to use for the string, defaults to "utf-8".
+    :type encoding: str, optional
+    :return: The decoded string.
+    :rtype: str
+    """
+    return b64decode(value).decode(encoding)
