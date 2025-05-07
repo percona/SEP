@@ -1862,6 +1862,7 @@ class MyDumper(Backup):
                 mydumper_cmd.extend(["/bin/numactl", "--interleave=all"])
 
             default_args = [
+                f"--defaults-file={self.defaults_cnf_file}",
                 f"--outputdir={self.backup_dir}",
                 "--verbose=3",
                 f"--host={self.host}",

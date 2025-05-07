@@ -1,4 +1,4 @@
-"""Define routes for the alters plugin."""
+"""Define routes for the backups plugin."""
 
 import logging
 from typing import Annotated, Any
@@ -14,10 +14,10 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.plugins.alters.deps import (
-    AltersGeneratedTask,
-    AltersTask,
-    get_alters_index_context,
+from app.sep.plugins.backup_mongo.deps import (
+    BackupGeneratedTask,
+    BackupsTask,
+    get_backups_index_context,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -27,14 +27,14 @@ templates = sep_settings.TEMPLATES
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def alters_index(
+async def pbm_backups_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
+    context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
 ) -> HTMLResponse:
-    """Homepage of alters plugin."""
+    """Homepage of PBM backup mongo plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="alters/index.html",
+        name="backup_mongo/index.html",
         context=context,
     )
 
@@ -42,18 +42,18 @@ async def alters_index(
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
-async def alters_create(
+async def pbm_backups_create(
     request: Request,
-    task: AltersGeneratedTask,
+    task: BackupGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
-    """Create an alter task."""
-    logger.debug("Create alters task: %s", task)
+    """Create new backups task."""
+    logger.debug("Create backups task: %s", task)
     await task_api.post(
-        "/generate/",
+        "/",
         json=task.model_dump(),
     )
-    task_path = request.url_for("alters_detail", task_name=task.name)
+    task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -61,28 +61,25 @@ async def alters_create(
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def alters_detail(
-    task: AltersTask,
+async def pbm_backups_detail(
+    task: BackupsTask,
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Retrieve alters task."""
+    """Retrieve backups task."""
     data = task.data
-    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = data["meta"]
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
-        "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
-        "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
+        "hostname": meta["target"],
         "meta": meta,
-        "delete_url": request.url_for("alters_delete", task_name=task.name),
+        "backup_type": data["backup_type"],
     }
+
     context["task"] = task_data
-    # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
@@ -90,7 +87,7 @@ async def alters_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="alters/details.html",
+        name="backups/details.html",
         context=context,
     )
 
@@ -100,18 +97,18 @@ async def alters_detail(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def alters_execute(
+async def pbm_backups_execute(
     request: Request,
-    task: AltersTask,
+    task: BackupsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
-    """Execute alters task."""
+    """Execute backups task."""
     await tasks_api.post(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    task_path = request.url_for("alters_detail", task_name=task.name)
+    task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -120,10 +117,12 @@ async def alters_execute(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def alters_delete(
-    task: AltersTask,
+async def pbm_backups_delete(
+    request: Request,
+    task: BackupsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Delete alters task."""
+    """Delete backups task."""
     await tasks_api.delete(f"/{task.name}")
-    return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
+    task_path = request.url_for("pbm_backups_index")
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

@@ -40,7 +40,6 @@
         display: block;
     }
 
-
     button {
         margin-top: 1em;
         margin-right: 1em;
@@ -67,7 +66,7 @@
         margin: 1em 0;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form action="" id="create_form" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main Options</legend>
     <br>
@@ -113,8 +112,8 @@
             <label for="service_id" title="{{ service_id_title }}">
                 <span class="material-symbols-outlined">arrow_drop_down</span>
                 <span class="label">Select a Database Host:</span>
-                {% if mysql_services|length == 1 %}
-                    {% set single_service = mysql_services[0] %}
+                {% if services|length == 1 %}
+                    {% set single_service = services[0] %}
                     <select id="service_id" name="service_id" disabled>
                         <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
                     </select>
@@ -122,7 +121,7 @@
                 {% else %}
                     <select id="service_id" name="service_id" required>
                         <option value="" selected>Select a database host</option>
-                        {% for service in mysql_services %}
+                        {% for service in services %}
                             <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                         {% endfor %}
                     </select>
@@ -736,17 +735,19 @@
     const xtrabackupContainer = document.getElementById('xtrabackup_container');
     const binlogContainer = document.getElementById('binlog_container');
     const uploadContainer = document.getElementById('upload_container');
-
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
-    let s3Visible = false;
-
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
-    let rsyncVisible = false;
-
     const s3BucketInput = document.getElementById('s3_bucket');
     const rsyncPathInput = document.getElementById('rsync_path');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
+
+    let s3Visible = false;
+    let rsyncVisible = false;
+
+
 
     function disableAllMydumperFields(disabled) {
         mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
@@ -860,13 +861,21 @@
             toggleRsyncBtn.textContent = "+ Add Rsync upload";
         }
     }
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
     // Initialize
-    updateBackupTypeUI();
-    showContainer(s3Container, false);
-    showContainer(rsyncContainer, false);
+    window.addEventListener('DOMContentLoaded', function() {
+        updateBackupTypeUI();
+        showContainer(s3Container, false);
+        showContainer(rsyncContainer, false);
+        updateCreateButtonState();
+    });
+
 </script>
