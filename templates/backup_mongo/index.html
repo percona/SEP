@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title -%}
-    Data Archiver
+    PBM Backups
 {%- endblock title %}
 {% block style %}
     {% if history_tasks or running_tasks %}
@@ -24,8 +24,8 @@
     {% endif %}
     {% if tasks %}
         <script nonce="{{ request.state.csp_nonce }}">
-            const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
-            const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
+    const taskNames = {{ tasks| map(attribute = 'name') | list | tojson }};
+    const availableTimezones = {{ AVAILABLE_TIMEZONES| tojson }};
         </script>
         <script src="{{ url_for('static', path='/js/cronstrue.min.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
@@ -38,17 +38,22 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <p>Perform data archiving tasks, currently MySQL-only.</p>
+    <p>
+        Generate a <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backup, currently only
+        supporting Logical, Physical and Snapshot methods.
+    </p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
-        <h2>Configure an archiver task</h2>
-        {% if services|length < 1 %}
-            <p>Unable to find suitable database instances.</p>
-        {% elif executor_hosts|length < 1 %}
-            <p>Unable to find suitable executor hosts.</p>
-        {% else %}
-            {% include "archiver/partials/create-form.html" %}
-        {% endif %}
+        <h2>Configure a backup task</h2>
+        {# Note: commented out until services exists
+{% if services|length != 1 %}
+<p>Unable to find suitable database instances.</p>
+{% elif executor_hosts|length < 1 %} <p>Unable to find suitable executor hosts.</p>
+    {% else %}
+    {% include "backup_mongo/partials/create-form.html" %}
+    {% endif %}
+    #}
+        {% include "backup_mongo/partials/create-form.html" %}
     {% else %}
         {% set modal_required = True %}
         {% if running_tasks %}
@@ -59,27 +64,20 @@
         {% endif %}
         <section id="saved-tasks">
             <h2>Saved</h2>
-            {% include "archiver/partials/saved-tasks.html" %}
-            <br>
+            {% include "backup_mongo/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
             {% include "tasks/partials/scheduled-tasks.html" %}
-            <br>
-            <h3>Create an archiving process</h3>
-            <br>
+            <h3>Create a backup process</h3>
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "archiver/partials/create-form.html" %}
+                {% include "backup_mongo/partials/create-form.html" %}
             {% endif %}
         </section>
-        <br>
-        <br>
         <section id="pending-tasks">
             <h2>Pending</h2>
             {% include "tasks/partials/pending-tasks.html" %}
         </section>
-        <br>
-        <br>
         <section id="completed-tasks">
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}

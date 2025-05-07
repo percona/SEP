@@ -114,7 +114,7 @@
 {% set form_class = "modal" if modal_required else "" %}
 <form action=""
       method="post"
-      id="checksum-create-form"
+      id="create_form"
       class="{{ form_class }}"
       style="padding-left: 0">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
@@ -152,15 +152,16 @@
                        class="validate"
                        required
                        title="{{ task_name_title }}"
-                       placeholder="Enter a unique task name">
+                       placeholder="Enter a unique task name"
+                       required>
             </div>
             <div class="select">
                 {% set service_id_title = "Select the database host from the inventory to connect to." %}
                 <label for="service_id" title="{{ service_id_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Database host</span>
-                    {% if mysql_services|length == 1 %}
-                        {% set single_service = mysql_services[0] %}
+                    {% if services|length == 1 %}
+                        {% set single_service = services[0] %}
                         <select id="service_id"
                                 name="service_id"
                                 title="{{ service_id_title }}"
@@ -174,8 +175,8 @@
                                 title="{{ service_id_title }}"
                                 required>
                             <option value="" selected>Select a database host</option>
-                            {% for service in mysql_services %}
-                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% for service in services %}
+                                <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                             {% endfor %}
                         </select>
                     {% endif %}
@@ -357,7 +358,7 @@
     </div>
 </form>
 {% set serviceSchemas = {} %}
-{% for service in mysql_services %}
+{% for service in services %}
     {% set schemas = {} %}
     {% for schema in service.schemas %}
         {% set tables = {} %}
@@ -379,6 +380,8 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
 
     let selectedService = null;
     let selectedSchema = null;
@@ -423,7 +426,11 @@
         }
     }
 
-    connectToSelect.addEventListener('change', function() {
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
+
+    connectToSelect.addEventListener('change', function () {
         const hiddenSchemaInput = document.getElementById("schema_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
         selectedService = this.value;
@@ -435,18 +442,6 @@
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         selectedSchema = this.value;
         populateTables(selectedService, selectedSchema);
-    });
-
-    tableSelect.addEventListener('change', function() {
-        selectedTable = this.value;
-    });
-
-    window.addEventListener('DOMContentLoaded', function() {
-        if (connectToSelect.options.length === 1) {
-            const singleHost = connectToSelect.options[0].value;
-            selectedService = singleHost;
-            populateSchemas(singleHost);
-        }
     });
 
     recursion_method.addEventListener('change', function () {
@@ -480,13 +475,16 @@
         }
     });
 
-    document.getElementById('checksum-create-form').addEventListener('submit', function (e) {
-        if (schemaSelect.value === "-1") {
-            schemaSelect.disabled = true;
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
+
+
+    window.addEventListener('DOMContentLoaded', function () {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            selectedService = singleHost;
+            populateSchemas(singleHost);
         }
-        if (tableSelect.value === "-1") {
-            tableSelect.disabled = true;
-        }
+        updateCreateButtonState();
     });
 
 </script>

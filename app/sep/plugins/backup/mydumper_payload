@@ -1587,11 +1587,14 @@ class MyDumperRunner(multiprocessing.Process):
                 self.logger.exception(exc.message)
                 self.logger.exception("Backup failed for this host.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                sys.exit(1)
             except:
                 self.logger.exception("Unhandled exception occurred.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                sys.exit(1)
 
             logging_set_host(None, LOGGING_NAME)
+
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         self.logger.info(
@@ -1859,6 +1862,7 @@ class MyDumper(Backup):
                 mydumper_cmd.extend(["/bin/numactl", "--interleave=all"])
 
             default_args = [
+                f"--defaults-file={self.defaults_cnf_file}",
                 f"--outputdir={self.backup_dir}",
                 "--verbose=3",
                 f"--host={self.host}",

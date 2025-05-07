@@ -107,6 +107,7 @@
 {% set form_class = "modal" if modal_required else "" %}
 <form action=""
       method="post"
+      id="create_form"
       class="{{ form_class }}"
       style="padding-left: 0">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
@@ -156,8 +157,8 @@
                 <label for="service_id" title="{{ service_id_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Database host</span>
-                    {% if mysql_services|length == 1 %}
-                        {% set single_service = mysql_services[0] %}
+                    {% if services|length == 1 %}
+                        {% set single_service = services[0] %}
                         <select id="service_id"
                                 name="service_id"
                                 title="{{ service_id_title }}"
@@ -171,7 +172,7 @@
                                 title="{{ service_id_title }}"
                                 required>
                             <option value="" selected>Select a database host</option>
-                            {% for service in mysql_services %}
+                            {% for service in services %}
                                 <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                             {% endfor %}
                         </select>
@@ -233,7 +234,8 @@
                        class="validate"
                        size="70"
                        title="{{ alter_title }}"
-                       placeholder="ADD COLUMN new_col INT, DROP COLUMN old_col" />
+                       placeholder="ADD COLUMN new_col INT, DROP COLUMN old_col"
+                       required />
             </div>
         </fieldset>
         <br>
@@ -461,13 +463,17 @@
             </div>
         </fieldset>
     </fieldset>
-    <br>
-    <button class="contained large" type="submit">Create</button>
-    <br>
-    <button class="text large" type="reset">Reset</button>
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                padding: 1em 0">
+        <button class="contained large" type="submit">Create</button>
+        &nbsp;&nbsp;
+        <button class="text large" type="reset">Reset</button>
+    </div>
 </form>
 {% set serviceSchemas = {} %}
-{% for service in mysql_services %}
+{% for service in services %}
     {% set schemas = {} %}
     {% for schema in service.schemas %}
         {% set tables = {} %}
@@ -492,6 +498,8 @@
     const createTableOutput = document.getElementById('createTableOutput');
     const statusMessage = document.getElementById('statusMessage');
     const resultPanel = document.getElementById('result-panel');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
 
     let selectedService = null;
     let selectedSchema = null;
@@ -560,39 +568,10 @@
         }
     }
 
-    connectToSelect.addEventListener('change', function() {
-        const hiddenSchemaInput = document.getElementById("schema_id_hidden");
-        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
-        selectedService = this.value;
-        populateSchemas(selectedService);
-    });
 
-    schemaSelect.addEventListener('change', function() {
-        const hiddenTableInput = document.getElementById("table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        selectedSchema = this.value;
-        populateTables(selectedService, selectedSchema);
-    });
-
-    tableSelect.addEventListener('change', function() {
-        selectedTable = this.value;
-        if (selectedTable) {
-            fetchCreateTableStatement(selectedTable);
-            resultPanel.classList.remove("fade")
-        } else {
-            createTableOutput.classList.add('hidden');
-            statusMessage.textContent = '';
-            resultPanel.classList.add("fade")
-        }
-    });
-
-    window.addEventListener('DOMContentLoaded', function() {
-        if (connectToSelect.options.length === 1) {
-            const singleHost = connectToSelect.options[0].value;
-            selectedService = singleHost;
-            populateSchemas(singleHost);
-        }
-    });
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
 
 
     function fetchCreateTableStatement(tableId) {
@@ -650,4 +629,43 @@
             statusMessage.innerHTML = '❌ This table does not have a PRIMARY or UNIQUE key.';
         }
     }
+
+    connectToSelect.addEventListener('change', function() {
+        const hiddenSchemaInput = document.getElementById("schema_id_hidden");
+        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
+        selectedService = this.value;
+        populateSchemas(selectedService);
+    });
+
+    schemaSelect.addEventListener('change', function() {
+        const hiddenTableInput = document.getElementById("table_id_hidden");
+        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
+        selectedSchema = this.value;
+        populateTables(selectedService, selectedSchema);
+    });
+
+    tableSelect.addEventListener('change', function() {
+        selectedTable = this.value;
+        if (selectedTable) {
+            fetchCreateTableStatement(selectedTable);
+            resultPanel.classList.remove("fade")
+        } else {
+            createTableOutput.classList.add('hidden');
+            statusMessage.textContent = '';
+            resultPanel.classList.add("fade")
+        }
+    });
+
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
+
+    window.addEventListener('DOMContentLoaded', function() {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            selectedService = singleHost;
+            populateSchemas(singleHost);
+        }
+        updateCreateButtonState();
+    });
+
+
 </script>

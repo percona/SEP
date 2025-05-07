@@ -545,8 +545,6 @@ button.outlined[disabled] {
     border-color: var(--textDisabled);
 }
 
-/* Button Text variant */
-
 button.text {
     color: var(--primaryMain);
     transition: background .2s, color .2s;
@@ -1158,6 +1156,10 @@ button.list-item:focus-visible {
 
 .list-item.checksums .icon::before {
     content: "new_releases";
+}
+
+.list-item.backup_mongo .icon::before {
+    content: "nature";
 }
 
 .list-item.inventory .icon::before {
