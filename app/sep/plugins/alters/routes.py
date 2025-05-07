@@ -79,6 +79,7 @@ async def alters_detail(
         "table": f"{meta['schema_name']}.{meta['table_name']}",
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
+        "delete_url": request.url_for("alters_delete", task_name=task.name),
     }
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
