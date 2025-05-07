@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, Request
+from fastapi.encoders import jsonable_encoder
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -119,7 +120,7 @@ async def build_backup_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    backup_config.model_dump(by_alias=True, exclude_none=True)
+                    jsonable_encoder(backup_config, by_alias=True, exclude_none=True)
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
