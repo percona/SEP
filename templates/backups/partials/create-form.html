@@ -106,42 +106,52 @@
                        required
                        placeholder="Enter a unique task name" />
             </label>
-        </div>
-    </fieldset>
-    <fieldset>
-        <legend>Basic Task Information</legend>
-        <br>
-        {% set task_name_title = "Type the name of task to be created." %}
-        <label for="task_name" title="{{ task_name_title }}">
-            Task Name:
-            <input type="text"
-                   id="task_name"
-                   name="task_name"
-                   class="validate"
-                   required
-                   placeholder="Enter a unique task name" />
-        </label>
-        <br>
-        <br>
-        {% set service_id_title = "Select the database host from the inventory to connect to." %}
-        <div class="select">
-            <label for="service_id" title="{{ service_id_title }}">
-                <span class="material-symbols-outlined">arrow_drop_down</span>
-                <span class="label">Select a Database Host:</span>
-                {% if services|length == 1 %}
-                    {% set single_service = services[0] %}
-                    <select id="service_id" name="service_id" disabled>
-                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+            <br>
+            <br>
+            {% set service_id_title = "Select the database host from the inventory to connect to." %}
+            <div class="select">
+                <label for="service_id" title="{{ service_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Select a Database Host:</span>
+                    {% if services|length == 1 %}
+                        {% set single_service = services[0] %}
+                        <select id="service_id" name="service_id" disabled>
+                            <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                        </select>
+                        <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% else %}
+                        <select id="service_id" name="service_id" required>
+                            <option value="" selected>Select a database host</option>
+                            {% for service in services %}
+                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
+            </div>
+            <br>
+            {% set backup_type_title = "Select the type of backup: MyDumper or XtraBackup." %}
+            <div class="select">
+                <label for="backup_type" title="{{ backup_type_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Backup Type:</span>
+                    <select id="backup_type" name="backup_type" required>
+                        <option value="">Select a backup type</option>
+                        <option value="M">Mydumper</option>
+                        <option value="X">Xtrabackup</option>
+                        <option value="B">Binlog</option>
                     </select>
-                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
-                {% else %}
-                    <select id="service_id" name="service_id" required>
-                        <option value="" selected>Select a database host</option>
-                        {% for service in services %}
-                            <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
+                </label>
+            </div>
+            <br>
+            <br>
+            {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
+            <label for="encryption_recipient" title="{{ encryption_recipient_title }}">
+                Encryption Recipient (optional):
+                <input type="text"
+                       id="encryption_recipient"
+                       name="encryption_recipient"
+                       placeholder="Recipient email or key ID" />
             </label>
             <br>
             <br>
