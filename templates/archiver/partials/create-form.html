@@ -118,8 +118,8 @@
                 <label for="service_id" title="{{ service_id_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Database host</span>
-                    {% if mysql_services|length == 1 %}
-                        {% set single_service = mysql_services[0] %}
+                    {% if services|length == 1 %}
+                        {% set single_service = services[0] %}
                         <select id="service_id" name="service_id" disabled>
                             <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
                         </select>
@@ -127,7 +127,7 @@
                     {% else %}
                         <select id="service_id" name="service_id" required>
                             <option value="" selected>Select a database host</option>
-                            {% for service in mysql_services %}
+                            {% for service in services %}
                                 <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                             {% endfor %}
                         </select>
@@ -329,7 +329,7 @@
     </div>
 </form>
 {% set serviceSchemas = {} %}
-{% for service in mysql_services %}
+{% for service in services %}
     {% set schemas = {} %}
     {% for schema in service.schemas %}
         {% set tables = {} %}

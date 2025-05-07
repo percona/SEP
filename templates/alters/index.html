@@ -38,7 +38,7 @@
             <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
             <section>
                 <h2>Configure a schema change</h2>
-                {% if mysql_services|length < 1 %}
+                {% if services|length < 1 %}
                     <p>Unable to find suitable database instances.</p>
                 {% elif executor_hosts|length < 1 %}
                     <p>Unable to find suitable executor hosts.</p>
