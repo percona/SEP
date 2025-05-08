@@ -37,20 +37,25 @@
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"
             nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="
+        https://unpkg.com/react-table@7.8.0/dist/react-table.development.js"
+         nonce="{{ request.state.csp_nonce }}"></script>
     {% include "inventory/partials/breadcrumb.html" %}
     <br>
     {% block inventory_entity_details %}
     {% endblock inventory_entity_details %}
-    <br>
-    {% block inventory_table %}
-    {% endblock inventory_table %}
-    <br>
-    <div id="root"></div>
+    <div id="inventory-container"></div>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/inventory-table.js') }}"
+            src="{{ url_for('static', path='/js/react/node-table.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script type="text/babel"
+            src="{{ url_for('static', path='/js/react/test-table.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script type="text/babel"
+            src="{{ url_for('static', path='/js/react/inventory.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel" nonce="{{ request.state.csp_nonce }}">
-        const container = document.getElementById('root');
-        ReactDOM.render(<AxiosExample />, container)
+        const container = document.getElementById('inventory-container');
+        ReactDOM.render(<Inventory />, container)
     </script>
 {% endblock main %}
