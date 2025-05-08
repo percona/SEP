@@ -7,6 +7,13 @@
         {% include "inventory/partials/sync-button.html" %}
     {% endwith %}
     <br>
+    <div id="root"></div>
+    <script type="text/babel">
+            function App() {
+                return <h1>Hello World</h1>;
+            }
+            ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
     <table data-table>
         <thead>
             <tr>

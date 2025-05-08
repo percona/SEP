@@ -4,8 +4,9 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from app.core.utils.serialization import enum_serializer
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
@@ -19,9 +20,9 @@ from app.sep.deps import (
     IsCsrfValidated,
     SessionDep,
 )
-from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
+from app.sep.inventory import Node, Schema, Service, Table
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.inventory.deps import SyncersDep
+from app.sep.plugins.inventory.deps import NodesDep, SyncersDep
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
     run_node_sync,
@@ -36,25 +37,22 @@ templates = sep_settings.TEMPLATES
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def node_list(
-    session: SessionDep,
-    syncers: SyncersDep,
-    request: Request,
-    context: DefaultContext,
-    inventory_api: InventoryAPI,
+    request: Request, context: DefaultContext, nodes: NodesDep
 ) -> HTMLResponse:
     """List Nodes."""
-    context["inventory"] = await inventory_api.get("/")
-    context["source_enum"] = SourceEnum
-    context["sync_is_running"] = await SyncItemManager.sync_is_running(
-        session,
-        SyncInventoryEntityTypeEnum.INVENTORY,
-    )
-    context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
+    context.update(nodes)
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html",
         context=context,
     )
+
+
+@router.get("/api/nodes", dependencies=[IsAuthenticated])
+async def node_list_api(nodes: NodesDep) -> JSONResponse:
+    """Return the node list metadata as a JSON response."""
+    nodes["source_enum"] = enum_serializer(nodes["source_enum"])
+    return JSONResponse(content=nodes, status_code=200)
 
 
 @router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])

@@ -27,6 +27,16 @@
     {% endif %}
 {% endblock behaviours %}
 {% block main %}
+    <script crossorigin
+            src="https://unpkg.com/react@17/umd/react.production.min.js"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script crossorigin
+            src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"
+            nonce="{{ request.state.csp_nonce }}"></script>
     {% include "inventory/partials/breadcrumb.html" %}
     <br>
     {% block inventory_entity_details %}
@@ -35,4 +45,12 @@
     {% block inventory_table %}
     {% endblock inventory_table %}
     <br>
+    <div id="root"></div>
+    <script type="text/babel"
+            src="{{ url_for('static', path='/js/inventory-table.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script type="text/babel" nonce="{{ request.state.csp_nonce }}">
+        const container = document.getElementById('root');
+        ReactDOM.render(<AxiosExample />, container)
+    </script>
 {% endblock main %}

@@ -5,8 +5,11 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.utils import import_var
+from app.inventory.models import SourceEnum
 from app.sep.config import sep_settings
-from app.sep.deps import InventoryAPI, TaskAPI
+from app.sep.crud import SyncItemManager
+from app.sep.deps import InventoryAPI, SessionDep, TaskAPI
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseSyncer
 
 
@@ -37,3 +40,33 @@ def get_syncers(inventory_api: InventoryAPI, tasks_api: TaskAPI) -> list[BaseSyn
 
 
 SyncersDep = Annotated[list[BaseSyncer], Depends(get_syncers)]
+
+
+async def get_node_list_data(
+    session: SessionDep, syncers: SyncersDep, inventory_api: InventoryAPI
+) -> dict:
+    """Assemble and return node list metadata for rendering or API response.
+
+    Retrieves inventory data, enum definitions, sync status, and sync eligibility.
+
+    :param session: Database session dependency.
+    :type session: SessionDep
+    :param syncers: List of initialized BaseSyncer instances.
+    :type syncers: SyncersDep
+    :param inventory_api: Inventory API client instance.
+    :type inventory_api: InventoryAPI
+    :return: A dictionary of context data used for inventory rendering.
+    :rtype: dict
+    """
+    return {
+        "inventory": await inventory_api.get("/"),
+        "source_enum": SourceEnum,
+        "sync_is_running": await SyncItemManager.sync_is_running(
+            session,
+            SyncInventoryEntityTypeEnum.INVENTORY,
+        ),
+        "can_sync": any(syncer.can_sync_inventory() for syncer in syncers),
+    }
+
+
+NodesDep = Annotated[dict, Depends(get_node_list_data)]

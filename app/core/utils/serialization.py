@@ -1,6 +1,7 @@
 """Utilities for serializing data."""
 
 import json
+from enum import Enum
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
@@ -24,3 +25,15 @@ def json_serializer(data: Any, **kwargs: Any) -> str:
     :rtype: str
     """
     return json.dumps(jsonable_encoder(data), **kwargs)
+
+
+def enum_serializer(enum_cls: Enum) -> list[dict[str, Any]]:
+    """Convert an Enum class into a list of dictionaries with name-value pairs.
+
+    :param enum_cls: The Enum class to serialize.
+    :type enum_cls: Enum
+    :return: A list of dictionaries where each dictionary has a single key-value
+             pair representing the name and value of an Enum member.
+    :rtype: list[dict[str, Any]]
+    """
+    return [{e.name: e.value} for e in enum_cls]
