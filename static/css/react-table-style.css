@@ -1,0 +1,82 @@
+#filter_input {
+    padding-left: 2.625em;
+    width: 20em;
+    max-width: 100%;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 400;
+    font-size: 1em;
+    line-height: 1.5;
+    box-sizing: border-box;
+    height: 2.5em;
+    border: 0.125rem solid var(--lineDivider);
+    border-radius: var(--cornerExtraSmall);
+    color: var(--textPrimary);
+    background: var(--surfaceElevation1);
+    transition: border-color .1s;
+}
+
+th div.sorted-asc,
+th div.sorted-desc {
+    display: flex;
+    align-items: center;
+    position: relative;
+    width: fit-content;
+}
+
+th:hover {
+    color: var(--primaryLight);
+    background: var(--primaryHover);
+}
+
+th div.sorted-asc::after,
+th div.sorted-desc::after {
+    position: absolute;
+    right: -1em;
+    order: 2;
+    font-family: 'Material Symbols Outlined';
+    font-weight: 400;
+    font-size: 1.25rem;
+    line-height: 1;
+    max-height: 2.5rem;
+    border: none;
+    opacity: 1;
+}
+
+th div.sorted-asc::after {
+    content: "north";
+}
+
+
+th div.sorted-desc::after {
+    content: "south";
+}
+
+.datatable-active {
+    border-radius: 100%;
+    color: var(--primaryMain);
+    background: var(--primarySelected);
+    transition: background .2s;
+}
+
+.pagination-prev-btn,
+.pagination-next-btn {
+    display: flex;
+    font-family: 'Material Symbols Outlined' !important;
+    font-weight: 400 !important;
+    font-size: 1.5em !important;
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+button.pagination-prev-btn:disabled,
+button.pagination-next-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.pagination-info {
+    float: left;
+    color: var(--textSecondary);
+    padding: 0.5625em 0;
+    margin: 0;
+}
