@@ -41,16 +41,25 @@
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src=" https://unpkg.com/react-table@7.8.0/dist/react-table.development.js"
             nonce="{{ request.state.csp_nonce }}"></script>
-    {% include "inventory/partials/breadcrumb.html" %}
+    <!-- {% include "inventory/partials/breadcrumb.html" %} -->
     <br>
-    {% block inventory_entity_details %}
-    {% endblock inventory_entity_details %}
+    <!-- {% block inventory_table %}
+    {% endblock inventory_table %} -->
     <div id="inventory-container"></div>
     <script type="text/babel"
-    src="{{ url_for('static', path='/js/react/data-table.js') }}"
-    nonce="{{ request.state.csp_nonce }}"></script>
+            src="{{ url_for('static', path='/js/react/data-table.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/node-table.js') }}"
+            src="{{ url_for('static', path='/js/react/node-list.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script type="text/babel"
+            src="{{ url_for('static', path='/js/react/service-list.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script type="text/babel"
+            src="{{ url_for('static', path='/js/react/schema-list.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script type="text/babel"
+            src="{{ url_for('static', path='/js/react/table-list.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
             src="{{ url_for('static', path='/js/react/inventory.js') }}"

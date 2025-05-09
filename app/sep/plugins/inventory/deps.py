@@ -3,12 +3,21 @@
 from typing import Annotated
 
 from fastapi import Depends
+from pydantic import BaseModel
 
 from app.core.utils import import_var
 from app.inventory.models import SourceEnum
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
-from app.sep.deps import InventoryAPI, SessionDep, TaskAPI
+from app.sep.deps import (
+    CreatedNodeDep,
+    CreatedSchemaDep,
+    CreatedServiceDep,
+    InventoryAPI,
+    SessionDep,
+    TaskAPI,
+)
+from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseSyncer
 
@@ -69,4 +78,139 @@ async def get_node_list_data(
     }
 
 
-NodesDep = Annotated[dict, Depends(get_node_list_data)]
+NodesContextDep = Annotated[dict, Depends(get_node_list_data)]
+
+
+class NodeDetailContextResponse(BaseModel):
+    """Node detail context response model.
+
+    :param node: Node instance with its details.
+    :type node: CreatedNode
+    :param sync_is_running: Flag indicating if sync is in progress.
+    :type sync_is_running: bool
+    :param can_sync: Flag indicating if node can be synced.
+    :type can_sync: bool
+    """
+
+    node: CreatedNode
+    sync_is_running: bool
+    can_sync: bool
+
+
+class ServiceDetailContextResponse(BaseModel):
+    """Service detail context response model.
+
+    :param service: Service instance with its details.
+    :type service: CreatedService
+    :param sync_is_running: Flag indicating if sync is in progress.
+    :type sync_is_running: bool
+    :param can_sync: Flag indicating if service can be synced.
+    :type can_sync: bool
+    """
+
+    service: CreatedService
+    sync_is_running: bool
+    can_sync: bool
+
+
+class SchemaDetailContextResponse(BaseModel):
+    """Schema detail context response model.
+
+    :param schema: Schema instance with its details.
+    :type schema: CreatedSchema
+    :param sync_is_running: Flag indicating if sync is in progress.
+    :type sync_is_running: bool
+    :param can_sync: Flag indicating if schema can be synced.
+    :type can_sync: bool
+    """
+
+    schema: CreatedSchema
+    sync_is_running: bool
+    can_sync: bool
+
+
+async def get_node_detail_data(
+    session: SessionDep,
+    syncers: SyncersDep,
+    node: CreatedNodeDep,
+) -> dict:
+    """Assemble and return node detail metadata for rendering or API response.
+
+    :param session: Database session dependency.
+    :type session: SessionDep
+    :param syncers: List of initialized BaseSyncer instances.
+    :type syncers: SyncersDep
+    :param node: Node instance to get details for.
+    :type node: CreatedNodeDep
+    :return: A dictionary of context data used for node detail rendering.
+    :rtype: dict
+    """
+    return {
+        "node": node,
+        "sync_is_running": await SyncItemManager.sync_is_running(
+            session,
+            SyncInventoryEntityTypeEnum.NODE,
+        ),
+        "can_sync": any(syncer.can_sync_node(node) for syncer in syncers),
+    }
+
+
+NodeDetailContextDep = Annotated[dict, Depends(get_node_detail_data)]
+
+
+async def get_service_detail_data(
+    session: SessionDep,
+    syncers: SyncersDep,
+    service: CreatedServiceDep,
+) -> dict:
+    """Assemble and return service detail metadata for rendering or API response.
+
+    :param session: Database session dependency.
+    :type session: SessionDep
+    :param syncers: List of initialized BaseSyncer instances.
+    :type syncers: SyncersDep
+    :param service: Service instance to get details for.
+    :type service: CreatedServiceDep
+    :return: A dictionary of context data used for service detail rendering.
+    :rtype: dict
+    """
+    return {
+        "service": service,
+        "sync_is_running": await SyncItemManager.sync_is_running(
+            session,
+            SyncInventoryEntityTypeEnum.SERVICE,
+        ),
+        "can_sync": any(syncer.can_sync_service(service) for syncer in syncers),
+    }
+
+
+ServiceDetailContextDep = Annotated[dict, Depends(get_service_detail_data)]
+
+
+async def get_schema_detail_data(
+    session: SessionDep,
+    syncers: SyncersDep,
+    schema: CreatedSchemaDep,
+) -> dict:
+    """Assemble and return schema detail metadata for rendering or API response.
+
+    :param session: Database session dependency.
+    :type session: SessionDep
+    :param syncers: List of initialized BaseSyncer instances.
+    :type syncers: SyncersDep
+    :param schema: Schema instance to get details for.
+    :type schema: CreatedSchemaDep
+    :return: A dictionary of context data used for schema detail rendering.
+    :rtype: dict
+    """
+    return {
+        "schema": schema,
+        "sync_is_running": await SyncItemManager.sync_is_running(
+            session,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+        ),
+        "can_sync": any(syncer.can_sync_schema(schema) for syncer in syncers),
+    }
+
+
+SchemaDetailContextDep = Annotated[dict, Depends(get_schema_detail_data)]

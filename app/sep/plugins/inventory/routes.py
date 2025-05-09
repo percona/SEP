@@ -8,7 +8,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.core.utils.serialization import enum_serializer
 from app.sep.config import sep_settings
-from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     CreatedNodeDep,
     CreatedSchemaDep,
@@ -18,11 +17,18 @@ from app.sep.deps import (
     InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
-    SessionDep,
 )
 from app.sep.inventory import Node, Schema, Service, Table
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.inventory.deps import NodesDep, SyncersDep
+from app.sep.plugins.inventory.deps import (
+    NodeDetailContextDep,
+    NodeDetailContextResponse,
+    NodesContextDep,
+    SchemaDetailContextDep,
+    SchemaDetailContextResponse,
+    ServiceDetailContextDep,
+    ServiceDetailContextResponse,
+    SyncersDep,
+)
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
     run_node_sync,
@@ -37,10 +43,10 @@ templates = sep_settings.TEMPLATES
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def node_list(
-    request: Request, context: DefaultContext, nodes: NodesDep
+    request: Request, context: DefaultContext, nodes_context: NodesContextDep
 ) -> HTMLResponse:
     """List Nodes."""
-    context.update(nodes)
+    context.update(nodes_context)
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html",
@@ -49,10 +55,10 @@ async def node_list(
 
 
 @router.get("/api/nodes", dependencies=[IsAuthenticated])
-async def node_list_api(nodes: NodesDep) -> JSONResponse:
-    """Return the node list metadata as a JSON response."""
-    nodes["source_enum"] = enum_serializer(nodes["source_enum"])
-    return JSONResponse(content=nodes, status_code=200)
+async def node_list_api(nodes_context: NodesContextDep) -> JSONResponse:
+    """Return the node list as a JSON response."""
+    nodes_context["source_enum"] = enum_serializer(nodes_context["source_enum"])
+    return JSONResponse(content=nodes_context, status_code=200)
 
 
 @router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -67,24 +73,29 @@ async def sync_inventory(
 
 @router.get("/{node_id}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def node_detail(
-    session: SessionDep,
-    syncers: SyncersDep,
     request: Request,
-    node: CreatedNodeDep,
+    node_detail_context: NodeDetailContextDep,
     context: DefaultContext,
 ) -> HTMLResponse:
     """Retrieve Node Details."""
-    context["node"] = node
-    context["sync_is_running"] = await SyncItemManager.sync_is_running(
-        session,
-        SyncInventoryEntityTypeEnum.NODE,
-    )
-    context["can_sync"] = any(syncer.can_sync_node(node) for syncer in syncers)
+    context.update(node_detail_context)
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-detail.html",
         context=context,
     )
+
+
+@router.get(
+    "/api/nodes/{node_id}",
+    dependencies=[IsAuthenticated],
+    response_model=NodeDetailContextResponse,
+)
+async def node_detail_api(
+    node_detail_context: NodeDetailContextDep,
+) -> NodeDetailContextResponse:
+    """Return the node detail as NodeDetailContextResponse."""
+    return NodeDetailContextResponse(**node_detail_context)
 
 
 @router.post("/{node_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -127,24 +138,29 @@ async def node_delete(
     response_class=HTMLResponse,
 )
 async def service_detail(
-    session: SessionDep,
-    syncers: SyncersDep,
     request: Request,
-    service: CreatedServiceDep,
+    service_detail_context: ServiceDetailContextDep,
     context: DefaultContext,
 ) -> HTMLResponse:
     """Retrieve Service Details."""
-    context["service"] = service
-    context["sync_is_running"] = await SyncItemManager.sync_is_running(
-        session,
-        SyncInventoryEntityTypeEnum.SERVICE,
-    )
-    context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
+    context.update(service_detail_context)
     return templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html",
         context=context,
     )
+
+
+@router.get(
+    "/api/services/{service_id}",
+    dependencies=[IsAuthenticated],
+    response_model=ServiceDetailContextResponse,
+)
+async def service_detail_api(
+    service_detail_context: ServiceDetailContextDep,
+) -> ServiceDetailContextResponse:
+    """Return the service detail as ServiceDetailContextResponse."""
+    return ServiceDetailContextResponse(**service_detail_context)
 
 
 @router.post(
@@ -201,24 +217,29 @@ async def service_delete(
     response_class=HTMLResponse,
 )
 async def schema_detail(
-    session: SessionDep,
-    syncers: SyncersDep,
     request: Request,
-    schema: CreatedSchemaDep,
+    schema_detail_context: SchemaDetailContextDep,
     context: DefaultContext,
 ) -> HTMLResponse:
     """Retrieve Schema Details."""
-    context["schema"] = schema
-    context["sync_is_running"] = await SyncItemManager.sync_is_running(
-        session,
-        SyncInventoryEntityTypeEnum.SCHEMA,
-    )
-    context["can_sync"] = any(syncer.can_sync_schema(schema) for syncer in syncers)
+    context.update(schema_detail_context)
     return templates.TemplateResponse(
         request=request,
         name="inventory/schema-detail.html",
         context=context,
     )
+
+
+@router.get(
+    "/api/schemas/{schema_id}",
+    dependencies=[IsAuthenticated],
+    response_model=SchemaDetailContextResponse,
+)
+async def schema_detail_api(
+    schema_detail_context: SchemaDetailContextDep,
+) -> SchemaDetailContextResponse:
+    """Return the schema detail as SchemaDetailContextResponse."""
+    return SchemaDetailContextResponse(**schema_detail_context)
 
 
 @router.post(

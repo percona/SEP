@@ -96,23 +96,31 @@ function DataTable({ data, columns, onRowClick }) {
             ))}
           </thead>
           <tbody {...getTableBodyProps()}>
-            {page.map(row => {
-              prepareRow(row);
-              return (
-                <tr {...row.getRowProps()} onClick={(e) => {onRowClick(row.original)}}>
-                  {row.cells.map(cell => (
-                    <td {...cell.getCellProps()}>
-                      {cell.render('Cell')}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
+            {page.length === 0 ? (
+              <tr>
+                <td colSpan={memoizedColumns.length} style={{ textAlign: 'center', padding: '1rem', color: '#888' }}>
+                  No data available
+                </td>
+              </tr>
+            ) : (
+              page.map(row => {
+                prepareRow(row);
+                return (
+                  <tr {...row.getRowProps()} onClick={() => onRowClick(row.original)}>
+                    {row.cells.map(cell => (
+                      <td {...cell.getCellProps()}>{cell.render('Cell')}</td>
+                    ))}
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
       <div className="pagination-info">
-        Shwing {startRow}–{endRow} of {rows.length} entries
+        {rows.length > 0
+          ? `Showing ${startRow}–${endRow} of ${rows.length} entries`
+          : 'No entries found'}
       </div>
       <ul className="datatable-pagination-list pagination" style={{ marginTop: "10px", float: "right", display: "flex" }}>
         {Array.from({ length: pageCount }, (_, i) => (
