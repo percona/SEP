@@ -47,10 +47,10 @@
     {% endblock inventory_entity_details %}
     <div id="inventory-container"></div>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/node-table.js') }}"
-            nonce="{{ request.state.csp_nonce }}"></script>
+    src="{{ url_for('static', path='/js/react/data-table.js') }}"
+    nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/test-table.js') }}"
+            src="{{ url_for('static', path='/js/react/node-table.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
             src="{{ url_for('static', path='/js/react/inventory.js') }}"

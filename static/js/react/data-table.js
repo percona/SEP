@@ -18,23 +18,9 @@ function GlobalFilter({ globalFilter, setGlobalFilter }) {
   );
 }
 
-function DataTable() {
-  const data = useMemo(() => [
-    { name: 'Alice', age: 25, city: 'New York' },
-    { name: 'Bob', age: 30, city: 'Chicago' },
-    { name: 'Carol', age: 22, city: 'Los Angeles' },
-    { name: 'Dave', age: 35, city: 'San Francisco' },
-    { name: 'Eve', age: 28, city: 'Boston' },
-    { name: 'Frank', age: 40, city: 'Austin' },
-    { name: 'Grace', age: 26, city: 'Seattle' },
-    { name: 'Hank', age: 32, city: 'Denver' },
-  ], []);
-
-  const columns = useMemo(() => [
-    { Header: 'Name', accessor: 'name' },
-    { Header: 'Age', accessor: 'age' },
-    { Header: 'City', accessor: 'city' },
-  ], []);
+function DataTable({ data, columns, onRowClick }) {
+  const memoizedData = useMemo(() => data, [data]);
+  const memoizedColumns = useMemo(() => columns, [columns]);
 
   const {
     getTableProps,
@@ -53,7 +39,7 @@ function DataTable() {
     setGlobalFilter,
     rows
   } = useTable(
-    { columns, data, initialState: { pageSize: 10 } },
+    { columns: memoizedColumns, data: memoizedData, initialState: { pageSize: 10 } },
     useGlobalFilter,
     useSortBy,
     usePagination
@@ -113,7 +99,7 @@ function DataTable() {
             {page.map(row => {
               prepareRow(row);
               return (
-                <tr {...row.getRowProps()}>
+                <tr {...row.getRowProps()} onClick={(e) => {onRowClick(row.original)}}>
                   {row.cells.map(cell => (
                     <td {...cell.getCellProps()}>
                       {cell.render('Cell')}

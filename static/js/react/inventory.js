@@ -1,7 +1,7 @@
 function Inventory() {
     return (
       <div>
-        <DataTable/>
+        <NodeTable/>
       </div>
     );
 }
