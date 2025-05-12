@@ -122,6 +122,17 @@ async def sync_node(
     )
 
 
+@router.post("/api/nodes/{node_id}/sync", dependencies=[IsAuthenticated])
+async def sync_node_api(
+    node: CreatedNodeDep,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
+    """Start node sync as a background task."""
+    background_tasks.add_task(run_node_sync, node, *syncers)
+    return JSONResponse(content={"status": "sync started"})
+
+
 @router.post("/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def node_create(
     inventory_api: InventoryAPI,
@@ -174,7 +185,7 @@ async def service_detail_api(
 
 
 @router.post(
-    "/services/{service_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
+    "/services/{service_id}/sync", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_service(
     service: CreatedServiceDep,
@@ -187,6 +198,17 @@ async def sync_service(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
+
+
+@router.post("/api/services/{service_id}/sync", dependencies=[IsAuthenticated])
+async def sync_service_api(
+    service: CreatedServiceDep,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
+    """Start service sync as a background task."""
+    background_tasks.add_task(run_service_sync, service, *syncers)
+    return JSONResponse(content={"status": "sync started"})
 
 
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -253,7 +275,7 @@ async def schema_detail_api(
 
 
 @router.post(
-    "/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
+    "/schemas/{schema_id}/sync", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_schema(
     schema: CreatedSchemaDep,
@@ -266,6 +288,17 @@ async def sync_schema(
         f"/inventory/schemas/{schema.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
+
+
+@router.post("/api/schemas/{schema_id}/sync", dependencies=[IsAuthenticated])
+async def sync_schema_api(
+    schema: CreatedSchemaDep,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
+    """Start schema sync as a background task."""
+    background_tasks.add_task(run_schema_sync, schema, *syncers)
+    return JSONResponse(content={"status": "sync started"})
 
 
 @router.post(

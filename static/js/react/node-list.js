@@ -51,24 +51,7 @@ function NodeList({ onSelect }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Node List</h2>
-        {canSync && (
-          <button
-            onClick={handleSync}
-            disabled={loading}
-            className="icons"
-            style={{ display: 'inline' }}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{
-                animation: loading ? 'spin 1s linear infinite' : 'none',
-                display: 'inline-block'
-              }}
-            >
-              autorenew
-            </span>
-          </button>
-        )}
+        <SyncButton loading={loading} canSync={canSync} onClick={handleSync} />
       </div>
       <DataTable data={nodes} columns={columns} onRowClick={onSelect} />
     </div>

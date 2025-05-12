@@ -63,7 +63,7 @@ development:
     SYNCERS:
       - SYNCER: PMMSyncer
         PMM:
-          ENDPOINT: https://127.0.0.1:8443
+          ENDPOINT: https://127.0.0.1:443
           VERIFY_SSL: false
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
