@@ -169,6 +169,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             task.data["ID"],
             payload=payload,
             meta=queue_item.execution_request.meta,
+            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}",
         )
         if not job_status:
             logger.error("Unable to dispatch task %s", task.id)
