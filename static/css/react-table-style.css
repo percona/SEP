@@ -80,3 +80,13 @@ button.pagination-next-btn:disabled {
     padding: 0.5625em 0;
     margin: 0;
 }
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}

@@ -71,6 +71,16 @@ async def sync_inventory(
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/api/nodes/sync", dependencies=[IsAuthenticated])
+async def sync_inventory_api(
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
+    """Start inventory sync as a background task."""
+    background_tasks.add_task(run_inventory_sync, *syncers)
+    return JSONResponse(content={"status": "sync started"})
+
+
 @router.get("/{node_id}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def node_detail(
     request: Request,
