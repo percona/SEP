@@ -26,10 +26,10 @@ function SchemaList({ serviceId, onSelect }) {
       const interval = setInterval(async () => {
         const res = await axios.get(`/inventory/api/services/${serviceId}`);
         setSchemas(res.data.service.schemas);
-        const isRunning = res.data.service.schemas.some(s => s.is_running);
-        if (!isRunning) {
+        setLoading(res.data.sync_is_running);
+        setCanSync(res.data.can_sync);
+        if (!res.data.sync_is_running) {
           clearInterval(interval);
-          setLoading(false);
         }
       }, 3000);
     } catch (err) {

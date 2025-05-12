@@ -10,7 +10,7 @@ function NodeList({ onSelect }) {
     axios.get("/inventory/api/nodes")
       .then(res => {
         setNodes(res.data.inventory);
-        setLoading(res.data.is_running);
+        setLoading(res.data.sync_is_running);
         setCanSync(res.data.can_sync);
       })
       .catch(err => console.error(err));
@@ -27,9 +27,9 @@ function NodeList({ onSelect }) {
       const interval = setInterval(async () => {
         const res = await axios.get("/inventory/api/nodes");
         setNodes(res.data.inventory);
-        setLoading(res.data.is_running);
+        setLoading(res.data.sync_is_running);
         setCanSync(res.data.can_sync);
-        if (!res.data.is_running) {
+        if (!res.data.sync_is_running) {
           clearInterval(interval);
         }
       }, 3000);

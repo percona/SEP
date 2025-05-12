@@ -26,10 +26,10 @@ function ServiceList({ nodeId, onSelect }) {
       const interval = setInterval(async () => {
         const res = await axios.get(`/inventory/api/nodes/${nodeId}`);
         setServices(res.data.node.services);
-        const isRunning = res.data.node.services.some(s => s.is_running);
-        if (!isRunning) {
+        setLoading(res.data.sync_is_running);
+        setCanSync(res.data.can_sync);
+        if (!res.data.sync_is_running) {
           clearInterval(interval);
-          setLoading(false);
         }
       }, 3000);
     } catch (err) {
