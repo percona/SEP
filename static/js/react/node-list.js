@@ -6,7 +6,6 @@ function NodeList({ onSelect }) {
   const [canSync, setCanSync] = useState(true);
 
   const fetchNodes = () => {
-
     axios.get("/inventory/api/nodes")
       .then(res => {
         setNodes(res.data.inventory);
@@ -39,12 +38,40 @@ function NodeList({ onSelect }) {
     }
   }
 
+  const handleDelete = async (nodeId) => {
+    try {
+      await axios.post(`/inventory/api/nodes/${nodeId}/delete`);
+      fetchNodes();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
+
   const columns = [
     { Header: 'Name', accessor: 'name' },
     { Header: 'Address', accessor: 'address' },
     { Header: 'Type', accessor: 'type' },
     { Header: 'Source', accessor: 'source' },
     { Header: 'External ID', accessor: 'external_id' },
+    {
+      Header: 'Actions',
+      accessor: 'id',
+      Cell: ({ value }) => (
+        <div style={{ display: 'inline' }} className="confirmable-form">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(value);
+            }}
+            name="location"
+            className="icons submitButton"
+            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            <span className="material-symbols-outlined">delete_forever</span>
+          </button>
+        </div>
+      ),
+    }
   ];
 
   return (

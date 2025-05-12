@@ -42,11 +42,39 @@ function ServiceList({ nodeId, onSelect }) {
     }
   };
 
+  const handleDelete = async (serviceId) => {
+    try {
+      await axios.post(`/inventory/api/services/${serviceId}/delete`);
+      fetchServices();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
+
   const columns = useMemo(() => [
     { Header: 'Name', accessor: 'name' },
     { Header: 'Type', accessor: 'type' },
     { Header: 'Port', accessor: 'port' },
     { Header: 'External ID', accessor: 'external_id' },
+    {
+      Header: 'Actions',
+      accessor: 'id',
+      Cell: ({ value }) => (
+        <div style={{ display: 'inline' }} className="confirmable-form">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(value);
+            }}
+            name="location"
+            className="icons submitButton"
+            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            <span className="material-symbols-outlined">delete_forever</span>
+          </button>
+        </div>
+      ),
+    }
   ], []);
 
   return (

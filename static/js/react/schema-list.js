@@ -47,8 +47,36 @@ function SchemaList({ serviceId, onSelect }) {
     }
   };
 
+  const handleDelete = async (schemaId) => {
+    try {
+      await axios.post(`/inventory/api/schemas/${schemaId}/delete`);
+      fetchSchemas();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
+
   const columns = useMemo(() => [
     { Header: 'Name', accessor: 'name' },
+    {
+      Header: 'Actions',
+      accessor: 'id',
+      Cell: ({ value }) => (
+        <div style={{ display: 'inline' }} className="confirmable-form">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(value);
+            }}
+            name="location"
+            className="icons submitButton"
+            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            <span className="material-symbols-outlined">delete_forever</span>
+          </button>
+        </div>
+      ),
+    }
   ], []);
 
   return (

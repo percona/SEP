@@ -153,6 +153,16 @@ async def node_delete(
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/api/nodes/{node_id}/delete", dependencies=[IsAuthenticated])
+async def node_delete_api(
+    node_id: int,
+    inventory_api: InventoryAPI,
+) -> JSONResponse:
+    """Delete Node."""
+    await inventory_api.delete(f"/{node_id}")
+    return JSONResponse(content={"status": "deleted node: {node_id}"})
+
+
 @router.get(
     "/services/{service_id}",
     dependencies=[IsAuthenticated],
@@ -241,6 +251,16 @@ async def service_delete(
         f"/inventory/{service.node_id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
+
+
+@router.post("/api/services/{service_id}/delete", dependencies=[IsAuthenticated])
+async def service_delete_api(
+    inventory_api: InventoryAPI,
+    service: CreatedServiceDep,
+) -> JSONResponse:
+    """Delete Service."""
+    await inventory_api.delete(f"/services/{service.id}")
+    return JSONResponse(content={"status": "deleted service: {service.id}"})
 
 
 @router.get(
@@ -335,6 +355,16 @@ async def schema_delete(
     )
 
 
+@router.post("/api/schemas/{schema_id}/delete", dependencies=[IsAuthenticated])
+async def schema_delete_api(
+    inventory_api: InventoryAPI,
+    schema: CreatedSchemaDep,
+) -> JSONResponse:
+    """Delete Schema."""
+    await inventory_api.delete(f"/schemas/{schema.id}")
+    return JSONResponse(content={"status": "deleted schema: {schema.id}"})
+
+
 @router.post(
     "/schemas/{schema_id}/tables/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
@@ -367,3 +397,13 @@ async def table_delete(
         f"/inventory/schemas/{table.schema_id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
+
+
+@router.post("/api/tables/{table_id}/delete", dependencies=[IsAuthenticated])
+async def table_delete_api(
+    inventory_api: InventoryAPI,
+    table: CreatedTableDep,
+) -> JSONResponse:
+    """Delete Table."""
+    await inventory_api.delete(f"/tables/{table.id}")
+    return JSONResponse(content={"status": "deleted table: {table.id}"})
