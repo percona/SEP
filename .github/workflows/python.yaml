@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Perform audit
-        run: RUFF_OUTPUT_FORMAT=github make audit
+        run: SHELL=bash RUFF_OUTPUT_FORMAT=github make audit
         shell: bash
 
   check_migrations:
@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Check migrations
-        run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
+        run: SHELL=bash CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
         shell: bash
 
   test:
@@ -67,7 +67,7 @@ jobs:
       - name: Install test dependencies
         run: poetry install --with syncmysql
       - name: Run tests
-        run: make test
+        run: SHELL=bash make test
         shell: bash
 
   build:
@@ -85,5 +85,5 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Build package
-        run: make build
+        run: SHELL=bash make build
         shell: bash
