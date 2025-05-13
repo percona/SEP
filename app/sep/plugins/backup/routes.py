@@ -7,7 +7,7 @@ import yaml
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
-from .restore import routes as restore_router
+from .restore.routes import router as restore_router
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
-router.include_router(restore_router, prefix="/restore", tags=["restore"])
+router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def backups_index(
@@ -38,7 +38,7 @@ async def backups_index(
     """Homepage of backups plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/index.html",
+        name="backups/backup/index.html",
         context=context,
     )
 
@@ -96,7 +96,7 @@ async def backups_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="backups/details.html",
+        name="backups/backup/details.html",
         context=context,
     )
 
