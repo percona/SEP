@@ -47,13 +47,34 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
-    """Create an alter task."""
-    logger.debug("Create alters task: %s", task)
+    """Create alter tasks - one for execution and one for dry run."""
+    logger.debug("Create alters tasks: %s", task)
+
+    # Create the execute task
+    execute_task = task.model_copy()
+    execute_task.name = f"{task.name}-execute"
     await task_api.post(
         "/generate/",
-        json=task.model_dump(),
+        json=execute_task.model_dump(),
     )
-    task_path = request.url_for("alters_detail", task_name=task.name)
+
+    # Create the dry-run task
+    dry_run_task = task.model_copy()
+    dry_run_task.name = f"{task.name}-dry-run"
+    # Replace --execute with --dry-run in the task arguments and add parent reference
+    for command in dry_run_task.commands:
+        if "args" in command:
+            command["args"] = [arg.replace("--execute", "--dry-run") for arg in command["args"]]
+        if "meta" in command:
+            command["meta"]["parent"] = execute_task.name
+
+    await task_api.post(
+        "/generate/",
+        json=dry_run_task.model_dump(),
+    )
+
+    # Redirect to the execute task detail page
+    task_path = request.url_for("alters_detail", task_name=execute_task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
