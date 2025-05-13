@@ -8,10 +8,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Checkout codebase
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        path: workspace
     - name: Install poetry
       run: pipx install poetry==1.8.4
       shell: bash
