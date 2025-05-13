@@ -57,7 +57,7 @@ jobs:
           cache: poetry
       - name: Check migrations
         working-directory: ./workspace
-        run: make checkmigrations
+        run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
 
   test:
     needs: [audit, check_migrations]
