@@ -23,14 +23,11 @@ jobs:
     steps:
       - name: Checkout codebase
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: workspace
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
       - name: Perform audit
-        working-directory: ./workspace
         run: RUFF_OUTPUT_FORMAT=github make audit
         shell: bash
 
@@ -44,14 +41,11 @@ jobs:
     steps:
       - name: Checkout codebase
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: workspace
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
       - name: Check migrations
-        working-directory: ./workspace
         run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
         shell: bash
 
@@ -66,17 +60,13 @@ jobs:
     steps:
       - name: Checkout codebase
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: workspace
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
       - name: Install test dependencies
-        working-directory: ./workspace
         run: poetry install --with syncmysql
       - name: Run tests
-        working-directory: ./workspace
         run: make test
         shell: bash
 
@@ -90,13 +80,10 @@ jobs:
     steps:
       - name: Checkout codebase
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: workspace
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
       - name: Build package
-        working-directory: ./workspace
         run: make build
         shell: bash
