@@ -43,14 +43,9 @@ async def build_backup_task_payload(
         configuration to create the Backup task.
     :rtype: TaskWrite
     """
-    all_config = form.model_dump(by_alias=True)
-
-    backup_config = BackupConfig(
-        backup_config=[BackupConfig.model_validate(all_config)],
-    )
+    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
-    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     return TaskWrite(
         name=form.task_name,
@@ -59,9 +54,7 @@ async def build_backup_task_payload(
         data={
             "task": "run-python",
             "meta": {
-                "config": yaml.dump(
-                    backup_config.model_dump(by_alias=True, exclude_none=True)
-                ),
+                "config": form.pbm_config_payload,
                 "target": form.hostname,
                 "requirements": requirements,
             },

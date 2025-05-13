@@ -62,12 +62,12 @@ class LogOutput(StrEnum):
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
 
-    :param pbm_config_yaml_payload: The PBM yaml payload to parse from CLI.
-    :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
+    :param pbm_config_payload: The PBM payload to parse from CLI.
+    :type pbm_config_payload: RequiredStr | EmptyStrToNone
     """
 
-    pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
-        None, serialization_alias="pbm_config_yaml_payload"
+    pbm_config_payload: RequiredStr | EmptyStrToNone = Field(
+        None, serialization_alias="pbm_config_payload"
     )
 
 

@@ -1,5 +1,4 @@
 <style>
-
     .hidden {
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
@@ -40,11 +39,11 @@
         margin-top: 0 !important;
     }
 
-    fieldset + fieldset {
+    fieldset+fieldset {
         margin: 1em 0;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form id="backup_config" action="" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main Options</legend>
     <fieldset>
@@ -52,94 +51,152 @@
         {% set hostname_title = "Select the hostname of the target system for task execution." %}
         <label for="hostname" title="{{ hostname_title }}">Select Executor Host:</label>
         {% if executor_hosts|length == 1 %}
-            {% set single_service = executor_hosts[0] %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                <option value="{{ single_service }}" selected>{{ single_service }}</option>
-            </select>
-            <input type="hidden" name="hostname" value="{{ single_service }}">
+        {% set single_service = executor_hosts[0] %}
+        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+        </select>
+        <input type="hidden" name="hostname" value="{{ single_service }}">
         {% else %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
-                <option value="" selected>Select a host</option>
-                {% for executor_host in executor_hosts %}
-                    <option value="{{ executor_host }}">{{ executor_host }}</option>
-                    {%
-                    endfor %}
-                </select>
-            {% endif %}
-        </fieldset>
-        <fieldset>
-            <legend>Basic Task Information</legend>
-            <br>
-            {% set task_name_title = "Type the name of task to be created." %}
-            <label for="task_name" title="{{ task_name_title }}">
-                Task Name:
-                <input type="text"
-                       id="task_name"
-                       name="task_name"
-                       class="validate"
-                       required
-                       placeholder="Enter a unique task name" />
-            </label>
-            <br>
-            <br>
-            {% set service_id_title = "Select the database host from the inventory to connect to." %}
-            <label for="service_id" title="{{ service_id_title }}">
-                Select a Database Host:
-                <select id="service_id" name="service_id" required>
-                    <option value="" selected>Select a database host</option>
-                    {% for service in services %}
-                        <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <br>
-            <br>
-            {% set backup_type_title = "Select the type of backup type: Logical/Physical/Config" %}
-            <label for="backup_type" title="{{ backup_type_title }}">
-                Backup Type:
-                <select id="backup_type" name="backup_type" required>
-                    <option value="" disabled>Select a backup method</option>
-                    <option value="pbm_logical">Logical</option>
-                    <option value="pbm_physical">Physical</option>
-                    <option value="pbm_config">Configuration Change</option>
-                </select>
-            </label>
-            <br>
-            <br>
-        </fieldset>
-        {# % include "backup_mongo/partials/pbm-config.html" % #}
-        <div style="display: flex;
+        <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+            <option value="" selected>Select a host</option>
+            {% for executor_host in executor_hosts %}
+            <option value="{{ executor_host }}">{{ executor_host }}</option>
+            {%
+            endfor %}
+        </select>
+        {% endif %}
+    </fieldset>
+    <fieldset>
+        <legend>Basic Task Information</legend>
+        <br>
+        {% set task_name_title = "Type the name of task to be created." %}
+        <label for="task_name" title="{{ task_name_title }}">
+            Task Name:
+            <input type="text" id="task_name" name="task_name" class="validate" required
+                placeholder="Enter a unique task name" />
+        </label>
+        <br>
+        <br>
+        {% set service_id_title = "Select the database host from the inventory to connect to." %}
+        <label for="service_id" title="{{ service_id_title }}">
+            Select a Database Host:
+            <input type="text" id="service_id" name="service_id" value="1">
+        </label>
+        <br>
+        <br>
+        {% set backup_type_title = "Select the type of backup type: Logical/Physical/Config" %}
+        <label for="backup_type" title="{{ backup_type_title }}">
+            Backup Type:
+            <select id="backup_type" name="backup_type" required>
+                <option value="" disabled>Select a backup method</option>
+                <option value="pbm_logical">Logical</option>
+                <option value="pbm_physical">Physical</option>
+                <option value="pbm_config">Configuration Change</option>
+            </select>
+        </label>
+        <br>
+        <br>
+    </fieldset>
+    {% include "backup_mongo/partials/pbm-config.html" %}
+    <div style="display: flex;
                     align-items: center;
                     flex-wrap: wrap;
                     gap: 0.25em">
-            <button class="contained large" type="submit">Create</button>
-            <button class="text large" type="reset">Reset</button>
-        </div>
-    </form>
-    <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+        <button class="contained large" type="submit">Create</button>
+        <button class="text large" type="reset">Reset</button>
+    </div>
+</form>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
-    function updateBackupTaskVisibility() {
-        s3Options.style.display = storageTypeSelect.value === 's3' ? 'block' : 'none';
-        filesystemOptions.style.display = storageTypeSelect.value === 'filesystem' ? 'block' : 'none';
-        azureOptions.style.display = storageTypeSelect.value === 'azure' ? 'block' : 'none';
+    function getFormDataAsObject() {
+        const form = document.querySelector('fieldset > legend:first-child').parentNode; // Select the first fieldset
+        const formData = new FormData(form);
+        const data = {};
+        for (const [key, value] of formData.entries()) {
+            data[key] = value;
+        }
+        return data;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const getDataButton = document.createElement('button');
+        getDataButton.textContent = 'Get Form Data as Object';
+        document.querySelector('fieldset').parentNode.appendChild(getDataButton);
+
+        getDataButton.addEventListener('click', function () {
+            const formDataObject = getFormDataAsObject();
+            console.log(JSON.stringify(formDataObject, null, 2));
+        });
+
+        const storageTypeSelect = document.getElementById('storage_type');
+        const s3OptionsDiv = document.getElementById('s3_options');
+        const filesystemOptionsDiv = document.getElementById('filesystem_options');
+        const azureOptionsDiv = document.getElementById('azure_options');
+
+        function updateStorageOptionsVisibility(selectedType) {
+            s3OptionsDiv.style.display = selectedType === 's3' ? 'block' : 'none';
+            filesystemOptionsDiv.style.display = selectedType === 'filesystem' ? 'block' : 'none';
+            azureOptionsDiv.style.display = selectedType === 'azure' ? 'block' : 'none';
+        }
+
+        if (storageTypeSelect) {
+            updateStorageOptionsVisibility(storageTypeSelect.value);
+            storageTypeSelect.addEventListener('change', function () {
+                updateStorageOptionsVisibility(this.value);
+            });
+        }
+
+        const logOutputSelect = document.getElementById('log_output');
+        const logFileOptionsDiv = document.getElementById('log_file_options');
+
+        function updateLogFileOptionsVisibility(selectedOutput) {
+            logFileOptionsDiv.style.display = selectedOutput === 'file' ? 'block' : 'none';
+        }
+
+        if (logOutputSelect) {
+            updateLogFileOptionsVisibility(logOutputSelect.value);
+            logOutputSelect.addEventListener('change', function () {
+                updateLogFileOptionsVisibility(this.value);
+            });
+        }
+    });
+
+
+    function populatePBMConfigAsHiddenJSON(formElement, hiddenInputName) {
+        const pbmConfig = {};
+        const formInputs = formElement.querySelectorAll('input, select, textarea');
+        const hiddenInput = formElement.querySelector(`input[type="hidden"][name="${hiddenInputName}"]`);
+
+        if (!hiddenInput) {
+            console.error(`Hidden input with name "${hiddenInputName}" not found in the form.`);
+            return;
+        }
+
+        formInputs.forEach(input => {
+            if (input.name && input.name.startsWith('backup')) {
+                pbmConfig[input.name] = input.value;
+            }
+        });
+
+        const pbmJSON = JSON.stringify(pbmConfig);
+        hiddenInput.value = pbmJSON;
+
+        console.log(`PBM Config JSON "${pbmJSON}" loaded into hidden input "${hiddenInputName}".`);
     }
 
 
-    const storageTypeSelect = document.getElementById('storage_type');
-    const s3Options = document.getElementById('s3_options');
-    const filesystemOptions = document.getElementById('filesystem_options');
-    const azureOptions = document.getElementById('azure_options');
-    const logOutputSelect = document.getElementById('log_output');
-    const logFileOptions = document.getElementById('log_file_options');
+    const pbmForm = document.getElementById('backup_config'); // Assuming your form has the ID 'backup_config'
+    const pbmInputName = 'pbm_config_payload'; // The name of your hidden input field
 
-    function updateStorageOptionsVisibility() {
-        s3Options.style.display = storageTypeSelect.value === 's3' ? 'block' : 'none';
-        filesystemOptions.style.display = storageTypeSelect.value === 'filesystem' ? 'block' : 'none';
-        azureOptions.style.display = storageTypeSelect.value === 'azure' ? 'block' : 'none';
+    if (pbmForm) {
+        pbmForm.addEventListener('submit', function (event) {
+            populatePBMConfigAsHiddenJSON(pbmForm, pbmInputName);
+            // The form will now submit with the 'pbm_config_json' field containing the JSON string
+        });
+
+        // You could also call it at other times if needed, for example:
+        // populatePBMConfigAsHiddenJSON(pbmForm, pbmJSONInputName);
+    } else {
+        console.error('Form with ID "pbm_config_payload" not found.');
     }
-
-    function updateLogFileOptionsVisibility() {
-        logFileOptions.style.display = logOutputSelect.value === 'file' ? 'block' : 'none';
-    }
-
-    </script>
+</script>
