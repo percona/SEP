@@ -101,7 +101,14 @@ async def alters_detail(
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
         "delete_url": request.url_for("alters_delete", task_name=task.name),
+        "dry_run_url": request.url_for("alters_execute", task_name=task.name+"-dry-run"),
     }
+
+    # If the task has a parent, redirect to the parent task detail page
+    if task_data["meta"].get("parent"):
+        task_path = request.url_for("alters_detail", task_name=task_data["meta"]["parent"])
+        return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
