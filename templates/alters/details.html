@@ -136,6 +136,13 @@
     <br>
     <br>
     <section>
+        <h2>Dry Run History</h2>
+        {% set history_tasks = history_dry_run %}
+        {% include "tasks/partials/completed-tasks.html" %}
+    </section>
+    <br>
+    <br>
+    <section>
         <h2>History</h2>
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html" %}

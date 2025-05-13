@@ -112,6 +112,7 @@ async def alters_detail(
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["history_dry_run"] = await tasks_api.get(f"/{task.name}-dry-run/history/")
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
