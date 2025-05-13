@@ -66,7 +66,7 @@ python-minifier = "^2.11.2"
 starlette = "^0.41.3"
 celery = "^5.4.0"
 asgiref = "^3.8.1"
-sqlalchemy-celery-beat = "0.8.0"
+sqlalchemy-celery-beat = { git = "https://github.com/farahats9/sqlalchemy-celery-beat.git", rev = "0fdfb416dd9e139c4aca912fc865e0c9922b267f" }
 fastapi-csrf-protect = "^0.3.7"
 fastapi = "^0.115.6"
 httpx = "^0.28.0"

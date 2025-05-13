@@ -3785,22 +3785,26 @@ pymysql = ["pymysql"]
 sqlcipher = ["sqlcipher3_binary"]
 
 [[package]]
-name = "sqlalchemy-celery-beat"
-version = "0.8.0"
+name = "sqlalchemy_celery_beat"
+version = "0.8.3"
 description = "A Scheduler Based SQLalchemy For Celery"
 optional = false
 python-versions = "*"
 groups = ["main"]
-files = [
-    {file = "sqlalchemy_celery_beat-0.8.0-py3-none-any.whl", hash = "sha256:41ea50b4934a42276dcaf20cd80f1e8e85cf07cec7d32694d891961e7dfea495"},
-    {file = "sqlalchemy_celery_beat-0.8.0.tar.gz", hash = "sha256:cedd679f757043602d5d5b0f9ef102bbbd6becb97d78e1748a635e454b69b883"},
-]
+files = []
+develop = false
 
 [package.dependencies]
 celery = ">=5.0"
 ephem = "*"
 sqlalchemy = ">=1.4"
 tzdata = "*"
+
+[package.source]
+type = "git"
+url = "https://github.com/farahats9/sqlalchemy-celery-beat.git"
+reference = "0fdfb416dd9e139c4aca912fc865e0c9922b267f"
+resolved_reference = "0fdfb416dd9e139c4aca912fc865e0c9922b267f"
 
 [[package]]
 name = "sqlmodel"
@@ -4458,4 +4462,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "83a27f90465cf489494fafc4922ad23386676134e2901aed48222b83a801c9d5"
+content-hash = "38797d98a2bf5475eb046d66a9c118cc65a709e4f112808df1d34293ed00cd7e"
