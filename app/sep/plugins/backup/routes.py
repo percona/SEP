@@ -7,6 +7,7 @@ import yaml
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
+from .restore import routes as restore_router
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
+router.include_router(restore_router, prefix="/restore", tags=["restore"])
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def backups_index(
