@@ -27,13 +27,13 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
         (
             BackupType.MYDUMPER,
             "mydumper_payload",
-            "packaging\nPyYAML\nPyMySQL\nboto3",
+            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
             "fake-address",
         ),
         (
             BackupType.XTRABACKUP,
             "xtrabackup_payload",
-            "packaging\nPyYAML\nPyMySQL\nboto3\nfilelock",
+            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
             "localhost",
         ),
     ],

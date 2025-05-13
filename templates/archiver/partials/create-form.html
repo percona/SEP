@@ -51,7 +51,7 @@
         pointer-events: none;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form action="" method="post" id="create_form" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Executor Host</legend>
@@ -78,8 +78,6 @@
     <fieldset style="display: flex; flex-flow: column;">
         <legend>Archive Type</legend>
         <br>
-        <br>
-        &nbsp;
         <div>
             {% set task_name_title = "Type the name of task to be created." %}
             <label for="alias" title="{{ task_name_title }}">
@@ -118,8 +116,8 @@
                 <label for="service_id" title="{{ service_id_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Database host</span>
-                    {% if mysql_services|length == 1 %}
-                        {% set single_service = mysql_services[0] %}
+                    {% if services|length == 1 %}
+                        {% set single_service = services[0] %}
                         <select id="service_id" name="service_id" disabled>
                             <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
                         </select>
@@ -127,7 +125,7 @@
                     {% else %}
                         <select id="service_id" name="service_id" required>
                             <option value="" selected>Select a database host</option>
-                            {% for service in mysql_services %}
+                            {% for service in services %}
                                 <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                             {% endfor %}
                         </select>
@@ -329,7 +327,7 @@
     </div>
 </form>
 {% set serviceSchemas = {} %}
-{% for service in mysql_services %}
+{% for service in services %}
     {% set schemas = {} %}
     {% for schema in service.schemas %}
         {% set tables = {} %}
@@ -363,6 +361,8 @@
     const extraArgsInput = document.getElementById('extra_args');
     const whereInput = document.getElementById('where');
     const purgeConfigOptionsContainer = document.getElementById('purge_options_container');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
 
     function populateSchemas(selectedService) {
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
@@ -630,6 +630,12 @@
         }
     }
 
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
+
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
+
     swapDropSelect.addEventListener('change', function() {
         togglePrgPurgeCheckbox()
         updateDestinationFieldset();
@@ -688,6 +694,7 @@
             const singleHost = connectToSelect.options[0].value;
             populateSchemas(singleHost);
         }
+        updateCreateButtonState();
         updateDestinationFieldset();
         toggleSchemaAndTable();
         toggleSourceQueryInput();

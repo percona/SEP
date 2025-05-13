@@ -79,6 +79,7 @@ async def archives_detail(
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
+        "delete_url": request.url_for("archives_delete", task_name=task.name),
     }
 
     source_db = purge_item.get("SOURCE_DB")

@@ -82,6 +82,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUPS = auto()
     RESTORES = auto()
     CHECKSUMS = auto()
+    BACKUP_MONGO = auto()
 
 
 class TaskExecutionRequest(BaseModel):

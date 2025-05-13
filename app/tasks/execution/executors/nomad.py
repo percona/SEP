@@ -14,7 +14,6 @@ from uuid import uuid1
 from aiohttp import (
     ClientError,
     ClientTimeout,
-    SocketTimeoutError,
 )
 from fastapi import HTTPException, status
 from nomad import Nomad
@@ -24,6 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
 from app.core.utils import async_run, slugify, sort_dict
+from app.core.utils.strings import b64decode_str
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
@@ -169,6 +169,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             task.data["ID"],
             payload=payload,
             meta=queue_item.execution_request.meta,
+            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}",
         )
         if not job_status:
             logger.error("Unable to dispatch task %s", task.id)
@@ -480,8 +481,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params = {
             "task": step,
             "type": log_type,
-            "plain": "true",
             "follow": "true",
+            "offset": 0,
         }
         state = "running"
         while state == "running":
@@ -499,7 +500,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         response.status == status.HTTP_404_NOT_FOUND
                         and alloc["TaskStates"][step]["StartedAt"] is None
                     ):
-                        logger.info(
+                        logger.debug(
                             "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
                             step,
                             alloc_id,
@@ -508,19 +509,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         await asyncio.sleep(self.wait_interval)
                         continue
                     response.raise_for_status()
-                    async for line in response.content:
-                        await queue.put(
-                            TaskLog(step=step, type=log_type, msg=line.decode("utf-8"))
-                        )
-            except SocketTimeoutError:
-                logger.info(
-                    "Timeout occurred while fetching %s logs for %s (%s)",
-                    log_type,
-                    step,
-                    alloc_id,
-                )
-                alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
-                state = alloc["TaskStates"][step]["State"]
+                    empty_data_count = 0
+                    async for chunk, _ in response.content.iter_chunks():
+                        data = json.loads(chunk)
+                        params["offset"] = data.get("Offset", params["offset"])
+                        if data and (msg := data.get("Data")):
+                            empty_data_count = 0
+                            await queue.put(
+                                TaskLog(
+                                    step=step, type=log_type, msg=b64decode_str(msg)
+                                )
+                            )
+                        elif empty_data_count >= self.log_socket_read_timeout:
+                            logger.debug(
+                                "No data received for %s seconds, rechecking job status...",
+                                self.log_socket_read_timeout,
+                            )
+                            alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
+                            state = alloc["TaskStates"][step]["State"]
+                            break
+                        else:
+                            empty_data_count += 1
             except ClientError:
                 logger.exception(
                     "An error occurred while fetching %s logs for %s (%s)",
