@@ -52,7 +52,7 @@ async def alters_create(
 
     # Create the execute task
     execute_task = task.model_copy()
-    execute_task.name = f"{task.name}-execute"
+    execute_task.name = f"{task.name}"
     await task_api.post(
         "/generate/",
         json=execute_task.model_dump(),

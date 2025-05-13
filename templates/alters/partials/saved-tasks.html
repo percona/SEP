@@ -1,4 +1,17 @@
 {% if tasks %}
+{#
+<!-- Debug output -->
+    <div style="background: #f5f5f5; padding: 10px; margin: 10px 0; border: 1px solid #ddd;">
+        <h4>Debug - Task Data:</h4>
+        {% for task in tasks %}
+            <div style="margin-bottom: 20px;">
+                <strong>Task {{ loop.index }}:</strong>
+                <pre style="white-space: pre-wrap;">{{ task | tojson(indent=2) }}</pre>
+            </div>
+        {% endfor %}
+    </div>
+    <!-- End debug output -->
+#}
     <table data-table="saved-tasks">
         <thead>
             <tr>
@@ -10,12 +23,14 @@
         </thead>
         <tbody>
             {% for task in tasks %}
+              {% if not task.parent %}
                 <tr id="{{ task.name }}">
                     <td>{{ task.name }}</td>
                     <td class="code">{{ task.hostname }}</td>
                     <td class="code">{{ task.table }}</td>
                     <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
+              {% endif %}
             {% endfor %}
         </tbody>
     </table>
