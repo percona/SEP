@@ -162,7 +162,7 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "hostname": data["Constraints"][0]["RTarget"],
         "table": f"{meta['schema_name']}.{meta['table_name']}",
-        "parent": meta.get("parent", None),
+        "parent": meta.get("parent"),
     }
 
 
