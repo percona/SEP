@@ -33,7 +33,7 @@ logger.setLevel(logging.INFO)
 logger_formatter = logging.Formatter(
     "%(asctime)s %(levelname)s: PID<%(process)d> %(funcName)s() - %(message)s"
 )
-stream_handler = logging.StreamHandler()
+stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logger_formatter)
 stream_handler.setLevel(logging.INFO)
 logger.addHandler(stream_handler)
