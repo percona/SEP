@@ -38,11 +38,11 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <div class="toggle-btn-group" role="group" aria-label="Backup and Restore navigation">
-        <a href="{{url_for('backups_index')}}"
-        class="toggle-btn active">Backup</a>
-        <a href="{{url_for('restores_index')}}"
-        class="toggle-btn">Restore</a>
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Backup and Restore navigation">
+        <a href="{{ url_for('backups_index') }}" class="toggle-btn active">Backup</a>
+        <a href="{{ url_for('restores_index') }}" class="toggle-btn">Restore</a>
     </div>
     <p>
         Perform a backup, currently only supporting MySQL and MariaDB with <a href="https://github.com/percona/percona-xtrabackup">Percona XtraBackup</a>

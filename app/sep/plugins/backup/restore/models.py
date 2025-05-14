@@ -1,18 +1,21 @@
 """Define models for the Restore plugin."""
 
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import Field
+
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EnumFieldMixin, RequiredStr, EmptyStrToNone
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
 from app.sep.plugins.backup.models import BackupType
+
 
 class S3Tool(EnumFieldMixin, StrEnum):
     """Allowed tools to interact with S3-compatible services."""
+
     S3CMD = "s3cmd"
     AWSCLI = "awscli"
-    
+
+
 class RestoreConfigAll(BaseCaseInsensitiveModel):
     """Global config values for restore operations.
 
@@ -53,64 +56,66 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
     gpg_password_file: RequiredStr | EmptyStrToNone = None
 
 
-class RestoreConfigServer(BaseCaseInsensitiveModel):
+class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     """Restore job configuration for a specific Mydumper restore job.
 
     This model contains server-specific settings for a restore operation, including
     backup source, destination, threading, and script hooks.
 
-    :param alias: Unique identifier for the restore job.
-    :type alias: RequiredStr
     :param backup_type: Type of backup to restore from.
     :type backup_type: BackupType
     :param backup_source: Source location of the backup.
     :type backup_source: RequiredStr
-    :param dest_host: Destination host for the restore.
-    :type dest_host: RequiredStr
-    :param dest_port: Destination port for the restore.
-    :type dest_port: int
     :param local_path: Local path for backup files.
     :type local_path: RequiredStr | EmptyStrToNone
     :param overwrite_tables: Whether to overwrite existing tables.
     :type overwrite_tables: bool
     :param myloader_threads: Number of threads for myloader operations.
     :type myloader_threads: int | None
-    :param database: Target database name for restore.
-    :type database: RequiredStr | EmptyStrToNone
     :param myloader_extra_args: Additional arguments for myloader.
     :type myloader_extra_args: RequiredStr | EmptyStrToNone
-    :param skip_databases: List of databases to skip during restore.
-    :type skip_databases: list[str] | None
-    :param include_databases: List of databases to include in restore.
-    :type include_databases: list[str] | None
+    :param skip_databases: Comma-separated string of databases to skip during restore.
+    :type skip_databases: RequiredStr | EmptyStrToNone
+    :param include_databases: Comma-separated string of databases to include in restore.
+    :type include_databases: RequiredStr | EmptyStrToNone
     :param pre_script: Script to execute before restore.
     :type pre_script: RequiredStr | EmptyStrToNone
     :param post_script: Script to execute after restore.
     :type post_script: RequiredStr | EmptyStrToNone
-    :param nagios_check_at: Nagios check configuration.
-    :type nagios_check_at: RequiredStr | EmptyStrToNone
     """
 
-    alias: RequiredStr
     backup_type: BackupType
     backup_source: RequiredStr
-    dest_host: RequiredStr
-    dest_port: int
-
     local_path: RequiredStr | EmptyStrToNone = None
     overwrite_tables: bool = False
     myloader_threads: int | None = None
-
-    database: RequiredStr | EmptyStrToNone = None
     myloader_extra_args: RequiredStr | EmptyStrToNone = None
-
-    skip_databases: list[str] | None = None
-    include_databases: list[str] | None = None
-
+    skip_databases: RequiredStr | EmptyStrToNone = None
+    include_databases: RequiredStr | EmptyStrToNone = None
     pre_script: RequiredStr | EmptyStrToNone = None
     post_script: RequiredStr | EmptyStrToNone = None
-    nagios_check_at: RequiredStr | EmptyStrToNone = None
-   
+
+
+class RestoreConfigServer(BaseRestoreConfigServer):
+    """Server-specific restore configuration.
+
+    Extends BaseRestoreConfigServer with additional required fields for alias, destination host, and port.
+
+    :param alias: Unique identifier for the restore job.
+    :type alias: RequiredStr
+    :param dest_host: Destination host for the restore.
+    :type dest_host: RequiredStr
+    :param dest_port: Destination port for the restore.
+    :type dest_port: int
+    :param database: Target database name for restore.
+    :type database: RequiredStr | EmptyStrToNone
+    """
+
+    alias: RequiredStr
+    dest_host: RequiredStr
+    dest_port: int
+    database: RequiredStr | EmptyStrToNone = None
+
 
 class RestoreConfig(BaseCaseInsensitiveModel):
     """Define the complete configuration for a restore operation.
@@ -126,3 +131,21 @@ class RestoreConfig(BaseCaseInsensitiveModel):
 
     all_servers: RestoreConfigAll
     server_list: list[RestoreConfigServer]
+
+
+class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
+    """Model for creating a restore task.
+
+    Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
+
+    :param task_name: Name of the restore task.
+    :type task_name: RequiredStr
+    :param service_id: Service identifier for the restore task.
+    :type service_id: RequiredStr
+    :param database: Target database name for restore.
+    :type database: RequiredStr | EmptyStrToNone
+    """
+
+    task_name: RequiredStr
+    service_id: RequiredStr
+    database: RequiredStr | EmptyStrToNone = None

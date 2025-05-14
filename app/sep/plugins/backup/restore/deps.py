@@ -1,9 +1,9 @@
 from typing import Any
 
-from fastapi import Request
 import yaml
+from fastapi import Request
 
-from app.sep.deps import DefaultContext, InventoryAPI, TaskAPI, get_tasks_context
+from app.sep.deps import DefaultContext, get_tasks_context, InventoryAPI, TaskAPI
 from app.tasks.models import TaskOwner
 
 
@@ -22,13 +22,12 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
     task_config = yaml.safe_load(meta["config"])
     restore_server = task_config["SERVER_LIST"][0]
 
-
     return {
         "hostname": meta["target"],
         "host": restore_server.get("HOST"),
         "port": restore_server.get("PORT") or 3306,
         "upload": ", ".join(restore_server.get("UPLOAD")),
-        #"restore_type": RestoreType(restore_server.get("RESTORE_TYPE")).name,
+        # "restore_type": RestoreType(restore_server.get("RESTORE_TYPE")).name,
     }
 
 
