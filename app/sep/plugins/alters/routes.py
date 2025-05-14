@@ -51,11 +51,9 @@ async def alters_create(
     logger.debug("Create alters tasks: %s", task)
 
     # Create the execute task
-    execute_task = task.model_copy()
-    execute_task.name = f"{task.name}"
     await task_api.post(
         "/generate/",
-        json=execute_task.model_dump(),
+        json=task.model_dump(),
     )
 
     # Create the dry-run task
@@ -66,7 +64,7 @@ async def alters_create(
         if "args" in command:
             command["args"] = [arg.replace("--execute", "--dry-run") for arg in command["args"]]
         if "meta" in command:
-            command["meta"]["parent"] = execute_task.name
+            command["meta"]["parent"] = task.name
 
     await task_api.post(
         "/generate/",
@@ -74,7 +72,7 @@ async def alters_create(
     )
 
     # Redirect to the execute task detail page
-    task_path = request.url_for("alters_detail", task_name=execute_task.name)
+    task_path = request.url_for("alters_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -116,6 +114,9 @@ async def alters_detail(
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    context["running_tasks"].extend(await tasks_api.get(
+        f"/{task.name}-dry-run/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    ))
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
