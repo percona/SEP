@@ -62,7 +62,9 @@ async def alters_create(
     # Replace --execute with --dry-run in the task arguments and add parent reference
     for command in dry_run_task.commands:
         if "args" in command:
-            command["args"] = [arg.replace("--execute", "--dry-run") for arg in command["args"]]
+            command["args"] = [
+                arg.replace("--execute", "--dry-run") for arg in command["args"]
+            ]
         if "meta" in command:
             command["meta"]["parent"] = task.name
 
@@ -99,12 +101,16 @@ async def alters_detail(
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
         "delete_url": request.url_for("alters_delete", task_name=task.name),
-        "dry_run_url": request.url_for("alters_execute", task_name=task.name+"-dry-run"),
+        "dry_run_url": request.url_for(
+            "alters_execute", task_name=task.name + "-dry-run"
+        ),
     }
 
     # If the task has a parent, redirect to the parent task detail page
     if task_data["meta"].get("parent"):
-        task_path = request.url_for("alters_detail", task_name=task_data["meta"]["parent"])
+        task_path = request.url_for(
+            "alters_detail", task_name=task_data["meta"]["parent"]
+        )
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     context["task"] = task_data
@@ -114,9 +120,12 @@ async def alters_detail(
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    context["running_tasks"].extend(await tasks_api.get(
-        f"/{task.name}-dry-run/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
-    ))
+    context["running_tasks"].extend(
+        await tasks_api.get(
+            f"/{task.name}-dry-run/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        )
+    )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
