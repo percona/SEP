@@ -73,7 +73,7 @@ pip-audit: venv
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
 
-makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py
+makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app/sep/models.py
 	@for app in $(APPS); do \
 		capitalized=$$(echo $$app | sed 's/^./\U&/'); \
 		echo "Checking migrations for $$capitalized"; \
@@ -99,10 +99,22 @@ makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py
 		echo "No new upgrade operations detected for $$capitalized"; \
 	done
 
-migrate: venv alembic.ini app/tasks/migrations/versions
+migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/sep/migrations/versions
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade head; \
 	done
+
+checkmigrations: migrate
+	@ret=0; \
+	for app in $(APPS); do \
+	  echo "Checking migrations for $$app"; \
+	  "${VENV_BIN}"/alembic --name $$app check || ret=1; \
+	done; \
+	if [ $$ret -ne 0 ]; then \
+	  echo "Error: One or more migration checks failed."; \
+	  exit $$ret; \
+	fi
+	@echo "All migration checks passed."
 
 test: venv
 	@"${VENV_BIN}"/pytest -v -r a --cov=app tests/
