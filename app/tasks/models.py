@@ -642,11 +642,14 @@ class TaskStats(BaseModel):
                 _durations_from_tracking()
             except KeyError:
                 return
-        if self._raw["durations"]:
+        durations = [
+            duration for duration in self._raw["durations"] if duration is not None
+        ]
+        if durations:
             self._durations.update(
-                average_seconds=mean(self._raw["durations"]),
-                last_seconds=self._raw["durations"].pop(),
-                total_seconds=sum(self._raw["durations"]),
+                average_seconds=mean(durations),
+                last_seconds=durations.pop(),
+                total_seconds=sum(durations),
             )
 
 
