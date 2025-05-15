@@ -58,7 +58,7 @@
             </tr>
         </tfoot>
     </table>
-    {% include "tasks/partials/run-python-form.html" %}
+    {% include "tasks/partials/run-python-form-alters.html" %}
     {% if running_tasks %}
         <section id="running-tasks">
             <h2>Running</h2>
@@ -132,6 +132,13 @@
         {% else %}
             <p>No data</p>
         {% endif %}
+    </section>
+    <br>
+    <br>
+    <section>
+        <h2>Dry Run History</h2>
+        {% set history_tasks = history_dry_run %}
+        {% include "tasks/partials/completed-tasks.html" %}
     </section>
     <br>
     <br>

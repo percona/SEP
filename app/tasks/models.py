@@ -246,7 +246,7 @@ class GeneratedTask(BaseModel):
     :param app: The application name associated with the task.
     :type app: TaskOwner
     :param commands: A list of commands to execute the task.
-    :type commands: list
+    :type commands: list[dict[str, Any]]
     :param name: The task name.
     :type name: str
     :param target: The target system for task execution.
@@ -265,7 +265,7 @@ class GeneratedTask(BaseModel):
     """
 
     app: TaskOwner
-    commands: list
+    commands: list[dict[str, Any]]
     name: str
     target: str
     artifacts: list | None = None

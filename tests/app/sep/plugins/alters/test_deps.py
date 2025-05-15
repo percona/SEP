@@ -94,4 +94,5 @@ def test_get_alters_task_info(created_task):
     assert result == {
         "hostname": "mock_hostname",
         "table": "public.example_table",
+        "parent": None,
     }
