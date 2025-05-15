@@ -517,11 +517,24 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     :type task_id: int
     :param task: The task associated with this execution history.
     :type task: Task
+    :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
+    :type sync_in_progress_started_at: UTCDatetime | None
     """
 
-    __table_args__ = (Index("ix_taskhistory_task_id_status", "task_id", "status"),)
+    __table_args__ = (
+        Index("ix_taskhistory_task_id_status", "task_id", "status"),
+        Index(
+            "ix_taskhistory_status_sync_in_progress_started_at",
+            "status",
+            "sync_in_progress_started_at",
+        ),
+    )
     task_id: int = SQLField(foreign_key="task.id", index=True)
     task: Task = Relationship(back_populates="history")
+    sync_in_progress_started_at: UTCDatetime | None = SQLField(
+        default=None,
+        sa_type=DateTimeWithTimezone,
+    )
 
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
