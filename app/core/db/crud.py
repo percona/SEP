@@ -5,7 +5,15 @@ from collections.abc import Sequence
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import CursorResult, delete, func, inspect, ScalarResult, Select
+from sqlalchemy import (
+    ChunkedIteratorResult,
+    CursorResult,
+    delete,
+    func,
+    inspect,
+    ScalarResult,
+    Select,
+)
 from sqlalchemy.engine import TupleResult
 from sqlalchemy.exc import DatabaseError, NoResultFound
 from sqlalchemy.orm import joinedload
@@ -455,8 +463,9 @@ class BaseManager:
         session: AsyncSession,
         values: dict[str, Any],
         *whereclause: ColumnExpressionArgument[bool],
+        returning: Sequence[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult:
+    ) -> CursorResult | ChunkedIteratorResult:
         """Execute an UPDATE statement.
 
         This method executes an UPDATE statement to update specific values for rows
@@ -469,11 +478,15 @@ class BaseManager:
         :type values: dict[str, Any]
         :param whereclause: SQL expressions for the `where` clause of the query.
         :type whereclause: ColumnExpressionArgument[bool]
+        :param returning: If True, return the updated rows as objects of `cls.Model`. If
+            a list of column names is provided, return only those columns. Defaults to
+            False, meaning no rows are returned from the statement.
+        :type returning: Sequence[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
         :return: The result of the UPDATE statement execution.
-        :rtype: CursorResult
+        :rtype: CursorResult | ChunkedIteratorResult
         """
         if not whereclause and not equal_filters:
             raise ValueError(
@@ -482,14 +495,12 @@ class BaseManager:
         query = cls._filter_query(
             update(cls.Model), *whereclause, **equal_filters
         ).values(**values)
+        if returning is True:
+            query = query.returning(cls.Model)
+        elif returning:
+            query = query.returning(*(getattr(cls.Model, field) for field in returning))
         result = await cls._exec(session, query)
         await session.commit()
-        logger.debug(
-            "Updated %s instances of %s with values %s",
-            result.rowcount,
-            cls.Model.__name__,
-            values,
-        )
         return result
 
     @classmethod
@@ -513,8 +524,9 @@ class BaseManager:
         cls,
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
+        returning: Sequence[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult:
+    ) -> CursorResult | ChunkedIteratorResult:
         """Execute a DELETE statement.
 
         This method executes a DELETE statement to delete specific rows matching the
@@ -525,24 +537,27 @@ class BaseManager:
         :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
         :type whereclause: ColumnExpressionArgument[bool]
+        :param returning: If True, return the updated rows as objects of `cls.Model`. If
+            a list of column names is provided, return only those columns. Defaults to
+            False, meaning no rows are returned from the statement.
+        :type returning: Sequence[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
         :return: The result of the DELETE statement execution.
-        :rtype: CursorResult
+        :rtype: CursorResult | ChunkedIteratorResult
         """
         if not whereclause and not equal_filters:
             raise ValueError(
                 "You must specify at least one filter in *whereclause or **equal_filters"
             )
         query = cls._filter_query(delete(cls.Model), *whereclause, **equal_filters)
+        if returning is True:
+            query = query.returning(cls.Model)
+        elif returning:
+            query = query.returning(*(getattr(cls.Model, field) for field in returning))
         result = await cls._exec(session, query)
         await session.commit()
-        logger.debug(
-            "Deleted %s instances of %s",
-            result.rowcount,
-            cls.Model.__name__,
-        )
         return result
 
     @classmethod
