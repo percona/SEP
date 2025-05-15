@@ -1,10 +1,110 @@
-from typing import Any
+"""Define dependencies for the Restores plugin."""
+
+from pathlib import Path
+from typing import Annotated, Any
 
 import yaml
-from fastapi import Request
+from fastapi import Depends, Form, Request
+from fastapi.encoders import jsonable_encoder
 
-from app.sep.deps import DefaultContext, get_tasks_context, InventoryAPI, TaskAPI
-from app.tasks.models import TaskOwner
+from app.core.utils.pydantic import extract_model_from_instance
+from app.inventory.models import ServiceTypeEnum
+from app.sep.deps import (
+    DefaultContext,
+    get_created_entity,
+    get_tasks_context,
+    InventoryAPI,
+    TaskAPI,
+)
+from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.backup.models import BackupType
+from app.sep.plugins.backup.restore.models import (
+    BaseRestoreConfigServer,
+    RestoreConfig,
+    RestoreConfigAll,
+    RestoreConfigServer,
+    RestoreCreate,
+)
+from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+
+
+async def build_restore_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build task payload for a restore operation."""
+    all_config_dict = extract_model_from_instance(form, RestoreConfigAll)
+    base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
+
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        form.service_id,
+        type=ServiceTypeEnum.MYSQL,
+    )
+
+    dest_host, dest_port = "localhost", 3306
+    if isinstance(service.address, str) and ":" in service.address:
+        host, port_str = service.address.split(":", 1)
+        dest_host = host.strip()
+        dest_port = int(port_str.strip())
+
+    restore_config_payload = {
+        **base_config_dict.model_dump(),
+        "dest_host": dest_host,
+        "dest_port": dest_port,
+        "alias": form.task_name,
+    }
+
+    if str(form.schema_id).isdigit() and int(form.schema_id) > 0:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            form.schema_id,
+            service_id=service.id,
+        )
+        restore_config_payload["database"] = schema.name
+
+    restore_config = RestoreConfig(
+        all_servers=RestoreConfigAll.model_validate(all_config_dict),
+        server_list=[RestoreConfigServer.model_validate(restore_config_payload)],
+    )
+
+    backup_type_to_payload = {
+        BackupType.MYDUMPER: "mydumper_payload",
+        BackupType.XTRABACKUP: "xtrabackup_payload",
+        BackupType.BINLOG: "binlog_payload",
+    }
+
+    payload_name = backup_type_to_payload.get(form.backup_type)
+    if not payload_name:
+        raise ValueError(f"Invalid Backup Type {form.backup_type}")
+
+    requirements = ""
+    if form.backup_type == BackupType.XTRABACKUP:
+        requirements += "\nfilelock"
+
+    payload_path = Path(__file__).parent / payload_name
+
+    return TaskWrite(
+        name=form.task_name,
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.RESTORES,
+        data={
+            "task": "run-python",
+            "meta": {
+                "config": yaml.dump(
+                    jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
+                ),
+                "target": form.hostname,
+                "requirements": requirements,
+            },
+            "payload": f"file://{payload_path}",
+        },
+    )
+
+
+RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
 def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:

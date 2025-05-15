@@ -23,7 +23,7 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
     including logging, SSH options, S3 tool selection, and GPG encryption.
 
     :param logging_dir: Directory path for storing restore operation logs.
-    :type logging_dir: RequiredStr | EmptyStrToNone
+    :type logging_dir: RequiredStr
     :param port: Port number for the restore operation.
     :type port: int | None
     :param custom_mysql_init_command: Custom MySQL initialization command.
@@ -40,7 +40,7 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
     :type gpg_password_file: RequiredStr | EmptyStrToNone
     """
 
-    logging_dir: RequiredStr | EmptyStrToNone = None
+    logging_dir: RequiredStr
     port: int | None = None
     custom_mysql_init_command: RequiredStr | EmptyStrToNone = None
 
@@ -138,14 +138,17 @@ class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
 
     Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
 
+    :param hostname: The hostname of the machine to back up.
+    :type hostname: RequiredStr
     :param task_name: Name of the restore task.
     :type task_name: RequiredStr
     :param service_id: Service identifier for the restore task.
     :type service_id: RequiredStr
-    :param database: Target database name for restore.
-    :type database: RequiredStr | EmptyStrToNone
+    :param schema_id: Schema identifier  for restore.
+    :type schema_id: RequiredStr | EmptyStrToNone
     """
 
+    hostname: RequiredStr
     task_name: RequiredStr
     service_id: RequiredStr
-    database: RequiredStr | EmptyStrToNone = None
+    schema_id: RequiredStr | EmptyStrToNone = None

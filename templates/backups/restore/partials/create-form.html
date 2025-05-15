@@ -147,6 +147,13 @@
             </label>
             <br>
             <br>
+            {% set port_title = "Type the MySQL port number used to connect to the target database (default is 3306)." %}
+            <label for="port" title="{{ port_title }}">
+                Port:
+                <input type="number" id="port" name="port" value="3306" placeholder="3306" />
+            </label>
+            <br>
+            <br>
             {% set custom_mysql_init_commad_title = "the path to the defaults file containing preset configuration values for the backup process." %}
             <label for="custom_mysql_init_commad"
                    title="{{ custom_mysql_init_commad_title }}">
@@ -190,7 +197,7 @@
                     <span class="label">S3 Tool:</span>
                     <select id="s3_tool" name="s3_tool" required>
                         <option value="">Select a S3 Tool type</option>
-                        <option value="s3cmd">S3 CMD</option>
+                        <option selected value="s3cmd">S3 CMD</option>
                         <option value="awscli">AWS CLI</option>
                     </select>
                 </label>
