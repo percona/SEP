@@ -611,23 +611,24 @@
                        placeholder="e.g. /usr/local/percona/msp/backup/bin/mysqlbinlog" />
             </label>
         </fieldset>
-        <div style="display: flex;
-                    align-items: center;
-                    flex-wrap: wrap;
-                    gap: 0.25em">
-            <button class="contained large" type="submit">Create</button>
-            <button class="text large" type="reset">Reset</button>
-        </div>
-    </form>
-    {% set serviceSchemas = {} %}
-    {% for service in services %}
-        {% set schemas = {} %}
-        {% for schema in service.schemas %}
-            {% do schemas.update({schema.id: {"name": schema.name}}) %}
-        {% endfor %}
-        {% do serviceSchemas.update({service.id: schemas}) %}
+    </fieldset>
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.25em">
+        <button class="contained large" type="submit">Create</button>
+        <button class="text large" type="reset">Reset</button>
+    </div>
+</form>
+{% set serviceSchemas = {} %}
+{% for service in services %}
+    {% set schemas = {} %}
+    {% for schema in service.schemas %}
+        {% do schemas.update({schema.id: {"name": schema.name}}) %}
     {% endfor %}
-    <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    {% do serviceSchemas.update({service.id: schemas}) %}
+{% endfor %}
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas|tojson }};
     const backupTypeSelect = document.getElementById('backup_type');
     const myloaderContainer = document.getElementById('myloader_container');
@@ -736,4 +737,4 @@
         populateSchemas(singleHost);
     }
     });
-    </script>
+</script>

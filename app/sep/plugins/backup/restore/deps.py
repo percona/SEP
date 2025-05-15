@@ -12,6 +12,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
     get_created_entity,
+    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -25,7 +26,7 @@ from app.sep.plugins.backup.restore.models import (
     RestoreConfigServer,
     RestoreCreate,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 
 async def build_restore_task_payload(
@@ -107,6 +108,30 @@ async def build_restore_task_payload(
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
+async def get_restores_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Fetch and validate a task for the Restores plugin.
+
+    This function retrieves a task by its name from the Tasks API and validates
+    that it is owned by the Restores plugin. If the task does not exist or is not
+    owned by Restores, it raises a 404 HTTP exception.
+
+    :param task_name: The name of the task to retrieve.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :return: The retrieved task.
+    :rtype: Task
+    :raises HTTPNotFoundException: If the task is not found or is not owned by Restores.
+    """
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.RESTORES)
+
+
+RestoresTask = Annotated[Task, Depends(get_restores_task)]
+
+
 def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant information from a task for the Restores plugin.
 
@@ -126,8 +151,7 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "hostname": meta["target"],
         "host": restore_server.get("HOST"),
         "port": restore_server.get("PORT") or 3306,
-        "upload": ", ".join(restore_server.get("UPLOAD")),
-        # "restore_type": RestoreType(restore_server.get("RESTORE_TYPE")).name,
+        "backup_type": BackupType(restore_server.get("BACKUP_TYPE")).name,
     }
 
 
