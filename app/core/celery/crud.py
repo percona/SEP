@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy_celery_beat import CrontabSchedule, IntervalSchedule, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import settings
 from app.core.db.crud import BaseManager
 
 
@@ -78,6 +79,7 @@ class BasePeriodicTaskManager(BaseManager):
             ) = await CrontabScheduleManager.get_or_create(
                 session, instance_create.crontab
             )
+        extra_fields["expire_seconds"] = settings.CELERY.global_expire_seconds
         return await super().create(session, instance_create, **extra_fields)
 
     @classmethod

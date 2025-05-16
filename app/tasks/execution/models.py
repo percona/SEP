@@ -61,13 +61,13 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         return await self.validate_job(parsed)
 
     @abstractmethod
-    async def run(
+    async def dispatch_task(
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
         task: Task | None = None,
     ) -> TaskHistory:
-        """Run a task and update the related task history.
+        """Dispatch a task and update the related task history.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
@@ -77,6 +77,21 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :param task: The task to be executed. If None, the queue_item's task will be
             used.
         :type task: Task | None
+        :return: The updated task history with execution details.
+        :rtype: TaskHistory
+        """
+
+    @abstractmethod
+    async def stop_task(
+        self, session: AsyncSession, queue_item: TaskHistory
+    ) -> TaskHistory:
+        """Stop a task execution.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param queue_item: The task history record for tracking this execution.
+        :type queue_item: TaskHistory
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """
@@ -117,11 +132,18 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         """
 
     @abstractmethod
-    async def is_task_running(self, queue_item: TaskHistory) -> bool:
-        """Check if a TaskHistory is currently running.
+    async def sync_task_history(
+        self,
+        session: AsyncSession,
+        queue_item: TaskHistory,
+    ) -> TaskHistory:
+        """Sync the task history with the backend.
 
-        :param queue_item: The task history record to check.
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
-        :return: A boolean indicating if the task history is currently running.
-        :rtype: bool
+        :return: The updated task history with execution details.
+        :rtype: TaskHistory
         """
