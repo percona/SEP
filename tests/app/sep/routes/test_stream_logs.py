@@ -79,6 +79,7 @@ def test_archives_logs_event_stream(
     mock_task_api_dep.stream.side_effect = lambda path: mock_stream(
         path, task_history_response.id
     )
+    mock_task_api_dep.get.return_value = task_history_response.model_dump()
     response = test_client.get(f"/stream-logs/{task_history_response.id}")
 
     assert response.status_code == HTTP_200_OK

@@ -356,7 +356,9 @@ class BaseManager:
             logger.exception("DatabaseError saving instance %s", instance)
             raise HTTPBadRequestException from None
         else:
-            logger.debug("Saved instance of %s: %s", cls.Model.__name__, instance)
+            logger.debug(
+                "Saved instance of %s with id %s", cls.Model.__name__, instance.id
+            )
         await session.refresh(instance)
         return instance
 

@@ -48,6 +48,16 @@ tasks_app = create_app(
 )
 
 
+@tasks_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
+async def internal_error_handler(
+    _: Request,
+    exc: BaseException,
+) -> None:
+    """Proper log unhandled exceptions."""
+    logger.exception("Unhandled exception:", exc_info=exc)
+    raise exc
+
+
 @tasks_app.exception_handler(BaseNomadException)
 async def nomad_exception_handler(_: Request, exc: BaseNomadException) -> None:
     """Handle exceptions raised by Nomad."""

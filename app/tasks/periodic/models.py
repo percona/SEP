@@ -68,6 +68,9 @@ class IntervalSchedule(BaseModel):
             return str_schedule[:-1]
         return str_schedule
 
+    def __hash__(self) -> int:
+        return hash((self.every, self.period))
+
 
 class CrontabSchedule(BaseModel):
     """Representing a crontab schedule.
@@ -112,6 +115,18 @@ class CrontabSchedule(BaseModel):
         }
         return "{minute} {hour} {day_of_month} {month_of_year} {day_of_week}".format(
             **fmt_kwargs
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.minute,
+                self.hour,
+                self.day_of_week,
+                self.day_of_month,
+                self.month_of_year,
+                self.timezone,
+            )
         )
 
     @field_validator("timezone")

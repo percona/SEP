@@ -244,6 +244,14 @@
     --errorDark: var(--red700);
     --errorContrast: var(--errorDark);
     --errorSurface: var(--red50);
+
+    /* Stopped */
+    --stoppedContrast: var(--stone700);
+    --stoppedSurface: var(--stone100);
+
+    /* Lost */
+    --lostContrast: var(--sunset700);
+    --lostSurface: var(--sunset100);
 }
 
 /* Dark theme is set up to switch using <x> element and JS to swap the theme name on [data-theme] attribute */
@@ -291,6 +299,14 @@
     --errorDark: var(--red400);
     --errorContrast: var(--white);
     --errorSurface: var(--errorDark);
+
+    /* Stopped */
+    --stoppedContrast: var(--white);
+    --stoppedSurface: var(--stone500);
+
+    /* Lost */
+    --lostContrast: var(--white);
+    --lostSurface: var(--sunset500);
 }
 
 body[data-theme="dark"] .theme-change.dark,
@@ -1271,12 +1287,28 @@ footer .link svg {
     color: var(--errorContrast);
 }
 
+.status .stopped {
+    color: var(--stoppedContrast);
+}
+
+.status .lost {
+    color: var(--lostContrast);
+}
+
 .success .badge {
     background: var(--successSurface);
 }
 
 .error .badge {
     background: var(--errorSurface);
+}
+
+.stopped .badge {
+    background: var(--stoppedSurface);
+}
+
+.lost .badge {
+    background: var(--lostSurface);
 }
 
 /*=============================================*/

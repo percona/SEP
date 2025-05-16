@@ -51,12 +51,18 @@ class TaskHistoryStatusEnum(StrEnum):
     :vartype RUNNING: str
     :cvar SUCCESS: Enum value for successfully completed tasks.
     :vartype SUCCESS: str
+    :cvar STOPPED: Enum value for stopped tasks.
+    :vartype STOPPED: str
+    :cvar LOST: Enum value for tasks that are lost.
+    :vartype LOST: str
     """
 
     FAILED = auto()
     PENDING = auto()
     RUNNING = auto()
     SUCCESS = auto()
+    STOPPED = auto()
+    LOST = auto()
 
 
 class TaskOwner(EnumFieldMixin, StrEnum):
@@ -483,19 +489,14 @@ class TaskHistoryBase(SQLModel):
 
     @computed_field
     @property
-    def errors(self) -> list:
+    def errors(self) -> list[str]:
         """Return a list of errors for the executed task.
 
         :return: A list of error messages encountered during task execution.
         :rtype: list[str]
         """
-        if self.status not in [
-            TaskHistoryStatusEnum.SUCCESS,
-            TaskHistoryStatusEnum.FAILED,
-        ] or not self.execution_request.tracking.get("task_states"):
-            return []
         errors = set()
-        for state in self.execution_request.tracking["task_states"].values():
+        for state in self.execution_request.tracking.get("task_states", {}).values():
             for event in state["Events"]:
                 match event["Type"]:
                     case "Driver Failure":
@@ -639,11 +640,13 @@ class TaskStats(BaseModel):
         """Process the task data."""
 
         def _durations_from_tracking() -> None:
-            self._durations["tasks"][task.id] = task.duration
-            self._raw["durations"].append(task.duration)
-            self._raw["finished_at"].append(
-                task.finished_at,
-            )
+            if task.duration is not None:
+                self._durations["tasks"][task.id] = task.duration
+                self._raw["durations"].append(task.duration)
+            if task.finished_at is not None:
+                self._raw["finished_at"].append(
+                    task.finished_at,
+                )
 
         # TODO:  # noqa: TD002, TD003
         #  - Refactor
@@ -656,14 +659,11 @@ class TaskStats(BaseModel):
                 _durations_from_tracking()
             except KeyError:
                 return
-        durations = [
-            duration for duration in self._raw["durations"] if duration is not None
-        ]
-        if durations:
+        if self._raw["durations"]:
             self._durations.update(
-                average_seconds=mean(durations),
-                last_seconds=durations.pop(),
-                total_seconds=sum(durations),
+                average_seconds=mean(self._raw["durations"]),
+                last_seconds=self._raw["durations"].pop(),
+                total_seconds=sum(self._raw["durations"]),
             )
 
 
@@ -680,17 +680,30 @@ class TransformPayloadRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
 
 
+class TaskLogType(StrEnum):
+    """Define the type of task log.
+
+    :cvar STDOUT: Enum value for standard output logs.
+    :vartype STDOUT: str
+    :cvar STDERR: Enum value for standard error logs.
+    :vartype STDERR: str
+    """
+
+    STDOUT = "stdout"
+    STDERR = "stderr"
+
+
 class TaskLog(BaseModel):
     """Define a task log line.
 
     :param step: The task step name.
     :type step: str
     :param type: The type of log to stream ('stdout' or 'stderr').
-    :type type: Literal["stdout", "stderr"]
+    :type type: TaskLogType
     :param msg: The log message. If None, represents the end of the log for that step.
     :type msg: str | None
     """
 
     step: str
-    type: Literal["stdout", "stderr"]
+    type: TaskLogType
     msg: str | None
