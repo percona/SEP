@@ -7,6 +7,7 @@ from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManage
 from app.core.celery.db import (
     get_async_session_maker as get_celery_beat_async_session_maker,
 )
+from app.core.config import settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task
@@ -232,6 +233,7 @@ async def init_periodic_tasks_db() -> None:
                         name=periodic_task_name,
                         task=task_name,
                         schedule_model=created_schedule,
+                        expire_seconds=settings.CELERY.global_expire_seconds,
                     )
                     celery_beat_session.add(periodic_task)
         await celery_beat_session.commit()
