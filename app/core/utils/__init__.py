@@ -1,5 +1,5 @@
 from app.core.utils.async_run import async_run
-from app.core.utils.date_time import make_datetime_utc
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.core.utils.dict import deep_dict_update, sort_dict, transform_dict_keys
 from app.core.utils.imports import (
     import_var,
@@ -9,4 +9,4 @@ from app.core.utils.imports import (
 from app.core.utils.list import remove_duplicates
 from app.core.utils.pydantic import run_pydantic_type_validator
 from app.core.utils.serialization import json_serializer
-from app.core.utils.strings import b64encode_str, slugify, to_uppercase
+from app.core.utils.strings import b64decode_str, b64encode_str, slugify, to_uppercase

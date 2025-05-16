@@ -40,7 +40,6 @@
         display: block;
     }
 
-
     button {
         margin-top: 1em;
         margin-right: 1em;
@@ -67,94 +66,96 @@
         margin: 1em 0;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form action="" id="create_form" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-    <legend>Main Options</legend>
-    <br>
     <fieldset>
-        <legend>Executor Host</legend>
-        {% set hostname_title = "Select the hostname of the target system for task execution." %}
-        <div class="select">
-            <label for="hostname" title="{{ hostname_title }}">
-                <span class="material-symbols-outlined">arrow_drop_down</span>
-                <span class="label">Select Executor Host:</span>
-                {% if executor_hosts|length == 1 %}
-                    {% set single_service = executor_hosts[0] %}
-                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
-                    </select>
-                    <input type="hidden" name="hostname" value="{{ single_service }}">
-                {% else %}
-                    <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
-                        <option value="" selected>Select a host</option>
-                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
-                    </select>
-                {% endif %}
+        <legend>Main Options</legend>
+        <br>
+        <fieldset>
+            <legend>Executor Host</legend>
+            {% set hostname_title = "Select the hostname of the target system for task execution." %}
+            <div class="select">
+                <label for="hostname" title="{{ hostname_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Select Executor Host:</span>
+                    {% if executor_hosts|length == 1 %}
+                        {% set single_service = executor_hosts[0] %}
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                        </select>
+                        <input type="hidden" name="hostname" value="{{ single_service }}">
+                    {% else %}
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+                            <option value="" selected>Select a host</option>
+                            {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend>Basic Task Information</legend>
+            <br>
+            {% set task_name_title = "Type the name of task to be created." %}
+            <label for="task_name" title="{{ task_name_title }}">
+                Task Name:
+                <input type="text"
+                       id="task_name"
+                       name="task_name"
+                       class="validate"
+                       required
+                       placeholder="Enter a unique task name" />
             </label>
-        </div>
-    </fieldset>
-    <fieldset>
-        <legend>Basic Task Information</legend>
-        <br>
-        {% set task_name_title = "Type the name of task to be created." %}
-        <label for="task_name" title="{{ task_name_title }}">
-            Task Name:
-            <input type="text"
-                   id="task_name"
-                   name="task_name"
-                   class="validate"
-                   required
-                   placeholder="Enter a unique task name" />
-        </label>
-        <br>
-        <br>
-        {% set service_id_title = "Select the database host from the inventory to connect to." %}
-        <div class="select">
-            <label for="service_id" title="{{ service_id_title }}">
-                <span class="material-symbols-outlined">arrow_drop_down</span>
-                <span class="label">Select a Database Host:</span>
-                {% if mysql_services|length == 1 %}
-                    {% set single_service = mysql_services[0] %}
-                    <select id="service_id" name="service_id" disabled>
-                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+            <br>
+            <br>
+            {% set service_id_title = "Select the database host from the inventory to connect to." %}
+            <div class="select">
+                <label for="service_id" title="{{ service_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Select a Database Host:</span>
+                    {% if services|length == 1 %}
+                        {% set single_service = services[0] %}
+                        <select id="service_id" name="service_id" disabled>
+                            <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                        </select>
+                        <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% else %}
+                        <select id="service_id" name="service_id" required>
+                            <option value="" selected>Select a database host</option>
+                            {% for service in services %}
+                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
+            </div>
+            <br>
+            {% set backup_type_title = "Select the type of backup: MyDumper or XtraBackup." %}
+            <div class="select">
+                <label for="backup_type" title="{{ backup_type_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Backup Type:</span>
+                    <select id="backup_type" name="backup_type" required>
+                        <option value="">Select a backup type</option>
+                        <option value="M">Mydumper</option>
+                        <option value="X">Xtrabackup</option>
+                        <option value="B">Binlog</option>
                     </select>
-                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
-                {% else %}
-                    <select id="service_id" name="service_id" required>
-                        <option value="" selected>Select a database host</option>
-                        {% for service in mysql_services %}
-                            <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
+                </label>
+            </div>
+            <br>
+            <br>
+            {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
+            <label for="encryption_recipient" title="{{ encryption_recipient_title }}">
+                Encryption Recipient (optional):
+                <input type="text"
+                       id="encryption_recipient"
+                       name="encryption_recipient"
+                       placeholder="Recipient email or key ID" />
             </label>
-        </div>
-        <br>
-        {% set backup_type_title = "Select the type of backup: MyDumper or XtraBackup." %}
-        <div class="select">
-            <label for="backup_type" title="{{ backup_type_title }}">
-                <span class="material-symbols-outlined">arrow_drop_down</span>
-                <span class="label">Backup Type:</span>
-                <select id="backup_type" name="backup_type" required>
-                    <option value="">Select a backup type</option>
-                    <option value="M">Mydumper</option>
-                    <option value="X">Xtrabackup</option>
-                    <option value="B">Binlog</option>
-                </select>
-            </label>
-        </div>
-        <br>
-        <br>
-        {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
-        <label for="encryption_recipient" title="{{ encryption_recipient_title }}">
-            Encryption Recipient (optional):
-            <input type="text"
-                   id="encryption_recipient"
-                   name="encryption_recipient"
-                   placeholder="Recipient email or key ID" />
-        </label>
-        <br>
-        <br>
+            <br>
+            <br>
+        </fieldset>
     </fieldset>
     <fieldset>
         <legend>General Backup Configuration</legend>
@@ -276,6 +277,16 @@
         </label>
         <br>
         <br>
+        {% set compression_algorithm_title = "Select the type of compression algorithm" %}
+        <div class="select"
+             style="display:none"
+             id="compression_algorithm_wrapper">
+            <label for="compression_algorithm" title="{{ compression_algorithm_title }}">
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Compression Algorithm:</span>
+                <select id="compression_algorithm" name="compression_algorithm"></select>
+            </label>
+        </div>
     </fieldset>
     <fieldset id="mydumper_container" style="flex-direction: column; gap: 1em">
         <legend>Mydumper Configuration</legend>
@@ -736,17 +747,52 @@
     const xtrabackupContainer = document.getElementById('xtrabackup_container');
     const binlogContainer = document.getElementById('binlog_container');
     const uploadContainer = document.getElementById('upload_container');
-
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
-    let s3Visible = false;
-
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
-    let rsyncVisible = false;
-
     const s3BucketInput = document.getElementById('s3_bucket');
     const rsyncPathInput = document.getElementById('rsync_path');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
+
+    let s3Visible = false;
+    let rsyncVisible = false;
+
+
+
+    const compressionWrapper = document.getElementById('compression_algorithm_wrapper');
+    const compressCheckbox = document.getElementById('compress');
+    const compressionSelect = document.getElementById('compression_algorithm');
+
+
+    const compressionOptions = {
+        M: {
+            title: "Select the compression algorithm to use for backups: 'gzip' or 'zstd'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'gzip', label: 'gzip' },
+                { value: 'zstd', label: 'zstd' }
+            ]
+        },
+        X: {
+            title: "Select the compression algorithm to use for backups: 'zstd' or 'lz4'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'zstd', label: 'zstd' },
+                { value: 'lz4', label: 'lz4' }
+            ]
+        },
+        B: {
+            title: "Select the compression algorithm to use for backups: 'gzip'.",
+            options: [
+                { value: '', label: 'Select one' },
+                { value: 'gzip', label: 'gzip' }
+            ]
+        }
+    };
+
+
 
     function disableAllMydumperFields(disabled) {
         mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
@@ -860,13 +906,46 @@
             toggleRsyncBtn.textContent = "+ Add Rsync upload";
         }
     }
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
+
+
+    function updateCompressionOptions() {
+        const isCompressChecked = compressCheckbox.checked;
+        const backupType = backupTypeSelect.value;
+
+        if (isCompressChecked && compressionOptions[backupType]) {
+            const { title, options } = compressionOptions[backupType];
+
+            compressionSelect.innerHTML = options
+                .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+                .join('');
+
+            compressionSelect.title = title;
+            compressionWrapper.title = title;
+            compressionWrapper.style.display = 'block';
+        } else {
+            compressionWrapper.style.display = 'none';
+            compressionSelect.innerHTML = '';
+        }
+    }
+
+    // Event listeners
+    compressCheckbox.addEventListener('change', updateCompressionOptions);
+    backupTypeSelect.addEventListener('change', updateCompressionOptions);
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
     // Initialize
-    updateBackupTypeUI();
-    showContainer(s3Container, false);
-    showContainer(rsyncContainer, false);
+    window.addEventListener('DOMContentLoaded', function() {
+        updateBackupTypeUI();
+        showContainer(s3Container, false);
+        showContainer(rsyncContainer, false);
+        updateCreateButtonState();
+    });
+
 </script>

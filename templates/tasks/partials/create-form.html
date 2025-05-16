@@ -1,5 +1,5 @@
 <h2>Create a new task</h2>
-<form action="" method="post">
+<form action="" id="task-create-form" method="post">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Enter a new task definition</legend>
@@ -58,3 +58,19 @@
     <br>
     <button class="contained large" type="submit" title="Add a new task">Create</button>
 </form>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    const form = document.getElementById('task-create-form');
+    const createButton = form.querySelector('button[type="submit"]');
+
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
+
+    form.addEventListener('input', updateCreateButtonState);
+    form.addEventListener('change', updateCreateButtonState);
+
+    window.addEventListener('DOMContentLoaded', function() {
+        updateCreateButtonState();
+    });
+
+</script>

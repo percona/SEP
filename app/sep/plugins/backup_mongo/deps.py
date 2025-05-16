@@ -6,25 +6,17 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, Request
-from fastapi.encoders import jsonable_encoder
 
-from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
-    get_created_entity,
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup.models import (
+from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
-    BackupConfigAll,
-    BackupConfigServer,
     BackupCreate,
-    BackupType,
-    UploadProvider,
 )
 from app.tasks.models import (
     Task,
@@ -38,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 async def build_backup_task_payload(
     form: Annotated[BackupCreate, Form()],
-    inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build the backup task payload from form.
 
@@ -52,80 +43,30 @@ async def build_backup_task_payload(
         configuration to create the Backup task.
     :rtype: TaskWrite
     """
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MYSQL,
-    )
-
-    all_config = form.model_dump(
-        exclude={
-            "task_name",
-            "hostname",
-            "service_id",
-            "backup_type",
-            "encryption_recipient",
-        },
-        by_alias=True,
-    )
-
-    upload_providers = []
-    if form.s3_bucket:
-        upload_providers.append(UploadProvider.S3)
-    if form.rsync_path:
-        upload_providers.append(UploadProvider.RSYNC)
-
-    server_config = {
-        "alias": service.node.address,
-        "backup_type": form.backup_type,
-        # for now only localhost allowed for X
-        "host": (
-            "localhost"
-            if form.backup_type == "X"
-            else form.binlog_alternative_host
-            if form.backup_type == "B" and form.binlog_alternative_host
-            else service.node.address
-        ),
-        "port": service.port,
-        "upload": upload_providers,
-    }
-
-    if form.encryption_recipient:
-        server_config["dir_encrypt_config"] = {
-            "encryption_recipient": form.encryption_recipient
-        }
+    all_config = form.model_dump(by_alias=True)
 
     backup_config = BackupConfig(
-        all_servers=BackupConfigAll.model_validate(all_config),
-        server_list=[BackupConfigServer.model_validate(server_config)],
+        backup_config=[BackupConfig.model_validate(all_config)],
     )
-    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
-    if form.backup_type == BackupType.MYDUMPER:
-        payload_name = "mydumper_payload"
-    elif form.backup_type == BackupType.XTRABACKUP:
-        payload_name = "xtrabackup_payload"
-        requirements += "\nfilelock"
-    elif form.backup_type == BackupType.BINLOG:
-        payload_name = "binlog_payload"
-    else:
-        raise ValueError(f"Invalid Backup Type {form.backup_type}")
-    payload_path = Path(__file__).parent / payload_name
+
+    requirements = "packaging\nPyYAML\nPyMongo\nboto3"
+    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUPS,
+        owner=TaskOwner.BACKUP_MONGO,
         data={
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    jsonable_encoder(backup_config, by_alias=True, exclude_none=True)
+                    backup_config.model_dump(by_alias=True, exclude_none=True)
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
             },
             "payload": f"file://{payload_path}",
+            "backup_type": form.backup_type,
         },
     )
 
@@ -151,7 +92,7 @@ async def get_backups_task(
     :rtype: Task
     :raises HTTPNotFoundException: If the task is not found or is not owned by Backups.
     """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUPS)
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUP_MONGO)
 
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
@@ -169,16 +110,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    backup_server = task_config["SERVER_LIST"][0]
-
-    return {
-        "hostname": meta["target"],
-        "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT") or 3306,
-        "upload": ", ".join(backup_server.get("UPLOAD")),
-        "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
-    }
+    return yaml.safe_load(meta["config"])
 
 
 async def get_backups_index_context(
@@ -189,7 +121,7 @@ async def get_backups_index_context(
 ) -> dict[str, Any]:
     """Assemble the context for the Backups plugin index view.
 
-    Retrieves MySQL services and associated tasks, organizing them based on their
+    Retrieves MongoDB services and associated tasks, organizing them based on their
     execution status. Integrates this information into the default context for
     rendering in templates.
 
@@ -210,5 +142,5 @@ async def get_backups_index_context(
         tasks_api,
         get_backups_task_info,
         context,
-        TaskOwner.BACKUPS,
+        TaskOwner.BACKUP_MONGO,
     )
