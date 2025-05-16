@@ -2,7 +2,7 @@
 
 import logging.config
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.config import create_app, default_lifespan, settings
@@ -10,6 +10,8 @@ from app.inventory.config import inventory_settings
 from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
 from app.inventory.deps import SessionDep
 from app.inventory.routes import nodes, schemas, services, tables
+
+logger = logging.getLogger(__name__)
 
 summary_router = APIRouter(prefix="/summary", tags=["summary"])
 
@@ -41,6 +43,16 @@ inventory_app = create_app(
     allowed_hosts=inventory_settings.ALLOWED_HOSTS,
     security_headers=inventory_settings.SECURITY_HEADERS,
 )
+
+
+@inventory_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
+async def internal_error_handler(
+    _: Request,
+    exc: BaseException,
+) -> None:
+    """Proper log unhandled exceptions."""
+    logger.exception("Unhandled exception:", exc_info=exc)
+    raise exc
 
 
 if __name__ == "__main__":

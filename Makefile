@@ -67,8 +67,8 @@ run-pre-commit: venv
 	@"${VENV_BIN}"/pre-commit run --all-files
 
 pip-audit: venv
-	@"${POETRY}" export -f requirements.txt --output requirements.txt
-	@${VENV_BIN}/pip-audit --verbose --progress-spinner=off --disable-pip --require-hashes -r requirements.txt; status=$$?; rm requirements.txt; exit $$status
+	@"${POETRY}" install --all-extras --all-groups
+	@"${POETRY}" run pip-audit --verbose --progress-spinner=off
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
