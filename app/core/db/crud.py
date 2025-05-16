@@ -5,7 +5,15 @@ from collections.abc import Sequence
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import CursorResult, delete, func, inspect, ScalarResult, Select
+from sqlalchemy import (
+    ChunkedIteratorResult,
+    CursorResult,
+    delete,
+    func,
+    inspect,
+    ScalarResult,
+    Select,
+)
 from sqlalchemy.engine import TupleResult
 from sqlalchemy.exc import DatabaseError, NoResultFound
 from sqlalchemy.orm import joinedload
@@ -113,6 +121,55 @@ class BaseManager:
         )
         result = await cls._exec(session, query)
         return result.unique()
+
+    @classmethod
+    async def values_list(
+        cls,
+        session: AsyncSession,
+        fields: Sequence[str],
+        *whereclause: ColumnExpressionArgument[bool],
+        select_related: Sequence = (),
+        **equal_filters: Any,
+    ) -> list[Any]:
+        """Return a list of values for the specified fields.
+
+        This method retrieves values for the specified fields from the database. If no
+        fields are provided, it retrieves all values for the model in alphabetical
+        order.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param fields: The fields to retrieve values for.
+        :type fields: Sequence[str]
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param select_related: Fields to be loaded using `joinedload` for related
+            objects.
+        :type select_related: Sequence
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: A list of tuples containing the values for the specified fields, or
+            a flat list of values if only one field is specified.
+        :rtype: list[Any]
+        """
+        if not fields:
+            items = await cls.list(
+                session, *whereclause, select_related=select_related, **equal_filters
+            )
+            return [
+                tuple(field[1] for field in sorted(item, key=lambda field: field[0]))
+                for item in items
+            ]
+        query = cls._filter_query(
+            select(*(getattr(cls.Model, field) for field in fields)),
+            *whereclause,
+            select_related=select_related,
+            **equal_filters,
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
 
     @classmethod
     async def list(
@@ -249,7 +306,7 @@ class BaseManager:
         session: AsyncSession,
         *instances: T,
         flag_modified_fields: Sequence[str] = (),
-    ) -> Sequence[T]:
+    ) -> tuple[T, ...]:
         """Save multiple instances of a model to the database.
 
         :param session: The SQLAlchemy asynchronous session to use for database
@@ -260,7 +317,7 @@ class BaseManager:
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
         :return: The saved instances.
-        :rtype: Sequence[T]
+        :rtype: tuple[T, ...]
         """
         for instance in instances:
             for field in flag_modified_fields:
@@ -299,7 +356,9 @@ class BaseManager:
             logger.exception("DatabaseError saving instance %s", instance)
             raise HTTPBadRequestException from None
         else:
-            logger.debug("Saved instance of %s: %s", cls.Model.__name__, instance)
+            logger.debug(
+                "Saved instance of %s with id %s", cls.Model.__name__, instance.id
+            )
         await session.refresh(instance)
         return instance
 
@@ -406,8 +465,9 @@ class BaseManager:
         session: AsyncSession,
         values: dict[str, Any],
         *whereclause: ColumnExpressionArgument[bool],
+        returning: Sequence[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult:
+    ) -> CursorResult | ChunkedIteratorResult:
         """Execute an UPDATE statement.
 
         This method executes an UPDATE statement to update specific values for rows
@@ -420,11 +480,15 @@ class BaseManager:
         :type values: dict[str, Any]
         :param whereclause: SQL expressions for the `where` clause of the query.
         :type whereclause: ColumnExpressionArgument[bool]
+        :param returning: If True, return the updated rows as objects of `cls.Model`. If
+            a list of column names is provided, return only those columns. Defaults to
+            False, meaning no rows are returned from the statement.
+        :type returning: Sequence[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
         :return: The result of the UPDATE statement execution.
-        :rtype: CursorResult
+        :rtype: CursorResult | ChunkedIteratorResult
         """
         if not whereclause and not equal_filters:
             raise ValueError(
@@ -433,14 +497,12 @@ class BaseManager:
         query = cls._filter_query(
             update(cls.Model), *whereclause, **equal_filters
         ).values(**values)
+        if returning is True:
+            query = query.returning(cls.Model)
+        elif returning:
+            query = query.returning(*(getattr(cls.Model, field) for field in returning))
         result = await cls._exec(session, query)
         await session.commit()
-        logger.debug(
-            "Updated %s instances of %s with values %s",
-            result.rowcount,
-            cls.Model.__name__,
-            values,
-        )
         return result
 
     @classmethod
@@ -464,8 +526,9 @@ class BaseManager:
         cls,
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
+        returning: Sequence[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult:
+    ) -> CursorResult | ChunkedIteratorResult:
         """Execute a DELETE statement.
 
         This method executes a DELETE statement to delete specific rows matching the
@@ -476,24 +539,27 @@ class BaseManager:
         :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
         :type whereclause: ColumnExpressionArgument[bool]
+        :param returning: If True, return the updated rows as objects of `cls.Model`. If
+            a list of column names is provided, return only those columns. Defaults to
+            False, meaning no rows are returned from the statement.
+        :type returning: Sequence[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
         :return: The result of the DELETE statement execution.
-        :rtype: CursorResult
+        :rtype: CursorResult | ChunkedIteratorResult
         """
         if not whereclause and not equal_filters:
             raise ValueError(
                 "You must specify at least one filter in *whereclause or **equal_filters"
             )
         query = cls._filter_query(delete(cls.Model), *whereclause, **equal_filters)
+        if returning is True:
+            query = query.returning(cls.Model)
+        elif returning:
+            query = query.returning(*(getattr(cls.Model, field) for field in returning))
         result = await cls._exec(session, query)
         await session.commit()
-        logger.debug(
-            "Deleted %s instances of %s",
-            result.rowcount,
-            cls.Model.__name__,
-        )
         return result
 
     @classmethod
