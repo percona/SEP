@@ -33,7 +33,7 @@ logger.setLevel(logging.INFO)
 logger_formatter = logging.Formatter(
     "%(asctime)s %(levelname)s: PID<%(process)d> %(funcName)s() - %(message)s"
 )
-stream_handler = logging.StreamHandler()
+stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logger_formatter)
 stream_handler.setLevel(logging.INFO)
 logger.addHandler(stream_handler)
@@ -66,9 +66,10 @@ def main() -> None:
     logger.setLevel(log_level)
     stream_handler.setLevel(log_level)
 
-    log_dir = Path(config.get("LOG_DIR") or "/var/log/percona")
-    log_file = config.get("LOG_FILE", "purge_tables.log")
+    # Only set up file logging if LOG_FILE is explicitly specified
+    log_file = config.get("LOG_FILE")
     if log_file:
+        log_dir = Path(config.get("LOG_DIR") or "/tmp")
         log_path = log_dir / log_file
         try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -220,6 +221,7 @@ def main() -> None:
             )
     except:
         logger.exception("Unhandled exception")
+        sys.exit(1)
     finally:
         lock.release()
 
