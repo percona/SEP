@@ -189,12 +189,16 @@ SYSTEM_TASKS = [
 PERIODIC_TASKS = {
     IntervalSchedule(every=30, period=Period.SECONDS): [
         (
-            "app.tasks.celery.process_expired_and_orphaned_periodic_tasks",
-            "process_expired_and_orphaned_periodic_tasks_every_30_seconds",
-        ),
-        (
             "app.tasks.celery.sync_running_tasks",
-            "sync_running_tasks_every_30_seconds",
+            "sync_running_tasks",
+            {},
+        ),
+    ],
+    IntervalSchedule(every=5, period=Period.MINUTES): [
+        (
+            "app.tasks.celery.process_expired_and_orphaned_periodic_tasks",
+            "process_expired_and_orphaned_periodic_tasks",
+            {"expire_seconds": settings.CELERY.global_expire_seconds},
         ),
     ],
 }
@@ -222,18 +226,24 @@ async def init_periodic_tasks_db() -> None:
             created_schedule, _ = await IntervalScheduleManager.get_or_create(
                 celery_beat_session, schedule
             )
-            for task_name, periodic_task_name in tasks:
+            for task_name, periodic_task_name, extra_kwargs in tasks:
                 if (
-                    await BasePeriodicTaskManager.first(
-                        celery_beat_session, name=periodic_task_name
+                    periodic_task := (
+                        await BasePeriodicTaskManager.first(
+                            celery_beat_session, task=task_name
+                        )
                     )
-                    is None
-                ):
+                ) is None:
                     periodic_task = PeriodicTask(
                         name=periodic_task_name,
                         task=task_name,
                         schedule_model=created_schedule,
-                        expire_seconds=settings.CELERY.global_expire_seconds,
+                        **extra_kwargs,
                     )
-                    celery_beat_session.add(periodic_task)
+                else:
+                    periodic_task.schedule_model = created_schedule
+                    periodic_task.name = periodic_task_name
+                    for key, value in extra_kwargs.items():
+                        setattr(periodic_task, key, value)
+                celery_beat_session.add(periodic_task)
         await celery_beat_session.commit()
