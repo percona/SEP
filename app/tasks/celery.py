@@ -23,7 +23,11 @@ from app.core.utils import utc_now
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.deps import create_task_history, get_executor, get_task_by_name
+from app.tasks.deps import (
+    get_executor,
+    get_task_by_name,
+    prepare_task_history,
+)
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     TaskHistory,
@@ -81,7 +85,7 @@ def execute_task_by_name(
     task_history = async_to_sync(prepare_periodic_task_history)(
         task_name, execution_data
     )
-    return jsonable_encoder(async_to_sync(dispatch_queue_item)(task_history.id))
+    return jsonable_encoder(async_to_sync(dispatch_queue_item)(task_history))
 
 
 @celery.task
@@ -157,10 +161,10 @@ async def prepare_periodic_task_history(
     async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
         task = await get_task_by_name(session, task_name)
-        return await create_task_history(session, task, execution_data)
+        return prepare_task_history(task, execution_data)
 
 
-async def dispatch_queue_item(queue_id: int) -> TaskHistory:
+async def dispatch_queue_item(queue_item: TaskHistory) -> TaskHistory:
     """Process an item from the history table.
 
     :param queue_id: The unique identifier of the queue item to process.
@@ -174,11 +178,6 @@ async def dispatch_queue_item(queue_id: int) -> TaskHistory:
     """
     async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
-        queue_item = await TaskHistoryManager.get_or_404(
-            session,
-            select_related=[TaskHistory.task],
-            id=queue_id,
-        )
         if queue_item.status != TaskHistoryStatusEnum.PENDING:
             raise HTTPConflictException("Queue item is not in a pending state.")
         task = await TaskManager.get_root_task(session, queue_item.task)
