@@ -16,7 +16,6 @@ from pydantic import (
 from sqlalchemy_celery_beat.models import CrontabSchedule as BaseCrontabSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
-from app.core.utils.date_time import utc_now
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.models import TaskExecuteRequest
 
@@ -455,8 +454,8 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     :param name: The name of the periodic task. Defaults to an empty string, meaning
         the value will be automatically generated on create.
     :type name: str
-    :param start_time: The start time for the task execution. Defaults to current time.
-    :type start_time: UTCDatetime
+    :param start_time: The start time for the task execution. Defaults to None.
+    :type start_time:  UTCDatetime | None
     :param expires: The expiration time for the task execution. Defaults to None.
     :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled. Defaults to True.
@@ -466,7 +465,7 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     """
 
     name: str = ""
-    start_time: UTCDatetime = Field(default_factory=utc_now)
+    start_time: UTCDatetime | None = None
     expires: UTCDatetime | None = None
     enabled: bool = True
     description: str = ""
