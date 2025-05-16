@@ -23,7 +23,7 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
     including logging, SSH options, S3 tool selection, and GPG encryption.
 
     :param logging_dir: Directory path for storing restore operation logs.
-    :type logging_dir: RequiredStr
+    :type logging_dir: RequiredStr | EmptyStrToNone
     :param port: Port number for the restore operation.
     :type port: int | None
     :param custom_mysql_init_command: Custom MySQL initialization command.
@@ -40,7 +40,7 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
     :type gpg_password_file: RequiredStr | EmptyStrToNone
     """
 
-    logging_dir: RequiredStr
+    logging_dir: RequiredStr | EmptyStrToNone = None
     port: int | None = None
     custom_mysql_init_command: RequiredStr | EmptyStrToNone = None
 

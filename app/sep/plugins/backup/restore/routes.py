@@ -79,9 +79,8 @@ async def restores_detail(
         "port": server_config["DEST_PORT"],
         "database": server_config.get("DATABASER"),
         "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
-        "delete_url": request.url_for("restores_detail", task_name=task.name),
+        "delete_url": request.url_for("restores_delete", task_name=task.name),
     }
-
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["running_tasks"] = await tasks_api.get(
@@ -113,3 +112,20 @@ async def restores_execute(
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     task_path = request.url_for("restores_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/delete",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def restores_delete(
+    request: Request,
+    task: RestoresTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Delete restores task."""
+    await tasks_api.delete(f"/{task.name}")
+    task_path = request.url_for("restores_index")
+    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+

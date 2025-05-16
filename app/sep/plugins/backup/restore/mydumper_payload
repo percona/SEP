@@ -2,19 +2,17 @@
 import argparse
 import json
 import logging
-import multiprocessing
 import os
 import pwd
 import re
 import signal
 import socket
-import struct
 import subprocess
 import sys
 import time
+import uuid
 import shutil
 import shlex
-import uuid
 import glob
 import datetime
 from enum import auto, Enum, IntEnum
@@ -39,8 +37,16 @@ except ImportError:
     import Queue
 
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
-CURRENT_USER = os.getenv('PERCONA_BACKUP_USER') or os.getenv('SUDO_USER') or getpass.getuser()
-CURRENT_USER_HOME_DIR = pwd.getpwnam(CURRENT_USER).pw_dir
+CURRENT_USER = os.getenv('PERCONA_BACKUP_USER') or os.getenv('SUDO_USER') or getuser()
+CURRENT_USER_HOME_DIR = Path(pwd.getpwnam(CURRENT_USER).pw_dir)
+BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
+    "PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR",
+    CURRENT_USER_HOME_DIR
+    / "pmm"
+    / "collectors"
+    / "textfile-collector"
+    / "low-resolution",
+)
 DEFAULT_MYCNF = '%s/.my.cnf' % (os.environ.get('HOME'))
 DEFAULT_CFG_DIR = os.getenv('PERCONA_BACKUP_DEFAULT_CFG_DIR', os.path.join(CURRENT_USER_HOME_DIR, '.config/percona/backup'))
 DEFAULT_CFG = DEFAULT_CFG_DIR + '/backup_config.yml'
@@ -77,14 +83,7 @@ PROC_STAT_PID_IDX = 0
 PROC_STAT_PPID_IDX = 3
 PROC_STAT_UTIME_IDX = 13
 PROC_STAT_STIME_IDX = 14
-BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
-    "PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR",
-    CURRENT_USER_HOME_DIR
-    / "pmm"
-    / "collectors"
-    / "textfile-collector"
-    / "low-resolution",
-)
+
 LOGGING_NAME = {
     'B': 'binlog.log',
     'G': 'gcesnapshot.log',
@@ -884,7 +883,7 @@ class BaseBackup(object):
         # Check if Textfile Collector dir exist
         backup_textfile_collector_dir = os.path.dirname(collector_file)
         if not os.path.isdir(backup_textfile_collector_dir):
-            self.logger.warn('Textfile Collector directory {} does not exist.'.format(backup_textfile_collector_dir))
+            self.logger.warning('Textfile Collector directory {} does not exist.'.format(backup_textfile_collector_dir))
             return False
 
         return True
@@ -1838,16 +1837,13 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         self.use_sql_file = options.use_sql_file
 
     def run(self):
+        local_cfg = LocalConfig(self.config_path)
 
-        if self.config_path is None:
-            local_cfg = LocalConfig(DEFAULT_CFG_DIR + '/restore_config.yml', try_only=bool(self.backup_path))
-        else:
-            local_cfg = LocalConfig(self.config_path, try_only=bool(self.backup_path))
-
-        try:
-            logging_dir = local_cfg.raw_cfg_data['ALL_SERVERS']['LOGGING_DIR']
-        except KeyError:
-            logging_dir = DEFAULT_LOGGING_DIR
+        logging_dir = Path(
+            local_cfg.raw_cfg_data["ALL_SERVERS"].get(
+                "LOGGING_DIR", DEFAULT_LOGGING_DIR
+            )
+        )
         self.logger = logging_setup(logging_dir, 'restore.log')
 
         # Get a lock
@@ -1858,7 +1854,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         # Read config if not manual run
         if self.backup_path is None:
             # Obtain server list
-            servers = [s for s in local_cfg.server_data_list if self.run_alias in s['ALIAS']]
+            servers = [s for s in local_cfg.server_data_list]
         else:
             servers = []
             rest_conf = {}
