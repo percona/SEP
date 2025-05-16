@@ -128,3 +128,45 @@ async def create_task_history(
 
 
 CreatedTaskHistory = Annotated[TaskHistory, Depends(create_task_history)]
+
+
+async def get_task_history(
+    session: SessionDep,
+    task_history_id: int,
+) -> TaskHistory:
+    """Get TaskHistory object by task history ID.
+
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history to retrieve.
+    :type task_history_id: int
+    :return: The retrieved TaskHistory object.
+    :rtype: TaskHistory
+    """
+    logger.debug("Requesting task history %s", task_history_id)
+    return await TaskHistoryManager.get_or_404(session=session, id=task_history_id)
+
+
+TaskHistoryDep = Annotated[TaskHistory, Depends(get_task_history)]
+
+
+async def get_task_history_with_task(
+    session: SessionDep,
+    task_history_id: int,
+) -> TaskHistory:
+    """Get TaskHistory object by task history ID with related task.
+
+    :param session: The asynchronous database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history to retrieve.
+    :type task_history_id: int
+    :return: The retrieved TaskHistory object.
+    :rtype: TaskHistory
+    """
+    logger.debug("Requesting task history %s", task_history_id)
+    return await TaskHistoryManager.get_or_404(
+        session=session, select_related=(TaskHistory.task,), id=task_history_id
+    )
+
+
+TaskHistoryWithTaskDep = Annotated[TaskHistory, Depends(get_task_history_with_task)]

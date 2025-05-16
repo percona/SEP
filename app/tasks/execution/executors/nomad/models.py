@@ -466,6 +466,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             raise ValueError("The job ID could not be determined")
         self.backend.job.deregister_job(job_id)
         queue_item.status = TaskHistoryStatusEnum.STOPPED
+        queue_item.finished_at = utc_now()
         return await TaskHistoryManager.save(session, queue_item)
 
     def get_logs_for_allocation(

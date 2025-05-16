@@ -10,7 +10,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.tasks.celery import execute_task_queue
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
@@ -19,6 +19,8 @@ from app.tasks.deps import (
     SessionDep,
     TaskDep,
     TaskExecutor,
+    TaskHistoryDep,
+    TaskHistoryWithTaskDep,
 )
 from app.tasks.models import (
     GeneratedTask,
@@ -275,30 +277,21 @@ async def get_task_history(
 
 @router.get("/history/{task_history_id}", dependencies=[IsAuthenticatedDep])
 async def retrieve_task_history(
-    session: SessionDep,
-    task_history_id: int,
+    task_history: TaskHistoryWithTaskDep,
 ) -> TaskHistoryResponse:
     """Retrieve a task history by id."""
-    logger.debug("Requesting task history %s", task_history_id)
-    return await TaskHistoryManager.get_or_404(
-        session=session,
-        select_related=(TaskHistory.task,),
-        id=task_history_id,
-    )
+    logger.debug("Requesting task history %s", task_history.id)
+    return task_history
 
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
-    session: SessionDep, executor: TaskExecutor, task_history_id: int
+    executor: TaskExecutor, task_history: TaskHistoryDep
 ) -> StreamingResponse:
     """Stream a task history's logs."""
-    logger.debug("Requesting logs for task history %s", task_history_id)
-    task_history = await TaskHistoryManager.get_or_404(
-        session=session,
-        id=task_history_id,
-    )
+    logger.debug("Requesting logs for task history %s", task_history.id)
     if task_history.status == TaskHistoryStatusEnum.PENDING:
-        raise HTTPBadRequestException("Task history is pending.")
+        raise HTTPConflictException("Task history is pending.")
     if task_history.status == TaskHistoryStatusEnum.RUNNING:
         stream_logs_generator = (
             f"{log_line.model_dump_json()}\n" if log_line else ""
@@ -316,6 +309,20 @@ async def stream_task_history_logs(
         stream_logs_generator,
         media_type="application/json",
     )
+
+
+@router.post("/history/{task_history_id}/stop/", dependencies=[IsAuthenticatedDep])
+async def stop_task_history(
+    session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
+) -> TaskHistoryResponse:
+    """Stop a task history."""
+    logger.debug("Stopping task history %s", task_history.id)
+    if task_history.status != TaskHistoryStatusEnum.RUNNING:
+        raise HTTPBadRequestException(
+            f"Cannot stop task history {task_history.id} ({task_history.task.name}): "
+            f"task is not running (current status: {task_history.status})."
+        )
+    return await executor.stop_task(session, task_history)
 
 
 @router.post(
