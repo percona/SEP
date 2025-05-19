@@ -34,10 +34,6 @@ default:
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
-      - NAME: Restores
-        MODULE_NAME: restore
-        URI_PATH: /restores
-        CSS_CLASS: restores
       - NAME: Checksums
         MODULE_NAME: checksums
         URI_PATH: /checksums
