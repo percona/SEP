@@ -10,6 +10,8 @@ from typing import Any
 from asgiref.sync import async_to_sync
 from celery import Task
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import func
+from sqlmodel import col, or_
 
 from app.core.celery.db import get_async_session_maker as get_celery_async_session_maker
 from app.core.celery.utils import create_celery
@@ -17,11 +19,17 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
+from app.core.utils import utc_now
+from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.deps import create_task_history, get_executor, get_task_by_name
+from app.tasks.deps import (
+    get_executor,
+    get_task_by_name,
+    prepare_task_history,
+)
+from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
-    TaskBackendEnum,
     TaskHistory,
     TaskHistoryStatusEnum,
 )
@@ -51,7 +59,7 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     logger.info("Executing task with queue_id: %s", queue_id)
-    return jsonable_encoder(async_to_sync(process_queue_item)(queue_id))
+    return jsonable_encoder(async_to_sync(dispatch_queue_item)(queue_id))
 
 
 @celery.task(
@@ -77,7 +85,7 @@ def execute_task_by_name(
     task_history = async_to_sync(prepare_periodic_task_history)(
         task_name, execution_data
     )
-    return jsonable_encoder(async_to_sync(process_queue_item)(task_history.id))
+    return jsonable_encoder(async_to_sync(dispatch_queue_item)(task_history))
 
 
 @celery.task
@@ -85,6 +93,24 @@ def process_expired_and_orphaned_periodic_tasks() -> None:
     """Define Celery task to process expired and orphaned periodic tasks."""
     async_to_sync(process_expired_periodic_tasks)()
     async_to_sync(process_orphaned_periodic_tasks)()
+
+
+@celery.task
+def sync_running_tasks() -> None:
+    """Define Celery task to sync running tasks."""
+    async_to_sync(sync_running_items)()
+
+
+@celery.task
+def sync_task_history(task_history_id: int) -> None:
+    """Define Celery task to sync a task history item.
+
+    :param task_history_id: The unique identifier of the task history item to sync.
+    :type task_history_id: int
+    """
+    logger.debug("Syncing task history %s", task_history_id)
+    async_to_sync(sync_queue_item)(task_history_id)
+    logger.debug("Finished syncing task history %s", task_history_id)
 
 
 async def process_expired_periodic_tasks() -> None:
@@ -135,10 +161,10 @@ async def prepare_periodic_task_history(
     async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
         task = await get_task_by_name(session, task_name)
-        return await create_task_history(session, task, execution_data)
+        return prepare_task_history(task, execution_data)
 
 
-async def process_queue_item(queue_id: int) -> TaskHistory:
+async def dispatch_queue_item(queue_item: TaskHistory) -> TaskHistory:
     """Process an item from the history table.
 
     :param queue_id: The unique identifier of the queue item to process.
@@ -152,24 +178,76 @@ async def process_queue_item(queue_id: int) -> TaskHistory:
     """
     async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
+        if queue_item.status != TaskHistoryStatusEnum.PENDING:
+            raise HTTPConflictException("Queue item is not in a pending state.")
+        task = await TaskManager.get_root_task(session, queue_item.task)
+        executor = get_executor_for_task(task)
+        return await executor.dispatch_task(session, queue_item, task)
+
+
+async def sync_running_items() -> None:
+    """Sync running tasks in the task history.
+
+    This function updates the `sync_in_progress_started_at` field for tasks that are
+    either not currently in progress or have been in progress for longer than the
+    configured SYNC_LOCK_TTL. It then dispatches the sync task for those tasks.
+    """
+    async_session = get_async_session_maker(create_new_engine=True)
+    async with async_session() as session:
+        result = await TaskHistoryManager.update_where(
+            session,
+            {"sync_in_progress_started_at": func.now()},
+            or_(
+                col(TaskHistory.sync_in_progress_started_at).is_(None),
+                col(TaskHistory.sync_in_progress_started_at)
+                < (utc_now() - tasks_settings.SYNC_LOCK_TTL),
+            ),
+            returning=("id",),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        args = [(item_id,) for item_id in result.scalars().all()]
+        if args:
+            logger.debug("Dispatching sync of %d running tasks", len(args))
+            chunk_size = 100
+            sync_task_history.chunks(args, chunk_size).apply_async()
+
+
+async def sync_queue_item(queue_id: int) -> TaskHistory:
+    """Sync a task history item.
+
+    :param queue_id: The unique identifier of the queue item to sync.
+    :type queue_id: int
+    :return: The TaskHistory object post sync.
+    :rtype: TaskHistory
+    :raises HTTPBadRequestException: If the task backend is unsupported,
+        raises a 400 Bad Request error.
+    """
+    async_session = get_async_session_maker(create_new_engine=True)
+    async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
             select_related=[TaskHistory.task],
             id=queue_id,
         )
-        task = queue_item.task
+        if queue_item.status == TaskHistoryStatusEnum.RUNNING:
+            task = await TaskManager.get_root_task(session, queue_item.task)
+            executor = get_executor_for_task(task)
+            queue_item = await executor.sync_task_history(session, queue_item)
+        queue_item.sync_in_progress_started_at = None
+        return await TaskHistoryManager.save(session, queue_item)
 
-        if queue_item.status != TaskHistoryStatusEnum.PENDING:
-            raise HTTPConflictException("Queue item is not in a pending state.")
 
-        if task.backend == TaskBackendEnum.PROXY:
-            task = await TaskManager.retrieve_by_name(
-                session=session, name=task.data["task"]
-            )
+def get_executor_for_task(task: Task) -> BaseExecutor:
+    """Get the executor for a specific task.
 
-        match task.backend:
-            case TaskBackendEnum.NOMAD:
-                executor = get_executor()
-            case _:
-                raise HTTPBadRequestException("Unsupported task backend.")
-        return await executor.run(session, queue_item, task)
+    :param task: The task for which to get the executor.
+    :type task: Task
+    :return: The executor for the task.
+    :rtype: BaseExecutor
+    """
+    try:
+        return get_executor(task.backend)
+    except ValueError:
+        raise HTTPBadRequestException(
+            f"Unsupported task backend: {task.backend}"
+        ) from None

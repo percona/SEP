@@ -70,9 +70,20 @@ $(document).ready(function() {
             } else {
                 console.log(`Log stream for ${taskId} finished`);
 
-                const statusClass = finishData.status === 'success' ? 'success' : 'error';
-                const icon = finishData.status === 'success' ? 'check' : 'report';
-                const label = finishData.status === 'success' ? 'Done' : 'Failed';
+                const statusClass = finishData.status;
+                if (finishData.status === 'success') {
+                    var icon = 'check';
+                    var label = 'Done';
+                } else if (finishData.status === 'stopped') {
+                    var icon = 'cancel';
+                    var label = 'Stopped';
+                } else if (finishData.status === 'lost') {
+                    var icon = 'question_mark';
+                    var label = 'Lost';
+                } else {
+                    var icon = 'report';
+                    var label = 'Failed';
+                }
 
                 const statusEl = $(`
                     <div class="status">

@@ -1,51 +1,66 @@
 {% if tasks %}
-    <table data-table="saved-tasks">
-        <thead>
-            <tr>
-                <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Name</th>
-                <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Host</th>
-                <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Table</th>
-                <th data-sortable="false" data-searchable="false" class="options">Options</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for task in tasks %}
+    {#
+<!-- Debug output -->
+    <div style="background: #f5f5f5; padding: 10px; margin: 10px 0; border: 1px solid #ddd;">
+        <h4>Debug - Task Data:</h4>
+        {% for task in tasks %}
+            <div style="margin-bottom: 20px;">
+                <strong>Task {{ loop.index }}:</strong>
+                <pre style="white-space: pre-wrap;">{{ task | tojson(indent=2) }}</pre>
+            </div>
+        {% endfor %}
+    </div>
+    <!-- End debug output -->
+#}
+<table data-table="saved-tasks">
+    <thead>
+        <tr>
+            <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Name</th>
+            <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Host</th>
+            <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Table</th>
+            <th data-sortable="false" data-searchable="false" class="options">Options</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for task in tasks %}
+            {% if not task.parent %}
                 <tr id="{{ task.name }}">
                     <td>{{ task.name }}</td>
                     <td class="code">{{ task.hostname }}</td>
                     <td class="code">{{ task.table }}</td>
-                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
+                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column-alters.html" %}</td>
                 </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <dialog id="modalScheduleExec"
-            aria-modal="true"
-            aria-labelledby="modalScheduleExecTitle"
-            data-modal="target"
-            class="small">
-        <form id="formScheduleExec" method="dialog" class="window">
-            <header>
-                <h3 id="modalScheduleExecTitle" class="h5 title">Schedule task for execution</h3>
-            </header>
-            <section>
-                <p>
-                    Choose a specific point in time for when you the task <strong id="modalTaskName"></strong> to execute automatically, and then click to Schedule.
-                </p>
-                <label for="dateTimeInput">Desired local date and time:</label>
-                <input type="datetime-local" id="dateTimeInput" class="eta-input" required>
-                <input type="hidden" name="eta" id="modalEtaValue" disabled>
-                <input type="hidden" name="taskName" id="taskName">
-            </section>
-            <footer>
-                <button type="button" class="text large" data-modal-close>
-                    Cancel<sup>ESC</sup>
-                </button>
-                <button type="submit" class="contained large">Schedule</button>
-            </footer>
-        </form>
-    </dialog>
+            {% endif %}
+        {% endfor %}
+    </tbody>
+</table>
+<dialog id="modalScheduleExec"
+        aria-modal="true"
+        aria-labelledby="modalScheduleExecTitle"
+        data-modal="target"
+        class="small">
+    <form id="formScheduleExec" method="dialog" class="window">
+        <header>
+            <h3 id="modalScheduleExecTitle" class="h5 title">Schedule task for execution</h3>
+        </header>
+        <section>
+            <p>
+                Choose a specific point in time for when you the task <strong id="modalTaskName"></strong> to execute automatically, and then click to Schedule.
+            </p>
+            <label for="dateTimeInput">Desired local date and time:</label>
+            <input type="datetime-local" id="dateTimeInput" class="eta-input" required>
+            <input type="hidden" name="eta" id="modalEtaValue" disabled>
+            <input type="hidden" name="taskName" id="taskName">
+        </section>
+        <footer>
+            <button type="button" class="text large" data-modal-close>
+                Cancel<sup>ESC</sup>
+            </button>
+            <button type="submit" class="contained large">Schedule</button>
+        </footer>
+    </form>
+</dialog>
 {% else %}
-    <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
-    <span>No data</span>
+<!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
+<span>No data</span>
 {% endif %}

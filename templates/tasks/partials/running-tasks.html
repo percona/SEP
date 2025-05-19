@@ -25,6 +25,19 @@
                                     data-modal-target="modal-{{ task.id }}">
                                 <span class="material-symbols-outlined">visibility</span>
                             </button>
+                            <form id="{{ task.id }}-stop"
+                                  method="post"
+                                  data-confirm-message="Are you sure you want to stop the task {{ task_name }}?"
+                                  action="{{ url_for("stop_task_execution", task_history_id=task.id) }}">
+                                <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                                <button type="submit"
+                                        form="{{ task.id }}-stop"
+                                        role="menuitem"
+                                        class="list-item submitButton"
+                                        aria-label="Stop this task execution">
+                                    <span class="material-symbols-outlined">stop_circle</span>
+                                </button>
+                            </form>
                             <section>
                                 <dialog id="modal-{{ task.id }}"
                                         aria-modal="true"

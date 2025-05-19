@@ -5,6 +5,7 @@ import unicodedata
 from base64 import b64decode, b64encode
 
 __all__ = [
+    "b64decode_str",
     "b64encode_str",
     "slugify",
     "to_uppercase",
