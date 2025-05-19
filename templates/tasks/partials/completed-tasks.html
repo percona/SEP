@@ -115,8 +115,14 @@
                                                         <div class="log-step-content"
                                                              data-step-name="{{ step_name }}"
                                                              {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>
-                                                            <pre class="log-output" data-soft-wrap="container" data-log-type="stdout" {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>{{ logs.stdout|e }}</pre>
-                                                            <pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display:none;">{{ logs.stderr|e }}</pre>
+                                                            <pre class="log-output"
+                                                                 data-soft-wrap="container"
+                                                                 data-log-type="stdout"
+                                                                 {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>{{ logs.stdout|e }}</pre>
+                                                            <pre class="log-output"
+                                                                 data-soft-wrap="container"
+                                                                 data-log-type="stderr"
+                                                                 style="display:none">{{ logs.stderr|e }}</pre>
                                                         </div>
                                                     {%- endfor %}
                                                 </div>
