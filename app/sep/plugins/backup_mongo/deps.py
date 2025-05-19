@@ -27,7 +27,6 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
-
 async def build_backup_task_payload(
     form: Annotated[BackupCreate, Form()],
 ) -> TaskWrite:

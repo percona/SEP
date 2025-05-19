@@ -43,7 +43,7 @@
         margin: 1em 0;
     }
 </style>
-<form id="backup_config" action="" method="post" class="{{ form_class }}">
+<form id="pbm" action="" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <legend>Main Options</legend>
     <fieldset>
@@ -108,59 +108,26 @@
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
-    function getFormDataAsObject() {
-        const form = document.querySelector('fieldset > legend:first-child').parentNode; // Select the first fieldset
-        const formData = new FormData(form);
-        const data = {};
-        for (const [key, value] of formData.entries()) {
-            data[key] = value;
-        }
-        return data;
-    }
+    const pbmForm = document.getElementById('pbm_config');
+    const pbmInputName = 'pbm_config_payload';
 
-    document.addEventListener('DOMContentLoaded', function () {
-        const getDataButton = document.createElement('button');
-        getDataButton.textContent = 'Get Form Data as Object';
-        document.querySelector('fieldset').parentNode.appendChild(getDataButton);
-
-        getDataButton.addEventListener('click', function () {
-            const formDataObject = getFormDataAsObject();
-            console.log(JSON.stringify(formDataObject, null, 2));
-        });
-
-        const storageTypeSelect = document.getElementById('storage_type');
-        const s3OptionsDiv = document.getElementById('s3_options');
-        const filesystemOptionsDiv = document.getElementById('filesystem_options');
-        const azureOptionsDiv = document.getElementById('azure_options');
-
-        function updateStorageOptionsVisibility(selectedType) {
-            s3OptionsDiv.style.display = selectedType === 's3' ? 'block' : 'none';
-            filesystemOptionsDiv.style.display = selectedType === 'filesystem' ? 'block' : 'none';
-            azureOptionsDiv.style.display = selectedType === 'azure' ? 'block' : 'none';
-        }
-
-        if (storageTypeSelect) {
-            updateStorageOptionsVisibility(storageTypeSelect.value);
-            storageTypeSelect.addEventListener('change', function () {
-                updateStorageOptionsVisibility(this.value);
-            });
-        }
-
-        const logOutputSelect = document.getElementById('log_output');
-        const logFileOptionsDiv = document.getElementById('log_file_options');
-
-        function updateLogFileOptionsVisibility(selectedOutput) {
-            logFileOptionsDiv.style.display = selectedOutput === 'file' ? 'block' : 'none';
-        }
-
-        if (logOutputSelect) {
-            updateLogFileOptionsVisibility(logOutputSelect.value);
-            logOutputSelect.addEventListener('change', function () {
-                updateLogFileOptionsVisibility(this.value);
-            });
+    backupTypeSelect.addEventListener('change', function () {
+        if (this.value === 'pbm_config') {
+            pbmForm.style.display = 'block'; // Or 'flex', 'grid', etc., depending on your CSS
+        } else {
+            pbmForm.style.display = 'none';
         }
     });
 
+
+    if (pbmForm) {
+        pbmForm.addEventListener('submit', function (event) {
+            populatePBMConfigAsHiddenJSON(pbmForm, pbmInputName);
+            // The form will now submit with the 'pbm_config_json' field containing the JSON string
+        });
+    } else {
+        console.error('Form with ID "pbm_config_payload" not found.');
+    }
 
     function populatePBMConfigAsHiddenJSON(formElement, hiddenInputName) {
         const pbmConfig = {};
@@ -173,7 +140,7 @@
         }
 
         formInputs.forEach(input => {
-            if (input.name && input.name.startsWith('backup')) {
+            if (input.name && input.name.startsWith('pbm_config')) {
                 pbmConfig[input.name] = input.value;
             }
         });
@@ -182,21 +149,5 @@
         hiddenInput.value = pbmJSON;
 
         console.log(`PBM Config JSON "${pbmJSON}" loaded into hidden input "${hiddenInputName}".`);
-    }
-
-
-    const pbmForm = document.getElementById('backup_config'); // Assuming your form has the ID 'backup_config'
-    const pbmInputName = 'pbm_config_payload'; // The name of your hidden input field
-
-    if (pbmForm) {
-        pbmForm.addEventListener('submit', function (event) {
-            populatePBMConfigAsHiddenJSON(pbmForm, pbmInputName);
-            // The form will now submit with the 'pbm_config_json' field containing the JSON string
-        });
-
-        // You could also call it at other times if needed, for example:
-        // populatePBMConfigAsHiddenJSON(pbmForm, pbmJSONInputName);
-    } else {
-        console.error('Form with ID "pbm_config_payload" not found.');
     }
 </script>
