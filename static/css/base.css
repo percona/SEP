@@ -671,6 +671,7 @@ button.icon[disabled] {
 button[role="tab"],
 button[role="log-tab"] {
     display: flex;
+    width: fit-content;
     gap: 0.375rem;
     min-height: 3rem;
     padding: 0.5rem 1rem 0.25rem;
@@ -697,6 +698,10 @@ button[role="log-tab"][aria-selected="true"] {
 button[role="tab"][aria-selected="true"]:focus-visible,
 button[role="log-tab"][aria-selected="true"]:focus-visible {
     outline-style: dashed;
+}
+
+dialog div.window footer button {
+    width: fit-content;
 }
 
 /* Inputs global */
