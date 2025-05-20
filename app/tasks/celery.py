@@ -15,6 +15,7 @@ from sqlmodel import col, or_
 
 from app.core.celery.db import get_async_session_maker as get_celery_async_session_maker
 from app.core.celery.utils import create_celery
+from app.core.db.utils import func_json_extract
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
@@ -183,8 +184,8 @@ async def prepare_periodic_task_history(
 async def dispatch_queue_item(queue_item: TaskHistory) -> TaskHistory:
     """Process an item from the history table.
 
-    :param queue_id: The unique identifier of the queue item to process.
-    :type queue_id: int
+    :param queue_item: The TaskHistory object to dispatch.
+    :type queue_item: TaskHistory
     :return: The TaskHistory object post execution.
     :rtype: TaskHistory
     :raises HTTPException: If the queue item status is not PENDING,
@@ -194,8 +195,37 @@ async def dispatch_queue_item(queue_item: TaskHistory) -> TaskHistory:
     """
     async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
+        engine_name = session.get_bind().name
         if queue_item.status != TaskHistoryStatusEnum.PENDING:
             raise HTTPConflictException("Queue item is not in a pending state.")
+        meta_where_clauses = []
+        if queue_item.execution_request.meta:
+            meta_where_clauses = [
+                func_json_extract(
+                    engine_name, TaskHistory.execution_request, "meta", field
+                )
+                == value
+                for field, value in queue_item.execution_request.meta.items()
+            ]
+        if identical_task := (
+            await TaskHistoryManager.first(
+                session,
+                func_json_extract(engine_name, TaskHistory.execution_request, "task")
+                == queue_item.execution_request.task,
+                func_json_extract(engine_name, TaskHistory.execution_request, "target")
+                == queue_item.execution_request.target,
+                func_json_extract(engine_name, TaskHistory.execution_request, "payload")
+                == queue_item.execution_request.payload,
+                *meta_where_clauses,
+                col(TaskHistory.status).in_(
+                    [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
+                ),
+                task_id=queue_item.task_id,
+            )
+        ):
+            raise HTTPConflictException(
+                f"Identical queue item already running ({identical_task.id})."
+            )
         task = await TaskManager.get_root_task(session, queue_item.task)
         executor = get_executor_for_task(task)
         return await executor.dispatch_task(session, queue_item, task)

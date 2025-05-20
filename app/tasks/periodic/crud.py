@@ -4,15 +4,15 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import CursorResult, func, JSON
+from sqlalchemy import CursorResult
 from sqlalchemy.sql._typing import _ColumnExpressionArgument, ColumnExpressionArgument
 from sqlalchemy_celery_beat import PeriodicTask
-from sqlmodel import cast, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.config import settings
+from app.core.db.utils import func_json_extract
 from app.core.utils.date_time import utc_now
 from app.tasks.periodic.config import periodic_tasks_settings, PeriodicTaskAction
 
@@ -197,10 +197,6 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
         :param task_names: The names of the tasks to filter the periodic tasks.
         :type task_names: str
         """
-        if settings.CELERY.beat_dburi.startswith("postgresql"):
-            return func.json_extract_path_text(
-                cast(col(PeriodicTask.kwargs), JSON), "task_name"
-            ).in_(task_names)
-        return func.json_extract(col(PeriodicTask.kwargs), "$.task_name").in_(
-            task_names
-        )
+        return func_json_extract(
+            settings.CELERY.beat_dburi, PeriodicTask.kwargs, "task_name"
+        ).in_(task_names)
