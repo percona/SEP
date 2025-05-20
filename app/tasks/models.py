@@ -466,7 +466,11 @@ class TaskHistoryBase(SQLModel):
     )
     status: TaskHistoryStatusEnum = SQLField(
         default=TaskHistoryStatusEnum.PENDING,
-        sa_column=Column(EnumField(TaskHistoryStatusEnum), nullable=False, index=True),
+        sa_column=Column(
+            EnumField(TaskHistoryStatusEnum, native_enum=False),
+            nullable=False,
+            index=True,
+        ),
     )
     started_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
