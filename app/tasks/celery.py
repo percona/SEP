@@ -182,6 +182,7 @@ async def dispatch_queue_item(queue_item: TaskHistory) -> TaskHistory:
                 col(TaskHistory.status).in_(
                     [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
                 ),
+                col(TaskHistory.id) != queue_item.id,
                 task_id=queue_item.task_id,
             )
         ):
