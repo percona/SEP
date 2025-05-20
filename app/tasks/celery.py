@@ -13,7 +13,6 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func
 from sqlmodel import col, or_
 
-from app.core.celery.db import get_async_session_maker as get_celery_async_session_maker
 from app.core.celery.utils import create_celery
 from app.core.db.utils import func_json_extract
 from app.core.exceptions import (
@@ -34,8 +33,6 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryStatusEnum,
 )
-from app.tasks.periodic.config import periodic_tasks_settings, PeriodicTaskAction
-from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
 logger = logging.getLogger(__name__)
@@ -91,13 +88,6 @@ def execute_task_by_name(
 
 
 @celery.task
-def process_expired_and_orphaned_periodic_tasks() -> None:
-    """Define Celery task to process expired and orphaned periodic tasks."""
-    async_to_sync(process_expired_periodic_tasks)()
-    async_to_sync(process_orphaned_periodic_tasks)()
-
-
-@celery.task
 def sync_running_tasks() -> None:
     """Define Celery task to sync running tasks."""
     async_to_sync(sync_running_items)()
@@ -113,34 +103,6 @@ def sync_task_history(task_history_id: int) -> None:
     logger.debug("Syncing task history %s", task_history_id)
     async_to_sync(sync_queue_item)(task_history_id)
     logger.debug("Finished syncing task history %s", task_history_id)
-
-
-async def process_expired_periodic_tasks() -> None:
-    """Find and process expired periodic tasks."""
-    logger.debug("Processing expired tasks...")
-    celery_beat_async_session = get_celery_async_session_maker(create_new_engine=True)
-    async with celery_beat_async_session() as celery_beat_session:
-        await PeriodicTaskManager.process_expired(celery_beat_session)
-
-
-async def process_orphaned_periodic_tasks() -> None:
-    """Find and process orphaned periodic tasks."""
-    action = periodic_tasks_settings.ON_ORPHAN
-    if action == PeriodicTaskAction.NOTHING:
-        logger.debug("ON_ORPHAN is NOTHING, ignoring orphaned periodic tasks")
-        return
-
-    async_session = get_async_session_maker(create_new_engine=True)
-    async with async_session() as session:
-        task_names = [task.name for task in await TaskManager.list_active(session)]
-
-    celery_beat_async_session = get_celery_async_session_maker(create_new_engine=True)
-    async with celery_beat_async_session() as celery_beat_session:
-        await PeriodicTaskManager.perform_action_where(
-            celery_beat_session,
-            action,
-            ~PeriodicTaskManager.build_where_clause_by_task_names(*task_names),
-        )
 
 
 async def get_task_history(queue_id: int) -> TaskHistory:

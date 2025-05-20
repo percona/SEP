@@ -7,7 +7,6 @@ from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManage
 from app.core.celery.db import (
     get_async_session_maker as get_celery_beat_async_session_maker,
 )
-from app.core.config import settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task
@@ -192,13 +191,6 @@ PERIODIC_TASKS = {
             "app.tasks.celery.sync_running_tasks",
             "sync_running_tasks",
             {},
-        ),
-    ],
-    IntervalSchedule(every=5, period=Period.MINUTES): [
-        (
-            "app.tasks.celery.process_expired_and_orphaned_periodic_tasks",
-            "process_expired_and_orphaned_periodic_tasks",
-            {"expire_seconds": settings.CELERY.global_expire_seconds},
         ),
     ],
 }

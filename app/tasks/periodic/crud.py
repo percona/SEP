@@ -4,7 +4,6 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import CursorResult
 from sqlalchemy.sql._typing import _ColumnExpressionArgument, ColumnExpressionArgument
 from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -13,8 +12,6 @@ from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.config import settings
 from app.core.db.utils import func_json_extract
-from app.core.utils.date_time import utc_now
-from app.tasks.periodic.config import periodic_tasks_settings, PeriodicTaskAction
 
 logger = logging.getLogger(__name__)
 
@@ -28,25 +25,6 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
     :ivar Model: The SQLAlchemy class this manager is responsible for (`PeriodicTask`).
     :vartype Model: type[PeriodicTask]
     """
-
-    @classmethod
-    async def _perform_action_where(
-        cls,
-        session: AsyncSession,
-        action: PeriodicTaskAction,
-        *whereclause: ColumnExpressionArgument[bool],
-        **equal_filters: Any,
-    ) -> CursorResult | None:
-        if action == PeriodicTaskAction.NOTHING:
-            return None
-        if action == PeriodicTaskAction.DELETE:
-            return await cls.delete_where(session, *whereclause, **equal_filters)
-        if action == PeriodicTaskAction.DISABLE:
-            equal_filters["enabled"] = True
-            return await cls.update_where(
-                session, {"enabled": False}, *whereclause, **equal_filters
-            )
-        raise ValueError(f"Unknown action {action!r}")
 
     @classmethod
     def _filter_query(
@@ -111,82 +89,6 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
         return await super().list(
             session, cls.build_where_clause_by_task_names(*task_names), **equal_filters
         )
-
-    @classmethod
-    async def process_expired(cls, session: AsyncSession) -> None:
-        """Perform periodic_tasks_settings.ON_EXPIRE to expired periodic tasks.
-
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
-        """
-        action = periodic_tasks_settings.ON_EXPIRE
-        result = await cls._perform_action_where(
-            session, action, PeriodicTask.expires <= utc_now()
-        )
-        if result is not None:
-            if result.rowcount:
-                logger.info(
-                    "%s %s expired periodic tasks",
-                    f"{action.capitalize()}d",
-                    result.rowcount,
-                )
-            else:
-                logger.debug(
-                    "ON_EXPIRE is %s but no expired periodic task found", action
-                )
-
-    @classmethod
-    async def perform_action_by_task_names(
-        cls, session: AsyncSession, action: PeriodicTaskAction, *task_names: str
-    ) -> None:
-        """Perform a PeriodicTaskAction to tasks with the specified names.
-
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
-        :param action: The periodic action to perform.
-        :type action: PeriodicTaskAction
-        :param task_names: The names of the tasks to filter the periodic tasks
-            to perform the actions.
-        :type task_names: str
-        """
-        await cls.perform_action_where(
-            session, action, cls.build_where_clause_by_task_names(*task_names)
-        )
-
-    @classmethod
-    async def perform_action_where(
-        cls,
-        session: AsyncSession,
-        action: PeriodicTaskAction,
-        *whereclause: ColumnExpressionArgument[bool],
-        **equal_filters: Any,
-    ) -> None:
-        """Perform a PeriodicTaskAction to tasks that match the specified filters.
-
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
-        :param action: The periodic action to perform.
-        :type action: PeriodicTaskAction
-        :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
-        :param equal_filters: Keyword arguments representing column names and their
-            respective filter values.
-        :type equal_filters: Any
-        """
-        result = await cls._perform_action_where(
-            session, action, *whereclause, **equal_filters
-        )
-        if action == PeriodicTaskAction.NOTHING:
-            logger.debug("action is NOTHING")
-        elif result is not None:
-            if result.rowcount:
-                logger.info(
-                    "%s %s periodic tasks", f"{action.capitalize()}d", result.rowcount
-                )
-            else:
-                logger.debug(
-                    "action is %r but no task found with specified filters", action
-                )
 
     @staticmethod
     def build_where_clause_by_task_names(
