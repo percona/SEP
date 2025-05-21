@@ -213,12 +213,17 @@ async def init_tasks_db() -> None:
 async def init_periodic_tasks_db() -> None:
     """Initialize the database with required periodic tasks."""
     celery_beat_async_session = get_celery_beat_async_session_maker()
+    system_task_names = [
+        "celery.backend_cleanup",
+        "app.tasks.celery.execute_task_by_name",
+    ]
     async with celery_beat_async_session() as celery_beat_session:
         for schedule, tasks in PERIODIC_TASKS.items():
             created_schedule, _ = await IntervalScheduleManager.get_or_create(
                 celery_beat_session, schedule
             )
             for task_name, periodic_task_name, extra_kwargs in tasks:
+                system_task_names.append(task_name)
                 if (
                     periodic_task := (
                         await BasePeriodicTaskManager.first(
@@ -238,4 +243,7 @@ async def init_periodic_tasks_db() -> None:
                     for key, value in extra_kwargs.items():
                         setattr(periodic_task, key, value)
                 celery_beat_session.add(periodic_task)
+        await BasePeriodicTaskManager.delete_where(
+            celery_beat_session, PeriodicTask.task.not_in(system_task_names)
+        )
         await celery_beat_session.commit()
