@@ -141,8 +141,10 @@ async def process_orphaned_periodic_tasks() -> None:
             ~PeriodicTaskManager.build_where_clause_by_task_names(*task_names),
         )
 
+
 async def get_task_history(queue_id: int) -> TaskHistory:
     """Get TaskHistory object by queue ID.
+
     :param queue_id: The unique identifier of the queue item to retrieve.
     :type queue_id: int
     :return: The TaskHistory object.
@@ -153,7 +155,8 @@ async def get_task_history(queue_id: int) -> TaskHistory:
         return await TaskHistoryManager.get_or_404(
             session, select_related=[TaskHistory.task], id=queue_id
         )
-        
+
+
 async def prepare_periodic_task_history(
     task_name: str, execution_data: PeriodicTaskExecuteRequest | None = None
 ) -> TaskHistory:

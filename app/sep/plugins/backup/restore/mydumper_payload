@@ -188,7 +188,7 @@ def logging_setup(logging_dir, log_name, level=LOGGING_LEVEL):
         stream_formatter = logging.Formatter(LOGGING_FORMAT)
         stream_handler.setFormatter(stream_formatter)
         logger.addHandler(stream_handler)
-        
+
     logger.setLevel(level)
     logging_set_host(None, name)
     return logger
@@ -1710,7 +1710,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         info_file = {'X': 'xtrabackup_info', 'M': 'metadata'}
         info_only = kwargs.get('info_only', False)
-        
+
         if info_only and self.backup_code in info_file:
             files = glob.iglob(os.path.join(source, "%s*" % info_file[self.backup_code]))
             for filen in files:

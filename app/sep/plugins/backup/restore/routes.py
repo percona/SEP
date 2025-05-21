@@ -128,4 +128,3 @@ async def restores_delete(
     await tasks_api.delete(f"/{task.name}")
     task_path = request.url_for("restores_index")
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
-
