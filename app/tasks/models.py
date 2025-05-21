@@ -711,3 +711,13 @@ class TaskLog(BaseModel):
     step: str
     type: TaskLogType
     msg: str | None
+
+
+class DispatchLock(BaseSQLModel, table=True):
+    """Define a task dispatch lock.
+
+    :param name: The name of the lock. Must be unique.
+    :type name: str
+    """
+
+    name: str = SQLField(max_length=255, index=True, unique=True)
