@@ -183,6 +183,12 @@ def logging_setup(logging_dir, log_name, level=LOGGING_LEVEL):
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
+    if not any(isinstance(h, logging.StreamHandler) and h.stream == sys.stdout for h in logger.handlers):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_formatter = logging.Formatter(LOGGING_FORMAT)
+        stream_handler.setFormatter(stream_formatter)
+        logger.addHandler(stream_handler)
+        
     logger.setLevel(level)
     logging_set_host(None, name)
     return logger
@@ -958,7 +964,7 @@ class BaseBackup(object):
                     with open(collector_file, "w") as outfile:
                         outfile.write(metrics_text)
             except AttributeError as err:
-                self.logger.warn(err, exc_info=True)
+                self.logger.warning(err, exc_info=True)
 
     def textfile_collector_write_enable(self, backup_type, alias, backup_enabled, job_type):
         """Adding the enabled backup types to the textfile collector."""
@@ -1131,7 +1137,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
                     shutil.copy(filen, backup_dir)
                 except (shutil.Error, IOError) as err:
                     msg = "Copy of cert files failed: %s" % str(err)
-                    self.logger.warn(msg)
+                    self.logger.warning(msg)
 
     def enable_upload(self, backup_dir):
         """If upload interval permits mark backup for upload by creating uploadme file."""
@@ -1267,7 +1273,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
             if result['@@wsrep_desync'] == 1:
                 recv_queue = self._query_mysql('SHOW GLOBAL STATUS LIKE "wsrep_local_recv_queue"')
                 if int(recv_queue['Value']) > 32:
-                    logging.warn('Galera node is not synced, queue size is %s', recv_queue['Value'])
+                    logging.warning('Galera node is not synced, queue size is %s', recv_queue['Value'])
 
             self._query_mysql('SET GLOBAL wsrep_desync = %s' % (new_status,))
             self.logger.info('MySQL wsrep_desync changed to %s', new_status)
@@ -1339,7 +1345,6 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             'hosts': [],
             'event': 'restore'
         }
-
         if os.path.basename(self.backup_source) == 'latest':
             if self.backup_source.startswith('s3://'):
                 self.backup_source = self._s3_get_path_from_latest()
@@ -1361,7 +1366,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         proc = subprocess.Popen(rl_cmd, stdout=subprocess.PIPE, shell=True)
         real_dir, _ = proc.communicate()
-
+        real_dir = real_dir.decode('utf-8').strip()
         if real_dir:
             return self.backup_source.replace('latest', real_dir)
 
@@ -1705,7 +1710,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         info_file = {'X': 'xtrabackup_info', 'M': 'metadata'}
         info_only = kwargs.get('info_only', False)
-
+        
         if info_only and self.backup_code in info_file:
             files = glob.iglob(os.path.join(source, "%s*" % info_file[self.backup_code]))
             for filen in files:
@@ -1987,7 +1992,7 @@ class Myloader(Restore):
         try:
             shutil.rmtree(self.local_path)
         except OSError as err:
-            self.logger.warn('Error removing backup files: %s', str(err))
+            self.logger.warning('Error removing backup files: %s', str(err))
 
         time_spent = time.time() - start_time
         self.report_options['time_spent_seconds'] = time_spent
@@ -1997,6 +2002,7 @@ class Myloader(Restore):
         """ Execute myloader """
 
         myloader_cmd = [MYLOADER_BIN,
+                        f"--defaults-file={self.defaults_cnf_file}",
                         "--host=%s" % self.dest_host,
                         "--directory=%s" % self.local_path,
                         "--queries-per-transaction=100",
@@ -2176,7 +2182,4 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    if os.geteuid() == 0:
-        main()
-    else:
-        os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
+    main()
