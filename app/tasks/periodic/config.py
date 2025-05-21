@@ -33,16 +33,10 @@ class PeriodicTasksSettings(BaseYamlSettings):
     :param AVAILABLE_TO_OWNERS: The task owners for which the periodic tasks feature
         will be available. Defaults to {TaskOwner.ARCHIVER}.
     :type AVAILABLE_TO_OWNERS: set[TaskOwner]
-    :param ON_EXPIRE: The action to perform for expired tasks. Defaults to DISABLE.
-    :type ON_EXPIRE: PeriodicTaskAction
-    :param ON_ORPHAN: The action to perform for orphaned tasks. Defaults to DELETE.
-    :type ON_ORPHAN: PeriodicTaskAction
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS", "PERIODIC"]
     AVAILABLE_TO_OWNERS: set[TaskOwner] = [TaskOwner.ARCHIVER]
-    ON_EXPIRE: PeriodicTaskAction = PeriodicTaskAction.DISABLE
-    ON_ORPHAN: PeriodicTaskAction = PeriodicTaskAction.DELETE
 
 
 periodic_tasks_settings = PeriodicTasksSettings()

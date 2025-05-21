@@ -466,7 +466,11 @@ class TaskHistoryBase(SQLModel):
     )
     status: TaskHistoryStatusEnum = SQLField(
         default=TaskHistoryStatusEnum.PENDING,
-        sa_column=Column(EnumField(TaskHistoryStatusEnum), nullable=False, index=True),
+        sa_column=Column(
+            EnumField(TaskHistoryStatusEnum, native_enum=False),
+            nullable=False,
+            index=True,
+        ),
     )
     started_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
@@ -707,3 +711,13 @@ class TaskLog(BaseModel):
     step: str
     type: TaskLogType
     msg: str | None
+
+
+class DispatchLock(BaseSQLModel, table=True):
+    """Define a task dispatch lock.
+
+    :param name: The name of the lock. Must be unique.
+    :type name: str
+    """
+
+    name: str = SQLField(max_length=255, index=True, unique=True)
