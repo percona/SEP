@@ -626,7 +626,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if task.data.get("ParameterizedJob"):
             try:
                 self.get_job(task.data["ID"])
-            except (ValueError, URLNotFoundNomadException):
+            except (ValueError, URLNotFoundNomadException, JobNotFoundException):
                 return True
             return False
         match task.data.get("Type"):
