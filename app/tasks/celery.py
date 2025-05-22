@@ -125,21 +125,6 @@ async def get_task_history(queue_id: int) -> TaskHistory:
         )
 
 
-async def get_task_history(queue_id: int) -> TaskHistory:
-    """Get TaskHistory object by queue ID.
-
-    :param queue_id: The unique identifier of the queue item to retrieve.
-    :type queue_id: int
-    :return: The TaskHistory object.
-    :rtype: TaskHistory
-    """
-    async_session = get_async_session_maker(create_new_engine=True)
-    async with async_session() as session:
-        return await TaskHistoryManager.get_or_404(
-            session, select_related=[TaskHistory.task], id=queue_id
-        )
-
-
 async def prepare_periodic_task_history(
     task_name: str, execution_data: PeriodicTaskExecuteRequest | None = None
 ) -> TaskHistory:
