@@ -63,7 +63,7 @@ function Inventory() {
         )}
         {selected.service && (
           <>
-            <Separator/> 
+            <Separator/>
             <span style={{ cursor: 'pointer' }} onClick={() => handleBreadcrumbClick('schemas')}>
               {selected.service.name}
             </span>

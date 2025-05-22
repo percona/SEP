@@ -21,20 +21,20 @@
 {% endblock style %}
 {% block main %}
     <script crossorigin
-            src="https://unpkg.com/react@17/umd/react.production.min.js"
+            src="{{ url_for('static', path='/js/react/react.production.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script crossorigin
-            src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"
+            src="{{ url_for('static', path='/js/react/react-dom.production.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="https://unpkg.com/axios/dist/axios.min.js"
+    <script src="{{ url_for('static', path='/js/react/axios.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"
+    <script src="{{ url_for('static', path='/js/react/babel.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="https://unpkg.com/react-table@7.8.0/dist/react-table.development.js"
+    <script src="{{ url_for('static', path='/js/react/react-table.production.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="https://unpkg.com/prismjs/prism.js"
+    <script src="{{ url_for('static', path='/js/react/prism.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="https://unpkg.com/prismjs/components/prism-sql.min.js"
+    <script src="{{ url_for('static', path='/js/react/prism-sql.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <!-- {% include "inventory/partials/breadcrumb.html" %} -->
     <br>
@@ -42,25 +42,25 @@
     {% endblock inventory_table %} -->
     <div id="inventory-container"></div>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/data-table.js') }}"
+            src="{{ url_for('static', path='/js/react/data-table.react.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/sync-btn.js') }}"
+            src="{{ url_for('static', path='/js/react/sync-btn.react.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/node-list.js') }}"
+            src="{{ url_for('static', path='/js/react/node-list.react.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/service-list.js') }}"
+            src="{{ url_for('static', path='/js/react/service-list.react.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/schema-list.js') }}"
+            src="{{ url_for('static', path='/js/react/schema-list.react.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/table-list.js') }}"
+            src="{{ url_for('static', path='/js/react/table-list.react.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel"
-            src="{{ url_for('static', path='/js/react/inventory.js') }}"
+            src="{{ url_for('static', path='/js/react/inventory.react.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script type="text/babel" nonce="{{ request.state.csp_nonce }}">
         const container = document.getElementById('inventory-container');

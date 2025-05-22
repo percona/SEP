@@ -145,4 +145,3 @@ function DataTable({ data, columns, onRowClick }) {
     </div>
   );
 }
-
