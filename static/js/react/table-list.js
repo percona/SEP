@@ -58,7 +58,15 @@ function TableList({ schemaId }) {
 
   const columns = useMemo(() => [
     { Header: 'Name', accessor: 'name' },
-    { Header: 'Create Statement', accessor: 'create' },
+    {
+      Header: 'Create Statement',
+      accessor: 'create',
+      Cell: ({ value }) => (
+        <pre>
+          <code className="language-sql">{value}</code>
+        </pre>
+      )
+    },
     {
       Header: 'Actions',
       accessor: 'id',
