@@ -114,9 +114,9 @@
         </tbody>
     </table>
     <script src="https://unpkg.com/prismjs/prism.js"
-    nonce="{{ request.state.csp_nonce }}"></script>
+            nonce="{{ request.state.csp_nonce }}"></script>
     <script src="https://unpkg.com/prismjs/components/prism-sql.min.js"
-    nonce="{{ request.state.csp_nonce }}"></script>
+            nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/schemaDetail.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock inventory_table %}

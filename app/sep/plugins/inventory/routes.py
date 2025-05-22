@@ -4,9 +4,8 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Form, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.core.utils.serialization import enum_serializer
 from app.sep.config import sep_settings
 from app.sep.deps import (
     CreatedNodeDep,
@@ -21,12 +20,9 @@ from app.sep.deps import (
 from app.sep.inventory import Node, Schema, Service, Table
 from app.sep.plugins.inventory.deps import (
     NodeDetailContextDep,
-    NodeDetailContextResponse,
     NodesContextDep,
     SchemaDetailContextDep,
-    SchemaDetailContextResponse,
     ServiceDetailContextDep,
-    ServiceDetailContextResponse,
     SyncersDep,
 )
 from app.sep.plugins.inventory.sync import (
@@ -36,9 +32,13 @@ from app.sep.plugins.inventory.sync import (
     run_service_sync,
 )
 
+from .api.routes import router as inventory_api_router
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
+
+router.include_router(inventory_api_router, prefix="/api", tags=["inventory-api"])
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -54,13 +54,6 @@ async def node_list(
     )
 
 
-@router.get("/api/nodes", dependencies=[IsAuthenticated])
-async def node_list_api(nodes_context: NodesContextDep) -> JSONResponse:
-    """Return the node list as a JSON response."""
-    nodes_context["source_enum"] = enum_serializer(nodes_context["source_enum"])
-    return JSONResponse(content=nodes_context, status_code=200)
-
-
 @router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_inventory(
     syncers: SyncersDep,
@@ -69,16 +62,6 @@ async def sync_inventory(
     """Start inventory sync as a background task."""
     background_tasks.add_task(run_inventory_sync, *syncers)
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/api/nodes/sync", dependencies=[IsAuthenticated])
-async def sync_inventory_api(
-    syncers: SyncersDep,
-    background_tasks: BackgroundTasks,
-) -> JSONResponse:
-    """Start inventory sync as a background task."""
-    background_tasks.add_task(run_inventory_sync, *syncers)
-    return JSONResponse(content={"status": "sync started"})
 
 
 @router.get("/{node_id}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -96,18 +79,6 @@ async def node_detail(
     )
 
 
-@router.get(
-    "/api/nodes/{node_id}",
-    dependencies=[IsAuthenticated],
-    response_model=NodeDetailContextResponse,
-)
-async def node_detail_api(
-    node_detail_context: NodeDetailContextDep,
-) -> NodeDetailContextResponse:
-    """Return the node detail as NodeDetailContextResponse."""
-    return NodeDetailContextResponse(**node_detail_context)
-
-
 @router.post("/{node_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_node(
     node: CreatedNodeDep,
@@ -120,17 +91,6 @@ async def sync_node(
         f"/inventory/{node.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
-
-
-@router.post("/api/nodes/{node_id}/sync", dependencies=[IsAuthenticated])
-async def sync_node_api(
-    node: CreatedNodeDep,
-    syncers: SyncersDep,
-    background_tasks: BackgroundTasks,
-) -> JSONResponse:
-    """Start node sync as a background task."""
-    background_tasks.add_task(run_node_sync, node, *syncers)
-    return JSONResponse(content={"status": "sync started"})
 
 
 @router.post("/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -153,16 +113,6 @@ async def node_delete(
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/api/nodes/{node_id}/delete", dependencies=[IsAuthenticated])
-async def node_delete_api(
-    node_id: int,
-    inventory_api: InventoryAPI,
-) -> JSONResponse:
-    """Delete Node."""
-    await inventory_api.delete(f"/{node_id}")
-    return JSONResponse(content={"status": "deleted node: {node_id}"})
-
-
 @router.get(
     "/services/{service_id}",
     dependencies=[IsAuthenticated],
@@ -182,18 +132,6 @@ async def service_detail(
     )
 
 
-@router.get(
-    "/api/services/{service_id}",
-    dependencies=[IsAuthenticated],
-    response_model=ServiceDetailContextResponse,
-)
-async def service_detail_api(
-    service_detail_context: ServiceDetailContextDep,
-) -> ServiceDetailContextResponse:
-    """Return the service detail as ServiceDetailContextResponse."""
-    return ServiceDetailContextResponse(**service_detail_context)
-
-
 @router.post(
     "/services/{service_id}/sync", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
@@ -208,17 +146,6 @@ async def sync_service(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
-
-
-@router.post("/api/services/{service_id}/sync", dependencies=[IsAuthenticated])
-async def sync_service_api(
-    service: CreatedServiceDep,
-    syncers: SyncersDep,
-    background_tasks: BackgroundTasks,
-) -> JSONResponse:
-    """Start service sync as a background task."""
-    background_tasks.add_task(run_service_sync, service, *syncers)
-    return JSONResponse(content={"status": "sync started"})
 
 
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -253,16 +180,6 @@ async def service_delete(
     )
 
 
-@router.post("/api/services/{service_id}/delete", dependencies=[IsAuthenticated])
-async def service_delete_api(
-    inventory_api: InventoryAPI,
-    service: CreatedServiceDep,
-) -> JSONResponse:
-    """Delete Service."""
-    await inventory_api.delete(f"/services/{service.id}")
-    return JSONResponse(content={"status": "deleted service: {service.id}"})
-
-
 @router.get(
     "/schemas/{schema_id}",
     dependencies=[IsAuthenticated],
@@ -282,18 +199,6 @@ async def schema_detail(
     )
 
 
-@router.get(
-    "/api/schemas/{schema_id}",
-    dependencies=[IsAuthenticated],
-    response_model=SchemaDetailContextResponse,
-)
-async def schema_detail_api(
-    schema_detail_context: SchemaDetailContextDep,
-) -> SchemaDetailContextResponse:
-    """Return the schema detail as SchemaDetailContextResponse."""
-    return SchemaDetailContextResponse(**schema_detail_context)
-
-
 @router.post(
     "/schemas/{schema_id}/sync", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
@@ -308,17 +213,6 @@ async def sync_schema(
         f"/inventory/schemas/{schema.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
-
-
-@router.post("/api/schemas/{schema_id}/sync", dependencies=[IsAuthenticated])
-async def sync_schema_api(
-    schema: CreatedSchemaDep,
-    syncers: SyncersDep,
-    background_tasks: BackgroundTasks,
-) -> JSONResponse:
-    """Start schema sync as a background task."""
-    background_tasks.add_task(run_schema_sync, schema, *syncers)
-    return JSONResponse(content={"status": "sync started"})
 
 
 @router.post(
@@ -355,16 +249,6 @@ async def schema_delete(
     )
 
 
-@router.post("/api/schemas/{schema_id}/delete", dependencies=[IsAuthenticated])
-async def schema_delete_api(
-    inventory_api: InventoryAPI,
-    schema: CreatedSchemaDep,
-) -> JSONResponse:
-    """Delete Schema."""
-    await inventory_api.delete(f"/schemas/{schema.id}")
-    return JSONResponse(content={"status": "deleted schema: {schema.id}"})
-
-
 @router.post(
     "/schemas/{schema_id}/tables/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
@@ -397,13 +281,3 @@ async def table_delete(
         f"/inventory/schemas/{table.schema_id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
-
-
-@router.post("/api/tables/{table_id}/delete", dependencies=[IsAuthenticated])
-async def table_delete_api(
-    inventory_api: InventoryAPI,
-    table: CreatedTableDep,
-) -> JSONResponse:
-    """Delete Table."""
-    await inventory_api.delete(f"/tables/{table.id}")
-    return JSONResponse(content={"status": "deleted table: {table.id}"})
