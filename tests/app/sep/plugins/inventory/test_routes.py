@@ -201,7 +201,7 @@ async def test_sync_service(
 ):
     """Test syncing services."""
     response = await async_test_client.post(
-        f"/inventory/services/{created_service.id}/sync/", follow_redirects=False
+        f"/inventory/services/{created_service.id}/sync", follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == f"/inventory/services/{created_service.id}"
@@ -256,7 +256,7 @@ async def test_sync_schema(
 ):
     """Test syncing schemas."""
     response = await async_test_client.post(
-        f"/inventory/schemas/{created_schema.id}/sync/", follow_redirects=False
+        f"/inventory/schemas/{created_schema.id}/sync", follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == f"/inventory/schemas/{created_schema.id}"
