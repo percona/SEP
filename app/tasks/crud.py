@@ -9,6 +9,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseSQLModelManager
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
+    DispatchLock,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -153,3 +154,13 @@ class TaskHistoryManager(BaseSQLModelManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
+
+
+class DispatchLockManager(BaseSQLModelManager):
+    """Manage dispatch lock operations.
+
+    :ivar Model: The SQLModel class this manager is responsible for (`DispatchLock`).
+    :vartype Model: type[DispatchLock]
+    """
+
+    Model = DispatchLock

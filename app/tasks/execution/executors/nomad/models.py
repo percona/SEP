@@ -465,6 +465,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if not job_id:
             raise ValueError("The job ID could not be determined")
         self.backend.job.deregister_job(job_id)
+        queue_item = await self.sync_task_history(session, queue_item)
         queue_item.status = TaskHistoryStatusEnum.STOPPED
         queue_item.finished_at = utc_now()
         return await TaskHistoryManager.save(session, queue_item)
@@ -626,7 +627,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if task.data.get("ParameterizedJob"):
             try:
                 self.get_job(task.data["ID"])
-            except (ValueError, URLNotFoundNomadException, JobNotFoundException):
+            except JobNotFoundException:
                 return True
             return False
         match task.data.get("Type"):

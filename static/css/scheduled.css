@@ -6,8 +6,7 @@
     margin-top: 0;
 }
 
-#start-time-header,
-#expires-header {
+#start-time-header {
     width: 225px;
 }
 
@@ -147,8 +146,7 @@ input:checked+.slider:before {
     margin-right: 0.5em;
 }
 
-.start-time-input,
-.expires-input {
+.start-time-input {
     padding: 0.5em;
     margin-right: 0.5em;
     border: 0.2em solid #F0F1F4;

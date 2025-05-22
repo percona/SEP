@@ -1524,7 +1524,4 @@ def parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    if os.geteuid() == 0:
-        main()
-    else:
-        os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
+    main()

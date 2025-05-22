@@ -20,8 +20,6 @@ class PeriodicTaskRequest(BaseModel):
 
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | EmptyStrToNone
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | EmptyStrToNone
     :param enabled: Whether the task is enabled.
     :type enabled: bool | EmptyStrToNone
     :param execute_request: The execution request details for the task.
@@ -33,7 +31,6 @@ class PeriodicTaskRequest(BaseModel):
     """
 
     start_time: UTCDatetime | EmptyStrToNone = None
-    expires: UTCDatetime | EmptyStrToNone = None
     enabled: bool | EmptyStrToNone = None
     execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone = None
     interval: IntervalSchedule | EmptyStrToNone = None
@@ -80,8 +77,6 @@ class PeriodicTaskCreateRequest(PeriodicTaskRequest):
 
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | EmptyStrToNone
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | EmptyStrToNone
     :param enabled: Whether the task is enabled.
     :type enabled: bool | EmptyStrToNone
     :param execute_request: The execution request details for the task.
@@ -105,8 +100,6 @@ class EnhancedPeriodicTaskCreateRequest(PeriodicTaskCreateRequest):
 
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | EmptyStrToNone
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | EmptyStrToNone
     :param enabled: Whether the task is enabled.
     :type enabled: bool | EmptyStrToNone
     :param execute_request: The execution request details for the task.

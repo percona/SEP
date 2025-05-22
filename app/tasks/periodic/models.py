@@ -155,8 +155,6 @@ class BasePeriodicTask(BaseModel):
     :type task: str
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | None
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -172,7 +170,6 @@ class BasePeriodicTask(BaseModel):
     name: str
     task: str
     start_time: UTCDatetime | None
-    expires: UTCDatetime | None
     enabled: bool
     description: str
     execute_request: PeriodicTaskExecuteRequest | None = None
@@ -223,8 +220,6 @@ class PeriodicTaskResponse(BasePeriodicTask):
     :type task: str
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | None
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -306,8 +301,6 @@ class PeriodicTaskWrite(BasePeriodicTask):
     :type task: str
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -398,8 +391,6 @@ class PeriodicTaskUpdate(PeriodicTaskWrite):
     :type task: str
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | None
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled.
     :type enabled: bool
     :param description: A description of the task.
@@ -456,8 +447,6 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     :type name: str
     :param start_time: The start time for the task execution. Defaults to None.
     :type start_time:  UTCDatetime | None
-    :param expires: The expiration time for the task execution. Defaults to None.
-    :type expires: UTCDatetime | None
     :param enabled: Whether the task is enabled. Defaults to True.
     :type enabled: bool
     :param description: A description of the task. Defaults to an empty string.
@@ -466,6 +455,5 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
 
     name: str = ""
     start_time: UTCDatetime | None = None
-    expires: UTCDatetime | None = None
     enabled: bool = True
     description: str = ""
