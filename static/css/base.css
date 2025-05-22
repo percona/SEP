@@ -800,13 +800,6 @@ select[disabled] {
     cursor: pointer;
 }
 
-input[type="checkbox"] {
-    opacity: 0;
-    height: 0;
-    width: 0;
-    cursor: pointer;
-}
-
 .checkmark {
     display: flex;
     justify-content: center;

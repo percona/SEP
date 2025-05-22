@@ -20,23 +20,24 @@
                      <label for="s3_endpoint_url_map">Endpoint URL Map (Optional):</label>
                      <input type="text" id="s3_endpoint_url_map" name="pbm_config.storage.s3.endpoint_url_map">
                      <label class="checkbox" for="force_path_style" title="{{ force_path_style }}">
-                     <label for="s3_access_key_id">Access Key ID:</label>
-                     <input type="text" id="s3_access_key_id" name="pbm_config.storage.s3.access_key_id">
-                     <label for="s3_secret_access_key">Secret Access Key:</label>
-                     <input type="text" id="s3_secret_access_key" name="pbm_config.storage.s3.secret_access_key">
-                     <label for="s3_session_token">Session Token (Optional):</label>
-                     <input type="text" id="s3_session_token" name="pbm_config.storage.s3.session_token">
-                     <label for="s3_upload_part_size">Upload Part Size (Bytes, Optional):</label>
-                     <input type="number" id="s3_upload_part_size" name="pbm_config.storage.s3.upload_part_size">
-                     <label for="s3_max_upload_parts">Max Upload Parts (Optional):</label>
-                     <input type="number" id="s3_max_upload_parts" name="pbm_config.storage.s3.max_upload_parts">
-                     <label for="s3_storage_class">Storage Class (Optional):</label>
-                     <input type="text" id="s3_storage_class" name="pbm_config.storage.s3.storage_class">
+                            <label for="s3_access_key_id">Access Key ID:</label>
+                            <input type="text" id="s3_access_key_id" name="pbm_config.storage.s3.access_key_id">
+                            <label for="s3_secret_access_key">Secret Access Key:</label>
+                            <input type="text" id="s3_secret_access_key" name="pbm_config.storage.s3.secret_access_key">
+                            <label for="s3_session_token">Session Token (Optional):</label>
+                            <input type="text" id="s3_session_token" name="pbm_config.storage.s3.session_token">
+                            <label for="s3_upload_part_size">Upload Part Size (Bytes, Optional):</label>
+                            <input type="number" id="s3_upload_part_size" name="pbm_config.storage.s3.upload_part_size">
+                            <label for="s3_max_upload_parts">Max Upload Parts (Optional):</label>
+                            <input type="number" id="s3_max_upload_parts" name="pbm_config.storage.s3.max_upload_parts">
+                            <label for="s3_storage_class">Storage Class (Optional):</label>
+                            <input type="text" id="s3_storage_class" name="pbm_config.storage.s3.storage_class">
               </div>
               <fieldset>
                      <legend>Point-in-Time Recovery (PITR) Configuration</legend>
-
-
+                     <label for="pitr">Enable PITR</label>
+                     <input type="checkbox" name="pitr" id="pitr" value="1"/>
+                     <span class=""></span>
                      <label for="pitr_oplog_span_min">Oplog Span (Minutes):</label>
                      <input type="number" id="pitr_oplog_span_min" name="pbm_config.pitr.oplog_span_min">
                      <label for="pitr_compression">Compression:</label>

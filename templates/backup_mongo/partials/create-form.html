@@ -21,24 +21,6 @@
         margin-right: 1em;
     }
 
-    .checkbox-group {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1em;
-        align-items: center;
-    }
-
-    .checkbox-group label {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25em;
-        margin-top: 0;
-    }
-
-    .checkbox-group input {
-        margin-top: 0 !important;
-    }
-
     fieldset+fieldset {
         margin: 1em 0;
     }
@@ -118,7 +100,6 @@
             pbmForm.style.display = 'none';
         }
     });
-
 
     if (pbmForm) {
         pbmForm.addEventListener('submit', function (event) {
