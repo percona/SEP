@@ -19,9 +19,7 @@
                      <input type="text" id="s3_endpoint_url" name="pbm_config.storage.s3.endpoint_url">
                      <label for="s3_endpoint_url_map">Endpoint URL Map (Optional):</label>
                      <input type="text" id="s3_endpoint_url_map" name="pbm_config.storage.s3.endpoint_url_map">
-                     <label for="s3_force_path_style">Force Path Style:</label>
-                     <input type="checkbox" id="s3_force_path_style" name="pbm_config.storage.s3.force_path_style">
-                     Yes
+                     <label class="checkbox" for="force_path_style" title="{{ force_path_style }}">
                      <label for="s3_access_key_id">Access Key ID:</label>
                      <input type="text" id="s3_access_key_id" name="pbm_config.storage.s3.access_key_id">
                      <label for="s3_secret_access_key">Secret Access Key:</label>
@@ -34,41 +32,34 @@
                      <input type="number" id="s3_max_upload_parts" name="pbm_config.storage.s3.max_upload_parts">
                      <label for="s3_storage_class">Storage Class (Optional):</label>
                      <input type="text" id="s3_storage_class" name="pbm_config.storage.s3.storage_class">
-                     <label for="s3_debug_log_levels">Debug Log Levels (Optional):</label>
-                     <input type="text" id="s3_debug_log_levels" name="pbm_config.storage.s3.debug_log_levels">
-                     <label for="s3_insecure_skip_tls_verify">Insecure Skip TLS Verify:</label>
-                     <input type="checkbox" id="s3_insecure_skip_tls_verify"
-                            name="pbm_config.storage.s3.insecure_skip_tls_verify">
-                     Yes
               </div>
-       <fieldset>
-              <legend>Point-in-Time Recovery (PITR) Configuration</legend>
-              <label for="pitr_enabled">Enable PITR:</label>
-              <input type="checkbox" id="pitr_enabled" name="pbm_config.pitr.enabled">
-              Yes
-              <label for="pitr_oplog_span_min">Oplog Span (Minutes):</label>
-              <input type="number" id="pitr_oplog_span_min" name="pbm_config.pitr.oplog_span_min">
-              <label for="pitr_compression">Compression:</label>
-              <select id="pitr_compression" name="pbm_config.pitr.compression">
-                     <option value="gzip">gzip</option>
-                     <option value="snappy">snappy</option>
-                     <option value="lz4">lz4</option>
-                     <option value="s2">s2</option>
-                     <option value="pgzip">pgzip</option>
-                     <option value="zstd">zstd</option>
-              </select>
-       </fieldset>
-       <fieldset>
-              <legend>Backup Options</legend>
-              <label for="backup_priority">Node Priority for Backup (Comma-separated, Optional):</label>
-              <input type="text" id="backup_priority" name="pbm_config.backup.priority">
-              <label for="backup_compression">Backup Compression:</label>
-              <select id="backup_compression" name="pbm_config.backup.compression">
-                     <option value="gzip">gzip</option>
-                     <option value="snappy">snappy</option>
-                     <option value="lz4">lz4</option>
-                     <option value="s2">s2</option>
-                     <option value="pgzip">pgzip</option>
-                     <option value="zstd">zstd</option>
-              </select>
+              <fieldset>
+                     <legend>Point-in-Time Recovery (PITR) Configuration</legend>
+
+
+                     <label for="pitr_oplog_span_min">Oplog Span (Minutes):</label>
+                     <input type="number" id="pitr_oplog_span_min" name="pbm_config.pitr.oplog_span_min">
+                     <label for="pitr_compression">Compression:</label>
+                     <select id="pitr_compression" name="pbm_config.pitr.compression">
+                            <option value="gzip">gzip</option>
+                            <option value="snappy">snappy</option>
+                            <option value="lz4">lz4</option>
+                            <option value="s2">s2</option>
+                            <option value="pgzip">pgzip</option>
+                            <option value="zstd">zstd</option>
+                     </select>
+              </fieldset>
+              <fieldset>
+                     <legend>Backup Options</legend>
+                     <label for="backup_priority">Node Priority for Backup (Comma-separated, Optional):</label>
+                     <input type="text" id="backup_priority" name="pbm_config.backup.priority">
+                     <label for="backup_compression">Backup Compression:</label>
+                     <select id="backup_compression" name="pbm_config.backup.compression">
+                            <option value="gzip">gzip</option>
+                            <option value="snappy">snappy</option>
+                            <option value="lz4">lz4</option>
+                            <option value="s2">s2</option>
+                            <option value="pgzip">pgzip</option>
+                            <option value="zstd">zstd</option>
+                     </select>
 </div>
