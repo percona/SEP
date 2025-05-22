@@ -5,6 +5,7 @@ function TableList({ schemaId }) {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(false);
   const [canSync, setCanSync] = useState(true);
+  const [expandedRows, setExpandedRows] = useState({}); // Track expanded rows by table ID
 
   const fetchTables = async () => {
     try {
@@ -56,16 +57,56 @@ function TableList({ schemaId }) {
     }
   };
 
+  const toggleRow = (id) => {
+    setExpandedRows((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
   const columns = useMemo(() => [
-    { Header: 'Name', accessor: 'name' },
+    {
+      Header: 'Name',
+      accessor: 'name',
+      Cell: ({ row }) => (
+        <span
+          style={{ cursor: 'pointer', color: '#007bff' }}
+          onClick={() => toggleRow(row.original.id)}
+        >
+          {row.original.name}
+        </span>
+      )
+    },
     {
       Header: 'Create Statement',
       accessor: 'create',
-      Cell: ({ value }) => (
-        <pre>
-          <code className="language-sql">{value}</code>
-        </pre>
-      )
+      width: 500,
+      Cell: ({ row }) => {
+        const isExpanded = expandedRows[row.original.id];
+        const value = row.original.create;
+        return (
+          <pre style={{ whiteSpace: 'pre-wrap', maxWidth: 500, overflowX: 'auto' }}>
+            <code className="language-sql">
+              {isExpanded ? value : value.slice(0, 200) + (value.length > 200 ? ' ...' : '')}
+            </code>
+          </pre>
+        );
+      }
+    },
+    {
+      Header: 'Keys',
+      accessor: 'keys',
+      width: 400,
+      Cell: ({ row }) => {
+        const isExpanded = expandedRows[row.original.id];
+        const value = row.original.keys;
+        const json = JSON.stringify(value, null, isExpanded ? 2 : 0);
+        return (
+          <pre style={{ whiteSpace: 'pre-wrap', maxWidth: 400, overflowX: 'auto' }}>
+            <code className="language-json">{json}{!isExpanded && json.length > 200 ? ' ...' : ''}</code>
+          </pre>
+        );
+      }
     },
     {
       Header: 'Actions',
@@ -86,12 +127,12 @@ function TableList({ schemaId }) {
         </div>
       ),
     }
-  ], []);
+  ], [expandedRows]);
 
   return (
     <div>
       {schema && (
-        <section> 
+        <section>
           <h2 style={{ marginTop: 0 }}>Schema Details</h2>
           <dl>
             <dt>Name</dt>
@@ -122,6 +163,7 @@ function TableList({ schemaId }) {
           </button>
         )}
       </div>
+
       <DataTable data={tables} columns={columns} />
     </div>
   );
