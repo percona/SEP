@@ -19,7 +19,7 @@ repos:
         entry: js-beautify --end-with-newline --replace
         language: python
         additional_dependencies: ["jsbeautifier==1.15.1"]
-        files: ^(?!.*\.min\.js$).*\.js$
+        files: ^(?!.*\.react\.js$)(?!.*\.min\.js$).*\.js$
       - id: css-beautify
         name: CSS Beautify
         description: "Run css-beautify (from cssbeautifier) on .css files"
