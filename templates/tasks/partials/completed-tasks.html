@@ -16,7 +16,7 @@
         <tbody>
             {% for task_history in history_tasks %}
                 {%- set task_logs = task_history.execution_request.tracking.task_logs or {} -%}
-                {% if task_history.status in ['success', 'failed'] %}
+                {% if task_history.status in ['success', 'failed', 'stopped', 'lost'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>
                         <td class="status">
@@ -24,6 +24,16 @@
                                 <div class="success">
                                     <span class="badge material-symbols-outlined">check</span>
                                     <span class="label">Done</span>
+                                </div>
+                            {% elif task_history.status == 'stopped' %}
+                                <div class="stopped">
+                                    <span class="badge material-symbols-outlined">cancel</span>
+                                    <span class="label">Stopped</span>
+                                </div>
+                            {% elif task_history.status == 'lost' %}
+                                <div class="lost">
+                                    <span class="badge material-symbols-outlined">question_mark</span>
+                                    <span class="label">Lost</span>
                                 </div>
                             {% else %}
                                 <div class="error">
@@ -45,9 +55,9 @@
                                 None
                             {% endif %}
                         </td>
-                        <td class="date code">{{ task_history.execution_request.tracking.started_at }}</td>
-                        <td class="date code">{{ task_history.execution_request.tracking.finished_at }}</td>
-                        <td class="number code">{{ task_history.execution_request.tracking.duration }}</td>
+                        <td class="relativeTime code">{{ task_history.started_at }}</td>
+                        <td class="relativeTime code">{{ task_history.finished_at }}</td>
+                        <td class="number code">{{ task_history.duration }}</td>
                         <td class="options">
                             {%- if task_logs %}
                                 <button type="button"
@@ -105,12 +115,14 @@
                                                         <div class="log-step-content"
                                                              data-step-name="{{ step_name }}"
                                                              {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>
-                                                            <pre class="log-output" data-soft-wrap="container" data-log-type="stdout" {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>
-                                                                {{ logs.stdout|e }}
-                                                            </pre>
-                                                            <pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display:none;">
-                                                                {{ logs.stderr|e }}
-                                                            </pre>
+                                                            <pre class="log-output"
+                                                                 data-soft-wrap="container"
+                                                                 data-log-type="stdout"
+                                                                 {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>{{ logs.stdout|e }}</pre>
+                                                            <pre class="log-output"
+                                                                 data-soft-wrap="container"
+                                                                 data-log-type="stderr"
+                                                                 style="display:none">{{ logs.stderr|e }}</pre>
                                                         </div>
                                                     {%- endfor %}
                                                 </div>

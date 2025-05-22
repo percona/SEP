@@ -135,7 +135,9 @@ def test_archives_detail(
     mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
 
 
-@pytest.mark.usefixtures("_mock_get_archives_task_dep")
+@pytest.mark.usefixtures(
+    "_mock_get_archives_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
 def test_archives_execute(
     test_client,
     created_task,

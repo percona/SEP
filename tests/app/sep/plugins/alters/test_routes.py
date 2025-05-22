@@ -1,7 +1,7 @@
 """Define tests for the app.sep.plugins.alters.routes module."""
 
 from datetime import datetime, timedelta, UTC
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 from fastapi import status
@@ -161,4 +161,6 @@ def test_alters_delete(
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/alters"
-    mock_task_api_dep.delete.assert_awaited_once_with(f"/{created_task.name}")
+    mock_task_api_dep.delete.assert_has_awaits(
+        [call(f"/{created_task.name}"), call(f"/{created_task.name}-dry-run")]
+    )

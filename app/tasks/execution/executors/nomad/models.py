@@ -3,11 +3,13 @@
 import asyncio
 import json
 import logging
-import time
 from binascii import b2a_base64
+from collections import defaultdict
 from collections.abc import AsyncGenerator
 from datetime import datetime, UTC
+from enum import StrEnum
 from functools import cached_property
+from itertools import product
 from typing import Any
 from uuid import uuid1
 
@@ -22,14 +24,57 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.utils import async_run, slugify, sort_dict
-from app.core.utils.strings import b64decode_str
+from app.core.utils import (
+    async_run,
+    b64decode_str,
+    slugify,
+    sort_dict,
+    utc_now,
+)
 from app.tasks.crud import TaskHistoryManager
+from app.tasks.execution.executors.nomad.exceptions import (
+    AllocationNotFoundException,
+    JobNotFoundException,
+)
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
-from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
+from app.tasks.models import (
+    Task,
+    TaskHistory,
+    TaskHistoryStatusEnum,
+    TaskLog,
+    TaskLogType,
+)
 
 logger = logging.getLogger(__name__)
+
+
+NOMAD_DEAD_JOB_STATUS = "dead"
+
+
+class NomadAllocStatusEnum(StrEnum):
+    """Reproduce Nomad's possible allocation statuses.
+
+    :cvar PENDING: Enum value for pending allocations.
+    :vartype PENDING: str
+    :cvar RUNNING: Enum value for running allocations.
+    :vartype RUNNING: str
+    :cvar COMPLETE: Enum value for completed allocations.
+    :vartype COMPLETE: str
+    :cvar FAILED: Enum value for failed allocations.
+    :vartype FAILED: str
+    :cvar LOST: Enum value for lost allocations.
+    :vartype LOST: str
+    :cvar UNKNOWN: Enum value for allocations with unknown status.
+    :vartype UNKNOWN: str
+    """
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    LOST = "lost"
+    UNKNOWN = "unknown"
 
 
 class NomadExecutor(BaseExecutor, BaseRemoteAPI):
@@ -90,6 +135,37 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             or self.verify_ssl,
             cert=cert,
         )
+
+    @staticmethod
+    def get_task_history_status_from_alloc_status(
+        client_status: NomadAllocStatusEnum,
+        default: TaskHistoryStatusEnum | None = None,
+        *,
+        stopped: bool = False,
+    ) -> TaskHistoryStatusEnum | None:
+        """Get the task history status based on the allocation status.
+
+        :param client_status: The Nomad allocation status.
+        :type client_status: NomadAllocStatusEnum
+        :param default: The default status to return if no match is found. Defaults to
+            None.
+        :type default: TaskHistoryStatusEnum | None
+        :param stopped: Whether the Nomad job was stopped.
+        :type stopped: bool
+        :return: The corresponding task history status.
+        :rtype: TaskHistoryStatusEnum | None
+        """
+        match client_status:
+            case NomadAllocStatusEnum.COMPLETE if not stopped:
+                return TaskHistoryStatusEnum.SUCCESS
+            case NomadAllocStatusEnum.COMPLETE if stopped:
+                return TaskHistoryStatusEnum.STOPPED
+            case NomadAllocStatusEnum.FAILED:
+                return TaskHistoryStatusEnum.FAILED
+            case NomadAllocStatusEnum.LOST | NomadAllocStatusEnum.UNKNOWN:
+                return TaskHistoryStatusEnum.LOST
+            case _:
+                return default
 
     @staticmethod
     def prepare_task(queue_item: TaskHistory, task: Task | None = None) -> Task:
@@ -169,6 +245,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             task.data["ID"],
             payload=payload,
             meta=queue_item.execution_request.meta,
+            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}",
         )
         if not job_status:
             logger.error("Unable to dispatch task %s", task.id)
@@ -185,13 +262,32 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type job_id: str
         :return: The job details retrieved from Nomad.
         :rtype: dict[str, Any]
-        :raises ValueError: If the job could not be determined.
+        :raises JobNotFoundException: If the job could not be determined.
         """
-        job = self.backend.job.get_job(job_id)
-        if not job:
-            logger.error("Unable to find job %s", job_id)
-            raise ValueError("The job could not be determined")
-        return job
+        try:
+            return self.backend.job.get_job(job_id)
+        except URLNotFoundNomadException as exc:
+            raise JobNotFoundException(exc.nomad_resp) from None
+
+    def get_job_for_task_history(self, queue_item: TaskHistory) -> dict[str, Any]:
+        """Retrieve the job associated with a task history record.
+
+        This method checks the task history's tracking information for a job ID and
+        retrieves the job details from the Nomad backend. Raises an error if the job ID
+        is missing or if the job cannot be found.
+
+        :param queue_item: The task history record for which to fetch the job.
+        :type queue_item: TaskHistory
+        :return: The job details retrieved from Nomad.
+        :rtype: dict[str, Any]
+        :raises JobNotFoundException: If the job ID is missing or the job cannot be
+            found.
+        """
+        if job_id := queue_item.execution_request.tracking.get("job_id"):
+            return self.get_job(job_id)
+        raise JobNotFoundException(
+            f"Missing job_id in task history tracking ({queue_item.id})"
+        )
 
     def get_hosts(self) -> dict[str, str]:
         """Get healthy node names from Nomad backend.
@@ -206,27 +302,71 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
 
-    def get_allocation(self, job_id: str, eval_id: str) -> dict[str, Any]:
-        """Retrieve a specific allocation for a job evaluation.
+    def get_allocation_for_task_history(
+        self, queue_item: TaskHistory
+    ) -> dict[str, Any]:
+        """Retrieve the allocation for a task history record.
 
-        Fetches allocation details based on the job ID and evaluation ID.
-        Sorts task states for consistency.
+        This method fetches the allocation details based on the job ID and evaluation ID
+        associated with the task history. If an allocation ID is present in the tracking
+        information, it retrieves the allocation directly using that ID.
 
-        :param job_id: The ID of the job.
-        :type job_id: str
-        :param eval_id: The evaluation ID associated with the job.
-        :type eval_id: str
+        :param queue_item: The task history record for which to fetch the allocation.
+        :type queue_item: TaskHistory
         :return: The allocation details from Nomad.
         :rtype: dict[str, Any]
-        :raises IndexError: If no allocations are found.
+        :raises AllocationNotFoundException: If allocation cannot be found directly
+            through an allocation_id and no allocations are found with the job_id and
+            evaluation_id attached to the queue_item.
         """
-        allocation_filters = [
-            f'JobID == "{job_id}"',
-            f'EvalID == "{eval_id}"',
-        ]
-        allocations = self.backend.allocations.get_allocations(
-            filter_=" and ".join(allocation_filters),
+        if alloc_id := queue_item.execution_request.tracking.get("allocation_id"):
+            logger.debug("Fetching allocation %r attached to TaskHistory", alloc_id)
+            try:
+                return self.backend.allocation.get_allocation(alloc_id)
+            except URLNotFoundNomadException:
+                logger.debug("Allocation %r not found", alloc_id)
+        job_id = queue_item.execution_request.tracking.get("job_id")
+        eval_id = queue_item.execution_request.tracking.get("evaluation_id")
+        logger.debug(
+            "Fetching last allocation for Job ID %s and Eval ID %s", job_id, eval_id
         )
+        return self.get_last_allocation(job_id, eval_id)
+
+    def get_last_allocation(
+        self, job_id: str | None = None, eval_id: str | None = None
+    ) -> dict[str, Any]:
+        """Retrieve the last allocation for a job evaluation.
+
+        This method fetches and returns details of the most recent allocation that
+        matches the specified job ID and/or evaluation ID filters. Sorts task states for
+        consistency.
+
+        :param job_id: The ID of the job.
+        :type job_id: str | None
+        :param eval_id: The evaluation ID associated with the job.
+        :type eval_id: str | None
+        :return: The allocation details from Nomad, or None if no allocations are found.
+        :rtype: dict[str, Any] | None
+        :raises ValueError: If neither job_id nor eval_id is provided.
+        :raises AllocationNotFoundException: If no allocations are found with the
+            specified filters.
+        """
+        allocation_filters = []
+        if job_id:
+            allocation_filters.append(f'JobID == "{job_id}"')
+        if eval_id:
+            allocation_filters.append(f'EvalID == "{eval_id}"')
+        if not allocation_filters:
+            raise ValueError("Either job_id or eval_id must be provided")
+        allocation_filter = " and ".join(allocation_filters)
+        allocations = self.backend.allocations.get_allocations(
+            filter_=allocation_filter,
+            reverse=True,
+        )
+        if not allocations:
+            raise AllocationNotFoundException(
+                f"No allocations found with filter {allocation_filter!r}"
+            )
         logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
         alloc = allocations[0]
         if alloc["TaskStates"]:
@@ -240,17 +380,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
         return alloc
 
-    async def run(
+    async def dispatch_task(
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
         task: Task | None = None,
     ) -> TaskHistory:
-        """Run a task on the Nomad backend and update task history.
+        """Dispatch a task on the Nomad backend and update task history.
 
-        This method executes the task on the Nomad backend, handles job creation and
-        tracking, and updates the task's execution history with logs, states, and
-        timing information.
+        This method starts the task on the Nomad backend, handling job creation and
+        dispatching, and updates the task's execution history with tracking information.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
@@ -268,7 +407,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         task = self.prepare_task(queue_item, task)
 
-        start_ts, stop_ts = time.time_ns(), None
         job_status = {}
         job = None
         if self.task_needs_new_job(task):
@@ -290,120 +428,187 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if job is None:
             raise ValueError("The job could not be determined")
 
+        submit_timestamp = job.get("SubmitTime")
+        if submit_timestamp:
+            queue_item.started_at = datetime.fromtimestamp(
+                submit_timestamp / 10**9, UTC
+            )
+        else:
+            queue_item.started_at = utc_now()
         queue_item.execution_request.tracking.update(
             evaluation_id=job_status["EvalID"], job_id=job["ID"]
         )
-        queue_item = await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=["execution_request"],
-        )
-
         queue_item.status = TaskHistoryStatusEnum.RUNNING
-        queue_item = await TaskHistoryManager.save(session, queue_item)
-
-        queue_item = await self.wait_for_job_completion(
-            job,
-            queue_item,
-            job_status["EvalID"],
-        )
-        stop_ts = time.time_ns()
-        duration = (stop_ts - start_ts) / 1000**3
-        queue_item.execution_request.tracking.update(
-            started_at_ns=start_ts,
-            finished_at_ns=stop_ts,
-            started_at=datetime.fromtimestamp(start_ts / 1000**3, tz=UTC),
-            finished_at=datetime.fromtimestamp(stop_ts / 1000**3, tz=UTC),
-            duration=duration,
-        )
         return await TaskHistoryManager.save(
             session,
             queue_item,
             flag_modified_fields=["execution_request"],
         )
 
-    async def wait_for_job_completion(
-        self,
-        job: dict[str, Any],
-        queue_item: TaskHistory,
-        eval_id: str,
+    async def stop_task(
+        self, session: AsyncSession, queue_item: TaskHistory
     ) -> TaskHistory:
-        """Monitor and wait for a Nomad job to complete.
+        """Stop a task execution in Nomad.
 
-        Continuously checks the status of the job until it reaches a terminal state,
-        updating the task history with logs and states along the way.
+        This method calls the Nomad API to stop the job associated with the given
+        task history. It updates the task history with the status of the operation.
 
-        :param job: The job details retrieved from Nomad.
-        :type job: dict[str, Any]
-        :param queue_item: The task history record to update with job execution details.
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
-        :param eval_id: The evaluation ID associated with the job execution.
-        :type eval_id: str
-        :return: The updated task history after job completion.
+        :return: The updated task history with execution details.
         :rtype: TaskHistory
-        :raises NotImplementedError: If the job type is not supported.
         """
-        task_logs = {}
-        task_states = {}
-        attempts = 0
-        alloc = self.get_allocation(job["ID"], eval_id)
-        while alloc:
-            match job["Type"]:
-                case "service":
-                    raise NotImplementedError("Service job support is TBD")
-                case "batch" | "system" | "sysbatch":
-                    task_states = alloc["TaskStates"]
-                    if task_states:
-                        for step in task_states:
-                            try:
-                                task_logs[step] = {
-                                    "allocation_id": alloc["ID"],
-                                    "stdout": self.backend.client.stream_logs.stream(
-                                        alloc["ID"],
-                                        task=step,
-                                        type_="stdout",
-                                        plain=True,
-                                    ),
-                                    "stderr": self.backend.client.stream_logs.stream(
-                                        alloc["ID"],
-                                        task=step,
-                                        type_="stderr",
-                                        plain=True,
-                                    ),
-                                }
-                            except BaseNomadException:
-                                task_logs[step] = {
-                                    "allocation_id": alloc["ID"],
-                                    "stdout": None,
-                                    "stderr": None,
-                                }
-                case _:
-                    raise NotImplementedError(f'Unrecognized job type "{job["Type"]}"')
-            match alloc["ClientStatus"]:
-                case "complete" | "failed":
-                    if alloc["FollowupEvalID"]:
-                        alloc = self.get_allocation(job["ID"], alloc["FollowupEvalID"])
-                        continue
-                    break
-                case _:
-                    alloc = self.get_allocation(job["ID"], eval_id)
-            attempts += 1
-            logger.debug("Attempt %d found status %s", attempts, alloc["ClientStatus"])
-            await asyncio.sleep(self.wait_interval)
+        job_id = queue_item.execution_request.tracking.get("job_id")
+        if not job_id:
+            raise ValueError("The job ID could not be determined")
+        self.backend.job.deregister_job(job_id)
+        queue_item = await self.sync_task_history(session, queue_item)
+        queue_item.status = TaskHistoryStatusEnum.STOPPED
+        queue_item.finished_at = utc_now()
+        return await TaskHistoryManager.save(session, queue_item)
 
-        match alloc["ClientStatus"]:
-            case "complete":
-                queue_item.status = TaskHistoryStatusEnum.SUCCESS
-            case _:
-                queue_item.status = TaskHistoryStatusEnum.FAILED
+    def get_logs_for_allocation(
+        self,
+        alloc: dict[str, Any],
+        initial_logs: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Get logs for a specific allocation.
 
+        This method retrieves logs for each task step in the allocation and returns a
+        dictionary containing the logs and their last offsets.
+
+        :param alloc: The allocation details from Nomad.
+        :type alloc: dict[str, Any]
+        :param initial_logs: Initial logs to be merged with the fetched logs.
+        :type initial_logs: dict[str, dict[str, Any]] | None
+        :return: A dictionary containing logs for each task step, including their last
+            offsets.
+        :rtype: dict[str, dict[str, Any]]
+        """
+        alloc_id = alloc["ID"]
+        task_logs = defaultdict(dict, initial_logs or {})
+        if task_states := alloc["TaskStates"]:
+            for step, log_type in product(task_states, TaskLogType):
+                task_logs[step][log_type] = task_logs[step].get(log_type) or ""
+                last_offset_key = f"{log_type}_last_offset"
+                task_logs[step][last_offset_key] = (
+                    task_logs[step].get(last_offset_key) or 0
+                )
+                try:
+                    raw_log_data = self.backend.client.stream_logs.stream(
+                        alloc_id,
+                        task=step,
+                        type_=log_type,
+                        offset=task_logs[step][last_offset_key],
+                    )
+                except BaseNomadException:
+                    logger.exception(
+                        "Error while fetching %s logs for allocation %s (step %s)",
+                        log_type,
+                        alloc_id,
+                        step,
+                    )
+                else:
+                    if raw_log_data:
+                        log_data = json.loads(raw_log_data)
+                        task_logs[step][last_offset_key] = log_data["Offset"]
+                        task_logs[step][log_type] += b64decode_str(log_data["Data"])
+        return task_logs
+
+    async def sync_task_history(
+        self,
+        session: AsyncSession,
+        queue_item: TaskHistory,
+    ) -> TaskHistory:
+        """Synchronize the task history with the current state of the task in Nomad.
+
+        This method retrieves the latest allocation details and updates the task history
+        with the current status, task states, and logs. If the task is no longer
+        running, it updates the status accordingly.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param queue_item: The task history record for tracking this execution.
+        :type queue_item: TaskHistory
+        :return: The updated task history with execution details.
+        :rtype: TaskHistory
+        """
+        if queue_item.status != TaskHistoryStatusEnum.RUNNING:
+            return queue_item
+
+        try:
+            alloc = self.get_allocation_for_task_history(queue_item)
+            job_id = alloc["JobID"]
+            while followup_eval_id := alloc.get("FollowupEvalID"):
+                alloc = self.get_last_allocation(job_id, followup_eval_id)
+                queue_item.execution_request.tracking.update(
+                    task_states={},
+                    task_logs={},
+                )
+        except AllocationNotFoundException:
+            logger.debug("Allocation not found for task history %s", queue_item.id)
+            try:
+                self.get_job_for_task_history(queue_item)
+            except JobNotFoundException:
+                logger.warning(
+                    "Lost job and allocation from task history %s", queue_item.id
+                )
+                queue_item.status = TaskHistoryStatusEnum.LOST
+                return await TaskHistoryManager.save(
+                    session,
+                    queue_item,
+                    flag_modified_fields=["execution_request"],
+                )
+            return queue_item
+
+        task_states = alloc["TaskStates"]
+        task_logs = self.get_logs_for_allocation(
+            alloc, queue_item.execution_request.tracking.get("task_logs", {})
+        )
+        logger.debug(
+            "sync_task_history(queue_item_id=%s): tasks_logs = %r",
+            queue_item.id,
+            task_logs,
+        )
         queue_item.execution_request.tracking.update(
+            allocation_id=alloc["ID"],
+            job_id=job_id,
+            evaluation_id=alloc["EvalID"],
             task_states=task_states,
             task_logs=sort_dict(
                 task_logs, lambda item: list(task_states.keys()).index(item[0])
             ),
         )
-        return queue_item
+
+        try:
+            job = self.get_job(job_id)
+        except JobNotFoundException:
+            queue_item.status = TaskHistoryStatusEnum.LOST
+        else:
+            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
+                last_modified_timestamp = alloc.get("ModifyTime")
+                if last_modified_timestamp:
+                    queue_item.finished_at = datetime.fromtimestamp(
+                        last_modified_timestamp / 10**9, UTC
+                    )
+                else:
+                    queue_item.finished_at = utc_now()
+
+                queue_item.status = self.get_task_history_status_from_alloc_status(
+                    alloc["ClientStatus"],
+                    queue_item.status,
+                    stopped=job.get("Stop", False),
+                )
+
+        return await TaskHistoryManager.save(
+            session,
+            queue_item,
+            flag_modified_fields=["execution_request"],
+        )
 
     def task_needs_new_job(self, task: Task) -> bool:
         """Determine whether a new job needs to be created for the task.
@@ -422,7 +627,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if task.data.get("ParameterizedJob"):
             try:
                 self.get_job(task.data["ID"])
-            except (ValueError, URLNotFoundNomadException):
+            except JobNotFoundException:
                 return True
             return False
         match task.data.get("Type"):
@@ -462,7 +667,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         # SEP-154
         alloc: dict[str, Any],
         step: str,
-        log_type: str,
+        log_type: TaskLogType,
         queue: asyncio.Queue,
     ) -> None:
         """Push logs to the asynchronous queue for processing.
@@ -472,7 +677,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param step: The task step name.
         :type step: str
         :param log_type: The type of log to stream ('stdout' or 'stderr').
-        :type log_type: str
+        :type log_type: TaskLogType
         :param queue: The asyncio queue to push log lines into.
         :type queue: asyncio.Queue
         """
@@ -524,7 +729,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 "No data received for %s seconds, rechecking job status...",
                                 self.log_socket_read_timeout,
                             )
-                            alloc = self.get_allocation(alloc["JobID"], alloc["EvalID"])
+                            alloc = self.get_last_allocation(
+                                alloc["JobID"], alloc["EvalID"]
+                            )
                             state = alloc["TaskStates"][step]["State"]
                             break
                         else:
@@ -554,14 +761,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         job_id = queue_item.execution_request.tracking["job_id"]
         eval_id = queue_item.execution_request.tracking["evaluation_id"]
-        alloc = self.get_allocation(job_id, eval_id)
+        alloc = self.get_last_allocation(job_id, eval_id)
         active_streams = set()
         queue = asyncio.Queue()
         push_logs_tasks = []
         task_states = alloc["TaskStates"]
         if task_states:
             for step in set(task_states):
-                for log_type in ("stdout", "stderr"):
+                for log_type in TaskLogType:
                     stream = (step, log_type)
                     logger.debug("Adding %s to active_streams", stream)
                     active_streams.add(stream)
@@ -589,21 +796,3 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             await asyncio.gather(*push_logs_tasks)
         else:
             yield None
-
-    async def is_task_running(self, queue_item: TaskHistory) -> bool:
-        """Check if a TaskHistory is currently running.
-
-        :param queue_item: The task history record to check.
-        :type queue_item: TaskHistory
-        :return: A boolean indicating if the task history is currently running.
-        :rtype: bool
-        """
-        job_id = queue_item.execution_request.tracking.get("job_id")
-        eval_id = queue_item.execution_request.tracking.get("evaluation_id")
-        if not job_id or not eval_id:
-            return False
-        try:
-            self.get_allocation(job_id, eval_id)
-        except IndexError:
-            return False
-        return True

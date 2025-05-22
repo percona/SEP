@@ -29,6 +29,7 @@ GENERIC_NOMAD_BATCH_TEMPLATE = {
         {
             "Name": "execution",
             "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "PreventRescheduleOnLost": True,
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
@@ -58,6 +59,7 @@ GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
         {
             "Name": "execution",
             "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "PreventRescheduleOnLost": True,
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
@@ -98,6 +100,7 @@ NOMAD_RUN_PYTHON = {
         {
             "Name": "execution",
             "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "PreventRescheduleOnLost": True,
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 {
@@ -182,6 +185,16 @@ SYSTEM_TASKS = [
     Task(name="run-python", data=NOMAD_RUN_PYTHON, is_template=False, protected=True),
 ]
 
+PERIODIC_TASKS = {
+    IntervalSchedule(every=30, period=Period.SECONDS): [
+        (
+            "app.tasks.celery.sync_running_tasks",
+            "sync_running_tasks",
+            {},
+        ),
+    ],
+}
+
 
 async def init_tasks_db() -> None:
     """Initialize the database with generic Nomad task templates."""
@@ -200,21 +213,37 @@ async def init_tasks_db() -> None:
 async def init_periodic_tasks_db() -> None:
     """Initialize the database with required periodic tasks."""
     celery_beat_async_session = get_celery_beat_async_session_maker()
-    periodic_task_name = "process_expired_and_orphaned_periodic_tasks_every_30_seconds"
+    system_task_names = [
+        "celery.backend_cleanup",
+        "app.tasks.celery.execute_task_by_name",
+    ]
     async with celery_beat_async_session() as celery_beat_session:
-        if (
-            await BasePeriodicTaskManager.first(
-                celery_beat_session, name=periodic_task_name
+        for schedule, tasks in PERIODIC_TASKS.items():
+            created_schedule, _ = await IntervalScheduleManager.get_or_create(
+                celery_beat_session, schedule
             )
-            is None
-        ):
-            schedule, _ = await IntervalScheduleManager.get_or_create(
-                celery_beat_session, IntervalSchedule(every=30, period=Period.SECONDS)
-            )
-            periodic_task = PeriodicTask(
-                name=periodic_task_name,
-                task="app.tasks.celery.process_expired_and_orphaned_periodic_tasks",
-                schedule_model=schedule,
-            )
-            celery_beat_session.add(periodic_task)
-            await celery_beat_session.commit()
+            for task_name, periodic_task_name, extra_kwargs in tasks:
+                system_task_names.append(task_name)
+                if (
+                    periodic_task := (
+                        await BasePeriodicTaskManager.first(
+                            celery_beat_session, task=task_name
+                        )
+                    )
+                ) is None:
+                    periodic_task = PeriodicTask(
+                        name=periodic_task_name,
+                        task=task_name,
+                        schedule_model=created_schedule,
+                        **extra_kwargs,
+                    )
+                else:
+                    periodic_task.schedule_model = created_schedule
+                    periodic_task.name = periodic_task_name
+                    for key, value in extra_kwargs.items():
+                        setattr(periodic_task, key, value)
+                celery_beat_session.add(periodic_task)
+        await BasePeriodicTaskManager.delete_where(
+            celery_beat_session, PeriodicTask.task.not_in(system_task_names)
+        )
+        await celery_beat_session.commit()

@@ -1,5 +1,6 @@
 """Define routes for streaming tasks logs."""
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -57,11 +58,11 @@ async def task_history_logs_event_stream(
                 log_data["id"] = i
                 yield f"data: {json.dumps(log_data)}\n\n"
                 i += 1
+    # TODO(yan): Don't wait for task to finish
+    # SEP-379
+    wait_interval = 5
     task_history = await tasks_api.get(f"/history/{task_history_id}")
-
-    final_status = (
-        "success"
-        if task_history and task_history.get("status") == TaskHistoryStatusEnum.SUCCESS
-        else "failed"
-    )
-    yield f"event: finish\ndata: {json.dumps({'status': final_status})}\n\n"
+    while task_history["status"] == TaskHistoryStatusEnum.RUNNING:
+        await asyncio.sleep(wait_interval)
+        task_history = await tasks_api.get(f"/history/{task_history_id}")
+    yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"

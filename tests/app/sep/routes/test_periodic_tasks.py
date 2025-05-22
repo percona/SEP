@@ -32,11 +32,9 @@ def test_periodic_task_create(test_client, mock_task_api_dep, faker, extra_data)
     """Test creating a new periodic task."""
     task_name = "run-python"
     start_time = faker.date_time_this_year()
-    expires = faker.date_time_between_dates(datetime_start=start_time)
     task_data = {
         "task": task_name,
         "start_time": start_time.replace(tzinfo=datetime.UTC),
-        "expires": expires.replace(tzinfo=datetime.UTC),
         "enabled": True,
         **{
             key: (value(faker) if callable(value) else value)

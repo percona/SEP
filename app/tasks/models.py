@@ -51,12 +51,18 @@ class TaskHistoryStatusEnum(StrEnum):
     :vartype RUNNING: str
     :cvar SUCCESS: Enum value for successfully completed tasks.
     :vartype SUCCESS: str
+    :cvar STOPPED: Enum value for stopped tasks.
+    :vartype STOPPED: str
+    :cvar LOST: Enum value for tasks that are lost.
+    :vartype LOST: str
     """
 
     FAILED = auto()
     PENDING = auto()
     RUNNING = auto()
     SUCCESS = auto()
+    STOPPED = auto()
+    LOST = auto()
 
 
 class TaskOwner(EnumFieldMixin, StrEnum):
@@ -246,7 +252,7 @@ class GeneratedTask(BaseModel):
     :param app: The application name associated with the task.
     :type app: TaskOwner
     :param commands: A list of commands to execute the task.
-    :type commands: list
+    :type commands: list[dict[str, Any]]
     :param name: The task name.
     :type name: str
     :param target: The target system for task execution.
@@ -265,7 +271,7 @@ class GeneratedTask(BaseModel):
     """
 
     app: TaskOwner
-    commands: list
+    commands: list[dict[str, Any]]
     name: str
     target: str
     artifacts: list | None = None
@@ -442,46 +448,59 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
-# TODO: Create Base/Write models  # noqa: TD002, TD003
-class TaskHistory(BaseSQLModel, table=True):
-    """Represent a task execution history.
+class TaskHistoryBase(SQLModel):
+    """Define the base structure for a TaskHistory.
 
     :param execution_request: The request that triggered the task execution.
     :type execution_request: TaskExecutionRequest
     :param status: The status of the task execution. Defaults to pending.
     :type status: TaskHistoryStatusEnum
-    :param task_id: The ID of the task associated with the execution.
-    :type task_id: int
-    :param task: The task associated with this execution history.
-    :type task: Task
+    :param started_at: The datetime when the task execution started.
+    :type started_at: UTCDatetime | None
+    :param finished_at: The datetime when the task execution finished.
+    :type finished_at: UTCDatetime | None
     """
 
-    __table_args__ = (Index("ix_taskhistory_task_id_status", "task_id", "status"),)
     execution_request: TaskExecutionRequest = SQLField(
         sa_column=Column(JSON, nullable=False),
     )
     status: TaskHistoryStatusEnum = SQLField(
         default=TaskHistoryStatusEnum.PENDING,
-        sa_column=Column(EnumField(TaskHistoryStatusEnum), nullable=False, index=True),
+        sa_column=Column(
+            EnumField(TaskHistoryStatusEnum, native_enum=False),
+            nullable=False,
+            index=True,
+        ),
     )
-    task_id: int = SQLField(foreign_key="task.id", index=True)
-    task: Task = Relationship(back_populates="history")
+    started_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    finished_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
 
     @computed_field
     @property
-    def errors(self) -> list:
+    def duration(self) -> float | None:
+        """Return the duration of the task execution in seconds.
+
+        :return: The duration in seconds, or None if not available.
+        :rtype: float | None
+        """
+        if self.started_at and self.finished_at:
+            return (self.finished_at - self.started_at).total_seconds()
+        return None
+
+    @computed_field
+    @property
+    def errors(self) -> list[str]:
         """Return a list of errors for the executed task.
 
         :return: A list of error messages encountered during task execution.
         :rtype: list[str]
         """
-        if self.status not in [
-            TaskHistoryStatusEnum.SUCCESS,
-            TaskHistoryStatusEnum.FAILED,
-        ] or not self.execution_request.tracking.get("task_states"):
-            return []
         errors = set()
-        for state in self.execution_request.tracking["task_states"].values():
+        for state in self.execution_request.tracking.get("task_states", {}).values():
             for event in state["Events"]:
                 match event["Type"]:
                     case "Driver Failure":
@@ -489,23 +508,57 @@ class TaskHistory(BaseSQLModel, table=True):
         return list(errors)
 
 
-class TaskHistoryResponse(BaseSQLModel):
+class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
+    """Represent a task execution history.
+
+    :param execution_request: The request that triggered the task execution.
+    :type execution_request: TaskExecutionRequest
+    :param status: The status of the task execution. Defaults to pending.
+    :type status: TaskHistoryStatusEnum
+    :param started_at: The datetime when the task execution started.
+    :type started_at: UTCDatetime | None
+    :param finished_at: The datetime when the task execution finished.
+    :type finished_at: UTCDatetime | None
+    :param task_id: The ID of the task associated with the execution.
+    :type task_id: int
+    :param task: The task associated with this execution history.
+    :type task: Task
+    :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
+    :type sync_in_progress_started_at: UTCDatetime | None
+    """
+
+    __table_args__ = (
+        Index("ix_taskhistory_task_id_status", "task_id", "status"),
+        Index(
+            "ix_taskhistory_status_sync_in_progress_started_at",
+            "status",
+            "sync_in_progress_started_at",
+        ),
+    )
+    task_id: int = SQLField(foreign_key="task.id", index=True)
+    task: Task = Relationship(back_populates="history")
+    sync_in_progress_started_at: UTCDatetime | None = SQLField(
+        default=None,
+        sa_type=DateTimeWithTimezone,
+    )
+
+
+class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """Represent a task history API response.
 
     :param execution_request: The request that triggered the task execution.
     :type execution_request: TaskExecutionRequest
     :param status: The status of the task execution.
     :type status: TaskHistoryStatusEnum
+    :param started_at: The datetime when the task execution started.
+    :type started_at: UTCDatetime | None
+    :param finished_at: The datetime when the task execution finished.
+    :type finished_at: UTCDatetime | None
     :param task: The task associated with this execution history.
-    :type task: Task
-    :param errors: A list of errors encountered during the task execution.
-    :type errors: list[str]
+    :type task: TaskResponse
     """
 
-    execution_request: TaskExecutionRequest
-    status: TaskHistoryStatusEnum
     task: TaskResponse
-    errors: list
 
 
 class TaskStats(BaseModel):
@@ -591,15 +644,13 @@ class TaskStats(BaseModel):
         """Process the task data."""
 
         def _durations_from_tracking() -> None:
-            self._durations["tasks"][task.id] = (
-                task.execution_request.tracking[  # TODO: Use Pydantic models  # noqa: TD002, TD003
-                    "duration"
-                ]
-            )
-            self._raw["durations"].append(task.execution_request.tracking["duration"])
-            self._raw["finished_at"].append(
-                task.execution_request.tracking["finished_at"],
-            )
+            if task.duration is not None:
+                self._durations["tasks"][task.id] = task.duration
+                self._raw["durations"].append(task.duration)
+            if task.finished_at is not None:
+                self._raw["finished_at"].append(
+                    task.finished_at,
+                )
 
         # TODO:  # noqa: TD002, TD003
         #  - Refactor
@@ -633,17 +684,40 @@ class TransformPayloadRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
 
 
+class TaskLogType(StrEnum):
+    """Define the type of task log.
+
+    :cvar STDOUT: Enum value for standard output logs.
+    :vartype STDOUT: str
+    :cvar STDERR: Enum value for standard error logs.
+    :vartype STDERR: str
+    """
+
+    STDOUT = "stdout"
+    STDERR = "stderr"
+
+
 class TaskLog(BaseModel):
     """Define a task log line.
 
     :param step: The task step name.
     :type step: str
     :param type: The type of log to stream ('stdout' or 'stderr').
-    :type type: Literal["stdout", "stderr"]
+    :type type: TaskLogType
     :param msg: The log message. If None, represents the end of the log for that step.
     :type msg: str | None
     """
 
     step: str
-    type: Literal["stdout", "stderr"]
+    type: TaskLogType
     msg: str | None
+
+
+class DispatchLock(BaseSQLModel, table=True):
+    """Define a task dispatch lock.
+
+    :param name: The name of the lock. Must be unique.
+    :type name: str
+    """
+
+    name: str = SQLField(max_length=255, index=True, unique=True)
