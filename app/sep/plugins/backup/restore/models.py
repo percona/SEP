@@ -31,7 +31,7 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
     :param ssh_user: SSH username for remote operations (default: "percona").
     :type ssh_user: RequiredStr | EmptyStrToNone
     :param ssh_port: SSH port for remote operations (default: 22).
-    :type ssh_port: int | None
+    :type ssh_port: int | EmptyStrToNone
     :param ssh_key: SSH key name for authentication (not full path).
     :type ssh_key: RequiredStr | EmptyStrToNone
     :param s3_tool: Tool to use for S3 operations (default: S3CMD).
@@ -46,7 +46,7 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
 
     # SSH Options
     ssh_user: RequiredStr | EmptyStrToNone = Field(default="percona")
-    ssh_port: int | None = Field(default=22)
+    ssh_port: int | EmptyStrToNone = Field(default=22)
     ssh_key: RequiredStr | EmptyStrToNone = None  # only key name, not full path
 
     # S3 tool selection (default is s3cmd)
