@@ -102,8 +102,9 @@ production_docker:
     SYNCERS:
       - SYNCER: PMMSyncer
         PMM:
-          ENDPOINT: https://host.docker.internal:8443
+          ENDPOINT: https://192.168.100.1:8443/
           VERIFY_SSL: false
+          API_KEY: eyJrIjoiSWM5NEpMcHdrZ0ZwQURmeTZmRGRncGJxY1N0NXFGY1ciLCJuIjoic2VwMiIsImlkIjoxfQ==
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys

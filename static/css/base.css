@@ -823,6 +823,13 @@ input[type="checkbox"]:focus-visible~.checkmark {
     outline-offset: -0.1875rem;
 }
 
+input[type="checkbox"] {
+    opacity: 0;
+    height: 0;
+    width: 0;
+    cursor: pointer;
+}
+
 input[type="checkbox"]~.checkmark .checked,
 input[type="checkbox"]:checked~.checkmark .unchecked {
     display: none;
