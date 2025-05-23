@@ -31,8 +31,6 @@ async def test_async_run():
 @pytest.mark.asyncio
 async def test_async_run_timeout(mocker):
     """Test that async_run returns None when a TimeoutError is raised."""
-    with mocker.patch(
-        "asyncio.get_running_loop", new=MagicMock(side_effect=TimeoutError)
-    ):
-        result = await async_run(lambda: None)
-        assert result is None
+    mocker.patch("asyncio.get_running_loop", new=MagicMock(side_effect=TimeoutError))
+    result = await async_run(lambda: None)
+    assert result is None
