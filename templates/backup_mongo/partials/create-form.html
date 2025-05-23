@@ -115,9 +115,27 @@
     var pbmConfigDiv = document.getElementById('pbm_config');
 
 
+    //Flatten payload:
+    function flattenPayload(payload) {
+        var pbmConfig = {};
+        payload.forEach(input => {
+            if (input.name && input.name.startsWith('pbm_config')) {
+                // Option 1: Keep the full input name as the key
+                pbmConfig[input.name] = input.value;
+            }
+        });
+        const flatStringParts = [];
+        for (const key in pbmConfig) {
+            if (pbmConfig.hasOwnProperty(key)) {
+                flatStringParts.push(`${key}=${pbmConfig[key]}`);
+            }
+        }
+        return flatStringParts.join(' ');
+    }
+
     // Reads all form key starting with pbm_config, stringifies a json out of it inside hiddenInputName
     function populatePBMConfigAsHiddenJSON(formElement, hiddenInputName) {
-        var pbmConfig = {};
+
         const formInputs = formElement.querySelectorAll('input, select, textarea');
         const hiddenInput = formElement.querySelector(`input[type="hidden"][name="${hiddenInputName}"]`);
         if (!hiddenInput) {
@@ -125,15 +143,9 @@
             return;
         }
 
-        formInputs.forEach(input => {
-            if (input.name && input.name.startsWith('pbm_config')) {
-                pbmConfig[input.name] = input.value;
-            }
-        });
-
-        const pbmJSON = JSON.stringify(pbmConfig);
-        console.log(pbmJSON, 'heyho')
-        hiddenInput.value = pbmJSON;
+        const pbmPayload = flattenPayload(formInputs)
+        console.log(pbmPayload, 'heyho')
+        hiddenInput.value = pbmPayload;
     }
 
     // Toggles PBM config container visibility
