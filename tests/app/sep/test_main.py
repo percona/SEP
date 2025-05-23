@@ -80,7 +80,7 @@ class TestLogin:
         If a user is already authenticated (i.e. has the session cookie)
         then GET /login should raise a redirect.
         """
-        response = test_client_with_session_cookie.get("/login", allow_redirects=False)
+        response = test_client_with_session_cookie.get("/login", follow_redirects=False)
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == "/"
@@ -124,7 +124,7 @@ class TestLogin:
         login_route = "/login"
         if next_path is not None:
             login_route += f"?next={next_path}"
-        response = test_client.post(login_route, data=form_data, allow_redirects=False)
+        response = test_client.post(login_route, data=form_data, follow_redirects=False)
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == expected_location
@@ -150,7 +150,7 @@ class TestLogin:
         form_data = {"username": "testuser", "password": "secret"}
 
         response = test_client_with_session_cookie.post(
-            "/login", data=form_data, allow_redirects=False
+            "/login", data=form_data, follow_redirects=False
         )
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
