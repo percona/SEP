@@ -5,6 +5,7 @@
         opacity: 0;
         max-height: 0;
         pointer-events: none;
+        display: none;
     }
 
     .visible {
@@ -12,13 +13,30 @@
         max-height: 1000px;
         /* Large enough to show all content */
         pointer-events: auto;
+        display: flex;
     }
-
-    /* Smaller containers might have less content, adjust accordingly if needed */
 
     button {
         margin-top: 1em;
         margin-right: 1em;
+    }
+
+    .checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1em;
+        align-items: center;
+    }
+
+    .checkbox-group label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25em;
+        margin-top: 0;
+    }
+
+    .checkbox-group input {
+        margin-top: 0 !important;
     }
 
     fieldset+fieldset {
@@ -89,7 +107,7 @@
     </div>
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    
+
     const pbmInputName = 'pbm_config_payload';
     var backupTypeSelect = document.getElementById('backup_type');
     var form = document.getElementById('pbm');
