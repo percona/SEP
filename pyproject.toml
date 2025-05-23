@@ -38,7 +38,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "aiohttp (>=3.11.10,<4.0.0)",
     "uvicorn[standard] (>=0.32.0,<0.33.0)",
-    "sqlalchemy-celery-beat @ https://github.com/farahats9/sqlalchemy-celery-beat/archive/0fdfb416dd9e139c4aca912fc865e0c9922b267f.zip",
+    "sqlalchemy-celery-beat (>=0.8.4,<0.9.0)",
     "aioresponses (>=0.7.7,<0.8.0)",
     "idna (>=3.7,<4.0)",
     "itsdangerous (>=2.1.2,<3.0.0)",
