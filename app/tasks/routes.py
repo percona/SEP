@@ -40,7 +40,6 @@ from app.tasks.models import (
     TaskWrite,
     TransformPayloadRequest,
 )
-from app.tasks.periodic.config import periodic_tasks_settings
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
 
@@ -62,14 +61,13 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
     dependencies=[IsAuthenticatedDep],
     response_model=TaskResponse,
 )
-async def delete_task(
-    session: SessionDep, celery_beat_session: CeleryBeatSessionDep, task_name: str
-) -> Task:
+async def delete_task(session: SessionDep, task_name: str) -> Task:
     """Delete a task."""
     logger.debug("Deleting task %s", task_name)
     # TODO(yan): Delete for real
     # SEP-170
     return await TaskManager.delete_by_name(session=session, name=task_name)
+
 
 @router.get(
     "/{task_name}", dependencies=[IsAuthenticatedDep], response_model=TaskResponse

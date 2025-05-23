@@ -4,7 +4,6 @@
             <tr>
                 <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Name</th>
                 <th data-sortable="false" data-searchable="false">Status</th>
-                <th data-sortable="false">Error messages</th>
                 <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Started at</th>
                 <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Completed at</th>
                 <th class="number"
@@ -40,19 +39,6 @@
                                     <span class="badge material-symbols-outlined">report</span>
                                     <span class="label">Failed</span>
                                 </div>
-                            {% endif %}
-                        </td>
-                        <td class="errors">
-                            {% if task_history.status != 'success' %}
-                                {% if task_history.errors %}
-                                    <ul>
-                                        {% for message in task_history.errors %}<li>{{ message }}</li>{% endfor %}
-                                    </ul>
-                                {% else %}
-                                    None
-                                {% endif %}
-                            {% else %}
-                                None
                             {% endif %}
                         </td>
                         <td class="relativeTime code">{{ task_history.started_at }}</td>
