@@ -69,12 +69,7 @@ async def delete_task(
     logger.debug("Deleting task %s", task_name)
     # TODO(yan): Delete for real
     # SEP-170
-    task = await TaskManager.delete_by_name(session=session, name=task_name)
-    await PeriodicTaskManager.perform_action_by_task_names(
-        celery_beat_session, periodic_tasks_settings.ON_ORPHAN, task_name
-    )
-    return task
-
+    return await TaskManager.delete_by_name(session=session, name=task_name)
 
 @router.get(
     "/{task_name}", dependencies=[IsAuthenticatedDep], response_model=TaskResponse
