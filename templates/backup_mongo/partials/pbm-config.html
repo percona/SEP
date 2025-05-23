@@ -35,9 +35,13 @@
               </div>
               <fieldset>
                      <legend>Point-in-Time Recovery (PITR) Configuration</legend>
-                     <label for="pitr">Enable PITR</label>
-                     <input type="checkbox" name="pitr" id="pitr" value="1"/>
-                     <span class=""></span>
+                     <label class="checkbox">
+                            <input type="checkbox">
+                            <div class="checkmark" id="pitr_checkbox_input">
+                                   <span id="pitr_checkmark_span" class="material-symbols-outlined checked"></span>
+                            </div>
+                            <span class="label">PITR:</span>
+                     </label>
                      <label for="pitr_oplog_span_min">Oplog Span (Minutes):</label>
                      <input type="number" id="pitr_oplog_span_min" name="pbm_config.pitr.oplog_span_min">
                      <label for="pitr_compression">Compression:</label>
@@ -64,3 +68,5 @@
                             <option value="zstd">zstd</option>
                      </select>
 </div>
+
+<span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
