@@ -107,15 +107,17 @@
     </div>
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-
     const pbmInputName = 'pbm_config_payload';
     var backupTypeSelect = document.getElementById('backup_type');
     var form = document.getElementById('pbm');
+    var pitrCheckboxInput = document.getElementById("pitr_checkbox_input");
+    var pitrCheckmarkSpan = document.querySelector("#pitr_checkbox_input .material-symbols-outlined");
     var pbmConfigDiv = document.getElementById('pbm_config');
+
 
     // Reads all form key starting with pbm_config, stringifies a json out of it inside hiddenInputName
     function populatePBMConfigAsHiddenJSON(formElement, hiddenInputName) {
-        const pbmConfig = {};
+        var pbmConfig = {};
         const formInputs = formElement.querySelectorAll('input, select, textarea');
         const hiddenInput = formElement.querySelector(`input[type="hidden"][name="${hiddenInputName}"]`);
         if (!hiddenInput) {
@@ -130,6 +132,7 @@
         });
 
         const pbmJSON = JSON.stringify(pbmConfig);
+        console.log(pbmJSON, 'heyho')
         hiddenInput.value = pbmJSON;
     }
 
@@ -137,19 +140,16 @@
     backupTypeSelect.addEventListener('change', function () {
         if (this.value === 'pbm_config') {
             pbmConfigDiv.style.display = 'block';
-            const pitrCheckboxInput = document.getElementById("pitr_checkbox_input");
-            const pitrCheckmarkSpan = document.querySelector("#pitr_checkbox_input .material-symbols-outlined");
+            var pitrCheckboxInput = document.getElementById("pitr_checkbox_input");
+            var pitrCheckboxDiv = document.getElementById("pitr_checkbox_div");
+            var pitrCheckmarkSpan = document.querySelector("#pitr_checkbox_input .material-symbols-outlined");
+
             // --- Event Listener for Changes ---
-            pitrCheckboxInput.addEventListener("change", () => {
-                if (pitrCheckboxInput.checked) {
-                    // When the checkbox is checked
-                    pitrCheckmarkSpan.classList.add('checked'); // Add 'checked' class for styling
-                    pitrCheckmarkSpan.textContent = 'pitr_checkbox'; // Set the Material Symbols icon for "checked"
-                } else {
-                    // When the checkbox is unchecked
-                    pitrCheckmarkSpan.classList.remove('checked'); // Remove 'checked' class
-                    pitrCheckmarkSpan.textContent = ''; // Set the Material Symbols icon for "unchecked" (or empty)
-                }
+            pitrCheckboxDiv.addEventListener("click", () => {
+                // 1. Toggle the 'checked' class on the div
+                pitrCheckboxDiv.classList.toggle('checked');
+                // 2. Use a ternary operator for concise value toggling
+                pitrCheckboxInput.value = (pitrCheckboxInput.value === 'on') ? 'off' : 'on';
             });
         } else {
             pbmConfigDiv.style.display = 'none';
@@ -157,7 +157,7 @@
     });
 
     form.addEventListener('submit', function (event) {
-        populatePBMConfigAsHiddenJSON(pbmForm, pbmInputName);
+        populatePBMConfigAsHiddenJSON(pbmConfigDiv, pbmInputName);
         // The form will now submit with the 'pbm_config_payload' field containing the JSON string
     });
 </script>
