@@ -491,22 +491,6 @@ class TaskHistoryBase(SQLModel):
             return (self.finished_at - self.started_at).total_seconds()
         return None
 
-    @computed_field
-    @property
-    def errors(self) -> list[str]:
-        """Return a list of errors for the executed task.
-
-        :return: A list of error messages encountered during task execution.
-        :rtype: list[str]
-        """
-        errors = set()
-        for state in self.execution_request.tracking.get("task_states", {}).values():
-            for event in state["Events"]:
-                match event["Type"]:
-                    case "Driver Failure":
-                        errors.add(event["DisplayMessage"])
-        return list(errors)
-
 
 class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     """Represent a task execution history.
