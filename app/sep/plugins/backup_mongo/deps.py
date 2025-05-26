@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, Request
+from fastapi.encoders import jsonable_encoder
 
 from app.sep.deps import (
     DefaultContext,
@@ -15,7 +16,6 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.models import (
-    BackupConfig,
     BackupCreate,
 )
 from app.tasks.models import (
@@ -26,6 +26,7 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 async def build_backup_task_payload(
     form: Annotated[BackupCreate, Form()],
@@ -43,12 +44,10 @@ async def build_backup_task_payload(
     :rtype: TaskWrite
     """
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
-
-    print(form)
-
-    pbm_config = {
-        "pitr.enabled": form.pitr_enabled
-    }
+    pbm_config = {"set": f"pitr.enabled={'True' if form.pitr_enabled else 'False'}"}
+    pbm_config_yaml = yaml.dump(
+        jsonable_encoder(pbm_config, by_alias=True, exclude_none=True)
+    )
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
 
     return TaskWrite(
@@ -58,7 +57,7 @@ async def build_backup_task_payload(
         data={
             "task": "run-python",
             "meta": {
-                "pbm_config": form,
+                "config": pbm_config_yaml,
                 "target": form.hostname,
                 "requirements": requirements,
             },
@@ -107,7 +106,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    return yaml.safe_load(meta["pbm_config"])
+    return yaml.safe_load(meta["config"])
 
 
 async def get_backups_index_context(

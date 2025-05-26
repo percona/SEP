@@ -2,8 +2,10 @@
 
 from enum import StrEnum
 
+from pydantic import field_validator
+
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, Field, RequiredStr
+from app.core.utils.fields import EnumFieldMixin, RequiredStr
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -66,9 +68,14 @@ class BackupConfig(BaseCaseInsensitiveModel):
     :type pbm_config_payload: RequiredStr | EmptyStrToNone
     """
 
-    pitr_enabled: RequiredStr | EmptyStrToNone = Field(
-        None, serialization_alias="pitr.enabled"
-    )
+    pitr_enabled: bool
+
+    @field_validator("pitr_enabled")
+    def empty_to_false(self, v: bool) -> bool:
+        """If pitr checkbox in unchecked, represent as false."""
+        if v is None:
+            return False
+        return v
 
 
 class BackupCreate(BackupConfig):
