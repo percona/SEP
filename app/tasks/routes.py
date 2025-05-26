@@ -61,12 +61,19 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
     dependencies=[IsAuthenticatedDep],
     response_model=TaskResponse,
 )
-async def delete_task(session: SessionDep, task_name: str) -> Task:
+async def delete_task(
+    session: SessionDep, celery_beat_session: CeleryBeatSessionDep, task_name: str
+) -> Task:
     """Delete a task."""
     logger.debug("Deleting task %s", task_name)
     # TODO(yan): Delete for real
     # SEP-170
-    return await TaskManager.delete_by_name(session=session, name=task_name)
+    task = await TaskManager.delete_by_name(session=session, name=task_name)
+    await PeriodicTaskManager.delete_where(
+        celery_beat_session,
+        PeriodicTaskManager.build_where_clause_by_task_names(task_name),
+    )
+    return task
 
 
 @router.get(
