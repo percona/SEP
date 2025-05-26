@@ -66,8 +66,8 @@ class BackupConfig(BaseCaseInsensitiveModel):
     :type pbm_config_payload: RequiredStr | EmptyStrToNone
     """
 
-    pbm_config_payload: RequiredStr | EmptyStrToNone = Field(
-        None, serialization_alias="pbm_config_payload"
+    pitr_enabled: RequiredStr | EmptyStrToNone = Field(
+        None, serialization_alias="pitr.enabled"
     )
 
 

@@ -44,6 +44,11 @@ async def build_backup_task_payload(
     """
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
+    print(form)
+
+    pbm_config = {
+        "pitr.enabled": form.pitr_enabled
+    }
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
 
     return TaskWrite(
@@ -53,7 +58,7 @@ async def build_backup_task_payload(
         data={
             "task": "run-python",
             "meta": {
-                "config": form.pbm_config_payload,
+                "pbm_config": form,
                 "target": form.hostname,
                 "requirements": requirements,
             },
@@ -102,7 +107,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    return yaml.safe_load(meta["config"])
+    return yaml.safe_load(meta["pbm_config"])
 
 
 async def get_backups_index_context(

@@ -107,69 +107,26 @@
     </div>
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const pbmInputName = 'pbm_config_payload';
     var backupTypeSelect = document.getElementById('backup_type');
     var form = document.getElementById('pbm');
-    var pitrCheckboxInput = document.getElementById("pitr_checkbox_input");
-    var pitrCheckmarkSpan = document.querySelector("#pitr_checkbox_input .material-symbols-outlined");
     var pbmConfigDiv = document.getElementById('pbm_config');
-
-
-    //Flatten payload:
-    function flattenPayload(payload) {
-        var pbmConfig = {};
-        payload.forEach(input => {
-            if (input.name && input.name.startsWith('pbm_config')) {
-                // Option 1: Keep the full input name as the key
-                pbmConfig[input.name] = input.value;
-            }
-        });
-        const flatStringParts = [];
-        for (const key in pbmConfig) {
-            if (pbmConfig.hasOwnProperty(key)) {
-                flatStringParts.push(`${key}=${pbmConfig[key]}`);
-            }
-        }
-        return flatStringParts.join(' ');
-    }
-
-    // Reads all form key starting with pbm_config, stringifies a json out of it inside hiddenInputName
-    function populatePBMConfigAsHiddenJSON(formElement, hiddenInputName) {
-
-        const formInputs = formElement.querySelectorAll('input, select, textarea');
-        const hiddenInput = formElement.querySelector(`input[type="hidden"][name="${hiddenInputName}"]`);
-        if (!hiddenInput) {
-            console.error(`Hidden input with name "${hiddenInputName}" not found in the form.`);
-            return;
-        }
-
-        const pbmPayload = flattenPayload(formInputs)
-        console.log(pbmPayload, 'heyho')
-        hiddenInput.value = pbmPayload;
-    }
+    var pitrEnabledCheckboxInput = document.getElementById("pitr.enabled");
+    var pitrEnabledCheckboxDiv = document.getElementById("pitr_checkbox_div");
+    var pitrEnabledCheckmarkSpan = document.querySelector("#pitr_checkbox_input .material-symbols-outlined");
 
     // Toggles PBM config container visibility
     backupTypeSelect.addEventListener('change', function () {
         if (this.value === 'pbm_config') {
             pbmConfigDiv.style.display = 'block';
-            var pitrCheckboxInput = document.getElementById("pitr_checkbox_input");
-            var pitrCheckboxDiv = document.getElementById("pitr_checkbox_div");
-            var pitrCheckmarkSpan = document.querySelector("#pitr_checkbox_input .material-symbols-outlined");
-
             // --- Event Listener for Changes ---
-            pitrCheckboxDiv.addEventListener("click", () => {
+            pitrEnabledCheckboxDiv.addEventListener("click", () => {
                 // 1. Toggle the 'checked' class on the div
-                pitrCheckboxDiv.classList.toggle('checked');
+                pitrEnabledCheckboxDiv.classList.toggle('checked');
                 // 2. Use a ternary operator for concise value toggling
-                pitrCheckboxInput.value = (pitrCheckboxInput.value === 'on') ? 'off' : 'on';
+                pitrEnabledCheckboxInput.value = (pitrEnabledCheckboxInput.value === 'on') ? 'off' : 'on';
             });
         } else {
             pbmConfigDiv.style.display = 'none';
         }
-    });
-
-    form.addEventListener('submit', function (event) {
-        populatePBMConfigAsHiddenJSON(pbmConfigDiv, pbmInputName);
-        // The form will now submit with the 'pbm_config_payload' field containing the JSON string
     });
 </script>
