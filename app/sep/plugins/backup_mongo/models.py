@@ -70,9 +70,10 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     pitr_enabled: bool
 
+    @classmethod
     @field_validator("pitr_enabled")
-    def empty_to_false(self, v: bool) -> bool:
-        """If pitr checkbox in unchecked, represent as false."""
+    def empty_to_false(cls, *, v: bool) -> bool:
+        """If pitr checkbox is unchecked, represent as false."""
         if v is None:
             return False
         return v
