@@ -120,11 +120,9 @@ async def alters_detail(
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    context["running_tasks"].extend(
-        await tasks_api.get(
-            f"/{task.name}-dry-run/history/",
-            params={"status": TaskHistoryStatusEnum.RUNNING},
-        )
+    context["running_tasks"] += await tasks_api.get(
+        f"/{task.name}-dry-run/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
