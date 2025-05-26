@@ -130,7 +130,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     backup_source: RequiredStr
     local_path: RequiredStr | EmptyStrToNone = None
     overwrite_tables: bool = False
-    myloader_threads: int | None = None
+    myloader_threads: int | EmptyStrToNone = Field(default=4)
     myloader_extra_args: RequiredStr | EmptyStrToNone = None
     skip_databases: RequiredStr | EmptyStrToNone = None
     include_databases: RequiredStr | EmptyStrToNone = None
@@ -140,7 +140,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     datadir: RequiredStr | EmptyStrToNone = None
     kill_mysql: bool = False
     xb_prepare_memory: RequiredStr | EmptyStrToNone = None
-    xb_parallel: int | None = None
+    xb_parallel: int | EmptyStrToNone = Field(default=4)
     xtrabackup_bin_cmd: XtraBackupTool
     restore_mycnf: bool = False
     incremental_dest_path: RequiredStr | EmptyStrToNone = None
@@ -150,7 +150,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     slave_from_master: bool = False
     wait_for_catchup: bool = False
     master_ip: RequiredStr | EmptyStrToNone = None
-    master_port: int | None = None
+    master_port: int | EmptyStrToNone = Field(default=3306)
     master_user: RequiredStr | EmptyStrToNone = None
     master_password: RequiredStr | EmptyStrToNone = None
 
@@ -171,8 +171,8 @@ class RestoreConfigServer(BaseRestoreConfigServer):
     """
 
     alias: RequiredStr
-    dest_host: RequiredStr
-    dest_port: int
+    dest_host: RequiredStr | EmptyStrToNone = None
+    dest_port: int | EmptyStrToNone = None
     database: RequiredStr | EmptyStrToNone = None
 
 
@@ -202,12 +202,12 @@ class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
     :param task_name: Name of the restore task.
     :type task_name: RequiredStr
     :param service_id: Service identifier for the restore task.
-    :type service_id: RequiredStr
-    :param schema_id: Schema identifier  for restore.
+    :type service_id: RequiredStr | EmptyStrToNone = None
+    :param schema_id: Schema identifier for restore.
     :type schema_id: RequiredStr | EmptyStrToNone
     """
 
     hostname: RequiredStr
     task_name: RequiredStr
-    service_id: RequiredStr
+    service_id: RequiredStr | EmptyStrToNone = None
     schema_id: RequiredStr | EmptyStrToNone = None

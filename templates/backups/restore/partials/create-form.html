@@ -327,17 +327,8 @@
         <fieldset id="xtrabackup_container" style="flex-direction: column; gap: 1em">
             <legend>Xtrabackup Configuration</legend>
             <br>
-            {% set backup_source_title = "Type the path or identifier of the backup source to restore from. Examples: 192.168.88.10:/backup/xtrabackup/backup-gascan/latest, s3://dummy/binlogs/primary, s3://dummy/mydumper/backup-gascan/latest" %}
-            <label for="backup_source" title="{{ backup_source_title }}">
-                Backup Source:
-                <input type="text"
-                       id="backup_source"
-                       name="backup_source"
-                       style="width: 25em"
-                       placeholder="127.0.0.1:/backup/xtrabackup/backup-gascan/latest" />
-            </label>
             <div class="checkbox-group">
-                {% set skip_incrementals_title = "" %}
+                {% set skip_incrementals_title = "Skip incremental backups during restore process. Useful when you want to restore only the base backup." %}
                 <label class="checkbox"
                        for="skip_incrementals"
                        title="{{ skip_incrementals_title }}">
@@ -351,7 +342,7 @@
                     </div>
                     <span class="label">Skip Incrementals</span>
                 </label>
-                {% set kill_mysql_title = "" %}
+                {% set kill_mysql_title = "Automatically stop MySQL service before restore and start it after restore is complete." %}
                 <label class="checkbox" for="kill_mysql" title="{{ kill_mysql_title }}">
                     <input type="checkbox" id="kill_mysql" name="kill_mysql" value="1" />
                     <div class="checkmark">
@@ -360,7 +351,7 @@
                     </div>
                     <span class="label">Kill MySQL</span>
                 </label>
-                {% set restore_mycnf_title = "" %}
+                {% set restore_mycnf_title = "Restore MySQL configuration file (my.cnf) along with the data backup." %}
                 <label class="checkbox"
                        for="restore_mycnf"
                        title="{{ restore_mycnf_title }}">
@@ -372,12 +363,12 @@
                     <span class="label">Restore MyCNF</span>
                 </label>
             </div>
-            {% set data_dir_title = "" %}
+            {% set data_dir_title = "Specify the MySQL data directory where the backup will be restored. Default is usually /var/lib/mysql." %}
             <label for="data_dir" title="{{ data_dir_title }}">
                 Data Dir:
                 <input type="text" id="data_dir" name="data_dir" placeholder="" />
             </label>
-            {% set xb_prepare_memory_title = "" %}
+            {% set xb_prepare_memory_title = "Amount of memory (in MB) to use for xtrabackup prepare operation. Higher values can speed up the prepare process." %}
             <label for="xb_prepare_memory" title="{{ xb_prepare_memory_title }}">
                 XtraBackup Prepare Memory:
                 <input type="text"
@@ -385,12 +376,12 @@
                        name="xb_prepare_memory"
                        placeholder="" />
             </label>
-            {% set xb_parallel_title = "" %}
+            {% set xb_parallel_title = "Number of threads to use for parallel operations during backup restore. Higher values can improve performance but require more system resources." %}
             <label for="xb_parallel" title="{{ xb_parallel_title }}">
                 XtraBackup Parallel:
                 <input type="number" id="xb_parallel" name="xb_parallel" />
             </label>
-            {% set xtrabackup_bin_cmd_title = "" %}
+            {% set xtrabackup_bin_cmd_title = "Select the backup tool to use for restore: InnoBackupPex (legacy), XtraBackup (recommended), or MariaDB Backup." %}
             <div class="select">
                 <label for="xtrabackup_bin_cmd" title="{{ xtrabackup_bin_cmd_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
@@ -404,7 +395,7 @@
                 </label>
             </div>
             <br>
-            {% set incremental_dest_path_title = "" %}
+            {% set incremental_dest_path_title = "Path where incremental backups will be stored during the restore process." %}
             <label for="incremental_dest_path" title="{{ incremental_dest_path_title }}">
                 Incremental Destination Path:
                 <input type="text"
@@ -412,7 +403,7 @@
                        name="incremental_dest_path"
                        placeholder="" />
             </label>
-            {% set xtrabackup_restore_args_title = "" %}
+            {% set xtrabackup_restore_args_title = "Additional command-line arguments to pass to xtrabackup during restore operation." %}
             <label for="xtrabackup_restore_args"
                    title="{{ xtrabackup_restore_args_title }}">
                 Xtrabackup Restore Args:
@@ -421,7 +412,7 @@
                        name="xtrabackup_restore_args"
                        placeholder="" />
             </label>
-            {% set keyring_file_data_title = "" %}
+            {% set keyring_file_data_title = "Path to the keyring file containing encryption keys for encrypted backups." %}
             <label for="keyring_file_data" title="{{ keyring_file_data_title }}">
                 KeyRing File Data:
                 <input type="text"
@@ -429,16 +420,7 @@
                        name="keyring_file_data"
                        placeholder="" />
             </label>
-            {% set xtrabackup_aes256_keyfile_title = "" %}
-            <label for="xtrabackup_aes256_keyfile"
-                   title="{{ xtrabackup_aes256_keyfile_title }}">
-                AES256 Key File:
-                <input type="text"
-                       id="xtrabackup_aes256_keyfile"
-                       name="xtrabackup_aes256_keyfile"
-                       placeholder="" />
-            </label>
-            {% set xtrabackup_aes256_keyfile_title = "" %}
+            {% set xtrabackup_aes256_keyfile_title = "Path to the AES256 key file used for encrypted backups." %}
             <label for="xtrabackup_aes256_keyfile"
                    title="{{ xtrabackup_aes256_keyfile_title }}">
                 AES256 Key File:
@@ -450,7 +432,7 @@
             <br>
             <br>
             <div class="checkbox-group">
-                {% set slave_from_master_title = "" %}
+                {% set slave_from_master_title = "Configure the restored instance as a replica (slave) of the specified master server." %}
                 <label class="checkbox"
                        for="slave_from_master"
                        title="{{ slave_from_master_title }}">
@@ -464,7 +446,7 @@
                     </div>
                     <span class="label">Slave from Master</span>
                 </label>
-                {% set wait_for_catchup_title = "" %}
+                {% set wait_for_catchup_title = "Wait for the replica to catch up with the master after restore is complete." %}
                 <label class="checkbox"
                        for="wait_for_catchup"
                        title="{{ wait_for_catchup_title }}">
@@ -479,22 +461,22 @@
                     <span class="label">Wait for Catchup</span>
                 </label>
             </div>
-            {% set master_ip_title = "" %}
+            {% set master_ip_title = "IP address of the master server to replicate from." %}
             <label for="master_ip" title="{{ master_ip_title }}">
                 Master IP:
                 <input type="text" id="master_ip" name="master_ip" placeholder="" />
             </label>
-            {% set master_port_title = "" %}
+            {% set master_port_title = "Port number of the master server (default is 3306)." %}
             <label for="master_port" title="{{ master_port_title }}">
                 Master Port:
                 <input type="number" id="master_port" name="master_port" />
             </label>
-            {% set master_user_title = "" %}
+            {% set master_user_title = "Username for connecting to the master server." %}
             <label for="master_user" title="{{ master_user_title }}">
                 Master User:
                 <input type="text" id="master_user" name="master_user" placeholder="" />
             </label>
-            {% set master_password_title = "" %}
+            {% set master_password_title = "Password for the master user account." %}
             <label for="master_password" title="{{ master_password_title }}">
                 Master Password:
                 <input type="text"

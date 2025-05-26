@@ -75,9 +75,9 @@ async def restores_detail(
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
-        "host": server_config["DEST_HOST"],
-        "port": server_config["DEST_PORT"],
-        "database": server_config.get("DATABASER"),
+        "host": server_config.get("dest_host"),
+        "port": server_config.get("dest_port"),
+        "database": server_config.get("database"),
         "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "delete_url": request.url_for("restores_delete", task_name=task.name),
     }
