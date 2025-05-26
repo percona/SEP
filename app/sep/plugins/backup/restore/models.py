@@ -16,6 +16,14 @@ class S3Tool(EnumFieldMixin, StrEnum):
     AWSCLI = "awscli"
 
 
+class XtraBackupTool(EnumFieldMixin, StrEnum):
+    """Allowed commands for XtraBackup-style restores."""
+
+    INNOBACKUPEX = "innobackupex"
+    XTRABACKUP = "xtrabackup"
+    MARIADB_BACKUP = "mariadb-backup"
+
+
 class RestoreConfigAll(BaseCaseInsensitiveModel):
     """Global config values for restore operations.
 
@@ -82,6 +90,40 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     :type pre_script: RequiredStr | EmptyStrToNone
     :param post_script: Script to execute after restore.
     :type post_script: RequiredStr | EmptyStrToNone
+    :param skip_incrementals: Whether to skip incremental backups during restore.
+    :type skip_incrementals: bool
+    :param datadir: MySQL data directory path.
+    :type datadir: RequiredStr | EmptyStrToNone
+    :param kill_mysql: Whether to kill MySQL process before restore.
+    :type kill_mysql: bool
+    :param xb_prepare_memory: Memory limit for xtrabackup prepare operation.
+    :type xb_prepare_memory: RequiredStr | EmptyStrToNone
+    :param xb_parallel: Number of parallel threads for xtrabackup operations.
+    :type xb_parallel: int | None
+    :param xtrabackup_bin_cmd: Tool to use for xtrabackup operations.
+    :type xtrabackup_bin_cmd: XtraBackupTool
+    :param restore_mycnf: Whether to restore my.cnf file during restore.
+    :type restore_mycnf: bool
+    :param incremental_dest_path: Path for incremental backup files.
+    :type incremental_dest_path: RequiredStr | EmptyStrToNone
+    :param xtrabackup_restore_args: Additional arguments for xtrabackup restore.
+    :type xtrabackup_restore_args: RequiredStr | EmptyStrToNone
+    :param keyring_file_data: Path to the keyring file for encryption.
+    :type keyring_file_data: RequiredStr | EmptyStrToNone
+    :param xtrabackup_aes256_keyfile: Path to AES-256 key file for encryption.
+    :type xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone
+    :param slave_from_master: Whether to configure the restored instance as a slave.
+    :type slave_from_master: bool
+    :param wait_for_catchup: Whether to wait for slave to catch up with master.
+    :type wait_for_catchup: bool
+    :param master_ip: IP address of the master server for replication.
+    :type master_ip: RequiredStr | EmptyStrToNone
+    :param master_port: Port number of the master server for replication.
+    :type master_port: int | None
+    :param master_user: Username for replication user on master.
+    :type master_user: RequiredStr | EmptyStrToNone
+    :param master_password: Password for replication user on master.
+    :type master_password: RequiredStr | EmptyStrToNone
     """
 
     backup_type: BackupType
@@ -94,6 +136,23 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     include_databases: RequiredStr | EmptyStrToNone = None
     pre_script: RequiredStr | EmptyStrToNone = None
     post_script: RequiredStr | EmptyStrToNone = None
+    skip_incrementals: bool = False
+    datadir: RequiredStr | EmptyStrToNone = None
+    kill_mysql: bool = False
+    xb_prepare_memory: RequiredStr | EmptyStrToNone = None
+    xb_parallel: int | None = None
+    xtrabackup_bin_cmd: XtraBackupTool
+    restore_mycnf: bool = False
+    incremental_dest_path: RequiredStr | EmptyStrToNone = None
+    xtrabackup_restore_args: RequiredStr | EmptyStrToNone = None
+    keyring_file_data: RequiredStr | EmptyStrToNone = None
+    xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone = None
+    slave_from_master: bool = False
+    wait_for_catchup: bool = False
+    master_ip: RequiredStr | EmptyStrToNone = None
+    master_port: int | None = None
+    master_user: RequiredStr | EmptyStrToNone = None
+    master_password: RequiredStr | EmptyStrToNone = None
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):
