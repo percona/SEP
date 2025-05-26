@@ -47,12 +47,33 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
-    """Create an alter task."""
-    logger.debug("Create alters task: %s", task)
+    """Create alter tasks - one for execution and one for dry run."""
+    logger.debug("Create alters tasks: %s", task)
+
+    # Create the execute task
     await task_api.post(
         "/generate/",
         json=task.model_dump(),
     )
+
+    # Create the dry-run task
+    dry_run_task = task.model_copy()
+    dry_run_task.name = f"{task.name}-dry-run"
+    # Replace --execute with --dry-run in the task arguments and add parent reference
+    for command in dry_run_task.commands:
+        if "args" in command:
+            command["args"] = [
+                arg.replace("--execute", "--dry-run") for arg in command["args"]
+            ]
+        if "meta" in command:
+            command["meta"]["parent"] = task.name
+
+    await task_api.post(
+        "/generate/",
+        json=dry_run_task.model_dump(),
+    )
+
+    # Redirect to the execute task detail page
     task_path = request.url_for("alters_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
@@ -80,12 +101,28 @@ async def alters_detail(
         "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
         "meta": meta,
         "delete_url": request.url_for("alters_delete", task_name=task.name),
+        "dry_run_url": request.url_for(
+            "alters_execute", task_name=task.name + "-dry-run"
+        ),
     }
+
+    # If the task has a parent, redirect to the parent task detail page
+    if task_data["meta"].get("parent"):
+        task_path = request.url_for(
+            "alters_detail", task_name=task_data["meta"]["parent"]
+        )
+        return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["history_dry_run"] = await tasks_api.get(f"/{task.name}-dry-run/history/")
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["running_tasks"] += await tasks_api.get(
+        f"/{task.name}-dry-run/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
@@ -124,6 +161,7 @@ async def alters_delete(
     task: AltersTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Delete alters task."""
+    """Delete alters tasks."""
     await tasks_api.delete(f"/{task.name}")
+    await tasks_api.delete(f"/{task.name}-dry-run")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

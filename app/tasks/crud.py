@@ -9,7 +9,9 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseSQLModelManager
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
+    DispatchLock,
     Task,
+    TaskBackendEnum,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskOwner,
@@ -93,6 +95,21 @@ class TaskManager(BaseSQLModelManager):
         task.name = f"{task.name}-{task.deleted_at.strftime('%Y%m%d%H%M%S')}"
         return await cls.save(session, task)
 
+    @classmethod
+    async def get_root_task(cls, session: AsyncSession, task: Task) -> Task:
+        """Get the root task for a given task.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param task: The task for which to find the root task.
+        :type task: Task
+        :return: The root task.
+        :rtype: Task
+        """
+        if task.backend == TaskBackendEnum.PROXY:
+            return await cls.retrieve_by_name(session=session, name=task.data["task"])
+        return task
+
 
 class TaskHistoryManager(BaseSQLModelManager):
     """Manage task history operations, including listing task histories by task name.
@@ -137,3 +154,13 @@ class TaskHistoryManager(BaseSQLModelManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
+
+
+class DispatchLockManager(BaseSQLModelManager):
+    """Manage dispatch lock operations.
+
+    :ivar Model: The SQLModel class this manager is responsible for (`DispatchLock`).
+    :vartype Model: type[DispatchLock]
+    """
+
+    Model = DispatchLock

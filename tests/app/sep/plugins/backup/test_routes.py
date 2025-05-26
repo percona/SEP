@@ -140,7 +140,9 @@ def test_backups_detail(test_client, mock_task_api_dep, created_task):
     mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
 
 
-@pytest.mark.usefixtures("_mock_get_backups_task_dep")
+@pytest.mark.usefixtures(
+    "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
 def test_backups_execute(test_client, mock_task_api_dep, created_task):
     """Test POST /backups/{task_name} route."""
     response = test_client.post(f"/backups/{created_task.name}", follow_redirects=False)

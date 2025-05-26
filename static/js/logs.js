@@ -31,8 +31,8 @@ $(document).ready(function() {
                 if ($logConsole.find('.log-step-content').length === 0) stepContent.show();
                 else stepContent.hide();
 
-                const stdoutPre = $('<pre class="log-output" data-log-type="stdout" style="display: none;"></pre>');
-                const stderrPre = $('<pre class="log-output" data-log-type="stderr" style="display: none;"></pre>');
+                const stdoutPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stdout" style="display: none;"></pre>');
+                const stderrPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display: none;"></pre>');
 
                 const selectedTab = $logConsole.find('[role="log-tab"][aria-selected="true"]');
                 const selectedLogType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
@@ -70,9 +70,20 @@ $(document).ready(function() {
             } else {
                 console.log(`Log stream for ${taskId} finished`);
 
-                const statusClass = finishData.status === 'success' ? 'success' : 'error';
-                const icon = finishData.status === 'success' ? 'check' : 'report';
-                const label = finishData.status === 'success' ? 'Done' : 'Failed';
+                const statusClass = finishData.status;
+                if (finishData.status === 'success') {
+                    var icon = 'check';
+                    var label = 'Done';
+                } else if (finishData.status === 'stopped') {
+                    var icon = 'cancel';
+                    var label = 'Stopped';
+                } else if (finishData.status === 'lost') {
+                    var icon = 'question_mark';
+                    var label = 'Lost';
+                } else {
+                    var icon = 'report';
+                    var label = 'Failed';
+                }
 
                 const statusEl = $(`
                     <div class="status">
@@ -115,9 +126,9 @@ $(document).ready(function() {
         const $this = $(this);
         const $logConsole = $this.closest('.log-console');
         if ($this.is(':checked')) {
-            $logConsole.find('.log-output').addClass('word-wrap');
+            $logConsole.find('.log-output').addClass('soft-wrap');
         } else {
-            $logConsole.find('.log-output').removeClass('word-wrap');
+            $logConsole.find('.log-output').removeClass('soft-wrap');
         }
     });
     $('.word-wrap-checkbox').trigger("change");
