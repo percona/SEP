@@ -94,7 +94,7 @@
       id="delete-task-form"
       data-confirm-message='Are you sure you want to delete task "{{ task.name }}"?'
       method="post"
-      action="{{ task.delete_url }}">
+      action="{{ task.delete_url or url_for('tasks_delete', task_name=task.name) }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
 <form id="schedule-task-form"
