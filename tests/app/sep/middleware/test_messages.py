@@ -166,8 +166,8 @@ class TestMessagesMiddleware:
     def test_middleware_loads_cookie(self, test_client):
         """Assert middleware loads messages from the cookie."""
         messages = [{"l": 1, "t": "hello"}]
-        cookie_value = crypto_serializer.dumps(json.dumps(messages))
-        response = test_client.get("/no-message", cookies={"messages": cookie_value})
+        test_client.cookies["messages"] = crypto_serializer.dumps(json.dumps(messages))
+        response = test_client.get("/no-message")
         assert "messages" in response.cookies
         new_value = response.cookies.get("messages")
         parsed = json.loads(crypto_serializer.loads(new_value))
