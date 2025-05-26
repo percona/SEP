@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseSQLModelManager
+from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
     DispatchLock,
@@ -97,11 +98,26 @@ class TaskManager(BaseSQLModelManager):
         :return: The deleted task.
         :rtype: Task
         :raises HTTPForbiddenException: If the task is protected and cannot be deleted.
+        :raises HTTPConflictException: If the task is currently running or pending.
         """
         task = await cls.retrieve_by_name(session=session, name=name, is_active=True)
         if task.protected:
             raise HTTPForbiddenException(
                 f"Task {name} is protected and cannot be deleted.",
+            )
+        # TODO(yan): Implement proper locking mechanism for deletion
+        # SEP-393
+        if await TaskHistoryManager.list_by_task_name(
+            session=session, task_name=name, status=TaskHistoryStatusEnum.RUNNING
+        ):
+            raise HTTPConflictException(
+                f"Task {name} is currently running and cannot be deleted."
+            )
+        if await TaskHistoryManager.list_by_task_name(
+            session=session, task_name=name, status=TaskHistoryStatusEnum.PENDING
+        ):
+            raise HTTPConflictException(
+                f"Task {name} is currently pending and cannot be deleted."
             )
         task.deleted_at = utc_now()
         task.name = f"{task.name}-{task.deleted_at.strftime('%Y%m%d%H%M%S')}"
