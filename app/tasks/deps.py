@@ -55,8 +55,8 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
 TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
 
 
-async def get_task_by_name(session: SessionDep, task_name: str) -> Task:
-    """Get Task object by task name.
+async def get_active_task_by_name(session: SessionDep, task_name: str) -> Task:
+    """Get an active (not deleted) Task object by task name.
 
     :param session: The asynchronous database session.
     :type session: AsyncSession
@@ -66,10 +66,12 @@ async def get_task_by_name(session: SessionDep, task_name: str) -> Task:
     :rtype: Task
     """
     logger.debug("Requesting task %s", task_name)
-    return await TaskManager.retrieve_by_name(session=session, name=task_name)
+    return await TaskManager.retrieve_by_name(
+        session=session, name=task_name, is_active=True
+    )
 
 
-TaskDep = Annotated[Task, Depends(get_task_by_name)]
+TaskDep = Annotated[Task, Depends(get_active_task_by_name)]
 
 
 async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Task:
@@ -84,7 +86,7 @@ async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Ta
     """
     logger.debug("Requesting executable task %s", task_name)
     return await TaskManager.retrieve_by_name(
-        session=session, name=task_name, is_template=False
+        session=session, name=task_name, is_template=False, is_active=True
     )
 
 

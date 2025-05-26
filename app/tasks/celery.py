@@ -28,8 +28,8 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import (
+    get_executable_task_by_name,
     get_executor,
-    get_task_by_name,
     prepare_task_history,
 )
 from app.tasks.execution.models import BaseExecutor
@@ -144,7 +144,7 @@ async def prepare_periodic_task_history(
     )
     async_session = get_async_session_maker(create_new_engine=True)
     async with async_session() as session:
-        task = await get_task_by_name(session, task_name)
+        task = await get_executable_task_by_name(session, task_name)
         return prepare_task_history(task, execution_data)
 
 
