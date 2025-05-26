@@ -1,13 +1,16 @@
 """Define test fixtures for the SEP app."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 import pytest_asyncio
 from fastapi import Request
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
+from app.core.requests import RemoteAPI
 from app.models import CasdoorUser
-from app.sep.deps import get_current_user, validate_csrf
+from app.sep.deps import get_current_user, get_tasks_api, validate_csrf
 from app.sep.main import sep_app
 
 
@@ -40,3 +43,18 @@ def dummy_request() -> Request:
     req = Request(scope)
     req.state.messages = []
     return req
+
+
+@pytest.fixture
+def mock_remote_api() -> AsyncMock:
+    """Mock a RemoteAPI object."""
+    return AsyncMock(spec=RemoteAPI)
+
+
+@pytest.fixture
+def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+    """Mock the TaskAPI dependency."""
+    mock = AsyncMock(spec=RemoteAPI)
+    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
+    yield mock
+    sep_app.dependency_overrides = {}
