@@ -1,5 +1,6 @@
 """Define test fixtures for the SEP app."""
 
+from collections import OrderedDict
 from unittest.mock import AsyncMock
 
 import pytest
@@ -41,7 +42,7 @@ def dummy_request() -> Request:
     """Create a dummy Request with a messages attribute in its state."""
     scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80")}
     req = Request(scope)
-    req.state.messages = []
+    req.state.messages = OrderedDict()
     return req
 
 

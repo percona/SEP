@@ -2,6 +2,7 @@
 
 import json
 from base64 import b64decode
+from collections import OrderedDict
 from unittest.mock import ANY, Mock
 
 import pytest
@@ -98,7 +99,7 @@ class TestMessageFunctions:
         add_message(dummy_request, MessageLevel.WARNING, "Warning message", sticky=True)
         msgs = dummy_request.state.messages
         assert len(msgs) == 1
-        msg = msgs[0]
+        msg = next(iter(msgs))
         assert msg.level == MessageLevel.WARNING
         assert msg.text == "Warning message"
         assert msg.sticky is True
@@ -117,7 +118,7 @@ class TestMessageFunctions:
         func(dummy_request, "Convenience test", sticky=False)
         msgs = dummy_request.state.messages
         assert len(msgs) == 1
-        msg = msgs[0]
+        msg = next(iter(msgs))
         assert msg.level == expected_level
         assert msg.text == "Convenience test"
 
@@ -127,10 +128,10 @@ class TestMessageFunctions:
             Message(level=MessageLevel.INFO, text="Msg 1"),
             Message(level=MessageLevel.SUCCESS, text="Msg 2"),
         ]
-        dummy_request.state.messages += msgs
+        dummy_request.state.messages.update(OrderedDict.fromkeys(msgs))
         ret = get_messages(dummy_request)
         assert ret == msgs
-        assert dummy_request.state.messages == []
+        assert dummy_request.state.messages == OrderedDict()
 
     def test_get_messages_partial(self, dummy_request):
         """Assert get_messages returns partial messages."""
@@ -139,10 +140,10 @@ class TestMessageFunctions:
             Message(level=MessageLevel.SUCCESS, text="Msg 2"),
             Message(level=MessageLevel.WARNING, text="Msg 3"),
         ]
-        dummy_request.state.messages += msgs
+        dummy_request.state.messages.update(OrderedDict.fromkeys(msgs))
         ret = get_messages(dummy_request, max_qty=2)
         assert ret == msgs[:2]
-        assert dummy_request.state.messages == msgs[2:]
+        assert dummy_request.state.messages == OrderedDict.fromkeys(msgs[2:])
 
     def test_add_message_no_state(self, logger_mock):
         """Assert add_message logs an error when state lacks messages."""
@@ -158,6 +159,16 @@ class TestMessageFunctions:
         """Assert add_message logs an error when Message validation fails."""
         add_message(dummy_request, MessageLevel.INFO, "a" * 513)
         logger_mock.exception.assert_called_with("Error building Message object")
+
+    def test_add_duplicate_message(self, dummy_request):
+        """Assert add_message does not duplicate messages."""
+        add_message(dummy_request, MessageLevel.INFO, "Duplicate test")
+        add_message(dummy_request, MessageLevel.INFO, "Duplicate test")
+        msgs = dummy_request.state.messages
+        assert len(msgs) == 1
+        msg = next(iter(msgs))
+        assert msg.text == "Duplicate test"
+        assert msg.level == MessageLevel.INFO
 
 
 class TestMessagesMiddleware:
