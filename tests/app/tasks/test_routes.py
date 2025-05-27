@@ -50,8 +50,11 @@ async def test_get_task_active_and_get_task_deleted_404(
 
 
 @pytest.mark.asyncio
-async def test_delete_task_success_and_cannot_delete_twice(test_client, created_task):
+async def test_delete_task_success_and_cannot_delete_twice(
+    mocker, test_client, created_task
+):
     """Test that deleting a task works and cannot be deleted twice."""
+    mocker.patch("app.tasks.routes.PeriodicTaskManager.delete_where", return_value=True)
     response = test_client.delete(f"/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     task_data = response.json()
