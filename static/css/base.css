@@ -1645,6 +1645,7 @@ td.errors ul {
     border-radius: var(--cornerExtraSmall);
     overflow: hidden;
     margin-bottom: 1.5rem;
+    background-color: white;
 }
 
 .toggle-btn {
@@ -1677,4 +1678,13 @@ td.errors ul {
 
 .toggle-btn-group .toggle-btn {
     text-decoration: none;
+}
+
+/*=============================================*/
+/* Sticky Header */
+/*=============================================*/
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
