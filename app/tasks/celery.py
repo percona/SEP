@@ -12,6 +12,8 @@ from typing import Any
 
 from asgiref.sync import async_to_sync
 from celery import Task
+from celery.app.task import Context
+from celery.signals import task_revoked
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -44,6 +46,19 @@ from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 logger = logging.getLogger(__name__)
 
 celery = create_celery("tasks")
+
+
+@task_revoked.connect
+def task_revoked_handler(*, request: Context, expired: bool, **kwargs: Any) -> None:
+    """Handle task revocation by logging the event."""
+    queue_id = request.args[0] if request.args else request.kwargs.get("queue_id")
+    if (
+        request.get("task") == "app.tasks.celery.execute_task_queue"
+        and queue_id
+        and expired
+    ):
+        logger.info("Deleting expired TaskHistory %s", queue_id)
+        async_to_sync(delete_task_history)(queue_id)
 
 
 @celery.task(
@@ -109,6 +124,17 @@ def sync_task_history(task_history_id: int) -> None:
     logger.debug("Syncing task history %s", task_history_id)
     async_to_sync(sync_queue_item)(task_history_id)
     logger.debug("Finished syncing task history %s", task_history_id)
+
+
+async def delete_task_history(queue_id: int) -> None:
+    """Delete a TaskHistory object by queue ID.
+
+    :param queue_id: The unique identifier of the queue item to delete.
+    :type queue_id: int
+    """
+    async_session = get_async_session_maker(create_new_engine=True)
+    async with async_session() as session:
+        await TaskHistoryManager.delete_where(session, id=queue_id)
 
 
 async def get_task_history(queue_id: int) -> TaskHistory:

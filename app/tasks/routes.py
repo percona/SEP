@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
@@ -10,6 +11,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
+from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
 from app.tasks.celery import (
@@ -255,7 +257,10 @@ async def execute_task_name(
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
         celery_task = execute_task_queue.apply_async(
-            args=[history_recorded.id], eta=history_recorded.execution_request.eta
+            args=[history_recorded.id],
+            eta=history_recorded.execution_request.eta,
+            expires=history_recorded.execution_request.eta
+            + timedelta(seconds=settings.CELERY.global_expire_seconds),
         )
         history_recorded.execution_request.tracking["celery_task_id"] = celery_task.id
         return await TaskHistoryManager.save(
