@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
 from app.tasks.celery import (
+    celery,
     dispatch_queue_item,
     execute_task_queue,
     get_executor_for_task,
@@ -343,6 +344,17 @@ async def stop_task_history(
 ) -> TaskHistoryResponse:
     """Stop a task history."""
     logger.debug("Stopping task history %s", task_history.id)
+    if task_history.status == TaskHistoryStatusEnum.PENDING:
+        if celery_task_id := task_history.execution_request.tracking.get(
+            "celery_task_id"
+        ):
+            logger.debug(
+                "Cancelling pending task history %s with Celery task ID %s",
+                task_history.id,
+                celery_task_id,
+            )
+            celery.control.revoke(celery_task_id)
+        return await TaskHistoryManager.delete(session, task_history)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
         raise HTTPBadRequestException(
             f"Cannot stop task history {task_history.id} ({task_history.task.name}): "

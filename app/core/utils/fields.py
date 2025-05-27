@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
+from pathlib import Path
 from typing import Annotated, Any, Self, TypeVar
 
 from pydantic import (
@@ -385,6 +386,25 @@ RelativeDirectoryPath = Annotated[
 
 This annotated type ensures that the provided directory path is valid and resolves
 relative paths based on the application's directory structure.
+"""
+
+RelativePath = Annotated[
+    Path,
+    BeforeValidator(resolve_relative_path),
+    Field(validate_default=True),
+]
+"""Define a path that resolves relative paths.
+
+This annotated type ensures that the provided path is valid and resolves
+relative paths based on the application's directory structure. This type does not
+validate if the path exists, it only resolves the relative path to an absolute one.
+"""
+
+StrRelativePath = Annotated[str, AsTypeValidator(RelativePath, str)]
+"""Define a string field representing a relative paths.
+
+This annotated type validates the string as a relative path and ensures it is returned
+as a string.
 """
 
 DatabaseUrl = database_url_normalized_scheme_field_factory(DatabaseEngine)

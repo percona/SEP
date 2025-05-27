@@ -23,12 +23,12 @@
                             <span class="material-symbols-outlined">visibility</span>
                         </a>
                         <a href="#" class="submitNextForm">
-                            <span class="material-symbols-outlined">delete_forever</span>
+                            <span class="material-symbols-outlined">cancel</span>
                         </a>
-                        <form action="{{ task_path }}/delete"
+                        <form action="{{ url_for('stop_task_execution', task_history_id=task['id']) }}"
                               method="post"
-                              style="display:none"
-                              id="deleteTaskForm">
+                              style="display:none">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
                         </form>
                     </td>
                 </tr>
