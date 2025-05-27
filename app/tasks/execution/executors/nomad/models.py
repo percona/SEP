@@ -552,7 +552,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         except AllocationNotFoundException:
             logger.debug("Allocation not found for task history %s", queue_item.id)
             try:
-                self.get_job_for_task_history(queue_item)
+                job = self.get_job_for_task_history(queue_item)
+                if all(
+                    evaluation.get("Status") != NomadAllocStatusEnum.PENDING
+                    for evaluation in self.backend.job.get_evaluations(job["ID"])
+                ):
+                    logger.warning(
+                        "No allocations or pending evaluations found for task history %s",
+                        queue_item.id,
+                    )
+                    queue_item.status = TaskHistoryStatusEnum.FAILED
+                    queue_item.started_at = None
+                    return await TaskHistoryManager.save(
+                        session,
+                        queue_item,
+                        flag_modified_fields=["execution_request"],
+                    )
+
             except JobNotFoundException:
                 logger.warning(
                     "Lost job and allocation from task history %s", queue_item.id
