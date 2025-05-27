@@ -7,6 +7,7 @@
              flex-direction: column;
              align-items: start">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <input type="hidden" name="eta" class="eta-value" disabled>
     {% if task_data and task_data.get("ParameterizedJob") %}
         <fieldset style="width: 90%;">
             <legend style="font-size: 1.5em; font-weight: bold;">Configuration</legend>
