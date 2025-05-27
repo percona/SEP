@@ -16,6 +16,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, or_
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery.utils import create_celery
 from app.core.db.utils import func_json_extract
@@ -148,11 +149,15 @@ async def prepare_periodic_task_history(
         return prepare_task_history(task, execution_data)
 
 
-async def dispatch_queue_item(queue_item: TaskHistory) -> TaskHistory:
+async def dispatch_queue_item(
+    queue_item: TaskHistory, session: AsyncSession | None = None
+) -> TaskHistory:
     """Process an item from the history table.
 
     :param queue_item: The TaskHistory object to dispatch.
     :type queue_item: TaskHistory
+    :param session: Optional SQLAlchemy asynchronous session to use for the operation.
+    :type session: AsyncSession | None
     :return: The TaskHistory object post execution.
     :rtype: TaskHistory
     :raises HTTPException: If the queue item status is not PENDING,
@@ -160,77 +165,79 @@ async def dispatch_queue_item(queue_item: TaskHistory) -> TaskHistory:
     :raises HTTPBadRequestException: If the task backend is unsupported,
         raises a 400 Bad Request error.
     """
-    async_session = get_async_session_maker(create_new_engine=True)
-    async with async_session() as session:
-        engine_name = session.get_bind().name
-        if queue_item.status != TaskHistoryStatusEnum.PENDING:
-            raise HTTPConflictException("Queue item is not in a pending state.")
+    if session is None:
+        async_session = get_async_session_maker(create_new_engine=True)
+        async with async_session() as async_session:
+            return await _dispatch_queue_item(queue_item, async_session)
+    return await _dispatch_queue_item(queue_item, session)
 
-        dispatch_lock_name = sha256(
-            json.dumps(
-                {
-                    "task_id": queue_item.task_id,
-                    "task": queue_item.execution_request.task,
-                    "target": queue_item.execution_request.target,
-                    "payload": queue_item.execution_request.payload,
-                    "meta": queue_item.execution_request.meta,
-                },
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
-        await DispatchLockManager.delete_where(
-            session,
-            col(DispatchLock.created_at) < (utc_now() - timedelta(seconds=30)),
-            name=dispatch_lock_name,
+
+async def _dispatch_queue_item(
+    queue_item: TaskHistory, session: AsyncSession
+) -> TaskHistory:
+    engine_name = session.get_bind().name
+    if queue_item.status != TaskHistoryStatusEnum.PENDING:
+        raise HTTPConflictException("Queue item is not in a pending state.")
+
+    dispatch_lock_name = sha256(
+        json.dumps(
+            {
+                "task_id": queue_item.task_id,
+                "task": queue_item.execution_request.task,
+                "target": queue_item.execution_request.target,
+                "payload": queue_item.execution_request.payload,
+                "meta": queue_item.execution_request.meta,
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    await DispatchLockManager.delete_where(
+        session,
+        col(DispatchLock.created_at) < (utc_now() - timedelta(seconds=30)),
+        name=dispatch_lock_name,
+    )
+    try:
+        dispatch_lock = await DispatchLockManager.create(
+            session, DispatchLock(name=dispatch_lock_name)
         )
-        try:
-            dispatch_lock = await DispatchLockManager.create(
-                session, DispatchLock(name=dispatch_lock_name)
-            )
-        except IntegrityError as exc:
-            raise HTTPConflictException("Identical dispatch in progress.") from exc
+    except IntegrityError as exc:
+        raise HTTPConflictException("Identical dispatch in progress.") from exc
 
-        try:
-            meta_where_clauses = []
-            if queue_item.execution_request.meta:
-                meta_where_clauses = [
-                    func_json_extract(
-                        engine_name, TaskHistory.execution_request, "meta", field
-                    )
-                    == value
-                    for field, value in queue_item.execution_request.meta.items()
-                ]
-            if identical_task := (
-                await TaskHistoryManager.first(
-                    session,
-                    func_json_extract(
-                        engine_name, TaskHistory.execution_request, "task"
-                    )
-                    == queue_item.execution_request.task,
-                    func_json_extract(
-                        engine_name, TaskHistory.execution_request, "target"
-                    )
-                    == queue_item.execution_request.target,
-                    func_json_extract(
-                        engine_name, TaskHistory.execution_request, "payload"
-                    )
-                    == queue_item.execution_request.payload,
-                    *meta_where_clauses,
-                    col(TaskHistory.status).in_(
-                        [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
-                    ),
-                    col(TaskHistory.id) != queue_item.id,
-                    task_id=queue_item.task_id,
+    try:
+        meta_where_clauses = []
+        if queue_item.execution_request.meta:
+            meta_where_clauses = [
+                func_json_extract(
+                    engine_name, TaskHistory.execution_request, "meta", field
                 )
-            ):
-                raise HTTPConflictException(
-                    f"Identical queue item already running ({identical_task.id})."
-                )
-            task = await TaskManager.get_root_task(session, queue_item.task)
-            executor = get_executor_for_task(task)
-            return await executor.dispatch_task(session, queue_item, task)
-        finally:
-            await DispatchLockManager.delete(session, dispatch_lock)
+                == value
+                for field, value in queue_item.execution_request.meta.items()
+            ]
+        if identical_task := (
+            await TaskHistoryManager.first(
+                session,
+                func_json_extract(engine_name, TaskHistory.execution_request, "task")
+                == queue_item.execution_request.task,
+                func_json_extract(engine_name, TaskHistory.execution_request, "target")
+                == queue_item.execution_request.target,
+                func_json_extract(engine_name, TaskHistory.execution_request, "payload")
+                == queue_item.execution_request.payload,
+                *meta_where_clauses,
+                col(TaskHistory.status).in_(
+                    [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
+                ),
+                col(TaskHistory.id) != queue_item.id,
+                task_id=queue_item.task_id,
+            )
+        ):
+            raise HTTPConflictException(
+                f"Identical queue item already running ({identical_task.id})."
+            )
+        task = await TaskManager.get_root_task(session, queue_item.task)
+        executor = get_executor_for_task(task)
+        return await executor.dispatch_task(session, queue_item, task)
+    finally:
+        await DispatchLockManager.delete(session, dispatch_lock)
 
 
 async def sync_running_items() -> None:

@@ -111,12 +111,15 @@ def prepare_task_history(
     if task.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
+    if not (target := execution_data.meta.get("target")):
+        raise ValueError("Execution target is required in execution data meta.")
+
     return TaskHistory(
         task_id=task.id,
         task=task,
         execution_request=TaskExecutionRequest(
             task=task.name,
-            target=execution_data.meta.get("target", "all"),
+            target=target,
             meta=execution_data.meta,
             payload=execution_data.payload,
             tracking={"evaluation_id": ""},
@@ -127,25 +130,6 @@ def prepare_task_history(
 
 
 PreparedTaskHistory = Annotated[TaskHistory, Depends(prepare_task_history)]
-
-
-async def create_task_history(
-    session: SessionDep,
-    task_history: PreparedTaskHistory,
-) -> TaskHistory:
-    """Record a prepared history of a task execution request.
-
-    :param session: The asynchronous database session.
-    :type session: AsyncSession
-    :param task_history: The task history to record.
-    :type task_history: PreparedTaskHistory
-    :return: The logged TaskHistory entry.
-    :rtype: TaskHistory
-    """
-    return await TaskHistoryManager.save(session, task_history)
-
-
-CreatedTaskHistory = Annotated[TaskHistory, Depends(create_task_history)]
 
 
 async def get_task_history(
