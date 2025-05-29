@@ -27,7 +27,6 @@ class StorageType(StrEnum):
 
 class S3Provider(StrEnum):
     """Represents native s3 or plugins what use s3 protocol."""
-
     AWS = "aws"
     MINIO = "minio"
     GCP = "gcp"
@@ -46,32 +45,30 @@ class CompressionAlgorithm(StrEnum):
 
 class LogLevel(StrEnum):
     """Represents log verbosity of PBM service."""
-
-    DEBUG = "debug"
-    INFO = "info"
-    WARN = "warn"
-    ERROR = "error"
-
-
-class LogOutput(StrEnum):
-    """Determines output of log."""
-
-    STDOUT = "stdout"
-    FILE = "file"
-    SYSLOG = "syslog"
-
-
+    debug = 'D'
+    info = 'I'
+    warn = 'W'
+    error = 'E'
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
 
-    :param pbm_config_payload: The PBM payload to parse from CLI.
-    :type pbm_config_payload: RequiredStr | EmptyStrToNone
-    """
+    :param pitr_enabled: Enable or disable Oplog fetching.
+    :type pitr_enabled: bool
+    :param log_path: The path to the log file. The file is created if it doesn't exist. The default value is /dev/stderr
+    :type log_path: RequiredStr | EmptyStrToNone
+    :param log_level: The log severity level. Supported levels are (from low to high): D - Debug (default), I - Info, W - Warning, E - Error, F - Fatal.
+    :type log_level: StrEnum
+    :param log_json: Output log messages in JSON format. If unchecked, logs are written in the default text format.
+    :type log_json: bool
 
+    """
     pitr_enabled: bool
+    log_path: str
+    log_level: LogLevel
+    log_json: bool
 
     @classmethod
-    @field_validator("pitr_enabled")
+    @field_validator("pitr_enabled", "log_json")
     def empty_to_false(cls, *, v: bool) -> bool:
         """If pitr checkbox is unchecked, represent as false."""
         if v is None:

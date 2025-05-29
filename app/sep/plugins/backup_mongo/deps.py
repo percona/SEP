@@ -44,7 +44,10 @@ async def build_backup_task_payload(
     :rtype: TaskWrite
     """
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
-    pbm_config = {"set": f"pitr.enabled={'True' if form.pitr_enabled else 'False'}"}
+    pbm_config = {
+        #"set": f"""pitr.enabled={"True" if form.pitr_enabled else "False"} log.path={form.log_path} log.level={form.log_level} log.json={"True" if form.log_json else "False"}"""
+        "set": f"""pitr.enabled={"True" if form.pitr_enabled else "False"} log.path={form.log_path}"""
+    }
     pbm_config_yaml = yaml.dump(
         jsonable_encoder(pbm_config, by_alias=True, exclude_none=True)
     )

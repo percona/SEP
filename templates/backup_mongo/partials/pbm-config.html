@@ -1,94 +1,93 @@
 <div id="pbm_config" style="display: none;">
     <fieldset>
-        <legend>PBM Config</legend>
+        <legend>s3 storage options</legend>
         <div id="s3_options">
-            <label for="s3_provider">S3 Provider:</label>
-            <select id="s3_provider" name="pbm_config.storage.s3.provider">
-                <option value="aws">AWS</option>
-                <option value="minio">MinIO</option>
-                <option value="gcp">GCP</option>
-            </select>
-            <label for="s3_region">Region:</label>
-            <input type="text" id="s3_region" name="pbm_config.storage.s3.region">
-            <label for="s3_bucket">Bucket Name:</label>
-            <input type="text" id="s3_bucket" name="pbm_config.storage.s3.bucket">
-            <label for="s3_prefix">Prefix (Optional):</label>
-            <input type="text" id="s3_prefix" name="pbm_config.storage.s3.prefix">
-            <label for="s3_endpoint_url">Endpoint URL (Optional):</label>
-            <input type="text"
-                   id="s3_endpoint_url"
-                   name="pbm_config.storage.s3.endpoint_url">
-            <label for="s3_endpoint_url_map">Endpoint URL Map (Optional):</label>
-            <input type="text"
-                   id="s3_endpoint_url_map"
-                   name="pbm_config.storage.s3.endpoint_url_map">
-            <label for="s3_access_key_id">Access Key ID:</label>
-            <input type="text"
-                   id="s3_access_key_id"
-                   name="pbm_config.storage.s3.access_key_id">
-            <label for="s3_secret_access_key">Secret Access Key:</label>
-            <input type="text"
-                   id="s3_secret_access_key"
-                   name="pbm_config.storage.s3.secret_access_key">
-            <label for="s3_session_token">Session Token (Optional):</label>
-            <input type="text"
-                   id="s3_session_token"
-                   name="pbm_config.storage.s3.session_token">
-            <label for="s3_upload_part_size">Upload Part Size (Bytes, Optional):</label>
-            <input type="number"
-                   id="s3_upload_part_size"
-                   name="pbm_config.storage.s3.upload_part_size">
-            <label for="s3_max_upload_parts">Max Upload Parts (Optional):</label>
-            <input type="number"
-                   id="s3_max_upload_parts"
-                   name="pbm_config.storage.s3.max_upload_parts">
-            <label for="s3_storage_class">Storage Class (Optional):</label>
-            <input type="text"
-                   id="s3_storage_class"
-                   name="pbm_config.storage.s3.storage_class">
+            <label>S3 Provider:
+                <select id="s3_provider" name="pbm_config.storage.s3.provider">
+                    <option value="aws">AWS</option>
+                    <option value="minio">MinIO</option>
+                    <option value="gcp">GCP</option>
+                </select>
+            </label>
+            <label>Region: <input type="text" id="s3_region" name="s3_region"></label>
+            <label>Bucket Name: <input type="text" id="s3_bucket" name="s3_bucket"></label>
+            <label>Prefix (Optional): <input type="text" id="s3_prefix" name="s3_prefix"></label>
+            <label>Endpoint URL (Optional): <input type="text" id="s3_endpoint_url" name="s3_endpoint_url"></label>
+            <label>Upload Part Size (Bytes, Optional): <input type="number" id="s3_upload_part_size" name="s3_upload_part_size"></label>
+            <label>Max Upload Parts (Optional): <input type="number" id="s3_max_upload_parts" name="s3_max_upload_parts"></label>
+            <label>Storage Class (Optional): <input type="text" id="pbm_s3_storage_class" name="pbm_s3_storage_class"></label>
         </div>
     </fieldset>
     <fieldset>
+        <legend>PITR Options</legend>
         <div class="checkbox-group">
             <label class="checkbox">
-                <span class="label">PITR:</span>
+                <span class="label">PITR Enabled:</span>
                 <input type="checkbox" id="pbm_pitr_enabled" name="pitr_enabled" checked>
-                <input type="hidden"
-                       id="pbm_pitr_enabled_unchecked"
-                       name="pitr_enabled"
-                       value="false">
+                <input type="hidden" id="pbm_pitr_enabled_unchecked" name="pitr_enabled" value="false">
                 <div class="checkmark" id="pitr_checkbox_div">
                     <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                     <span class="material-symbols-outlined checked">check_box</span>
                 </div>
             </label>
         </div>
-        <label for="pitr_oplog_span_min">Oplog Span (Minutes):</label>
-        <input type="number"
-               id="pitr_oplog_span_min"
-               name="pbm_config.pitr.oplog_span_min">
-        <label for="pitr_compression">Compression:</label>
-        <select id="pitr_compression" name="pbm_config.pitr.compression">
-            <option value="gzip">gzip</option>
-            <option value="snappy">snappy</option>
-            <option value="lz4">lz4</option>
-            <option value="s2">s2</option>
-            <option value="pgzip">pgzip</option>
-            <option value="zstd">zstd</option>
-        </select>
+        <label>Oplog Span (Minutes):
+            <input type="number" id="pitr_oplog_span_min" name="pbm_config.pitr.oplog_span_min">
+        </label>
+
+        <label>Compression:
+            <select id="pitr_compression" name="pbm_config.pitr.compression">
+                <option value="gzip">gzip</option>
+                <option value="snappy">snappy</option>
+                <option value="lz4">lz4</option>
+                <option value="s2">s2</option>
+                <option value="pgzip">pgzip</option>
+                <option value="zstd">zstd</option>
+            </select>
+        </label>
+
     </fieldset>
     <fieldset>
         <legend>Backup Options</legend>
-        <label for="backup_priority">Node Priority for Backup (Comma-separated, Optional):</label>
-        <input type="text" id="backup_priority" name="pbm_config.backup.priority">
-        <label for="backup_compression">Backup Compression:</label>
-        <select id="backup_compression" name="pbm_config.backup.compression">
-            <option value="gzip">gzip</option>
-            <option value="snappy">snappy</option>
-            <option value="lz4">lz4</option>
-            <option value="s2">s2</option>
-            <option value="pgzip">pgzip</option>
-            <option value="zstd">zstd</option>
-        </select>
+        <label>Node Priority for Backup (Comma-separated, Optional):
+            <input type="text" id="backup_priority" name="pbm_config.backup.priority">
+        </label>
+
+        <label>Backup Compression:
+            <select id="pbm_backup_compression" name="backup_compression">
+                <option value="gzip">gzip</option>
+                <option value="snappy">snappy</option>
+                <option value="lz4">lz4</option>
+                <option value="s2">s2</option>
+                <option value="pgzip">pgzip</option>
+                <option value="zstd">zstd</option>
+            </select>
+        </label>
+
+    </fieldset>
+    <fieldset>
+        <legend>Logging Options</legend>
+        <label for="log_level"> Log Level:
+            <select id="pbm_log_level" name="log_level">
+                <option value="D">debug</option>
+                <option value="I">info</option>
+                <option value="W">warn</option>
+                <option value="E">error</option>
+            </select>
+        </label>
+        <label for="log_path"> Log Path:
+            <input type="text" id="pbm_log_path" name="log_path">
+        </label>
+        <div class="checkbox-group">
+            <label class="checkbox">
+                <span class="label">Json Format:</span>
+                <input type="checkbox" id="pbm_log_json" name="log_json" checked>
+                <input type="hidden" id="pbm_log_json_unchecked" name="log_json_unchecked" value="false">
+                <div class="checkmark" id="log_json_checkbox_div">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+            </label>
+        </div>
     </fieldset>
 </div>
