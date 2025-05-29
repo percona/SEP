@@ -1830,38 +1830,9 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
 class Restorer(object):  # pylint: disable=too-many-instance-attributes
     """ Parent Restorer Class """
-    def __init__(self, options):
+    def __init__(self):
 
         self.logger = None
-        self.config_path = options.config_path
-        self.backup_path = options.backup_path
-        self.backup_type = options.backup_type
-        self.ssh_user = options.ssh_user
-        self.ssh_port = options.ssh_port
-        self.ssh_key = options.ssh_key
-        self.run_alias = options.alias
-        self.continue_replication = options.continue_replication
-        # xtrabackup
-        self.restore_mycnf = options.restore_mycnf
-        self.skip_incrementals = options.skip_incrementals
-        self.datadir = options.datadir
-        self.custom_mysql_init_command = options.custom_mysql_init_command
-        self.xtrabackup_bin_cmd = options.xtrabackup_bin_cmd
-        self.keyring_file_data = options.keyring_file_data
-        # myloader
-        self.dest_host = options.dest_host
-        self.dest_port = options.dest_port
-        self.local_path = options.local_path
-        self.overwrite_tables = options.overwrite_tables
-        self.skip_databases = options.skip_databases
-        self.include_databases = options.include_databases
-        self.myloader_threads = options.myloader_threads
-        # binlog
-        self.start_position = options.start_position
-        self.start_file = options.start_file
-        self.stop_position = options.stop_position
-        self.stop_file = options.stop_file
-        self.use_sql_file = options.use_sql_file
 
     def run(self):
         local_cfg = LocalConfig(self.config_path)
@@ -1881,44 +1852,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         # Read config if not manual run
         if self.backup_path is None:
             # Obtain server list
-            servers = [s for s in local_cfg.server_data_list]
-        else:
-            servers = []
-            rest_conf = {}
-            rest_conf['BACKUP_SOURCE'] = self.backup_path
-            rest_conf['BACKUP_TYPE'] = self.backup_type
-            rest_conf['DATADIR'] = self.datadir
-            rest_conf['SSH_USER'] = self.ssh_user
-            rest_conf['SSH_PORT'] = self.ssh_port
-            rest_conf['SSH_KEY'] = self.ssh_key
-            rest_conf['CONTINUE_REPLICATION'] = self.continue_replication
-            rest_conf['FROM_COMMANDLINE'] = True
-            if self.backup_type == 'X':
-                rest_conf['SKIP_INCREMENTALS'] = self.skip_incrementals
-                rest_conf['CUSTOM_MYSQL_INIT_COMMAND'] = self.custom_mysql_init_command
-                rest_conf['RESTORE_MYCNF'] = self.restore_mycnf
-                rest_conf['XTRABACKUP_BIN_CMD'] = self.xtrabackup_bin_cmd
-                rest_conf['KEYRING_FILE_DATA'] = self.keyring_file_data
-            elif self.backup_type == 'M':
-                rest_conf['DEST_HOST'] = self.dest_host
-                rest_conf['DEST_PORT'] = self.dest_port
-                rest_conf['LOCAL_PATH'] = self.local_path
-                rest_conf['OVERWRITE_TABLES'] = self.overwrite_tables
-                if self.skip_databases:
-                    rest_conf['SKIP_DATABASES'] = self.skip_databases
-                if self.include_databases:
-                    rest_conf['INCLUDE_DATABASES'] = self.include_databases
-                rest_conf['MYLOADER_THREADS'] = self.myloader_threads
-            elif self.backup_type == 'B':
-                rest_conf['START_POSITION'] = self.start_position
-                rest_conf['START_FILE'] = self.start_file
-                rest_conf['STOP_POSITION'] = self.stop_position
-                rest_conf['STOP_FILE'] = self.stop_file
-                rest_conf['USE_SQL_FILE'] = self.use_sql_file
-                rest_conf['LOCAL_PATH'] = self.local_path
-
-            servers.append(rest_conf)
-            self.logger.info('>>>>>>>>>>>>>>>>>> Ondemand Restore.')
+            servers = [s for s in local_cfg.server_data_list]            
 
         start_time = time.time()
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore started.')
@@ -2657,122 +2591,9 @@ class MyConfigParser(configparser.ConfigParser):
 def main():
     """Main"""
     preflight_check()
-    options = parse_args()
 
-    restore_runner = Restorer(options)
+    restore_runner = Restorer()
     restore_runner.run()
-
-
-def parse_args():
-    """Parse Arguments"""
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config-path',
-                        help='File name of the YAML config'
-                    )
-    parser.add_argument('--backup-type',
-                        default='X',
-                        help='Backup type [X-M-B]'
-                    )
-    parser.add_argument('--backup-path',
-                        help='Backup source path'
-                    )
-    parser.add_argument('--alias',
-                        help='Restore process to run'
-                    )
-    parser.add_argument('--ssh-user',
-                        default='percona',
-                        help='SSH user to connect between source and dest when stream'
-                    )
-    parser.add_argument('--ssh-port',
-                        default='22',
-                        help='SSH port to connect between source and dest when stream'
-                    )
-
-    parser.add_argument('--ssh-key',
-                        default='id_rsa',
-                        help='SSH Key to connect between source and dest when stream'
-                        )
-
-    parser.add_argument('--continue-replication',
-                        default=False,
-                        help='Continue Replication')
-
-    xtrab = parser.add_argument_group('Xtrabackup [X] Options',
-                                      'Options that are only used by Xtrabackup')
-    xtrab.add_argument('--datadir',
-                        help='MySQL datadir.'
-                    )
-    xtrab.add_argument('--skip-incrementals',
-                        help='Skip restoring incremental backups'
-                    )
-    xtrab.add_argument('--custom-mysql-init-command',
-                        help='Set mysql init command, ie. systemctl'
-                    )
-    xtrab.add_argument('--restore-mycnf',
-                        action="store_true",
-                        default=False,
-                        help='Restore my.cnf files.'
-                    )
-    xtrab.add_argument('--xtrabackup-bin-cmd',
-                       default='xtrabackup',
-                       help='Default Xtrabackup binary'
-                    )
-    xtrab.add_argument('--keyring-file-data',
-                       help='Keyring file'
-                    )
-
-    myload = parser.add_argument_group('Myloader [M] Options',
-                                       'Options that are only used by Myloader')
-    myload.add_argument('--dest-host',
-                        default='localhost',
-                        help='destination host for myloader restore'
-                    )
-    myload.add_argument('--dest-port',
-                        default='3306',
-                        help='port of destination mysql instance'
-                    )
-    myload.add_argument('--local-path',
-                        default='/tmp',
-                        help='path to temporary store mydumper backup while restoring'
-                    )
-    myload.add_argument('--overwrite-tables',
-                        action="store_true",
-                        default=False,
-                        help='Sets myloader --overwrite-tables option'
-                    )
-    myload.add_argument('--skip-databases',
-                        help='mydumper only comma separated databases to exclude'
-                    )
-    myload.add_argument('--include-databases',
-                        help='mydumper only comma separated databases to include'
-                    )
-    myload.add_argument('--myloader-threads',
-                        default=4,
-                        help='myloader threads used for restoration'
-                    )
-
-    binl = parser.add_argument_group('Binlog [B] Options', 'Options that are only used by binlogs')
-    binl.add_argument('--start-file',
-                        help='First binlog file to restore.'
-                    )
-    binl.add_argument('--start-position',
-                        default=0,
-                        help='First binlog position to restore.'
-                    )
-    binl.add_argument('--stop-file',
-                        help='Last binlog file to restore.'
-                    )
-    binl.add_argument('--stop-position',
-                        help='Last binlog position to restore.'
-                    )
-    binl.add_argument('--use-sql-file',
-                        action="store_true",
-                        default=False,
-                        help='Use intermediate sql file to apply binlogs'
-                    )
-
-    options = parser.parse_args()
-    return options
 
 
 if __name__ == "__main__":
