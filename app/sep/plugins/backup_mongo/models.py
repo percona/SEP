@@ -16,20 +16,10 @@ class BackupType(EnumFieldMixin, StrEnum):
     PBM_SNAPSHOT = "pbm_snapshot"
     PBM_CONFIG = "pbm_config"
 
-
-class StorageType(StrEnum):
-    """Represents whe PBM should keep datafiles."""
-
-    S3 = "s3"
-    FILESYSTEM = "filesystem"
-    AZUER = "azure"
-
-
 class S3Provider(StrEnum):
     """Represents native s3 or plugins what use s3 protocol."""
     AWS = "aws"
-    MINIO = "minio"
-    GCP = "gcp"
+    GCS = "gcs"
 
 
 class CompressionAlgorithm(StrEnum):
@@ -63,10 +53,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     """
     pitr_enabled: bool
-    log_path: str
-    log_level: LogLevel
-    log_json: bool
-
+    s3_provider: S3Provider
     @classmethod
     @field_validator("pitr_enabled", "log_json")
     def empty_to_false(cls, *, v: bool) -> bool:
