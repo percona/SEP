@@ -27,8 +27,9 @@ class S3RegionForm(BaseCaseInsensitiveModel):
     provider: S3Provider
     region: str
 
-    @field_validator("region")
     @classmethod
+    @field_validator("region")
+    
     def validate_region(cls, value: str, values: dict) -> str:
         provider = values.get("provider")
         if provider == "aws":
@@ -63,8 +64,9 @@ class S3RegionForm(BaseCaseInsensitiveModel):
 class S3BucketForm(BaseCaseInsensitiveModel):
     bucket_name: str
 
-    @field_validator("bucket_name")
     @classmethod
+    @field_validator("bucket_name")
+    
     def validate_bucket_name(cls, value: str) -> str:
         """
         Validates an AWS S3 bucket name based on AWS rules.
@@ -97,9 +99,10 @@ class S3BucketForm(BaseCaseInsensitiveModel):
     
 class S3PrefixForm(BaseCaseInsensitiveModel):
     prefix: str
-
-    @field_validator("prefix")
+    
     @classmethod
+    @field_validator("prefix")
+    
     def validate_prefix(cls, value: str) -> str:
         """
         Validates an S3 prefix, disallowing spaces.
@@ -119,8 +122,9 @@ class S3PrefixForm(BaseCaseInsensitiveModel):
 class EndpointUrlForm(BaseCaseInsensitiveModel):
     endpoint_url: str
 
-    @field_validator("endpoint_url")
     @classmethod
+    @field_validator("endpoint_url")
+    
     def validate_endpoint_url(cls, value: str) -> str:
         """
         Validates an endpoint URL. Allows None or a valid URL format.
@@ -141,8 +145,9 @@ class EndpointUrlForm(BaseCaseInsensitiveModel):
 class UploadPartSizeForm(BaseCaseInsensitiveModel):
     upload_part_size: int
 
-    @field_validator("upload_part_size")
     @classmethod
+    @field_validator("upload_part_size")
+    
     def validate_upload_part_size(cls, value: int) -> int:
         """
         Validates the upload part size for S3 multipart uploads.
@@ -172,8 +177,9 @@ class UploadPartSizeForm(BaseCaseInsensitiveModel):
 class MaxUploadPartsForm(BaseCaseInsensitiveModel):
     max_upload_parts: int
 
-    @field_validator("max_upload_parts")
     @classmethod
+    @field_validator("max_upload_parts")
+
     def validate_max_upload_parts(cls, value: int) -> int:
         """
         Validates the maximum number of parts for an S3 multipart upload.
@@ -200,8 +206,9 @@ class MaxUploadPartsForm(BaseCaseInsensitiveModel):
 class NumMaxRetriesForm(BaseCaseInsensitiveModel):
     num_max_retries: int = None
 
-    @field_validator("num_max_retries")
     @classmethod
+    @field_validator("num_max_retries")
+    
     def validate_num_max_retries(cls, value: int) -> int:
         """
         Validates the maximum number of retries.
@@ -221,8 +228,9 @@ class NumMaxRetriesForm(BaseCaseInsensitiveModel):
 class MinRetryDelayForm(BaseCaseInsensitiveModel):
     min_retry_delay: int = None
 
-    @field_validator("min_retry_delay")
     @classmethod
+    @field_validator("min_retry_delay")
+    
     def validate_min_retry_delay(cls, value: int) -> int:
         """
         Validates the minimum retry delay in seconds.
@@ -242,8 +250,9 @@ class MinRetryDelayForm(BaseCaseInsensitiveModel):
 class MaxRetryDelayForm(BaseCaseInsensitiveModel):
     max_retry_delay: int
 
-    @field_validator("max_retry_delay")
     @classmethod
+    @field_validator("max_retry_delay")
+
     def validate_max_retry_delay(cls, value: int) -> int:
         """
         Validates the maximum retry delay in seconds.
@@ -282,25 +291,18 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     :param pitr_enabled: Enable or disable Oplog fetching.
     :type pitr_enabled: bool
-    :param log_path: The path to the log file. The file is created if it doesn't exist. The default value is /dev/stderr
-    :type log_path: RequiredStr | EmptyStrToNone
-    :param log_level: The log severity level. Supported levels are (from low to high): D - Debug (default), I - Info, W - Warning, E - Error, F - Fatal.
-    :type log_level: StrEnum
-    :param log_json: Output log messages in JSON format. If unchecked, logs are written in the default text format.
-    :type log_json: bool
-
     """
     pitr_enabled: bool
-    provider: S3Provider
-    region: S3RegionForm
-    bucket_name: S3BucketForm
-    prefix: S3PrefixForm
-    endpoint_url: EndpointUrlForm
-    upload_part_size: UploadPartSizeForm
-    max_upload_parts: MaxUploadPartsForm
-    num_max_retries: NumMaxRetriesForm
-    max_retry_delay: MaxRetryDelayForm
-    min_retry_delay: MinRetryDelayForm
+    provider: str = S3Provider
+    region: str = S3RegionForm
+    bucket_name: str =S3BucketForm
+    prefix: str = S3PrefixForm
+    endpoint_url: str = EndpointUrlForm
+    upload_part_size: int = UploadPartSizeForm
+    max_upload_parts: int = MaxUploadPartsForm
+    num_max_retries: int = NumMaxRetriesForm
+    max_retry_delay: int = MaxRetryDelayForm
+    min_retry_delay: int = MinRetryDelayForm
     
     
     

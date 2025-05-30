@@ -47,7 +47,16 @@ async def build_backup_task_payload(
     
     pbm_config_set_clause = f"""\
     pitr.enabled={"True" if form.pitr_enabled else "False"}
-    storage.s3.provider={form.s3_provider}
+    storage.s3.provider={form.provider}
+    region={form.region}
+    bucket_name={form.bucket_name}
+    prefix={form.prefix}
+    endpoint_url={form.endpoint_url}
+    upload_part_size={form.upload_part_size}
+    max_upload_parts={form.max_upload_parts}
+    num_max_retries={form.num_max_retries}
+    min_retry_delay={form.min_retry_delay}
+    max_retry_delay={form.max_retry_delay}
     """.replace('\n', ' ')
     
     pbm_config = {
