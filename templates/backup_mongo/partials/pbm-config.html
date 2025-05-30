@@ -3,18 +3,20 @@
         <legend>s3 storage options</legend>
         <div id="s3_options">
             <label>S3 Provider:
-                <select id="s3_provider" name="s3_provider">
+                <select id="provider" name="provider">
                     <option value="aws">AWS</option>
                     <option value="gcs">GCS</option>
                 </select>
             </label>
-            <label>Region: <input type="text" id="s3_region" name="s3_region"></label>
-            <label>Bucket Name: <input type="text" id="s3_bucket" name="s3_bucket"></label>
-            <label>Prefix (Optional): <input type="text" id="s3_prefix" name="s3_prefix"></label>
-            <label>Endpoint URL (Optional): <input type="text" id="s3_endpoint_url" name="s3_endpoint_url"></label>
-            <label>Upload Part Size (Bytes, Optional): <input type="number" id="s3_upload_part_size" name="s3_upload_part_size"></label>
-            <label>Max Upload Parts (Optional): <input type="number" id="s3_max_upload_parts" name="s3_max_upload_parts"></label>
-            <label>Storage Class (Optional): <input type="text" id="pbm_s3_storage_class" name="pbm_s3_storage_class"></label>
+            <label>Region: <input type="text" id="region" name="region"></label>
+            <label>Bucket Name: <input type="text" id="bucket_name" name="bucket_name"></label>
+            <label>Prefix: <input type="text" id="prefix" name="prefix"></label>
+            <label>Endpoint URL: <input type="text" id="endpoint_url" name="endpoint_url"></label>
+            <label>Upload Part Size (Bytes): <input type="number" id="upload_part_size" name="upload_part_size"></label>
+            <label>Max Upload Parts: <input type="number" id="max_upload_parts" name="max_upload_parts"></label>
+            <label> NumMaxRetries <input type="number" id="num_max_retries" name="num_max_retries"></label>
+            <label> MinRetryDelay <input type="number" id="min_retry_delay" name="min_retry_delay"></label>
+            <label> MaxRetryDelay <input type="number" id="max_retry_delay" name="max_retry_delay"></label>
         </div>
     </fieldset>
     <fieldset>
