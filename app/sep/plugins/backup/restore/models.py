@@ -93,7 +93,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     :param skip_incrementals: Whether to skip incremental backups during restore.
     :type skip_incrementals: bool
     :param datadir: MySQL data directory path.
-    :type datadir: RequiredStr | EmptyStrToNone
+    :type datadir: RequiredStr
     :param kill_mysql: Whether to kill MySQL process before restore.
     :type kill_mysql: bool
     :param xb_prepare_memory: Memory limit for xtrabackup prepare operation.
@@ -137,7 +137,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     pre_script: RequiredStr | EmptyStrToNone = None
     post_script: RequiredStr | EmptyStrToNone = None
     skip_incrementals: bool = False
-    datadir: RequiredStr | EmptyStrToNone = None
+    datadir: RequiredStr
     kill_mysql: bool = False
     xb_prepare_memory: RequiredStr | EmptyStrToNone = None
     xb_parallel: int | EmptyStrToNone = Field(default=4)
