@@ -18,6 +18,7 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,11 @@ def prepare_task_history(
     if task.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
-    if not (target := execution_data.meta.get("target")):
+    if task.owner == TaskOwner.ALTERS:
+        target = task.data["Constraints"][0]["RTarget"]
+    else:
+        target = execution_data.meta.get("target")
+    if not target:
         raise ValueError("Execution target is required in execution data meta.")
 
     return TaskHistory(
