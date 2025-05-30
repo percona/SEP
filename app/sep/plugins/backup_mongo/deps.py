@@ -46,9 +46,9 @@ async def build_backup_task_payload(
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
     
     pbm_config_set_clause = f"""\
-        pitr.enabled={"True" if form.pitr_enabled else "False"}
-        storage.s3.provider={form.s3_provider}
-        """.replace('\n', ' ')
+    pitr.enabled={"True" if form.pitr_enabled else "False"}
+    storage.s3.provider={form.s3_provider}
+    """.replace('\n', ' ')
     
     pbm_config = {
         "set": pbm_config_set_clause
