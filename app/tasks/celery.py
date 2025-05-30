@@ -4,13 +4,13 @@ This module defines functions for executing tasks asynchronously via Celery,
 along with utility functions to process queue items.
 """
 
+import asyncio
 import json
 import logging
 from datetime import timedelta
 from hashlib import sha256
 from typing import Any
 
-from asgiref.sync import async_to_sync
 from celery import Task
 from celery.app.task import Context
 from celery.signals import task_revoked
@@ -43,6 +43,9 @@ from app.tasks.models import (
 )
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 logger = logging.getLogger(__name__)
 
 celery = create_celery("tasks")
@@ -58,7 +61,7 @@ def task_revoked_handler(*, request: Context, expired: bool, **kwargs: Any) -> N
         and expired
     ):
         logger.info("Deleting expired TaskHistory %s", queue_id)
-        async_to_sync(delete_task_history)(queue_id)
+        loop.run_until_complete(delete_task_history(queue_id))
 
 
 @celery.task(
@@ -78,8 +81,8 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     logger.info("Executing task with queue_id: %s", queue_id)
-    queue_item = async_to_sync(get_task_history)(queue_id)
-    return jsonable_encoder(async_to_sync(dispatch_queue_item)(queue_item))
+    queue_item = loop.run_until_complete(get_task_history(queue_id))
+    return jsonable_encoder(loop.run_until_complete(dispatch_queue_item(queue_item)))
 
 
 @celery.task(
@@ -102,16 +105,16 @@ def execute_task_by_name(
     :return: The data of the processed TaskHistory.
     :rtype: dict[str, Any]
     """
-    task_history = async_to_sync(prepare_periodic_task_history)(
-        task_name, execution_data
+    task_history = loop.run_until_complete(
+        prepare_periodic_task_history(task_name, execution_data)
     )
-    return jsonable_encoder(async_to_sync(dispatch_queue_item)(task_history))
+    return jsonable_encoder(loop.run_until_complete(dispatch_queue_item(task_history)))
 
 
 @celery.task
 def sync_running_tasks() -> None:
     """Define Celery task to sync running tasks."""
-    async_to_sync(sync_running_items)()
+    loop.run_until_complete(sync_running_items())
 
 
 @celery.task
@@ -122,7 +125,7 @@ def sync_task_history(task_history_id: int) -> None:
     :type task_history_id: int
     """
     logger.debug("Syncing task history %s", task_history_id)
-    async_to_sync(sync_queue_item)(task_history_id)
+    loop.run_until_complete(sync_queue_item(task_history_id))
     logger.debug("Finished syncing task history %s", task_history_id)
 
 
@@ -132,7 +135,7 @@ async def delete_task_history(queue_id: int) -> None:
     :param queue_id: The unique identifier of the queue item to delete.
     :type queue_id: int
     """
-    async_session = get_async_session_maker(create_new_engine=True)
+    async_session = get_async_session_maker()
     async with async_session() as session:
         await TaskHistoryManager.delete_where(session, id=queue_id)
 
@@ -145,7 +148,7 @@ async def get_task_history(queue_id: int) -> TaskHistory:
     :return: The TaskHistory object.
     :rtype: TaskHistory
     """
-    async_session = get_async_session_maker(create_new_engine=True)
+    async_session = get_async_session_maker()
     async with async_session() as session:
         return await TaskHistoryManager.get_or_404(
             session, select_related=[TaskHistory.task], id=queue_id
@@ -169,7 +172,7 @@ async def prepare_periodic_task_history(
         if execution_data
         else None
     )
-    async_session = get_async_session_maker(create_new_engine=True)
+    async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_executable_task_by_name(session, task_name)
         return prepare_task_history(task, execution_data)
@@ -192,7 +195,7 @@ async def dispatch_queue_item(
         raises a 400 Bad Request error.
     """
     if session is None:
-        async_session = get_async_session_maker(create_new_engine=True)
+        async_session = get_async_session_maker()
         async with async_session() as async_session:
             return await _dispatch_queue_item(queue_item, async_session)
     return await _dispatch_queue_item(queue_item, session)
@@ -273,7 +276,7 @@ async def sync_running_items() -> None:
     either not currently in progress or have been in progress for longer than the
     configured SYNC_LOCK_TTL. It then dispatches the sync task for those tasks.
     """
-    async_session = get_async_session_maker(create_new_engine=True)
+    async_session = get_async_session_maker()
     async with async_session() as session:
         result = await TaskHistoryManager.update_where(
             session,
@@ -303,7 +306,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
     :raises HTTPBadRequestException: If the task backend is unsupported,
         raises a 400 Bad Request error.
     """
-    async_session = get_async_session_maker(create_new_engine=True)
+    async_session = get_async_session_maker()
     async with async_session() as session:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
