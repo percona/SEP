@@ -19,7 +19,7 @@
     </style>
     <link rel="stylesheet"
           href="{{ url_for('static', path='/css/saved.css') }}">
-    {% if history or running_tasks %}
+    {% if history or history_dry_run or running_tasks %}
         <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
 {% endblock style %}
@@ -28,7 +28,7 @@
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/saved.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    {% if history or running_tasks %}
+    {% if history or history_dry_run or running_tasks %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
