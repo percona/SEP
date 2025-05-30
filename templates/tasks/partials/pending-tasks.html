@@ -5,6 +5,7 @@
                 <th>Name</th>
                 <th>Host</th>
                 <th>Created at</th>
+                <th>ETA</th>
                 <th>Options</th>
             </tr>
         </thead>
@@ -15,27 +16,23 @@
                     <td>{{ task_name }}</td>
                     <td>{{ task['execution_request']['target'] }}</td>
                     <td class="relativeTime">{{ task['created_at'] }}</td>
+                    {% set eta = task['execution_request'].get('eta') %}
+                    <td {% if eta %}class="relativeTime"{% endif %}>{{ eta }}</td>
                     <td>
                         <a href="{{ task_name }}">
                             <span class="material-symbols-outlined">visibility</span>
                         </a>
                         <a href="#" class="submitNextForm">
-                            <span class="material-symbols-outlined">delete_forever</span>
+                            <span class="material-symbols-outlined">cancel</span>
                         </a>
-                        <form action="{{ task_path }}/delete"
+                        <form action="{{ url_for('stop_task_execution', task_history_id=task['id']) }}"
                               method="post"
-                              style="display:none"
-                              id="deleteTaskForm">
+                              style="display:none">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
                         </form>
                     </td>
                 </tr>
             {% endfor %}
-            <tr>
-                <td>No tasks pending</td>
-                <td></td>
-                <td></td>
-                <td></td>
-            </tr>
         </tbody>
     </table>
 {% else %}

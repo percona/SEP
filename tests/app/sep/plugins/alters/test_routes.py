@@ -139,7 +139,9 @@ def test_alters_detail(
     mock_task_api_dep.get.assert_has_awaits(expected_awaits)
 
 
-@pytest.mark.usefixtures("_mock_get_alters_task_dep")
+@pytest.mark.usefixtures(
+    "_mock_get_alters_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
 def test_alters_execute(
     test_client,
     created_task,

@@ -10,6 +10,7 @@ from pydantic import FutureDatetime
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    HasNoConflictedRunningTasks,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -98,7 +99,7 @@ async def checksums_detail(
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
 )
 async def checksums_execute(

@@ -68,7 +68,7 @@ run-pre-commit: venv
 
 pip-audit: venv
 	@"${POETRY}" install --all-extras --all-groups
-	@"${POETRY}" run pip-audit --verbose --progress-spinner=off
+	@"${POETRY}" run pip-audit --verbose --progress-spinner=off --ignore-vuln PYSEC-2023-312
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app

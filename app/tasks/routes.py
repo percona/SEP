@@ -2,20 +2,28 @@
 
 import json
 import logging
+from datetime import timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
+from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
-from app.tasks.celery import execute_task_queue
+from app.core.utils import utc_now
+from app.tasks.celery import (
+    celery,
+    dispatch_queue_item,
+    execute_task_queue,
+    get_executor_for_task,
+)
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
-    CreatedTaskHistory,
     ExecutableTaskDep,
+    PreparedTaskHistory,
     SessionDep,
     TaskDep,
     TaskExecutor,
@@ -61,12 +69,19 @@ async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task
     dependencies=[IsAuthenticatedDep],
     response_model=TaskResponse,
 )
-async def delete_task(session: SessionDep, task_name: str) -> Task:
+async def delete_task(
+    session: SessionDep, celery_beat_session: CeleryBeatSessionDep, task_name: str
+) -> Task:
     """Delete a task."""
     logger.debug("Deleting task %s", task_name)
     # TODO(yan): Delete for real
     # SEP-170
-    return await TaskManager.delete_by_name(session=session, name=task_name)
+    task = await TaskManager.delete_by_name(session=session, name=task_name)
+    await PeriodicTaskManager.delete_where(
+        celery_beat_session,
+        PeriodicTaskManager.build_where_clause_by_task_names(task_name),
+    )
+    return task
 
 
 @router.get(
@@ -220,20 +235,39 @@ async def generate_task(
 @router.post(
     "/execute/{task_name}",
     dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
+    response_model=TaskHistoryResponse,
 )
 async def execute_task_name(
+    session: SessionDep,
+    queue_item: PreparedTaskHistory,
     task_name: str,
-    history_recorded: CreatedTaskHistory,
-) -> TaskHistoryResponse:
+) -> TaskHistory:
     """Send a task for execution."""
     logger.debug(
-        "Executing task %s at %s", task_name, history_recorded.execution_request.eta
+        "Dispatching task %s at %s",
+        task_name,
+        queue_item.execution_request.eta or utc_now(),
     )
-    execute_task_queue.apply_async(
-        args=[history_recorded.id], eta=history_recorded.execution_request.eta
-    )
-    return history_recorded
+    root_task = await TaskManager.get_root_task(session, queue_item.task)
+    executor = get_executor_for_task(root_task)
+    if queue_item.execution_request.target not in executor.get_hosts().values():
+        raise HTTPBadRequestException(
+            f"Failed to dispatch task: Target {queue_item.execution_request.target!r}"
+            f"is not available in {executor.__class__.__name__} for task {task_name!r}"
+        )
+    if queue_item.execution_request.eta:
+        history_recorded = await TaskHistoryManager.save(session, queue_item)
+        celery_task = execute_task_queue.apply_async(
+            args=[history_recorded.id],
+            eta=history_recorded.execution_request.eta,
+            expires=history_recorded.execution_request.eta
+            + timedelta(seconds=settings.CELERY.global_expire_seconds),
+        )
+        history_recorded.execution_request.tracking["celery_task_id"] = celery_task.id
+        return await TaskHistoryManager.save(
+            session, history_recorded, flag_modified_fields=["execution_request"]
+        )
+    return await dispatch_queue_item(queue_item, session)
 
 
 @router.get("/history/", dependencies=[IsAuthenticatedDep])
@@ -310,6 +344,17 @@ async def stop_task_history(
 ) -> TaskHistoryResponse:
     """Stop a task history."""
     logger.debug("Stopping task history %s", task_history.id)
+    if task_history.status == TaskHistoryStatusEnum.PENDING:
+        if celery_task_id := task_history.execution_request.tracking.get(
+            "celery_task_id"
+        ):
+            logger.debug(
+                "Cancelling pending task history %s with Celery task ID %s",
+                task_history.id,
+                celery_task_id,
+            )
+            celery.control.revoke(celery_task_id)
+        return await TaskHistoryManager.delete(session, task_history)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
         raise HTTPBadRequestException(
             f"Cannot stop task history {task_history.id} ({task_history.task.name}): "
