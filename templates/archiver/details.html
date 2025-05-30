@@ -138,7 +138,15 @@
     </section>
     <br>
     <br>
-    <br>
+    {% set pending_tasks = history|selectattr("status", "equalto", "pending")|list %}
+    {% if pending_tasks %}
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}

@@ -7,6 +7,7 @@
              flex-direction: column;
              align-items: start">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <input type="hidden" name="eta" class="eta-value" disabled>
     {% if task_data and task_data.get("ParameterizedJob") %}
         <fieldset style="width: 90%;">
             <legend style="font-size: 1.5em; font-weight: bold;">Configuration</legend>
@@ -94,7 +95,7 @@
       id="delete-task-form"
       data-confirm-message='Are you sure you want to delete task "{{ task.name }}"?'
       method="post"
-      action="{{ task.delete_url }}">
+      action="{{ task.delete_url or url_for('tasks_delete', task_name=task.name) }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
 <form id="schedule-task-form"
