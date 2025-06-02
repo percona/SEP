@@ -211,7 +211,7 @@
                        id="extra_args"
                        name="extra_args"
                        class="validate"
-                       placeholder=""
+                       placeholder="--databases=db1,db2 --tables=db1.tb1,db1.tb2"
                        style="width: 25em" />
             </label>
             <br>
@@ -391,6 +391,7 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
+    const extra_args = document.getElementById('extra_args');
     const form = document.getElementById('create_form');
     const createButton = form.querySelector('button[type="submit"]');
 
@@ -449,11 +450,17 @@
     });
 
     schemaSelect.addEventListener('change', function() {
+        extra_args.value = ""
         const hiddenTableInput = document.getElementById("table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         selectedSchema = this.value;
         populateTables(selectedService, selectedSchema);
     });
+
+    extra_args.addEventListener('change', function() {
+        schemaSelect.value = -1;
+        tableSelect.value = -1;
+    })
 
     recursion_method.addEventListener('change', function () {
         if (this.value === 'dsn') {

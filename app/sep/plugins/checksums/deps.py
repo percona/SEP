@@ -1,6 +1,7 @@
 """Define dependencies for the Checksums plugin."""
 
 import logging
+import shlex
 from typing import Annotated, Any
 
 from fastapi import Depends, Form, Request
@@ -101,10 +102,7 @@ async def build_checksums_task_payload(
     form.tables = tables.rstrip(",")
 
     if form.extra_args:
-        cleaned_args = [
-            f"{arg.strip()}," for arg in form.extra_args.split(",") if arg.strip()
-        ]
-        args.extend(cleaned_args)
+        args.extend(shlex.split(form.extra_args))
 
     # Mapping form fields to their respective arguments
     optional_args = {
