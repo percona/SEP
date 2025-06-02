@@ -17,7 +17,6 @@ import shlex
 import glob
 import datetime
 import resource
-from enum import auto, Enum, IntEnum
 from getpass import getuser
 from pathlib import Path
 from typing import Any
@@ -94,55 +93,16 @@ PROC_STAT_UTIME_IDX = 13
 PROC_STAT_STIME_IDX = 14
 
 LOGGING_NAME = {
-    'B': 'binlog.log',
-    'G': 'gcesnapshot.log',
-    'L': 'mylvmbackup.log',
-    'M': 'mydumper.log',
     'X': 'xtrabackup.log',
-    'T': 'tokudb.log',
-    'R': 'rdssnapshot.log',
-    'MC': 'mongodb_cluster.log',
-    'O': 'mongodb_oplog.log',
-    'H': 'psmdb_hot_backup.log',
-    'P': 'pgbackrest.log',
-    'E': 'ebssnapshot.log'
 }
 BACKUP_TYPES = {
-    'B': 'Binlogs',
-    'G': 'GCESnapshot',
-    'L': 'LVMBackup',
-    'M': 'Mydumper',
     'X': 'Xtrabackup',
-    'T': 'Tokudb',
-    'R': 'RDSSnapshot',
-    'MC': 'MongoDBCluster',
-    'O': 'Oplog',
-    'H': 'PSMDBHotBackup',
-    'P': 'PgBackRest',
-    'E': 'EBSSnapshot'
 }
 COMPRESSION_ALGORITHMS = {
-    'B': ['gzip'],
-    'G': [''],
-    'L': [''],
-    'M': ['gzip'],  # TODO: add support for zstd later
     'X': ['quicklz', 'zstd', 'lz4'],
-    'T': [''],
-    'R': [''],
-    'MC': [''],
-    'O': [''],
-    'H': [''],
-    'P': [''],
-    'E': [''],
 }
 BACKUP_DIR_REGEX = {
-    'B': r'\.[0-9]{6}',
-    'M': '^2[0-9]{7}$',
     'X': '^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$',
-    'I': '^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$',
-    'T': '^2[0-9]{7}$',
-    'H': '2[0-9]{7}$',
-    'O': r'[0-9]{10}'
 }
 
 VALID_POLICIES = ["mysql", "mongodb", "postgresql"]
@@ -792,10 +752,7 @@ class BaseBackup(object):
         if isinstance(logger, logging.Logger):
             self.logger = logger
         else:
-            if 'Restore' in self.__class__.__name__:
                 self.logger = logging_setup(self.logging_dir, 'restore.log')
-            else:
-                self.logger = logging_setup(self.logging_dir, LOGGING_NAME[self.backup_code])
 
         # Compression
         self.compress = server_data.get('COMPRESS', True)
@@ -1825,15 +1782,15 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         self.logger.info('Decompressing binlogs complete.')
 
-
-
-
 class Restorer(object):  # pylint: disable=too-many-instance-attributes
     """ Parent Restorer Class """
-    def __init__(self):
+    def __init__(self, options):
 
         self.logger = None
-
+        self.config_path = options.config_path
+        self.backup_type = None
+        self.backup_path = None
+    
     def run(self):
         local_cfg = LocalConfig(self.config_path)
 
@@ -1860,14 +1817,9 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         rst = None
         for server_data in servers:
             self.backup_type = server_data.get('BACKUP_TYPE')
+
             if self.backup_type == 'X':
                 rst = Xtrabackup(server_data)
-            if self.backup_type == 'M':
-                pass
-                #rst = Myloader(server_data)
-            if self.backup_type == 'B':
-                pass
-                #rst = Binlog(server_data)
             else:
                 self.logger.error('No Restores to run.')
 
@@ -1881,7 +1833,6 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
                 except Exception:
                     self.logger.exception('Unhandled exception occurred.')
                     rst.notify(STATUS_CRITICAL, 'Unhandled exception occurred during restore.')
-
         time_spent = time.time() - start_time
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore finished. Total duration: %s.',
                          format_seconds_to_hhmmss(time_spent))
@@ -1926,7 +1877,6 @@ class Xtrabackup(Restore):
 
         start_time = time.time()
 
-        self.logger.info("%%%%%%%%%%%%%%%%%%%%%%")
         self.logger.info(self.continue_replication)
         # set xb binary own log file
         self.xb_log_file = os.path.join(self.logging_dir, 'restore_xtrabackup-%s.log' % (time.strftime('%Y%m%d')))
@@ -1934,7 +1884,7 @@ class Xtrabackup(Restore):
         if self.pre_script:
             self.logger.info('Running pre restore script: %s', self.pre_script)
             self._run_script('PRE')
-
+        
         try:
             if self.backup_source.startswith('stream'):
                 self.is_stream = True
@@ -2591,10 +2541,23 @@ class MyConfigParser(configparser.ConfigParser):
 def main():
     """Main"""
     preflight_check()
-
-    restore_runner = Restorer()
+    options = parse_args()
+    
+    restore_runner = Restorer(options)
     restore_runner.run()
 
+def parse_args():
+    """Parse Arguments"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config-path',
+                        help='File name of the YAML config'
+                    )
+    options = parser.parse_args()
+    return options
 
 if __name__ == "__main__":
-    main()
+    if os.geteuid() != 0:
+        print("Re-running script with root privileges...")
+        os.execvp("sudo", ["sudo"] + [sys.executable] + sys.argv)
+    else:
+        main()
