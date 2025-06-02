@@ -32,7 +32,7 @@ try:
 except ImportError:
     import ConfigParser as configparser
     import StringIO
-    
+
 try:
     import pymysql as MySQLdb
 
@@ -1790,7 +1790,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         self.config_path = options.config_path
         self.backup_type = None
         self.backup_path = None
-    
+
     def run(self):
         local_cfg = LocalConfig(self.config_path)
 
@@ -1809,7 +1809,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         # Read config if not manual run
         if self.backup_path is None:
             # Obtain server list
-            servers = [s for s in local_cfg.server_data_list]            
+            servers = [s for s in local_cfg.server_data_list]
 
         start_time = time.time()
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore started.')
@@ -1884,7 +1884,7 @@ class Xtrabackup(Restore):
         if self.pre_script:
             self.logger.info('Running pre restore script: %s', self.pre_script)
             self._run_script('PRE')
-        
+
         try:
             if self.backup_source.startswith('stream'):
                 self.is_stream = True
@@ -2542,7 +2542,7 @@ def main():
     """Main"""
     preflight_check()
     options = parse_args()
-    
+
     restore_runner = Restorer(options)
     restore_runner.run()
 
