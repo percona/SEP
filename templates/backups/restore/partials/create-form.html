@@ -67,7 +67,7 @@
         margin: 1em 0;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
+<form action=""  id="create_form"  method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     <fieldset>
         <legend>Main Options</legend>
@@ -133,6 +133,7 @@
                        id="backup_source"
                        name="backup_source"
                        style="width: 25em"
+                       required
                        placeholder="127.0.0.1:/backup/xtrabackup/backup-gascan/latest" />
             </label>
             <br>
@@ -637,6 +638,9 @@
 
     const serviceSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
+
 
     let selectedService = null;
     let selectedSchema = null;
@@ -661,14 +665,17 @@
 
     function disableAllMyloaderFields(disabled) {
         myloaderContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+        serviceSelect.removeAttribute('required');
     }
 
     function disableAllXtrabackupFields(disabled) {
         xtrabackupContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+        serviceSelect.setAttribute('required', '');
     }
 
     function disableAllBinlogFields(disabled) {
         binlogContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+        serviceSelect.setAttribute('required', '');
     }
 
     function showContainer(container, show) {
@@ -679,6 +686,10 @@
             container.classList.add('hidden');
             container.classList.remove('visible');
         }
+    }
+
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
     }
 
     function updateBackupTypeUI() {
@@ -728,6 +739,7 @@
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     // Initialize
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
     window.addEventListener('DOMContentLoaded', function () {
     updateBackupTypeUI();
@@ -735,6 +747,7 @@
         const singleHost = serviceSelect.options[0].value;
         selectedService = singleHost;
         populateSchemas(singleHost);
+        updateCreateButtonState();
     }
     });
 </script>
