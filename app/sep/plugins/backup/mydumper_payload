@@ -1367,7 +1367,7 @@ class RsyncUploadProvider:
         logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
         log_file = (
             logging_dir
-            / f"rsync-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "rsync-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 
@@ -1436,7 +1436,7 @@ class S3UploadProvider:
 
         log_file = (
             self.logging_dir
-            / f"s3cmd-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 
