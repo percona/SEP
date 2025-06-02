@@ -62,10 +62,10 @@ class S3RegionForm(BaseCaseInsensitiveModel):
         return value
 
 class S3BucketForm(BaseCaseInsensitiveModel):
-    bucket_name: str
+    bucket: str
 
     @classmethod
-    @field_validator("bucket_name")
+    @field_validator("bucket")
     
     def validate_bucket_name(cls, value: str) -> str:
         """
@@ -295,7 +295,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
     pitr_enabled: bool
     provider: str = S3Provider
     region: str = S3RegionForm
-    bucket_name: str =S3BucketForm
+    bucket: str = S3BucketForm
     prefix: str = S3PrefixForm
     endpoint_url: str = EndpointUrlForm
     upload_part_size: int = UploadPartSizeForm

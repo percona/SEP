@@ -6,7 +6,6 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, Request
-from fastapi.encoders import jsonable_encoder
 
 from app.sep.deps import (
     DefaultContext,
@@ -45,26 +44,25 @@ async def build_backup_task_payload(
     """
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
     
-    pbm_config_set_clause = f"""\
-    pitr.enabled={"True" if form.pitr_enabled else "False"}
-    storage.s3.provider={form.provider}
-    region={form.region}
-    bucket_name={form.bucket_name}
-    prefix={form.prefix}
-    endpoint_url={form.endpoint_url}
-    upload_part_size={form.upload_part_size}
-    max_upload_parts={form.max_upload_parts}
-    num_max_retries={form.num_max_retries}
-    min_retry_delay={form.min_retry_delay}
-    max_retry_delay={form.max_retry_delay}
-    """.replace('\n', ' ')
-    
-    pbm_config = {
-        "set": pbm_config_set_clause
-    }
-    pbm_config_yaml = yaml.dump(
-        jsonable_encoder(pbm_config, by_alias=True, exclude_none=True)
-    )
+    pbm_config_set_clause = f"""pitr:
+  enabled: "{True if form.pitr_enabled else False}"
+storage:
+  s3:
+    provider: "{form.provider}"
+    region: "{form.region}"
+    bucket: "{form.bucket}"
+    prefix: "{form.prefix}"
+    endpointUrl: "{form.endpoint_url}"
+    uploadPartSize: "{form.upload_part_size}"
+    maxUploadParts: "{form.max_upload_parts}"
+retryer:
+  s3:
+    numMaxRetries: "{form.num_max_retries}"
+    minRetryDelay: "{form.min_retry_delay}"
+    maxRetryDelay: "{form.max_retry_delay}"
+"""
+
+    pbm_config_yaml = yaml.dump({'pbm_payload': pbm_config_set_clause})
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
 
     return TaskWrite(
