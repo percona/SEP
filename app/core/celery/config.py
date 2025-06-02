@@ -39,7 +39,7 @@ class CeleryOptions(BaseLowercaseModel):
     result_backend: StrAnyUrl | None = None
     beat_dburi: StrDatabaseUrl = "sqlite:///schedule.db"
     worker_state_db: StrRelativePath = Field(
-        "data/celery_worker_state", validate_default=True
+        ".celery_worker_state", validate_default=True
     )
     beat_schema: str | None = None
     max_retries: Annotated[int, Ge(0)] = 0
