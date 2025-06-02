@@ -628,7 +628,7 @@ async def check_for_conflicted_running_tasks(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
     if running_tasks or pending_tasks:
-        raise HTTPConflictException("Identical task is already running or pending.")
+        raise HTTPConflictException("Task is already running or pending.")
 
 
 HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)

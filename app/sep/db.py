@@ -1,7 +1,6 @@
 """Define database initialization and utility functions for SEP."""
 
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
@@ -14,7 +13,7 @@ engine = create_async_engine(
 )
 
 
-def get_async_session_maker() -> sessionmaker:
+def get_async_session_maker() -> async_sessionmaker:
     """Return a new asynchronous session maker for database operations.
 
     This function creates a new SQLAlchemy asynchronous session maker using the

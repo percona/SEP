@@ -512,8 +512,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         step,
                     )
                 else:
-                    if raw_log_data:
-                        log_data = json.loads(raw_log_data)
+                    for raw_log_data_item in (
+                        "{" + item for item in raw_log_data.split("{") if item
+                    ):
+                        log_data = json.loads(raw_log_data_item)
                         task_logs[step][last_offset_key] = log_data["Offset"]
                         task_logs[step][log_type] += b64decode_str(log_data["Data"])
         return task_logs
@@ -552,7 +554,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         except AllocationNotFoundException:
             logger.debug("Allocation not found for task history %s", queue_item.id)
             try:
-                self.get_job_for_task_history(queue_item)
+                job = self.get_job_for_task_history(queue_item)
+                if all(
+                    evaluation.get("Status") != NomadAllocStatusEnum.PENDING
+                    for evaluation in self.backend.job.get_evaluations(job["ID"])
+                ):
+                    logger.warning(
+                        "No allocations or pending evaluations found for task history %s",
+                        queue_item.id,
+                    )
+                    queue_item.status = TaskHistoryStatusEnum.FAILED
+                    queue_item.started_at = None
+                    return await TaskHistoryManager.save(
+                        session,
+                        queue_item,
+                        flag_modified_fields=["execution_request"],
+                    )
+
             except JobNotFoundException:
                 logger.warning(
                     "Lost job and allocation from task history %s", queue_item.id
@@ -714,28 +732,32 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         continue
                     response.raise_for_status()
                     empty_data_count = 0
+                    raw_data = b""
                     async for chunk, _ in response.content.iter_chunks():
-                        data = json.loads(chunk)
-                        params["offset"] = data.get("Offset", params["offset"])
-                        if data and (msg := data.get("Data")):
-                            empty_data_count = 0
-                            await queue.put(
-                                TaskLog(
-                                    step=step, type=log_type, msg=b64decode_str(msg)
+                        raw_data += chunk
+                        if b"}" in chunk:
+                            data = json.loads(raw_data)
+                            raw_data = b""
+                            params["offset"] = data.get("Offset", params["offset"])
+                            if data and (msg := data.get("Data")):
+                                empty_data_count = 0
+                                await queue.put(
+                                    TaskLog(
+                                        step=step, type=log_type, msg=b64decode_str(msg)
+                                    )
                                 )
-                            )
-                        elif empty_data_count >= self.log_socket_read_timeout:
-                            logger.debug(
-                                "No data received for %s seconds, rechecking job status...",
-                                self.log_socket_read_timeout,
-                            )
-                            alloc = self.get_last_allocation(
-                                alloc["JobID"], alloc["EvalID"]
-                            )
-                            state = alloc["TaskStates"][step]["State"]
-                            break
-                        else:
-                            empty_data_count += 1
+                            elif empty_data_count >= self.log_socket_read_timeout:
+                                logger.debug(
+                                    "No data received for %s seconds, rechecking job status...",
+                                    self.log_socket_read_timeout,
+                                )
+                                alloc = self.get_last_allocation(
+                                    alloc["JobID"], alloc["EvalID"]
+                                )
+                                state = alloc["TaskStates"][step]["State"]
+                                break
+                            else:
+                                empty_data_count += 1
             except ClientError:
                 logger.exception(
                     "An error occurred while fetching %s logs for %s (%s)",

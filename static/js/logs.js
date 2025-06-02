@@ -104,7 +104,9 @@ $(document).ready(function() {
             console.error(`Error receiving SSE for task ${taskId}:`, e);
             if (lastMessagesIds[taskId] === 0) {
                 eventSource.close();
-                window.location.reload();
+                setTimeout(() => {
+                    window.location.reload()
+                }, 5000);
             }
         };
     });

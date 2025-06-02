@@ -18,6 +18,7 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,8 +56,8 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
 TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
 
 
-async def get_task_by_name(session: SessionDep, task_name: str) -> Task:
-    """Get Task object by task name.
+async def get_active_task_by_name(session: SessionDep, task_name: str) -> Task:
+    """Get an active (not deleted) Task object by task name.
 
     :param session: The asynchronous database session.
     :type session: AsyncSession
@@ -66,10 +67,12 @@ async def get_task_by_name(session: SessionDep, task_name: str) -> Task:
     :rtype: Task
     """
     logger.debug("Requesting task %s", task_name)
-    return await TaskManager.retrieve_by_name(session=session, name=task_name)
+    return await TaskManager.retrieve_by_name(
+        session=session, name=task_name, is_active=True
+    )
 
 
-TaskDep = Annotated[Task, Depends(get_task_by_name)]
+TaskDep = Annotated[Task, Depends(get_active_task_by_name)]
 
 
 async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Task:
@@ -84,7 +87,7 @@ async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Ta
     """
     logger.debug("Requesting executable task %s", task_name)
     return await TaskManager.retrieve_by_name(
-        session=session, name=task_name, is_template=False
+        session=session, name=task_name, is_template=False, is_active=True
     )
 
 
@@ -109,12 +112,19 @@ def prepare_task_history(
     if task.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
+    if task.owner == TaskOwner.ALTERS:
+        target = task.data["Constraints"][0]["RTarget"]
+    else:
+        target = execution_data.meta.get("target")
+    if not target:
+        raise ValueError("Execution target is required in execution data meta.")
+
     return TaskHistory(
         task_id=task.id,
         task=task,
         execution_request=TaskExecutionRequest(
             task=task.name,
-            target=execution_data.meta.get("target", "all"),
+            target=target,
             meta=execution_data.meta,
             payload=execution_data.payload,
             tracking={"evaluation_id": ""},
@@ -125,25 +135,6 @@ def prepare_task_history(
 
 
 PreparedTaskHistory = Annotated[TaskHistory, Depends(prepare_task_history)]
-
-
-async def create_task_history(
-    session: SessionDep,
-    task_history: PreparedTaskHistory,
-) -> TaskHistory:
-    """Record a prepared history of a task execution request.
-
-    :param session: The asynchronous database session.
-    :type session: AsyncSession
-    :param task_history: The task history to record.
-    :type task_history: PreparedTaskHistory
-    :return: The logged TaskHistory entry.
-    :rtype: TaskHistory
-    """
-    return await TaskHistoryManager.save(session, task_history)
-
-
-CreatedTaskHistory = Annotated[TaskHistory, Depends(create_task_history)]
 
 
 async def get_task_history(

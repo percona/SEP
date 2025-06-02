@@ -1,19 +1,16 @@
 """Define test fixtures."""
 
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
-from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
-from app.sep.deps import get_tasks_api
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
-from app.sep.main import sep_app
 from tests.app.factories import (
     CasdoorUserFactory,
     CreatedNodeFactory,
@@ -159,21 +156,6 @@ def regular_user(valid_username: str, faker: Faker) -> CasdoorUser:
         username=valid_username,
         is_admin=False,
     )
-
-
-@pytest.fixture
-def mock_remote_api() -> AsyncMock:
-    """Mock a RemoteAPI object."""
-    return AsyncMock(spec=RemoteAPI)
-
-
-@pytest.fixture
-def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
-    """Mock the TaskAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
 
 
 @pytest.fixture

@@ -470,6 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const taskNameInput = modal.querySelector('#taskName');
                 if (taskNameInput && taskName) {
                     taskNameInput.value = taskName;
+                    document.getElementById('modalScheduleExecSubmitButton').setAttribute('form', taskName + '-send');
                 }
 
                 // Set focus on the first focusable element.

@@ -22,7 +22,11 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, UTCDatetime
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    UTCDatetime,
+)
 
 TASK_ALIAS_LENGTH = 100
 
@@ -301,7 +305,7 @@ class TaskBase(SQLModel):
     :type protected: bool
     """
 
-    name: str = SQLField(max_length=255, unique=True, index=True)
+    name: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
     data: dict = SQLField(sa_column=Column(JSON, nullable=False))
     backend: TaskBackendEnum = SQLField(
         default=TaskBackendEnum.NOMAD,

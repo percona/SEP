@@ -134,7 +134,7 @@
                                 <div class="message{% if msg.sticky %} sticky{% endif %}"
                                      data-level="{{ msg.level.name.lower() }}">
                                     <span class="message-text">{{ msg.text }}</span>
-                                    <button type="button" class="close-button icons">close</button>
+                                    <button type="button" class="close-button icons material-symbols-outlined">close</button>
                                 </div>
                             {% endfor %}
                         </div>
@@ -172,6 +172,11 @@
                     nonce="{{ request.state.csp_nonce }}"></script>
             <script src="{{ url_for('static', path='/js/app.js') }}"
                     nonce="{{ request.state.csp_nonce }}"></script>
+            <script nonce="{{ request.state.csp_nonce }}">
+                $('.submitNextForm').click(function() {
+                    $(this).next('form').submit();
+                });
+            </script>
             {% block behaviours_optimized_extra %}
             {% endblock behaviours_optimized_extra %}
         {% endblock behaviours_optimized %}

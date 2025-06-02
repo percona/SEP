@@ -19,7 +19,7 @@
     </style>
     <link rel="stylesheet"
           href="{{ url_for('static', path='/css/saved.css') }}">
-    {% if history or running_tasks %}
+    {% if history or history_dry_run or running_tasks %}
         <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
 {% endblock style %}
@@ -28,7 +28,7 @@
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/saved.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    {% if history or running_tasks %}
+    {% if history or history_dry_run or running_tasks %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
@@ -135,6 +135,15 @@
     </section>
     <br>
     <br>
+    {% set pending_tasks = history|selectattr("status", "equalto", "pending")|list %}
+    {% if pending_tasks %}
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
     <section>
         <h2>Dry Run History</h2>
         {% set history_tasks = history_dry_run %}
