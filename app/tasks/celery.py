@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 @worker_process_init.connect
 def init_child_event_loop(**kwargs: Any) -> None:
     """Initialize a new event loop for each worker process."""
-    logger.error("Initializing new event loop for worker process")
+    logger.debug("Initializing new event loop for worker process")
     celery.loop = asyncio.new_event_loop()
     asyncio.set_event_loop(celery.loop)
 
