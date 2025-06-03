@@ -66,6 +66,7 @@
             <h2>Saved</h2>
             {% include "backup_mongo/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
+            {%- set detail_route = "pbm_backups_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a backup process</h3>
             {% if executor_hosts|length < 1 %}
