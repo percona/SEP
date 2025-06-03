@@ -637,7 +637,7 @@ class DirectoryEncryptor:
     def _set_default_config(self) -> None:
         """Set default configuration values."""
         self.config = {
-            "encryption recipient": "CHANGEME_GPG",
+            "encryption recipient": "directory.encryption@percona.com",
             "encryption home dir": "~/.gnupg",
             "max encryption processes": 5,
             "encryption nice": False,
@@ -738,7 +738,7 @@ class DirectoryEncryptor:
         :return: True if all files were encrypted successfully, False otherwise.
         :rtype: bool
         """
-        recipient = self.config.get("encryption recipient", "CHANGEME_GPG")
+        recipient = self.config.get("encryption recipient", "directory.encryption@percona.com")
         nice = bool(self.config.get("encryption nice", False))
         max_proc = int(self.config.get("max encryption processes", 5))
 
@@ -1367,7 +1367,7 @@ class RsyncUploadProvider:
         logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
         log_file = (
             logging_dir
-            / f"rsync-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "rsync-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 
@@ -1436,7 +1436,7 @@ class S3UploadProvider:
 
         log_file = (
             self.logging_dir
-            / f"s3cmd-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 

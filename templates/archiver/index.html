@@ -62,6 +62,7 @@
             {% include "archiver/partials/saved-tasks.html" %}
             <br>
             <h2>Periodic Tasks</h2>
+            {%- set detail_route = "archives_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
             <br>
             <h3>Create an archiving process</h3>
