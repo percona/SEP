@@ -25,7 +25,9 @@
         {% for task in tasks %}
             {% if not task.parent %}
                 <tr id="{{ task.name }}">
-                    <td>{{ task.name }}</td>
+                    <td>
+                        <a href="{{ url_for('alters_detail', task_name=task.name) }}">{{ task.name }}</a>
+                    </td>
                     <td class="code">{{ task.hostname }}</td>
                     <td class="code">{{ task.table }}</td>
                     <td class="options">{% include "tasks/partials/saved-tasks-actions-column-alters.html" %}</td>
