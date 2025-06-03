@@ -7,9 +7,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseSQLModelManager
+from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
+    DispatchLock,
     Task,
+    TaskBackendEnum,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskOwner,
@@ -53,7 +56,9 @@ class TaskManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         name: str,
+        *,
         is_template: bool | None = None,
+        is_active: bool | None = None,
     ) -> Task:
         """Retrieve a task by its name, raising a 404 error if not found.
 
@@ -64,11 +69,21 @@ class TaskManager(BaseSQLModelManager):
         :param is_template: Whether the task should be a template or not.
             Use None to not use the filter. Defaults to None.
         :type is_template: bool | None
+        :param is_active: Whether to retrieve only active tasks (not deleted).
+            If None (default), both active and deleted tasks will be considered.
+        :type is_active: bool | None
         :return: The task with the given name.
         :rtype: Task
         :raises HTTPNotFoundException: If no task with the given name is found.
         """
-        return await cls.get_or_404(session, name=name, is_template=is_template)
+        if is_active is None:
+            return await cls.get_or_404(session, name=name, is_template=is_template)
+        where = (
+            col(Task.deleted_at).is_(None)
+            if is_active
+            else col(Task.deleted_at).isnot(None)
+        )
+        return await cls.get_or_404(session, where, name=name, is_template=is_template)
 
     @classmethod
     async def delete_by_name(cls, session: AsyncSession, name: str) -> Task:
@@ -83,14 +98,45 @@ class TaskManager(BaseSQLModelManager):
         :return: The deleted task.
         :rtype: Task
         :raises HTTPForbiddenException: If the task is protected and cannot be deleted.
+        :raises HTTPConflictException: If the task is currently running or pending.
         """
-        task = await cls.retrieve_by_name(session=session, name=name)
+        task = await cls.retrieve_by_name(session=session, name=name, is_active=True)
         if task.protected:
             raise HTTPForbiddenException(
                 f"Task {name} is protected and cannot be deleted.",
             )
+        # TODO(yan): Implement proper locking mechanism for deletion
+        # SEP-393
+        if await TaskHistoryManager.list_by_task_name(
+            session=session, task_name=name, status=TaskHistoryStatusEnum.RUNNING
+        ):
+            raise HTTPConflictException(
+                f"Task {name} is currently running and cannot be deleted."
+            )
+        if await TaskHistoryManager.list_by_task_name(
+            session=session, task_name=name, status=TaskHistoryStatusEnum.PENDING
+        ):
+            raise HTTPConflictException(
+                f"Task {name} is currently pending and cannot be deleted."
+            )
         task.deleted_at = utc_now()
+        task.name = f"{task.name}-{task.deleted_at.strftime('%Y%m%d%H%M%S')}"
         return await cls.save(session, task)
+
+    @classmethod
+    async def get_root_task(cls, session: AsyncSession, task: Task) -> Task:
+        """Get the root task for a given task.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param task: The task for which to find the root task.
+        :type task: Task
+        :return: The root task.
+        :rtype: Task
+        """
+        if task.backend == TaskBackendEnum.PROXY:
+            return await cls.retrieve_by_name(session=session, name=task.data["task"])
+        return task
 
 
 class TaskHistoryManager(BaseSQLModelManager):
@@ -136,3 +182,13 @@ class TaskHistoryManager(BaseSQLModelManager):
         )
         result = await cls._exec(session, query)
         return list(result.all())
+
+
+class DispatchLockManager(BaseSQLModelManager):
+    """Manage dispatch lock operations.
+
+    :ivar Model: The SQLModel class this manager is responsible for (`DispatchLock`).
+    :vartype Model: type[DispatchLock]
+    """
+
+    Model = DispatchLock

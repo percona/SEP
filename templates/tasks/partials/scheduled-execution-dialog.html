@@ -1,0 +1,29 @@
+<dialog id="modalScheduleExec"
+        aria-modal="true"
+        aria-labelledby="modalScheduleExecTitle"
+        data-modal="target"
+        class="small">
+    <header>
+        <h3 id="modalScheduleExecTitle" class="h5 title">Schedule task for execution</h3>
+    </header>
+    <section>
+        <p>
+            Choose a specific point in time for when you the task <strong id="modalTaskName"></strong> to execute
+            automatically, and then click to Schedule.
+        </p>
+        <label for="dateTimeInput">Desired local date and time:</label>
+        <input type="datetime-local" id="dateTimeInput" class="eta-input" required>
+        <input type="hidden" name="eta" id="modalEtaValue" disabled>
+        <input type="hidden" name="taskName" id="taskName">
+    </section>
+    <footer>
+        <button type="button" class="text large" data-modal-close>
+            Cancel<sup>ESC</sup>
+        </button>
+        <button id="modalScheduleExecSubmitButton"
+                type="submit"
+                disabled
+                class="contained large submitButton">Schedule</button>
+    </footer>
+</dialog>
+<input type="hidden" name="csrf-token" value="{{ csrf_token }}" />

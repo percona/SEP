@@ -11,6 +11,7 @@ from pydantic import FutureDatetime
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    HasNoConflictedRunningTasks,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -82,6 +83,7 @@ async def archives_detail(
         "hostname": meta["target"],
         "meta": meta,
         "entities": {entity.name: entity.value for entity in decoded_entities},
+        "delete_url": request.url_for("archives_delete", task_name=task.name),
     }
 
     source_db = purge_item.get("SOURCE_DB")
@@ -113,7 +115,7 @@ async def archives_detail(
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
 )
 async def archives_execute(

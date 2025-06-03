@@ -81,7 +81,7 @@ def test_backups_index(test_client):
     response = test_client.get("/backups/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    assert "<title>SEP Backups</title>" in response.text
+    assert "<title>Backups — Services Enablement Platform</title>" in response.text
 
 
 def test_backups_create(test_client, mock_task_api_dep, backup_create):
@@ -126,7 +126,10 @@ def test_backups_detail(test_client, mock_task_api_dep, created_task):
 
     response = test_client.get(f"/backups/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
-    assert f"<title>SEP Backups - {created_task.name}</title>" in response.text
+    assert (
+        f"<title>Backups - {created_task.name} — Services Enablement Platform</title>"
+        in response.text
+    )
 
     assert mock_task_api_dep.get.call_count == expected_call_count
     mock_task_api_dep.get.assert_any_call(f"/{created_task.name}/history/")
@@ -137,7 +140,9 @@ def test_backups_detail(test_client, mock_task_api_dep, created_task):
     mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
 
 
-@pytest.mark.usefixtures("_mock_get_backups_task_dep")
+@pytest.mark.usefixtures(
+    "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
 def test_backups_execute(test_client, mock_task_api_dep, created_task):
     """Test POST /backups/{task_name} route."""
     response = test_client.post(f"/backups/{created_task.name}", follow_redirects=False)

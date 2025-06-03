@@ -1,11 +1,11 @@
 {% if tasks %}
-    <table>
+    <table data-table>
         <thead>
             <tr>
-                <th style="width: 200px;">Name</th>
+                <th>Name</th>
                 <th>Host</th>
-                <th style="width: 200px;">Type</th>
-                <th style="width: 200px;">Upload</th>
+                <th>Type</th>
+                <th>Upload</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -16,11 +16,12 @@
                     <td>{{ task.host }} ({{ task.port }})</td>
                     <td>{{ task.backup_type }}</td>
                     <td>{{ task.upload }}</td>
-                    {% include "tasks/partials/saved-tasks-actions-column.html" %}
+                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
+    {% include "tasks/partials/scheduled-execution-dialog.html" %}
 {% else %}
     <p>No data</p>
 {% endif %}

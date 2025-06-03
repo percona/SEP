@@ -1,11 +1,11 @@
 <div class="tasks-table-container">
-    <table class="responsive-table tasks-table">
+    <table data-table>
         <thead>
             <tr>
                 <th>Name</th>
                 <th>Host</th>
                 <th>Start At</th>
-                <th>Actions</th>
+                <th class="options">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -16,31 +16,76 @@
                         <td>{{ task_name }}</td>
                         <td>{{ task['execution_request']['target'] }}</td>
                         <td class="relativeTime">{{ task['updated_at'] }}</td>
-                        <td>
-                            <a href="{{ task_name }}"><i class="icons">visibility</i></a>
-                        </td>
-                    </tr>
-                    <tr class="log-row" data-task-id="{{ task.id }}">
-                        <td colspan="4">
-                            <div class="log-console streaming-console" data-task-id="{{ task.id }}">
-                                <div class="log-top-bar">
-                                    <div class="log-tabs">
-                                        <a href="#" class="log-type-tab selected" data-log-type="stdout">stdout</a>
-                                        <a href="#" class="log-type-tab" data-log-type="stderr">stderr</a>
+                        <td class="options">
+                            <button type="button"
+                                    class="icon medium"
+                                    aria-label="View logs"
+                                    data-tooltip
+                                    data-modal="trigger"
+                                    data-modal-target="modal-{{ task.id }}">
+                                <span class="material-symbols-outlined">visibility</span>
+                            </button>
+                            <form id="{{ task.id }}-stop"
+                                  method="post"
+                                  data-confirm-message="Are you sure you want to stop the task {{ task_name }}?"
+                                  action="{{ url_for("stop_task_execution", task_history_id=task.id) }}">
+                                <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                                <button type="submit"
+                                        form="{{ task.id }}-stop"
+                                        role="menuitem"
+                                        class="list-item submitButton"
+                                        aria-label="Stop this task execution">
+                                    <span class="material-symbols-outlined">stop_circle</span>
+                                </button>
+                            </form>
+                            <section>
+                                <dialog id="modal-{{ task.id }}"
+                                        aria-modal="true"
+                                        aria-labelledby="modal-title-{{ task.id }}"
+                                        data-modal="target"
+                                        class="fullwidth modal-log tabs-wrapper">
+                                    <div class="window log-console streaming-console"
+                                         data-task-id="{{ task.id }}">
+                                        <header>
+                                            <h3 id="modal-title-{{ task.id }}" class="h5 title">Logs for {{ task["task"]["name"] }}</h3>
+                                            <div class="log-header">
+                                                <nav class="tabs" role="tablist" aria-label="Choose the output format">
+                                                    <label class="checkbox">
+                                                        <input type="checkbox" data-soft-wrap="trigger" class="word-wrap-checkbox">
+                                                        <div class="checkmark">
+                                                            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                                            <span class="material-symbols-outlined checked">check_box</span>
+                                                        </div>
+                                                        <span class="label">Soft wrap</span>
+                                                    </label>
+                                                    <button id="tab-stdout-{{ task.id }}"
+                                                            class="large"
+                                                            role="log-tab"
+                                                            aria-controls="log-stdout-{{ task.id }}"
+                                                            aria-selected="true">
+                                                        <span class="label">Output</span>
+                                                    </button>
+                                                    <button id="tab-stderr-{{ task.id }}"
+                                                            class="large"
+                                                            role="log-tab"
+                                                            aria-controls="log-stderr-{{ task.id }}"
+                                                            aria-selected="false">
+                                                        <span class="label">Error</span>
+                                                    </button>
+                                                </nav>
+                                            </div>
+                                        </header>
+                                        <section class="log-content terminal" data-theme="dark">
+                                        </section>
+                                        <footer class="log-footer">
+                                            <div class="log-tabs"></div>
+                                            <button type="button" class="text large" data-modal-close>
+                                                Close<sup>ESC</sup>
+                                            </button>
+                                        </footer>
                                     </div>
-                                    <div class="word-wrap-toggle">
-                                        <label class="switch">
-                                            <input type="checkbox" class="word-wrap-checkbox">
-                                            <span class="slider round"></span>
-                                        </label>
-                                        <span class="toggle-label">Word Wrap</span>
-                                    </div>
-                                </div>
-                                <div class="log-content"></div>
-                                <div class="log-bottom-bar">
-                                    <div class="log-tabs"></div>
-                                </div>
-                            </div>
+                                </dialog>
+                            </section>
                         </td>
                     </tr>
                 {% endfor %}

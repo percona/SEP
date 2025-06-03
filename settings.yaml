@@ -31,7 +31,7 @@ default:
         MODULE_NAME: archives
         URI_PATH: /archives
         CSS_CLASS: archive
-      - NAME: Backups
+      - NAME: MySQL Backups
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
@@ -39,10 +39,15 @@ default:
         MODULE_NAME: checksums
         URI_PATH: /checksums
         CSS_CLASS: checksums
+      - NAME: MongoDB Backups
+        MODULE_NAME: backup_mongo
+        URI_PATH: /backup_mongo
+        CSS_CLASS: backup_mongo
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
     LOG_ANON: True
+
 
 development:
   SEP:
@@ -78,7 +83,6 @@ development:
     RESULT_BACKEND: file://data/celery/results
     RESULT_PERSISTENT: true
     BEAT_DBURI: "sqlite:///schedule.db"
-    MAX_RETRIES: 3
 
 production_docker:
   CASDOOR:

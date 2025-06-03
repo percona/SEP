@@ -35,7 +35,6 @@ classifiers = [
     "Typing :: Typed"
 ]
 requires-python = ">=3.11,<3.14"
-
 dependencies = [
     "aiohttp (>=3.11.10,<4.0.0)",
     "uvicorn[standard] (>=0.32.0,<0.33.0)",
@@ -85,12 +84,10 @@ optional = true
 [tool.poetry.group.audit.dependencies]
 pip-audit = "^2.9.0"
 bandit = {extras = ["toml"], version = "^1.7.9"}
-
 ruff = "^0.9.4"
 djlint = "^1.36.4"
 jsbeautifier = "^1.15.1"
 cssbeautifier = "^1.15.1"
-
 
 [tool.poetry.group.mysql]
 optional = true

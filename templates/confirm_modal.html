@@ -1,8 +1,4 @@
 <style>
-    body {
-        font-family: Arial, sans-serif;
-        overflow-x: hidden;
-    }
 
     .dialog {
         display: none;
@@ -42,11 +38,13 @@
     .confirm-btn {
         min-width: 4em;
         margin: 0.8em 0.5em 0 .5em;
+        color: var(--stone900);
     }
 
     #confirmationMessage {
         margin-bottom: .8em;
         font-weight: 600;
+        color: var(--stone900);
     }
 
     @keyframes popUp {
@@ -84,6 +82,7 @@
         const confirmYes = document.getElementById('confirmYes');
         const confirmNo = document.getElementById('confirmNo');
         const submitButtons = document.querySelectorAll('.submitButton');
+        const scheduleDialog = document.getElementById('modalScheduleExec');
 
         let currentForm = null;
 
@@ -121,6 +120,9 @@
                     }
                 });
                 if (allFieldsValid) {
+                    if (scheduleDialog && scheduleDialog.open) {
+                        scheduleDialog.close();
+                    }
                     showModal();
                 }
             });

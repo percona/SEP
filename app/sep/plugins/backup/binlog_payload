@@ -1,0 +1,1527 @@
+#!/bin/python
+"""The script for creating Binlog backups.
+
+It creates Binlog backup and purges old backups.
+"""
+
+import argparse
+import json
+import logging
+import multiprocessing
+import os
+import pwd
+import re
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import time
+import uuid
+from enum import auto, Enum, IntEnum
+from getpass import getuser
+from pathlib import Path
+from typing import Any
+
+import pymysql
+import pymysql.cursors
+import yaml
+from pymysql import InternalError, OperationalError, ProgrammingError
+
+try:
+    import pymysql as MySQLdb
+
+    MySQLdb.install_as_MySQLdb()
+except ImportError:
+    import MySQLdb
+try:
+    import queue as Queue
+except ImportError:
+    import Queue
+
+
+MYSQLBINLOG_RESTART_DELAY = 5 * 60
+ST_BLOCKS_SIZE = 512
+CURRENT_USER = os.getenv("PERCONA_BACKUP_USER") or os.getenv("SUDO_USER") or getuser()
+CURRENT_USER_HOME_DIR = Path(pwd.getpwnam(CURRENT_USER).pw_dir)
+DU_BIN = os.getenv("PERCONA_BACKUP_DU_BIN", "/usr/bin/du")
+DEFAULT_LOGGING_DIR = Path(
+    os.getenv(
+        "PERCONA_BACKUP_DEFAULT_LOGGING_DIR",
+        CURRENT_USER_HOME_DIR / ".local" / "percona" / "logs" / "backup",
+    )
+)
+MYSQLBINLOG_CMD = os.getenv("PERCONA_BACKUP_MYSQLBINLOG_CMD", "/usr/bin/mysqlbinlog")
+LOGGING_FORMAT = "%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s"
+LOGGING_FORMAT_DEBUG = (
+    "%(asctime)s PID<%(process)d> %(levelname)s:%(lineno)d:%(alias)s%(message)s"
+)
+LOGGING_NAME = "binlog.log"
+DEFAULT_MYCNF = CURRENT_USER_HOME_DIR / ".my.cnf"
+PROC_STAT_PID_IDX = 0
+PROC_STAT_PPID_IDX = 3
+PROC_STAT_UTIME_IDX = 13
+PROC_STAT_STIME_IDX = 14
+BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
+    "PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR",
+    CURRENT_USER_HOME_DIR
+    / "pmm"
+    / "collectors"
+    / "textfile-collector"
+    / "low-resolution",
+)
+DEFAULT_COMPRESSION_ALGORITHM = "gzip"
+AVAILABLE_COMPRESSION_ALGORITHMS = ["gzip"]
+DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+BACKUP_TYPE = "Binlogs"
+UPLOADME_FILE = ".uploadme"
+
+
+class BackupNotifyStatus(IntEnum):
+    OK = 0
+    WARNING = 1
+    CRITICAL = 2
+    UNKNOWN = 3
+
+
+class MSPAction(str, Enum):
+    BACKUP = auto()
+    UPLOAD = auto()
+
+
+def is_public_ip(ip_addr):
+    """Checks whether IP is public."""
+    try:
+        ip_addr = socket.gethostbyname(ip_addr)
+    except Exception:
+        # Unable to resolve, unknown host or invalid host or IP
+        return False
+    pton = struct.unpack("!I", socket.inet_pton(socket.AF_INET, ip_addr))[0]
+    private = (
+        ["127.0.0.0", "255.0.0.0"],
+        ["192.168.0.0", "255.255.0.0"],
+        ["172.16.0.0", "255.240.0.0"],
+        ["10.0.0.0", "255.0.0.0"],
+    )
+    for net in private:
+        mask = struct.unpack("!I", socket.inet_aton(net[1]))[0]
+        aton = struct.unpack("!I", socket.inet_aton(net[0]))[0]
+        if (pton & mask) == aton:
+            return False
+
+    return True
+
+
+def get_max_subdir_size(start_path, unit="m"):
+    """Return the max size among all subdirs within the given path.
+
+    Unit: m (MB), b (bytes).
+    """
+    cmd = [DU_BIN, "-%s" % (unit,), "--max-depth=1", start_path]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = proc.communicate()
+    if proc.returncode != 0:
+        logging.error("Error running %s: %s", " ".join(cmd), err)
+        return 0
+
+    # Sort subdir sizes and exclude the first element - an empty value '' from du output
+    # and the last one - the parent dir size itself.
+    subdir_size = sorted([int(i.split("\t")[0]) for i in out.decode().split("\n") if i])
+    # No subdirs
+    if len(subdir_size) == 1:
+        return 0
+
+    return subdir_size[-2]
+
+
+def get_free_space(dir_path, pct=False):
+    """Return free space in MB or %"""
+    vfs = os.statvfs(dir_path)
+    free_mb = vfs.f_bavail * vfs.f_bsize / 1024**2
+    if pct:
+        total_mb = vfs.f_blocks * vfs.f_bsize / 1024**2
+        free_mb = free_mb * 100 / total_mb
+    return free_mb
+
+
+def is_free_space(
+    dir_path,
+    logging_host="localhost",
+    double_space_needed=False,
+    threshold_pct=None,
+    logger=None,
+):
+    """Check for free disk space for the current backup run.
+
+    dir_path: a path for which we determine a partition to be checked.
+    logging_host: a host to include into log messages.
+    double_space_needed: if true, we will require double space for the backup, Used by with mydumper and option
+                         MYDUMPER_USE_TMPDIR_FOR_ENC_S3UPLOAD enabled.
+    threshold_pct: if defined, this is a check for binlog backup and reflects a threshold when backup is run.
+                   When disk space free percentage is larger than this threshold, mysqlbinlog will be running.
+
+    Return False is no space available.
+    """
+    max_size = 0
+    ratio = 1
+    if threshold_pct:
+        free_pct = get_free_space(dir_path, pct=True)
+        if free_pct <= threshold_pct:
+            output = "Not enough disk space to pull binlogs: free %s%%, needed %s%%" % (
+                free_pct,
+                threshold_pct + 1,
+            )
+            return False, output
+
+        logging.debug(
+            "Disk space OK: free %s%%, needed %s%%", free_pct, threshold_pct + 1
+        )
+    else:
+        free_mb = get_free_space(dir_path)
+        max_backup_size = get_max_subdir_size(dir_path)
+        if double_space_needed:
+            ratio = 2
+
+        if max_backup_size > 0:
+            # Reserving +10% to the largest backup
+            max_size = int(max_backup_size * ratio * 1.1)
+
+        if free_mb < max_size:
+            output = (
+                "Not enough disk space to run the backup: free %s Mb, needed %s Mb"
+                % (free_mb, max_size)
+            )
+            return False, output
+
+        if logger:
+            logger.info("Disk space OK: free %s Mb, needed %s Mb.", free_mb, max_size)
+
+    return True, ""
+
+
+def get_backup_dir(server_data):
+    return os.path.join(
+        server_data["BACKUP_DIR"],
+        "binlogs",
+        server_data.get("ALIAS", server_data["HOST"]),
+    )
+
+
+def logging_setup(
+    logging_dir: Path, log_name: str, level: int = logging.INFO
+) -> logging.Logger:
+    """Set up and return a configured logger.
+
+    :param logging_dir: Directory for log files.
+    :param log_name: Name of the log file.
+    :param level: Logging level.
+    :return: Configured logger instance.
+    """
+    real_logging_dir = logging_dir.expanduser().resolve()
+
+    if not real_logging_dir.is_dir():
+        real_logging_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        test_file = real_logging_dir / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+    except OSError:
+        print(f"Logging directory {logging_dir} is not writable.")
+        sys.exit(4)
+
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    name = log_name.replace(".log", "")
+    logger = logging.getLogger(name)
+    log_file = real_logging_dir / log_name
+
+    if not any(
+        isinstance(h, logging.FileHandler)
+        and getattr(h, "baseFilename", None) == str(log_file)
+        for h in logger.handlers
+    ):
+        file_handler = logging.FileHandler(str(log_file))
+        file_formatter = logging.Formatter(LOGGING_FORMAT)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
+    if not any(
+        isinstance(h, logging.StreamHandler) and h.stream == sys.stdout
+        for h in logger.handlers
+    ):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        if level <= logging.DEBUG:
+            stream_formatter = logging.Formatter(LOGGING_FORMAT_DEBUG)
+        else:
+            stream_formatter = logging.Formatter(LOGGING_FORMAT)
+        stream_handler.setFormatter(stream_formatter)
+        logger.addHandler(stream_handler)
+
+    logger.setLevel(level)
+    logging_set_host(None, name)
+    return logger
+
+
+def logging_set_host(alias: str | None, log_name: str) -> None:
+    """Prepend a server alias to the logging messages until unset.
+
+    :param alias: Alias to prepend.
+    :param log_name: Logger name.
+    """
+
+    class ContextFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            record.alias = f"[{alias}] " if alias else ""
+            return True
+
+    log_name = log_name.replace(".log", "")
+    logging.getLogger(log_name).addFilter(ContextFilter())
+
+
+class LocalConfig:
+    """Local configuration class for backup/restore processes."""
+
+    default_nowrite_timeout = 1800  # 30 minutes
+    default_purge_days = 30
+
+    def __init__(self, cfg_path: Path) -> None:
+        """Initialize LocalConfig and populate configuration from the specified YAML file.
+
+        :param cfg_path: Path to the configuration file.
+        """
+        self.server_data_list: list[dict[str, Any]] = []
+        self.base: dict[str, Any] = {}
+        self.cfg_path = Path(cfg_path)
+        self.populated = False
+        self.raw_cfg_data: dict[str, Any] = {}
+        self._populate_cfg()
+
+    def _populate_cfg(self) -> None:
+        """Populate the configuration from the YAML file."""
+        try:
+            with self.cfg_path.open("r") as cfg_file:
+                cfg_file_contents = cfg_file.read()
+                data = yaml.safe_load(cfg_file_contents)
+        except Exception:
+            logging.exception("Could not read config file %r", self.cfg_path)
+            return
+
+        self.raw_cfg_data = data
+
+        default_server = {
+            "PORT": 3306,
+            "NOWRITE_TIMEOUT": LocalConfig.default_nowrite_timeout,
+            "BINLOG_PURGE_DAYS": LocalConfig.default_purge_days,
+        }
+        default_server.update(data["ALL_SERVERS"])
+        self.base = default_server.copy()
+
+        for server in data["SERVER_LIST"]:
+            if (
+                "HOST" in server
+                and isinstance(server["HOST"], str)
+                and server["HOST"].count(":") > 1
+            ):
+                logging.warning("Unsupported host format %s", server["HOST"])
+                continue
+            server_data = default_server.copy()
+            server_data.update(server)
+            self.server_data_list.append(server_data)
+        self.populated = True
+
+
+class LockInUse(Exception):
+    """Error for active locks"""
+
+
+class LockFile:
+    """Lockfile management
+
+    Be very careful about changing the format of the lock file.
+    Adding values should be fine but, be careful in accessing them.
+    Make sure that the value not being there will not crash the program.
+    Removing values is not a good idea but, if it has to
+    be done you should remove them in an iterative process.  ie.:
+    Week #1 stop the default lock file from writing them and
+    make sure the code functions with or without the value
+    Week #3 remove references to the old value and
+    make sure that all processes have been restarted
+    """
+
+    def __init__(self, lock_fname, timeout=300):
+        self.lock_fname = lock_fname
+        self.timeout = timeout
+        self.lock_time = time.time()
+        self.cur_pid = os.getpid()
+        self.cur_all_cpu_time = self._get_all_cpu_time(self.cur_pid)
+        self.lock_file_data = None
+
+    def get_lock(self):
+        """Acquire a lock
+
+        :raises: LockInUse when a lock is already active
+        """
+        if not self._is_lock_free():
+            msg = "Could not acquire lock file"
+            logging.debug(msg)
+            raise LockInUse(msg)
+        self._write_lock_file()
+
+    def get_lock_or_exit(self):
+        """Acquire a lock, or exit"""
+        try:
+            self.get_lock()
+        except LockInUse:
+            sys.exit(-1)
+
+    def free_lock(self):
+        """Release a lock"""
+        # TODO: check what happens if this is called when the lock is not held
+        if os.path.isfile(self.lock_fname):
+            os.unlink(self.lock_fname)
+
+    def update_lock(self):
+        """Update the lock metadata"""
+        self.lock_time = time.time()
+        self._write_lock_file()
+
+    def _is_lock_free(self):
+        """Check if a lock is free
+
+        :return: lock status
+        :rtype: bool
+        """
+        lock_free = False
+        if not os.path.isfile(self.lock_fname):
+            lock_free = True
+        elif not self._is_process_running():
+            self.free_lock()
+            lock_free = True
+        return lock_free
+
+    def _is_process_running(self):
+        """Check for a lock's owner process
+
+        :return: is the lock's owner still running
+        :rtype: bool
+        """
+        proc_running = False
+        self._read_lock_file()
+        self.lock_time = time.time()
+        if os.path.isdir("/proc/%d" % self.lock_file_data["PID"]):
+            pid_cmdline = self._get_process_cmdline(self.lock_file_data["PID"])
+            lockfile_cmdline = self.lock_file_data.get("CMD_LINE").encode("utf-8")
+            if lockfile_cmdline is not None and lockfile_cmdline != pid_cmdline:
+                # The pid is being re-used by another process.
+                proc_running = False
+            elif (self.lock_file_data["UPDATE_TIME"] + self.timeout) > self.lock_time:
+                proc_running = True
+            else:
+                old_cpu_time = self.lock_file_data["ALL_CPU_TIME"]
+                cur_cpu_time = self._get_all_cpu_time(self.lock_file_data["PID"])
+                if len(old_cpu_time) != len(cur_cpu_time):
+                    proc_running = True
+                else:
+                    old_pids = list(old_cpu_time.keys())
+                    cur_pids = list(cur_cpu_time.keys())
+                    old_pids.sort()
+                    cur_pids.sort()
+                    for i, j in enumerate(old_pids):
+                        if j != cur_pids[i]:
+                            proc_running = True
+                            break
+                        if old_cpu_time[j] < cur_cpu_time[cur_pids[i]]:
+                            proc_running = True
+                            break
+                    if proc_running:
+                        # Update the current CPU TIME in the lock file
+                        self._update_cpu_time()
+                if not proc_running:
+                    # kill the old process
+                    msg = "Killing hung process %s" % self.lock_file_data["PID"]
+                    logging.error(msg)
+                    os.kill(int(self.lock_file_data["PID"]), signal.SIGKILL)
+                    for cpid in self._get_child_pids(self.lock_file_data["PID"]):
+                        msg = "Killing hung child process %s" % cpid
+                        logging.error(msg)
+                        os.kill(int(cpid), signal.SIGKILL)
+        return proc_running
+
+    def _read_lock_file(self):
+        """Read a lockfile
+
+        :raises: Exception on error
+        """
+        try:
+            with open(self.lock_fname, "rb") as lock_fstream:
+                self.lock_file_data = json.loads(lock_fstream.read().decode())
+        except Exception:
+            self.free_lock()
+            raise
+
+    def _update_cpu_time(self):
+        """Update the CPU time for the lock"""
+        with open(self.lock_fname, "rb") as lock_fstream:
+            existing_lock_file_data = json.loads(lock_fstream.read().decode())
+        existing_lock_file_data["ALL_CPU_TIME"] = self._get_all_cpu_time(
+            existing_lock_file_data["PID"]
+        )  # pylint: disable=line-too-long
+        existing_lock_file_data["UPDATE_TIME"] = time.time()
+        tmp_fname = self.lock_fname + ".update_tmp"
+        with open(tmp_fname, "wb") as tmp_fstream:
+            tmp_fstream.write(json.dumps(existing_lock_file_data).encode("utf-8"))
+        os.rename(tmp_fname, self.lock_fname)
+
+    def _write_lock_file(self):
+        """Write out the lockfile metadata"""
+        self.lock_time = time.time()
+        self.cur_all_cpu_time = self._get_all_cpu_time(self.cur_pid)
+        lock_data = {
+            "CMD": " ".join(sys.argv),
+            "PID": self.cur_pid,
+            "UPDATE_TIME": self.lock_time,
+            "ALL_CPU_TIME": self.cur_all_cpu_time,
+            "CMD_LINE": self._get_process_cmdline(self.cur_pid).decode(),
+        }
+        tmp_fname = self.lock_fname + ".tmp"
+        with open(tmp_fname, "wb") as tmp_fstream:
+            tmp_fstream.write(json.dumps(lock_data).encode("utf-8"))
+        os.rename(tmp_fname, self.lock_fname)
+
+    def _get_all_cpu_time(self, pid):
+        """Check the total CPU time
+
+        :param pid: process ID
+        :type pid: int
+        :return: mapping of processes and CPU time
+        :rtype: dict
+        """
+        ret = {str(pid): self._get_process_cpu_time(pid)}
+        for cpid in self._get_child_pids(pid):
+            ret.update(self._get_all_cpu_time(cpid))
+        return ret
+
+    @staticmethod
+    def _get_process_cpu_time(pid):
+        """Get the CPU time for a process
+
+        :param pid: process ID
+        :type pid: int
+        :return: process CPU time
+        :rtype: int
+        """
+        with open("/proc/%d/stat" % pid, "rb") as stat_fstream:
+            stat_data = stat_fstream.read()
+        stat_list = stat_data.split()
+        return int(stat_list[PROC_STAT_UTIME_IDX]) + int(stat_list[PROC_STAT_STIME_IDX])
+
+    @staticmethod
+    def _get_process_cmdline(pid):
+        """Return the value stored in /proc/<pid>/cmdline or None if there is an error"""
+        cmdline_fp = f"/proc/{pid:d}/cmdline"
+        try:
+            with open(cmdline_fp, "rb") as cmdline_f:
+                command_line = cmdline_f.read()
+        except Exception:
+            logging.debug(
+                "could not read command line file for pid %r", pid, exc_info=True
+            )
+            command_line = None
+        return command_line
+
+    @staticmethod
+    def _get_child_pids(pid):
+        """Get all child process IDs
+
+        :param pid: process ID
+        :type pid: int
+        :return: child process IDs
+        :rtype: list
+        """
+        child_pids = []
+        for fname in os.listdir("/proc"):
+            try:
+                if fname.isdigit() and os.path.isdir(os.path.join("/proc", fname)):
+                    if os.path.isfile(os.path.join("/proc", fname, "stat")):
+                        with open(
+                            os.path.join("/proc", fname, "stat"), "rb"
+                        ) as stat_fstream:
+                            stat_data = stat_fstream.read()
+                        stat_list = stat_data.split()
+                        if int(stat_list[PROC_STAT_PPID_IDX]) == pid:
+                            child_pids.append(int(stat_list[PROC_STAT_PID_IDX]))
+            except Exception:
+                pass  # This is to account for processes that have ended since the listdir()
+        return child_pids
+
+
+class BackupError(Exception):
+    """Typical backup error."""
+
+    def __init__(self, message) -> None:
+        super().__init__(self, message)
+        self.message = message
+
+
+class BinlogRunner(multiprocessing.Process):
+    """Binlog multiprocessing class to run backups in parallel."""
+
+    def __init__(
+        self,
+        command_queue,
+        config_path: Path,
+        run_only_server: bool,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize MyDumperRunner.
+
+        :param command_queue:
+        :param config_path: Path to the configuration file.
+        :param run_only_server:
+        """
+        multiprocessing.Process.__init__(self, *args, **kwargs)
+
+        self.command_queue = command_queue
+        self.local_cfg = None
+        self.config_path = config_path
+        self.run_only_server = run_only_server
+        self.logger = None
+
+    def run(self) -> None:
+        """Run the BinlogRunner: iterate over servers and run Binlog backups."""
+        self.local_cfg = LocalConfig(self.config_path)
+
+        logging_dir = Path(
+            self.local_cfg.raw_cfg_data["ALL_SERVERS"].get(
+                "LOGGING_DIR", DEFAULT_LOGGING_DIR
+            )
+        )
+
+        servers = self.local_cfg.server_data_list
+        settings = servers[0]
+        if settings.get("DEBUG") or self.local_cfg.raw_cfg_data["ALL_SERVERS"].get(
+            "DEBUG"
+        ):
+            self.logger = logging_setup(logging_dir, LOGGING_NAME, logging.DEBUG)
+        if self.logger is None:
+            self.logger = logging_setup(logging_dir, LOGGING_NAME)
+
+        procs = []
+        queues = []
+        for server_data in self.local_cfg.server_data_list:
+            srv_bkup_type = server_data.get("BACKUP_TYPE", "ALL")
+            if srv_bkup_type != "ALL" and "B" not in srv_bkup_type:
+                continue
+            if (
+                self.run_only_server is not None
+                and server_data["HOST"] != self.run_only_server
+            ):
+                continue
+            server_command_queue = multiprocessing.Queue()
+            proc = multiprocessing.Process(
+                target=run_binlog_backup, args=(server_data, server_command_queue)
+            )
+            proc.start()
+            procs.append(proc)
+            queues.append(server_command_queue)
+
+        exit_initiated = None
+        while procs:
+            if exit_initiated is None:
+                command = queue_get_maybe(self.command_queue, 60)
+                if command is not None:
+                    if command == "exit":
+                        self.logger.info("BinlogRunner received exit command")
+                        for que in queues:
+                            que.put("exit")
+                        exit_initiated = time.time()
+                    else:
+                        self.logger.error("invalid command received: %r", command)
+            else:
+                time.sleep(1)
+
+            alive_procs = []
+            for proc in procs:
+                if proc.is_alive():
+                    alive_procs.append(proc)
+                else:
+                    proc.join()
+            procs = alive_procs
+
+            if exit_initiated is not None and time.time() - exit_initiated >= 10:
+                for proc in procs:
+                    proc.terminate()
+                return
+
+
+class BaseBackup:
+    """Base class for shared functionality across backup and restore operations."""
+
+    def __init__(
+        self,
+        server_data: dict[str, Any],
+        backup_code: str,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Initialize the BaseBackup object.
+
+        :param server_data: Dictionary of server configuration and runtime data.
+        :param backup_code: Backup code indicating the type of backup.
+        :param logger: Optional logger instance to use.
+        """
+        self.server_data = server_data
+        self.backup_code = backup_code
+        self.backup_textfile_collector_dir = Path(
+            self.server_data.get(
+                "BACKUP_TEXTFILE_COLLECTOR_DIR", BACKUP_TEXTFILE_COLLECTOR_DIR
+            )
+        )
+        self.alias = self.server_data.get("ALIAS")
+        self.report_options: dict[str, Any] = {}
+        self.logging_dir = Path(
+            self.server_data.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+        )
+        self.logger = LOGGER
+
+        self.compress = self.server_data.get("COMPRESS", True)
+        self.compression_algorithm = self.server_data.get(
+            "COMPRESSION_ALGORITHM", DEFAULT_COMPRESSION_ALGORITHM
+        )
+        if self.compress:
+            self.check_compression_algorithm(self.compression_algorithm)
+
+        # Dynamically set
+        self.is_replica = False
+        self.last_backup_dir = None
+
+    def check_compression_algorithm(self, algorithm: str) -> None:
+        """Check if the given compression algorithm is compatible with the backup type.
+
+        :param algorithm: Compression algorithm name.
+        :raises BackupError: If the algorithm is not compatible.
+        """
+        if not self.compress:
+            self.logger.debug("Compression is disabled, skipping check")
+            return
+        if algorithm in AVAILABLE_COMPRESSION_ALGORITHMS:
+            self.logger.debug(
+                "Algorithm %s accepted for backup type %s", algorithm, self.backup_code
+            )
+            return
+        raise BackupError(
+            f"algorithm {algorithm} is not one of {AVAILABLE_COMPRESSION_ALGORITHMS}"
+        )
+
+    def notify(self, status: BackupNotifyStatus, output: str) -> None:
+        """Send notifications about backup or restore operations.
+
+        :param status: Operation status code.
+        :param output: Operation output or message.
+        """
+        if len(output) > 300:
+            output = f"{output[:300]}..."
+
+        if isinstance(self, Backup) and self.is_replica:
+            output = f"Host {self.alias}. {output}"
+
+        self.report_options["end_time"] = time.strftime(DATETIME_FORMAT, time.gmtime())
+
+        if status == BackupNotifyStatus.OK:
+            self.textfile_collector_notify(0)
+            if "OK no new binlogs to upload" in output:
+                self.textfile_collector_write_status(status, MSPAction.UPLOAD)
+        else:
+            self.textfile_collector_notify(1)
+
+    def check_textcollector_dir(self) -> bool:
+        """Check if the textfile collector directory exists.
+
+        :return: True if directory exists, False otherwise.
+        """
+        backup_textfile_collector_dir = self.backup_textfile_collector_dir.parent
+        if not backup_textfile_collector_dir.is_dir():
+            self.logger.warning(
+                "Textfile Collector directory %s does not exist.",
+                backup_textfile_collector_dir,
+            )
+            return False
+        return True
+
+    def textfile_collector_write_status(
+        self,
+        backup_status: int,
+        msp_action: MSPAction = MSPAction.BACKUP,
+    ) -> None:
+        """Write backup status to textfile collector for Prometheus.
+
+        :param backup_status: Backup status code.
+        """
+        if not self.check_textcollector_dir():
+            return
+
+        collector_file = (
+            self.backup_textfile_collector_dir
+            / f"{msp_action}.{BACKUP_TYPE}.{self.alias}.prom"
+        )
+
+        encryption_val = self.report_options.get("encryption", "")
+        start_time_val = str(self.report_options.get("start_time", ""))
+        end_time_val = str(self.report_options.get("end_time", ""))
+
+        metrics_text = (
+            f"# HELP msp_{msp_action}_status The status of the job\n"
+            f"# TYPE msp_{msp_action}_status Untyped\n"
+            f"# HELP msp_{msp_action}_last_report_ts The Last Report Time\n"
+            f"# TYPE msp_{msp_action}_last_report_ts Untyped\n"
+            f'msp_{msp_action}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
+            f'backup_id="", start_time="{start_time_val}", end_time="{end_time_val}"'
+        )
+
+        size_bytes = (
+            get_dir_size(self.last_backup_dir)
+            if self.last_backup_dir is not None
+            else 0
+        )
+        metrics_text += f', backup_size="{size_bytes}"'
+
+        metrics_text += f"}} {backup_status}\n"
+        metrics_text += f'msp_{msp_action}_last_report_ts{{type="{BACKUP_TYPE}", alias="{self.alias}", backup_id=""}} {int(time.time())}\n'
+
+        with collector_file.open("w") as outfile:
+            outfile.write(metrics_text)
+
+    def textfile_collector_notify(self, backup_status: int) -> None:
+        """Notify status via textfile collector.
+
+        :param backup_status: Backup status code.
+        """
+        self.textfile_collector_write_status(backup_status)
+
+
+class Backup(BaseBackup):
+    """Common class for all backup types."""
+
+    def __init__(
+        self,
+        server_data: dict[str, Any],
+        backup_code: str,
+        logger: logging.Logger,
+    ) -> None:
+        """Initialize the Backup object with server data and backup code.
+
+        :param server_data: Server configuration and data.
+        :param backup_code: Backup code string.
+        :param logger: Optional logger instance.
+        """
+        self.backup_code = backup_code
+        super().__init__(server_data, backup_code, logger)
+        self.host = server_data.get("HOST", "localhost")
+        self.alias = server_data.get("ALIAS", self.host)
+        self.port = server_data.get("PORT", 3306)
+        self.hostname = str(
+            server_data.get("HOSTNAME", socket.gethostname().split(".")[0])
+        )
+        self.check_disk_space = server_data.get("CHECK_DISK_SPACE", True)
+        self.defaults_cnf_file = server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF)
+        self.hardlink = server_data.get("HARDLINK", True)
+        self.dir_encrypt_config = server_data.get("DIR_ENCRYPT_CONFIG", {})
+        self.post_run_encrypt = server_data.get("POST_RUN_ENCRYPT", False)
+        self.only_if_read_only = server_data.get("ONLY_IF_READ_ONLY")
+        self.only_if_running_replica = server_data.get("ONLY_IF_RUNNING_REPLICA")
+        self.upload_type = server_data.get("UPLOAD", set())
+        if isinstance(self.upload_type, str):
+            self.upload_type = {self.upload_type}
+        self.upload_interval = server_data.get("UPLOAD_INTERVAL", "weekly")
+        self.all_cnf_files = []
+        self.backup_textfile_collector_dir = Path(
+            self.server_data.get(
+                "BACKUP_TEXTFILE_COLLECTOR_DIR", BACKUP_TEXTFILE_COLLECTOR_DIR
+            )
+        )
+
+        self.logger = (
+            self.logger
+            or logger
+            or logging_setup(self.logging_dir, BACKUP_TYPE.lower() + ".log")
+        )
+        logging_set_host(self.alias, BACKUP_TYPE.lower() + ".log")
+
+        self.report_options = {
+            "host": self.alias,
+            "status": "error",
+            "start_time": time.strftime(DATETIME_FORMAT, time.gmtime()),
+            "end_time": "",
+            "size_mb": 0,
+            "hl_mb": None,
+            "options": {},
+            "encryption": "none",
+        }
+
+    def enable_upload(self, backup_dir: Path) -> None:
+        """If upload interval permits, mark backup for upload by creating the UPLOADME_FILE.
+
+        :param backup_dir: Path to the backup directory.
+        """
+        uploadme_path = backup_dir / UPLOADME_FILE
+        if not uploadme_path.is_file():
+            uploadme_path.touch()
+            self.logger.info("Backup marked for upload.")
+
+    def _query_mysql(self, sql: str) -> Any:
+        """Execute a MySQL query and return the result.
+
+        :param sql: SQL query string.
+        :return: Fetched result.
+        :raises BackupError: If query fails.
+        """
+        try:
+            conn = pymysql.connect(
+                read_default_file=self.defaults_cnf_file,
+                host=self.host,
+                port=self.port,
+                cursorclass=pymysql.cursors.DictCursor,
+            )
+            with conn, conn.cursor() as cursor:
+                cursor.execute(sql)
+                return cursor.fetchone()
+        except (OperationalError, InternalError) as err:
+            msg = f'Error running query "{sql}": {err}'
+            raise BackupError(msg) from err
+
+    def _is_running_replica(self) -> bool:
+        """Check if MySQL replica is running.
+
+        Supports both legacy `SHOW SLAVE STATUS` and newer `SHOW REPLICA STATUS` (MySQL 8.0.22+).
+
+        :return: True if replica is running, False otherwise.
+        """
+        result = None
+        # Try newer MySQL syntax first
+        for query in ["SHOW REPLICA STATUS", "SHOW SLAVE STATUS"]:
+            for suffix in [" NONBLOCKING", " NOLOCK", ""]:
+                try:
+                    result = self._query_mysql(f"{query}{suffix}")
+                except ProgrammingError:
+                    continue
+                if result:
+                    break
+            if result:
+                break
+
+        if result and result.get("Replica_IO_Running", result.get("Slave_IO_Running")) == "Yes":
+            self.logger.info("MySQL replication is running.")
+            return True
+
+        return False
+
+    def _is_read_only(self) -> bool:
+        """Check if MySQL is read-only.
+
+        :return: True if read_only=1, False otherwise.
+        """
+        result = self._query_mysql("SELECT @@read_only")
+        if result["@@read_only"] == 1:
+            self.logger.info("MySQL read_only is enabled.")
+            return True
+        return False
+
+    def _is_pxc(self) -> bool:
+        """Check if MySQL is running PXC/Galera cluster.
+
+        :return: True if wsrep_on=1, False otherwise.
+        """
+        try:
+            result = self._query_mysql("SELECT @@wsrep_on")
+        except BackupError:
+            return False
+
+        if result["@@wsrep_on"] == 1:
+            self.logger.info("PXC/Galera cluster detected.")
+            return True
+        return False
+
+    def _pxc_desync(self, new_status: int = 1) -> bool:
+        """Change wsrep_desync of a Galera node.
+
+        :param new_status: Desired wsrep_desync status (0 or 1).
+        :return: True if wsrep_desync changed or already in desired state, False otherwise.
+        """
+        try:
+            result = self._query_mysql("SELECT @@wsrep_desync")
+        except BackupError:
+            return False
+
+        if result["@@wsrep_desync"] != new_status:
+            if result["@@wsrep_desync"] == 1:
+                recv_queue = self._query_mysql(
+                    'SHOW GLOBAL STATUS LIKE "wsrep_local_recv_queue"'
+                )
+                if int(recv_queue["Value"]) > 32:
+                    logging.warning(
+                        "Galera node is not synced, queue size is %s",
+                        recv_queue["Value"],
+                    )
+
+            self._query_mysql(f"SET GLOBAL wsrep_desync = {new_status}")
+            self.logger.info("MySQL wsrep_desync changed to %s", new_status)
+
+        return True
+
+
+def run_binlog_backup(server_data, command_queue):
+    alias = server_data.get("ALIAS", server_data["HOST"])
+    logging_dir = Path(server_data.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
+
+    if server_data.get("DEBUG"):
+        logging_lvl = logging.DEBUG
+    else:
+        logging_lvl = logging.INFO
+
+    global LOGGER
+    LOGGER = logging_setup(logging_dir, "binlog_puller_%s.log" % (alias,), logging_lvl)
+
+    server_data["BINLOG_BACKUP_START"] = time.strftime(
+        "%Y-%m-%d %H:%M:%S", time.gmtime()
+    )
+
+    lockfile_name = "/tmp/.lock_binlog_puller_%s_%s" % (
+        server_data["HOST"],
+        server_data["PORT"],
+    )
+
+    lock_file = LockFile(lockfile_name, timeout=600)
+    try:
+        lock_file.get_lock()
+    except LockInUse:
+        return
+
+    server_data["last_success"] = time.time()
+    server_data["last_fail_msg"] = "no specific failure recorded"
+
+    # Create backup dir
+    if not os.path.isdir(get_backup_dir(server_data)):
+        os.makedirs(get_backup_dir(server_data))
+
+    if is_public_ip(server_data["HOST"]):
+        LOGGER.info("Pulling from an external IP, enabling --compress")
+        # Add --compress option
+        if "BINLOG_EXTRA_ARGS" in server_data:
+            if server_data["BINLOG_EXTRA_ARGS"].find("--compress") == -1:
+                server_data["BINLOG_EXTRA_ARGS"] = " ".join(
+                    [server_data["BINLOG_EXTRA_ARGS"], "--compress"]
+                )
+        else:
+            server_data["BINLOG_EXTRA_ARGS"] = "--compress"
+
+        # Check for SSL connection
+        conn = MySQLdb.connect(
+            host=server_data["HOST"],
+            port=server_data["PORT"],
+            read_default_file=server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF),
+            read_default_group="client",
+        )
+        cursor = conn.cursor()
+        cursor.execute('SHOW STATUS like "Ssl_cipher"')
+        ssl = cursor.fetchone()
+        if (not ssl or ssl[1] == "") and not server_data.get(
+            "BINLOG_INSECURE_CONNECTION"
+        ):
+            LOGGER.warning("""Insecure connection: client is not enabled for SSL while pulling from an external IP.
+                               Configure SSL or enable BINLOG_INSECURE_CONNECTION in the config.
+                               Exiting...""")
+            lock_file.free_lock()
+            return
+
+    try:
+        while True:
+            exit_now, restart_now = run_binlog_process(
+                server_data, lock_file, command_queue
+            )
+
+            if exit_now:
+                break
+
+            if not restart_now:
+                time.sleep(MYSQLBINLOG_RESTART_DELAY)
+
+    finally:
+        lock_file.free_lock()
+
+
+def run_binlog_process(server_data, lock_file, command_queue):
+    cleanup_binlogs(server_data)
+    backup_proc = start_mysqlbinlog(server_data)
+
+    if backup_proc is None:
+        send_notifications(2, server_data, "server does not have binary logs enabled")
+        return False, False
+
+    alias = server_data.get("ALIAS", server_data["HOST"])
+    last_binlog = None
+    last_binlog_size = 0
+    last_binlog_write = time.time()
+    killed = False
+    restart_now = False
+    exit_now = False
+    last_source_status = None
+
+    if time.time() - server_data["last_success"] > 60 * 50:
+        send_notifications(
+            2,
+            server_data,
+            "binlog_puller.py has encountered problems: %s"
+            % (server_data["last_fail_msg"],),
+        )
+        server_data["last_success"] = time.time()
+
+    check_disk_space = server_data.get("CHECK_DISK_SPACE", True)
+    threshold = server_data.get("BINLOG_DISK_FREE_PCT", 5)
+    backup_dir = get_backup_dir(server_data)
+    while backup_proc.poll() is None:  # i.e. process is running
+        # Check for free disk space
+        if check_disk_space:
+            res, output = is_free_space(backup_dir, alias, False, threshold, LOGGER)
+            if not res:
+                # Not enough space, killing mysqlbinlog
+                LOGGER.error("Killing backup process. %s", output)
+                server_data["last_fail_msg"] = output
+                backup_proc.kill()
+                return False, False
+
+        cur_last_binlog = get_last_binlog(server_data)
+        if os.path.isfile(cur_last_binlog):
+            cur_last_binlog_size = os.path.getsize(cur_last_binlog)
+            if last_binlog:
+                if (cur_last_binlog > last_binlog) or (
+                    cur_last_binlog == last_binlog
+                    and cur_last_binlog_size > last_binlog_size
+                ):
+                    last_binlog = cur_last_binlog
+                    last_binlog_size = cur_last_binlog_size
+                    last_binlog_write = time.time()
+                    send_notifications(
+                        0, server_data, "OK Last binlog: %s" % (last_binlog,)
+                    )
+                    server_data["last_success"] = time.time()
+                else:
+                    # If the logs on the source haven't moved, infer the
+                    # mysqlbinlog process is still OK even though the local
+                    # logs haven't grown
+                    source_status = get_source_status(server_data)
+                    if source_status is not None:
+                        binlog_name = os.path.basename(cur_last_binlog)
+                        if (
+                            source_status[0] == binlog_name
+                            and last_source_status == source_status
+                        ):
+                            last_binlog_write = time.time()
+                            server_data["last_success"] = time.time()
+                            send_notifications(
+                                0,
+                                server_data,
+                                "OK Last binlog: %s; no recent source writes"
+                                % (last_binlog,),
+                            )
+                        last_source_status = source_status
+            else:
+                last_binlog = cur_last_binlog
+                last_binlog_size = cur_last_binlog_size
+
+        if (last_binlog_write + server_data["NOWRITE_TIMEOUT"]) < time.time():
+            msg = (
+                "Killing backup process. No logs have been written for %s seconds."
+                % server_data["NOWRITE_TIMEOUT"]
+            )
+            LOGGER.error(msg)
+            server_data["last_success"] = time.time()
+            backup_proc.kill()
+            killed = True
+            send_notifications(
+                0,
+                server_data,
+                "OK No logs have been written for %s seconds."
+                % (server_data["NOWRITE_TIMEOUT"],),
+            )
+            break
+
+        cleanup_binlogs(server_data)
+        lock_file.update_lock()
+
+        command = queue_get_maybe(command_queue, 30)
+        if command is not None:
+            if command == "exit":
+                LOGGER.info("run_binlog_process received exit command")
+                backup_proc.terminate()
+                return True, False
+            LOGGER.error("invalid command received: %r", command)
+
+    ret = backup_proc.returncode
+    LOGGER.debug("Mysqlbinlog ret <%s>", ret)
+
+    if ret != 0 and not killed:
+        stderr_lines = backup_proc.stderr.readlines()
+        stderr_lines = [
+            line.decode("utf-8") for line in stderr_lines
+        ]  # Decode each line to a string
+        err = "\n".join(stderr_lines)
+        LOGGER.error(err)
+        if err.find("binlog truncated in the middle of event") > 0:
+            LOGGER.warning("Caught truncated binlog %s. Skipping it.", cur_last_binlog)
+            server_data["TRUNCATED_BINLOG"] = True
+            server_data["last_fail_msg"] = "binlog truncated in the middle of event"
+            restart_now = True
+        elif err.find("Access denied for user") > 0:
+            server_data["last_fail_msg"] = "check database credentials: %s" % err
+            send_notifications(
+                2,
+                server_data,
+                "binlog_puller.py has encountered problems: %s"
+                % (server_data["last_fail_msg"],),
+            )
+        else:
+            server_data["last_fail_msg"] = "mysqlbinlog has exited: %s" % err
+
+    return exit_now, restart_now
+
+
+def cleanup_binlogs(server_data):
+    no_compress = server_data.get("NO_COMPRESS", 0)
+    remove_partial_binlogs(server_data)
+    purge_old_gzip_binlogs(server_data)
+    if no_compress == 0:
+        compress_complete_binlogs(server_data)
+
+
+def compress_complete_binlogs(server_data):
+    # TODO - Add a check that grabs the binlog size from the server and re-pulls the log if the size does not match
+    current_binlogs = get_file_list(
+        get_backup_dir(server_data), server_data["BINLOG_PREFIX"], sort_by="binlog_id"
+    )
+    LOGGER.debug("current_binlogs 1: <%r>", current_binlogs)
+    current_binlogs = current_binlogs[:-2]
+    LOGGER.debug("current_binlogs 2: <%r>", current_binlogs)
+    for binlog in current_binlogs:
+        try:
+            if binlog["ext"] == "":
+                compress_file(binlog["path"], server_data)
+        except Exception:
+            pass
+
+
+def purge_old_gzip_binlogs(server_data):
+    no_compress = server_data.get("NO_COMPRESS", 0)
+    dir_list = get_file_list(
+        get_backup_dir(server_data),
+        server_data["BINLOG_PREFIX"],
+        False if no_compress else "gz",
+    )
+    mtime_dir_list = [(os.path.getmtime(f["path"]), f["path"]) for f in dir_list]
+    ptime = time.time() - 86400 * server_data["BINLOG_PURGE_DAYS"]
+    purge_file_list = [f[1] for f in mtime_dir_list if f[0] <= ptime]
+
+    failed_cnt = 0
+    for fname in purge_file_list:
+        try:
+            purge_file(fname)
+        except Exception:
+            failed_cnt += 1
+    if failed_cnt:
+        msg = "Failed to purge %d file(s)" % failed_cnt
+        LOGGER.error(msg)
+
+
+def remove_partial_binlogs(server_data):
+    partial_list = get_file_list(
+        get_backup_dir(server_data), server_data["BINLOG_PREFIX"], "partial"
+    )
+    msg = "partial_list: <%s>" % repr(partial_list)
+    LOGGER.debug(msg)
+    for fname in partial_list:
+        # look for new download of this binlog and verify that it is at least
+        # as far at the partial before removing
+        # strip off the '.<EPOCH>.partial' suffix
+        base_fname = fname["path"].replace(fname["ext"], "")
+        if os.path.isfile(base_fname):
+            if os.path.getsize(base_fname) >= os.path.getsize(fname["path"]):
+                purge_file(fname["path"])
+
+
+def start_mysqlbinlog(server_data):
+    try:
+        last_binlog = get_last_binlog(server_data)
+    except MySQLdb.OperationalError as e:
+        if e.args[0] == 1381:
+            LOGGER.exception("Server does not have binlogs enabled.")
+            return None
+        raise
+
+    if os.path.isfile(last_binlog):
+        os.rename(last_binlog, "%s.%s.partial" % (last_binlog, time.strftime("%s")))
+
+    default_args = [
+        "--raw",
+        "--read-from-remote-server",
+        "--stop-never",
+        "--verify-binlog-checksum",
+        "--host=%s" % (server_data["HOST"],),
+    ]
+
+    cmd = [server_data.get("BINLOG_CMD", MYSQLBINLOG_CMD)]
+
+    if "DEFAULTS_FILE" in server_data:
+        cmd.append("--defaults-file=%s" % (server_data["DEFAULTS_FILE"],))
+    if "BINLOG_EXTRA_ARGS" in server_data:
+        cmd.extend(server_data["BINLOG_EXTRA_ARGS"].split(" "))
+    cmd.extend(default_args)
+    if "PORT" in server_data:
+        cmd.append("--port=%s" % (server_data["PORT"],))
+    if "BINLOG_SERVER_ID" in server_data:
+        cmd.append(
+            "--stop-never-slave-server-id=%s" % (server_data["BINLOG_SERVER_ID"],) # Still present in mysqlbinlog for 8.4
+        )
+    else:
+        cmd.append(
+            "--stop-never-slave-server-id=%s"
+            % ((2**16 - int(uuid.getnode() % (2**14))),)
+        )
+    if last_binlog:
+        cmd.append(os.path.basename(last_binlog))
+
+    LOGGER.info("Running <%s>", " ".join(cmd))
+    proc = subprocess.Popen(
+        cmd,
+        cwd=get_backup_dir(server_data),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return proc
+
+
+def get_backup_dir(server_data):
+    return os.path.join(
+        server_data["BACKUP_DIR"],
+        "binlogs",
+        server_data.get("ALIAS", server_data["HOST"]),
+    )
+
+
+def get_last_binlog(server_data):
+    current_binlogs = get_file_list(
+        get_backup_dir(server_data), server_data["BINLOG_PREFIX"], sort_by="binlog_id"
+    )
+    last_binlog = ""
+
+    if len(current_binlogs) > 0:
+        last_binlog_meta = current_binlogs[-1]
+        last_binlog = last_binlog_meta["path"].replace(last_binlog_meta["ext"], "")
+    else:
+        # Pull from server
+        conn = MySQLdb.connect(
+            host=server_data["HOST"],
+            port=server_data["PORT"],
+            read_default_file=server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF),
+            read_default_group="client",
+        )
+        cursor = conn.cursor(MySQLdb.cursors.DictCursor)
+        # XXX OperationalError: (1381, 'You are not using binary logging')
+        cursor.execute("SHOW BINARY LOGS")
+        rows = cursor.fetchall()
+        for row in rows:
+            if row["File_size"] > 0:
+                last_binlog = row["Log_name"]
+                break
+    if len(last_binlog) and server_data.get("TRUNCATED_BINLOG"):
+        file_parts = last_binlog.split(".")
+        last_binlog = "{0}.{1:d}".format(
+            "".join(file_parts[:-1]), int("".join(file_parts[-1:])) + 1
+        )
+        server_data["TRUNCATED_BINLOG"] = False
+    return last_binlog
+
+
+def get_file_list(dname, binlog_prefix="mysql-bin", filter=None, sort_by=None):
+    file_regex = (
+        r"^(?P<prefix>%s\.)(?P<binlog_id>[0-9]{6,})(?P<ext>(\.(gz|[0-9]{10,}\.partial))?)$"
+        % binlog_prefix
+    )
+    fname_re = re.compile(file_regex)
+    dir_list = []
+    for f in os.listdir(dname):
+        fname_match = fname_re.match(f)
+        fname_path = os.path.join(dname, f)
+        if fname_match and os.path.isfile(fname_path):
+            fname_meta = fname_match.groupdict()
+            if (
+                (filter == "gz" and fname_meta["ext"] == ".gz")
+                or (filter == "partial" and fname_meta["ext"] not in [".gz", ""])
+                or not filter
+            ):
+                dir_list += [
+                    {
+                        "path": fname_path,
+                        "binlog_id": fname_meta["binlog_id"],
+                        "ext": fname_meta["ext"],
+                    }
+                ]
+    if sort_by is not None:
+        dir_list = sorted(dir_list, key=lambda x: x[sort_by])
+    return dir_list
+
+
+def purge_file(fname):
+    os.unlink(fname)
+    msg = "<%s> purged." % fname
+    LOGGER.info(msg)
+
+
+def compress_file(fname, server_data):
+    if "BINLOG_COMPRESS_CMD" in server_data:
+        cmd = server_data["BINLOG_COMPRESS_CMD"].split(" ") + [fname]
+        LOGGER.debug("compress command = %s", cmd)
+    else:
+        cmd = [
+            "/bin/gzip",
+            "-q",
+            "--suffix=.msp",
+            fname,
+            "&&",
+            "mv",
+            f"{fname}.msp",
+            f"{fname}.gz",
+        ]
+
+    proc = subprocess.Popen(" ".join(cmd), shell=True)
+    proc_ret = proc.wait()
+    if proc_ret == 0:
+        msg = "<%s> compressed." % fname
+        LOGGER.info(msg)
+    else:
+        msg = "<%s> compression failed." % fname
+        LOGGER.error(msg)
+        raise Exception(msg)
+
+
+def send_notifications(status_int, server_data, msg):
+    alias = server_data.get("ALIAS", server_data["HOST"])
+    this_host = str(server_data.get("HOSTNAME", socket.gethostname().split(".")[0]))
+
+    notify = BaseBackup(server_data, "B")
+    # sending textfile collector notification for freshness
+    notify.textfile_collector_notify(status_int)
+
+    if status_int == 0:
+        LOGGER.info(msg)
+    elif status_int == 1:
+        LOGGER.warning(msg)
+    else:
+        LOGGER.critical(msg)
+
+
+def queue_get_maybe(queue, timeout=None):
+    block = timeout is not None
+    try:
+        item = queue.get(block, timeout)
+    except Queue.Empty:
+        item = None
+    return item
+
+
+def get_source_status(server_data):
+    """Return a tuple of binlog name and position from the source we're currently
+    connecting to.
+    """
+    try:
+        conn = MySQLdb.connect(
+            host=server_data["HOST"],
+            port=server_data["PORT"],
+            read_default_file=server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF),
+            read_default_group="client",
+        )
+    except Exception:
+        LOGGER.exception("problem connecting to source")
+        return None
+
+    cursor = conn.cursor()
+    for query in ["SHOW BINARY LOG STATUS", "SHOW MASTER STATUS"]:
+        try:
+            cursor.execute(query)
+        except ProgrammingError:
+            continue
+    source_status = cursor.fetchone()
+
+    conn.close()
+
+    return source_status
+
+
+def get_dir_size(start_path: Path) -> int:
+    """Get the disk usage of a directory in bytes."""
+    total_size = start_path.stat().st_blocks * ST_BLOCKS_SIZE
+    try:
+        for file in start_path.rglob("*"):
+            if not file.is_symlink():
+                total_size += file.stat().st_blocks * ST_BLOCKS_SIZE
+    except Exception as e:
+        logging.warning(
+            "Error traversing directory %s: %s", start_path, e, exc_info=True
+        )
+    return total_size
+
+
+def preflight_check() -> None:
+    """Perform checks prior to running backups."""
+    if not sys.version_info >= (3, 8):
+        print(f"ERROR: python 3.8+ required. Your version: {sys.version_info}.\n")
+        sys.exit(4)
+
+
+def main() -> None:
+    """Run main program."""
+    preflight_check()
+    run_all, config, alias, parser = parse_args()
+
+    run_all = (
+        LocalConfig(config).raw_cfg_data["ALL_SERVERS"].get("BINLOG_RUN_ALL", False)
+    )
+
+    if (alias and run_all) or not (alias or run_all):
+        sys.stderr.write("must only specify server or run-all\n")
+        parser.print_help()
+        sys.exit(1)
+
+    command_queue = multiprocessing.Queue()
+    binlog_runner = BinlogRunner(command_queue, config, alias)
+    binlog_runner.run()
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments.
+
+    :return: Parsed arguments namespace.
+    """
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--run-all",
+        default=False,
+        action="store_true",
+        help="Subprocess all servers specified in --config",
+    )
+    group.add_argument(
+        "--server",
+        action="store",
+        help="Name of the host binlogs will be pulled off of. "
+        "Alias should map to server name in config file",
+    )
+    parser.add_argument(
+        "--config", help="File name of the YAML config for --run-all and --server"
+    )
+    options = parser.parse_args()
+    return options.run_all, options.config, options.server, parser
+
+
+if __name__ == "__main__":
+    main()

@@ -38,6 +38,7 @@ class TaskFactory(ModelFactory[Task]):
     """Define factory for Task instances."""
 
     is_template: bool = False
+    protected: bool = False
     backend: TaskBackendEnum = TaskBackendEnum.NOMAD
 
 

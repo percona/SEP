@@ -3,10 +3,10 @@
 from typing import Annotated, Self
 
 from annotated_types import Ge
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from app.core.models import BaseLowercaseModel
-from app.core.utils.fields import StrAnyUrl, StrDatabaseUrl
+from app.core.utils.fields import StrAnyUrl, StrDatabaseUrl, StrRelativePath
 
 
 class CeleryOptions(BaseLowercaseModel):
@@ -28,6 +28,9 @@ class CeleryOptions(BaseLowercaseModel):
     :param max_retries: The maximum number of times to retry failed tasks. Defaults
         to `0` (no retries).
     :type max_retries: int
+    :param global_expire_seconds: The number of seconds after which a periodic task
+        will no longer run. Defaults to `30`.
+    :type global_expire_seconds: int
     """
 
     model_config = ConfigDict(extra="allow")
@@ -35,8 +38,12 @@ class CeleryOptions(BaseLowercaseModel):
     task_track_started: bool = True
     result_backend: StrAnyUrl | None = None
     beat_dburi: StrDatabaseUrl = "sqlite:///schedule.db"
+    worker_state_db: StrRelativePath = Field(
+        "data/celery_worker_state", validate_default=True
+    )
     beat_schema: str | None = None
     max_retries: Annotated[int, Ge(0)] = 0
+    global_expire_seconds: Annotated[int, Ge(0)] = 30
 
     @model_validator(mode="after")
     def set_default_beat_schema(self) -> Self:

@@ -15,7 +15,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
-from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPNotFoundException,
+    HTTPRedirectException,
+)
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
@@ -200,6 +204,7 @@ def get_default_context(
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "messages": messages.get_messages(request),
+        "pmm_url": sep_settings.PMM_FRONTEND,
     }
 
 
@@ -435,10 +440,16 @@ async def get_tasks_context(
     :return: The assembled context dictionary containing tasks and services information.
     :rtype: dict[str, Any]
     """
-    mysql_services = await inventory_api.get(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    service_type = (
+        ServiceTypeEnum.MONGODB
+        if owner == TaskOwner.BACKUP_MONGO
+        else ServiceTypeEnum.MYSQL
     )
-    for service in mysql_services:
+    services = await inventory_api.get(
+        "/services/", params={"service_type": service_type}
+    )
+
+    for service in services:
         service["schemas"] = await inventory_api.get(
             f"/services/{service['id']}/schemas/",
         )
@@ -456,12 +467,12 @@ async def get_tasks_context(
         history = await tasks_api.get(f"/{task['name']}/history/")
         for hist in history:
             match TaskHistoryStatusEnum(hist["status"]):
-                case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
-                    history_tasks.append(hist)
                 case TaskHistoryStatusEnum.PENDING:
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
+                case _:
+                    history_tasks.append(hist)
     periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
 
     try:
@@ -476,7 +487,7 @@ async def get_tasks_context(
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
-            "mysql_services": mysql_services,
+            "services": services,
             "tasks": tasks,
             "entities": entities,
             "pending_tasks": scheduled_tasks,
@@ -620,3 +631,32 @@ async def get_task_history(
     if owner is not None and owner != task_history.task.owner:
         raise HTTPNotFoundException
     return task_history
+
+
+async def check_for_conflicted_running_tasks(
+    task_name: str, tasks_api: TaskAPI
+) -> None:
+    """Check for running or pending tasks with the same name.
+
+    This function checks if there are any running or pending tasks with the same name
+    as the provided `task_name`. If such tasks are found, it raises an
+    HTTPConflictException.
+
+    :param task_name: The name of the task to check for.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :raises HTTPConflictException: If there are running or pending tasks with the same
+        name.
+    """
+    running_tasks = await tasks_api.get(
+        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    pending_tasks = await tasks_api.get(
+        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+    )
+    if running_tasks or pending_tasks:
+        raise HTTPConflictException("Task is already running or pending.")
+
+
+HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)

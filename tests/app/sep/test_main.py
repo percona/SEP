@@ -5,12 +5,20 @@ from unittest.mock import Mock
 import pytest
 from fastapi import HTTPException, status
 from fastapi.responses import HTMLResponse
+from fastapi.testclient import TestClient
 
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.sep.config import sep_settings
 from app.sep.deps import get_access_token_from_cookie
 from app.sep.main import get_tasks_index_context, sep_app, templates
 from tests.app.factories import OAuthTokenFactory
+
+
+@pytest.fixture
+def test_client_with_session_cookie(test_client: TestClient) -> TestClient:
+    """Create an authenticated test client for the app with the session cookie set."""
+    test_client.cookies[sep_settings.SESSION.COOKIE_NAME] = "existing_session"
+    return test_client
 
 
 @pytest.fixture
@@ -64,15 +72,15 @@ class TestLogin:
         context = kwargs.get("context", {})
         assert "csrf_token" in context
 
-    def test_get_login_redirects_if_authenticated(self, test_client):
+    def test_get_login_redirects_if_authenticated(
+        self, test_client_with_session_cookie
+    ):
         """Test the GET /login route for an already authenticated user.
 
         If a user is already authenticated (i.e. has the session cookie)
         then GET /login should raise a redirect.
         """
-        cookies = {sep_settings.SESSION.COOKIE_NAME: "existing_session"}
-
-        response = test_client.get("/login", cookies=cookies, allow_redirects=False)
+        response = test_client_with_session_cookie.get("/login", follow_redirects=False)
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == "/"
@@ -116,7 +124,7 @@ class TestLogin:
         login_route = "/login"
         if next_path is not None:
             login_route += f"?next={next_path}"
-        response = test_client.post(login_route, data=form_data, allow_redirects=False)
+        response = test_client.post(login_route, data=form_data, follow_redirects=False)
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == expected_location
@@ -131,17 +139,18 @@ class TestLogin:
         )
         dumps_patch.assert_called_once_with(fake_access_token)
 
-    def test_post_login_redirects_if_authenticated(self, test_client):
+    def test_post_login_redirects_if_authenticated(
+        self, test_client_with_session_cookie
+    ):
         """Test the POST /login route for an already authenticated user.
 
         If the client sends a session cookie, the POST /login route
         should not try to reauthenticate but instead immediately redirect.
         """
-        cookies = {sep_settings.SESSION.COOKIE_NAME: "existing_session"}
         form_data = {"username": "testuser", "password": "secret"}
 
-        response = test_client.post(
-            "/login", data=form_data, cookies=cookies, allow_redirects=False
+        response = test_client_with_session_cookie.post(
+            "/login", data=form_data, follow_redirects=False
         )
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -151,7 +160,9 @@ class TestLogin:
 class TestLogout:
     """Define test suite for logout route."""
 
-    def test_logout_success(self, mocker, dummy_access_token, test_client):
+    def test_logout_success(
+        self, mocker, dummy_access_token, test_client_with_session_cookie
+    ):
         """Test a successful logout request.
 
         A successful POST /logout should delete the session cookie,
@@ -162,10 +173,8 @@ class TestLogout:
             new_callable=mocker.AsyncMock,
         )
 
-        response = test_client.post(
-            "/logout",
-            cookies={sep_settings.SESSION.COOKIE_NAME: "fake_cookie_token"},
-            follow_redirects=False,
+        response = test_client_with_session_cookie.post(
+            "/logout", follow_redirects=False
         )
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -175,7 +184,7 @@ class TestLogout:
         invalidate_patch.assert_awaited_once_with(dummy_access_token)
 
     def test_logout_handles_invalidation_error(
-        self, mocker, dummy_access_token, test_client
+        self, mocker, dummy_access_token, test_client_with_session_cookie
     ):
         """Test that logout route always redirects.
 
@@ -188,9 +197,8 @@ class TestLogout:
             side_effect=KeyError("invalid token"),
         )
 
-        response = test_client.post(
+        response = test_client_with_session_cookie.post(
             "/logout",
-            cookies={sep_settings.SESSION.COOKIE_NAME: "fake_cookie_token"},
             follow_redirects=False,
         )
 
@@ -245,7 +253,7 @@ class TestExceptionHandlers:
         messages_error_mock.assert_called_once_with(mocker.ANY, error_detail)
 
     def test_auth_provider_exception_handler(
-        self, mocker, dummy_access_token, dummy_context, test_client
+        self, mocker, dummy_access_token, dummy_context, test_client_with_session_cookie
     ):
         """Test that BaseAuthProviderException are caught and properly handled."""
         error_detail = "Error getting response from auth provider."
@@ -257,9 +265,8 @@ class TestExceptionHandlers:
         )
         messages_error_mock = mocker.patch("app.sep.main.messages.error")
 
-        response = test_client.get(
+        response = test_client_with_session_cookie.get(
             "/",
-            cookies={sep_settings.SESSION.COOKIE_NAME: "fake_cookie_token"},
             follow_redirects=False,
         )
 

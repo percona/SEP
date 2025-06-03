@@ -11,6 +11,7 @@ from pydantic import FutureDatetime
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    HasNoConflictedRunningTasks,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -86,6 +87,7 @@ async def backups_detail(
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "entities": {entity.name: entity.value for entity in decoded_entities},
+        "delete_url": request.url_for("backups_delete", task_name=task.name),
     }
 
     context["task"] = task_data
@@ -103,7 +105,7 @@ async def backups_detail(
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
 )
 async def backups_execute(

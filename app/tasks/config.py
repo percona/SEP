@@ -1,5 +1,6 @@
 """Define settings for the Tasks app."""
 
+from datetime import timedelta
 from typing import ClassVar
 
 from app.core.config import (
@@ -22,8 +23,6 @@ class TasksSettings(BaseYamlAppSettings):
     :type UVICORN_PORT: int
     :param NOMAD: The configuration options for integrating with Nomad.
     :type NOMAD: NomadOptions
-    :param EXECUTE_MODE: The execution mode for tasks. Defaults to 'background'.
-    :type EXECUTE_MODE: str
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
@@ -32,18 +31,21 @@ class TasksSettings(BaseYamlAppSettings):
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
     :param secret_key: Secret key used for encryption of logs.
     :type secret_key: str
+    :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
+        minutes.
+    :type SYNC_LOCK_TTL: timedelta
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
     NOMAD: NomadExecutor
-    EXECUTE_MODE: str = "background"
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
         content_security_policy_strict=False
     )
     LOG_ANON: bool | list[str] = True
     SECRET_KEY: str = settings.SECRET_KEY
+    SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
 
 
 tasks_settings = TasksSettings()

@@ -46,6 +46,22 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     logger_name: str = __name__
     _session: ClientSession | None = None
 
+    def __hash__(self) -> int:
+        """Compute the hash based on the endpoint and SSL configuration.
+
+        :return: The hash value of the remote API instance.
+        :rtype: int
+        """
+        return hash(
+            (
+                self.endpoint,
+                self.verify_ssl,
+                self.ssl_cafile,
+                self.ssl_keyfile,
+                self.ssl_certfile,
+            )
+        )
+
     async def __aenter__(self) -> Self:
         """Enter the asynchronous context manager.
 
@@ -178,7 +194,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return path + "/" if trailing_slash else path
 
     @asynccontextmanager
-    async def _request(self, method: str, path: str, **kwargs: Any) -> ClientResponse:
+    async def _request(
+        self, method: str, path: str, **kwargs: Any
+    ) -> AsyncGenerator[ClientResponse, None]:
         """Define internal method to perform an HTTP request.
 
         Yields the aiohttp `ClientResponse` object for further processing.
@@ -192,16 +210,16 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :yield: The aiohttp `ClientResponse` object.
         :rtype: AsyncGenerator[ClientResponse, None]
         """
-        path = self.prepare_path(path)
+        prepared_path = self.prepare_path(path)
         kwargs["ssl"] = self.ssl_context if self.verify_ssl else False
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
-            self.base_url,
+            self.endpoint,
             method,
             path,
             kwargs,
         )
-        async with self._session.request(method, path, **kwargs) as response:
+        async with self._session.request(method, prepared_path, **kwargs) as response:
             yield response
 
     async def stream(
@@ -287,6 +305,24 @@ class RemoteAPI(BaseRemoteAPI):
     error_detail_key: RequiredStr = "detail"
     error_code_key: RequiredStr | None = None
 
+    def __hash__(self) -> int:
+        """Compute the hash based on the endpoint, SSL configuration, and auth data.
+
+        :return: The hash value of the remote API instance.
+        :rtype: int
+        """
+        return hash(
+            (
+                self.endpoint,
+                self.verify_ssl,
+                self.ssl_cafile,
+                self.ssl_keyfile,
+                self.ssl_certfile,
+                self.auth_scheme,
+                self.api_key,
+            )
+        )
+
     @property
     def headers(self) -> dict[str, str]:
         """Return the headers to be used in API requests.
@@ -326,23 +362,23 @@ class RemoteAPI(BaseRemoteAPI):
             try:
                 response_data = await response.json()
                 self.logger.debug(
-                    "%s request to %s%s response: %s, status: %s",
+                    "RemoteAPI (%s): %s request to %s response (%s): %s",
+                    self.endpoint,
                     method,
-                    self.base_url,
                     path,
-                    response_data,
                     response.status,
+                    response_data,
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
                 response_content = response.content
                 self.logger.exception(
-                    "%s request to %s%s response content: %s, status: %s",
+                    "RemoteAPI (%s): %s request to %s response content (%s): %s",
+                    self.endpoint,
                     method,
-                    self.base_url,
                     path,
-                    response_content,
                     response.status,
+                    response_content,
                 )
                 raise HTTPException(
                     err.status, detail="An unexpected error occurred on the server."

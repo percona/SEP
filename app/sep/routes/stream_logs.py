@@ -1,5 +1,6 @@
 """Define routes for streaming tasks logs."""
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -10,7 +11,7 @@ from starlette.responses import StreamingResponse
 
 from app.sep.deps import get_task_history, IsAuthenticated, TaskAPI
 from app.sep.utils.decorators import csrf_exempt
-from app.tasks.models import TaskHistoryResponse
+from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,4 +58,11 @@ async def task_history_logs_event_stream(
                 log_data["id"] = i
                 yield f"data: {json.dumps(log_data)}\n\n"
                 i += 1
-    yield "event: finish\ndata: true\n\n"
+    # TODO(yan): Don't wait for task to finish
+    # SEP-379
+    wait_interval = 5
+    task_history = await tasks_api.get(f"/history/{task_history_id}")
+    while task_history["status"] == TaskHistoryStatusEnum.RUNNING:
+        await asyncio.sleep(wait_interval)
+        task_history = await tasks_api.get(f"/history/{task_history_id}")
+    yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
