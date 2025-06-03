@@ -36,10 +36,6 @@
         <script src="{{ url_for('static', path='/js/scheduled.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
-    {% if user.is_admin and entities %}
-        <script src="{{ url_for('static', path='/js/maskForm.js') }}"
-                nonce="{{ request.state.csp_nonce }}"></script>
-    {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
     <p>Perform data archiving tasks, currently MySQL-only.</p>
