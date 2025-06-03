@@ -2,21 +2,49 @@
     <fieldset>
         <legend>s3 storage options</legend>
         <div id="s3_options">
-            <label>S3 Provider:
+            <label>
+                S3 Provider:
                 <select id="provider" name="provider">
                     <option value="aws">AWS</option>
                     <option value="gcs">GCS</option>
                 </select>
             </label>
-            <label>Region: <input type="text" id="region" name="region"></label>
-            <label>Bucket Name: <input type="text" id="bucket" name="bucket"></label>
-            <label>Prefix: <input type="text" id="prefix" name="prefix"></label>
-            <label>Endpoint URL: <input type="text" id="endpoint_url" name="endpoint_url"></label>
-            <label>Upload Part Size (Bytes): <input type="number" id="upload_part_size" name="upload_part_size"></label>
-            <label>Max Upload Parts: <input type="number" id="max_upload_parts" name="max_upload_parts"></label>
-            <label> NumMaxRetries <input type="number" id="num_max_retries" name="num_max_retries"></label>
-            <label> MinRetryDelay <input type="number" id="min_retry_delay" name="min_retry_delay"></label>
-            <label> MaxRetryDelay <input type="number" id="max_retry_delay" name="max_retry_delay"></label>
+            <label>
+                Region:
+                <input type="text" id="region" name="region">
+            </label>
+            <label>
+                Bucket Name:
+                <input type="text" id="bucket" name="bucket">
+            </label>
+            <label>
+                Prefix:
+                <input type="text" id="prefix" name="prefix">
+            </label>
+            <label>
+                Endpoint URL:
+                <input type="text" id="endpoint_url" name="endpoint_url">
+            </label>
+            <label>
+                Upload Part Size (Bytes):
+                <input type="number" id="upload_part_size" name="upload_part_size">
+            </label>
+            <label>
+                Max Upload Parts:
+                <input type="number" id="max_upload_parts" name="max_upload_parts">
+            </label>
+            <label>
+                NumMaxRetries
+                <input type="number" id="num_max_retries" name="num_max_retries">
+            </label>
+            <label>
+                MinRetryDelay
+                <input type="number" id="min_retry_delay" name="min_retry_delay">
+            </label>
+            <label>
+                MaxRetryDelay
+                <input type="number" id="max_retry_delay" name="max_retry_delay">
+            </label>
         </div>
     </fieldset>
     <fieldset>
@@ -25,18 +53,24 @@
             <label class="checkbox">
                 <span class="label">PITR Enabled:</span>
                 <input type="checkbox" id="pbm_pitr_enabled" name="pitr_enabled" checked>
-                <input type="hidden" id="pbm_pitr_enabled_unchecked" name="pitr_enabled" value="false">
+                <input type="hidden"
+                       id="pbm_pitr_enabled_unchecked"
+                       name="pitr_enabled"
+                       value="false">
                 <div class="checkmark" id="pitr_checkbox_div">
                     <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                     <span class="material-symbols-outlined checked">check_box</span>
                 </div>
             </label>
         </div>
-        <label>Oplog Span (Minutes):
-            <input type="number" id="pitr_oplog_span_min" name="pbm_config.pitr.oplog_span_min">
+        <label>
+            Oplog Span (Minutes):
+            <input type="number"
+                   id="pitr_oplog_span_min"
+                   name="pbm_config.pitr.oplog_span_min">
         </label>
-
-        <label>Compression:
+        <label>
+            Compression:
             <select id="pitr_compression" name="pbm_config.pitr.compression">
                 <option value="gzip">gzip</option>
                 <option value="snappy">snappy</option>
@@ -46,15 +80,15 @@
                 <option value="zstd">zstd</option>
             </select>
         </label>
-
     </fieldset>
     <fieldset>
         <legend>Backup Options</legend>
-        <label>Node Priority for Backup (Comma-separated, Optional):
+        <label>
+            Node Priority for Backup (Comma-separated, Optional):
             <input type="text" id="backup_priority" name="pbm_config.backup.priority">
         </label>
-
-        <label>Backup Compression:
+        <label>
+            Backup Compression:
             <select id="pbm_backup_compression" name="backup_compression">
                 <option value="gzip">gzip</option>
                 <option value="snappy">snappy</option>
@@ -64,11 +98,11 @@
                 <option value="zstd">zstd</option>
             </select>
         </label>
-
     </fieldset>
     <fieldset>
         <legend>Logging Options</legend>
-        <label for="log_level"> Log Level:
+        <label for="log_level">
+            Log Level:
             <select id="pbm_log_level" name="log_level">
                 <option value="D">debug</option>
                 <option value="I">info</option>
@@ -76,14 +110,18 @@
                 <option value="E">error</option>
             </select>
         </label>
-        <label for="log_path"> Log Path:
+        <label for="log_path">
+            Log Path:
             <input type="text" id="pbm_log_path" name="log_path">
         </label>
         <div class="checkbox-group">
             <label class="checkbox">
                 <span class="label">Json Format:</span>
                 <input type="checkbox" id="pbm_log_json" name="log_json" checked>
-                <input type="hidden" id="pbm_log_json_unchecked" name="log_json_unchecked" value="false">
+                <input type="hidden"
+                       id="pbm_log_json_unchecked"
+                       name="log_json_unchecked"
+                       value="false">
                 <div class="checkmark" id="log_json_checkbox_div">
                     <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                     <span class="material-symbols-outlined checked">check_box</span>

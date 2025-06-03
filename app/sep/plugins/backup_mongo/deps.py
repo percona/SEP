@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, Request
+from fastapi.encoders import jsonable_encoder
 
 from app.sep.deps import (
     DefaultContext,
@@ -43,26 +44,29 @@ async def build_backup_task_payload(
     :rtype: TaskWrite
     """
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
-    
-    pbm_config_set_clause = f"""pitr:
-  enabled: "{True if form.pitr_enabled else False}"
-storage:
-  s3:
-    provider: "{form.provider}"
-    region: "{form.region}"
-    bucket: "{form.bucket}"
-    prefix: "{form.prefix}"
-    endpointUrl: "{form.endpoint_url}"
-    uploadPartSize: "{form.upload_part_size}"
-    maxUploadParts: "{form.max_upload_parts}"
-retryer:
-  s3:
-    numMaxRetries: "{form.num_max_retries}"
-    minRetryDelay: "{form.min_retry_delay}"
-    maxRetryDelay: "{form.max_retry_delay}"
-"""
 
-    pbm_config_yaml = yaml.dump({'pbm_payload': pbm_config_set_clause})
+    pbm_config = f"""
+      storage:
+        type: s3
+        s3:
+          provider: {form.provider}
+          region: {form.region}
+          endpointUrl: {form.endpoint_url}
+          bucket: {form.bucket}
+          prefix: {form.prefix}
+          uploadPartSize: {form.upload_part_size}
+          maxUploadParts: {form.max_upload_parts}
+      pitr:
+        enabled: {True if form.pitr_enabled else False}
+    """
+
+    pbm_config_yaml = yaml.dump(yaml.safe_load(pbm_config))
+
+    #pbm_config_yaml = yaml.safe_load(pbm_config)
+    
+    print(pbm_config_yaml)
+    print("Chris do Brasil")
+
     requirements = "packaging\nPyYAML\nPyMongo\nboto3"
 
     return TaskWrite(

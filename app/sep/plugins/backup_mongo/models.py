@@ -17,11 +17,14 @@ class BackupType(EnumFieldMixin, StrEnum):
     PBM_SNAPSHOT = "pbm_snapshot"
     PBM_CONFIG = "pbm_config"
 
+
 class S3Provider(StrEnum):
     """Represents native s3 or plugins what use s3 protocol."""
+
     AWS = "aws"
     GCS = "gcs"
     MINIO = "minio"
+
 
 class S3RegionForm(BaseCaseInsensitiveModel):
     provider: S3Provider
@@ -29,7 +32,6 @@ class S3RegionForm(BaseCaseInsensitiveModel):
 
     @classmethod
     @field_validator("region")
-    
     def validate_region(cls, value: str, values: dict) -> str:
         provider = values.get("provider")
         if provider == "aws":
@@ -61,12 +63,12 @@ class S3RegionForm(BaseCaseInsensitiveModel):
                 raise ValueError("MinIO region cannot be empty.")
         return value
 
+
 class S3BucketForm(BaseCaseInsensitiveModel):
     bucket: str
 
     @classmethod
     @field_validator("bucket")
-    
     def validate_bucket_name(cls, value: str) -> str:
         """
         Validates an AWS S3 bucket name based on AWS rules.
@@ -86,23 +88,29 @@ class S3BucketForm(BaseCaseInsensitiveModel):
             )
 
         if not (value[0].isalnum() and value[-1].isalnum()):
-            raise ValueError("Bucket name must start and end with a letter or a number.")
+            raise ValueError(
+                "Bucket name must start and end with a letter or a number."
+            )
 
         # Simple check to avoid IP address format (more robust check might be needed)
         if all(c.isdigit() or c == "." for c in value) and value.count(".") == 3:
             raise ValueError("Bucket name cannot be formatted as an IP address.")
 
-        if any(".." in value or "--" in value): # Not a strict AWS rule, but often good practice
-            raise ValueError("Bucket name cannot contain consecutive periods or hyphens.")
+        if any(
+            ".." in value or "--" in value
+        ):  # Not a strict AWS rule, but often good practice
+            raise ValueError(
+                "Bucket name cannot contain consecutive periods or hyphens."
+            )
 
         return value
-    
+
+
 class S3PrefixForm(BaseCaseInsensitiveModel):
     prefix: str
-    
+
     @classmethod
     @field_validator("prefix")
-    
     def validate_prefix(cls, value: str) -> str:
         """
         Validates an S3 prefix, disallowing spaces.
@@ -119,12 +127,12 @@ class S3PrefixForm(BaseCaseInsensitiveModel):
 
         return value
 
+
 class EndpointUrlForm(BaseCaseInsensitiveModel):
     endpoint_url: str
 
     @classmethod
     @field_validator("endpoint_url")
-    
     def validate_endpoint_url(cls, value: str) -> str:
         """
         Validates an endpoint URL. Allows None or a valid URL format.
@@ -147,7 +155,6 @@ class UploadPartSizeForm(BaseCaseInsensitiveModel):
 
     @classmethod
     @field_validator("upload_part_size")
-    
     def validate_upload_part_size(cls, value: int) -> int:
         """
         Validates the upload part size for S3 multipart uploads.
@@ -161,25 +168,29 @@ class UploadPartSizeForm(BaseCaseInsensitiveModel):
             return None
 
         min_part_size = 5 * 1024 * 1024  # 5 MB
-        max_part_size = 5 * 1024 * 1024 * 1024 # 5 GB (arbitrary practical max)
+        max_part_size = 5 * 1024 * 1024 * 1024  # 5 GB (arbitrary practical max)
 
         if not isinstance(value, int):
             raise ValueError("Upload part size must be an integer.")
 
         if value < min_part_size:
-            raise ValueError(f"Upload part size must be at least {min_part_size} bytes (5 MB).")
+            raise ValueError(
+                f"Upload part size must be at least {min_part_size} bytes (5 MB)."
+            )
 
         if value > max_part_size:
-            raise ValueError(f"Upload part size cannot exceed {max_part_size} bytes (5 GB).")
+            raise ValueError(
+                f"Upload part size cannot exceed {max_part_size} bytes (5 GB)."
+            )
 
         return value
+
 
 class MaxUploadPartsForm(BaseCaseInsensitiveModel):
     max_upload_parts: int
 
     @classmethod
     @field_validator("max_upload_parts")
-
     def validate_max_upload_parts(cls, value: int) -> int:
         """
         Validates the maximum number of parts for an S3 multipart upload.
@@ -202,13 +213,13 @@ class MaxUploadPartsForm(BaseCaseInsensitiveModel):
             raise ValueError(f"Maximum upload parts cannot exceed {max_parts}.")
 
         return value
-    
+
+
 class NumMaxRetriesForm(BaseCaseInsensitiveModel):
     num_max_retries: int = None
 
     @classmethod
     @field_validator("num_max_retries")
-    
     def validate_num_max_retries(cls, value: int) -> int:
         """
         Validates the maximum number of retries.
@@ -225,12 +236,12 @@ class NumMaxRetriesForm(BaseCaseInsensitiveModel):
 
         return value
 
+
 class MinRetryDelayForm(BaseCaseInsensitiveModel):
     min_retry_delay: int = None
 
     @classmethod
     @field_validator("min_retry_delay")
-    
     def validate_min_retry_delay(cls, value: int) -> int:
         """
         Validates the minimum retry delay in seconds.
@@ -247,12 +258,12 @@ class MinRetryDelayForm(BaseCaseInsensitiveModel):
 
         return value
 
+
 class MaxRetryDelayForm(BaseCaseInsensitiveModel):
     max_retry_delay: int
 
     @classmethod
     @field_validator("max_retry_delay")
-
     def validate_max_retry_delay(cls, value: int) -> int:
         """
         Validates the maximum retry delay in seconds.
@@ -269,6 +280,7 @@ class MaxRetryDelayForm(BaseCaseInsensitiveModel):
 
         return value
 
+
 class CompressionAlgorithm(StrEnum):
     """Represents algorithm of choice whem compressing wirteTiger datafiles."""
 
@@ -282,16 +294,20 @@ class CompressionAlgorithm(StrEnum):
 
 class LogLevel(StrEnum):
     """Represents log verbosity of PBM service."""
-    debug = 'D'
-    info = 'I'
-    warn = 'W'
-    error = 'E'
+
+    debug = "D"
+    info = "I"
+    warn = "W"
+    error = "E"
+
+
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
 
     :param pitr_enabled: Enable or disable Oplog fetching.
     :type pitr_enabled: bool
     """
+
     pitr_enabled: bool
     provider: str = S3Provider
     region: str = S3RegionForm
@@ -303,9 +319,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
     num_max_retries: int = NumMaxRetriesForm
     max_retry_delay: int = MaxRetryDelayForm
     min_retry_delay: int = MinRetryDelayForm
-    
-    
-    
+
     @classmethod
     @field_validator("pitr_enabled", "log_json")
     def empty_to_false(cls, *, v: bool) -> bool:
