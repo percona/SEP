@@ -1630,3 +1630,25 @@ td.errors ul {
     flex-wrap: wrap;
     gap: 0.5em;
 }
+
+/*=============================================*/
+/* Checkbox groups */
+/*=============================================*/
+
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+    align-items: center;
+}
+
+.checkbox-group label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    margin-top: 0;
+}
+
+.checkbox-group input {
+    margin-top: 0 !important;
+}

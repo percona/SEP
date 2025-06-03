@@ -37,8 +37,6 @@
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
     {% if user.is_admin and entities %}
-        <link rel="stylesheet"
-              href="{{ url_for('static', path='/css/maskForm.css') }}">
         <script src="{{ url_for('static', path='/js/maskForm.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}

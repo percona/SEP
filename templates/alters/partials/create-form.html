@@ -471,10 +471,10 @@
                        size="5" />
             </div>
         </fieldset>
+        {% if user.is_admin %}
+            {% include "/tasks/partials/mask-form.html" %}
+        {% endif %}
     </fieldset>
-    {% if user.is_admin %}
-        {% include "/tasks/partials/mask-form.html" %}
-    {% endif %}
     <div style="display: flex;
                 align-items: center;
                 flex-wrap: wrap;

@@ -1,26 +1,29 @@
 <fieldset class="entity-fieldset">
     <legend style="margin-bottom: 0.8em;">Mask options</legend>
-    <fieldset>
         <input type="hidden" id="anonymize" name="anonymize" value="0">
         <div>
             <div>
-                <label for="encrypt_all_entities">
+                <label class="checkbox" for="encrypt_all_entities">
                     <input type="checkbox" id="encrypt_all_entities">
-                    <strong>Encrypt All Entities</strong>
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Encrypt All Entities</span>
                 </label>
             </div>
             <br />
-            <div class="entity-container">
+            <div class="checkbox-group">
                 {% for key, value in entities.items() %}
-                    <div class="entity-checkbox-item">
-                        <input type="checkbox"
-                               id="encrypt_{{ key }}"
-                               value="{{ value }}"
-                               class="entity-encrypt-checkbox">
-                        <label for="encrypt_{{ key }}">{{ key.replace('_', ' ').title() }}</label>
+                <label class="checkbox" for="encrypt_{{ key }}">
+                    <input class="entity-encrypt-checkbox" type="checkbox" id="encrypt_{{ key }}" name="encrypt_{{ key }}" value="{{ value }}"/>
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
                     </div>
+                    <span class="label">{{ key.replace('_', ' ').title() }}</span>
+                </label>
                 {% endfor %}
             </div>
         </div>
-    </fieldset>
 </fieldset>
