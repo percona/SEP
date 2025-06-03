@@ -575,8 +575,6 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     :type task_id: int
     :param task: The task associated with this execution history.
     :type task: Task
-    :param anonymized_items: The list of anonymized entities related to the task execution.
-    :type anonymized_items: list[AnonymizedEntity] | None
     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
     :type sync_in_progress_started_at: UTCDatetime | None
     """
@@ -590,30 +588,6 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         ),
     )
     task_id: int = SQLField(foreign_key="task.id", index=True)
-    anonymized_items: dict | None = SQLField(
-        sa_column=Column(JSON, nullable=True),
-    )
-
-    @computed_field
-    @property
-    def errors(self) -> list:
-        """Return a list of errors for the executed task.
-
-        :return: A list of error messages encountered during task execution.
-        :rtype: list[str]
-        """
-        if self.status not in [
-            TaskHistoryStatusEnum.SUCCESS,
-            TaskHistoryStatusEnum.FAILED,
-        ] or not self.execution_request.tracking.get("task_states"):
-            return []
-        errors = set()
-        for state in self.execution_request.tracking["task_states"].values():
-            for event in state["Events"]:
-                match event["Type"]:
-                    case "Driver Failure":
-                        errors.add(event["DisplayMessage"])
-        return list(errors)
     task: Task = Relationship(back_populates="history")
     sync_in_progress_started_at: UTCDatetime | None = SQLField(
         default=None,
@@ -634,15 +608,9 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     :type finished_at: UTCDatetime | None
     :param task: The task associated with this execution history.
     :type task: TaskResponse
-    :param errors: A list of errors encountered during the task execution.
-    :type errors: list[str]
-    :param anonymized_items: The list of anonymized entities related to the task execution.
-    :type anonymized_items: list[AnonymizedEntity] | None
     """
 
     task: TaskResponse
-    errors: list
-    anonymized_items: TaskExecutionResult | None
 
 
 class TaskStats(BaseModel):

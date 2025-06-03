@@ -306,7 +306,8 @@ async def get_task_history(
 
 @router.get("/history/{task_history_id}", dependencies=[IsAuthenticatedDep])
 async def retrieve_task_history(
-    session: SessionDep, task_history: TaskHistoryWithTaskDep, decrypted: bool | None = None
+    task_history: TaskHistoryWithTaskDep,
+    decrypted: bool | None = None,
 ) -> TaskHistoryResponse:
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history.id)
