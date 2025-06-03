@@ -78,3 +78,4 @@ class AltersCreate(BaseModel):
     max_load: str = ""
     chunk_time: str = ""
     max_lag: str = ""
+    max_flow_ctl: str = ""

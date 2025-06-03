@@ -1962,8 +1962,10 @@ class XtraBackupRunner(multiprocessing.Process):
                     self.logger.error(exc.message)
                     self.logger.error('Backup failed for this host.')
                     bkp.notify(STATUS_CRITICAL, exc.message)
+                    sys.exit(1)
                 except Exception:
                     self.logger.exception('Unhandled exception occurred.')
+                    sys.exit(1)
 
                 logging_set_host(None, 'xtrabackup.log')
 
@@ -1971,6 +1973,7 @@ class XtraBackupRunner(multiprocessing.Process):
             self.logger.info('>>>>>>>>>>>>>>>>>> Backup finished. Total duration: %s.', time_spent)
         except:
             self.logger.exception("Unhandled exception")
+            sys.exit(1)
         finally:
             lock.release()
 
