@@ -12,7 +12,9 @@
         <tbody>
             {% for task in tasks %}
                 <tr id="{{ task.name }}">
-                    <td>{{ task.name }}</td>
+                    <td>
+                        <a href="{{ url_for('archives_detail', task_name=task.name) }}">{{ task.name }}</a>
+                    </td>
                     <td>{{ task.hostname }}</td>
                     <td>{{ task.source_table }} {{ task.source_query }}</td>
                     <td>{{ task.dest_table }} {{ task.dest_file }}</td>

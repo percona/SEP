@@ -126,7 +126,7 @@ DEFAULT_LOGGING_DIR = os.getenv(
     str(Path(CURRENT_USER_HOME_DIR) / ".local" / "percona" / "logs" / "backup"),
 )
 DEFAULT_LOGGING_STDOUT = False
-DEFAULT_MYCNF = f"{os.environ.get('HOME')}/.my.cnf"
+DEFAULT_MYCNF = "{}/.my.cnf".format(os.environ.get("HOME"))
 LOGGING_FORMAT = "%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s"
 LOGGING_FORMAT_DEBUG = (
     "%(asctime)s PID<%(process)d> %(levelname)s:%(lineno)d:%(alias)s%(message)s"
@@ -1717,7 +1717,7 @@ class RsyncUploadProvider:
         logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
         log_file = (
             Path(logging_dir)
-            / f"rsync-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "rsync-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 
@@ -1786,7 +1786,7 @@ class S3UploadProvider:
 
         log_file = (
             Path(self.logging_dir)
-            / f"s3cmd-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 
@@ -1962,8 +1962,10 @@ class XtraBackupRunner(multiprocessing.Process):
                     self.logger.error(exc.message)
                     self.logger.error('Backup failed for this host.')
                     bkp.notify(STATUS_CRITICAL, exc.message)
+                    sys.exit(1)
                 except Exception:
                     self.logger.exception('Unhandled exception occurred.')
+                    sys.exit(1)
 
                 logging_set_host(None, 'xtrabackup.log')
 
@@ -1971,6 +1973,7 @@ class XtraBackupRunner(multiprocessing.Process):
             self.logger.info('>>>>>>>>>>>>>>>>>> Backup finished. Total duration: %s.', time_spent)
         except:
             self.logger.exception("Unhandled exception")
+            sys.exit(1)
         finally:
             lock.release()
 

@@ -13,7 +13,7 @@ from typing import Any
 
 from celery import Task
 from celery.app.task import Context
-from celery.signals import task_revoked
+from celery.signals import task_revoked, worker_process_init
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -43,12 +43,20 @@ from app.tasks.models import (
 )
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+celery = create_celery("tasks")
+
+celery.loop = asyncio.new_event_loop()
+asyncio.set_event_loop(celery.loop)
 
 logger = logging.getLogger(__name__)
 
-celery = create_celery("tasks")
+
+@worker_process_init.connect
+def init_child_event_loop(**kwargs: Any) -> None:
+    """Initialize a new event loop for each worker process."""
+    logger.debug("Initializing new event loop for worker process")
+    celery.loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(celery.loop)
 
 
 @task_revoked.connect
@@ -61,7 +69,7 @@ def task_revoked_handler(*, request: Context, expired: bool, **kwargs: Any) -> N
         and expired
     ):
         logger.info("Deleting expired TaskHistory %s", queue_id)
-        loop.run_until_complete(delete_task_history(queue_id))
+        celery.loop.run_until_complete(delete_task_history(queue_id))
 
 
 @celery.task(
@@ -81,8 +89,10 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     logger.info("Executing task with queue_id: %s", queue_id)
-    queue_item = loop.run_until_complete(get_task_history(queue_id))
-    return jsonable_encoder(loop.run_until_complete(dispatch_queue_item(queue_item)))
+    queue_item = celery.loop.run_until_complete(get_task_history(queue_id))
+    return jsonable_encoder(
+        celery.loop.run_until_complete(dispatch_queue_item(queue_item))
+    )
 
 
 @celery.task(
@@ -105,16 +115,18 @@ def execute_task_by_name(
     :return: The data of the processed TaskHistory.
     :rtype: dict[str, Any]
     """
-    task_history = loop.run_until_complete(
+    task_history = celery.loop.run_until_complete(
         prepare_periodic_task_history(task_name, execution_data)
     )
-    return jsonable_encoder(loop.run_until_complete(dispatch_queue_item(task_history)))
+    return jsonable_encoder(
+        celery.loop.run_until_complete(dispatch_queue_item(task_history))
+    )
 
 
 @celery.task
 def sync_running_tasks() -> None:
     """Define Celery task to sync running tasks."""
-    loop.run_until_complete(sync_running_items())
+    celery.loop.run_until_complete(sync_running_items())
 
 
 @celery.task
@@ -125,7 +137,7 @@ def sync_task_history(task_history_id: int) -> None:
     :type task_history_id: int
     """
     logger.debug("Syncing task history %s", task_history_id)
-    loop.run_until_complete(sync_queue_item(task_history_id))
+    celery.loop.run_until_complete(sync_queue_item(task_history_id))
     logger.debug("Finished syncing task history %s", task_history_id)
 
 
