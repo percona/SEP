@@ -176,7 +176,7 @@
                                 required>
                             <option value="" selected>Select a database host</option>
                             {% for service in services %}
-                                <option value=" {{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
                             {% endfor %}
                         </select>
                     {% endif %}
@@ -349,9 +349,6 @@
             </div>
         </fieldset>
     </fieldset>
-    {% if user.is_admin %}
-        {% include "/tasks/partials/mask-form.html" %}
-    {% endif %}
     <div style="display: flex;
                 align-items: center;
                 flex-wrap: wrap;
