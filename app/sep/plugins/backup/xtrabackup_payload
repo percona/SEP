@@ -662,7 +662,7 @@ class DirectoryEncryptor:
     def _set_default_config(self) -> None:
         """Set default configuration values."""
         self.config = {
-            "encryption recipient": "CHANGEME_GPG",
+            "encryption recipient": "directory.encryption@percona.com",
             "encryption home dir": "~/.gnupg",
             "max encryption processes": 5,
             "encryption nice": False,
@@ -763,7 +763,7 @@ class DirectoryEncryptor:
         :return: True if all files were encrypted successfully, False otherwise.
         :rtype: bool
         """
-        recipient = self.config.get("encryption recipient", "CHANGEME_GPG")
+        recipient = self.config.get("encryption recipient", "directory.encryption@percona.com")
         nice = bool(self.config.get("encryption nice", False))
         max_proc = int(self.config.get("max encryption processes", 5))
 
