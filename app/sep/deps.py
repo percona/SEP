@@ -598,7 +598,6 @@ async def get_task_history(
     tasks_api: TaskAPI,
     task_history_id: int,
     owner: TaskOwner | None = None,
-    decrypted: bool | None = None,
 ) -> TaskHistoryResponse:
     """Fetch and validate a task history by ID.
 
@@ -618,12 +617,9 @@ async def get_task_history(
     :raises HTTPNotFoundException: If the task history is not found or the validation
         fails.
     """
-    params = {}
-    if decrypted is not None:
-        params["decrypted"] = str(decrypted).lower()
     try:
         task_history = TaskHistoryResponse.model_validate(
-            await tasks_api.get(f"/history/{task_history_id}", params=params)
+            await tasks_api.get(f"/history/{task_history_id}")
         )
     except ValidationError:
         logger.debug("ValidationError retrieving task history.", exc_info=True)

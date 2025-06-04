@@ -3,10 +3,7 @@
 from datetime import timedelta
 from typing import ClassVar
 
-from app.core.config import (
-    BaseYamlAppSettings,
-    settings,
-)
+from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -29,8 +26,6 @@ class TasksSettings(BaseYamlAppSettings):
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
         Use `False` to disable the middleware completely.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
-    :param secret_key: Secret key used for encryption of logs.
-    :type secret_key: str
     :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
         minutes.
     :type SYNC_LOCK_TTL: timedelta
@@ -43,7 +38,6 @@ class TasksSettings(BaseYamlAppSettings):
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
         content_security_policy_strict=False
     )
-    SECRET_KEY: str = settings.SECRET_KEY
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
 
 

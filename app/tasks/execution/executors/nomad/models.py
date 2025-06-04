@@ -637,62 +637,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             flag_modified_fields=["execution_request"],
         )
 
-    async def anonymize_logs(
-        self,
-        alloc_id: str,
-        task_name: str,
-        anonymize_config: Any,
-        queue_item: TaskHistory,
-        task_logs: dict,
-    ) -> None:
-        """Fetch and anonymize logs for a specific task.
-
-        :param alloc_id: Allocation ID for the task.
-        :type alloc_id: str
-        :param task_name: Name of the task.
-        :type task_name: str
-        :param anonymize_config: Configuration for anonymizing logs.
-        :type anonymize_config: Any
-        :param queue_item: The task history record being updated.
-        :type queue_item: TaskHistory
-        :param task_logs: Dictionary to store anonymized logs.
-        :type task_logs: dict
-        """
-        try:
-            raw_stdout = self.backend.client.stream_logs.stream(
-                alloc_id, task=task_name, type_="stdout", plain=True
-            )
-            raw_stderr = self.backend.client.stream_logs.stream(
-                alloc_id, task=task_name, type_="stderr", plain=True
-            )
-            anonymized_stdout, stdout_items = presidio_anonymize_log(
-                raw_stdout, anonymize_config
-            )
-            anonymized_stderr, stderr_items = presidio_anonymize_log(
-                raw_stderr, anonymize_config
-            )
-
-            task_logs[task_name] = {
-                "allocation_id": alloc_id,
-                "stdout": anonymized_stdout,
-                "stderr": anonymized_stderr,
-            }
-
-            if stdout_items or stderr_items:
-                if queue_item.anonymized_items is None:
-                    queue_item.anonymized_items = {}
-
-                queue_item.anonymized_items[task_name] = {
-                    "stdout": stdout_items or None,
-                    "stderr": stderr_items or None,
-                }
-        except BaseNomadException:
-            task_logs[task_name] = {
-                "allocation_id": alloc_id,
-                "stdout": None,
-                "stderr": None,
-            }
-
     def task_needs_new_job(self, task: Task) -> bool:
         """Determine whether a new job needs to be created for the task.
 
@@ -870,6 +814,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 logger.debug("Waiting for log line for streams %s", active_streams)
                 log_line = await queue.get()
                 logger.debug("Received log line %s", log_line)
+                if log_line.step in ("run-script", "step1"):
+                    log_line.msg = presidio_anonymize_log(
+                        log_line.msg, queue_item.task.anonymize
+                    )
                 if log_line.msg is None:
                     stream = (log_line.step, log_line.type)
                     logger.info(

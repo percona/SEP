@@ -2,6 +2,7 @@
 
 import logging.config
 import re
+import secrets
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
@@ -232,8 +233,6 @@ class Settings(BaseYamlSettings):
     :type CASDOOR: CasdoorSDK
     :param CELERY: Celery configuration options.
     :type CELERY: CeleryOptions
-    :param SECRET_KEY: The secret key used for signing tokens.
-    :type SECRET_KEY: str
     :param AUTH_USER_MODEL: The full import path of the user model class.
         Defaults to "app.models.CasdoorUser".
     :type AUTH_USER_MODEL: StrImportableAttribute
@@ -241,6 +240,9 @@ class Settings(BaseYamlSettings):
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
     :type ALLOW_CONCURRENT_SESSIONS: bool
+    :param SECRET_KEY: The secret key used for signing tokens. Defaults to
+    `secrets.token_urlsafe(32)`.
+    :type SECRET_KEY: str
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
     :param LOGGING_CONFIG: dictConfig logging configuration.
@@ -262,9 +264,9 @@ class Settings(BaseYamlSettings):
 
     CASDOOR: CasdoorSDK
     CELERY: CeleryOptions
-    SECRET_KEY: str
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     ALLOW_CONCURRENT_SESSIONS: bool = False
+    SECRET_KEY: str = secrets.token_urlsafe(32)
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePath | None = None
