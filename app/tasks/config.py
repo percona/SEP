@@ -43,7 +43,6 @@ class TasksSettings(BaseYamlAppSettings):
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
         content_security_policy_strict=False
     )
-    LOG_ANON: bool | list[str] = True
     SECRET_KEY: str = settings.SECRET_KEY
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
 

@@ -44,6 +44,7 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
+    mask_pii_types: bool | list[str] = True
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Plugin):

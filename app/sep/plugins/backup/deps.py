@@ -10,6 +10,7 @@ from fastapi.encoders import jsonable_encoder
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
+    compute_anonymize,
     DefaultContext,
     get_created_entity,
     get_task_by_name,
@@ -127,7 +128,7 @@ async def build_backup_task_payload(
             },
             "payload": f"file://{payload_path}",
         },
-        anonymize=form.anonymize,
+        anonymize=compute_anonymize(TaskOwner.BACKUPS),
     )
 
 

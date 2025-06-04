@@ -870,10 +870,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
                     active_streams.remove(stream)
                     continue
-                encrypted_text, items = presidio_anonymize_log(
-                    log_line.msg, queue_item.task.anonymize
-                )
-                log_line.msg = encrypted_text
                 yield log_line
                 queue.task_done()
 

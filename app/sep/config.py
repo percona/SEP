@@ -36,6 +36,7 @@ from app.core.utils.fields import (
 )
 from app.sep.models import Plugin
 from app.sep.utils.jinja import syntax_highlight, syntax_highlight_css
+from app.tasks.models import TaskOwner
 
 
 class SessionOptions(BaseModel):
@@ -252,6 +253,16 @@ class SEPSettings(BaseYamlAppSettings):
                 raise ValueError("PMM endpoint should be a valid HTTP URL") from None
         self.SYNCERS = syncers
         return self
+
+    def get_plugin_by_owner(self, owner: TaskOwner) -> Plugin | None:
+        """Return the plugin associated with a given TaskOwner.
+
+        :param owner: The TaskOwner enum to look for.
+        :return: The matching Plugin or None if not found.
+        """
+        return next(
+            (plugin for plugin in self.PLUGINS if plugin.css_class == owner), None
+        )
 
 
 sep_settings = SEPSettings()

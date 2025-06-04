@@ -39,6 +39,7 @@ from app.sep.inventory import (
 from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
+from app.tasks.entity import encode_selection, Entity
 from app.tasks.models import (
     Task,
     TaskHistoryResponse,
@@ -660,3 +661,30 @@ async def check_for_conflicted_running_tasks(
 
 
 HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)
+
+
+def compute_anonymize(owner: TaskOwner) -> int:
+    """Compute and return the default anonymize bitmask for a specific plugin owner.
+
+    :param owner: The TaskOwner enum value indicating which plugin's config to use.
+    :return: The integer bitmask based on the plugin's mask_pii_types setting.
+    :rtype: int
+    """
+    plugin = sep_settings.get_plugin_by_owner(owner)
+    if not plugin:
+        return 0
+
+    config_value = plugin.mask_pii_types
+    if isinstance(config_value, bool):
+        entities = list(Entity) if config_value else []
+    elif isinstance(config_value, list):
+        entities = []
+        for name in config_value:
+            try:
+                entities.append(Entity[name])
+            except KeyError:
+                continue
+    else:
+        entities = []
+
+    return encode_selection(entities)

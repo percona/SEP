@@ -7,6 +7,7 @@ from fastapi import Depends, Form, Request
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
+    compute_anonymize,
     DefaultContext,
     get_created_entity,
     get_task_by_name,
@@ -127,7 +128,7 @@ async def build_checksums_task_payload(
         ],
         name=form.task_name,
         target=form.hostname,
-        anonymize=form.anonymize,
+        anonymize=compute_anonymize(TaskOwner.CHECKSUMS),
     )
 
 

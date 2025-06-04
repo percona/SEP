@@ -23,10 +23,12 @@ default:
         MODULE_NAME: alters
         URI_PATH: /alters
         CSS_CLASS: alters
+        MASK_PII_TYPES: true
       - NAME: Inventory
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
+        MASK_PII_TYPES: false
       - NAME: Archive
         MODULE_NAME: archives
         URI_PATH: /archives
@@ -46,7 +48,6 @@ default:
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
-    LOG_ANON: True
 
 
 development:

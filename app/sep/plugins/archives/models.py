@@ -65,8 +65,6 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
-    :param anonymize: The bitmask for entities to be anonymized in logs.
-    :type anonymize: int
     """
 
     alias: RequiredStr
@@ -90,7 +88,6 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
     )
-    anonymize: int = 0
 
     @model_validator(mode="after")
     def validate_tables_are_different(self) -> Self:

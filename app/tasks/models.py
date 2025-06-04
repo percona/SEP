@@ -354,30 +354,7 @@ class TaskBase(SQLModel):
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
 
-    def compute_default_anonymize() -> int:
-        """Compute and return the default anonymize bitmask.
-
-        :return: The integer bitmask based on current LOG_ANON settings.
-        :rtype: int
-        """
-        from app.tasks.config import tasks_settings
-        from app.tasks.entity import encode_selection, Entity
-
-        config_value = tasks_settings.LOG_ANON
-        if isinstance(config_value, bool):
-            entities = list(Entity) if config_value else []
-        elif isinstance(config_value, list):
-            entities = []
-            for name in config_value:
-                try:
-                    entities.append(Entity[name])
-                except KeyError:
-                    continue
-        else:
-            entities = []
-        return encode_selection(entities)
-
-    anonymize: int = SQLField(default_factory=compute_default_anonymize, nullable=False)
+    anonymize: int = SQLField(default=0, nullable=False)
 
     @model_validator(mode="after")
     def validate_data_for_backend(self) -> Self:
