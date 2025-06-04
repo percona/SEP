@@ -103,9 +103,7 @@
         <h2>Mask</h2>
         <p>The following sensitive data types are selected for anonymization:</p>
         {% if task.entities %}
-            <ul>
-                {% for entity, value in task.entities.items() %}<code>{{ entity }},</code>{% endfor %}
-            </ul>
+            {% for entity, value in task.entities.items() %}<code>{{ entity }}, </code>{% endfor %}
         {% else %}
             <p>No entities selected.</p>
         {% endif %}
