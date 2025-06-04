@@ -474,6 +474,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     def get_logs_for_allocation(
         self,
         alloc: dict[str, Any],
+        anonymize: int | None = None,
         initial_logs: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Get logs for a specific allocation.
@@ -518,7 +519,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     ):
                         log_data = json.loads(raw_log_data_item)
                         task_logs[step][last_offset_key] = log_data["Offset"]
-                        task_logs[step][log_type] += b64decode_str(log_data["Data"])
+                        decoded_data = b64decode_str(log_data["Data"])
+                        if step in ("run-script", "step1"):
+                            decoded_data = presidio_anonymize_log(
+                                decoded_data, anonymize
+                            )
+                        task_logs[step][log_type] += decoded_data
         return task_logs
 
     async def sync_task_history(
@@ -586,7 +592,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         task_states = alloc["TaskStates"]
         task_logs = self.get_logs_for_allocation(
-            alloc, queue_item.execution_request.tracking.get("task_logs", {})
+            alloc,
+            queue_item.task.anonymize,
+            queue_item.execution_request.tracking.get("task_logs", {}),
         )
         logger.debug(
             "sync_task_history(queue_item_id=%s): tasks_logs = %r",

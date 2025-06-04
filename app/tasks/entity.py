@@ -66,20 +66,16 @@ def decode_selection(number: int) -> list[Entity]:
     return [entity for entity in Entity if number & entity.value]
 
 
-def presidio_anonymize_log(
-    log_text: str, anonymize_bitmask: int
-) -> tuple[str, list[dict]]:
+def presidio_anonymize_log(log_text: str, anonymize_bitmask: int) -> str:
     """Anonymize the log text using Microsoft Presidio based on the anonymize bitmask.
 
     :param log_text: The original log text.
     :type log_text: str
     :param anonymize_bitmask: Bitmask indicating which entities to anonymize.
     :type anonymize_bitmask: int
-    :return: A tuple containing the encrypted log text and a list of encrypted items.
-    :rtype: tuple[str, list[dict]]
+    :return: The encrypted log text.
+    :rtype: str
     """
-    from app.tasks.config import tasks_settings
-
     selected_entities = decode_selection(anonymize_bitmask)
 
     pii_types = [entity.name for entity in selected_entities]
@@ -90,10 +86,7 @@ def presidio_anonymize_log(
         all_results.extend(results)
 
     anonymizers_config = {
-        result.entity_type: OperatorConfig(
-            "encrypt", {"key": tasks_settings.SECRET_KEY}
-        )
-        for result in all_results
+        result.entity_type: OperatorConfig("replace", {}) for result in all_results
     }
 
     try:
@@ -105,7 +98,7 @@ def presidio_anonymize_log(
             f"Invalid parameter error in presidio_encrypt_log: {ipe}"
         ) from ipe
 
-    return anonymized_result.text, anonymized_result.items
+    return anonymized_result.text
 
 
 def presidio_decrypt_log(anonymized_text: str, anonymized_items: list[dict]) -> str:
