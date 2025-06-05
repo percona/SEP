@@ -204,6 +204,17 @@
                     <select id="table_id" name="table_id" title="{{ schema_id_title }}" disabled></select>
                 </label>
             </div>
+            {% set extra_args_title = "Type optional additional arguments for the checksum task." %}
+            <label for="extra_args" title="{{ extra_args_title }}">
+                Extra args
+                <input type="text"
+                       id="extra_args"
+                       name="extra_args"
+                       class="validate"
+                       placeholder="--databases=db1,db2 --tables=db1.tb1,db1.tb2"
+                       style="width: 25em" />
+            </label>
+            <br>
         </fieldset>
         <br>
     </fieldset>
@@ -380,6 +391,7 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
+    const extra_args = document.getElementById('extra_args');
     const form = document.getElementById('create_form');
     const createButton = form.querySelector('button[type="submit"]');
 
@@ -438,11 +450,17 @@
     });
 
     schemaSelect.addEventListener('change', function() {
+        extra_args.value = ""
         const hiddenTableInput = document.getElementById("table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         selectedSchema = this.value;
         populateTables(selectedService, selectedSchema);
     });
+
+    extra_args.addEventListener('change', function() {
+        schemaSelect.value = -1;
+        tableSelect.value = -1;
+    })
 
     recursion_method.addEventListener('change', function () {
         if (this.value === 'dsn') {
