@@ -62,12 +62,7 @@ async def build_backup_task_payload(
 
     pbm_config_yaml = yaml.dump(yaml.safe_load(pbm_config))
 
-    #pbm_config_yaml = yaml.safe_load(pbm_config)
-    
-    print(pbm_config_yaml)
-    print("Chris do Brasil")
-
-    requirements = "packaging\nPyYAML\nPyMongo\nboto3"
+    requirements = ""
 
     return TaskWrite(
         name=form.task_name,
