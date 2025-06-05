@@ -814,10 +814,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 logger.debug("Waiting for log line for streams %s", active_streams)
                 log_line = await queue.get()
                 logger.debug("Received log line %s", log_line)
-                if log_line.step in ("run-script", "step1"):
-                    log_line.msg = presidio_anonymize_log(
-                        log_line.msg, queue_item.task.anonymize
-                    )
                 if log_line.msg is None:
                     stream = (log_line.step, log_line.type)
                     logger.info(

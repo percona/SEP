@@ -27,10 +27,9 @@ from app.tasks.deps import (
     SessionDep,
     TaskDep,
     TaskExecutor,
-    TaskHistoryDep,
     TaskHistoryWithTaskDep,
 )
-from app.tasks.entity import Entity
+from app.tasks.entity import Entity, presidio_anonymize_log
 from app.tasks.models import (
     GeneratedTask,
     Task,
@@ -315,7 +314,7 @@ async def retrieve_task_history(
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
-    executor: TaskExecutor, task_history: TaskHistoryDep
+    executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
 ) -> StreamingResponse:
     """Stream a task history's logs."""
     logger.debug("Requesting logs for task history %s", task_history.id)
@@ -323,12 +322,32 @@ async def stream_task_history_logs(
         raise HTTPConflictException("Task history is pending.")
     if task_history.status == TaskHistoryStatusEnum.RUNNING:
         stream_logs_generator = (
-            f"{log_line.model_dump_json()}\n" if log_line else ""
+            f"{
+                log_line.model_copy(
+                    update={
+                        'msg': presidio_anonymize_log(
+                            log_line.msg, task_history.task.anonymize
+                        )
+                        if log_line.step in ('run-script', 'step1')
+                        else log_line.msg
+                    }
+                ).model_dump_json()
+            }\n"
             async for log_line in executor.stream_logs(task_history)
         )
     else:
         stream_logs_generator = (
-            f"{TaskLog(step=step, type=log_type, msg=log[log_type]).model_dump_json()}\n"
+            f"{
+                TaskLog(
+                    step=step,
+                    type=log_type,
+                    msg=presidio_anonymize_log(
+                        log[log_type], task_history.task.anonymize
+                    )
+                    if step in ('run-script', 'step1')
+                    else log[log_type],
+                ).model_dump_json()
+            }\n"
             for step, log in task_history.execution_request.tracking.get(
                 "task_logs", {}
             ).items()
