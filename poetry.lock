@@ -2090,6 +2090,23 @@ files = [
 ]
 
 [[package]]
+name = "pagerduty"
+version = "2.1.2"
+description = "Clients for PagerDuty's Public APIs"
+optional = false
+python-versions = ">=3.6"
+groups = ["main"]
+files = [
+    {file = "pagerduty-2.1.2-py3-none-any.whl", hash = "sha256:e5537ed3c28bdc83f6d4dbb43df8b246769c075390ffc2c40e90ae4ec7055d75"},
+    {file = "pagerduty-2.1.2.tar.gz", hash = "sha256:4e78bb7fcb24c3157db055fd4127ae0a922e6de96367bf2f5f9d0c44ac8cba56"},
+]
+
+[package.dependencies]
+certifi = "*"
+requests = "*"
+urllib3 = "*"
+
+[[package]]
 name = "pathspec"
 version = "0.12.1"
 description = "Utility library for gitignore style pattern matching of file paths."
@@ -3851,4 +3868,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "3333e60d9093f3a6010d903ee1c9323df633bc2b1ccba1c145dea777ebbd6c64"
+content-hash = "e980d47c0eabc88177bb1d49141ee49086a48901e7200e4b441039f8fcd63388"
