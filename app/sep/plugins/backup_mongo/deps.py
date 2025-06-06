@@ -6,7 +6,6 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, Request
-from fastapi.encoders import jsonable_encoder
 
 from app.sep.deps import (
     DefaultContext,
@@ -57,7 +56,7 @@ async def build_backup_task_payload(
           uploadPartSize: {form.upload_part_size}
           maxUploadParts: {form.max_upload_parts}
       pitr:
-        enabled: {True if form.pitr_enabled else False}
+        enabled: {bool(form.pitr_enabled)}
     """
 
     pbm_config_yaml = yaml.dump(yaml.safe_load(pbm_config))
