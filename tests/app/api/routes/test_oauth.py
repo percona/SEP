@@ -1,10 +1,10 @@
 """Define tests for the app.api.routes.oauth module."""
 
-from http import HTTPStatus
 from unittest.mock import AsyncMock
 
 import pytest
 from faker import Faker
+from fastapi import status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -47,7 +47,7 @@ def test_create_oauth_token_success(
         "password": "valid_password",
     }
     response = test_client.post("/api/oauth/token", data=data)
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == status.HTTP_200_OK
     assert response.json() == oauth_token.model_dump()
 
 
@@ -78,7 +78,7 @@ def test_create_oauth_token_inactive_user(
         "password": "valid_password",
     }
     response = test_client.post("/api/oauth/token", data=data)
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == status.HTTP_403_FORBIDDEN
     assert response.json()["detail"] == "User is not active"
 
 
@@ -107,7 +107,7 @@ def test_refresh_token_success(test_client, oauth_token, mocker, faker: Faker):
         data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == status.HTTP_200_OK
     assert response.json() == oauth_token.model_dump()
 
 
@@ -129,7 +129,7 @@ def test_refresh_token_invalid_token(test_client, mocker):
         json=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json()["detail"] == "Refresh token is invalid, expired, or revoked"
 
 
@@ -159,5 +159,5 @@ def test_refresh_token_inactive_user(test_client, oauth_token, mocker, faker: Fa
         json=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == status.HTTP_403_FORBIDDEN
     assert response.json()["detail"] == "User is not active"

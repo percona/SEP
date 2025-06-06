@@ -65,6 +65,7 @@
             <h2>Saved</h2>
             {% include "backups/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
+            {%- set detail_route = "backups_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a backup process</h3>
             {% if executor_hosts|length < 1 %}

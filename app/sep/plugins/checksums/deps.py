@@ -1,6 +1,7 @@
 """Define dependencies for the Checksums plugin."""
 
 import logging
+import shlex
 from typing import Annotated, Any
 
 from fastapi import Depends, Form, Request
@@ -60,17 +61,25 @@ async def build_checksums_task_payload(
         args.append(f"--recursion-method={form.recursion_method}")
 
     # --databases and --tables options
-    databases = ""
-    if form.schema_id is not None and len(form.schema_id) > 0:
-        for s in form.schema_id:
-            schema = await get_created_entity(
+    if (
+        form.schema_id is not None
+        and len(form.schema_id) == 1
+        and form.table_id is not None
+    ):
+        schema_id = next(iter(form.schema_id))
+        valid_table_ids = [t for t in form.table_id if t > 0]
+
+        table_names = []
+        for t in valid_table_ids:
+            table = await get_created_entity(
                 inventory_api,
-                SyncInventoryEntityTypeEnum.SCHEMA,
-                s,
-                service_id=service.id,
+                SyncInventoryEntityTypeEnum.TABLE,
+                t,
+                schema_id=schema_id,
             )
-            databases += f"{schema.name},"
-    form.databases = databases.rstrip(",")
+            table_names.append(table.name)
+
+        form.tables = ",".join(table_names)
 
     tables = ""
     if (
@@ -78,15 +87,22 @@ async def build_checksums_task_payload(
         and len(form.schema_id) == 1
         and form.table_id is not None
     ):
-        for t in form.table_id:
+        schema_id = next(iter(form.schema_id))
+        valid_table_ids = [t for t in form.table_id if t > 0]
+
+        for t in valid_table_ids:
             table = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.TABLE,
                 t,
-                schema_id=next(iter(form.schema_id)),
+                schema_id=schema_id,
             )
             tables += f"{table.name},"
+
     form.tables = tables.rstrip(",")
+
+    if form.extra_args:
+        args.extend(shlex.split(form.extra_args))
 
     # Mapping form fields to their respective arguments
     optional_args = {

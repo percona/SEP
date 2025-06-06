@@ -12,7 +12,9 @@
         <tbody>
             {% for task in tasks %}
                 <tr id="{{ task.name }}">
-                    <td>{{ task.name }}</td>
+                    <td>
+                        <a href="{{ url_for('backups_detail', task_name=task.name) }}">{{ task.name }}</a>
+                    </td>
                     <td>{{ task.host }} ({{ task.port }})</td>
                     <td>{{ task.backup_type }}</td>
                     <td>{{ task.upload }}</td>
@@ -21,6 +23,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include "tasks/partials/scheduled-execution-dialog.html" %}
 {% else %}
     <p>No data</p>
 {% endif %}

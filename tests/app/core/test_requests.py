@@ -1,6 +1,5 @@
 """Define tests for the app.core.requests module."""
 
-from http import HTTPStatus
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -47,7 +46,7 @@ async def test_context_manager_open_close(remote_api, base_url):
             assert remote_api.session is not None
             assert isinstance(remote_api.session, ClientSession)
             response = await remote_api.session.get("/")
-            assert response.status == HTTPStatus.OK
+            assert response.status == status.HTTP_200_OK
 
         assert remote_api.session is None
 

@@ -20,7 +20,10 @@
         <button type="button" class="text large" data-modal-close>
             Cancel<sup>ESC</sup>
         </button>
-        <button type="submit" class="contained large submitButton">Schedule</button>
+        <button id="modalScheduleExecSubmitButton"
+                type="submit"
+                disabled
+                class="contained large submitButton">Schedule</button>
     </footer>
 </dialog>
 <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
