@@ -22,7 +22,6 @@ default:
         MODULE_NAME: alters
         URI_PATH: /alters
         CSS_CLASS: alters
-        MASK_PII_TYPES: true
       - NAME: Inventory
         MODULE_NAME: inventory
         URI_PATH: /inventory
@@ -35,10 +34,6 @@ default:
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
-        MASK_PII_TYPES:
-          - EMAIL_ADDRESS
-          - CREDIT_CARD
-          - EMAIL_ADDRESS
       - NAME: Checksums
         MODULE_NAME: checksums
         URI_PATH: /checksums
@@ -50,6 +45,13 @@ default:
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
+    MASKING_ENTITIES:
+      ALTERS:
+        - CREDIT_CARD
+        - EMAIL_ADDRESS
+        - IBAN_CODE
+      ARCHIVER:
+        - EMAIL_ADDRESS
 
 
 development:

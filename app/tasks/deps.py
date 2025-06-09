@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.tasks.anonymizer import encode_selection
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -19,6 +20,7 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskOwner,
+    TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
@@ -177,3 +179,20 @@ async def get_task_history_with_task(
 
 
 TaskHistoryWithTaskDep = Annotated[TaskHistory, Depends(get_task_history_with_task)]
+
+
+async def get_task_with_anonymized_value(task: TaskWrite) -> TaskWrite:
+    """Add anonymization configuration to a task based on its owner.
+
+    :param task: The task write model to anonymize.
+    :type task: TaskWrite
+    :return: The task with anonymization configuration added.
+    :rtype: TaskWrite
+    """
+    task.anonymize = encode_selection(tasks_settings.MASKING_ENTITIES[task.owner])
+    return task
+
+
+TaskWriteWithAnonymizeDep = Annotated[
+    TaskWrite, Depends(get_task_with_anonymized_value)
+]

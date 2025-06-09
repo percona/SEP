@@ -8,7 +8,6 @@ import yaml
 from fastapi import Depends, Form, Request
 
 from app.sep.deps import (
-    compute_anonymize,
     DefaultContext,
     get_task_by_name,
     get_tasks_context,
@@ -69,7 +68,6 @@ async def build_backup_task_payload(
             "payload": f"file://{payload_path}",
             "backup_type": form.backup_type,
         },
-        anonymize=compute_anonymize(TaskOwner.BACKUP_MONGO),
     )
 
 

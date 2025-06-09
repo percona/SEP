@@ -38,8 +38,8 @@ from app.sep.inventory import (
 )
 from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.tasks.anonymizer import AnonymizerEntity
 from app.tasks.config import tasks_settings
-from app.tasks.anonymizer import encode_selection, AnonymizerEntity
 from app.tasks.models import (
     Task,
     TaskHistoryResponse,
@@ -653,17 +653,3 @@ async def check_for_conflicted_running_tasks(
 
 
 HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)
-
-
-def compute_anonymize(owner: TaskOwner) -> int:
-    """Compute and return the default anonymize bitmask for a specific plugin owner.
-
-    :param owner: The TaskOwner enum value indicating which plugin's config to use.
-    :return: The integer bitmask based on the plugin's mask_pii_types setting.
-    :rtype: int
-    """
-    plugin = sep_settings.get_plugin_by_owner(owner)
-    if not plugin:
-        return 0
-
-    return encode_selection(plugin.mask_pii_types)

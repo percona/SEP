@@ -14,12 +14,17 @@ from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
+from app.tasks.anonymizer import (
+    encode_selection,
+    presidio_anonymize_log,
+)
 from app.tasks.celery import (
     celery,
     dispatch_queue_item,
     execute_task_queue,
     get_executor_for_task,
 )
+from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
@@ -28,8 +33,8 @@ from app.tasks.deps import (
     TaskDep,
     TaskExecutor,
     TaskHistoryWithTaskDep,
+    TaskWriteWithAnonymizeDep,
 )
-from app.tasks.anonymizer import AnonymizerEntity, presidio_anonymize_log
 from app.tasks.models import (
     GeneratedTask,
     Task,
@@ -45,7 +50,6 @@ from app.tasks.models import (
     TaskLogType,
     TaskResponse,
     TaskStats,
-    TaskWrite,
     TransformPayloadRequest,
 )
 from app.tasks.periodic.crud import PeriodicTaskManager
@@ -98,7 +102,7 @@ async def get_task(task: TaskDep) -> Task:
     status_code=status.HTTP_201_CREATED,
     response_model=TaskResponse,
 )
-async def create_task(session: SessionDep, task: TaskWrite) -> Task:
+async def create_task(session: SessionDep, task: TaskWriteWithAnonymizeDep) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
     return await TaskManager.create(session, task)
@@ -164,7 +168,7 @@ async def generate_task(
     task = Task(
         name=generated_task.name,
         owner=generated_task.app,
-        anonymize=generated_task.anonymize,
+        anonymize=encode_selection(tasks_settings.MASKING_ENTITIES[generated_task.app]),
         backend=template.backend,
         data=template.data,
     )

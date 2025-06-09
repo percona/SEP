@@ -31,8 +31,8 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.tasks.crud import TaskHistoryManager
 from app.tasks.anonymizer import presidio_anonymize_log
+from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundException,
     JobNotFoundException,

@@ -38,11 +38,11 @@ class AnonymizerEntity(EnumFieldMixin, IntEnum):
     US_SSN = 1 << 13
 
 
-def encode_selection(selected_entities: list[AnonymizerEntity]) -> int:
-    """Encode a list of :class:`AnonymizerEntity` enum members into an integer bitmask.
+def encode_selection(selected_entities: set[AnonymizerEntity]) -> int:
+    """Encode a set of :class:`AnonymizerEntity` enum members into an integer bitmask.
 
-    :param selected_entities: A list of :class:`AnonymizerEntity` members to encode.
-    :type selected_entities: list[AnonymizerEntity]
+    :param selected_entities: A set of :class:`AnonymizerEntity` members to encode.
+    :type selected_entities: set[AnonymizerEntity]
     :return: The integer bitmask representing the selected entities.
     :rtype: int
     """

@@ -306,8 +306,6 @@ class GeneratedTask(BaseModel):
     :type schedule: dict
     :param template: The task template type. Defaults to "batch".
     :type template: str
-    :param anonymize: Bitmask encoding which PII types should be anonymized in logs.
-    :type anonymize: int
     """
 
     app: TaskOwner
@@ -319,7 +317,6 @@ class GeneratedTask(BaseModel):
     persist: bool = True
     schedule: dict = {"save_only": True}
     template: str = "batch"
-    anonymize: int = 0
 
 
 class TaskBase(SQLModel):

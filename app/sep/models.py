@@ -1,9 +1,15 @@
 """Define models for the SEP app."""
 
 from enum import auto, IntEnum, StrEnum
-from typing import Any, Self, Set
+from typing import Any, Self
 
-from pydantic import Field, computed_field, field_validator, HttpUrl, model_validator, UUID4
+from pydantic import (
+    computed_field,
+    field_validator,
+    HttpUrl,
+    model_validator,
+    UUID4,
+)
 from sqlalchemy import Column, Index
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -13,7 +19,6 @@ from app.core.db.models import BaseUUIDSQLModel
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import slugify
 from app.core.utils.fields import RequiredStr, StrImportableModule, URIPath
-from app.tasks.anonymizer import AnonymizerEntity
 
 
 class Plugin(BaseCaseInsensitiveModel):
@@ -45,7 +50,6 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
-    mask_pii_types: Set[AnonymizerEntity] = Field(default_factory=lambda: {AnonymizerEntity})
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Plugin):
@@ -66,16 +70,7 @@ class Plugin(BaseCaseInsensitiveModel):
         :rtype: str
         """
         return f"app.sep.plugins.{v}"
-        
-    @field_validator("mask_pii_types", mode="before")   
-    @classmethod
-    def handle_bool_to_enum_set(cls, v: Any) -> Set:
-        if v is True:
-            return set(AnonymizerEntity)
-        elif v is False or v is None:
-            return set()
-        return v
-    
+
     @model_validator(mode="before")
     @classmethod
     def _set_default_from_name(cls, data: Any) -> Any:
