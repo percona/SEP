@@ -1578,7 +1578,7 @@ class Upload(Backup):
             self.logger.info(
                 "Checking available disk space to copy %s ...", source_path
             )
-            bkp_size = get_dir_size(str(source_path), "mb")
+            bkp_size = get_dir_size(str(source_path))
             tmpdir_base = tmpdir
             while not tmpdir_base.is_dir():
                 tmpdir_base = tmpdir_base.parent
@@ -1642,10 +1642,10 @@ class Upload(Backup):
             "Starting %s upload of %s backup: %s",
             self.upload_type,
             self.backup_type.lower(),
-            ", ".join([p["source"] for p in self.paths]),
+            ", ".join([str(p["source"]) for p in self.paths]),
         )
 
-        self.textfile_collector_write_status(-1, self.backup_code, self.alias, True)
+        #self.textfile_collector_write_status(-1, self.backup_code, self.alias, True)
 
         self._copy_to_tmpdir()
         self._encrypt()
@@ -1655,7 +1655,7 @@ class Upload(Backup):
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         msg = f"OK {self.upload_type} upload complete. Duration: {time_spent}."
         self.logger.info(msg)
-        self.textfile_collector_write_status(0, self.backup_code, self.alias, True)
+        #self.textfile_collector_write_status(0, self.backup_code, self.alias, True)
 
         return msg
 
