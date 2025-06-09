@@ -43,27 +43,12 @@ except ImportError:
 # Backup code to CNS report mapping. Also used for logging.
 BACKUP_TYPES = {
     "B": "Binlogs",
-    "G": "GCESnapshot",
-    "L": "LVMBackup",
     "M": "Mydumper",
     "X": "Xtrabackup",
-    "T": "Tokudb",
-    "R": "RDSSnapshot",
-    "MC": "MongoDBCluster",
-    "O": "Oplog",
-    "H": "PSMDBHotBackup",
-    "P": "PgBackRest",
-    "E": "EBSSnapshot",
 }
 
 BACKUP_DIR_REGEX = {
     "B": r"\.[0-9]{6}",
-    "M": r"^2[0-9]{7}$",
-    "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$",
-    "I": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$",
-    "T": r"^2[0-9]{7}$",
-    "H": r"2[0-9]{7}$",
-    "O": r"[0-9]{10}",
 }
 
 MYSQLBINLOG_RESTART_DELAY = 5 * 60
@@ -130,14 +115,6 @@ class MSPAction(str, Enum):
 
 
 class DirectoryEncryptor:
-    """Handle encryption of files in a directory using GPG.
-
-    :param cfg_path: Path to the configuration file.
-    :type cfg_path: Path
-    :ivar config: A dictionary holding configuration options such as encryption
-        recipient, GPG binary path, encryption home directory, and concurrency limits.
-    :vartype config: dict
-    """
 
     def __init__(self, cfg_path: Path, **cfg) -> None:
         self.config = {}
@@ -145,10 +122,6 @@ class DirectoryEncryptor:
         self.config.update(cfg)
 
     def _setup_cfgs(self, cfg_path: Path) -> None:
-        """Load configuration from the specified path, or set defaults if not found.
-
-        Also checks if pinentry-mode is supported by the configured GPG binary.
-        """
         if cfg_path.exists():
             try:
                 with cfg_path.open(encoding="utf-8") as cfg_f:
@@ -161,7 +134,6 @@ class DirectoryEncryptor:
         gpg_bin = self.config.get("gpg bin", "/usr/bin/gpg")
 
     def _set_default_config(self) -> None:
-        """Set default configuration values."""
         self.config = {
             "encryption recipient": "directory.encryption@percona.com",
             "encryption home dir": "~/.gnupg",
@@ -178,17 +150,6 @@ class DirectoryEncryptor:
         *,
         nice: bool = False,
     ) -> subprocess.Popen:
-        """Start and return a GPG encryption (or decryption) subprocess.
-
-        :param filename: The input file to encrypt or decrypt.
-        :type filename: str
-        :param recipient: The GPG recipient if encrypting, ignored if decrypting.
-        :type recipient: str
-        :param nice: If True, start the process with `nice`.
-        :type nice: bool
-        :return: The subprocess.Popen object representing the started GPG process.
-        :rtype: subprocess.Popen
-        """
         gpg_bin = self.config["gpg bin"]
         home_dir = self.config.get("encryption home dir", "")
         output_filename = filename + ".gpg"
@@ -214,22 +175,6 @@ class DirectoryEncryptor:
     def _prune_finished_procs(
         self, proc_dict: dict[str, subprocess.Popen], max_live_proc: int = 0
     ) -> bool:
-        """Check the dictionary of active processes for those that have finished.
-
-        Once a process finishes:
-        - If exit code is 0, the original file is unlinked.
-        - If exit code is non-zero, logs an error and exits the program with status 1.
-
-        Prunes finished processes from the dictionary.
-
-        :param proc_dict: A dictionary of {filename: Popen} representing running
-            encryption processes.
-        :type proc_dict: dict[str, subprocess.Popen]
-        :param max_live_proc: The maximum number of processes allowed before waiting.
-        :type max_live_proc: int
-        :return: True if no errors were encountered, False otherwise.
-        :rtype: bool
-        """
         ok = True
         while proc_dict:
             for fp, proc in list(proc_dict.items()):
@@ -253,17 +198,6 @@ class DirectoryEncryptor:
         self,
         encr_dir: Path,
     ) -> bool:
-        """Encrypt all regular files under `encr_dir` using GPG.
-
-        If `recipient`, `nice`, and `max_proc` are not provided, the values are taken
-        from the configuration file. If a file is successfully encrypted, the original
-        file is removed.
-
-        :param encr_dir: The directory path containing files to be encrypted.
-        :type encr_dir: str
-        :return: True if all files were encrypted successfully, False otherwise.
-        :rtype: bool
-        """
         recipient = self.config.get("encryption recipient", "directory.encryption@percona.com")
         nice = bool(self.config.get("encryption nice", False))
         max_proc = int(self.config.get("max encryption processes", 5))
@@ -296,13 +230,6 @@ class DirectoryEncryptor:
 
 
 def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> None:
-    """Encrypt a directory using GPG.
-
-    :param path: Directory path to encrypt.
-    :param logger: Logger instance.
-    :param cfg: Additional encryption configuration arguments.
-    :raises BackupError: If encryption fails or verification fails.
-    """
     if logger:
         logger.info("Encrypting backup...")
         logger.info("Running on: %s", path)
@@ -328,13 +255,6 @@ def is_encrypted_dir(
     ),
     logger: logging.Logger | None = None,
 ) -> bool:
-    """Check if all files in the directory are encrypted.
-
-    :param path: Directory path.
-    :param exclude_files: Files to exclude from the check.
-    :param logger: Logger instance.
-    :return: True if all files are encrypted, False otherwise.
-    """
     ppath = Path(path)
     for p in ppath.rglob("*"):
         if p.is_file() and p.name not in exclude_files:
@@ -362,7 +282,6 @@ def is_encrypted_dir(
 
 
 def is_public_ip(ip_addr):
-    """Checks whether IP is public."""
     try:
         ip_addr = socket.gethostbyname(ip_addr)
     except Exception:
@@ -385,10 +304,6 @@ def is_public_ip(ip_addr):
 
 
 def get_max_subdir_size(start_path, unit="m"):
-    """Return the max size among all subdirs within the given path.
-
-    Unit: m (MB), b (bytes).
-    """
     cmd = [DU_BIN, "-%s" % (unit,), "--max-depth=1", start_path]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = proc.communicate()
@@ -407,7 +322,6 @@ def get_max_subdir_size(start_path, unit="m"):
 
 
 def get_free_space(dir_path, pct=False):
-    """Return free space in MB or %"""
     vfs = os.statvfs(dir_path)
     free_mb = vfs.f_bavail * vfs.f_bsize / 1024**2
     if pct:
@@ -423,17 +337,6 @@ def is_free_space(
     threshold_pct=None,
     logger=None,
 ):
-    """Check for free disk space for the current backup run.
-
-    dir_path: a path for which we determine a partition to be checked.
-    logging_host: a host to include into log messages.
-    double_space_needed: if true, we will require double space for the backup, Used by with mydumper and option
-                         MYDUMPER_USE_TMPDIR_FOR_ENC_S3UPLOAD enabled.
-    threshold_pct: if defined, this is a check for binlog backup and reflects a threshold when backup is run.
-                   When disk space free percentage is larger than this threshold, mysqlbinlog will be running.
-
-    Return False is no space available.
-    """
     max_size = 0
     ratio = 1
     if threshold_pct:
@@ -482,13 +385,6 @@ def get_backup_dir(server_data):
 def logging_setup(
     logging_dir: Path, log_name: str, level: int = logging.INFO
 ) -> logging.Logger:
-    """Set up and return a configured logger.
-
-    :param logging_dir: Directory for log files.
-    :param log_name: Name of the log file.
-    :param level: Logging level.
-    :return: Configured logger instance.
-    """
     real_logging_dir = logging_dir.expanduser().resolve()
 
     if not real_logging_dir.is_dir():
@@ -537,11 +433,6 @@ def logging_setup(
 
 
 def logging_set_host(alias: str | None, log_name: str) -> None:
-    """Prepend a server alias to the logging messages until unset.
-
-    :param alias: Alias to prepend.
-    :param log_name: Logger name.
-    """
 
     class ContextFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
@@ -553,16 +444,11 @@ def logging_set_host(alias: str | None, log_name: str) -> None:
 
 
 class LocalConfig:
-    """Local configuration class for backup/restore processes."""
 
     default_nowrite_timeout = 1800  # 30 minutes
     default_purge_days = 30
 
     def __init__(self, cfg_path: Path) -> None:
-        """Initialize LocalConfig and populate configuration from the specified YAML file.
-
-        :param cfg_path: Path to the configuration file.
-        """
         self.server_data_list: list[dict[str, Any]] = []
         self.base: dict[str, Any] = {}
         self.cfg_path = Path(cfg_path)
@@ -571,7 +457,6 @@ class LocalConfig:
         self._populate_cfg()
 
     def _populate_cfg(self) -> None:
-        """Populate the configuration from the YAML file."""
         try:
             with self.cfg_path.open("r") as cfg_file:
                 cfg_file_contents = cfg_file.read()
@@ -609,18 +494,6 @@ class LockInUse(Exception):
 
 
 class LockFile:
-    """Lockfile management
-
-    Be very careful about changing the format of the lock file.
-    Adding values should be fine but, be careful in accessing them.
-    Make sure that the value not being there will not crash the program.
-    Removing values is not a good idea but, if it has to
-    be done you should remove them in an iterative process.  ie.:
-    Week #1 stop the default lock file from writing them and
-    make sure the code functions with or without the value
-    Week #3 remove references to the old value and
-    make sure that all processes have been restarted
-    """
 
     def __init__(self, lock_fname, timeout=300):
         self.lock_fname = lock_fname
@@ -631,10 +504,6 @@ class LockFile:
         self.lock_file_data = None
 
     def get_lock(self):
-        """Acquire a lock
-
-        :raises: LockInUse when a lock is already active
-        """
         if not self._is_lock_free():
             msg = "Could not acquire lock file"
             logging.debug(msg)
@@ -642,29 +511,21 @@ class LockFile:
         self._write_lock_file()
 
     def get_lock_or_exit(self):
-        """Acquire a lock, or exit"""
         try:
             self.get_lock()
         except LockInUse:
             sys.exit(-1)
 
     def free_lock(self):
-        """Release a lock"""
         # TODO: check what happens if this is called when the lock is not held
         if os.path.isfile(self.lock_fname):
             os.unlink(self.lock_fname)
 
     def update_lock(self):
-        """Update the lock metadata"""
         self.lock_time = time.time()
         self._write_lock_file()
 
     def _is_lock_free(self):
-        """Check if a lock is free
-
-        :return: lock status
-        :rtype: bool
-        """
         lock_free = False
         if not os.path.isfile(self.lock_fname):
             lock_free = True
@@ -674,11 +535,6 @@ class LockFile:
         return lock_free
 
     def _is_process_running(self):
-        """Check for a lock's owner process
-
-        :return: is the lock's owner still running
-        :rtype: bool
-        """
         proc_running = False
         self._read_lock_file()
         self.lock_time = time.time()
@@ -722,10 +578,6 @@ class LockFile:
         return proc_running
 
     def _read_lock_file(self):
-        """Read a lockfile
-
-        :raises: Exception on error
-        """
         try:
             with open(self.lock_fname, "rb") as lock_fstream:
                 self.lock_file_data = json.loads(lock_fstream.read().decode())
@@ -734,7 +586,6 @@ class LockFile:
             raise
 
     def _update_cpu_time(self):
-        """Update the CPU time for the lock"""
         with open(self.lock_fname, "rb") as lock_fstream:
             existing_lock_file_data = json.loads(lock_fstream.read().decode())
         existing_lock_file_data["ALL_CPU_TIME"] = self._get_all_cpu_time(
@@ -747,7 +598,6 @@ class LockFile:
         os.rename(tmp_fname, self.lock_fname)
 
     def _write_lock_file(self):
-        """Write out the lockfile metadata"""
         self.lock_time = time.time()
         self.cur_all_cpu_time = self._get_all_cpu_time(self.cur_pid)
         lock_data = {
@@ -763,13 +613,6 @@ class LockFile:
         os.rename(tmp_fname, self.lock_fname)
 
     def _get_all_cpu_time(self, pid):
-        """Check the total CPU time
-
-        :param pid: process ID
-        :type pid: int
-        :return: mapping of processes and CPU time
-        :rtype: dict
-        """
         ret = {str(pid): self._get_process_cpu_time(pid)}
         for cpid in self._get_child_pids(pid):
             ret.update(self._get_all_cpu_time(cpid))
@@ -777,13 +620,6 @@ class LockFile:
 
     @staticmethod
     def _get_process_cpu_time(pid):
-        """Get the CPU time for a process
-
-        :param pid: process ID
-        :type pid: int
-        :return: process CPU time
-        :rtype: int
-        """
         with open("/proc/%d/stat" % pid, "rb") as stat_fstream:
             stat_data = stat_fstream.read()
         stat_list = stat_data.split()
@@ -791,7 +627,6 @@ class LockFile:
 
     @staticmethod
     def _get_process_cmdline(pid):
-        """Return the value stored in /proc/<pid>/cmdline or None if there is an error"""
         cmdline_fp = f"/proc/{pid:d}/cmdline"
         try:
             with open(cmdline_fp, "rb") as cmdline_f:
@@ -805,13 +640,6 @@ class LockFile:
 
     @staticmethod
     def _get_child_pids(pid):
-        """Get all child process IDs
-
-        :param pid: process ID
-        :type pid: int
-        :return: child process IDs
-        :rtype: list
-        """
         child_pids = []
         for fname in os.listdir("/proc"):
             try:
@@ -830,7 +658,6 @@ class LockFile:
 
 
 class BackupError(Exception):
-    """Typical backup error."""
 
     def __init__(self, message) -> None:
         super().__init__(self, message)
@@ -838,8 +665,6 @@ class BackupError(Exception):
 
 
 class BinlogRunner(multiprocessing.Process):
-    """Binlog multiprocessing class to run backups in parallel."""
-
     def __init__(
         self,
         command_queue,
@@ -848,12 +673,6 @@ class BinlogRunner(multiprocessing.Process):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Initialize MyDumperRunner.
-
-        :param command_queue:
-        :param config_path: Path to the configuration file.
-        :param run_only_server:
-        """
         multiprocessing.Process.__init__(self, *args, **kwargs)
 
         self.command_queue = command_queue
@@ -863,7 +682,6 @@ class BinlogRunner(multiprocessing.Process):
         self.logger = None
 
     def run(self) -> None:
-        """Run the BinlogRunner: iterate over servers and run Binlog backups."""
         self.local_cfg = LocalConfig(self.config_path)
 
         logging_dir = Path(
@@ -930,20 +748,12 @@ class BinlogRunner(multiprocessing.Process):
 
 
 class BaseBackup:
-    """Base class for shared functionality across backup and restore operations."""
-
     def __init__(
         self,
         server_data: dict[str, Any],
         backup_code: str,
         logger: logging.Logger | None = None,
     ) -> None:
-        """Initialize the BaseBackup object.
-
-        :param server_data: Dictionary of server configuration and runtime data.
-        :param backup_code: Backup code indicating the type of backup.
-        :param logger: Optional logger instance to use.
-        """
         self.server_data = server_data
         self.backup_code = backup_code
         self.backup_textfile_collector_dir = Path(
@@ -970,11 +780,6 @@ class BaseBackup:
         self.last_backup_dir = None
 
     def check_compression_algorithm(self, algorithm: str) -> None:
-        """Check if the given compression algorithm is compatible with the backup type.
-
-        :param algorithm: Compression algorithm name.
-        :raises BackupError: If the algorithm is not compatible.
-        """
         if not self.compress:
             self.logger.debug("Compression is disabled, skipping check")
             return
@@ -988,11 +793,6 @@ class BaseBackup:
         )
 
     def notify(self, status: BackupNotifyStatus, output: str) -> None:
-        """Send notifications about backup or restore operations.
-
-        :param status: Operation status code.
-        :param output: Operation output or message.
-        """
         if len(output) > 300:
             output = f"{output[:300]}..."
 
@@ -1009,10 +809,6 @@ class BaseBackup:
             self.textfile_collector_notify(1)
 
     def check_textcollector_dir(self) -> bool:
-        """Check if the textfile collector directory exists.
-
-        :return: True if directory exists, False otherwise.
-        """
         backup_textfile_collector_dir = self.backup_textfile_collector_dir.parent
         if not backup_textfile_collector_dir.is_dir():
             self.logger.warning(
@@ -1027,10 +823,6 @@ class BaseBackup:
         backup_status: int,
         msp_action: MSPAction = MSPAction.BACKUP,
     ) -> None:
-        """Write backup status to textfile collector for Prometheus.
-
-        :param backup_status: Backup status code.
-        """
         if not self.check_textcollector_dir():
             return
 
@@ -1066,29 +858,17 @@ class BaseBackup:
             outfile.write(metrics_text)
 
     def textfile_collector_notify(self, backup_status: int) -> None:
-        """Notify status via textfile collector.
-
-        :param backup_status: Backup status code.
-        """
         self.textfile_collector_write_status(backup_status)
 
 
 class Backup(BaseBackup):
-    """Common class for all backup types."""
-
     def __init__(
         self,
         server_data: dict[str, Any],
         backup_code: str,
-        native_upload: bool = False,
         logger: logging.Logger,
+        native_upload: bool = False,
     ) -> None:
-        """Initialize the Backup object with server data and backup code.
-
-        :param server_data: Server configuration and data.
-        :param backup_code: Backup code string.
-        :param logger: Optional logger instance.
-        """
         self.backup_code = backup_code
         super().__init__(server_data, backup_code, logger)
         self.host = server_data.get("HOST", "localhost")
@@ -1134,22 +914,12 @@ class Backup(BaseBackup):
         }
 
     def enable_upload(self, backup_dir: Path) -> None:
-        """If upload interval permits, mark backup for upload by creating the UPLOADME_FILE.
-
-        :param backup_dir: Path to the backup directory.
-        """
         uploadme_path = backup_dir / UPLOADME_FILE
         if not uploadme_path.is_file():
             uploadme_path.touch()
             self.logger.info("Backup marked for upload.")
 
     def _query_mysql(self, sql: str) -> Any:
-        """Execute a MySQL query and return the result.
-
-        :param sql: SQL query string.
-        :return: Fetched result.
-        :raises BackupError: If query fails.
-        """
         try:
             conn = pymysql.connect(
                 read_default_file=self.defaults_cnf_file,
@@ -1163,85 +933,6 @@ class Backup(BaseBackup):
         except (OperationalError, InternalError) as err:
             msg = f'Error running query "{sql}": {err}'
             raise BackupError(msg) from err
-
-    def _is_running_replica(self) -> bool:
-        """Check if MySQL replica is running.
-
-        Supports both legacy `SHOW SLAVE STATUS` and newer `SHOW REPLICA STATUS` (MySQL 8.0.22+).
-
-        :return: True if replica is running, False otherwise.
-        """
-        result = None
-        # Try newer MySQL syntax first
-        for query in ["SHOW REPLICA STATUS", "SHOW SLAVE STATUS"]:
-            for suffix in [" NONBLOCKING", " NOLOCK", ""]:
-                try:
-                    result = self._query_mysql(f"{query}{suffix}")
-                except ProgrammingError:
-                    continue
-                if result:
-                    break
-            if result:
-                break
-
-        if result and result.get("Replica_IO_Running", result.get("Slave_IO_Running")) == "Yes":
-            self.logger.info("MySQL replication is running.")
-            return True
-
-        return False
-
-    def _is_read_only(self) -> bool:
-        """Check if MySQL is read-only.
-
-        :return: True if read_only=1, False otherwise.
-        """
-        result = self._query_mysql("SELECT @@read_only")
-        if result["@@read_only"] == 1:
-            self.logger.info("MySQL read_only is enabled.")
-            return True
-        return False
-
-    def _is_pxc(self) -> bool:
-        """Check if MySQL is running PXC/Galera cluster.
-
-        :return: True if wsrep_on=1, False otherwise.
-        """
-        try:
-            result = self._query_mysql("SELECT @@wsrep_on")
-        except BackupError:
-            return False
-
-        if result["@@wsrep_on"] == 1:
-            self.logger.info("PXC/Galera cluster detected.")
-            return True
-        return False
-
-    def _pxc_desync(self, new_status: int = 1) -> bool:
-        """Change wsrep_desync of a Galera node.
-
-        :param new_status: Desired wsrep_desync status (0 or 1).
-        :return: True if wsrep_desync changed or already in desired state, False otherwise.
-        """
-        try:
-            result = self._query_mysql("SELECT @@wsrep_desync")
-        except BackupError:
-            return False
-
-        if result["@@wsrep_desync"] != new_status:
-            if result["@@wsrep_desync"] == 1:
-                recv_queue = self._query_mysql(
-                    'SHOW GLOBAL STATUS LIKE "wsrep_local_recv_queue"'
-                )
-                if int(recv_queue["Value"]) > 32:
-                    logging.warning(
-                        "Galera node is not synced, queue size is %s",
-                        recv_queue["Value"],
-                    )
-
-            self._query_mysql(f"SET GLOBAL wsrep_desync = {new_status}")
-            self.logger.info("MySQL wsrep_desync changed to %s", new_status)
-
-        return True
 
 
 def run_binlog_backup(server_data, command_queue):
@@ -1492,7 +1183,6 @@ def cleanup_binlogs(server_data):
 
 
 def compress_complete_binlogs(server_data):
-    # TODO - Add a check that grabs the binlog size from the server and re-pulls the log if the size does not match
     current_binlogs = get_file_list(
         get_backup_dir(server_data), server_data["BINLOG_PREFIX"], sort_by="binlog_id"
     )
@@ -1622,7 +1312,6 @@ def get_last_binlog(server_data):
             read_default_group="client",
         )
         cursor = conn.cursor(MySQLdb.cursors.DictCursor)
-        # XXX OperationalError: (1381, 'You are not using binary logging')
         cursor.execute("SHOW BINARY LOGS")
         rows = cursor.fetchall()
         for row in rows:
@@ -1726,9 +1415,6 @@ def queue_get_maybe(queue, timeout=None):
 
 
 def get_source_status(server_data):
-    """Return a tuple of binlog name and position from the source we're currently
-    connecting to.
-    """
     try:
         conn = MySQLdb.connect(
             host=server_data["HOST"],
@@ -1754,7 +1440,6 @@ def get_source_status(server_data):
 
 
 def get_dir_size(start_path: Path) -> int:
-    """Get the disk usage of a directory in bytes."""
     total_size = start_path.stat().st_blocks * ST_BLOCKS_SIZE
     try:
         for file in start_path.rglob("*"):
@@ -1767,16 +1452,7 @@ def get_dir_size(start_path: Path) -> int:
     return total_size
 
 
-def preflight_check() -> None:
-    """Perform checks prior to running backups."""
-    if not sys.version_info >= (3, 8):
-        print(f"ERROR: python 3.8+ required. Your version: {sys.version_info}.\n")
-        sys.exit(4)
-
-
 def main() -> None:
-    """Run main program."""
-    preflight_check()
     run_all, config, alias, parser = parse_args()
 
     run_all = (
@@ -1794,10 +1470,6 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments.
-
-    :return: Parsed arguments namespace.
-    """
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -1820,9 +1492,6 @@ def parse_args() -> argparse.Namespace:
 
 
 class Upload(Backup):
-    """Parent class for all specific uploaders.
-    Provides a run method to execute uploading.
-    """
 
     def __init__(
         self,
@@ -1832,16 +1501,8 @@ class Upload(Backup):
         logger: logging.Logger,
         native_upload: bool = False,
     ) -> None:
-        """Initialize the Upload object.
-
-        :param upload_type: Type of upload (e.g., "S3", "Rsync").
-        :param upload_provider: Class handling the specific upload method.
-        :param settings: Server/backup settings.
-        :param logger: Logger instance.
-        :param native_upload: Whether the upload was triggered natively or from a script.
-        """
         backup_code = settings["BACKUP_TYPE"]
-        super().__init__(settings, backup_code, native_upload, logger)
+        super().__init__(settings, backup_code, logger, native_upload)
         self.upload_type = upload_type
         self.upload_provider = upload_provider(settings, logger)
         self.last_uploaded_number = 0
@@ -1859,9 +1520,6 @@ class Upload(Backup):
         if self.post_run_encrypt or not self.encrypt:
             self.encrypt_using_tmpdir = False
 
-        if self.backup_code == "X" and self.xtrabackup_aes256:
-            self.encrypt_using_tmpdir = False
-
         self.cdba_report = {}
         self.cdba_report["upload"] = 1
         self.report_options["options"] = {
@@ -1875,18 +1533,9 @@ class Upload(Backup):
         root_backup_dir = settings["BACKUP_DIR"]
         root_backup_path = Path(root_backup_dir)
         self.backup_type_dir = ""
-        if self.backup_code == "M":
-            self.backup_type_dir = "mydumper"
-        elif self.backup_code == "X":
-            self.backup_type_dir = "xtrabackup"
-        elif self.backup_code == "B":
+        if self.backup_code == "B":
             self.backup_type_dir = "binlogs"
-        elif self.backup_code == "T":
-            self.backup_type_dir = "tokudb"
-        elif self.backup_code == "O":
-            self.backup_type_dir = "oplog"
-        elif self.backup_code == "H":
-            self.backup_type_dir = "hotbackup"
+
 
         self.relative_backup_path = Path(self.backup_type_dir) / self.alias
         self.full_backup_path = root_backup_path / self.relative_backup_path
@@ -1897,13 +1546,6 @@ class Upload(Backup):
         self.paths: list[dict[str, str]] = []
 
     def _collect_paths(self) -> None:
-        """If there are backups to upload, add them to the upload list.
-        Otherwise, with empty self.paths, the upload will be skipped.
-        """
-        if self.backup_code == "X" and self.prepare_backup:
-            self.logger.warning("Skipping upload as XTRABACKUP_PREPARE is enabled.")
-            return
-
         for datedir in self.full_backup_path.iterdir():
             if datedir.is_dir():
                 conditions_to_upload = [
@@ -1920,36 +1562,8 @@ class Upload(Backup):
                             "tmpdir": str(self.tmpdir_for_enc_upload / datedir.name),
                         }
                     )
-                # loop inside xb incrementals dirs too
-                if self.backup_code == "X" and re.search(
-                    BACKUP_DIR_REGEX["I"], datedir.name
-                ):
-                    for inc_datedir in datedir.iterdir():
-                        if inc_datedir.is_dir():
-                            conditions_to_upload = [
-                                re.search(
-                                    BACKUP_DIR_REGEX[self.backup_code], inc_datedir.name
-                                ),
-                                (inc_datedir / UPLOADME_FILE).is_file(),
-                            ]
-                            if all(conditions_to_upload):
-                                self.paths.append(
-                                    {
-                                        "source": str(inc_datedir),
-                                        "rel_destination": str(
-                                            self.relative_backup_path
-                                            / datedir.name
-                                            / inc_datedir.name
-                                        ),
-                                        "tmpdir": str(
-                                            self.tmpdir_for_enc_upload
-                                            / inc_datedir.name
-                                        ),
-                                    }
-                                )
 
     def _copy_to_tmpdir(self) -> None:
-        """Copy backup to a temporary directory for encryption prior to upload, if enabled."""
         if not self.encrypt_using_tmpdir:
             return
 
@@ -1979,9 +1593,6 @@ class Upload(Backup):
         self.logger.info("OK Copy complete.")
 
     def _encrypt(self) -> None:
-        """Encrypt backup directories prior to upload if encryption is enabled."""
-        if self.backup_code == "X" and self.xtrabackup_aes256:
-            return
 
         if not (self.encrypt or self.post_run_encrypt):
             self.logger.warning("UPLOADING UNENCRYPTED BACKUP!!!")
@@ -1992,7 +1603,6 @@ class Upload(Backup):
             encrypt_dir(str(dir_), self.logger, **self.dir_encrypt_config)
 
     def _upload(self) -> None:
-        """Upload backups to the remote destination using the provided upload provider."""
         for path in self.paths:
             dir_ = path["tmpdir"] if self.encrypt_using_tmpdir else path["source"]
             dest_path = self.upload_provider.upload(dir_, path["rel_destination"])
@@ -2000,10 +1610,6 @@ class Upload(Backup):
             self._mark_as_uploaded(path["source"])
 
     def _mark_as_uploaded(self, dir_: str) -> None:
-        """Mark the backup as uploaded by removing or updating the UPLOADME_FILE.
-
-        :param dir_: Path to the backup directory.
-        """
         uploadme_file = Path(dir_) / UPLOADME_FILE
         if self.backup_code in ["B", "O"]:
             with uploadme_file.open("w+") as file_:
@@ -2012,7 +1618,6 @@ class Upload(Backup):
             uploadme_file.unlink(missing_ok=True)
 
     def _cleanup(self) -> None:
-        """Purge temporary directories used for encryption if enabled."""
         if not self.encrypt_using_tmpdir:
             return
 
@@ -2023,10 +1628,6 @@ class Upload(Backup):
                 self.logger.info("Removed tmpdir %s", tmpdir)
 
     def run(self) -> str:
-        """Execute the upload process.
-
-        :return: Status message of the upload process.
-        """
         logging_set_host(self.alias, "upload.log")
 
         if self.full_backup_path.is_dir():
@@ -2059,11 +1660,6 @@ class Upload(Backup):
         return msg
 
 def format_seconds_to_hhmmss(seconds: int | float) -> str:
-    """Format seconds into HH:MM:SS format.
-
-    :param seconds: Number of seconds.
-    :return: Formatted time string.
-    """
     seconds = round(seconds)
     hours = seconds // 3600
     seconds %= 3600
@@ -2073,8 +1669,6 @@ def format_seconds_to_hhmmss(seconds: int | float) -> str:
 
 class BinaryLogUpload(Upload):
 
-    """Implements uploading of already compressed binlogs."""
-
     def __init__(self, *args, **kwargs):
         super(BinaryLogUpload, self).__init__(*args, **kwargs)
         # use tmpdir despite encrypt or not
@@ -2083,8 +1677,6 @@ class BinaryLogUpload(Upload):
         self.report_options['options']['upload_interval'] = 'recurrent'
 
     def _collect_paths(self):
-        """Gather paths for upload list."""
-        # Read last uploaded binlog number from uploadme file.
         uploadme_file = os.path.join(self.full_backup_path, UPLOADME_FILE)
         if os.path.isfile(uploadme_file):
             with open(uploadme_file, 'r') as file_:
@@ -2118,7 +1710,6 @@ class BinaryLogUpload(Upload):
             }]
 
     def _copy_to_tmpdir(self):
-        """Copy pending gzipped binlogs to tmpdir for upload."""
         # Create tmpdir
         if not os.path.isdir(self.tmpdir_for_enc_upload):
             os.makedirs(self.tmpdir_for_enc_upload)
@@ -2131,15 +1722,8 @@ class BinaryLogUpload(Upload):
 
 
 class S3UploadProvider:
-    """Upload to Amazon S3 bucket using boto3."""
 
     def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
-        """Initialize S3UploadProvider.
-
-        :param settings: Backup/server settings.
-        :param logger: Logger instance.
-        :raises BackupError: If S3_BUCKET not set.
-        """
         self.logger = logger
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
@@ -2171,10 +1755,6 @@ class S3UploadProvider:
         self.s3 = boto3.client("s3")
 
     def _check_bucket_safety(self) -> None:
-        """Check whether the S3 bucket is safe by verifying public access block settings.
-
-        :raises BackupError: If the bucket is found to be unsafe.
-        """
         if self.skip_s3_safety_check:
             self.logger.info("Skipping S3 bucket safety check as requested.")
             return
@@ -2191,13 +1771,6 @@ class S3UploadProvider:
         self.logger.info("OK S3 bucket looks to be safe or safety check skipped.")
 
     def upload(self, source_dir: str, dest_dir: str) -> str:
-        """Upload directory to S3.
-
-        :param source_dir: Local source directory.
-        :param dest_dir: Destination path (relative) on S3.
-        :return: S3 URI of the uploaded backup.
-        :raises BackupError: If S3 upload fails.
-        """
         if not self.skip_s3_safety_check:
             self._check_bucket_safety()
 
@@ -2264,15 +1837,8 @@ class S3UploadProvider:
 
 
 class RsyncUploadProvider:
-    """Rsync folder to another location."""
 
     def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
-        """Initialize RsyncUploadProvider.
-
-        :param settings: Backup/server settings.
-        :param logger: Logger instance.
-        :raises BackupError: If RSYNC_PATH not set or rsync not installed.
-        """
         self.logger = logger
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
@@ -2290,13 +1856,6 @@ class RsyncUploadProvider:
         self.log_stream = log_file.open("a")
 
     def upload(self, source_dir: str, dest_dir: str) -> str:
-        """Rsync files from source dir to target directory.
-
-        :param source_dir: Local source directory.
-        :param dest_dir: Remote/target directory structure.
-        :return: Destination path.
-        :raises BackupError: If rsync fails.
-        """
         if not Path(RSYNC_BIN).exists():
             msg = f"Missing {RSYNC_BIN}. Install rsync package."
             raise BackupError(msg)
