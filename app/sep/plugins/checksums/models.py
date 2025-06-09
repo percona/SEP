@@ -70,3 +70,4 @@ class ChecksumsCreate(BaseModel):
     max_load: str = ""
     chunk_time: str = ""
     max_lag: str = ""
+    extra_args: str = ""

@@ -30,7 +30,10 @@ def get_table(cursor: DictCursor, db_name: str, table_name: str) -> dict:
              - "keys" (dict): A dictionary describing the keys.
     :rtype: dict
     """
-    query = f"SHOW CREATE TABLE `{db_name.replace('`', '``')}`.`{table_name.replace('`', '``')}`"
+    query = "SHOW CREATE TABLE `{}`.`{}`".format(
+        db_name.replace("`", "``"),
+        table_name.replace("`", "``"),
+    )
     cursor.execute(query)
     create_table_result = cursor.fetchone()
     create_statement = create_table_result["Create Table"]
