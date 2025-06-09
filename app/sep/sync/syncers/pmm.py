@@ -297,7 +297,7 @@ class PMMSyncer(BaseSyncer):
         :return: The `BaseRemoteAPI` instance.
         :rtype: BaseRemoteAPI
         """
-        self.pmm_api.session = await settings.get_extra_client_session(
+        self.pmm_api.session = settings.get_extra_client_session(
             self.pmm_api.endpoint, self.pmm_api.api_key
         )
         return await super().__aenter__()
