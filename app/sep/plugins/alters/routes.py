@@ -20,7 +20,7 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
-from app.tasks.entity import decode_selection
+from app.tasks.anonymizer import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)

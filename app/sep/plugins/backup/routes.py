@@ -22,7 +22,7 @@ from app.sep.plugins.backup.deps import (
     get_backups_index_context,
 )
 from app.sep.plugins.backup.models import BackupType
-from app.tasks.entity import decode_selection
+from app.tasks.anonymizer import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)

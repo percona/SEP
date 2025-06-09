@@ -20,7 +20,7 @@ from app.sep.plugins.checksums.deps import (
     ChecksumsTask,
     get_checksums_index_context,
 )
-from app.tasks.entity import decode_selection
+from app.tasks.anonymizer import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)

@@ -32,7 +32,7 @@ from app.core.utils import (
     utc_now,
 )
 from app.tasks.crud import TaskHistoryManager
-from app.tasks.entity import presidio_anonymize_log
+from app.tasks.anonymizer import presidio_anonymize_log
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundException,
     JobNotFoundException,

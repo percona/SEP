@@ -21,7 +21,7 @@ from app.sep.plugins.archives.deps import (
     ArchivesTask,
     get_archives_index_context,
 )
-from app.tasks.entity import decode_selection
+from app.tasks.anonymizer import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)

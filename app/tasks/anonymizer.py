@@ -9,12 +9,13 @@ from presidio_anonymizer import (
     OperatorConfig,
 )
 
-# Initialize Presidio engines.
+from app.core.utils.fields import EnumFieldMixin
+
 analyzer = AnalyzerEngine()
 anonymizer = AnonymizerEngine()
 
 
-class Entity(IntEnum):
+class AnonymizerEntity(EnumFieldMixin, IntEnum):
     """Enumeration of sensitive data types represented as bitmask flags.
 
     Each member value is a bit-shifted integer that uniquely identifies a
@@ -37,29 +38,29 @@ class Entity(IntEnum):
     US_SSN = 1 << 13
 
 
-def encode_selection(selected_entities: list[Entity]) -> int:
-    """Encode a list of :class:`Entity` enum members into an integer bitmask.
+def encode_selection(selected_entities: list[AnonymizerEntity]) -> int:
+    """Encode a list of :class:`AnonymizerEntity` enum members into an integer bitmask.
 
-    :param selected_entities: A list of :class:`Entity` members to encode.
-    :type selected_entities: list[Entity]
+    :param selected_entities: A list of :class:`AnonymizerEntity` members to encode.
+    :type selected_entities: list[AnonymizerEntity]
     :return: The integer bitmask representing the selected entities.
     :rtype: int
     """
     number = 0
     for entity in selected_entities:
-        number |= entity.value
+        number |= entity
     return number
 
 
-def decode_selection(number: int) -> list[Entity]:
-    """Decode an integer bitmask into a list of :class:`Entity` enum members.
+def decode_selection(number: int) -> list[AnonymizerEntity]:
+    """Decode an integer bitmask into a list of :class:`AnonymizerEntity` enum members.
 
     :param number: The integer bitmask to decode.
     :type number: int
-    :return: A list of :class:`Entity` members corresponding to the bitmask.
-    :rtype: list[Entity]
+    :return: A list of :class:`AnonymizerEntity` members corresponding to the bitmask.
+    :rtype: list[AnonymizerEntity]
     """
-    return [entity for entity in Entity if number & entity.value]
+    return [entity for entity in AnonymizerEntity if number & entity]
 
 
 def presidio_anonymize_log(log_text: str, anonymize_bitmask: int) -> str:

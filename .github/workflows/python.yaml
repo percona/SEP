@@ -54,8 +54,6 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
-        exclude:
-          - python: "3.13"  # Excluding 3.13 as Presidio does not support it yet
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase

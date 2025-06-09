@@ -241,7 +241,7 @@ class Settings(BaseYamlSettings):
         a new one is created.
     :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
-    `secrets.token_urlsafe(32)`.
+        `secrets.token_urlsafe(32)`.
     :type SECRET_KEY: str
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel

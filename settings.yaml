@@ -27,7 +27,6 @@ default:
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
-        MASK_PII_TYPES: false
       - NAME: Archive
         MODULE_NAME: archives
         URI_PATH: /archives
@@ -36,6 +35,10 @@ default:
         MODULE_NAME: backup
         URI_PATH: /backups
         CSS_CLASS: backups
+        MASK_PII_TYPES:
+          - EMAIL_ADDRESS
+          - CREDIT_CARD
+          - EMAIL_ADDRESS
       - NAME: Checksums
         MODULE_NAME: checksums
         URI_PATH: /checksums

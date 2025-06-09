@@ -39,7 +39,7 @@ from app.sep.inventory import (
 from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
-from app.tasks.entity import encode_selection, Entity
+from app.tasks.anonymizer import encode_selection, AnonymizerEntity
 from app.tasks.models import (
     Task,
     TaskHistoryResponse,
@@ -482,15 +482,13 @@ async def get_tasks_context(
         executor_hosts = {}
         messages.error(request, exc.detail)
 
-    entities = await tasks_api.get("/entities/")
-
     context = default_context or {}
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
             "services": services,
             "tasks": tasks,
-            "entities": entities,
+            "entities": list(AnonymizerEntity),
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
@@ -595,9 +593,7 @@ async def get_task_by_name(
 # TODO(yan): Put get_task_history in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_history(
-    tasks_api: TaskAPI,
-    task_history_id: int,
-    owner: TaskOwner | None = None,
+    tasks_api: TaskAPI, task_history_id: int, owner: TaskOwner | None = None
 ) -> TaskHistoryResponse:
     """Fetch and validate a task history by ID.
 
@@ -670,17 +666,4 @@ def compute_anonymize(owner: TaskOwner) -> int:
     if not plugin:
         return 0
 
-    config_value = plugin.mask_pii_types
-    if isinstance(config_value, bool):
-        entities = list(Entity) if config_value else []
-    elif isinstance(config_value, list):
-        entities = []
-        for name in config_value:
-            try:
-                entities.append(Entity[name])
-            except KeyError:
-                continue
-    else:
-        entities = []
-
-    return encode_selection(entities)
+    return encode_selection(plugin.mask_pii_types)

@@ -21,7 +21,7 @@ def json_deserialize(raw_data: str) -> Any:
     :param raw_data: The JSON string to deserialize.
     :type raw_data: str
     :return: A `TaskExecutionRequest` object if deserialization is successful,
-            otherwise the raw data.
+        otherwise the raw data.
     :rtype: Any
     """
     data = json.loads(raw_data)

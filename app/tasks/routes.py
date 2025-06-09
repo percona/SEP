@@ -29,7 +29,7 @@ from app.tasks.deps import (
     TaskExecutor,
     TaskHistoryWithTaskDep,
 )
-from app.tasks.entity import Entity, presidio_anonymize_log
+from app.tasks.anonymizer import AnonymizerEntity, presidio_anonymize_log
 from app.tasks.models import (
     GeneratedTask,
     Task,
@@ -421,9 +421,3 @@ async def transform_payload(
 ) -> dict[str, Any]:
     """Transform a payload string into a dictionary."""
     return await executor.transform_payload(data.payload, data.fmt)
-
-
-@router.get("/entities/", dependencies=[IsAuthenticatedDep])
-async def get_supported_entities() -> dict[str, int]:
-    """Retrives a dict of supported entity names and values."""
-    return {entity.name: entity.value for entity in Entity}
