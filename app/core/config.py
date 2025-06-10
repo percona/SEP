@@ -315,7 +315,7 @@ class Settings(BaseYamlSettings):
         return self
 
     @validate_call
-    def get_extra_client_session(
+    async def get_extra_client_session(
         self,
         endpoint: HttpUrl,
         api_key: str | None = None,

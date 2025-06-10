@@ -1,5 +1,6 @@
 """Define the base alerting models."""
 
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import StrEnum
@@ -10,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import utc_now
 from app.core.utils.fields import RequiredStr
+
+logger = logging.getLogger(__name__)
 
 
 class AlertSeverity(StrEnum):
@@ -66,3 +69,38 @@ class BaseAlertProvider(BaseCaseInsensitiveModel, ABC):
         :param alert: The alert to be sent.
         :type alert: Alert
         """
+
+
+class AlertService(BaseCaseInsensitiveModel):
+    """Define service for managing and triggering alerts through registered providers.
+
+    This service allows for the registration of multiple alert providers and
+    triggers alerts through all registered providers. It handles the sending of
+    alerts and logs any exceptions that occur during the process.
+
+    :param providers: A set of registered alert providers.
+    :type providers: set[BaseAlertProvider]
+    """
+
+    providers: set[BaseAlertProvider] = set()
+
+    async def trigger(self, alert: Alert) -> None:
+        """Trigger an alert through all registered providers.
+
+        :param alert: The alert to be triggered.
+        :type alert: Alert
+        """
+        if not self.providers:
+            logger.warning("No alert providers registered.")
+            return
+
+        for provider in self.providers:
+            try:
+                await provider.send_alert(alert)
+                logger.info("Alert sent via %s: %s", provider.__class__.__name__, alert)
+            except Exception:
+                logger.exception(
+                    "Failed to send alert via %s: %s",
+                    provider.__class__.__name__,
+                    alert,
+                )

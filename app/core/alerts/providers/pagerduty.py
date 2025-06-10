@@ -1,7 +1,6 @@
 """Provide a PagerDuty alert provider."""
 
 from enum import StrEnum
-from functools import cached_property
 from typing import Any, ClassVar
 
 from pydantic import (
@@ -13,7 +12,9 @@ from pydantic import (
 from app.core.alerts.models import Alert, BaseAlertProvider
 from app.core.config import settings
 from app.core.requests import RemoteAPI
-from app.core.utils.fields import EnumFieldMixin, RequiredStr, StrHttpUrl
+from app.core.utils.fields import EnumFieldMixin, RequiredStr
+
+__all__ = ["PagerDutyEventsAlertProvider"]
 
 
 class PagerDutyAlertSeverity(EnumFieldMixin, StrEnum):
@@ -74,21 +75,22 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
     This provider sends alerts to PagerDuty using the Events API v2.
     """
 
-    API_ENDPOINT: ClassVar[StrHttpUrl] = "https://events.pagerduty.com/v2/"
+    API_ENDPOINT: ClassVar[str] = "https://events.pagerduty.com/v2/"
     routing_key: str
 
     def __hash__(self) -> int:
         return hash((self.__class__.__name__, self.routing_key))
 
-    @cached_property
-    def api(self) -> RemoteAPI:
+    async def get_api(self) -> RemoteAPI:
         """Get the PagerDuty API client.
 
         :return: The RemoteAPI client for PagerDuty.
         :rtype: RemoteAPI
         """
         remote_api = RemoteAPI(endpoint=self.API_ENDPOINT)
-        remote_api.session = settings.get_extra_client_session(remote_api.endpoint)
+        remote_api.session = await settings.get_extra_client_session(
+            remote_api.endpoint
+        )
         return remote_api
 
     @validate_call
@@ -100,7 +102,8 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         :param alert: The alert to be sent.
         :type alert: Alert
         """
-        await self.api.post(
+        pagerduty_api = await self.get_api()
+        await pagerduty_api.post(
             "enqueue",
             json={
                 "routing_key": self.routing_key,
