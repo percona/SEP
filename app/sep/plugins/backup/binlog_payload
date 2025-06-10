@@ -235,7 +235,7 @@ def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> 
         logger.info("Running on: %s", path)
 
     dir_encrypt = DirectoryEncryptor(cfg_path=DIR_ENCRYPT_CFG_PATH, **cfg)
-    if not dir_encrypt.encrypt_dir(encr_dir=path):
+    if not dir_encrypt.encrypt_dir(encr_dir=Path(path)):
         raise BackupError("Encryption failed.")
 
     if not is_encrypted_dir(path, logger=logger):
@@ -702,21 +702,25 @@ class BinlogRunner(multiprocessing.Process):
         procs = []
         queues = []
         for server_data in self.local_cfg.server_data_list:
-            srv_bkup_type = server_data.get("BACKUP_TYPE", "ALL")
-            if srv_bkup_type != "ALL" and "B" not in srv_bkup_type:
-                continue
-            if (
-                self.run_only_server is not None
-                and server_data["HOST"] != self.run_only_server
-            ):
-                continue
-            server_command_queue = multiprocessing.Queue()
-            proc = multiprocessing.Process(
-                target=run_binlog_backup, args=(server_data, server_command_queue)
-            )
-            proc.start()
-            procs.append(proc)
-            queues.append(server_command_queue)
+            try:
+                srv_bkup_type = server_data.get("BACKUP_TYPE", "ALL")
+                if srv_bkup_type != "ALL" and "B" not in srv_bkup_type:
+                    continue
+                if (
+                    self.run_only_server is not None
+                    and server_data["HOST"] != self.run_only_server
+                ):
+                    continue
+                server_command_queue = multiprocessing.Queue()
+                proc = multiprocessing.Process(
+                    target=run_binlog_backup, args=(server_data, server_command_queue)
+                )
+                proc.start()
+                procs.append(proc)
+                queues.append(server_command_queue)
+            except Exception as err:
+                self.logger.error("Unhandled Exception")
+                sys.exit(1)
 
         exit_initiated = None
         while procs:
@@ -1784,7 +1788,7 @@ class S3UploadProvider:
 
         self.logger.info("Uploading backup...")
         source_path = Path(source_dir)
-        for root, _dirs, files in os.walk(str(source_path)):
+        for root, _, files in os.walk(str(source_path)):
             for file_ in files:
                 local_path = Path(root) / file_
                 relative_path = local_path.relative_to(source_path)
@@ -1802,8 +1806,8 @@ class S3UploadProvider:
                     self.s3.upload_file(
                         str(local_path), self.bucket_name, key, ExtraArgs=extra_args
                     )
-                except ClientError as e:
-                    raise BackupError(f"S3 upload failed: {e}")
+                except boto3.exceptions.S3UploadFailedError as err:
+                    raise BackupError(f"S3 upload failed: {err}") from err
 
         # Upload a "latest" file for convenience if needed
         if self.backup_type not in ["B", "O"] and not (
