@@ -1484,6 +1484,7 @@ class Upload(Backup):
         if self.backup_code == "X" and self.xtrabackup_aes256:
             self.encrypt_using_tmpdir = False
 
+        self.cdba_report = {}
         self.cdba_report["upload"] = 1
         self.report_options["options"] = {
             "upload_to": self.upload_type,
@@ -2143,15 +2144,25 @@ class Xtrabackup(Backup):
             if self.hardlink and self.max_copies > 1:
                 self._save_disk_space()
 
-        # Create uploadme file to enable backup for upload
-        if self.upload_type or self.rsync_dir:
+        # Upload if needed
+        for upload_type in self.upload_type:
             self.enable_upload(self.last_backup_dir)
-
-        # Rsync backup to another location.
-        # This is a backward-compatible uploading, when backup_driver is not run and
-        # new uploading options aren't defined.
-        if self.rsync_dir:
-            self._rsync_upload()
+            if upload_type == "rsync":
+                XtraBackupUpload(
+                    upload_type=upload_type,
+                    upload_provider=RsyncUploadProvider,
+                    settings=self.server_setting,
+                    logger=self.logger,
+                ).run()
+            elif upload_type == "s3":
+                XtraBackupUpload(
+                    upload_type=upload_type,
+                    upload_provider=S3UploadProvider,
+                    settings=self.server_setting,
+                    logger=self.logger,
+                ).run()
+            else:
+                self.logger.warning("Unsupported upload type: %r", upload_type)
 
         # Report we are OK :)
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
