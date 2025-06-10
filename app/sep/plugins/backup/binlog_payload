@@ -743,6 +743,11 @@ class BinlogRunner(multiprocessing.Process):
                     alive_procs.append(proc)
                 else:
                     proc.join()
+                    # Check if the process exited with an error
+                    if proc.returncode != 0:
+                        self.logger.error("Child process exited with code %d", proc.returncode)
+                        sys.exit(1)
+
             procs = alive_procs
 
             if exit_initiated is not None and time.time() - exit_initiated >= 10:
@@ -1806,7 +1811,7 @@ class S3UploadProvider:
                     self.s3.upload_file(
                         str(local_path), self.bucket_name, key, ExtraArgs=extra_args
                     )
-                except boto3.exceptions.S3UploadFailedError as err:
+                except (boto3.exceptions.S3UploadFailedError, ClientError) as err:
                     raise BackupError(f"S3 upload failed: {err}") from err
 
         # Upload a "latest" file for convenience if needed
@@ -1864,11 +1869,17 @@ class RsyncUploadProvider:
             msg = f"Missing {RSYNC_BIN}. Install rsync package."
             raise BackupError(msg)
 
-        if "_incrementals" in dest_dir:
-            _, inc_dir_name = dest_dir.rsplit("/", 1)
+        # Convert dest_dir to string for string operations
+        dest_dir_str = str(dest_dir)
+
+        if "_incrementals" in dest_dir_str:
+            _, inc_dir_name = dest_dir_str.rsplit("/", 1)
             dest_path = str(Path(self.rsync_dir) / inc_dir_name / "")
         else:
             dest_path = str(Path(self.rsync_dir) / "")
+
+        #Ensure source_dir is a string
+        source_dir_str = str(source_dir)
 
         cmd = [
             RSYNC_BIN,
@@ -1876,7 +1887,7 @@ class RsyncUploadProvider:
             "--numeric-ids",
             "--no-owner",
             "--no-group",
-            source_dir,
+            source_dir_str,
             dest_path,
         ]
         self.logger.info("Starting rsync...")
@@ -1891,4 +1902,12 @@ class RsyncUploadProvider:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        # Re-raise SystemExit to preserve the original exit code
+        raise
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        logging.exception("Unexpected error occurred")
+        sys.exit(1)
