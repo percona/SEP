@@ -10,6 +10,7 @@ from pydantic import FutureDatetime
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    HasNoConflictedRunningTasks,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -120,11 +121,9 @@ async def alters_detail(
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    context["running_tasks"].extend(
-        await tasks_api.get(
-            f"/{task.name}-dry-run/history/",
-            params={"status": TaskHistoryStatusEnum.RUNNING},
-        )
+    context["running_tasks"] += await tasks_api.get(
+        f"/{task.name}-dry-run/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
@@ -136,7 +135,7 @@ async def alters_detail(
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
 )
 async def alters_execute(

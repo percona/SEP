@@ -31,11 +31,16 @@ class CompressionAlgorithm(EnumFieldMixin, StrEnum):
     ZSTD = "zstd"
     LZ4 = "lz4"
     GZIP = "gzip"
+    QUICKLZ = "quicklz"
 
 
 ALLOWED_COMPRESSIONS = {
     BackupType.MYDUMPER: [CompressionAlgorithm.GZIP, CompressionAlgorithm.ZSTD],
-    BackupType.XTRABACKUP: [CompressionAlgorithm.ZSTD, CompressionAlgorithm.LZ4],
+    BackupType.XTRABACKUP: [
+        CompressionAlgorithm.ZSTD,
+        CompressionAlgorithm.LZ4,
+        CompressionAlgorithm.QUICKLZ,
+    ],
     BackupType.BINLOG: [CompressionAlgorithm.GZIP],
 }
 

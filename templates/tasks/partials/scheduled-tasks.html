@@ -19,7 +19,12 @@
         {% for periodic_task in periodic_tasks %}
             <tr {% if not periodic_task.enabled %}class="disabled-row"{% endif %}>
                 <td>
-                    <a href="#{{ periodic_task.task }}" class="task-link">{{ periodic_task.task }}</a>
+                    {%- if detail_route -%}
+                        <a href="{{ url_for(detail_route, task_name=periodic_task.task) }}"
+                           class="task-link">{{ periodic_task.task }}</a>
+                    {%- else -%}
+                        {{ periodic_task.task }}
+                    {%- endif -%}
                 </td>
                 {% if periodic_task.crontab %}
                     {# djlint:off H025 #}

@@ -44,31 +44,37 @@ document.addEventListener('DOMContentLoaded', () => {
     if (scheduleModal) {
         const dateTimeInput = scheduleModal.querySelector('#dateTimeInput');
         const modalEtaInput = scheduleModal.querySelector('#modalEtaValue');
+        const submitScheduleButton = scheduleModal.querySelector('#modalScheduleExecSubmitButton');
+
         if (dateTimeInput && modalEtaInput) {
-            dateTimeInput.addEventListener('change', function() {
-                const etaValue = this.value;
-                if (etaValue) {
-                    const isoStr = new Date(etaValue).toISOString();
-                    modalEtaInput.disabled = false;
-                    modalEtaInput.value = isoStr;
-                    // Also update the send form's hidden ETA value:
-                    // the modal should have a hidden input #taskName containing the taskName.
-                    const taskNameInput = scheduleModal.querySelector('#taskName');
-                    if (taskNameInput && taskNameInput.value) {
-                        const sendForm = document.getElementById(taskNameInput.value + '-send');
-                        if (sendForm) {
-                            const etaValueInput = sendForm.querySelector('.eta-value');
-                            if (etaValueInput) {
-                                etaValueInput.disabled = false;
-                                etaValueInput.value = isoStr;
+            ['focus', 'blur', 'change'].forEach(function(eventType) {
+                dateTimeInput.addEventListener(eventType, function() {
+                    submitScheduleButton.disabled = true;
+                    const etaValue = this.value;
+                    if (etaValue) {
+                        const isoStr = new Date(etaValue).toISOString();
+                        modalEtaInput.disabled = false;
+                        modalEtaInput.value = isoStr;
+                        // Also update the send form's hidden ETA value:
+                        // the modal should have a hidden input #taskName containing the taskName.
+                        const taskNameInput = scheduleModal.querySelector('#taskName');
+                        if (taskNameInput && taskNameInput.value) {
+                            const sendForm = document.getElementById(taskNameInput.value + '-send');
+                            if (sendForm) {
+                                const etaValueInput = sendForm.querySelector('.eta-value');
+                                if (etaValueInput) {
+                                    etaValueInput.disabled = false;
+                                    etaValueInput.value = isoStr;
+                                }
                             }
                         }
+                        console.log("Scheduled ETA (ISO):", isoStr);
+                        submitScheduleButton.disabled = false;
+                    } else {
+                        modalEtaInput.disabled = true;
                     }
-                    console.log("Scheduled ETA (ISO):", isoStr);
-                } else {
-                    modalEtaInput.disabled = true;
-                }
-            });
+                });
+            })
         }
     }
 

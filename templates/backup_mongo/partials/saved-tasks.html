@@ -11,7 +11,9 @@
         <tbody>
             {% for task in tasks %}
                 <tr id="{{ task.name }}">
-                    <td>{{ task.name }}</td>
+                    <td>
+                        <a href="{{ url_for('pbm_backups_detail', task_name=task.name) }}">{{ task.name }}</a>
+                    </td>
                     <td>{{ task.backup_type }}</td>
                     <td>{{ task.upload }}</td>
                     <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
@@ -19,6 +21,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include "tasks/partials/scheduled-execution-dialog.html" %}
 {% else %}
     <p>No data</p>
 {% endif %}

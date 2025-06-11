@@ -117,18 +117,31 @@ def test_alters_detail(
         "Constraints": [{"RTarget": "mock_hostname"}],
     }
     created_task.data = mock_data
+    expected_awaits = [
+        call(f"/{created_task.name}/history/"),
+        call(f"/{created_task.name}-dry-run/history/"),
+        call(
+            f"/{created_task.name}/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        ),
+        call(
+            f"/{created_task.name}-dry-run/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        ),
+        call(f"/stats/{created_task.name}"),
+    ]
+
     response = test_client.get(f"/alters/{created_task.name}")
+
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
-    mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
-    mock_task_api_dep.get.assert_any_await(
-        f"/{created_task.name}/history/",
-        params={"status": TaskHistoryStatusEnum.RUNNING},
-    )
-    mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
+    assert mock_task_api_dep.get.await_count == len(expected_awaits)
+    mock_task_api_dep.get.assert_has_awaits(expected_awaits)
 
 
-@pytest.mark.usefixtures("_mock_get_alters_task_dep")
+@pytest.mark.usefixtures(
+    "_mock_get_alters_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
 def test_alters_execute(
     test_client,
     created_task,

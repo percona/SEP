@@ -31,8 +31,8 @@ $(document).ready(function() {
                 if ($logConsole.find('.log-step-content').length === 0) stepContent.show();
                 else stepContent.hide();
 
-                const stdoutPre = $('<pre class="log-output" data-log-type="stdout" style="display: none;"></pre>');
-                const stderrPre = $('<pre class="log-output" data-log-type="stderr" style="display: none;"></pre>');
+                const stdoutPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stdout" style="display: none;"></pre>');
+                const stderrPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display: none;"></pre>');
 
                 const selectedTab = $logConsole.find('[role="log-tab"][aria-selected="true"]');
                 const selectedLogType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
@@ -104,7 +104,9 @@ $(document).ready(function() {
             console.error(`Error receiving SSE for task ${taskId}:`, e);
             if (lastMessagesIds[taskId] === 0) {
                 eventSource.close();
-                window.location.reload();
+                setTimeout(() => {
+                    window.location.reload()
+                }, 5000);
             }
         };
     });
@@ -126,9 +128,9 @@ $(document).ready(function() {
         const $this = $(this);
         const $logConsole = $this.closest('.log-console');
         if ($this.is(':checked')) {
-            $logConsole.find('.log-output').addClass('word-wrap');
+            $logConsole.find('.log-output').addClass('soft-wrap');
         } else {
-            $logConsole.find('.log-output').removeClass('word-wrap');
+            $logConsole.find('.log-output').removeClass('soft-wrap');
         }
     });
     $('.word-wrap-checkbox').trigger("change");

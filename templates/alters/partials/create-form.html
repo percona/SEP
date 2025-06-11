@@ -280,6 +280,7 @@
                        name="pause_file"
                        class="validate"
                        title="{{ pause_file_title }}"
+                       value="/tmp/pause_file.txt"
                        placeholder="/tmp/pause_file.txt" />
             </div>
         </fieldset>
@@ -390,6 +391,7 @@
                        id="tries"
                        name="tries"
                        class="validate"
+                       value="create_triggers:10000:1,drop_triggers:10000:1,copy_rows:10000:1"
                        placeholder="create_triggers:10000:1,drop_triggers:10000:1,copy_rows:10000:1"
                        size="70"
                        title="{{ tries_title }}" />
@@ -405,7 +407,8 @@
                        name="set_vars"
                        class="validate"
                        title="{{ set_vars_titlie }}"
-                       placeholder="tx_isolation='READ-COMMITTED',lock_wait_timeout=5"
+                       value="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5"
+                       placeholder="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5"
                        size="70" />
             </div>
         </fieldset>
@@ -419,6 +422,7 @@
                        name="critical_load"
                        class="validate"
                        title="{{ critical_load_title }}"
+                       value="Threads_running=99999,Connections=200"
                        placeholder="Threads_running=99999,Connections=200"
                        size="30" />
             </div>
@@ -430,7 +434,19 @@
                        name="max_load"
                        class="validate"
                        title="{{ max_load_title }}"
+                       value="Threads_running=30,Threads_connected=120"
                        placeholder="Threads_running=30,Threads_connected=120"
+                       size="30" />
+            </div>
+            <div class="field">
+                {% set max_flow_ctl_title = "Check average time cluster spent pausing for Flow Control and make tool pause if it goes over the percentage indicated in the option.." %}
+                <label for="max_flow_ctl" title="{{ max_flow_ctl_title }}">Max Flow Control</label>
+                <input type="text"
+                       id="max_flow_ctl"
+                       name="max_flow_ctl"
+                       class="validate"
+                       title="{{ max_flow_ctl_title }}"
+                       value=""
                        size="30" />
             </div>
         </fieldset>
@@ -444,6 +460,7 @@
                        name="chunk_time"
                        class="validate"
                        title="{{ chunk_time_title }}"
+                       value="0.5"
                        placeholder="0.5"
                        size="5" />
             </div>
@@ -458,6 +475,7 @@
                        name="max_lag"
                        class="validate"
                        title="{{ max_lag_title }}"
+                       value="150"
                        placeholder="150"
                        size="5" />
             </div>

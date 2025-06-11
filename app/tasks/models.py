@@ -22,7 +22,11 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, UTCDatetime
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    UTCDatetime,
+)
 
 TASK_ALIAS_LENGTH = 100
 
@@ -298,7 +302,7 @@ class TaskBase(SQLModel):
     :type protected: bool
     """
 
-    name: str = SQLField(max_length=255, unique=True, index=True)
+    name: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
     data: dict = SQLField(sa_column=Column(JSON, nullable=False))
     backend: TaskBackendEnum = SQLField(
         default=TaskBackendEnum.NOMAD,
@@ -490,22 +494,6 @@ class TaskHistoryBase(SQLModel):
         if self.started_at and self.finished_at:
             return (self.finished_at - self.started_at).total_seconds()
         return None
-
-    @computed_field
-    @property
-    def errors(self) -> list[str]:
-        """Return a list of errors for the executed task.
-
-        :return: A list of error messages encountered during task execution.
-        :rtype: list[str]
-        """
-        errors = set()
-        for state in self.execution_request.tracking.get("task_states", {}).values():
-            for event in state["Events"]:
-                match event["Type"]:
-                    case "Driver Failure":
-                        errors.add(event["DisplayMessage"])
-        return list(errors)
 
 
 class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):

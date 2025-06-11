@@ -88,12 +88,10 @@
         </ul>
     </div>
     <form id="schedule-task-form"
-          class="schedule-task-form"
-          class="window"
+          class="window schedule-task-form"
           method="post"
           action="{{ task.name }}"
           data-confirm-message='Are you sure you want to schedule task "{{ task.name }}"?'>
-        {% include "tasks/partials/scheduled-execution-dialog.html" %}
     </form>
 </div>
 {# <td class="actions-cell flex">
