@@ -71,6 +71,11 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
     """Define a PagerDuty alert provider.
 
     This provider sends alerts to PagerDuty using the Events API v2.
+
+    :cvar API_ENDPOINT: The API endpoint for Events v2.
+    :vartype API_ENDPOINT: str
+    :param routing_key: The routing key used for API requests.
+    :type routing_key: str
     """
 
     API_ENDPOINT: ClassVar[str] = "https://events.pagerduty.com/v2/"
