@@ -37,8 +37,6 @@ async def build_backup_task_payload(
 
     :param form: The form data for the Backups creation.
     :type form: BackupCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
     :return: A fully constructed `TaskWrite` object containing all the necessary
         configuration to create the Backup task.
     :rtype: TaskWrite
@@ -68,6 +66,7 @@ async def build_backup_task_payload(
             "payload": f"file://{payload_path}",
             "backup_type": form.backup_type,
         },
+        alert_on_fail=form.alert_on_fail,
     )
 
 
@@ -143,4 +142,5 @@ async def get_backups_index_context(
         get_backups_task_info,
         context,
         TaskOwner.BACKUP_MONGO,
+        alert_on_fail_default=True,
     )

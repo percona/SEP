@@ -445,30 +445,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             flag_modified_fields=["execution_request"],
         )
 
-    async def stop_task(
-        self, session: AsyncSession, queue_item: TaskHistory
-    ) -> TaskHistory:
+    async def _stop_task(self, queue_item: TaskHistory) -> None:
         """Stop a task execution in Nomad.
 
         This method calls the Nomad API to stop the job associated with the given
         task history. It updates the task history with the status of the operation.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
-        :return: The updated task history with execution details.
-        :rtype: TaskHistory
         """
         job_id = queue_item.execution_request.tracking.get("job_id")
         if not job_id:
             raise ValueError("The job ID could not be determined")
         self.backend.job.deregister_job(job_id)
-        queue_item = await self.sync_task_history(session, queue_item)
-        queue_item.status = TaskHistoryStatusEnum.STOPPED
-        queue_item.finished_at = utc_now()
-        return await TaskHistoryManager.save(session, queue_item)
 
     def get_logs_for_allocation(
         self,
@@ -520,7 +509,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         task_logs[step][log_type] += b64decode_str(log_data["Data"])
         return task_logs
 
-    async def sync_task_history(
+    async def _sync_task_history(
         self,
         session: AsyncSession,
         queue_item: TaskHistory,

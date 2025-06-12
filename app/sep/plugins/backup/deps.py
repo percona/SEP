@@ -127,6 +127,7 @@ async def build_backup_task_payload(
             },
             "payload": f"file://{payload_path}",
         },
+        alert_on_fail=form.alert_on_fail,
     )
 
 
@@ -211,4 +212,5 @@ async def get_backups_index_context(
         get_backups_task_info,
         context,
         TaskOwner.BACKUPS,
+        alert_on_fail_default=True,
     )

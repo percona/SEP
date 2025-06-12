@@ -1,7 +1,7 @@
 """Define configuration utilities for alerts."""
 
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import field_validator, ValidationError
 
@@ -17,16 +17,25 @@ class AlertProviderEnum(Enum):
 
 
 class AlertSettings(BaseYamlSettings):
-    """Define configuration settings for alert providers.
+    """Define configuration settings for alerting.
 
-    :param ALERT_PROVIDERS: The alert service configuration, which includes a list of
-        alert providers.
-    :type ALERT_PROVIDERS: AlertService
+    :cvar SETTINGS_PREFIXES: The prefixes for alert-related settings in the
+        configuration file.
+    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
+    :param PROVIDERS: The list of alert providers for the AlertService.
+    :type PROVIDERS: set[BaseAlertProvider]
+    :param SOURCE_PREFIX: An optional prefix to be added to every alert source.
+    :type SOURCE_PREFIX: str
+    :param SOURCE_SUFFIX: An optional suffix to be added to every alert source.
+    :type SOURCE_SUFFIX: str
     """
 
-    ALERT_PROVIDERS: set[BaseAlertProvider] = set()
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["ALERTING"]
+    PROVIDERS: set[BaseAlertProvider] = set()
+    SOURCE_PREFIX: str = ""
+    SOURCE_SUFFIX: str = ""
 
-    @field_validator("ALERT_PROVIDERS", mode="before")
+    @field_validator("PROVIDERS", mode="before")
     @classmethod
     def _set_alerts_providers(cls, data: Any) -> Any:
         providers = set()
@@ -53,4 +62,8 @@ class AlertSettings(BaseYamlSettings):
 
 
 alert_settings = AlertSettings()
-alert_service = AlertService(providers=alert_settings.ALERT_PROVIDERS)
+alert_service = AlertService(
+    providers=alert_settings.PROVIDERS,
+    source_prefix=alert_settings.SOURCE_PREFIX,
+    source_suffix=alert_settings.SOURCE_SUFFIX,
+)

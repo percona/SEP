@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, validate_call
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import utc_now
@@ -80,10 +80,17 @@ class AlertService(BaseCaseInsensitiveModel):
 
     :param providers: A set of registered alert providers.
     :type providers: set[BaseAlertProvider]
+    :param source_prefix: An optional prefix to be added to every alert source.
+    :type source_prefix: str
+    :param source_suffix: An optional suffix to be added to every alert source.
+    :type source_suffix: str
     """
 
     providers: set[BaseAlertProvider] = set()
+    source_prefix: str = ""
+    source_suffix: str = ""
 
+    @validate_call
     async def trigger(self, alert: Alert) -> None:
         """Trigger an alert through all registered providers.
 
@@ -93,6 +100,8 @@ class AlertService(BaseCaseInsensitiveModel):
         if not self.providers:
             logger.warning("No alert providers registered.")
             return
+
+        alert.source = f"{self.source_prefix}{alert.source}{self.source_suffix}"
 
         for provider in self.providers:
             try:

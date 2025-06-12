@@ -65,6 +65,8 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
+    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
+    :type alert_on_fail: bool
     """
 
     alias: RequiredStr
@@ -88,6 +90,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
     )
+    alert_on_fail: bool = False
 
     @model_validator(mode="after")
     def validate_tables_are_different(self) -> Self:

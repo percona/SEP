@@ -81,6 +81,8 @@ development:
     RESULT_BACKEND: file://data/celery/results
     RESULT_PERSISTENT: true
     BEAT_DBURI: "sqlite:///schedule.db"
+  ALERTING:
+    SOURCE_SUFFIX: ":dev"
 
 production_docker:
   CASDOOR:
