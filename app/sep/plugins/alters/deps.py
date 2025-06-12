@@ -103,7 +103,6 @@ async def build_alters_task_payload(
     if form.print_arg:
         args.append(f"--progress={form.progress}")
 
-    logger.info("BUILD ALTERS ALERT ON FAIL: %s", form.alert_on_fail)
     return GeneratedTask(
         app=TaskOwner.ALTERS,
         commands=[
