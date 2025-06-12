@@ -1,6 +1,5 @@
 """Define tests for the app.core.alerts.config module."""
 
-# tests/test_alerts_config.py
 import pytest
 
 from app.core.alerts.config import AlertProviderEnum, AlertSettings
