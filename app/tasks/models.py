@@ -566,7 +566,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             "summary": f"Task {self.execution_request.task!r} ({self.id}) {summary_action} on node {self.execution_request.target!r}.",
             "source": f"{self.execution_request.task}:{self.id}:{self.execution_request.target}",
             "severity": severity,
-            "class_": alert_class,
+            "class": alert_class,
         }
         await alert_service.trigger(alert_data)
 

@@ -67,6 +67,7 @@ def test_task_create(
         "name": "new-task",
         "backend": TaskBackendEnum.NOMAD,
         "owner": TaskOwner.ANY,
+        "alert_on_fail": False,
     }
 
     form_data = transform_data | task_data

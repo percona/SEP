@@ -14,8 +14,6 @@ from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.core.utils.fields import EnumFieldMixin, RequiredStr
 
-__all__ = ["PagerDutyEventsAlertProvider"]
-
 
 class PagerDutyAlertSeverity(EnumFieldMixin, StrEnum):
     """Define alert severity levels."""
@@ -58,7 +56,7 @@ class PagerDutyAlert(Alert):
     :type links: list[dict[str, str]] | None
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
     severity: PagerDutyAlertSeverity
     dedup_key: RequiredStr | None = None
     component: RequiredStr | None = None
