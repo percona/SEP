@@ -3,6 +3,7 @@
 import re
 import unicodedata
 from base64 import b64decode, b64encode
+from typing import Any
 
 __all__ = [
     "b64decode_str",
@@ -75,3 +76,17 @@ def b64decode_str(value: str, encoding: str = "utf-8") -> str:
     :rtype: str
     """
     return b64decode(value).decode(encoding)
+
+
+def lower_if_string(value: Any) -> Any:
+    """Convert a value to lowercase if it is a string.
+
+    This function checks if the input value is a string and converts it to
+    lowercase. If the value is not a string, it returns the value unchanged.
+
+    :param value: The value to be checked and potentially converted.
+    :type value: Any
+    :return: The input value converted to lowercase if it is a string, otherwise unchanged.
+    :rtype: Any
+    """
+    return value.lower() if isinstance(value, str) else value

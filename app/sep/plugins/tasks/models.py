@@ -22,6 +22,8 @@ class TaskCreateRequest(BaseModel):
     :type backend: TaskBackendEnum
     :param owner: The owner of the task.
     :type owner: TaskOwner
+    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
+    :type alert_on_fail: bool
     """
 
     name: RequiredStr
@@ -29,3 +31,4 @@ class TaskCreateRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
     backend: TaskBackendEnum
     owner: TaskOwner
+    alert_on_fail: bool = False

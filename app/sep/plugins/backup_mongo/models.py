@@ -82,9 +82,12 @@ class BackupCreate(BackupConfig):
     :type service_id: int
     :param backup_type: Type of backup activity on PBM.
     :type backup_type: BackupType
+    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
+    :type alert_on_fail: bool
     """
 
     task_name: RequiredStr
     hostname: RequiredStr
     service_id: int
     backup_type: BackupType
+    alert_on_fail: bool = False

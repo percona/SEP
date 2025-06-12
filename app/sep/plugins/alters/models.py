@@ -54,6 +54,8 @@ class AltersCreate(BaseModel):
     :type chunk_time: str
     :param max_lag: Pause the data copy until all replicas lag is less than this value.
     :type max_lag: str
+    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
+    :type alert_on_fail: bool
     """
 
     task_name: RequiredStr
@@ -79,3 +81,4 @@ class AltersCreate(BaseModel):
     chunk_time: str = ""
     max_lag: str = ""
     max_flow_ctl: str = ""
+    alert_on_fail: bool = False
