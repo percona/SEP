@@ -47,12 +47,6 @@ def dummy_request() -> Request:
 
 
 @pytest.fixture
-def mock_remote_api() -> AsyncMock:
-    """Mock a RemoteAPI object."""
-    return AsyncMock(spec=RemoteAPI)
-
-
-@pytest.fixture
 def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     """Mock the TaskAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)

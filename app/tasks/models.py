@@ -20,6 +20,8 @@ from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
+from app.core.alerts.config import alert_service
+from app.core.alerts.models import AlertSeverity
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils.fields import (
@@ -272,6 +274,9 @@ class GeneratedTask(BaseModel):
     :type schedule: dict
     :param template: The task template type. Defaults to "batch".
     :type template: str
+    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
+        False.
+    :type alert_on_fail: bool
     """
 
     app: TaskOwner
@@ -283,6 +288,7 @@ class GeneratedTask(BaseModel):
     persist: bool = True
     schedule: dict = {"save_only": True}
     template: str = "batch"
+    alert_on_fail: bool = False
 
 
 class TaskBase(SQLModel):
@@ -300,6 +306,9 @@ class TaskBase(SQLModel):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
+    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
+        False.
+    :type alert_on_fail: bool
     """
 
     name: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
@@ -316,6 +325,7 @@ class TaskBase(SQLModel):
     )
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
+    alert_on_fail: bool = False
 
     @model_validator(mode="after")
     def validate_data_for_backend(self) -> Self:
@@ -348,6 +358,9 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
+    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
+        False.
+    :type alert_on_fail: bool
     :param history: The history of task executions.
     :type history: list[TaskHistory]
     :param deleted_at: The deletion timestamp, if applicable.
@@ -387,6 +400,9 @@ class TaskResponse(TaskBase, BaseSQLModel):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
+    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
+        False.
+    :type alert_on_fail: bool
     :param deleted_at: The deletion timestamp, if applicable.
     :type deleted_at: UTCDatetime | None
     """
@@ -409,6 +425,9 @@ class TaskWrite(TaskBase):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
+    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
+        False.
+    :type alert_on_fail: bool
     """
 
 
@@ -529,6 +548,27 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         default=None,
         sa_type=DateTimeWithTimezone,
     )
+
+    async def alert_for_status(self) -> None:
+        """Trigger an alert for failing statuses."""
+        if self.status == TaskHistoryStatusEnum.FAILED:
+            summary_action = "failed"
+            severity = AlertSeverity.ERROR
+            alert_class = "task_failure"
+        elif self.status == TaskHistoryStatusEnum.LOST:
+            summary_action = "execution tracking lost"
+            severity = AlertSeverity.WARNING
+            alert_class = "task lost"
+        else:
+            return
+
+        alert_data = {
+            "summary": f"Task {self.execution_request.task!r} ({self.id}) {summary_action} on node {self.execution_request.target!r}.",
+            "source": f"{self.execution_request.task}:{self.id}:{self.execution_request.target}",
+            "severity": severity,
+            "class": alert_class,
+        }
+        await alert_service.trigger(alert_data)
 
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):

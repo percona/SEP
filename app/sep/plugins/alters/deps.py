@@ -81,6 +81,7 @@ async def build_alters_task_payload(
         "max_load": f"--max-load={form.max_load}",
         "chunk_time": f"--chunk-time={form.chunk_time}",
         "max_lag": f"--max-lag={form.max_lag}",
+        "max_flow_ctl": f"--max-flow-ctl={form.max_flow_ctl}",
     }
 
     # Adding optional arguments if their values exist
@@ -116,6 +117,7 @@ async def build_alters_task_payload(
         ],
         name=form.task_name,
         target=form.hostname,
+        alert_on_fail=form.alert_on_fail,
     )
 
 
@@ -196,4 +198,5 @@ async def get_alters_index_context(
         get_alters_task_info,
         context,
         TaskOwner.ALTERS,
+        alert_on_fail_default=True,
     )

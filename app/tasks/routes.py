@@ -161,11 +161,13 @@ async def generate_task(
     )
 
     # TODO: enhance options for generating tasks  # noqa: TD002, TD003
+    logger.info("GENERATE TASK ALERT ON FAIL: %s", generated_task.alert_on_fail)
     task = Task(
         name=generated_task.name,
         owner=generated_task.app,
         backend=template.backend,
         data=template.data,
+        alert_on_fail=generated_task.alert_on_fail,
     )
     tpl = task.data
 
