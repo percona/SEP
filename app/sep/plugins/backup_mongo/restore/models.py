@@ -54,7 +54,7 @@ class RestoreConfigAll(BaseCaseInsensitiveModel):
 
 
 class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
-    """Restore job configuration for a specific Mydumper restore job.
+    """Restore job configuration for a specific PBM restore job.
 
     This model contains server-specific settings for a restore operation, including
     backup source, destination, threading, and script hooks.

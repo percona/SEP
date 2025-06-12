@@ -72,9 +72,7 @@ async def build_restore_task_payload(
     )
 
     backup_type_to_payload = {
-        BackupType.MYDUMPER: "mydumper_payload",
-        BackupType.XTRABACKUP: "xtrabackup_payload",
-        BackupType.BINLOG: "binlog_payload",
+        BackupType.PBM_PHYSICAL: "pbm_physical_restore_payload",
     }
 
     payload_name = backup_type_to_payload.get(form.backup_type)
