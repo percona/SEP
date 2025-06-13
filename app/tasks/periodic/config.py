@@ -5,7 +5,6 @@ from typing import ClassVar
 
 from app.core.config import BaseYamlSettings
 from app.core.utils.fields import EnumFieldMixin
-from app.tasks.models import TaskOwner
 
 
 class PeriodicTaskAction(EnumFieldMixin, StrEnum):
@@ -30,13 +29,9 @@ class PeriodicTasksSettings(BaseYamlSettings):
     :cvar SETTINGS_PREFIXES: The prefixes for periodic tasks related settings in the
         configuration file. Set to `["TASKS", "PERIODIC"]`.
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
-    :param AVAILABLE_TO_OWNERS: The task owners for which the periodic tasks feature
-        will be available. Defaults to {TaskOwner.ARCHIVER}.
-    :type AVAILABLE_TO_OWNERS: set[TaskOwner]
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS", "PERIODIC"]
-    AVAILABLE_TO_OWNERS: set[TaskOwner] = [TaskOwner.ARCHIVER]
 
 
 periodic_tasks_settings = PeriodicTasksSettings()

@@ -27,7 +27,7 @@ async def task_logs_event_stream(
     """Stream a task history's logs as server-sent events."""
     logger.debug("request.state.is_csrf_exempt is %s", request.state.is_csrf_exempt)
     return StreamingResponse(
-        task_history_logs_event_stream(tasks_api, task_history.id),
+        task_history_logs_event_stream(tasks_api, task_history.id, request),
         media_type="text/event-stream",
     )
 
@@ -35,7 +35,7 @@ async def task_logs_event_stream(
 # TODO(yan): Put stream_task_history_logs in a proper TasksAPI SDK class
 # SEP-130
 async def task_history_logs_event_stream(
-    tasks_api: TaskAPI, task_history_id: int
+    tasks_api: TaskAPI, task_history_id: int, request: Request
 ) -> AsyncGenerator[str, None]:
     """Stream logs from a task history as server-sent events.
 
@@ -46,18 +46,16 @@ async def task_history_logs_event_stream(
     :type tasks_api: RemoteAPI
     :param task_history_id: The ID of the task history whose logs to stream.
     :type task_history_id: int
+    :param request: The FastAPI request object, used to access query parameters.
+    :type request: Request
     :yield: Log entries formatted as server-sent events.
     :rtype: str
     """
-    i = 1
-    async for log_entry in tasks_api.stream(f"/history/{task_history_id}/logs/"):
+    async for log_entry in tasks_api.stream(
+        f"/history/{task_history_id}/logs/", params=request.query_params
+    ):
         if log_entry:
-            log_data = json.loads(log_entry)
-            for line in log_data["msg"].splitlines():
-                log_data["msg"] = f"{line}\n"
-                log_data["id"] = i
-                yield f"data: {json.dumps(log_data)}\n\n"
-                i += 1
+            yield f"data: {log_entry.decode()}\n\n"
     # TODO(yan): Don't wait for task to finish
     # SEP-379
     wait_interval = 5

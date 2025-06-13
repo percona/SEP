@@ -739,6 +739,7 @@ class TaskLog(BaseModel):
     step: str
     type: TaskLogType
     msg: str | None
+    offset: int = 0
 
 
 class DispatchLock(BaseSQLModel, table=True):
