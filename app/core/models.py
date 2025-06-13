@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.core.utils import to_uppercase, transform_dict_keys
+from app.core.utils.strings import lower_if_string
 
 
 class BaseTransformFieldsModel(BaseModel):
@@ -78,7 +79,5 @@ class BaseLowercaseModel(BaseTransformFieldsModel):
     :vartype TRANSFORM_DEEP: ClassVar[bool]
     """
 
-    TRANSFORM_CALLABLE: ClassVar[Callable[[Any], Any]] = (
-        lambda v: v.lower() if isinstance(v, str) else v
-    )
+    TRANSFORM_CALLABLE: ClassVar[Callable[[Any], Any]] = lower_if_string
     TRANSFORM_DEEP: ClassVar[bool] = True

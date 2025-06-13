@@ -12,6 +12,7 @@ from jwt import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import alert_settings
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -397,6 +398,8 @@ async def get_tasks_context(
     get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
     default_context: DefaultContext | None = None,
     owner: TaskOwner | None = None,
+    *,
+    alert_on_fail_default: bool = False,
 ) -> dict[str, Any]:
     """Assemble the template context for task-dependent plugins.
 
@@ -418,6 +421,8 @@ async def get_tasks_context(
     :type default_context: dict[str, Any] | None
     :param owner: The owner filter for retrieving tasks. Defaults to `None`.
     :type owner: TaskOwner | None
+    :param alert_on_fail_default: Default value for the alert on failure setting.
+    :type alert_on_fail_default: bool
     :return: The assembled context dictionary containing tasks and services information.
     :rtype: dict[str, Any]
     """
@@ -462,6 +467,7 @@ async def get_tasks_context(
         executor_hosts = {}
         messages.error(request, exc.detail)
 
+    alert_on_fail_available = bool(alert_settings.PROVIDERS)
     context = default_context or {}
     context.update(
         {
@@ -473,6 +479,8 @@ async def get_tasks_context(
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
             "AVAILABLE_TIMEZONES": list(available_timezones()),
+            "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
+            "alert_on_fail_available": alert_on_fail_available,
         }
     )
     return context

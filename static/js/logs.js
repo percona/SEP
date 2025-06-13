@@ -1,25 +1,33 @@
 $(document).ready(function() {
-    const lastMessagesIds = {};
+    const lastOffsets = {};
 
-    $('.log-console.streaming-console').each(function() {
-        const $logConsole = $(this);
-        const taskId = $logConsole.data('task-id');
-        lastMessagesIds[taskId] = 0;
+    $('.view-logs-button').click(function() {
+        const taskId = $(this).data('task-id');
+        const $logConsole = $(`.log-console.streaming-console[data-task-id=${taskId}]`);
+        lastOffsets[taskId] = lastOffsets[taskId] || {};
 
-        const eventSource = new EventSource('/stream-logs/' + taskId);
+        const offsetQueryParams = Object.entries(lastOffsets[taskId]).map(
+            ([key, offset]) => `${encodeURIComponent(key)}_offset=${encodeURIComponent(offset)}`
+        );
+        const offsetQueryString = offsetQueryParams.join('&');
 
+        const eventSource = new EventSource(`/stream-logs/${taskId}?${offsetQueryString}`);
         eventSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
-            const logId = data.id;
-
-            if (logId <= lastMessagesIds[taskId]) return;
-            lastMessagesIds[taskId] = logId;
+            console.log(`Received log message for task ${taskId}:`, data);
 
             const {
                 msg,
                 step,
-                type
+                type,
+                offset
             } = data;
+
+            const offsetKey = `${step}_${type}`;
+            if (offset <= (lastOffsets[taskId][offsetKey] || 0)) return;
+            lastOffsets[taskId][offsetKey] = offset;
+
+
 
             if ($logConsole.find('.log-step-content[data-step-name="' + step + '"]').length === 0) {
                 const stepTab = $('<button type="button" class="text large log-step-tab" data-step-name="' + step + '">' + step + '</button>');
@@ -59,14 +67,21 @@ $(document).ready(function() {
             if (step !== selectedStep) {
                 $logConsole.find('.log-step-tab[data-step-name="' + step + '"]').addClass('tab-notification');
             }
+
+            console.log(`Log console is open: ${$logConsole.parent().prop('open')}`);
+            if (!$logConsole.parent().prop('open')) {
+                eventSource.close();
+            }
         };
 
         eventSource.addEventListener('finish', function(event) {
             eventSource.close();
             const finishData = JSON.parse(event.data);
 
-            if (lastMessagesIds[taskId] === 0) {
-                window.location.reload();
+            if (lastOffsets[taskId] === 0) {
+                setTimeout(() => {
+                    window.location.reload()
+                }, 5000);
             } else {
                 console.log(`Log stream for ${taskId} finished`);
 
@@ -96,13 +111,13 @@ $(document).ready(function() {
 
                 $logConsole.find('.log-footer .log-tabs').append(statusEl);
                 $logConsole.addClass(finishData.status);
-                delete lastMessagesIds[taskId];
+                delete lastOffsets[taskId];
             }
         });
 
         eventSource.onerror = function(e) {
             console.error(`Error receiving SSE for task ${taskId}:`, e);
-            if (lastMessagesIds[taskId] === 0) {
+            if (lastOffsets[taskId] === 0) {
                 eventSource.close();
                 setTimeout(() => {
                     window.location.reload()

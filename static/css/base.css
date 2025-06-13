@@ -821,6 +821,11 @@ select[disabled] {
     cursor: pointer;
 }
 
+.checkbox.disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
 input[type="checkbox"] {
     opacity: 0;
     height: 0;
@@ -838,7 +843,7 @@ input[type="checkbox"] {
     transition: background .2s;
 }
 
-.checkbox:hover .checkmark {
+.checkbox:not(.disabled):hover .checkmark {
     background: var(--primaryHover);
 }
 

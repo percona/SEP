@@ -10,8 +10,9 @@ import yaml
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils import async_run
-from app.tasks.models import Task, TaskHistory, TaskLog
+from app.core.utils import async_run, utc_now
+from app.tasks.crud import TaskHistoryManager
+from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,6 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :rtype: TaskHistory
         """
 
-    @abstractmethod
     async def stop_task(
         self, session: AsyncSession, queue_item: TaskHistory
     ) -> TaskHistory:
@@ -94,6 +94,19 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :type queue_item: TaskHistory
         :return: The updated task history with execution details.
         :rtype: TaskHistory
+        """
+        await self._stop_task(queue_item)
+        queue_item = await self.sync_task_history(session, queue_item)
+        queue_item.status = TaskHistoryStatusEnum.STOPPED
+        queue_item.finished_at = utc_now()
+        return await TaskHistoryManager.save(session, queue_item)
+
+    @abstractmethod
+    async def _stop_task(self, queue_item: TaskHistory) -> None:
+        """Stop a task execution in the backend.
+
+        :param queue_item: The task history record for tracking this execution.
+        :type queue_item: TaskHistory
         """
 
     # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
@@ -118,7 +131,9 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
 
     @abstractmethod
     async def stream_logs(
-        self, queue_item: TaskHistory
+        self,
+        queue_item: TaskHistory,
+        start_offsets: dict[str, dict[str, int]] | None = None,
     ) -> AsyncGenerator[TaskLog, None]:
         """Stream logs from a task history record.
 
@@ -127,12 +142,35 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
 
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
+        :param start_offsets: A dictionary containing the starting offsets for each
+            step and log type. If None, defaults to starting from the beginning.
+        :type start_offsets: dict[str, dict[str, int]] | None
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog
         """
 
-    @abstractmethod
     async def sync_task_history(
+        self,
+        session: AsyncSession,
+        queue_item: TaskHistory,
+    ) -> TaskHistory:
+        """Sync the task history with the backend and trigger the configured alerts.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param queue_item: The task history record for tracking this execution.
+        :type queue_item: TaskHistory
+        :return: The updated task history with execution details.
+        :rtype: TaskHistory
+        """
+        queue_item = await self._sync_task_history(session, queue_item)
+        if queue_item.task.alert_on_fail:
+            await queue_item.alert_for_status()
+        return queue_item
+
+    @abstractmethod
+    async def _sync_task_history(
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
