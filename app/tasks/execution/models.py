@@ -131,7 +131,9 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
 
     @abstractmethod
     async def stream_logs(
-        self, queue_item: TaskHistory
+        self,
+        queue_item: TaskHistory,
+        start_offsets: dict[str, dict[str, int]] | None = None,
     ) -> AsyncGenerator[TaskLog, None]:
         """Stream logs from a task history record.
 
@@ -140,6 +142,9 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
 
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
+        :param start_offsets: A dictionary containing the starting offsets for each
+            step and log type. If None, defaults to starting from the beginning.
+        :type start_offsets: dict[str, dict[str, int]] | None
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog
         """

@@ -190,7 +190,7 @@ PERIODIC_TASKS = {
         (
             "app.tasks.celery.sync_running_tasks",
             "sync_running_tasks",
-            {},
+            {"expire_seconds": 30},
         ),
     ],
 }
