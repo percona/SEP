@@ -41,7 +41,7 @@ async def build_restore_task_payload(
         inventory_api,
         SyncInventoryEntityTypeEnum.SERVICE,
         form.service_id,
-        type=ServiceTypeEnum.MYSQL,
+        type=ServiceTypeEnum.MONGODB,
     )
 
     dest_host, dest_port = "localhost", 27017
@@ -80,7 +80,7 @@ async def build_restore_task_payload(
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
 
     requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
-    if form.backup_type == BackupType.XTRABACKUP:
+    if form.backup_type == BackupType.PBM_PHYSICAL:
         requirements += "\nfilelock"
 
     payload_path = Path(__file__).parent / payload_name

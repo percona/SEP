@@ -57,7 +57,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     """Restore job configuration for a specific PBM restore job.
 
     This model contains server-specific settings for a restore operation, including
-    backup source, destination, threading, and script hooks.
+    backup source, destination and script hooks.
 
     :param backup_type: Type of backup to restore from.
     :type backup_type: BackupType
