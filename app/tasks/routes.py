@@ -2,10 +2,11 @@
 
 import json
 import logging
+from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
@@ -23,6 +24,7 @@ from app.tasks.celery import (
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
+    get_logs_offsets,
     PreparedTaskHistory,
     SessionDep,
     TaskDep,
@@ -315,7 +317,9 @@ async def retrieve_task_history(
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
-    executor: TaskExecutor, task_history: TaskHistoryDep
+    executor: TaskExecutor,
+    task_history: TaskHistoryDep,
+    offsets: Annotated[defaultdict[str, dict[str, int]], Depends(get_logs_offsets)],
 ) -> StreamingResponse:
     """Stream a task history's logs."""
     logger.debug("Requesting logs for task history %s", task_history.id)
@@ -324,15 +328,22 @@ async def stream_task_history_logs(
     if task_history.status == TaskHistoryStatusEnum.RUNNING:
         stream_logs_generator = (
             f"{log_line.model_dump_json()}\n" if log_line else ""
-            async for log_line in executor.stream_logs(task_history)
+            async for log_line in executor.stream_logs(task_history, offsets)
         )
     else:
         stream_logs_generator = (
-            f"{TaskLog(step=step, type=log_type, msg=log[log_type]).model_dump_json()}\n"
+            TaskLog(
+                step=step,
+                type=log_type,
+                msg=msg,
+                offset=log.get(f"{log_type}_last_offset", 0),
+            ).model_dump_json()
+            + "\n"
             for step, log in task_history.execution_request.tracking.get(
                 "task_logs", {}
             ).items()
             for log_type in TaskLogType
+            if (msg := log[log_type][offsets[step].get(log_type, 0) :])
         )
     return StreamingResponse(
         stream_logs_generator,
