@@ -42,7 +42,7 @@ async def build_restore_task_payload(
         "alias": form.task_name,
     }
 
-    if form.backup_type != BackupType.XTRABACKUP:
+    if form.backup_type == BackupType.MYDUMPER:
         service = await get_created_entity(
             inventory_api,
             SyncInventoryEntityTypeEnum.SERVICE,

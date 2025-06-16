@@ -489,57 +489,44 @@
         </fieldset>
         <fieldset id="binlog_container" style="flex-direction: column; gap: 1em">
             <legend>Binlog Configuration</legend>
-            {% set binlog_alternative_host_title = "Type the alternative host address to use for binlog restore (optional)." %}
-            <label for="binlog_alternative_host"
-                   title="{{ binlog_alternative_host_title }}">
-                Alternative Host Address:
+            {% set start_file_title = "Specify the name of the first binary log file to start the restore from (e.g., binlog.000030)." %}
+            <label for="start_file" title="{{ start_file_title }}">
+                Start File:
                 <input type="text"
-                       id="binlog_alternative_host"
-                       name="binlog_alternative_host"
-                       placeholder="e.g. localhost" />
+                       id="start_file"
+                       name="start_file"
+                       placeholder="e.g. binlog.000030" />
             </label>
-            {% set binlog_prefix_title = "Type the prefix of the binlog files to restore (e.g., mysql-bin)." %}
-            <label for="binlog_prefix" title="{{ binlog_prefix_title }}">
-                Binglog Prefix:
-                <input type="text"
-                       id="binlog_prefix"
-                       name="binlog_prefix"
-                       placeholder="e.g. mysql-bin"
-                       value="mysql-bin" />
-            </label>
-            {% set binlog_purge_days_title = "Set the number of days after which old binlog files will be purged (optional)." %}
-            <label for="binlog_purge_days" title="{{ binlog_purge_days_title }}">
-                Binglog Purge Days:
+            {% set start_position_title = "Specify the position within the start file where the restore should begin (e.g., 157)." %}
+            <label for="start_position" title="{{ start_position_title }}">
+                Start Position:
                 <input type="number"
-                       id="binlog_purge_days"
-                       name="binlog_purge_days"
-                       value="30"
-                       placeholder="e.g. 30" />
+                       id="start_position"
+                       name="start_position"
+                       value=""
+                       placeholder="e.g. 157" />
             </label>
-            {% set binlog_extra_args_title = "Type any additional command-line arguments for the binlog restore process (optional)." %}
-            <label for="binlog_extra_args" title="{{ binlog_extra_args_title }}">
-                Binlog Extra Args:
+            {% set stop_file_title = "Specify the name of the last binary log file to stop the restore at (e.g., binlog.000031)." %}
+            <label for="stop_file" title="{{ stop_file_title }}">
+                Stop File:
                 <input type="text"
-                       id="binlog_extra_args"
-                       name="binlog_extra_args"
-                       placeholder="e.g. --compress" />
+                       id="stop_file"
+                       name="stop_file"
+                       placeholder="e.g. binlog.000031" />
             </label>
-            {% set binlog_compress_cmd_title = "Type the command to use for compressing binlog files during restore (optional)." %}
-            <label for="binlog_compress_cmd" title="{{ binlog_compress_cmd_title }}">
-                Binglog Compress Command:
-                <input type="text"
-                       id="binlog_compress_cmd"
-                       name="binlog_compress_cmd"
-                       placeholder="e.g. /usr/bin/pigz -p 3" />
+            {% set stop_position_title = "Specify the position within the stop file where the restore should end (e.g., 2995)." %}
+            <label for="stop_position" title="{{ stop_position_title }}">
+                Stop Position:
+                <input type="number"
+                       id="stop_position"
+                       name="stop_position"
+                       value=""
+                       placeholder="e.g. 2995" />
             </label>
-            {% set binlog_cmd_title = "Type the full path to the mysqlbinlog command to use for binlog restores (optional)." %}
-            <label for="binlog_cmd" title="{{ binlog_cmd_title }}">
-                Binglog Command:
-                <input type="text"
-                       size="55"
-                       id="binlog_cmd"
-                       name="binlog_cmd"
-                       placeholder="e.g. /usr/local/percona/msp/backup/bin/mysqlbinlog" />
+            {% set use_sql_file_title = "Specify the path to a SQL file containing additional SQL statements to execute during the restore process." %}
+            <label for="use_sql_file" title="{{ use_sql_file_title }}">
+                Use SQL File:
+                <input type="text" id="use_sql_file" name="use_sql_file" placeholder="" />
             </label>
         </fieldset>
     </fieldset>
@@ -624,6 +611,7 @@
 
     function updateBackupTypeUI() {
         const restoreType = backupTypeSelect.value;
+        console.log("restoreType")
         if (restoreType === 'M') {
             // Show myloader, hide xtrabackup and binlog
             showContainer(myloaderContainer, true);

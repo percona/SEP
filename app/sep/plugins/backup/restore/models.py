@@ -124,6 +124,16 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     :type master_user: RequiredStr | EmptyStrToNone
     :param master_password: Password for replication user on master.
     :type master_password: RequiredStr | EmptyStrToNone
+    :param start_file: Binary log file to start replication from.
+    :type start_file: RequiredStr | EmptyStrToNone
+    :param start_position: Position in binary log file to start replication from.
+    :type start_position: int | EmptyStrToNone
+    :param stop_file: Binary log file to stop replication at.
+    :type stop_file: RequiredStr | EmptyStrToNone
+    :param stop_position: Position in binary log file to stop replication at.
+    :type stop_position: int | EmptyStrToNone
+    :param use_sql_file: Path to SQL file to use for restore instead of backup files.
+    :type use_sql_file: RequiredStr | EmptyStrToNone
     """
 
     backup_type: BackupType
@@ -137,11 +147,11 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     pre_script: RequiredStr | EmptyStrToNone = None
     post_script: RequiredStr | EmptyStrToNone = None
     skip_incrementals: bool = False
-    datadir: RequiredStr
+    datadir: RequiredStr | EmptyStrToNone = None
     kill_mysql: bool = False
     xb_prepare_memory: RequiredStr | EmptyStrToNone = None
     xb_parallel: int | EmptyStrToNone = Field(default=4)
-    xtrabackup_bin_cmd: XtraBackupTool
+    xtrabackup_bin_cmd: XtraBackupTool | EmptyStrToNone = None
     restore_mycnf: bool = False
     incremental_dest_path: RequiredStr | EmptyStrToNone = None
     xtrabackup_restore_args: RequiredStr | EmptyStrToNone = None
@@ -153,6 +163,11 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     master_port: int | EmptyStrToNone = Field(default=3306)
     master_user: RequiredStr | EmptyStrToNone = None
     master_password: RequiredStr | EmptyStrToNone = None
+    start_file: RequiredStr | EmptyStrToNone = None
+    start_position: int | EmptyStrToNone = None
+    stop_file: RequiredStr | EmptyStrToNone = None
+    stop_position: int | EmptyStrToNone = None
+    use_sql_file: RequiredStr | EmptyStrToNone = None
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):
@@ -163,7 +178,7 @@ class RestoreConfigServer(BaseRestoreConfigServer):
     :param alias: Unique identifier for the restore job.
     :type alias: RequiredStr
     :param dest_host: Destination host for the restore.
-    :type dest_host: RequiredStr
+    :type dest_host: RequiredStr | EmptyStrToNone
     :param dest_port: Destination port for the restore.
     :type dest_port: int
     :param database: Target database name for restore.
