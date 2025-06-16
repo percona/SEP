@@ -232,6 +232,8 @@ class BackupCreate(BackupConfigAll):
     :type encryption_recipient: RequiredStr | EmptyStrToNone
     :param binlog_alternative_host: Optional alternative host for binlog operations.
     :type binlog_alternative_host: RequiredStr | EmptyStrToNone
+    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
+    :type alert_on_fail: bool
     """
 
     task_name: RequiredStr
@@ -240,6 +242,7 @@ class BackupCreate(BackupConfigAll):
     backup_type: BackupType
     encryption_recipient: RequiredStr | EmptyStrToNone = None
     binlog_alternative_host: RequiredStr | EmptyStrToNone = None
+    alert_on_fail: bool = False
 
     @model_validator(mode="after")
     def validate_compression_algorithm(self) -> Self:

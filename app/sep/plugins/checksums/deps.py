@@ -143,6 +143,7 @@ async def build_checksums_task_payload(
         ],
         name=form.task_name,
         target=form.hostname,
+        alert_on_fail=form.alert_on_fail,
     )
 
 
@@ -224,4 +225,5 @@ async def get_checksums_index_context(
         get_checksums_task_info,
         context,
         TaskOwner.CHECKSUMS,
+        alert_on_fail_default=True,
     )

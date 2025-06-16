@@ -445,30 +445,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             flag_modified_fields=["execution_request"],
         )
 
-    async def stop_task(
-        self, session: AsyncSession, queue_item: TaskHistory
-    ) -> TaskHistory:
+    async def _stop_task(self, queue_item: TaskHistory) -> None:
         """Stop a task execution in Nomad.
 
         This method calls the Nomad API to stop the job associated with the given
         task history. It updates the task history with the status of the operation.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
-        :return: The updated task history with execution details.
-        :rtype: TaskHistory
         """
         job_id = queue_item.execution_request.tracking.get("job_id")
         if not job_id:
             raise ValueError("The job ID could not be determined")
         self.backend.job.deregister_job(job_id)
-        queue_item = await self.sync_task_history(session, queue_item)
-        queue_item.status = TaskHistoryStatusEnum.STOPPED
-        queue_item.finished_at = utc_now()
-        return await TaskHistoryManager.save(session, queue_item)
 
     def get_logs_for_allocation(
         self,
@@ -520,7 +509,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         task_logs[step][log_type] += b64decode_str(log_data["Data"])
         return task_logs
 
-    async def sync_task_history(
+    async def _sync_task_history(
         self,
         session: AsyncSession,
         queue_item: TaskHistory,
@@ -687,6 +676,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         step: str,
         log_type: TaskLogType,
         queue: asyncio.Queue,
+        start_offset: int = 0,
     ) -> None:
         """Push logs to the asynchronous queue for processing.
 
@@ -698,13 +688,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type log_type: TaskLogType
         :param queue: The asyncio queue to push log lines into.
         :type queue: asyncio.Queue
+        :param start_offset: The offset to start reading logs from. Defaults to 0.
+        :type start_offset: int
         """
         timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
         params = {
             "task": step,
             "type": log_type,
             "follow": "true",
-            "offset": 0,
+            "offset": start_offset,
         }
         state = "running"
         while state == "running":
@@ -738,12 +730,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         if b"}" in chunk:
                             data = json.loads(raw_data)
                             raw_data = b""
-                            params["offset"] = data.get("Offset", params["offset"])
+                            params["offset"] = offset = data.get(
+                                "Offset", params["offset"]
+                            )
                             if data and (msg := data.get("Data")):
                                 empty_data_count = 0
                                 await queue.put(
                                     TaskLog(
-                                        step=step, type=log_type, msg=b64decode_str(msg)
+                                        step=step,
+                                        type=log_type,
+                                        msg=b64decode_str(msg),
+                                        offset=offset,
                                     )
                                 )
                             elif empty_data_count >= self.log_socket_read_timeout:
@@ -769,7 +766,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
 
     async def stream_logs(
-        self, queue_item: TaskHistory
+        self,
+        queue_item: TaskHistory,
+        start_offsets: dict[str, dict[str, int]] | None = None,
     ) -> AsyncGenerator[TaskLog | None, None]:
         """Stream logs from a task history record.
 
@@ -778,6 +777,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
+        :param start_offsets: A dictionary containing the starting offsets for each
+            step and log type. If None, defaults to starting from the beginning.
+        :type start_offsets: dict[str, dict[str, int]] | None
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog | None
         """
@@ -789,32 +791,40 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         push_logs_tasks = []
         task_states = alloc["TaskStates"]
         if task_states:
-            for step in set(task_states):
-                for log_type in TaskLogType:
-                    stream = (step, log_type)
-                    logger.debug("Adding %s to active_streams", stream)
-                    active_streams.add(stream)
-                    push_logs_tasks.append(
-                        asyncio.create_task(
-                            self._push_logs_to_queue(alloc, step, log_type, queue)
+            start_offsets = defaultdict(dict, start_offsets or {})
+            for step, log_type in product(task_states, TaskLogType):
+                stream = (step, log_type)
+                logger.debug("Adding %s to active_streams", stream)
+                active_streams.add(stream)
+                push_logs_tasks.append(
+                    asyncio.create_task(
+                        self._push_logs_to_queue(
+                            alloc,
+                            step,
+                            log_type,
+                            queue,
+                            start_offsets[step].get(log_type, 0),
                         )
                     )
-
-            while active_streams:
-                logger.debug("Waiting for log line for streams %s", active_streams)
-                log_line = await queue.get()
-                logger.debug("Received log line %s", log_line)
-                if log_line.msg is None:
-                    stream = (log_line.step, log_line.type)
-                    logger.info(
-                        "Log stream %s is over, removing it from active_streams",
-                        stream,
-                    )
-                    active_streams.remove(stream)
-                    continue
-                yield log_line
-                queue.task_done()
-
-            await asyncio.gather(*push_logs_tasks)
+                )
+            try:
+                while active_streams:
+                    logger.debug("Waiting for log line for streams %s", active_streams)
+                    log_line = await queue.get()
+                    logger.debug("Received log line %s", log_line)
+                    if log_line.msg is None:
+                        stream = (log_line.step, log_line.type)
+                        logger.info(
+                            "Log stream %s is over, removing it from active_streams",
+                            stream,
+                        )
+                        active_streams.remove(stream)
+                        continue
+                    yield log_line
+                    queue.task_done()
+            finally:
+                for task in push_logs_tasks:
+                    task.cancel()
+                await asyncio.gather(*push_logs_tasks, return_exceptions=True)
         else:
             yield None

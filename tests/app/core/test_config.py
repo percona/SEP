@@ -141,17 +141,17 @@ def test_settings_customise_sources(
         mock_file_secret_settings,
     )
 
-    expected_length = 3
+    expected_length = 4
     assert isinstance(customised_sources, tuple)
     assert len(customised_sources) == expected_length
 
-    processed_env_vars = customised_sources[0].env_vars
+    processed_env_vars = customised_sources[1].env_vars
     assert "UVICORN_HOST" in processed_env_vars
     assert "UVICORN_PORT" in processed_env_vars
     assert processed_env_vars["UVICORN_HOST"] == "0.0.0.0"
     assert processed_env_vars["UVICORN_PORT"] == "8000"
 
-    processed_dotenv_vars = customised_sources[1].env_vars
+    processed_dotenv_vars = customised_sources[2].env_vars
     assert "SSL_KEYFILE" in processed_dotenv_vars
     assert "SSL_CERTFILE" in processed_dotenv_vars
     assert processed_dotenv_vars["SSL_KEYFILE"] == "/path/to/keyfile"

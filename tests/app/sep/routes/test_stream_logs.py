@@ -64,19 +64,19 @@ def mock_stream(path, task_history_id):
     if path == f"/history/{task_history_id}/logs/":
         return mock_stream_logs_generator(
             [
-                '{"msg": "log line 1"}',
-                '{"msg": "log line 2"}',
+                b'{"msg": "log line 1"}',
+                b'{"msg": "log line 2"}',
             ]
         )
     raise ValueError(f"Unexpected path: {path}")
 
 
 def test_archives_logs_event_stream(
-    test_client, mock_task_api_dep, task_history_response
+    mocker, test_client, mock_task_api_dep, task_history_response
 ):
     """Test streaming task history logs as server-sent events."""
     # Use the standalone mock_stream function
-    mock_task_api_dep.stream.side_effect = lambda path: mock_stream(
+    mock_task_api_dep.stream.side_effect = lambda path, **_kwargs: mock_stream(
         path, task_history_response.id
     )
     mock_task_api_dep.get.return_value = task_history_response.model_dump()
@@ -90,5 +90,6 @@ def test_archives_logs_event_stream(
     assert "log line 2" in streamed_content
 
     mock_task_api_dep.stream.assert_called_once_with(
-        f"/history/{task_history_response.id}/logs/"
+        f"/history/{task_history_response.id}/logs/",
+        params=mocker.ANY,
     )

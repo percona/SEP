@@ -127,6 +127,7 @@ async def build_archives_task_payload(
             },
             "payload": f"file://{payload_path}",
         },
+        alert_on_fail=form.alert_on_fail,
     )
 
 
@@ -222,4 +223,5 @@ async def get_archives_index_context(
         get_archives_task_info,
         context,
         TaskOwner.ARCHIVER,
+        alert_on_fail_default=True,
     )

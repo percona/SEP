@@ -1,6 +1,6 @@
 [project]
 name = "sep"
-version = "0.5.1"
+version = "0.6.0"
 description = "SEP: Services Enablement Platform"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
@@ -86,6 +86,7 @@ ruff = "^0.9.4"
 djlint = "^1.36.4"
 jsbeautifier = "^1.15.1"
 cssbeautifier = "^1.15.1"
+requests = "^2.32.4"
 
 [tool.poetry.group.mysql]
 optional = true
