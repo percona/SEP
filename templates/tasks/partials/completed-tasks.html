@@ -47,16 +47,17 @@
                         <td class="options">
                             {%- if task_logs %}
                                 <button type="button"
-                                        class="icon medium"
+                                        class="icon medium view-finished-logs-button"
                                         data-task="{{ task_history.task.name }}"
                                         aria-label="View logs"
                                         data-tooltip
                                         data-modal="trigger"
-                                        data-modal-target="modal-{{ task_history.task.name }}-{{ loop.index }}">
+                                        data-modal-target="modal-{{ task_history.id }}"
+                                        data-task-history-id="{{ task_history.id }}">
                                     <span class="material-symbols-outlined">visibility</span>
                                 </button>
                                 <section>
-                                    <dialog id="modal-{{ task_history.task.name }}-{{ loop.index }}"
+                                    <dialog id="modal-{{ task_history.id }}"
                                             aria-modal="true"
                                             aria-labelledby="modal-title-{{ task_history.task.name }}-{{ loop.index }}"
                                             data-modal="target"
@@ -93,32 +94,9 @@
                                                 </div>
                                             </header>
                                             <section class="log-content terminal" data-theme="dark">
-                                                <div id="log-{{ task_history.task.name }}-{{ loop.index }}-stdout"
-                                                     role="tabpanel"
-                                                     aria-labelledby="tab-{{ task_history.task.name }}-{{ loop.index }}-stdout"
-                                                     style="display:block">
-                                                    {%- for step_name, logs in task_logs.items() %}
-                                                        <div class="log-step-content"
-                                                             data-step-name="{{ step_name }}"
-                                                             {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>
-                                                            <pre class="log-output"
-                                                                 data-soft-wrap="container"
-                                                                 data-log-type="stdout"
-                                                                 {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>{{ logs.stdout|e }}</pre>
-                                                            <pre class="log-output"
-                                                                 data-soft-wrap="container"
-                                                                 data-log-type="stderr"
-                                                                 style="display:none">{{ logs.stderr|e }}</pre>
-                                                        </div>
-                                                    {%- endfor %}
-                                                </div>
                                             </section>
                                             <footer>
-                                                {% for step_name in task_logs.keys() %}
-                                                    <button type="button"
-                                                            class="text large log-step-tab {% if loop.first %}selected{% endif %}"
-                                                            data-step-name="{{ step_name }}">{{ step_name }}</button>
-                                                {% endfor %}
+                                                <div class="log-tabs"></div>
                                                 <button type="button" class="text large" data-modal-close>
                                                     Close<sup>ESC</sup>
                                                 </button>

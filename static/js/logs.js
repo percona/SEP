@@ -126,6 +126,121 @@ $(document).ready(function() {
         };
     });
 
+    $('.view-finished-logs-button').click(function() {
+        const taskHistoryId = $(this).data('task-history-id');
+        const dialogId = `modal-${taskHistoryId}`;
+        const $dialog = $(`#${dialogId}`);
+
+        if (!$dialog.length) {
+            console.error(`No dialog found with id="${dialogId}"`);
+            return;
+        }
+
+        $dialog.find('.log-content').empty();
+        $dialog.find('footer .log-tabs').empty();
+        $dialog.removeClass('success stopped lost failed');
+
+        const $selTab = $dialog.find('[role="log-tab"][aria-selected="true"]');
+        const ariaControls = $selTab.length ? ($selTab.attr('aria-controls') || '') : '';
+        const isStdoutSelected = ariaControls.includes('stdout');
+
+        $.post(`/task-logs/${taskHistoryId}`, function(response) {
+                const logsByStep = response.task_logs;
+                const status = response.status;
+
+                Object.keys(logsByStep).forEach((stepName, idx) => {
+                    const {
+                        stdout,
+                        stderr
+                    } = logsByStep[stepName];
+
+                    const $stepTab = $(`
+              <button type="button"
+                      class="text large log-step-tab"
+                      data-step-name="${stepName}">
+                ${stepName}
+              </button>`);
+                    if (idx === 0) $stepTab.addClass('selected');
+                    $dialog.find('footer .log-tabs').append($stepTab);
+
+                    const $stepContent = $(`<div class="log-step-content" data-step-name="${stepName}"></div>`);
+                    if (idx !== 0) $stepContent.hide();
+
+                    const $stdoutPre = $(`<pre class="log-output" data-soft-wrap="container" data-log-type="stdout"></pre>`)
+                        .text(stdout || '');
+                    const $stderrPre = $(`<pre class="log-output" data-soft-wrap="container" data-log-type="stderr"></pre>`)
+                        .text(stderr || '');
+
+                    if (isStdoutSelected) {
+                        $stderrPre.hide();
+                    } else {
+                        $stdoutPre.hide();
+                    }
+
+                    $stepContent.append($stdoutPre, $stderrPre);
+                    $dialog.find('.log-content').append($stepContent);
+                });
+
+                let icon, label;
+                switch (status) {
+                    case 'success':
+                        icon = 'check';
+                        label = 'Done';
+                        break;
+                    case 'stopped':
+                        icon = 'cancel';
+                        label = 'Stopped';
+                        break;
+                    case 'lost':
+                        icon = 'question_mark';
+                        label = 'Lost';
+                        break;
+                    default:
+                        icon = 'report';
+                        label = 'Failed';
+                }
+                const $statusEl = $(`
+            <div class="status">
+              <div class="${status}">
+                <span class="badge material-symbols-outlined">${icon}</span>
+                <span class="label">${label}</span>
+              </div>
+            </div>`);
+                $dialog.find('footer .log-tabs').append($statusEl);
+                $dialog.addClass(status);
+
+                $dialog.find('[role="log-tab"]').off('click').on('click', function() {
+                    const showStdout = $(this).attr('aria-controls').includes('stdout');
+                    $dialog.find('[role="log-tab"]').attr('aria-selected', 'false');
+                    $(this).attr('aria-selected', 'true');
+                    $dialog.find('.log-output').hide();
+                    if (showStdout) {
+                        $dialog.find('.log-output[data-log-type="stdout"]').show();
+                    } else {
+                        $dialog.find('.log-output[data-log-type="stderr"]').show();
+                    }
+                });
+
+                $dialog.find('.log-step-tab').off('click').on('click', function() {
+                    const selectedStep = $(this).data('step-name');
+                    $dialog.find('.log-step-tab').removeClass('selected');
+                    $(this).addClass('selected');
+                    $dialog.find('.log-step-content').hide();
+                    $dialog.find(`.log-step-content[data-step-name="${selectedStep}"]`).show();
+                });
+
+                $dialog.find('input[data-soft-wrap]').off('change').on('change', function() {
+                    const wrapMode = $(this).prop('checked') ? 'container' : '';
+                    $dialog.find('.log-output').attr('data-soft-wrap', wrapMode);
+                });
+
+                document.getElementById(dialogId).showModal();
+            })
+            .fail(function(xhr, status, error) {
+                console.error('Error fetching logs:', error);
+            });
+    });
+
 
     $('.logs-button').click(function() {
         const logId = $(this).data('log-id');
