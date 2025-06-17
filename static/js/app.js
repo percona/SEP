@@ -14,8 +14,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (link.target === '_blank') return;
 
         const linkPath = new URL(link.href, window.location.origin).pathname;
-        if (linkPath === currentPath) {
+        const currentPath = window.location.pathname;
+
+        if (linkPath === '/' && currentPath === '/') {
             link.classList.add('active');
+            console.log("rool")
+        } else if (
+            linkPath !== '/' &&
+            (currentPath === linkPath || currentPath.startsWith(linkPath))
+        ) {
+            link.classList.add('active');
+            console.log("herer")
         }
     });
 
