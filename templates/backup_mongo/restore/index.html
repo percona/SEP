@@ -41,8 +41,8 @@
     <div class="toggle-btn-group"
          role="group"
          aria-label="Backup and Restore navigation">
-        <a href="{{ url_for('backups_index') }}" class="toggle-btn">Backup</a>
-        <a href="{{ url_for('restores_index') }}" class="toggle-btn active">Restore</a>
+        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn">Backup</a>
+        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn active">Restore</a>
     </div>
 {% endblock sticky %}
 {% block main %}
@@ -50,12 +50,10 @@
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure a restore task</h2>
-        {% if services|length < 1 %}
-            <p>Unable to find suitable database instances.</p>
-        {% elif executor_hosts|length < 1 %}
+        {% if executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
-            {% include "/backups/restore/partials/create-form.html" %}
+            {% include "/backup_mongo/restore/partials/create-form.html" %}
         {% endif %}
     {% else %}
         {% set modal_required = True %}
@@ -67,14 +65,14 @@
         {% endif %}
         <section id="saved-tasks">
             <h2>Saved</h2>
-            {% include "/backups/restore/partials/saved-tasks.html" %}
+            {% include "/backup_mongo/restore/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a restore process</h3>
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "/backups/restore/partials/create-form.html" %}
+                {% include "/backup_mongo/restore/partials/create-form.html" %}
             {% endif %}
         </section>
         <br>
