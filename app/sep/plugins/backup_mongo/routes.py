@@ -91,7 +91,7 @@ async def pbm_backups_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/details.html",
+        name="backup_mongo/backup/details.html",
         context=context,
     )
 

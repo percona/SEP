@@ -24,14 +24,14 @@ templates = sep_settings.TEMPLATES
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def restores_index(
+async def pbm_restores_index(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_restores_index_context)],
 ) -> HTMLResponse:
     """Homepage of restores plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/restore/index.html",
+        name="backup_mongo/restore/index.html",
         context=context,
     )
 
