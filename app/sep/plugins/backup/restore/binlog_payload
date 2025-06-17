@@ -94,16 +94,16 @@ PROC_STAT_UTIME_IDX = 13
 PROC_STAT_STIME_IDX = 14
 
 LOGGING_NAME = {
-    'X': 'xtrabackup.log',
+    'B': 'binlog.log',
 }
 BACKUP_TYPES = {
-    'X': 'Xtrabackup',
+    'B': 'Binlogs',
 }
 COMPRESSION_ALGORITHMS = {
-    'X': ['quicklz', 'zstd', 'lz4'],
+    'B': ['gzip'],
 }
 BACKUP_DIR_REGEX = {
-    'X': '^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$',
+    'B': r'\.[0-9]{6}',
 }
 
 VALID_POLICIES = ["mysql", "mongodb", "postgresql"]
