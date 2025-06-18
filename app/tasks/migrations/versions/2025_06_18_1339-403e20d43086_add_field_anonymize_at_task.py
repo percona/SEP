@@ -1,8 +1,8 @@
-"""add_field_anonymize_at_task
+"""add field anonymize at task
 
-Revision ID: 0afb8990c91b
-Revises: 36f2b569e7bb
-Create Date: 2025-06-04 21:52:32.206416
+Revision ID: 403e20d43086
+Revises: b4f0b7b50441
+Create Date: 2025-06-18 13:39:22.747808
 
 """
 from typing import Sequence, Union
@@ -13,8 +13,8 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0afb8990c91b'
-down_revision: Union[str, None] = '36f2b569e7bb'
+revision: str = '403e20d43086'
+down_revision: Union[str, None] = 'b4f0b7b50441'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
