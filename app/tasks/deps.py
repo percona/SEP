@@ -1,11 +1,13 @@
 """Define dependencies for the Tasks API."""
 
 import logging
+from collections import defaultdict
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.requests import Request
 
 from app.tasks.anonymizer import encode_selection
 from app.tasks.config import tasks_settings
@@ -196,3 +198,27 @@ async def get_task_with_anonymized_value(task: TaskWrite) -> TaskWrite:
 TaskWriteWithAnonymizeDep = Annotated[
     TaskWrite, Depends(get_task_with_anonymized_value)
 ]
+
+
+def get_logs_offsets(request: Request) -> defaultdict[str, dict[str, int]]:
+    """Extract log offsets from the request query parameters.
+
+    This function looks for query parameters that end with "_offset" and extracts
+    the step and log type from the parameter name. It returns a dictionary where
+    the keys are steps and the values are dictionaries mapping log types to their
+    corresponding offsets.
+
+    :param request: The FastAPI request object containing query parameters.
+    :type request: Request
+    :return: A dictionary mapping steps to log types and their offsets.
+    :rtype: defaultdict[str, dict[str, int]]
+    """
+    offsets = defaultdict(dict)
+    for raw_key, raw_val in request.query_params.items():
+        if raw_key.endswith("_offset"):
+            try:
+                step, log_type, _ = raw_key.rsplit("_", 2)
+                offsets[step][log_type] = max(0, int(raw_val))
+            except ValueError:
+                continue
+    return offsets

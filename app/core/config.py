@@ -217,6 +217,7 @@ class BaseYamlSettings(BaseSettings):
                     ] = value
                 env_source.env_vars = env_vars
         return (
+            init_settings,
             env_settings,
             dotenv_settings,
             YamlPrefixConfigSettingsSource(

@@ -18,11 +18,12 @@
                         <td class="relativeTime">{{ task['updated_at'] }}</td>
                         <td class="options">
                             <button type="button"
-                                    class="icon medium"
+                                    class="icon medium view-logs-button"
                                     aria-label="View logs"
                                     data-tooltip
                                     data-modal="trigger"
-                                    data-modal-target="modal-{{ task.id }}">
+                                    data-modal-target="modal-{{ task.id }}"
+                                    data-task-id="{{ task.id }}">
                                 <span class="material-symbols-outlined">visibility</span>
                             </button>
                             <form id="{{ task.id }}-stop"

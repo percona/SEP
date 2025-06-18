@@ -7,6 +7,7 @@ from zoneinfo import available_timezones
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
@@ -43,6 +44,7 @@ async def tasks_list(
     )
     context["available_backends"] = TaskBackendEnum
     context["available_owners"] = TaskOwner
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,

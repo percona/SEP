@@ -2,10 +2,11 @@
 
 import json
 import logging
+from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
@@ -28,6 +29,7 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
+    get_logs_offsets,
     PreparedTaskHistory,
     SessionDep,
     TaskDep,
@@ -165,12 +167,14 @@ async def generate_task(
     )
 
     # TODO: enhance options for generating tasks  # noqa: TD002, TD003
+    logger.info("GENERATE TASK ALERT ON FAIL: %s", generated_task.alert_on_fail)
     task = Task(
         name=generated_task.name,
         owner=generated_task.app,
         anonymize=encode_selection(tasks_settings.MASKING_ENTITIES[generated_task.app]),
         backend=template.backend,
         data=template.data,
+        alert_on_fail=generated_task.alert_on_fail,
     )
     tpl = task.data
 
@@ -318,7 +322,9 @@ async def retrieve_task_history(
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
-    executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+    offsets: Annotated[defaultdict[str, dict[str, int]], Depends(get_logs_offsets)],
 ) -> StreamingResponse:
     """Stream a task history's logs."""
     logger.debug("Requesting logs for task history %s", task_history.id)
@@ -338,7 +344,7 @@ async def stream_task_history_logs(
                 ).model_dump_json()
                 + "\n"
             )
-            async for log_line in executor.stream_logs(task_history)
+            async for log_line in executor.stream_logs(task_history, offsets)
         )
     else:
         stream_logs_generator = (
@@ -346,11 +352,12 @@ async def stream_task_history_logs(
                 TaskLog(
                     step=step,
                     type=log_type,
-                    msg=presidio_anonymize_log(
-                        log[log_type], task_history.task.anonymize
-                    )
-                    if step in ("run-script", "step1")
-                    else log[log_type],
+                    msg=(
+                        presidio_anonymize_log(msg, task_history.task.anonymize)
+                        if step in ("run-script", "step1")
+                        else msg
+                    ),
+                    offset=log.get(f"{log_type}_last_offset", 0),
                 ).model_dump_json()
                 + "\n"
             )
@@ -358,6 +365,7 @@ async def stream_task_history_logs(
                 "task_logs", {}
             ).items()
             for log_type in TaskLogType
+            if (msg := log[log_type][offsets[step].get(log_type, 0) :])
         )
     return StreamingResponse(
         stream_logs_generator,

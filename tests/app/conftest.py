@@ -1,13 +1,14 @@
 """Define test fixtures."""
 
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
+from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
@@ -180,3 +181,9 @@ def created_schema() -> CreatedSchema:
 def created_table() -> CreatedTable:
     """Return a fake created Table."""
     return CreatedTableFactory.build()
+
+
+@pytest.fixture
+def mock_remote_api() -> AsyncMock:
+    """Mock a RemoteAPI object."""
+    return AsyncMock(spec=RemoteAPI)
