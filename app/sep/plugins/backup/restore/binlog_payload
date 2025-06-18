@@ -2055,8 +2055,4 @@ def parse_args():
     return options
 
 if __name__ == "__main__":
-    if os.geteuid() != 0:
-        print("Re-running script with root privileges...")
-        os.execvp("sudo", ["sudo"] + [sys.executable] + sys.argv)
-    else:
-        main()
+    main()
