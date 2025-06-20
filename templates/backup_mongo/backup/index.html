@@ -45,11 +45,12 @@ PBM Backups
 {# Note: commented out until services exists
 {% if services|length != 1 %}
 <p>Unable to find suitable database instances.</p>
-{% elif executor_hosts|length < 1 %} <p>Unable to find suitable executor hosts.</p>
-    {% else %}
+{% elif executor_hosts|length < 1 %} 
+    <p>Unable to find suitable executor hosts.</p>
+{% else %}
     {% include "backup_mongo/backup/partials/create-form.html" %}
-    {% endif %}
-    #}
+{% endif %}
+ #}
     {% include "backup_mongo/backup/partials/create-form.html" %}
     {% else %}
     {% set modal_required = True %}

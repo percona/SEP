@@ -39,7 +39,7 @@ async def pbm_restores_index(
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
-async def restores_create(
+async def pbm_restores_create(
     request: Request,
     task: RestoreGeneratedTask,
     task_api: TaskAPI,
@@ -50,7 +50,7 @@ async def restores_create(
         "/",
         json=task.model_dump(),
     )
-    task_path = request.url_for("restores_detail", task_name=task.name)
+    task_path = request.url_for("pbm_restores_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -58,7 +58,7 @@ async def restores_create(
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def restores_detail(
+async def pbm_restores_detail(
     task: RestoresTask,
     request: Request,
     context: DefaultContext,
@@ -67,19 +67,13 @@ async def restores_detail(
     """Retrieve restores task."""
     data = task.data
     meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    server_config = task_config["SERVER_LIST"][0]
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
-        "host": server_config["DEST_HOST"],
-        "port": server_config["DEST_PORT"],
-        "database": server_config.get("DATABASER"),
-        "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
-        "delete_url": request.url_for("restores_delete", task_name=task.name),
+        "delete_url": request.url_for("pbm_restores_delete", task_name=task.name),
     }
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
@@ -89,7 +83,7 @@ async def restores_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="backups/restore/details.html",
+        name="backup_mongo/restore/details.html",
         context=context,
     )
 
@@ -99,7 +93,7 @@ async def restores_detail(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def restores_execute(
+async def pbm_restores_execute(
     request: Request,
     task: RestoresTask,
     tasks_api: TaskAPI,
@@ -110,7 +104,7 @@ async def restores_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    task_path = request.url_for("restores_detail", task_name=task.name)
+    task_path = request.url_for("pbm_restores_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -119,12 +113,12 @@ async def restores_execute(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def restores_delete(
+async def pbm_restores_delete(
     request: Request,
     task: RestoresTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete restores task."""
     await tasks_api.delete(f"/{task.name}")
-    task_path = request.url_for("restores_index")
+    task_path = request.url_for("pbm_restores_index")
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

@@ -61,8 +61,6 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
 
     :param backup_type: Type of backup to restore from.
     :type backup_type: BackupType
-    :param backup_source: Source location of the backup.
-    :type backup_source: RequiredStr
     :param local_path: Local path for backup files.
     :type local_path: RequiredStr | EmptyStrToNone
     :param overwrite_tables: Whether to overwrite existing tables.
@@ -75,7 +73,8 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     """
 
     backup_type: BackupType
-    backup_source: RequiredStr
+    backup_name: RequiredStr | EmptyStrToNone = None
+    pitr: RequiredStr | EmptyStrToNone = None
     local_path: RequiredStr | EmptyStrToNone = None
     overwrite_datadir: bool = False
     pbm_extra_args: RequiredStr | EmptyStrToNone = None

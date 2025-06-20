@@ -53,7 +53,7 @@
         {% if executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
-            {% include "/backup_mongo/restore/partials/create-form.html" %}
+            {% include "backup_mongo/restore/partials/create-form.html" %}
         {% endif %}
     {% else %}
         {% set modal_required = True %}
@@ -65,14 +65,14 @@
         {% endif %}
         <section id="saved-tasks">
             <h2>Saved</h2>
-            {% include "/backup_mongo/restore/partials/saved-tasks.html" %}
+            {% include "backup_mongo/restore/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a restore process</h3>
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "/backup_mongo/restore/partials/create-form.html" %}
+                {% include "backup_mongo/restore/partials/create-form.html" %}
             {% endif %}
         </section>
         <br>
