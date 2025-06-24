@@ -15,11 +15,14 @@ from celery import Task
 from celery.app.task import Context
 from celery.signals import task_revoked, worker_process_init
 from fastapi.encoders import jsonable_encoder
+from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import alert_service
+from app.core.alerts.models import AlertSeverity
 from app.core.celery.utils import create_celery
 from app.core.db.utils import func_json_extract
 from app.core.exceptions import (
@@ -102,7 +105,10 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     retry_kwargs={"max_retries": celery.conf.max_retries},
 )
 def execute_task_by_name(
-    self: Task, task_name: str, execution_data: PeriodicTaskExecuteRequest | None = None
+    self: Task,
+    task_name: str,
+    periodic_task_name: str | None = None,
+    execution_data: PeriodicTaskExecuteRequest | None = None,
 ) -> dict[str, Any]:
     """Define Celery task to execute a SEP task by name.
 
@@ -110,6 +116,8 @@ def execute_task_by_name(
     :type self: Task
     :param task_name: The name of the task to execute.
     :type task_name: int | None
+    :param periodic_task_name: The name of the periodic task, if available.
+    :type periodic_task_name: str | None
     :param execution_data: Execution details and parameters, if any.
     :type execution_data: PeriodicTaskExecuteRequest | None
     :return: The data of the processed TaskHistory.
@@ -118,9 +126,22 @@ def execute_task_by_name(
     task_history = celery.loop.run_until_complete(
         prepare_periodic_task_history(task_name, execution_data)
     )
-    return jsonable_encoder(
-        celery.loop.run_until_complete(dispatch_queue_item(task_history))
-    )
+    try:
+        task_history = celery.loop.run_until_complete(dispatch_queue_item(task_history))
+    except BaseNomadException:
+        alert_msg = f"Failed to dispatch periodic task {periodic_task_name or task_name}: error getting a response from Nomad"
+        logger.exception(alert_msg)
+        if task_history.task.alert_on_fail:
+            alert_data = {
+                "summary": alert_msg,
+                "source": f"{task_name}:{task_history.execution_request.target}",
+                "severity": AlertSeverity.ERROR,
+                "class": "task_dispatch_failure",
+            }
+            if periodic_task_name:
+                alert_data["source"] = f"{periodic_task_name}:{alert_data['source']}"
+            celery.loop.run_until_complete(alert_service.trigger(alert_data))
+    return jsonable_encoder(task_history)
 
 
 @celery.task
