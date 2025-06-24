@@ -9,6 +9,7 @@ from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
+from app.core.exceptions import HTTPBadRequestException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -119,7 +120,9 @@ def prepare_task_history(
     else:
         target = execution_data.meta.get("target")
     if not target:
-        raise ValueError("Execution target is required in execution data meta.")
+        raise HTTPBadRequestException(
+            "Execution target is required in execution data meta."
+        )
 
     return TaskHistory(
         task_id=task.id,
