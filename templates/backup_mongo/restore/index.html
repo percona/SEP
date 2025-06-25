@@ -50,11 +50,13 @@
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure a restore task</h2>
-        {% if executor_hosts|length < 1 %}
+        {% if services|length < 1 %}
+            <p>Unable to find suitable database instances.</p>
+        {% elif executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
-            {% include "backup_mongo/restore/partials/create-form.html" %}
-        {% endif %}
+            {% include "/backup_mongo/restore/partials/create-form.html" %}
+    {% endif %}
     {% else %}
         {% set modal_required = True %}
         {% if running_tasks %}

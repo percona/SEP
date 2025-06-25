@@ -142,15 +142,7 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    restore_server = task_config["SERVER_LIST"][0]
-
-    return {
-        "hostname": meta["target"],
-        "host": restore_server.get("HOST"),
-        "port": restore_server.get("PORT") or 3306,
-        "backup_type": BackupType(restore_server.get("BACKUP_TYPE")).name,
-    }
+    return yaml.safe_load(meta["config"])
 
 
 async def get_restores_index_context(
@@ -182,5 +174,5 @@ async def get_restores_index_context(
         tasks_api,
         get_restores_task_info,
         context,
-        TaskOwner.RESTORES,
+        TaskOwner.RESTORE_MONGO,
     )

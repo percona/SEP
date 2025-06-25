@@ -16,43 +16,6 @@ class S3Tool(EnumFieldMixin, StrEnum):
     AWSCLI = "awscli"
 
 
-class RestoreConfigAll(BaseCaseInsensitiveModel):
-    """Global config values for restore operations.
-
-    This model contains settings that apply to all servers in a restore operation,
-    including logging, SSH options, S3 tool selection, and GPG encryption.
-
-    :param logging_dir: Directory path for storing restore operation logs.
-    :type logging_dir: RequiredStr | EmptyStrToNone
-    :param port: Port number for the restore operation.
-    :type port: int | None
-    :param custom_mysql_init_command: Custom MySQL initialization command.
-    :type custom_mysql_init_command: RequiredStr | EmptyStrToNone
-    :param ssh_user: SSH username for remote operations (default: "percona").
-    :type ssh_user: RequiredStr | EmptyStrToNone
-    :param ssh_port: SSH port for remote operations (default: 22).
-    :type ssh_port: int | EmptyStrToNone
-    :param ssh_key: SSH key name for authentication (not full path).
-    :type ssh_key: RequiredStr | EmptyStrToNone
-    :param s3_tool: Tool to use for S3 operations (default: S3CMD).
-    :type s3_tool: S3Tool
-    :param gpg_password_file: Path to the GPG encryption key password file.
-    :type gpg_password_file: RequiredStr | EmptyStrToNone
-    """
-
-    logging_dir: RequiredStr | EmptyStrToNone = None
-    port: int | None = None
-    custom_mongod_init_command: RequiredStr | EmptyStrToNone = None
-
-    # SSH Options
-    ssh_user: RequiredStr | EmptyStrToNone = Field(default="percona")
-    ssh_port: int | EmptyStrToNone = Field(default=22)
-    ssh_key: RequiredStr | EmptyStrToNone = None  # only key name, not full path
-
-    # S3 tool selection (default is awscli)
-    s3_tool: S3Tool = S3Tool.AWSCLI
-
-
 class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     """Restore job configuration for a specific PBM restore job.
 
@@ -106,20 +69,36 @@ class RestoreConfigServer(BaseRestoreConfigServer):
 class RestoreConfig(BaseCaseInsensitiveModel):
     """Define the complete configuration for a restore operation.
 
-    This model combines global settings applicable to all servers with a list of
-    server-specific configurations for a complete restore operation setup.
-
-    :param all_servers: Global configuration settings for all servers.
-    :type all_servers: RestoreConfigAll
-    :param server_list: List of server-specific restore configurations.
-    :type server_list: list[RestoreConfigServer]
+    :param logging_dir: Directory path for storing restore operation logs.
+    :type logging_dir: RequiredStr | EmptyStrToNone
+    :param port: Port number for the restore operation.
+    :type port: int | None
+    :param custom_mysql_init_command: Custom MySQL initialization command.
+    :type custom_mysql_init_command: RequiredStr | EmptyStrToNone
+    :param ssh_user: SSH username for remote operations (default: "percona").
+    :type ssh_user: RequiredStr | EmptyStrToNone
+    :param ssh_port: SSH port for remote operations (default: 22).
+    :type ssh_port: int | EmptyStrToNone
+    :param ssh_key: SSH key name for authentication (not full path).
+    :type ssh_key: RequiredStr | EmptyStrToNone
+    :param s3_tool: Tool to use for S3 operations (default: S3CMD).
+    :type s3_tool: S3Tool
     """
 
-    all_servers: RestoreConfigAll
-    server_list: list[RestoreConfigServer]
+    logging_dir: RequiredStr | EmptyStrToNone = None
+    port: int | None = None
+    custom_mongod_init_command: RequiredStr | EmptyStrToNone = None
+
+    # SSH Options
+    ssh_user: RequiredStr | EmptyStrToNone = Field(default="percona")
+    ssh_port: int | EmptyStrToNone = Field(default=22)
+    ssh_key: RequiredStr | EmptyStrToNone = None  # only key name, not full path
+
+    # S3 tool selection (default is awscli)
+    s3_tool: S3Tool = S3Tool.AWSCLI
 
 
-class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
+class RestoreCreate(RestoreConfig):
     """Model for creating a restore task.
 
     Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
