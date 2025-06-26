@@ -21,10 +21,10 @@ if [[ $1 == --defaults-file=* ]]; then
     shift
 fi
 
-MYSQL="mysql -B $DEFAULTS_FILE $*"
+MYSQL="mysql -B $DEFAULTS_FILE"
 
-# Check if SHOW REPLICA STATUS is supported
-if $MYSQL -e "SHOW REPLICA STATUS\\G" 2>&1 | grep -qv "You have an error"; then
+# Try SHOW REPLICA STATUS and check for error anywhere in output
+if ! $MYSQL -e "SHOW REPLICA STATUS\\G" 2>&1 | grep -q "You have an error"; then
     $MYSQL -e "SHOW REPLICA STATUS\\G"
 else
     $MYSQL -e "SHOW SLAVE STATUS\\G"
