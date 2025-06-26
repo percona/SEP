@@ -510,6 +510,7 @@ button.large {
 
 button.medium {
     padding: 0.6875rem 1rem;
+    min-width: 6rem;
 }
 
 button.small {
