@@ -298,9 +298,12 @@ class ServiceResponse(BaseSQLModel, ServiceBase):
     :type node_id: int
     :param schemas: A list of schemas associated with the service.
     :type schemas: list[Schema]
+    :param node: The node to which the service is associated.
+    :type node: Node
     """
 
     schemas: list["Schema"]
+    node: Node
 
 
 class ServiceDetailResponse(ServiceResponse):
