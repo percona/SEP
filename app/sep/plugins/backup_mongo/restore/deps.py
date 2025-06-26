@@ -20,10 +20,7 @@ from app.sep.deps import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
-    BaseRestoreConfigServer,
     RestoreConfig,
-    RestoreConfigAll,
-    RestoreConfigServer,
     RestoreCreate,
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
@@ -34,41 +31,13 @@ async def build_restore_task_payload(
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build task payload for a restore operation."""
-    all_config_dict = {'backup_name': form.backup_name, 'pitr': form.pitr}
-    base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
+    all_config = extract_model_from_instance(form, RestoreConfig)
 
     service = await get_created_entity(
         inventory_api,
         SyncInventoryEntityTypeEnum.SERVICE,
         form.service_id,
         type=ServiceTypeEnum.MONGODB,
-    )
-
-    dest_host, dest_port = "localhost", 27017
-    if isinstance(service.address, str) and ":" in service.address:
-        host, port_str = service.address.split(":", 1)
-        dest_host = host.strip()
-        dest_port = int(port_str.strip())
-
-    restore_config_payload = {
-        **base_config_dict.model_dump(),
-        "dest_host": dest_host,
-        "dest_port": dest_port,
-        "alias": form.task_name,
-    }
-
-    if str(form.schema_id).isdigit() and int(form.schema_id) > 0:
-        schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            form.schema_id,
-            service_id=service.id,
-        )
-        restore_config_payload["database"] = schema.name
-
-    restore_config = RestoreConfig(
-        all_servers=RestoreConfigAll.model_validate(all_config_dict),
-        server_list=[RestoreConfigServer.model_validate(restore_config_payload)],
     )
 
     backup_type_to_payload = {
@@ -88,12 +57,12 @@ async def build_restore_task_payload(
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORES,
+        owner=TaskOwner.RESTORE_MONGO,
         data={
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
+                    jsonable_encoder(all_config, by_alias=True, exclude_none=True)
                 ),
                 "target": form.hostname,
                 "requirements": requirements,

@@ -1,8 +1,6 @@
 import subprocess
 import os
-all_env_vars = os.environ
-
-def pbm(env):
+def pbm():
 
     pbm_create_restore = os.environ['PBM_CREATE_RESTORE']
     command = ['bash', pbm_create_restore ]
@@ -19,4 +17,4 @@ def pbm(env):
     except subprocess.CalledProcessError as e:
         print(f"Command failed with error: {e}")
 
-pbm(all_env_vars)
+pbm()

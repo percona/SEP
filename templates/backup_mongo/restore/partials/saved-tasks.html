@@ -13,7 +13,7 @@
             {% for task in tasks %}
                 <tr id="{{ task.name }}">
                     <td>
-                        <a href="{{ url_for('backups_detail', task_name=task.name) }}">{{ task.name }}</a>
+                        <a href="{{ url_for('pbm_backups_detail', task_name=task.name) }}">{{ task.name }}</a>
                     </td>
                     <td>{{ task.host }} ({{ task.port }})</td>
                     <td>{{ task.backup_type }}</td>

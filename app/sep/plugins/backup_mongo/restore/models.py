@@ -15,57 +15,6 @@ class S3Tool(EnumFieldMixin, StrEnum):
     S3CMD = "s3cmd"
     AWSCLI = "awscli"
 
-
-class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
-    """Restore job configuration for a specific PBM restore job.
-
-    This model contains server-specific settings for a restore operation, including
-    backup source, destination and script hooks.
-
-    :param backup_type: Type of backup to restore from.
-    :type backup_type: BackupType
-    :param local_path: Local path for backup files.
-    :type local_path: RequiredStr | EmptyStrToNone
-    :param overwrite_tables: Whether to overwrite existing tables.
-    :type overwrite_tables: bool
-    :param pbm_extra_args: Additional arguments for myloader.
-    :param pre_script: Script to execute before restore.
-    :type pre_script: RequiredStr | EmptyStrToNone
-    :param post_script: Script to execute after restore.
-    :type post_script: RequiredStr | EmptyStrToNone
-    """
-
-    backup_type: BackupType
-    backup_name: RequiredStr | EmptyStrToNone = None
-    pitr: RequiredStr | EmptyStrToNone = None
-    local_path: RequiredStr | EmptyStrToNone = None
-    overwrite_datadir: bool = False
-    pbm_extra_args: RequiredStr | EmptyStrToNone = None
-    pre_script: RequiredStr | EmptyStrToNone = None
-    post_script: RequiredStr | EmptyStrToNone = None
-
-
-class RestoreConfigServer(BaseRestoreConfigServer):
-    """Server-specific restore configuration.
-
-    Extends BaseRestoreConfigServer with additional required fields for alias, destination host, and port.
-
-    :param alias: Unique identifier for the restore job.
-    :type alias: RequiredStr
-    :param dest_host: Destination host for the restore.
-    :type dest_host: RequiredStr
-    :param dest_port: Destination port for the restore.
-    :type dest_port: int
-    :param database: Target database name for restore.
-    :type database: RequiredStr | EmptyStrToNone
-    """
-
-    alias: RequiredStr
-    dest_host: RequiredStr
-    dest_port: int
-    database: RequiredStr | EmptyStrToNone = None
-
-
 class RestoreConfig(BaseCaseInsensitiveModel):
     """Define the complete configuration for a restore operation.
 
@@ -73,8 +22,8 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     :type logging_dir: RequiredStr | EmptyStrToNone
     :param port: Port number for the restore operation.
     :type port: int | None
-    :param custom_mysql_init_command: Custom MySQL initialization command.
-    :type custom_mysql_init_command: RequiredStr | EmptyStrToNone
+    :param custom_mongod_init_command: Custom MySQL initialization command.
+    :type custom_mongod_init_command: RequiredStr | EmptyStrToNone
     :param ssh_user: SSH username for remote operations (default: "percona").
     :type ssh_user: RequiredStr | EmptyStrToNone
     :param ssh_port: SSH port for remote operations (default: 22).
@@ -96,6 +45,14 @@ class RestoreConfig(BaseCaseInsensitiveModel):
 
     # S3 tool selection (default is awscli)
     s3_tool: S3Tool = S3Tool.AWSCLI
+    backup_name: RequiredStr | EmptyStrToNone = None
+    backup_type: BackupType
+    pitr: RequiredStr | EmptyStrToNone = None
+    local_dbpath: RequiredStr | EmptyStrToNone = None
+    overwrite_datadir: bool = False
+    pbm_extra_args: RequiredStr | EmptyStrToNone = None
+    pre_script: RequiredStr | EmptyStrToNone = None
+    post_script: RequiredStr | EmptyStrToNone = None
 
 
 class RestoreCreate(RestoreConfig):

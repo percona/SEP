@@ -102,7 +102,7 @@
                 </label>
             </div>
             <br>
-            {% set backup_type_title = "Select the type of backup: MyDumper or XtraBackup." %}
+            {% set backup_type_title = "Select the type of backup: Logical or Physical." %}
             <div class="select">
                 <label for="backup_type" title="{{ backup_type_title }}">
                     Backup Type:
@@ -132,10 +132,10 @@
             </label>
             <br>
             <br>
-            {% set backup_dir_title = "Type the directory where backup files will be stored." %}
-            <label for="backup_dir" title="{{ backup_dir_title }}">
-                Backup Directory:
-                <input type="text" id="backup_dir" name="backup_dir" placeholder="/path/to/backups" required>
+            {% set local_dbpath_title = "Type the directory where backup files will be stored." %}
+            <label for="local_dbpath" title="{{ local_dbpath_title }}">
+                Local DBPath:
+                <input type="text" id="local_dbpath" name="local_dbpath" placeholder="/data/mongo" required>
             </label>
             <br>
             <br>
