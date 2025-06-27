@@ -199,7 +199,7 @@
                                        class="validate"
                                        placeholder="SELECT ..."
                                        required
-                                       value="{{ task.source_query }}"
+                                       value="{{ task.source_query | default('', true) }}"
                                        style="width: 25em" />
                             </label>
                         </div>
@@ -213,7 +213,7 @@
                                    id="swp_table_suffix"
                                    name="swp_table_suffix"
                                    class="validate"
-                                   value="{{ task.swp_table_suffix }}"
+                                   value="{{ task.swp_table_suffix | default('', true) }}"
                                    required />
                         </label>
                     </div>
@@ -228,7 +228,7 @@
                                    class="validate"
                                    required
                                    style="width: 25em"
-                                   value="{{ task.where }}"
+                                   value="{{ task.where | default('', true) }}"
                                    placeholder="ts < current_date - interval 90 day" />
                         </label>
                         <br>
@@ -240,7 +240,7 @@
                                    id="use_index"
                                    name="use_index"
                                    class="validate"
-                                   value="{{ task.use_index }}"
+                                   value="{{ task.use_index | default('', true) }}"
                                    placeholder="created_date" />
                         </label>
                         <br>
@@ -252,7 +252,7 @@
                                    id="limit"
                                    name="limit"
                                    class="validate"
-                                   value="{{ task.limit }}"
+                                   value="{{ task.limit | default('', true) }}"
                                    placeholder="100"
                                    style="width:5em" />
                         </label>
@@ -263,7 +263,7 @@
                                    id="sleep"
                                    name="sleep"
                                    class="validate"
-                                   value="{{ task.sleep }}"
+                                   value="{{ task.sleep | default('', true) }}"
                                    placeholder="1"
                                    style="width: 3em" />
                         </label>
@@ -277,7 +277,7 @@
                                    name="extra_args"
                                    class="validate"
                                    placeholder="--quick"
-                                   value="{{ task.extra_args }}"
+                                   value="{{ task.extra_args | default('', true) }}"
                                    style="width: 25em" />
                         </label>
                         <br>
@@ -290,7 +290,7 @@
                                    id="disable_binlog"
                                    name="disable_binlog"
                                    class="validate"
-                                   value="{{ task.disable_binlog }}">
+                                   {% if task.disable_binlog %}checked{% endif %}>
                             <div class="checkmark">
                                 <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                                 <span class="material-symbols-outlined checked">check_box</span>
@@ -307,7 +307,7 @@
                                id="delete_data"
                                name="delete_data"
                                class="validate"
-                               value="{{ task.delete_data }}">
+                               {% if task.delete_data %}checked{% endif %}>
                         <div class="checkmark">
                             <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                             <span class="material-symbols-outlined checked">check_box</span>
@@ -348,6 +348,7 @@
                                        class="validate"
                                        placeholder="/path/to/detination/file.txt"
                                        required
+                                       value="{{ task.dest_file | default('', true) }}"
                                        style="width: 25em" />
                             </label>
                         </div>
@@ -381,7 +382,7 @@
     {% endfor %}
     {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
-{% set source_data = { "schema": task["source_db"], "table": task["source_table"]} %}
+{% set source_data = { "schema": task["source_db"], "table": task["source_table"], "dest_table": task["dest_table"]} %}
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas | tojson }};
     const source_data = {{ source_data | tojson }};
@@ -417,78 +418,36 @@
 
         if (selectedService && serviceSchemas[selectedService]) {
             const schemas = Object.entries(serviceSchemas[selectedService]);
-            let matchedSchemaFound = false;
             if (schemas.length > 0) {
                 for (const [schemaId, schema] of schemas) {
                     const option = document.createElement('option');
                     option.value = schemaId;
                     option.textContent = schema.name;
-                    if (schema.name === source_data.schema) {
-                        option.selected = true;
-                        matchedSchemaFound = true;
-                        populateSourceTables(selectedService, schemaId);
-                    }
                     schemaSelect.appendChild(option);
+                    if (srcQueryInput.value === '')
+                        schemaSelect.disabled = false;
                 }
-
-                if (!matchedSchemaFound && source_data.schema) {
-                    const unknownOption = document.createElement('option');
-                    unknownOption.value = '-1';
-                    unknownOption.textContent = `Unknown schema(${source_data.schema})`;
-                    unknownOption.selected = true;
-                    schemaSelect.appendChild(unknownOption);
-                }
-
-                if (srcQueryInput.value === '') {
-                    schemaSelect.disabled = false;
-                }
-
                 if (schemas.length === 1) {
-                    const [singleSchemaId, singleSchema] = schemas[0];
+                    const [singleSchemaId, _] = schemas[0]
                     schemaSelect.value = singleSchemaId;
                     addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, singleSchemaId);
-                    return;
                 }
             }
-        }
-
-        if (selectedService == "-1") {
-            const unknownOption = document.createElement('option');
-            unknownOption.value = '-1';
-            unknownOption.textContent = `Unknown schema(${source_data.schema})`;
-            unknownOption.selected = true;
-            schemaSelect.appendChild(unknownOption);
-            populateSourceTables(selectedService, unknownOption.value);
         }
     }
 
     function populateTables(tableSelect, tables) {
         if (tables.length > 0) {
-            let matchFound = false;
-
             for (const [tableId, tableName] of tables) {
                 const option = document.createElement('option');
                 option.value = tableId;
                 option.textContent = tableName;
-                if (tableName === source_data.table) {
-                    option.selected = true;
-                    matchFound = true;
-                }
                 tableSelect.appendChild(option);
                 tableSelect.disabled = false;
             }
-
-            if (!matchFound && source_data.table) {
-                const unknownOption = document.createElement('option');
-                unknownOption.value = '-1';
-                unknownOption.textContent = `Unknown table: ${source_data.table}`;
-                unknownOption.selected = true;
-                tableSelect.appendChild(unknownOption);
-            }
-
             if (tables.length === 1) {
-                const [singleTableId, _] = tables[0];
+                const [singleTableId, _] = tables[0]
                 tableSelect.value = singleTableId;
             }
         }
@@ -497,15 +456,6 @@
     function populateSourceTables(selectedService, selectedSchema) {
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
         destTableSelect.innerHTML = '<option value="">Select a table</option>';
-
-        if (selectedSchema == "-1") {
-            const unknownOption = document.createElement('option');
-            unknownOption.value = '-1';
-            unknownOption.textContent = `Unknown table(${source_data.table})`;
-            unknownOption.selected = true;
-            sourceTableSelect.appendChild(unknownOption);
-            return;
-        }
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
             const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
@@ -517,7 +467,6 @@
                 populateDestTables(selectedService, selectedSchema, singleTableId);
             }
         }
-
     }
 
     function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
