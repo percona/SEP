@@ -93,7 +93,7 @@ async def get_restores_task(
     :rtype: Task
     :raises HTTPNotFoundException: If the task is not found or is not owned by Restores.
     """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.RESTORES)
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.RESTORE_MONGO)
 
 
 RestoresTask = Annotated[Task, Depends(get_restores_task)]

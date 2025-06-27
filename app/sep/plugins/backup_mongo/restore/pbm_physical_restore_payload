@@ -2,7 +2,12 @@ import subprocess
 import os
 def pbm():
 
-    pbm_create_restore = os.environ['PBM_CREATE_RESTORE']
+    print('hiphop')
+    for key, value in os.environ.items():
+        print(f"{key}: {value}")
+    # pbm_create_restore = os.environ['PBM_CREATE_RESTORE']
+    pbm_create_restore = "/home/admin/bin/pbm_create_restore.sh"
+
     command = ['bash', pbm_create_restore ]
     try:
         result = subprocess.run(command,

@@ -5,7 +5,8 @@ import logging
 def pbm():
 
     pbm_create_logical = os.environ['PBM_CREATE_LOGICAL']
-    command = ['bash', pbm_create_logical ]
+    #command = ['bash', pbm_create_logical ]
+    command = ['pbm', 'status' ]
     try:
         # Simple command
         result = subprocess.run(command,
