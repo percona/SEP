@@ -414,7 +414,7 @@
     const whereInput = document.getElementById('where');
     const purgeConfigOptionsContainer = document.getElementById('purge_options_container');
     const form = document.getElementById('edit-task-form');
-    const createButton = form.querySelector('button[type="submit"]');
+    const editButton = form.querySelector('button[type="submit"]');
 
     function populateSchemas(selectedService) {
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
@@ -432,7 +432,7 @@
                     if (srcQueryInput.value === '')
                         schemaSelect.disabled = false;
                 }
-                if (matched.schemaId) {
+                if (selectedService === matched.serviceId &&  matched.schemaId) {
                     schemaSelect.value = matched.schemaId;
                     addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, matched.schemaId);
@@ -705,7 +705,15 @@
     }
 
     function updateCreateButtonState() {
-        createButton.disabled = !form.checkValidity();
+        const selectElementValues = [
+            connectToSelect.value,
+            schemaSelect.value,
+            sourceTableSelect.value,
+            destTableSelect.value
+        ];
+
+        const hasInvalidValue = selectElementValues.includes("-1");
+        editButton.disabled = !form.checkValidity() || hasInvalidValue;
     }
 
     ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
@@ -885,6 +893,5 @@
         toggleWhereInput();
         togglePurgeOptionsContainer();
         toggleOptionalInputNames();
-        console.log(source_data, serviceSchemas, matched)
     });
 </script>

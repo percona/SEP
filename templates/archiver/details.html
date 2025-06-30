@@ -32,8 +32,6 @@
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/saved.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    <script src="{{ url_for('static', path='/js/edited.js') }}"
-            nonce="{{ request.state.csp_nonce }}"></script>
     {% if history %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
