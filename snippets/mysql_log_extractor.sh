@@ -10,7 +10,7 @@
 #    label: Issue Time
 #    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
 #  - name: minutes
-#    type: str
+#    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
 #    default: true
