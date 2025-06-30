@@ -736,14 +736,87 @@
         toggleOptionalInputName(extraArgsInput);
     }
 
+    function addUnknownOption(type, name, selector) {
+        if (!name) return;
+        const unknownOption = document.createElement('option');
+        unknownOption.value = '-1';
+        unknownOption.textContent = `Unknown ${type}(${name})`;
+        unknownOption.selected = true;
+        selector.appendChild(unknownOption);
+    }
+
+    // Initializing the source shcmea, table, and destination table
+    // ==============================
+    // If there is unkown service
+    function initSource() {
+        if (connectToSelect.value === "-1") {
+          const unknownTables = {
+            "-1": "Unknow table: " + source_data.table
+          };
+
+          if (source_data.dest_table) {
+            unknownTables["-2"] = "Unknow table: " + source_data.dest_table;
+          }
+
+          serviceSchemas["-1"] = {
+            "-1": {
+              name: "Unknown schema: " + source_data.schema,
+              tables: unknownTables
+            }
+          };
+        } else {
+          let matchedSchemaEntry = null;
+
+          for (const serviceId in serviceSchemas) {
+            const schemas = serviceSchemas[serviceId];
+            for (const schemaId in schemas) {
+              const schema = schemas[schemaId];
+              if (schema.name === source_data.schema) {
+                matchedSchemaEntry = schema;
+                break;
+              }
+            }
+            if (matchedSchemaEntry) break;
+          }
+
+          if (matchedSchemaEntry) {
+            const existingTables = Object.values(matchedSchemaEntry.tables);
+            let tableIdx = -1;
+
+            if (!existingTables.includes(source_data.table)) {
+              matchedSchemaEntry.tables[String(tableIdx--)] = "Unknow table: " + source_data.table;
+            }
+
+            if (source_data.dest_table && !existingTables.includes(source_data.dest_table)) {
+              matchedSchemaEntry.tables[String(tableIdx--)] = "Unknow table: " + source_data.dest_table;
+            }
+          } else {
+            const unknownTables = {};
+
+            if (source_data.table) {
+              unknownTables["-1"] = "Unknow table: " + source_data.table;
+            }
+
+            if (source_data.dest_table) {
+              unknownTables["-2"] = "Unknow table: " + source_data.dest_table;
+            }
+
+            serviceSchemas["-1"] = {
+              "-1": {
+                name: "Unknown schema: " + source_data.schema,
+                tables: unknownTables
+              }
+            };
+          }
+        }
+        }
+
     window.addEventListener('DOMContentLoaded', function() {
         if (connectToSelect.options.length === 1) {
             const singleHost = connectToSelect.options[0].value;
             populateSchemas(singleHost);
         }
-        if (connectToSelect.value !== "") {
-            populateSchemas(connectToSelect.value);
-        }
+        initSource();
         updateCreateButtonState();
         updateDestinationFieldset();
         toggleSchemaAndTable();
