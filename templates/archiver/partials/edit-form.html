@@ -470,12 +470,26 @@
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
             const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
-            populateTables(sourceTableSelect, tables);
-            if (tables.length === 1) {
-                const [singleTableId, _] = tables[0]
-                sourceTableSelect.value = singleTableId;
-                addHiddenInput(sourceTableSelect);
-                populateDestTables(selectedService, selectedSchema, singleTableId);
+            if (tables.length > 0) {
+                for (const [tableId, tableName] of tables) {
+                    const option = document.createElement('option');
+                    option.value = tableId;
+                    option.textContent = tableName;
+                    sourceTableSelect.appendChild(option);
+                    sourceTableSelect.disabled = false;
+                }
+                if (selectedSchema == matched.schemaId && matched.tableId) {
+                    sourceTableSelect.value = matched.tableId;
+                    addHiddenInput(sourceTableSelect);
+                    populateDestTables(selectedService, selectedSchema, matched.tableId);
+                    return;
+                }
+                if (tables.length === 1) {
+                    const [singleTableId, _] = tables[0]
+                    sourceTableSelect.value = singleTableId;
+                    addHiddenInput(sourceTableSelect);
+                    populateDestTables(selectedService, selectedSchema, singleTableId);
+                }
             }
         }
     }
@@ -487,7 +501,9 @@
             let tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
             tables = tables.filter(table => table[0] !== selectedSourceTable)
             populateTables(destTableSelect, tables);
-
+            if (selectedSchema == matched.schemaId && matched.destTableId) {
+                destTableSelect.value = matched.destTableId;
+            }
             if (tables.length === 1) {
                 const [singleTableId, _] = tables[0];
                 destTableSelect.value = singleTableId;
