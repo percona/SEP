@@ -386,7 +386,12 @@
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas | tojson }};
     const source_data = {{ source_data | tojson }};
-    console.log(source_data, serviceSchemas)
+    const matched = {
+        serviceId: null,
+        schemaId: null,
+        tableId: null,
+        destTableId: null
+      };
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('source_db_id');
     const sourceTableSelect = document.getElementById('source_table_id');
@@ -426,6 +431,12 @@
                     schemaSelect.appendChild(option);
                     if (srcQueryInput.value === '')
                         schemaSelect.disabled = false;
+                }
+                if (matched.schemaId) {
+                    schemaSelect.value = matched.schemaId;
+                    addHiddenInput(schemaSelect);
+                    populateSourceTables(selectedService, matched.schemaId);
+                    return;
                 }
                 if (schemas.length === 1) {
                     const [singleSchemaId, _] = schemas[0]
@@ -749,14 +760,9 @@
     // ==============================
     // If there is unkown service
     function initSource() {
-        const matched = {
-          serviceId: null,
-          schemaId: null,
-          tableId: null,
-          destTableId: null
-        };
-
-        if (connectToSelect.value === "-1") {
+        const selectedServiceId = connectToSelect.value;
+        if (selectedServiceId === "-1") {
+          // No matched service selected — completely unknown
           const unknownTables = {
             "-1": "Unknow table: " + source_data.table
           };
@@ -779,34 +785,28 @@
             matched.destTableId = "-2";
           }
         } else {
+          matched.serviceId = selectedServiceId;
+
+          const schemas = serviceSchemas[selectedServiceId] || {};
           let matchedSchema = null;
           let matchedSchemaKey = null;
-          let matchedServiceKey = null;
 
-          for (const serviceId in serviceSchemas) {
-            const schemas = serviceSchemas[serviceId];
-
-            for (const schemaId in schemas) {
-              const schema = schemas[schemaId];
-              if (schema.name === source_data.schema) {
-                matchedSchema = schema;
-                matchedSchemaKey = schemaId;
-                matchedServiceKey = serviceId;
-                break;
-              }
+          for (const schemaId in schemas) {
+            const schema = schemas[schemaId];
+            if (schema.name === source_data.schema) {
+              matchedSchema = schema;
+              matchedSchemaKey = schemaId;
+              break;
             }
-
-            if (matchedSchema) break;
           }
 
           if (matchedSchema) {
-            matched.serviceId = matchedServiceKey;
             matched.schemaId = matchedSchemaKey;
 
             const tableNames = Object.values(matchedSchema.tables);
             const tableIds = Object.keys(matchedSchema.tables);
 
-            // source_data.table
+            // Match source_data.table
             if (tableNames.includes(source_data.table)) {
               matched.tableId = tableIds.find(
                 id => matchedSchema.tables[id] === source_data.table
@@ -816,7 +816,7 @@
               matched.tableId = "-1";
             }
 
-            // source_data.dest_table
+            // Match source_data.dest_table
             if (source_data.dest_table) {
               if (tableNames.includes(source_data.dest_table)) {
                 matched.destTableId = tableIds.find(
@@ -828,6 +828,7 @@
               }
             }
           } else {
+            // No schema matched → insert unknown schema inside selected service
             const unknownTables = {
               "-1": "Unknow table: " + source_data.table
             };
@@ -836,19 +837,18 @@
               unknownTables["-2"] = "Unknow table: " + source_data.dest_table;
             }
 
-            serviceSchemas["-1"] = {
-              "-1": {
-                name: "Unknown schema: " + source_data.schema,
-                tables: unknownTables
-              }
+            schemas["-1"] = {
+              name: "Unknown schema: " + source_data.schema,
+              tables: unknownTables
             };
 
-            matched.serviceId = "-1";
             matched.schemaId = "-1";
             matched.tableId = "-1";
             if (source_data.dest_table) {
               matched.destTableId = "-2";
             }
+
+            serviceSchemas[selectedServiceId] = schemas;
           }
         }
       }
@@ -869,5 +869,6 @@
         toggleWhereInput();
         togglePurgeOptionsContainer();
         toggleOptionalInputNames();
+        console.log(source_data, serviceSchemas, matched)
     });
 </script>
