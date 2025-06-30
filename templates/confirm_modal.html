@@ -83,6 +83,7 @@
         const confirmNo = document.getElementById('confirmNo');
         const submitButtons = document.querySelectorAll('.submitButton');
         const scheduleDialog = document.getElementById('modalScheduleExec');
+        const editDialog = document.getElementById('modalEditTask');
 
         let currentForm = null;
 
@@ -122,6 +123,9 @@
                 if (allFieldsValid) {
                     if (scheduleDialog && scheduleDialog.open) {
                         scheduleDialog.close();
+                    }
+                    if (editDialog && editDialog.open) {
+                        editDialog.close();
                     }
                     showModal();
                 }
