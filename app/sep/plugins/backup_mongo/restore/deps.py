@@ -48,7 +48,7 @@ async def build_restore_task_payload(
     if not payload_name:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
 
-    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
+    requirements = "packaging\nPyYAML"
     if form.backup_type == BackupType.PBM_PHYSICAL:
         requirements += "\nfilelock"
 
