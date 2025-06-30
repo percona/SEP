@@ -92,7 +92,7 @@ Here is a sample of what each script shoud contain:
 
 ```
 # pbm_create_config.sh
-echo "$PBM_CONFIG_YAML" | docker compose exec -T $SERVICE_NAME pbm config --file="-"
+echo "$PBM_CONFIG_YAML" | pbm config --file="-"
 
 
 # pbm_create_restore.sh
