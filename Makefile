@@ -1,6 +1,6 @@
 # vim: ts=8:sw=8:ft=make:noai:noet
 
-SHELL?=`which bash`
+SHELL=env bash
 
 PYTHON?=python3
 RELEASE_VER?=HEAD
@@ -23,7 +23,7 @@ PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
 
 venv: pyproject.toml poetry.lock
-	@[[ ! -z "${VIRTUAL_ENV}" || -d "venv" ]] || "${PYTHON}" -m venv "${VENV}"
+	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
 	@"${PIP}" install --no-cache ${START_PKGS};
 	@source "${VENV_BIN}"/activate; "${POETRY}" install --with audit
 

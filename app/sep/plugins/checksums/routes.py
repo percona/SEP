@@ -1,6 +1,7 @@
 """Define routes for the checksums plugin."""
 
 import logging
+import shlex
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -79,7 +80,7 @@ async def checksums_detail(
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "hostname": data["Constraints"][0]["RTarget"],
-        "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
+        "cmd": f"{task_config['command']} {shlex.join(task_config['args'])}",
         "meta": meta,
         "delete_url": request.url_for("checksums_delete", task_name=task.name),
     }
