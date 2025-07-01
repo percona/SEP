@@ -434,14 +434,12 @@
                 }
                 if (selectedService === matched.serviceId &&  matched.schemaId) {
                     schemaSelect.value = matched.schemaId;
-                    addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, matched.schemaId);
                     return;
                 }
                 if (schemas.length === 1) {
                     const [singleSchemaId, _] = schemas[0]
                     schemaSelect.value = singleSchemaId;
-                    addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, singleSchemaId);
                 }
             }
@@ -480,14 +478,12 @@
                 }
                 if (selectedSchema == matched.schemaId && matched.tableId) {
                     sourceTableSelect.value = matched.tableId;
-                    addHiddenInput(sourceTableSelect);
                     populateDestTables(selectedService, selectedSchema, matched.tableId);
                     return;
                 }
                 if (tables.length === 1) {
                     const [singleTableId, _] = tables[0]
                     sourceTableSelect.value = singleTableId;
-                    addHiddenInput(sourceTableSelect);
                     populateDestTables(selectedService, selectedSchema, singleTableId);
                 }
             }
@@ -552,8 +548,6 @@
             destinationContainer.classList.add('hidden');
             destTableSelect.disabled = true;
             dstFileInput.disabled = true;
-            removeHiddenInput('dest_table_id');
-            removeHiddenInput('dest_file');
         } else {
             destinationContainer.classList.remove('hidden');
             if (!dstFileInput.value)
@@ -566,24 +560,6 @@
         }
     }
 
-    function removeHiddenInput(inputName) {
-        const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
-        if (hiddenInput) {
-            hiddenInput.parentNode.removeChild(hiddenInput);
-        }
-    }
-
-    function addHiddenInput(inputElement) {
-        removeHiddenInput(inputElement.name);
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = inputElement.name;
-        hiddenInput.value = inputElement.value;
-        hiddenInput.id = `${inputElement.id}_hidden`;
-        inputElement.insertAdjacentElement('afterend', hiddenInput);
-    }
-
-
     function toggleSchemaAndTable() {
         if (srcQueryInput.value.trim() !== '') {
             schemaSelect.disabled = true;
@@ -594,8 +570,6 @@
             sourceTableSelect.value = '';
             schemaSelect.removeAttribute('name');
             sourceTableSelect.removeAttribute('name');
-            removeHiddenInput('source_db_id')
-            removeHiddenInput('source_table_id')
         } else {
             schemaSelect.disabled = false;
             sourceTableSelect.disabled = false;
@@ -660,7 +634,6 @@
             destTableSelect.disabled = true;
             destTableSelect.value = '';
             destTableSelect.removeAttribute('name');
-            removeHiddenInput('dest_table_id')
         } else {
             destTableSelect.disabled = false;
             destTableSelect.setAttribute('name', 'dest_table_id');
@@ -769,15 +742,6 @@
         toggleOptionalInputName(limitInput);
         toggleOptionalInputName(sleepInput);
         toggleOptionalInputName(extraArgsInput);
-    }
-
-    function addUnknownOption(type, name, selector) {
-        if (!name) return;
-        const unknownOption = document.createElement('option');
-        unknownOption.value = '-1';
-        unknownOption.textContent = `Unknown ${type}(${name})`;
-        unknownOption.selected = true;
-        selector.appendChild(unknownOption);
     }
 
     // Initializing the source shcmea, table, and destination table
