@@ -106,6 +106,20 @@ async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     return await TaskManager.create(session, task)
 
 
+@router.put(
+    "/{task_name}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+    response_model=TaskResponse,
+)
+async def update_task(
+    session: SessionDep, existing_task: TaskDep, updated_task: TaskWrite
+) -> Task:
+    """Update an existing task."""
+    logger.debug("Updating task %s", existing_task.name)
+    return await TaskManager.update(session, existing_task, updated_task)
+
+
 @router.get(
     "/{task_name}/periodic/",
     dependencies=[IsAuthenticatedDep],
