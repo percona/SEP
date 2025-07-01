@@ -137,6 +137,7 @@ async def create_periodic_task_for_task_name(
         periodic_task.name = f"run_{task.name}_{periodic_task.period}_{hash(periodic_task.kwargs)}".replace(
             " ", "_"
         )
+    kwargs["periodic_task_name"] = periodic_task.name
     return await PeriodicTaskManager.create(
         celery_beat_session, periodic_task, kwargs=json.dumps(kwargs)
     )

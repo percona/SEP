@@ -561,7 +561,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         elif self.status == TaskHistoryStatusEnum.LOST:
             summary_action = "execution tracking lost"
             severity = AlertSeverity.WARNING
-            alert_class = "task lost"
+            alert_class = "task_lost"
         else:
             return
 
