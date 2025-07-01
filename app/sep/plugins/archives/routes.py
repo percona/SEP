@@ -160,6 +160,29 @@ async def archives_execute(
 
 
 @router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def archives_update(
+    request: Request,
+    task_name: str,
+    updated_task: ArchivesGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update archives task."""
+    logger.debug("Updating archives task: %s", updated_task)
+    await tasks_api.put(
+        f"/{task_name}",
+        json=updated_task.model_dump(),
+    )
+    return RedirectResponse(
+        request.url_for("archives_detail", task_name=updated_task.name),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post(
     "/{task_name}/delete",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,

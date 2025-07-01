@@ -53,7 +53,7 @@
 <form id="edit-task-form"
       class="edit-task-form window"
       method="post"
-      action=""
+      action="{{ url_for('archives_update', task_name=task.name) }}"
       data-confirm-message='Are you sure you want to edit task "{{ task.name }}"?'>
     <dialog id="modalEditTask"
             aria-modal="true"
