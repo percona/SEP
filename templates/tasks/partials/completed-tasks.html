@@ -47,13 +47,13 @@
                         <td class="options">
                             {%- if task_logs %}
                                 <button type="button"
-                                        class="icon medium view-finished-logs-button"
+                                        class="icon medium view-logs-button"
                                         data-task="{{ task_history.task.name }}"
                                         aria-label="View logs"
                                         data-tooltip
                                         data-modal="trigger"
                                         data-modal-target="modal-{{ task_history.id }}"
-                                        data-task-history-id="{{ task_history.id }}">
+                                        data-task-id="{{ task_history.id }}">
                                     <span class="material-symbols-outlined">visibility</span>
                                 </button>
                                 <section>
@@ -62,7 +62,8 @@
                                             aria-labelledby="modal-title-{{ task_history.task.name }}-{{ loop.index }}"
                                             data-modal="target"
                                             class="fullwidth modal-log tabs-wrapper">
-                                        <div class="window">
+                                        <div class="window log-console streaming-console"
+                                             data-task-id="{{ task_history.id }}">
                                             <header>
                                                 <h3 id="modal-title-{{ task_history.task.name }}-{{ loop.index }}"
                                                     class="h5 title">Logs for {{ task_history.task.name }}</h3>
@@ -76,17 +77,17 @@
                                                             </div>
                                                             <span class="label">Soft wrap</span>
                                                         </label>
-                                                        <button id="tab-{{ task_history.task.name }}-{{ loop.index }}-stdout"
+                                                        <button id="tab-stdout-{{ task_history.id }}"
                                                                 class="large"
                                                                 role="log-tab"
-                                                                aria-controls="log-{{ task_history.task.name }}-{{ loop.index }}-stdout"
+                                                                aria-controls="log-stdout-{{ task_history.id }}"
                                                                 aria-selected="true">
                                                             <span class="label">Output</span>
                                                         </button>
-                                                        <button id="tab-{{ task_history.task.name }}-{{ loop.index }}-stderr"
+                                                        <button id="tab-stderr-{{ task_history.id }}"
                                                                 class="large"
                                                                 role="log-tab"
-                                                                aria-controls="log-{{ task_history.task.name }}-{{ loop.index }}-stderr"
+                                                                aria-controls="log-stderr-{{ task_history.id }}"
                                                                 aria-selected="false">
                                                             <span class="label">Error</span>
                                                         </button>
@@ -95,7 +96,7 @@
                                             </header>
                                             <section class="log-content terminal" data-theme="dark">
                                             </section>
-                                            <footer>
+                                            <footer class="log-footer">
                                                 <div class="log-tabs"></div>
                                                 <button type="button" class="text large" data-modal-close>
                                                     Close<sup>ESC</sup>
