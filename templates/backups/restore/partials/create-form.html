@@ -217,7 +217,6 @@
         </fieldset>
         <fieldset id="myloader_container" style="flex-direction: column; gap: 1em">
             <legend>Myloader Configuration</legend>
-            <br>
             {% set service_id_title = "Select the destination database service where the restore will be applied." %}
             <div class="select">
                 <label for="service_id" title="{{ service_id_title }}">
@@ -250,8 +249,6 @@
                             disabled></select>
                 </label>
             </div>
-            <br>
-            <br>
             {% set local_path_title = "Type the local path where the backup files are stored or will be restored to (optional)." %}
             <label for="local_path" title="{{ local_path_title }}">
                 Local Path:
@@ -280,15 +277,11 @@
                        name="myloader_extra_args"
                        placeholder="" />
             </label>
-            <br>
-            <br>
             {% set skip_databases_title = "Type a comma-separated list of databases to skip during the restore (optional)." %}
             <label for="skip_databases" title="{{ skip_databases_title }}">
                 Skip Databases:
                 <input type="text" id="skip_databases" name="skip_databases" placeholder="" />
             </label>
-            <br>
-            <br>
             {% set include_databases_title = "Type a comma-separated list of databases to include in the restore (optional)." %}
             <label for="include_databases" title="{{ include_databases_title }}">
                 Include Databases:
@@ -297,22 +290,16 @@
                        name="include_databases"
                        placeholder="" />
             </label>
-            <br>
-            <br>
             {% set pre_script_title = "Type the path to a script to run before the restore process begins (optional)." %}
             <label for="pre_script" title="{{ pre_script_title }}">
                 Pre Script:
                 <input type="text" id="pre_script" name="pre_script" placeholder="" />
             </label>
-            <br>
-            <br>
             {% set post_title = "Type the path to a script to run after the restore process completes (optional)." %}
             <label for="post" title="{{ post_title }}">
                 Post Script:
                 <input type="text" id="post" name="post" placeholder="" />
             </label>
-            <br>
-            <br>
             {% set myloader_threads_title = "Set the number of days after which old backups will be automatically deleted." %}
             <label for="myloader_threads" title="{{ myloader_threads_title }}">
                 MyLoader Threads:
@@ -322,11 +309,9 @@
                        value="4"
                        placeholder="e.g. 4" />
             </label>
-            <br>
         </fieldset>
         <fieldset id="xtrabackup_container" style="flex-direction: column; gap: 1em">
             <legend>Xtrabackup Configuration</legend>
-            <br>
             <div class="checkbox-group">
                 {% set skip_incrementals_title = "Skip incremental backups during restore process. Useful when you want to restore only the base backup." %}
                 <label class="checkbox"
@@ -394,7 +379,6 @@
                     </select>
                 </label>
             </div>
-            <br>
             {% set incremental_dest_path_title = "Path where incremental backups will be stored during the restore process." %}
             <label for="incremental_dest_path" title="{{ incremental_dest_path_title }}">
                 Incremental Destination Path:
@@ -429,8 +413,6 @@
                        name="xtrabackup_aes256_keyfile"
                        placeholder="" />
             </label>
-            <br>
-            <br>
             <div class="checkbox-group">
                 {% set slave_from_master_title = "Configure the restored instance as a replica (slave) of the specified master server." %}
                 <label class="checkbox"
@@ -484,8 +466,6 @@
                        name="master_password"
                        placeholder="" />
             </label>
-            <br>
-            <br>
         </fieldset>
         <fieldset id="binlog_container" style="flex-direction: column; gap: 1em">
             <legend>Binlog Configuration</legend>
