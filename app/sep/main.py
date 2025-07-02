@@ -88,10 +88,8 @@ if {
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
-    from app.sep.routes.task_logs import router as task_logs_router
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
-    sep_app.include_router(task_logs_router, prefix="/task-logs")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
 
