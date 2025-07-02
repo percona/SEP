@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define dependencies for the Tasks API."""
 
 import logging
@@ -9,6 +24,7 @@ from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
+from app.core.exceptions import HTTPBadRequestException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -20,7 +36,6 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,12 +129,13 @@ def prepare_task_history(
     if task.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
-    if task.owner == TaskOwner.ALTERS:
-        target = task.data["Constraints"][0]["RTarget"]
-    else:
-        target = execution_data.meta.get("target")
+    target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
+        0
+    ].get("RTarget")
     if not target:
-        raise ValueError("Execution target is required in execution data meta.")
+        raise HTTPBadRequestException(
+            "Execution target is required in execution data meta."
+        )
 
     return TaskHistory(
         task_id=task.id,

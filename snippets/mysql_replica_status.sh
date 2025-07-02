@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# ---
+# title: "Show Replica Status"
+# description: "Prints the output of SHOW REPLICA STATUS."
+# strict: false
+# parameters:
+#  - name: defaults-file
+#    type: str
+#    label: Path to defaults-file
+#    description: Path to defaults-file
+# ---
+
+# Usage: ./mysql_replica_status.sh [--defaults-file=path] [mysql_args...]
+# Example: ./mysql_replica_status.sh --defaults-file=/etc/mysql/my.cnf -uroot -p
+
+# Check for --defaults-file argument
+DEFAULTS_FILE=""
+if [[ $1 == --defaults-file=* ]]; then
+    DEFAULTS_FILE="$1"
+    shift
+fi
+
+MYSQL="mysql -B $DEFAULTS_FILE"
+
+# Try SHOW REPLICA STATUS and check for error anywhere in output
+if ! $MYSQL -e "SHOW REPLICA STATUS\\G" 2>&1 | grep -q "You have an error"; then
+    $MYSQL -e "SHOW REPLICA STATUS\\G"
+else
+    $MYSQL -e "SHOW SLAVE STATUS\\G"
+fi
