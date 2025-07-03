@@ -1,6 +1,7 @@
 """Define routes for the alters plugin."""
 
 import logging
+import shlex
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -99,7 +100,7 @@ async def alters_detail(
         "updated_at": task.updated_at,
         "hostname": data["Constraints"][0]["RTarget"],
         "table": f"{meta['schema_name']}.{meta['table_name']}",
-        "cmd": f"{task_config['command']} {' '.join(task_config['args'])}",
+        "cmd": f"{task_config['command']} {shlex.join(task_config['args'])}",
         "meta": meta,
         "delete_url": request.url_for("alters_delete", task_name=task.name),
         "dry_run_url": request.url_for(
