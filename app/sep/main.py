@@ -15,9 +15,7 @@
 
 """Define SEP routes."""
 
-import json
 import logging.config
-from pathlib import Path
 from traceback import format_exception
 from typing import Annotated, Any
 
@@ -49,28 +47,9 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.sep.utils.react_assets import get_react_assets
 
 logger = logging.getLogger(__name__)
-
-
-def get_react_assets() -> dict[str, str]:
-    """Get React asset manifest for dynamic file loading.
-
-    Returns:
-        Dictionary mapping entry names to their file paths
-
-    """
-    manifest_path = Path(sep_settings.STATIC_DIR) / "react" / "asset-manifest.json"
-    try:
-        if manifest_path.exists():
-            with manifest_path.open() as f:
-                return json.load(f)
-        else:
-            logger.warning("React manifest not found at %s", manifest_path)
-            return {}
-    except (OSError, json.JSONDecodeError):
-        logger.exception("Error reading React manifest")
-        return {}
 
 
 lifespan = default_lifespan if __name__ == "__main__" else None

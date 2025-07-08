@@ -46,8 +46,8 @@ module.exports = {
             },
             exposes: {
                 // Expose the main React app
-                "./ReactApp": "./src/ReactApp.js",
-                "./App": "./src/ReactApp.js",
+                "./ReactApp": "./src/App.jsx",
+                "./App": "./src/App.jsx",
             },
             shared: {
                 react: {
