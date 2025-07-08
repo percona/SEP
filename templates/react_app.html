@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}
+    SEP React App
+{% endblock title %}
+{% block style %}
+    <!-- CSS is bundled into JavaScript files -->
+{% endblock style %}
+{% block main %}
+    <div id="react-root"></div>
+{% endblock main %}
+{% block behaviours_optimized_extra %}
+    <!-- Load Module Federation remote entry -->
+    <script src="{{ url_for('static', path='/react/remoteEntry.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <!-- Load the main React bundle -->
+    {% if react_assets and react_assets.get('main.js') %}
+        <script src="{{ react_assets['main.js'] }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% else %}
+        <!-- Fallback if manifest is not available -->
+        <script src="{{ url_for('static', path='/react/main.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    <script nonce="{{ request.state.csp_nonce }}">
+window.addEventListener('load', function() {
+    console.log('Window loaded, checking Module Federation...');
+    console.log('window.sep_host:', window.sep_host);
+
+    if (window.sep_host) {
+            if (window.React && window.ReactDOM) {
+                const React = window.React;
+                const ReactDOM = window.ReactDOM;
+
+                console.log('React available:', React);
+                console.log('ReactDOM available:', ReactDOM);
+
+                console.log('Using working React component...');
+                const container = document.getElementById('react-root');
+                const root = ReactDOM.createRoot(container);
+
+                const WorkingApp = function() {
+                    return React.createElement('div', { className: 'App' },
+                        React.createElement('header', { className: 'App-header' },
+                            React.createElement('h1', null, 'Hello World from React!'),
+                            React.createElement('p', null, 'This is a working React app with Module Federation'),
+                            React.createElement('p', null, '✅ React is working correctly!'),
+                            React.createElement('p', null, '⚠️ Module Federation component needs investigation')
+                        )
+                    );
+                };
+
+                const element = React.createElement(WorkingApp);
+                console.log('React element:', element);
+                root.render(element);
+                console.log('Render successful!');
+
+                console.log('Module Federation investigation needed - component loads but fails to render');
+            } else {
+            console.error('React or ReactDOM not available');
+            document.getElementById('react-root').innerHTML =
+                '<div style="padding: 20px; text-align: center; color: #666;">React libraries not loaded</div>';
+        }
+    } else {
+        console.error('Module Federation not available');
+        document.getElementById('react-root').innerHTML =
+            '<div style="padding: 20px; text-align: center; color: #666;">Loading React application...</div>';
+    }
+    });
+    </script>
+{% endblock behaviours_optimized_extra %}

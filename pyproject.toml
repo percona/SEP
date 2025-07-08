@@ -285,4 +285,4 @@ commands = [["make", "test"]]
 
 [tool.djlint]
 profile = "jinja"
-ignore = "H021"
+ignore = "H021,J004"

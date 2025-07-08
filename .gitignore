@@ -396,3 +396,14 @@ static/sep-db.sql.txt
 data/nomad.hcl
 data/casdoor_init_data.json
 .celery
+
+# React build files
+static/react/
+frontend/dist/
+frontend/node_modules/
+frontend/.cache/
+frontend/.webpack/
+
+# Frontend build artifacts
+*.js.map
+*.css.map
