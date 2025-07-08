@@ -1,0 +1,177 @@
+<style>
+    .hidden {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    .visible {
+        opacity: 1;
+        max-height: 1000px;
+        /* Large enough to show all content */
+        pointer-events: auto;
+    }
+
+    /* Smaller containers might have less content, adjust accordingly if needed */
+
+    button {
+        margin-top: 1em;
+        margin-right: 1em;
+    }
+
+    .checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1em;
+        align-items: center;
+    }
+
+    .checkbox-group label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25em;
+        margin-top: 0;
+    }
+
+    .checkbox-group input {
+        margin-top: 0 !important;
+    }
+
+    fieldset+fieldset {
+        margin: 1em 0;
+    }
+</style>
+<form action="" id="create_form" method="post" class="{{ form_class }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <fieldset>
+        <legend>Main Options</legend>
+        <br>
+        <fieldset>
+            <legend>Executor Host</legend>
+            {% set hostname_title = "Select the hostname of the target system for task execution." %}
+            <div class="select">
+                <label for="hostname" title="{{ hostname_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Select Executor Host:</span>
+                    {% if executor_hosts|length == 1 %}
+                    {% set single_service = executor_hosts[0] %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                    </select>
+                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                    {% else %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+                        <option value="" selected>Select a host</option>
+                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}
+                        </option>{% endfor %}
+                    </select>
+                    {% endif %}
+                </label>
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend>Basic Task Information</legend>
+            <br>
+            {% set task_name_title = "Type the name of task to be created." %}
+            <label for="task_name" title="{{ task_name_title }}">
+                Task Name:
+                <input type="text" id="task_name" name="task_name" class="validate" required
+                    placeholder="Enter a unique task name" />
+            </label>
+            <br>
+            <br>
+            {% set service_id_title = "Select the database host from the inventory to connect to." %}
+            <div class="select">
+                <label for="service_id" title="{{ service_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Select a Database Host:</span>
+                    {% if services|length == 1 %}
+                    {% set single_service = services[0] %}
+                    <select id="service_id" name="service_id" disabled>
+                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                    </select>
+                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% else %}
+                    <select id="service_id" name="service_id" required>
+                        <option value="" selected>Select a database host</option>
+                        <option value="1">deb-1 1</option>
+                    </select>
+                    {% endif %}
+                </label>
+            </div>
+            <br>
+            {% set backup_type_title = "Select the type of backup: Logical or Physical." %}
+            <div class="select">
+                <label for="backup_type" title="{{ backup_type_title }}">
+                    Backup Type:
+                    <select id="backup_type" name="backup_type" required>
+                        <option value="" disabled>Select a backup method</option>
+                        <option value="pbm_logical">Logical</option>
+                        <option value="pbm_physical">Physical</option>
+                    </select>
+                </label>
+            </div>
+        </fieldset>
+    </fieldset>
+    <fieldset>
+        <legend>General Restore Configuration</legend>
+        <div class="checkbox-group">
+            {% set backup_name_title = "Type the backup name in UTC format" %}
+            <label for="backup_name" title="{{ backup_name_title }}">
+                Backup Name:
+                <input type="text" id="backup_name" name="backup_name" placeholder="1994-06-01T03:30:03Z" required>
+            </label>
+            <br>
+            <br>
+            {% set pitr_title = "Type the PITR UTC format" %}
+            <label for="pitr" title="{{ pitr_title }}">
+                PITR:
+                <input type="text" id="pitr" name="pitr" placeholder="1994-06-01T03:35:03Z">
+            </label>
+            <br>
+            <br>
+            {% set local_dbpath_title = "Type the directory where backup files will be stored." %}
+            <label for="local_dbpath" title="{{ local_dbpath_title }}">
+                Local DBPath:
+                <input type="text" id="local_dbpath" name="local_dbpath" placeholder="/data/mongo" required>
+            </label>
+            <br>
+            <br>
+            {% set logging_dir_title = "Type the directory where log files will be stored for backup operations." %}
+            <label for="logging_dir" title="{{ logging_dir_title }}">
+                Logging Directory (optional):
+                <input type="text" id="logging_dir" name="logging_dir" placeholder="/path/to/logs" />
+            </label>
+            <br>
+            <br>
+            {% set defaults_file_title = "the path to the defaults file containing preset configuration values for the
+            backup process." %}
+            <label for="defaults_file" title="{{ defaults_file_title }}">
+                Defaults File (optional):
+                <input type="text" id="defaults_file" name="defaults_file" placeholder="/etc/mongod.conf" />
+            </label>
+            <br>
+            <br>
+    </fieldset>
+    <fieldset>
+        {% set pbm_extra_args_title = "Type additional command-line arguments for the backup process to customize
+        pbm restore behavior." %}
+        <label for="pbm_extra_args" title="{{ pbm_extra_args_title }}">
+            Extra Arguments (optional):
+            <input type="text" id="pbm_extra_args" name="pbm_extra_args" placeholder="e.g. --verbose=3" />
+        </label>
+    </fieldset>
+    {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.25em">
+        <button class="contained large" type="submit">Create</button>
+        <button class="text large" type="reset">Reset</button>
+    </div>
+</form>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+
+</script>

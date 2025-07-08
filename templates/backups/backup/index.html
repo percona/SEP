@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title -%}
-    PBM Backups
+    Backups
 {%- endblock title %}
 {% block style %}
     {% if history_tasks or running_tasks %}
@@ -24,8 +24,8 @@
     {% endif %}
     {% if tasks %}
         <script nonce="{{ request.state.csp_nonce }}">
-    const taskNames = {{ tasks| map(attribute = 'name') | list | tojson }};
-    const availableTimezones = {{ AVAILABLE_TIMEZONES| tojson }};
+            const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
+            const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
         </script>
         <script src="{{ url_for('static', path='/js/cronstrue.min.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
@@ -37,23 +37,30 @@
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Backup and Restore navigation">
+        <a href="{{ url_for('backups_index') }}" class="toggle-btn active">Backup</a>
+        <a href="{{ url_for('restores_index') }}" class="toggle-btn">Restore</a>
+    </div>
+{% endblock sticky %}
 {% block main %}
     <p>
-        Generate a <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backup, currently only
-        supporting Logical, Physical and Snapshot methods.
+        Perform a backup, currently only supporting MySQL and MariaDB with <a href="https://github.com/percona/percona-xtrabackup">Percona XtraBackup</a>
+        (physical) and
+        <a href="https://github.com/mydumper/mydumper">MyDumper</a> (logical).
     </p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure a backup task</h2>
-        {# Note: commented out until services exists
-{% if services|length != 1 %}
-<p>Unable to find suitable database instances.</p>
-{% elif executor_hosts|length < 1 %} <p>Unable to find suitable executor hosts.</p>
-    {% else %}
-    {% include "backup_mongo/partials/create-form.html" %}
-    {% endif %}
-    #}
-        {% include "backup_mongo/partials/create-form.html" %}
+        {% if services|length < 1 %}
+            <p>Unable to find suitable database instances.</p>
+        {% elif executor_hosts|length < 1 %}
+            <p>Unable to find suitable executor hosts.</p>
+        {% else %}
+            {% include "backups/backup/partials/create-form.html" %}
+        {% endif %}
     {% else %}
         {% set modal_required = True %}
         {% if running_tasks %}
@@ -64,21 +71,25 @@
         {% endif %}
         <section id="saved-tasks">
             <h2>Saved</h2>
-            {% include "backup_mongo/partials/saved-tasks.html" %}
+            {% include "backups/backup/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
-            {%- set detail_route = "pbm_backups_detail" %}
+            {%- set detail_route = "backups_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
             <h3>Create a backup process</h3>
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "backup_mongo/partials/create-form.html" %}
+                {% include "backups/backup/partials/create-form.html" %}
             {% endif %}
         </section>
+        <br>
+        <br>
         <section id="pending-tasks">
             <h2>Pending</h2>
             {% include "tasks/partials/pending-tasks.html" %}
         </section>
+        <br>
+        <br>
         <section id="completed-tasks">
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}

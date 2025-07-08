@@ -1,44 +1,37 @@
-"""Define routes for the backups plugin."""
+"""Define routes for the restores plugin."""
 
 import logging
 from typing import Annotated, Any
 
+import yaml
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
-from app.sep.deps import (
-    DefaultContext,
-    HasNoConflictedRunningTasks,
-    IsAuthenticated,
-    IsCsrfValidated,
-    TaskAPI,
-)
-from app.sep.plugins.backup_mongo.deps import (
-    BackupGeneratedTask,
-    BackupsTask,
-    get_backups_index_context,
+from app.sep.deps import DefaultContext, IsAuthenticated, IsCsrfValidated, TaskAPI
+from app.sep.plugins.backup.models import BackupType
+from app.sep.plugins.backup.restore.deps import (
+    get_restores_index_context,
+    RestoreGeneratedTask,
+    RestoresTask,
 )
 from app.tasks.models import TaskHistoryStatusEnum
-from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-router.include_router(restore_router, prefix="/restores", tags=["restores"])
-
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def pbm_backups_index(
+async def restores_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
+    context: Annotated[dict[str, Any], Depends(get_restores_index_context)],
 ) -> HTMLResponse:
-    """Homepage of PBM backup mongo plugin."""
+    """Homepage of restores plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backup_mongo/backup/index.html",
+        name="backups/restore/index.html",
         context=context,
     )
 
@@ -46,18 +39,18 @@ async def pbm_backups_index(
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
-async def pbm_backups_create(
+async def restores_create(
     request: Request,
-    task: BackupGeneratedTask,
+    task: RestoreGeneratedTask,
     task_api: TaskAPI,
 ) -> RedirectResponse:
-    """Create new backups task."""
-    logger.debug("Create backups task: %s", task)
+    """Create new restores task."""
+    logger.debug("Create restores task: %s", task)
     await task_api.post(
         "/",
         json=task.model_dump(),
     )
-    task_path = request.url_for("pbm_backups_detail", task_name=task.name)
+    task_path = request.url_for("restores_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -65,24 +58,29 @@ async def pbm_backups_create(
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def pbm_backups_detail(
-    task: BackupsTask,
+async def restores_detail(
+    task: RestoresTask,
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Retrieve backups task."""
+    """Retrieve restores task."""
     data = task.data
     meta = data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    server_config = task_config["SERVER_LIST"][0]
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
-        "backup_type": data["backup_type"],
+        "host": server_config["DEST_HOST"],
+        "port": server_config["DEST_PORT"],
+        "database": server_config.get("DATABASER"),
+        "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
+        "delete_url": request.url_for("restores_delete", task_name=task.name),
     }
-
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["running_tasks"] = await tasks_api.get(
@@ -91,28 +89,28 @@ async def pbm_backups_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="backup_mongo/backup/details.html",
+        name="backups/restore/details.html",
         context=context,
     )
 
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def pbm_backups_execute(
+async def restores_execute(
     request: Request,
-    task: BackupsTask,
+    task: RestoresTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
-    """Execute backups task."""
+    """Execute restores task."""
     await tasks_api.post(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    task_path = request.url_for("pbm_backups_detail", task_name=task.name)
+    task_path = request.url_for("restores_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -121,12 +119,12 @@ async def pbm_backups_execute(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def pbm_backups_delete(
+async def restores_delete(
     request: Request,
-    task: BackupsTask,
+    task: RestoresTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Delete backups task."""
+    """Delete restores task."""
     await tasks_api.delete(f"/{task.name}")
-    task_path = request.url_for("pbm_backups_index")
+    task_path = request.url_for("restores_index")
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

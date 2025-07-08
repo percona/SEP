@@ -1195,6 +1195,10 @@ button.list-item:focus-visible {
     content: "history";
 }
 
+.list-item.restores .icon::before {
+    content: "refresh";
+}
+
 .list-item.checksums .icon::before {
     content: "new_releases";
 }
@@ -1649,4 +1653,58 @@ td.errors ul {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5em;
+}
+
+/*=============================================*/
+/* Toggle Buttons */
+/*=============================================*/
+
+.toggle-btn-group {
+    display: inline-flex;
+    border: 0.0625rem solid var(--lineDivider);
+    border-radius: var(--cornerExtraSmall);
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    background-color: white;
+}
+
+.toggle-btn {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+    font-size: 0.9375em;
+    padding: 0.5em 1.25em;
+    text-align: center;
+    text-decoration: none;
+    color: var(--textSecondary);
+    background: var(--surfaceElevation1);
+    border-right: 0.0625rem solid var(--lineDivider);
+    transition: background 0.2s, color 0.2s;
+}
+
+.toggle-btn:last-child {
+    border-right: none;
+}
+
+.toggle-btn:hover {
+    background: var(--primaryHover);
+    color: var(--primaryLight);
+}
+
+.toggle-btn.active {
+    background: var(--primarySelected);
+    color: var(--primaryMain);
+    cursor: default;
+}
+
+.toggle-btn-group .toggle-btn {
+    text-decoration: none;
+}
+
+/*=============================================*/
+/* Sticky Header */
+/*=============================================*/
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
