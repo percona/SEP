@@ -1,10 +1,22 @@
-import React from "react";
-import * as ReactDOM from "react-dom/client";
-import App from "./App";
+// Bootstrap file for Module Federation
+// This ensures the Module Federation container is ready before loading the app
 
-// Don't auto-render - let the consuming application control when to render
-// The App component will be exposed via Module Federation for external use
+const loadApp = async () => {
+    // Wait for Module Federation container to be available
+    if (window.sep_host) {
+        try {
+            // Wait for the container to be ready
+            await window.sep_host.init();
+            console.log("Module Federation container ready");
+        } catch (error) {
+            // Silently ignore Module Federation initialization errors
+            // This is expected when not consuming remote modules
+            console.warn("Module Federation init skipped (not using remote modules)");
+        }
+    }
 
-// Make React and ReactDOM available globally for Module Federation
-window.React = React;
-window.ReactDOM = ReactDOM;
+    // Import and start the application
+    await import("./index.js");
+};
+
+loadApp();

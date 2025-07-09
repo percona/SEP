@@ -3,7 +3,7 @@ const ModuleFederationPlugin = require("webpack/lib/container/ModuleFederationPl
 const path = require("path");
 
 module.exports = {
-    entry: "./src/index.js",
+    entry: "./src/bootstrap.js",
     output: {
         path: path.resolve(__dirname, "dist"),
         filename: "[name].[contenthash].js",
@@ -12,6 +12,11 @@ module.exports = {
     },
     resolve: {
         extensions: [".js", ".jsx", ".ts", ".tsx"],
+        alias: {
+            // Ensure React is properly resolved
+            'react': path.resolve('./node_modules/react'),
+            'react-dom': path.resolve('./node_modules/react-dom'),
+        },
     },
     module: {
         rules: [{
@@ -40,23 +45,19 @@ module.exports = {
         new ModuleFederationPlugin({
             name: "sep_host",
             filename: "remoteEntry.js",
-            remotes: {
-                // You can add remote modules here when needed
-                // sep_remote: "sep_remote@http://localhost:3001/remoteEntry.js",
-            },
             exposes: {
-                // Expose the main React app
-                "./ReactApp": "./src/App.jsx",
-                "./App": "./src/App.jsx",
+                "./RemoteComponent": "./src/components/RemoteComponent.jsx",
             },
             shared: {
                 react: {
                     singleton: true,
-                    requiredVersion: "^18.2.0",
+                    requiredVersion: false,
+                    eager: true,
                 },
                 "react-dom": {
                     singleton: true,
-                    requiredVersion: "^18.2.0",
+                    requiredVersion: false,
+                    eager: true,
                 },
             },
         }),

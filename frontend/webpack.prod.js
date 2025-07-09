@@ -9,10 +9,10 @@ const {
 
 module.exports = merge(common, {
     mode: "production",
+    entry: "./src/bootstrap.js", // Ensure we use bootstrap.js as entry point
     output: {
         path: path.resolve(__dirname, "../static/react"),
         filename: "[name].[contenthash].js",
-        publicPath: "/static/react/",
         clean: true,
     },
     optimization: {

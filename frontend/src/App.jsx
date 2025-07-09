@@ -1,13 +1,13 @@
 import React from "react";
 import "./App.css";
+import RemoteComponent from "./components/RemoteComponent";
 
 function App() {
   return (
     <div className="App">
-      <header className="App-header">
-        <h1>Hello World from React!</h1>
-        <p>This is a simple React app with Module Federation</p>
-      </header>
+      <main>
+        <RemoteComponent />
+      </main>
     </div>
   );
 }

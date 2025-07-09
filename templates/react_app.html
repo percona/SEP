@@ -6,13 +6,18 @@
     <!-- CSS is bundled into JavaScript files -->
 {% endblock style %}
 {% block main %}
-    <div id="react-root"></div>
+    <div id="root"></div>
 {% endblock main %}
 {% block behaviours_optimized_extra %}
-    <!-- Load Module Federation remote entry -->
+    <!-- Load vendors bundle for React libraries FIRST -->
+    {% if react_assets and react_assets.get('vendors.js') %}
+        <script src="{{ react_assets['vendors.js'] }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    <!-- Load Module Federation remote entry AFTER vendors.js -->
     <script src="{{ url_for('static', path='/react/remoteEntry.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    <!-- Load the main React bundle -->
+    <!-- Load the main React bundle AFTER remoteEntry.js -->
     {% if react_assets and react_assets.get('main.js') %}
         <script src="{{ react_assets['main.js'] }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
@@ -22,53 +27,31 @@
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
     <script nonce="{{ request.state.csp_nonce }}">
-        (async function() {
-            try {
-                // Wait for Module Federation container to be available
-                await new Promise((resolve) => {
-                    if (window.sep_host && typeof window.sep_host.get === 'function') {
-                        resolve();
-                    } else {
-                        window.addEventListener('load', resolve);
-                    }
-                });
+        // Simple error handler
+        window.addEventListener('error', function(event) {
+            console.error('Global error caught:', event.error);
+        });
 
-                const module = await window.sep_host.get('./ReactApp');
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Unhandled promise rejection:', event.reason);
+        });
 
-                if (!window.React || !window.ReactDOM) {
-                    throw new Error('React libraries not available');
+        // Wait for everything to load and then check if React app is working
+        window.addEventListener('load', function() {
+            console.log('Page loaded, checking React app status...');
+            console.log('React available:', !!window.React);
+            console.log('ReactDOM available:', !!window.ReactDOM);
+            console.log('Module Federation container:', !!window.sep_host);
+
+            // Check if the root element has been rendered
+            setTimeout(() => {
+                const rootElement = document.getElementById('root');
+                if (rootElement && rootElement.children.length === 0) {
+                    console.log('Root element is empty, React app may not have loaded properly');
+                } else {
+                    console.log('React app appears to be loaded successfully');
                 }
-
-                const React = window.React;
-                const ReactDOM = window.ReactDOM;
-
-                let ReactApp = null;
-
-                if (typeof module === 'function') {
-                    const result = module();
-                    ReactApp = result.default || result;
-                } else if (module.default) {
-                    ReactApp = module.default;
-                } else if (module.ReactApp) {
-                    ReactApp = module.ReactApp;
-                } else if (typeof module === 'function') {
-                    ReactApp = module;
-                }
-
-                if (!ReactApp || typeof ReactApp !== 'function') {
-                    throw new Error('Invalid React component');
-                }
-
-                const container = document.getElementById('react-root');
-                const root = ReactDOM.createRoot(container);
-                const element = React.createElement(ReactApp);
-                root.render(element);
-
-            } catch (error) {
-                console.error('Failed to load React app:', error);
-                document.getElementById('react-root').innerHTML =
-                    '<div style="padding: 20px; text-align: center; color: #666;">Failed to load React application</div>';
-            }
-        })();
+            }, 1000);
+        });
     </script>
 {% endblock behaviours_optimized_extra %}
