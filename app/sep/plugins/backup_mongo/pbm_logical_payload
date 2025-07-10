@@ -7,10 +7,14 @@ import sys
 def pbm_creds():
     """ PBM Credentials """
     envhome = os.environ['HOME']
-    command_creds = ['cat', f'{envhome}/.mongodb_uri' ]
-    result = subprocess.run(command_creds,
-                            stdout=subprocess.PIPE,
-                            check=True)
+    command_creds = ['cat', f'{envhome}/.mongodb_uri']
+    try:
+        result = subprocess.run(command_creds,
+                                stdout=subprocess.PIPE,
+                                check=True)
+    except subprocess.CalledProcessError:
+        sys.exit(1)
+
     return result.stdout.decode().strip()
 
 def pbm():
