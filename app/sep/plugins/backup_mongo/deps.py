@@ -47,7 +47,7 @@ async def build_backup_task_payload(
         backup_config=[BackupConfig.model_validate(all_config)],
     )
 
-    requirements = "packaging\nPyYAML\nboto3"
+    requirements = "packaging"
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     return TaskWrite(

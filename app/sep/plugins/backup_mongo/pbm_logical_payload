@@ -1,24 +1,33 @@
+""" PBM Logical Payload """
+
 import subprocess
 import os
-import logging
+import sys
+
+def pbm_creds():
+    """ PBM Credentials """
+    envhome = os.environ['HOME']
+    command_creds = ['cat', f'{envhome}/.mongodb_uri' ]
+    result = subprocess.run(command_creds,
+                            stdout=subprocess.PIPE,
+                            check=True)
+    return result.stdout.decode().strip()
 
 def pbm():
+    """ PBM Logical Payload """
 
-    pbm_create_logical = os.environ['PBM_CREATE_LOGICAL']
-    #command = ['bash', pbm_create_logical ] commented until logical is released
-    command = ['pbm', 'status' ]
+    mongodb_uri = pbm_creds()
+    cmd = ['pbm', '--mongodb-uri', mongodb_uri, 'backup', '--type', 'logical']
+
     try:
-        # Simple command
-        result = subprocess.run(command,
-                              capture_output=True,  # Captures stdout and stderr
-                              text=True,           # Returns strings instead of bytes
-                              check=True)
+        proc = subprocess.Popen(cmd)
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            sys.exit(ret_code)
 
-        print("Output:", result.stdout)
-        print("Error (if any):", result.stderr)
-        print("Return code:", result.returncode)
-
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed with error: {e}")
+    except subprocess.CalledProcessError as err:
+        print(f"Command failed with error: {err}")
+        sys.exit(1)
 
 pbm()
