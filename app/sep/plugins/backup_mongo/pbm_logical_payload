@@ -7,21 +7,20 @@ import sys
 def pbm_creds():
     """ PBM Credentials """
     envhome = os.environ['HOME']
-    command_creds = ['cat', f'{envhome}/.mongodb_uri']
+    creds_path = f'{envhome}/.mongodb_uri'
     try:
-        result = subprocess.run(command_creds,
-                                stdout=subprocess.PIPE,
-                                check=True)
-    except subprocess.CalledProcessError:
+        with open(creds_path, 'r', encoding='utf-8') as fpt:
+            creds = fpt.read().strip()
+    except Exception:
         sys.exit(1)
 
-    return result.stdout.decode().strip()
+    return creds
 
 def pbm():
     """ PBM Logical Payload """
 
-    mongodb_uri = pbm_creds()
-    cmd = ['pbm', '--mongodb-uri', mongodb_uri, 'backup', '--type', 'logical']
+    os.environ['PBM_MONGODB_URI'] = pbm_creds()
+    cmd = ['pbm', 'backup', '--type', 'logical']
 
     try:
         proc = subprocess.Popen(cmd)
