@@ -129,15 +129,19 @@
 </fieldset>
 <fieldset>
     <legend>2. Point-in-Time Recovery (PITR) Configuration</legend>
-    <label for="pitr_enabled">Enable PITR:</label>
-    <input type="checkbox" id="pitr_enabled" name="backup_config.pitr.enabled">
-    Yes
+    <label class="checkbox" for="pitr_enabled"><span class="label">Enable PITR:</span>
+       <input type="checkbox" id="pitr_enabled" name="pitr_enabled">
+       <div class="checkmark">
+              <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+              <span class="material-symbols-outlined checked">check_box</span>
+       </div>
+    </label>
     <label for="pitr_oplog_span_min">Oplog Span (Minutes):</label>
     <input type="number"
            id="pitr_oplog_span_min"
-           name="backup_config.pitr.oplog_span_min">
+           name="pitr_oplog_span_min">
     <label for="pitr_compression">Compression:</label>
-    <select id="pitr_compression" name="backup_config.pitr.compression">
+    <select id="pitr_compression" name="pitr_compression">
         <option value="gzip">gzip</option>
         <option value="snappy">snappy</option>
         <option value="lz4">lz4</option>

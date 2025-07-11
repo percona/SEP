@@ -1,22 +1,66 @@
+""" PBM Config Payload """
+
 import subprocess
 import os
-all_env_vars = os.environ
+import sys
+import yaml
 
-def pbm(env):
-
-    pbm_create_config = os.environ['PBM_CREATE_CONFIG']
-    command = ['bash', pbm_create_config ]
+def pbm_creds():
+    """ PBM Credentials """
+    envhome = os.environ['HOME']
+    creds_path = f'{envhome}/.mongodb_uri'
     try:
-        result = subprocess.run(command,
-                              capture_output=True,  # Captures stdout and stderr
-                              text=True,           # Returns strings instead of bytes
-                              check=True)
+        with open(creds_path, 'r', encoding='utf-8') as fpt:
+            creds = fpt.read().strip()
+    except Exception:
+        sys.exit(1)
 
-        print("Output:", result.stdout)
-        print("Error (if any):", result.stderr)
-        print("Return code:", result.returncode)
+    return creds
 
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed with error: {e}")
+def flatten_yaml_config(yaml_path):
+    """
+    Reads a YAML file and flattens it into a list of (dot-separated key, value) pairs for each end value.
+    """
+    def _flatten(d, parent_key=""):
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}.{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(_flatten(v, new_key))
+            else:
+                items.append(f'{new_key}={v}')
+        return items
 
-pbm(all_env_vars)
+    with open(yaml_path, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    return _flatten(data)
+
+def pbm():
+    """ PBM Config Payload """
+
+    taskdir = os.environ['NOMAD_TASK_DIR']
+    # Remove the last dir if named 'local'
+    if os.path.basename(taskdir) == 'local':
+        taskdir = os.path.dirname(taskdir)
+
+    os.environ['PBM_MONGODB_URI'] = pbm_creds()
+
+    cmd = ['pbm',
+           'config',
+           ]
+
+    for setting in flatten_yaml_config(f'{taskdir}/script_config'):
+        cmd.extend(['--set', setting])
+
+    try:
+        proc = subprocess.Popen(cmd)
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            sys.exit(ret_code)
+
+    except subprocess.CalledProcessError as err:
+        print(f"Command failed with error: {err}")
+        sys.exit(1)
+
+pbm()

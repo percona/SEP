@@ -58,6 +58,21 @@ class LogOutput(StrEnum):
     FILE = "file"
     SYSLOG = "syslog"
 
+class BackupConfigPITR(BaseCaseInsensitiveModel):
+    """Represent Point In Time Recovery configuration.
+
+    :param enabled: PITR enabled.
+    :type enabled: bool
+    :param oplogSpanMin: The PBM ...
+    :type oplogSpanMin: int
+    :param compression: Compression ... PBM.
+    :type compression: RequiredStr
+    """
+
+    enabled: bool = False
+    oplogSpanMin: int
+    compression: RequiredStr
+
 
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
@@ -66,12 +81,13 @@ class BackupConfig(BaseCaseInsensitiveModel):
     :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
     """
 
+    pitr: BackupConfigPITR | EmptyStrToNone = None
     pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
         None, serialization_alias="pbm_config_yaml_payload"
     )
 
 
-class BackupCreate(BackupConfig):
+class BackupCreate(BaseCaseInsensitiveModel):
     """Represent a Backup creation form with proper case-insensitive fields.
 
     :param task_name: The PBM yaml payload to parse from CLI.
@@ -91,3 +107,6 @@ class BackupCreate(BackupConfig):
     service_id: int
     backup_type: BackupType
     alert_on_fail: bool = False
+    pitr_oplog_span_min: int
+    pitr_enabled: bool = False
+    pitr_compression: RequiredStr | EmptyStrToNone = None

@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, Request
+from fastapi.encoders import jsonable_encoder
 
 from app.sep.deps import (
     DefaultContext,
@@ -17,6 +18,7 @@ from app.sep.deps import (
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
     BackupCreate,
+    BackupConfigPITR,
 )
 from app.tasks.models import (
     Task,
@@ -41,13 +43,19 @@ async def build_backup_task_payload(
         configuration to create the Backup task.
     :rtype: TaskWrite
     """
-    all_config = form.model_dump(by_alias=True)
+    #all_config = form.model_dump(by_alias=True)
+
+    pitr = {
+        "enabled": form.pitr_enabled,
+        "oplogSpanMin": form.pitr_oplog_span_min,
+        "compression": form.pitr_compression,
+    }
 
     backup_config = BackupConfig(
-        backup_config=[BackupConfig.model_validate(all_config)],
+        pitr=BackupConfigPITR.model_validate(pitr),
     )
 
-    requirements = "packaging"
+    requirements = "packaging\nPyYAML"
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     return TaskWrite(
@@ -58,7 +66,7 @@ async def build_backup_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    backup_config.model_dump(by_alias=True, exclude_none=True)
+                    jsonable_encoder(backup_config, by_alias=False, exclude_none=True)
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
