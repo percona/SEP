@@ -536,6 +536,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Utility function to close modals.
     function closeModal(modal) {
+        // Hide the confirmation dialog
+        const dialog = document.getElementById('confirmationDialog');
+        const dialogContent = document.querySelector('.dialog-content');
+        if (dialogContent && dialog) {
+            dialogContent.classList.remove('pop-up');
+            dialogContent.classList.add('pop-down');
+            dialog.style.display = 'none';
+        }
+        // Hide the modal
         if (typeof modal.close === 'function') {
             modal.close();
         } else {
