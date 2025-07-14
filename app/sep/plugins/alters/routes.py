@@ -202,6 +202,18 @@ async def alters_update(
         f"/{task_name}",
         json=updated_task.model_dump(),
     )
+    dry_run_task = updated_task.model_copy()
+    dry_run_task.name = f"{updated_task.name}-dry-run"
+    if "meta" in dry_run_task.data:
+        dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
+            "--execute", "--dry-run"
+        )
+        dry_run_task.data["meta"]["parent"] = updated_task.name
+    await tasks_api.put(
+        f"/{task_name}-dry-run",
+        json=dry_run_task.model_dump(),
+    )
+
     return RedirectResponse(
         request.url_for("alters_detail", task_name=updated_task.name),
         status_code=status.HTTP_303_SEE_OTHER,
