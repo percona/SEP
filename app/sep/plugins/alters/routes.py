@@ -4,14 +4,16 @@ import logging
 import shlex
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     HasNoConflictedRunningTasks,
+    InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -89,6 +91,7 @@ async def alters_detail(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """Retrieve alters task."""
     data = task.data
@@ -127,6 +130,26 @@ async def alters_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+    try:
+        executor_hosts = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        executor_hosts = {}
+        logger.warning("Failed to get executor hosts: %s", exc)
+    try:
+        services = await inventory_api.get(
+            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        )
+        for service in services:
+            service["schemas"] = await inventory_api.get(
+                f"/services/{service['id']}/schemas/",
+            )
+    except HTTPException as exc:
+        services = []
+        logger.warning("Failed to get services: %s", exc)
+
+    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["services"] = services
+
     return templates.TemplateResponse(
         request=request,
         name="alters/details.html",
@@ -152,6 +175,29 @@ async def alters_execute(
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     task_path = request.url_for("alters_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def alters_update(
+    request: Request,
+    task_name: str,
+    updated_task: AltersGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update alters task."""
+    logger.debug("Updating alters task: %s", updated_task)
+    await tasks_api.put(
+        f"/{task_name}",
+        json=updated_task.model_dump(),
+    )
+    return RedirectResponse(
+        request.url_for("alters_detail", task_name=updated_task.name),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post(
