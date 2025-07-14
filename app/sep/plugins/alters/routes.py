@@ -1,7 +1,6 @@
 """Define routes for the alters plugin."""
 
 import logging
-import shlex
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -59,7 +58,7 @@ async def alters_create(
 
     # Create the execute task
     await task_api.post(
-        "/generate/",
+        "/",
         json=task.model_dump(),
     )
 
@@ -67,16 +66,14 @@ async def alters_create(
     dry_run_task = task.model_copy()
     dry_run_task.name = f"{task.name}-dry-run"
     # Replace --execute with --dry-run in the task arguments and add parent reference
-    for command in dry_run_task.commands:
-        if "args" in command:
-            command["args"] = [
-                arg.replace("--execute", "--dry-run") for arg in command["args"]
-            ]
-        if "meta" in command:
-            command["meta"]["parent"] = task.name
+    if "meta" in dry_run_task.data:
+        dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
+            "--execute", "--dry-run"
+        )
+        dry_run_task.data["meta"]["parent"] = task.name
 
     await task_api.post(
-        "/generate/",
+        "/",
         json=dry_run_task.model_dump(),
     )
 
@@ -98,16 +95,15 @@ async def alters_detail(
 ) -> HTMLResponse:
     """Retrieve alters task."""
     data = task.data
-    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
-    service_host, service_port = extract_service_info(task_config)
+    meta = data["meta"]
+    service_host, service_port = extract_service_info(meta)
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
-        "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
-        "cmd": f"{task_config['command']} {shlex.join(task_config['args'])}",
+        "hostname": meta["target"],
+        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
+        "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
         "delete_url": request.url_for("alters_delete", task_name=task.name),
         "dry_run_url": request.url_for(
@@ -138,7 +134,7 @@ async def alters_detail(
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    task_data.update(parse_alters_task_args(task_config))
+    task_data.update(parse_alters_task_args(meta))
 
     try:
         executor_hosts = await tasks_api.get("/hosts/")

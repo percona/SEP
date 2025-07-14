@@ -1,6 +1,7 @@
 """Define dependencies for the Alters plugin."""
 
 import logging
+import shlex
 from typing import Annotated, Any
 
 from fastapi import Depends, Form, Request
@@ -16,7 +17,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task, TaskOwner
+from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -102,26 +103,27 @@ async def build_alters_task_payload(
     # Adding '--progress' argument if 'print_arg' is set
     if form.print_arg:
         args.append(f"--progress={form.progress}")
-
-    return GeneratedTask(
-        app=TaskOwner.ALTERS,
-        commands=[
-            {
-                "args": [*args, "--execute"],
+    args.append("--execute")
+    return TaskWrite(
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        data={
+            "task": "run-command",
+            "meta": {
                 "command": "pt-online-schema-change",
-                "meta": {
-                    "schema_name": schema.name,
-                    "table_name": table.name,
-                },
+                "args": shlex.join(args),
+                "target": form.hostname,
+                "_schema_name": schema.name,
+                "_table_name": table.name,
             },
-        ],
+        },
         name=form.task_name,
         target=form.hostname,
         alert_on_fail=form.alert_on_fail,
     )
 
 
-AltersGeneratedTask = Annotated[GeneratedTask, Depends(build_alters_task_payload)]
+AltersGeneratedTask = Annotated[TaskWrite, Depends(build_alters_task_payload)]
 
 
 async def get_alters_task(
@@ -159,30 +161,34 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     data = task["data"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = data["meta"]
 
     return {
-        "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
+        "hostname": meta["target"],
+        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
         "parent": meta.get("parent"),
     }
 
 
-def extract_service_info(task_config: dict[str, Any]) -> tuple[str, int]:
+def extract_service_info(meta: dict[str, Any]) -> tuple[str, int]:
     """Extract service host and port from task configuration arguments.
 
     Parses the task arguments to extract the service host and port from DSN-like
     connection strings. Defaults to localhost:3306 if not specified.
 
-    :param task_config: The task configuration containing the args list.
-    :type task_config: dict[str, Any]
+    :param meta: The task meta containing the args string.
+    :type meta: dict[str, Any]
     :return: A tuple containing (service_host, service_port).
     :rtype: tuple[str, int]
     """
     service_host = "localhost"
     service_port = 3306
 
-    for task_arg in task_config["args"]:
+    args_string = meta.get("args", "")
+    # Split the args string into individual arguments
+    args = shlex.split(args_string)
+
+    for task_arg in args:
         if "=" in task_arg and not task_arg.startswith("--"):
             # Parse connection string like "P=3306,D=percona,t=checksums" or "h=192.0.0.1"
             for param in task_arg.split(","):
@@ -249,13 +255,13 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
             return
 
 
-def parse_alters_task_args(task_config: dict[str, Any]) -> dict[str, Any]:
+def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
     """Parse existing task arguments back into form field values.
 
     Extracts form field values from the task configuration arguments for editing.
 
-    :param task_config: The task configuration containing the args list.
-    :type task_config: dict[str, Any]
+    :param meta: The task meta containing the args string.
+    :type meta: dict[str, Any]
     :return: A dictionary containing form field values.
     :rtype: dict[str, Any]
     """
@@ -280,7 +286,9 @@ def parse_alters_task_args(task_config: dict[str, Any]) -> dict[str, Any]:
         "max_flow_ctl": "",
     }
 
-    args = task_config.get("args", [])
+    args_string = meta.get("args", "")
+    # Split the args string into individual arguments
+    args = shlex.split(args_string)
 
     for arg in args:
         parse_single_arg(arg, form_values)
