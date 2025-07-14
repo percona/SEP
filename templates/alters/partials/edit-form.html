@@ -576,6 +576,7 @@
                 }
                 if (selectedService === matched.serviceId && matched.schemaId) {
                     schemaSelect.value = matched.schemaId;
+                    selectedSchema = matched.schemaId;
                     populateTables(selectedService, matched.schemaId);
                     return;
                 }
@@ -611,6 +612,7 @@
                 }
                 if (selectedSchema == matched.schemaId && matched.tableId) {
                     tableSelect.value = matched.tableId;
+                    selectedTable = matched.tableId;
                     fetchCreateTableStatement(matched.tableId);
                     return;
                 }
@@ -787,7 +789,7 @@
         const hiddenTableInput = document.getElementById("table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         selectedSchema = this.value;
-        populateTables(selectedService, selectedSchema);
+        populateTables(connectToSelect.value, selectedSchema);
     });
 
     tableSelect.addEventListener('change', function() {
@@ -808,6 +810,7 @@
         initSource();
         if (connectToSelect.options.length != 0) {
             const singleHost = connectToSelect.value;
+            selectedService = singleHost;
             populateSchemas(singleHost);
         }
         updateEditButtonState();
