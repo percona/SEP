@@ -196,6 +196,98 @@ def extract_service_info(task_config: dict[str, Any]) -> tuple[str, int]:
     return service_host, service_port
 
 
+def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
+    """Parse a single argument and update form values.
+
+    :param arg: The argument string to parse.
+    :type arg: str
+    :param form_values: The form values dictionary to update.
+    :type form_values: dict[str, Any]
+    """
+    if arg.startswith("--recursion-method="):
+        recursion_method = arg.split("=", 1)[1]
+        if recursion_method.startswith("dsn="):
+            form_values["recursion_method"] = "dsn"
+            form_values["dsn_table"] = recursion_method.split("=", 1)[1]
+        else:
+            form_values["recursion_method"] = recursion_method
+        return
+
+    if arg.startswith("--progress="):
+        form_values["progress"] = arg.split("=", 1)[1]
+        return
+
+    arg_mappings = {
+        "--alter=": "alter",
+        "--pause-file=": "pause_file",
+        "--new-table-name=": "new_table_name",
+        "--tries=": "tries",
+        "--set-vars=": "set_vars",
+        "--critical-load=": "critical_load",
+        "--max-load=": "max_load",
+        "--chunk-time=": "chunk_time",
+        "--max-lag=": "max_lag",
+        "--max-flow-ctl=": "max_flow_ctl",
+    }
+
+    for arg_pattern, field_name in arg_mappings.items():
+        if arg.startswith(arg_pattern):
+            form_values[field_name] = arg.split("=", 1)[1]
+            return
+
+    flag_mappings = {
+        "--print": "print_arg",
+        "--no-swap-tables": "no_swap_tables",
+        "--no-drop-old-table": "no_drop_old_table",
+        "--no-drop-new-table": "no_drop_new_table",
+        "--no-drop-triggers": "no_drop_triggers",
+    }
+
+    for flag, field_name in flag_mappings.items():
+        if arg == flag:
+            form_values[field_name] = True
+            return
+
+
+def parse_alters_task_args(task_config: dict[str, Any]) -> dict[str, Any]:
+    """Parse existing task arguments back into form field values.
+
+    Extracts form field values from the task configuration arguments for editing.
+
+    :param task_config: The task configuration containing the args list.
+    :type task_config: dict[str, Any]
+    :return: A dictionary containing form field values.
+    :rtype: dict[str, Any]
+    """
+    form_values = {
+        "alter": "",
+        "recursion_method": "processlist",
+        "dsn_table": "",
+        "pause_file": "",
+        "new_table_name": "",
+        "print_arg": False,
+        "progress": "",
+        "no_swap_tables": False,
+        "no_drop_old_table": False,
+        "no_drop_new_table": False,
+        "no_drop_triggers": False,
+        "tries": "",
+        "set_vars": "",
+        "critical_load": "",
+        "max_load": "",
+        "chunk_time": "",
+        "max_lag": "",
+        "max_flow_ctl": "",
+    }
+
+    args = task_config.get("args", [])
+
+    for arg in args:
+        parse_single_arg(arg, form_values)
+
+    return form_values
+
+
 async def get_alters_index_context(
     request: Request,
     inventory_api: InventoryAPI,

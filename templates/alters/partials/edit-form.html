@@ -253,6 +253,7 @@
                                class="validate"
                                size="70"
                                title="{{ alter_title }}"
+                               value="{{ task.alter }}"
                                placeholder="ADD COLUMN new_col INT, DROP COLUMN old_col"
                                required />
                     </div>
@@ -269,10 +270,16 @@
                             <select id="recursion_method"
                                     name="recursion_method"
                                     title="{{ recursion_method_title }}">
-                                <option value="processlist" selected>processlist</option>
-                                <option value="host">host</option>
-                                <option value="dsn">dsn</option>
-                                <option value="none">none</option>
+                                <option value="processlist"
+                                        {% if task.recursion_method == "processlist" %}selected{% endif %}>
+                                    processlist
+                                </option>
+                                <option value="host"
+                                        {% if task.recursion_method == "host" %}selected{% endif %}>host</option>
+                                <option value="dsn"
+                                        {% if task.recursion_method == "dsn" %}selected{% endif %}>dsn</option>
+                                <option value="none"
+                                        {% if task.recursion_method == "none" %}selected{% endif %}>none</option>
                             </select>
                         </label>
                     </div>
@@ -284,6 +291,7 @@
                                id="dsn_table"
                                name="dsn_table"
                                class="validate"
+                               value="{{ task.dsn_table }}"
                                placeholder="schema.dsns"
                                title="{{ dsn_table_title }}" />
                     </div>
@@ -299,7 +307,7 @@
                                name="pause_file"
                                class="validate"
                                title="{{ pause_file_title }}"
-                               value="/tmp/pause_file.txt"
+                               value="{{ task.pause_file }}"
                                placeholder="/tmp/pause_file.txt" />
                     </div>
                 </fieldset>
@@ -314,6 +322,7 @@
                                class="validate"
                                size="30"
                                title="{{ new_table_name_title }}"
+                               value="{{ task.new_table_name }}"
                                placeholder=" %T_new_table" />
                     </div>
                 </fieldset>
@@ -324,8 +333,8 @@
                         <input type="checkbox"
                                id="print_arg"
                                name="print_arg"
-                               checked="true"
                                class="validate"
+                               {% if task.print_arg %}checked{% endif %}
                                title="{{ print_arg_title }}" />
                         <div class="checkmark">
                             <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
@@ -341,7 +350,7 @@
                                name="progress"
                                class="validate"
                                size="15"
-                               value="time,10"
+                               value="{{ task.progress }}"
                                title="{{ progress_title }}"
                                placeholder="time,30 or percentage,10" />
                     </div>
@@ -354,6 +363,7 @@
                                id="no_swap_tables"
                                name="no_swap_tables"
                                class="validate"
+                               {% if task.no_swap_tables %}checked{% endif %}
                                title="{{ no_swap_tables_title }}" />
                         <div class="checkmark">
                             <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
@@ -367,6 +377,7 @@
                                id="no_drop_old_table"
                                name="no_drop_old_table"
                                class="validate"
+                               {% if task.no_drop_old_table %}checked{% endif %}
                                title="{{ no_drop_old_table_title }}" />
                         <div class="checkmark">
                             <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
@@ -380,6 +391,7 @@
                                id="no_drop_new_table"
                                name="no_drop_new_table"
                                class="validate"
+                               {% if task.no_drop_new_table %}checked{% endif %}
                                title="{{ no_drop_new_table_title }}" />
                         <div class="checkmark">
                             <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
@@ -393,6 +405,7 @@
                                id="no_drop_triggers"
                                name="no_drop_triggers"
                                class="validate"
+                               {% if task.no_drop_triggers %}checked{% endif %}
                                title="{{ no_drop_triggers_title }}" />
                         <div class="checkmark">
                             <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
@@ -410,7 +423,7 @@
                                id="tries"
                                name="tries"
                                class="validate"
-                               value="create_triggers:10000:1,drop_triggers:10000:1,copy_rows:10000:1"
+                               value="{{ task.tries }}"
                                placeholder="create_triggers:10000:1,drop_triggers:10000:1,copy_rows:10000:1"
                                size="70"
                                title="{{ tries_title }}" />
@@ -426,7 +439,7 @@
                                name="set_vars"
                                class="validate"
                                title="{{ set_vars_titlie }}"
-                               value="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5"
+                               value="{{ task.set_vars }}"
                                placeholder="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5"
                                size="70" />
                     </div>
@@ -441,7 +454,7 @@
                                name="critical_load"
                                class="validate"
                                title="{{ critical_load_title }}"
-                               value="Threads_running=99999,Connections=200"
+                               value="{{ task.critical_load }}"
                                placeholder="Threads_running=99999,Connections=200"
                                size="30" />
                     </div>
@@ -453,7 +466,7 @@
                                name="max_load"
                                class="validate"
                                title="{{ max_load_title }}"
-                               value="Threads_running=30,Threads_connected=120"
+                               value="{{ task.max_load }}"
                                placeholder="Threads_running=30,Threads_connected=120"
                                size="30" />
                     </div>
@@ -465,7 +478,7 @@
                                name="max_flow_ctl"
                                class="validate"
                                title="{{ max_flow_ctl_title }}"
-                               value=""
+                               value="{{ task.max_flow_ctl }}"
                                size="30" />
                     </div>
                 </fieldset>
@@ -479,7 +492,7 @@
                                name="chunk_time"
                                class="validate"
                                title="{{ chunk_time_title }}"
-                               value="0.5"
+                               value="{{ task.chunk_time }}"
                                placeholder="0.5"
                                size="5" />
                     </div>
@@ -494,11 +507,13 @@
                                name="max_lag"
                                class="validate"
                                title="{{ max_lag_title }}"
-                               value="150"
+                               value="{{ task.max_lag }}"
                                placeholder="150"
                                size="5" />
                     </div>
                 </fieldset>
+                <br>
+                {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
             </div>
         </section>
         <footer>

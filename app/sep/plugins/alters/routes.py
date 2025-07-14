@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -23,6 +24,7 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     extract_service_info,
     get_alters_index_context,
+    parse_alters_task_args,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -113,6 +115,7 @@ async def alters_detail(
         ),
         "service_host": service_host,
         "service_port": service_port,
+        "alert_on_fail": task.alert_on_fail,
     }
 
     # If the task has a parent, redirect to the parent task detail page
@@ -134,6 +137,9 @@ async def alters_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+
+    task_data.update(parse_alters_task_args(task_config))
+
     try:
         executor_hosts = await tasks_api.get("/hosts/")
     except HTTPException as exc:
@@ -153,6 +159,8 @@ async def alters_detail(
 
     context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
     context["services"] = services
+    context["alert_on_fail_default"] = task_data["alert_on_fail"]
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
     return templates.TemplateResponse(
         request=request,
