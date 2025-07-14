@@ -21,6 +21,7 @@ from app.sep.deps import (
 from app.sep.plugins.alters.deps import (
     AltersGeneratedTask,
     AltersTask,
+    extract_service_info,
     get_alters_index_context,
 )
 from app.tasks.models import TaskHistoryStatusEnum
@@ -97,6 +98,7 @@ async def alters_detail(
     data = task.data
     task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
     meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    service_host, service_port = extract_service_info(task_config)
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -109,6 +111,8 @@ async def alters_detail(
         "dry_run_url": request.url_for(
             "alters_execute", task_name=task.name + "-dry-run"
         ),
+        "service_host": service_host,
+        "service_port": service_port,
     }
 
     # If the task has a parent, redirect to the parent task detail page

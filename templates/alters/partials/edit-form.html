@@ -173,7 +173,7 @@
                             {% if services|length > 0 %}
                                 {% set matched_service_list = [] %}
                                 {% for service in services %}
-                                    {% if task["meta"]["schema_name"] in service.schemas|map(attribute="name")|list %}
+                                    {% if task["service_host"] == service.node.address and task["service_port"] == service.port %}
                                         {% do matched_service_list.append(1) %}
                                     {% endif %}
                                 {% endfor %}
@@ -186,10 +186,10 @@
                                         Select a database host
                                     </option>
                                     {% if matched_service_list|length == 0 %}
-                                        <option value="-1" selected>Unknown({{ task["meta"]["schema_name"] }})</option>
+                                        <option value="-1" selected>Unknown({{ task["service_host"] }}:{{ task["service_port"] }})</option>
                                     {% endif %}
                                     {% for service in services %}
-                                        {% set is_selected = task["meta"]["schema_name"] in service.schemas|map(attribute="name")|list %}
+                                        {% set is_selected = task["service_host"] == service.node.address and task["service_port"] == service.port %}
                                         <option value="{{ service.id }}" {% if is_selected %}selected{% endif %}>
                                             {{ service.name }} ({{ service.node_id }})
                                         </option>
@@ -531,8 +531,15 @@
     {% endfor %}
     {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
+{% set source_data = { "schema": task['meta']['schema_name'], "table": task['meta']['table_name']} %}
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas|tojson }};
+    const source_data = {{ source_data | tojson }};
+    const matched = {
+        serviceId: null,
+        schemaId: null,
+        tableId: null,
+      };
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
@@ -567,6 +574,11 @@
                     schemaSelect.appendChild(option);
                     schemaSelect.disabled = false;
                 }
+                if (selectedService === matched.serviceId && matched.schemaId) {
+                    schemaSelect.value = matched.schemaId;
+                    populateTables(selectedService, matched.schemaId);
+                    return;
+                }
                 if (schemas.length === 1) {
                     const [singleSchemaId, _] = schemas[0]
                     schemaSelect.value = singleSchemaId;
@@ -597,6 +609,11 @@
                     tableSelect.appendChild(option);
                     tableSelect.disabled = false;
                 }
+                if (selectedSchema == matched.schemaId && matched.tableId) {
+                    tableSelect.value = matched.tableId;
+                    fetchCreateTableStatement(matched.tableId);
+                    return;
+                }
                 if (tables.length === 1) {
                     const [singleTableId, _] = tables[0]
                     tableSelect.value = singleTableId;
@@ -610,7 +627,14 @@
     }
 
     function updateEditButtonState() {
-        editButton.disabled = !form.checkValidity();
+        const selectElementValues = [
+            connectToSelect.value,
+            schemaSelect.value,
+            tableSelect.value
+        ];
+
+        const hasInvalidValue = selectElementValues.includes("-1");
+        editButton.disabled = !form.checkValidity() || hasInvalidValue;
     }
 
     function fetchCreateTableStatement(tableId) {
@@ -669,6 +693,89 @@
         }
     }
 
+    // Initializing the source schema and table
+    // ==============================
+    // If there is unknown service
+    function initSource() {
+        const selectedServiceId = connectToSelect.value;
+        if (selectedServiceId === "-1") {
+          // No matched service selected — completely unknown
+          const unknownTables = {
+            "-1": {
+              name: "Unknown table: " + source_data.table,
+              create: "",
+              keys: {}
+            }
+          };
+
+          serviceSchemas["-1"] = {
+            "-1": {
+              name: "Unknown schema: " + source_data.schema,
+              tables: unknownTables
+            }
+          };
+
+          matched.serviceId = "-1";
+          matched.schemaId = "-1";
+          matched.tableId = "-1";
+        } else {
+          matched.serviceId = selectedServiceId;
+
+          const schemas = serviceSchemas[selectedServiceId] || {};
+          let matchedSchema = null;
+          let matchedSchemaKey = null;
+
+          for (const schemaId in schemas) {
+            const schema = schemas[schemaId];
+            if (schema.name === source_data.schema) {
+              matchedSchema = schema;
+              matchedSchemaKey = schemaId;
+              break;
+            }
+          }
+
+          if (matchedSchema) {
+            matched.schemaId = matchedSchemaKey;
+
+            const tableNames = Object.values(matchedSchema.tables).map(table => table.name);
+            const tableIds = Object.keys(matchedSchema.tables);
+
+            // Match source_data.table
+            if (tableNames.includes(source_data.table)) {
+              matched.tableId = tableIds.find(
+                id => matchedSchema.tables[id].name === source_data.table
+              );
+            } else {
+              matchedSchema.tables["-1"] = {
+                name: "Unknown table: " + source_data.table,
+                create: "",
+                keys: {}
+              };
+              matched.tableId = "-1";
+            }
+          } else {
+            // No schema matched → insert unknown schema inside selected service
+            const unknownTables = {
+              "-1": {
+                name: "Unknown table: " + source_data.table,
+                create: "",
+                keys: {}
+              }
+            };
+
+            schemas["-1"] = {
+              name: "Unknown schema: " + source_data.schema,
+              tables: unknownTables
+            };
+
+            matched.schemaId = "-1";
+            matched.tableId = "-1";
+
+            serviceSchemas[selectedServiceId] = schemas;
+          }
+        }
+      }
+
     connectToSelect.addEventListener('change', function() {
         const hiddenSchemaInput = document.getElementById("schema_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
@@ -698,9 +805,9 @@
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
     window.addEventListener('DOMContentLoaded', function() {
-        if (connectToSelect.options.length === 1) {
-            const singleHost = connectToSelect.options[0].value;
-            selectedService = singleHost;
+        initSource();
+        if (connectToSelect.options.length != 0) {
+            const singleHost = connectToSelect.value;
             populateSchemas(singleHost);
         }
         updateEditButtonState();

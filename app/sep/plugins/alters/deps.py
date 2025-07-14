@@ -168,6 +168,34 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def extract_service_info(task_config: dict[str, Any]) -> tuple[str, int]:
+    """Extract service host and port from task configuration arguments.
+
+    Parses the task arguments to extract the service host and port from DSN-like
+    connection strings. Defaults to localhost:3306 if not specified.
+
+    :param task_config: The task configuration containing the args list.
+    :type task_config: dict[str, Any]
+    :return: A tuple containing (service_host, service_port).
+    :rtype: tuple[str, int]
+    """
+    service_host = "localhost"
+    service_port = 3306
+
+    for task_arg in task_config["args"]:
+        if "=" in task_arg and not task_arg.startswith("--"):
+            # Parse connection string like "P=3306,D=percona,t=checksums" or "h=192.0.0.1"
+            for param in task_arg.split(","):
+                if "=" in param:
+                    key, value = param.split("=", 1)
+                    if key == "h":
+                        service_host = value
+                    elif key == "P":
+                        service_port = int(value)
+
+    return service_host, service_port
+
+
 async def get_alters_index_context(
     request: Request,
     inventory_api: InventoryAPI,
