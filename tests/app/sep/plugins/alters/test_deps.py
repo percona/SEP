@@ -10,7 +10,7 @@ from app.sep.plugins.alters.deps import (
     get_alters_task_info,
 )
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task, TaskOwner
+from app.tasks.models import Task, TaskOwner, TaskWrite
 from tests.app.factories import (
     AltersCreateFactory,
     TaskFactory,
@@ -34,24 +34,16 @@ def created_task() -> Task:
     """Return a fake created task."""
     created_task = TaskFactory.build(owner=TaskOwner.ALTERS)
     mock_data = {
-        "TaskGroups": [
-            {
-                "Tasks": [
-                    {
-                        "Config": {
-                            "command": "echo",
-                            "args": ["hello", "world"],
-                        },
-                        "Meta": {
-                            "schema_name": "public",
-                            "table_name": "example_table",
-                        },
-                    }
-                ]
-            }
-        ],
-        "Constraints": [{"RTarget": "mock_hostname"}],
+        "task": "run-command",
+        "meta": {
+            "command": "pt-online-schema-change",
+            "args": "--alter=ADD COLUMN new_column INT --execute",
+            "target": "localhost",
+            "_schema_name": "public",
+            "_table_name": "example_table",
+        },
     }
+
     created_task.data = mock_data
     return created_task
 
@@ -69,14 +61,11 @@ async def test_build_alters_task_payload(
         ]
     )
     generated_task = await build_alters_task_payload(created_alters, mock_remote_api)
-    assert isinstance(generated_task, GeneratedTask)
-    assert generated_task.app == TaskOwner.ALTERS
+    assert isinstance(generated_task, TaskWrite)
+    assert generated_task.owner == TaskOwner.ALTERS
 
-    commands = generated_task.commands
-    assert len(commands) == 1
-    assert commands[0]["command"] == "pt-online-schema-change"
-    assert "--alter=ADD COLUMN new_column INT" in commands[0]["args"]
-    assert "--execute" in commands[0]["args"]
+    command = generated_task.data["meta"]["command"]
+    assert command == "pt-online-schema-change"
 
 
 @pytest.mark.asyncio
@@ -92,7 +81,7 @@ def test_get_alters_task_info(created_task):
     """Test for extracting relevant information from a task for the Alters plugin."""
     result = get_alters_task_info(created_task.model_dump())
     assert result == {
-        "hostname": "mock_hostname",
+        "hostname": "localhost",
         "table": "public.example_table",
         "parent": None,
     }
