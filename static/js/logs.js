@@ -1,9 +1,27 @@
 $(document).ready(function() {
     const lastOffsets = {};
+    const loadedCompletedTasks = new Set();
+
+    window.clearLoadedTasks = function() {
+        loadedCompletedTasks.clear();
+    };
 
     $('.view-logs-button').click(function() {
         const taskId = $(this).data('task-id');
         const $logConsole = $(`.log-console.streaming-console[data-task-id=${taskId}]`);
+
+        if (loadedCompletedTasks.has(taskId)) {
+            if ($logConsole.find('.log-content').children().length === 0) {
+                $logConsole.find('.log-content').html('<div class="log-info">Logs already loaded</div>');
+            }
+            return;
+        }
+
+        if ($logConsole.find('.log-step-content').length > 0) {
+            loadedCompletedTasks.add(taskId);
+            return;
+        }
+
         lastOffsets[taskId] = lastOffsets[taskId] || {};
 
         const offsetQueryParams = Object.entries(lastOffsets[taskId]).map(
@@ -112,6 +130,8 @@ $(document).ready(function() {
                 $logConsole.find('.log-footer .log-tabs').append(statusEl);
                 $logConsole.addClass(finishData.status);
                 delete lastOffsets[taskId];
+
+                loadedCompletedTasks.add(taskId);
             }
         });
 
