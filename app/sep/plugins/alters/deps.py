@@ -180,7 +180,7 @@ def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
     :return: A dictionary containing service_host, service_port, schema_name, and table_name.
     :rtype: dict[str, Any]
     """
-    service_host = meta.get("_service_host", "localhost")
+    service_host = meta.get("_service_host", "")
     service_port = meta.get("_service_port", 0)
     schema_name = meta.get("_schema_name", "")
     table_name = meta.get("_table_name", "")
@@ -199,7 +199,8 @@ def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
                                 service_host = value
                             elif key == "P" and service_port == 0:
                                 service_port = int(value)
-
+    if service_host == "":
+        service_host = "localhost"
     return {
         "service_host": service_host,
         "service_port": service_port,
