@@ -47,7 +47,7 @@ async def list_services(
     logger.debug("Listing services for type '%s'", service_type or "all")
     return await ServiceManager.list(
         session,
-        select_related=[Service.schemas],
+        select_related=[Service.schemas, Service.node],
         type=service_type,
     )
 

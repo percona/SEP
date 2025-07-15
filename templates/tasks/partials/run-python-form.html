@@ -83,6 +83,17 @@
             <span class="label">Execute</span>
         </button>
         {% if not task.protected %}
+            <button type="button"
+                    class="text medium edit-button submitButton triggerEditTask edit-tasks-button"
+                    data-task="{{ task.name }}"
+                    aria-label="Edit task for modification"
+                    data-tooltip
+                    data-modal="trigger"
+                    data-modal-target="modalEditTask"
+                    form="edit-task-form">
+                <span class="material-symbols-outlined">edit</span>
+                <span class="label">Edit</span>
+            </button>
             <button class="text medium delete-button submitButton delete-tasks-button"
                     form="delete-task-form">
                 <span class="material-symbols-outlined">delete_forever</span>
