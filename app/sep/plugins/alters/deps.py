@@ -185,12 +185,10 @@ def extract_service_info(meta: dict[str, Any]) -> tuple[str, int]:
     service_port = 3306
 
     args_string = meta.get("args", "")
-    # Split the args string into individual arguments
     args = shlex.split(args_string)
 
     for task_arg in args:
         if "=" in task_arg and not task_arg.startswith("--"):
-            # Parse connection string like "P=3306,D=percona,t=checksums" or "h=192.0.0.1"
             for param in task_arg.split(","):
                 if "=" in param:
                     key, value = param.split("=", 1)
@@ -287,7 +285,6 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
     }
 
     args_string = meta.get("args", "")
-    # Split the args string into individual arguments
     args = shlex.split(args_string)
 
     for arg in args:
