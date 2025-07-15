@@ -96,7 +96,6 @@ async def alters_detail(
     """Retrieve alters task."""
     data = task.data
     meta = data["meta"]
-    service_host, service_port = extract_service_info(meta)
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -109,10 +108,9 @@ async def alters_detail(
         "dry_run_url": request.url_for(
             "alters_execute", task_name=task.name + "-dry-run"
         ),
-        "service_host": service_host,
-        "service_port": service_port,
         "alert_on_fail": task.alert_on_fail,
     }
+    task_data.update(extract_service_info(meta))
 
     # If the task has a parent, redirect to the parent task detail page
     if task_data["meta"].get("parent"):

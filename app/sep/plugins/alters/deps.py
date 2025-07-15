@@ -115,6 +115,8 @@ async def build_alters_task_payload(
                 "target": form.hostname,
                 "_schema_name": schema.name,
                 "_table_name": table.name,
+                "_service_host": service.node.address,
+                "_service_port": service.port,
             },
         },
         name=form.task_name,
@@ -170,34 +172,40 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def extract_service_info(meta: dict[str, Any]) -> tuple[str, int]:
-    """Extract service host and port from task configuration arguments.
+def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
+    """Extract service information from task configuration.
 
-    Parses the task arguments to extract the service host and port from DSN-like
-    connection strings. Defaults to localhost:3306 if not specified.
-
-    :param meta: The task meta containing the args string.
+    :param meta: The task meta containing service information and args string.
     :type meta: dict[str, Any]
-    :return: A tuple containing (service_host, service_port).
-    :rtype: tuple[str, int]
+    :return: A dictionary containing service_host, service_port, schema_name, and table_name.
+    :rtype: dict[str, Any]
     """
-    service_host = "localhost"
-    service_port = 3306
+    service_host = meta.get("_service_host", "localhost")
+    service_port = meta.get("_service_port", 0)
+    schema_name = meta.get("_schema_name", "")
+    table_name = meta.get("_table_name", "")
 
-    args_string = meta.get("args", "")
-    args = shlex.split(args_string)
+    if not service_host or service_port == 0:
+        args_string = meta.get("args", "")
+        if args_string:
+            args = shlex.split(args_string)
 
-    for task_arg in args:
-        if "=" in task_arg and not task_arg.startswith("--"):
-            for param in task_arg.split(","):
-                if "=" in param:
-                    key, value = param.split("=", 1)
-                    if key == "h":
-                        service_host = value
-                    elif key == "P":
-                        service_port = int(value)
+            for task_arg in args:
+                if "=" in task_arg and not task_arg.startswith("--"):
+                    for param in task_arg.split(","):
+                        if "=" in param:
+                            key, value = param.split("=", 1)
+                            if key == "h" and not service_host:
+                                service_host = value
+                            elif key == "P" and service_port == 0:
+                                service_port = int(value)
 
-    return service_host, service_port
+    return {
+        "service_host": service_host,
+        "service_port": service_port,
+        "schema_name": schema_name,
+        "table_name": table_name,
+    }
 
 
 def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:

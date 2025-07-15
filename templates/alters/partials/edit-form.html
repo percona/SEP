@@ -546,7 +546,7 @@
     {% endfor %}
     {% do serviceSchemas.update({service.id: schemas}) %}
 {% endfor %}
-{% set source_data = { "schema": task['meta']['_schema_name'], "table": task['meta']['_table_name']} %}
+{% set source_data = { "schema": task['schema_name'], "table": task['table_name']} %}
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas|tojson }};
     const source_data = {{ source_data | tojson }};
