@@ -48,6 +48,11 @@
 #    label: start or stop.
 #    description: Start or stop pt-stalk. Compresses data when stopped.
 #    default: start
+#  - name: help
+#    type: int
+#    label: Show help message
+#    description: Show help message
+#    default: 0
 # ---
 
 # Usage: ./pt-stalk.sh [--defaults-file=path]  start|stop [-- other args...]
@@ -82,6 +87,7 @@ Command line options:
    --system-only           Collect only operating system related captures
    --action=[start|stop]   Start or stop pt-stalk. Compresses data when stopped.
                            Default: start
+   -h, --help              Show this help message
 
 EOS
    exit $1
