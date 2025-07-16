@@ -52,6 +52,11 @@ EOS
 
 OPTS=$(getopt --options -d:h --longoptions 'dest:,save-samples,help' -- "$@")
 
+if [ $? -gt 0 ]; then
+   echo "Error parsing options"
+   usage 1
+fi
+
 eval set -- "$OPTS"
 
 while [[ -n "$*" ]]; do
@@ -74,14 +79,10 @@ while [[ -n "$*" ]]; do
       --)
          break
          ;;
-      *)
-         echo "Unrecognized option '$1'"
-         usage 255
-         ;;
    esac
 done
 
-if [ $# -gt 0 ]; then
+if [ $# -gt 1 ]; then
    echo "Starting pt-summary with extra options: $@"
 fi
 

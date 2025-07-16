@@ -1,0 +1,42 @@
+name: pt-summary
+sudo: true
+tests:
+  - name: "default"
+    cmd: "pt-summary.sh"
+    args:
+    expected:
+      stdout:
+        file: "default.log"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "invalid-options"
+    cmd: "pt-summary.sh"
+    args:
+      - "--invalid-option" 
+    expected:
+      stdout:
+        file: "invalid.stdout"
+        isre: true
+      stderr:
+        file: "invalid.stderr"
+        isre: false
+      returncode: 1
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
