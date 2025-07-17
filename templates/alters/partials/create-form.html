@@ -609,7 +609,7 @@
             statusMessage.textContent = '';
 
             try {
-                const response = await fetch(`/alters/table/${tableId}/details`);
+                const response = await fetch(`/alters/table/${tableId}/details?syntax_highlight_style=monokai`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -628,11 +628,7 @@
     }
 
     function displayCreateTable(sql) {
-        if (typeof hljs !== 'undefined') {
-            createTableOutput.innerHTML = hljs.highlight(sql, {language: 'sql'}).value;
-        } else {
-            createTableOutput.innerHTML = sql;
-        }
+        createTableOutput.innerHTML = sql;
         createTableOutput.classList.remove('hidden');
     }
 

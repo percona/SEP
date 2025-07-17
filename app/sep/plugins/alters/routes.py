@@ -22,6 +22,7 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
+from app.sep.utils.jinja import syntax_highlight
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -46,15 +47,19 @@ async def alters_index(
 async def get_table_details(
     table_id: int,
     inventory_api: InventoryAPI,
+    syntax_highlight_style: str | None = None,
 ) -> JSONResponse:
     """Get table details including create statement and keys."""
     try:
         table = await inventory_api.get(f"/tables/{table_id}")
+        create = table["create"]
+        if syntax_highlight_style:
+            create = syntax_highlight(create, "sql", style=syntax_highlight_style)
         return JSONResponse(
             {
                 "id": table["id"],
                 "name": table["name"],
-                "create": table["create"],
+                "create": create,
                 "keys": table["keys"],
             }
         )
