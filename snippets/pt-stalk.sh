@@ -99,6 +99,11 @@ compress_data() {
 
 OPTS=$(getopt --options -s:d:h --longoptions 'defaults-file:,pid:,log:,dest:,iterations:,sleep:,action:,daemon,help,system-only' -- "$@")
 
+if [ $? -gt 0 ]; then
+   echo "Error parsing options"
+   usage 1
+fi
+
 eval set -- "$OPTS"
 
 while [[ -n "$*" ]]; do
@@ -145,10 +150,6 @@ while [[ -n "$*" ]]; do
       --)
          shift 1
          break
-         ;;
-      *)
-         echo "Unrecognized option '$1'"
-         usage 255
          ;;
    esac
 done
