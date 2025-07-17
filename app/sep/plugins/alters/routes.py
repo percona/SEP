@@ -22,6 +22,7 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
+from app.sep.utils.decorators import csrf_exempt
 from app.sep.utils.jinja import syntax_highlight
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -44,7 +45,9 @@ async def alters_index(
 
 
 @router.get("/table/{table_id}/details", dependencies=[IsAuthenticated])
+@csrf_exempt
 async def get_table_details(
+    request: Request,  # noqa: ARG001
     table_id: int,
     inventory_api: InventoryAPI,
     syntax_highlight_style: str | None = None,
