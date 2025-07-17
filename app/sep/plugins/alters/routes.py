@@ -4,14 +4,15 @@ import logging
 import shlex
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     HasNoConflictedRunningTasks,
+    InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -39,6 +40,29 @@ async def alters_index(
         name="alters/index.html",
         context=context,
     )
+
+
+@router.get("/table/{table_id}/details", dependencies=[IsAuthenticated])
+async def get_table_details(
+    table_id: int,
+    inventory_api: InventoryAPI,
+) -> JSONResponse:
+    """Get table details including create statement and keys."""
+    try:
+        table = await inventory_api.get(f"/tables/{table_id}")
+        return JSONResponse(
+            {
+                "id": table["id"],
+                "name": table["name"],
+                "create": table["create"],
+                "keys": table["keys"],
+            }
+        )
+    except HTTPException:
+        return JSONResponse(
+            {"error": "Failed to fetch table details"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @router.post(
