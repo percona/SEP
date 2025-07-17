@@ -609,12 +609,7 @@
             statusMessage.textContent = '';
 
             try {
-                const csrfToken = document.querySelector('input[name="csrf-token"]').value;
-                const response = await fetch(`/alters/table/${tableId}/details`, {
-                    headers: {
-                        'X-CSRF-Token': csrfToken
-                    }
-                });
+                const response = await fetch(`/alters/table/${tableId}/details`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
