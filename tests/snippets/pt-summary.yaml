@@ -6,7 +6,7 @@ tests:
     args:
     expected:
       stdout:
-        file: "default.log"
+        file: "default.stdout"
         isre: true
       stderr:
       returncode: 0
@@ -19,7 +19,7 @@ tests:
       dirs:
       files:
     cleanup:
-  - name: "invalid-options"
+  - name: "invalid-option"
     cmd: "pt-summary.sh"
     args:
       - "--invalid-option" 
@@ -40,3 +40,79 @@ tests:
       dirs:
       files:
     cleanup:
+  - name: "help"
+    cmd: "pt-summary.sh"
+    args:
+      - "--help" 
+    expected:
+      stdout:
+        file: "help.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "save-samples"
+    cmd: "pt-summary.sh"
+    args:
+      - "--save-samples" 
+    expected:
+      stdout:
+        file: "default.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/processes"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/memory"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "dest"
+    cmd: "pt-summary.sh"
+    args:
+      - "--dest={{hostname}}"
+      - "--save-samples"
+    expected:
+      stdout:
+        file: "default.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+       - "{{hostname}}"
+      files:
+       - "{{hostname}}/processes"
+       - "{{hostname}}/memory"
+       - "{{hostname}}.tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/processes"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/memory"
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm {{hostname}}.tar.gz"

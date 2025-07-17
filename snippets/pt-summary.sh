@@ -13,7 +13,7 @@
 #    type: str
 #    label: Destination for the summaries
 #    description: Destination for the summaries
-#    default: .$(pwd)/$(hostname)-$(date +%g-%m-%d-%H-%M-%S)"
+#    default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 #  - name: save-samples
 #    type: int
 #    label: Save samples
@@ -30,7 +30,7 @@
 # Example: ./pt-summary.sh --dest=/tmp/summary --save-samples
 
 declare DEFAULTS_FILE=""
-declare PTDEST="$(pwd)/$(hostname)-$(date +%g-%m-%d-%H-%M-%S)"
+declare PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 declare SAVE_SAMPLES=0
 
 usage() {
@@ -42,7 +42,7 @@ Command line options:
 
    --defaults-file   Path to MySQL defaults-file
    -d, --dest        Destination for the samples. 
-                     Default: .$(pwd)/$(hostname)-$(date +%g-%m-%d-%H-%M-%S)
+                     Default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
    --save-samples    Save samples
    -h, --help        Show this help message
 
