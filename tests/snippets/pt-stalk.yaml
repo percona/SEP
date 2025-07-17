@@ -6,7 +6,7 @@ tests:
     args:
     expected:
       stdout:
-        file: "start.log"
+        file: "start.stdout"
         isre: true
       stderr:
       returncode: 0
@@ -34,7 +34,7 @@ tests:
       - "--action=start"
     expected:
       stdout:
-        file: "start.log"
+        file: "start.stdout"
         isre: true
       stderr:
       returncode: 0
@@ -62,15 +62,15 @@ tests:
       - "--action=invalid"
     expected:
       stdout:
-        file: "invalid.log"
-        isre: false
+        file: "invalid-action.stdout"
+        isre: true
       stderr:
       returncode: 255
       dirs:
       files:
     notExpected:
       stdout:
-        file: "start.log"
+        file: "start.stdout"
         isre: true
       stderr:
       returncode: 0
@@ -83,13 +83,34 @@ tests:
         - "{{hostname}}/*innodbstatus*"
         - "{{hostname}}/*mysqladmin"
     cleanup:
+  - name: "invalid-option"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--invalid-option" 
+    expected:
+      stdout:
+        file: "invalid-option.stdout"
+        isre: true
+      stderr:
+        file: "invalid-option.stderr"
+        isre: false
+      returncode: 1
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
   - name: "system-only"
     cmd: "pt-stalk.sh"
     args:
       - "--system-only"
     expected:
       stdout:
-        file: "system-only.log"
+        file: "system-only.stdout"
         isre: true
       stderr:
       returncode: 0
@@ -118,7 +139,7 @@ tests:
       - "--mysql-only"
     expected:
       stdout:
-        file: "mysql-only.log"
+        file: "mysql-only.stdout"
         isre: true
       stderr:
       returncode: 0
@@ -149,7 +170,7 @@ tests:
       - "--log={{hostname}}_custom/pt-stalk.custom.log"
     expected:
       stdout:
-        file: "custom-options.log"
+        file: "custom-options.stdout"
         isre: true
       stderr:
       returncode: 0

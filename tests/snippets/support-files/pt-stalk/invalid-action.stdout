@@ -1,5 +1,5 @@
 Unrecognized action 'invalid'
-Usage: pt-stalk.sh [OPTIONS]
+Usage: pt-stalk.sh \[OPTIONS\]
 Executes pt-stalk or stops the daemon
 
 Command line options:
@@ -8,10 +8,10 @@ Command line options:
    --pid                   pt-stalk PID file
    --log                   pt-stalk log file
    -d, --dest              Destination for the summaries. 
-                           Default: ./home/sveta/src/sveta/SEP/tests/snippets/tmp/s76
+                           Default: .+/{{hostname}}
    --iterations            How many iterations to run
    --sleep                 Sleep time between iterations
    --daemon                Run pt-stalk in daemon mode
    --system-only           Collect only operating system related captures
-   --action=[start|stop]   Start or stop pt-stalk. Compresses data when stopped.
+   --action=\[start|stop\]   Start or stop pt-stalk. Compresses data when stopped.
                            Default: start
