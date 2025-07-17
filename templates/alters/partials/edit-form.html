@@ -101,6 +101,7 @@
         white-space: break-spaces;
     }
 
+    {{ syntax_highlight_css(style="monokai") }}
 </style>
 <form id="edit-task-form"
       class="edit-task-form window"
@@ -537,8 +538,7 @@
             {% do tables.update({
             table.id: {
             "name": table.name,
-            "create": table.create|syntax_highlight("sql", style="monokai"),
-            "keys": table['keys']
+            "id": table.id
             }
             }) %}
         {% endfor %}
@@ -550,6 +550,7 @@
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const serviceSchemas = {{ serviceSchemas|tojson }};
     const source_data = {{ source_data | tojson }};
+    const tableDetailsCache = {};
     const matched = {
         serviceId: null,
         schemaId: null,
@@ -568,7 +569,7 @@
     let selectedSchema = null;
     let selectedTable = null;
 
-    function populateSchemas(selectedService) {
+    async function populateSchemas(selectedService) {
         schemaSelect.disabled = true;
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
         tableSelect.disabled = true;
@@ -601,13 +602,13 @@
                     schemaSelect.disabled = true;
                     schemaSelect.insertAdjacentHTML("afterend", `<input id="schema_id_hidden" type="hidden" name="schema_id" value="${schemaSelect.value}">`)
                     selectedSchema = singleSchemaId;
-                    populateTables(selectedService, singleSchemaId);
+                    await populateTables(selectedService, singleSchemaId);
                 }
             }
         }
     }
 
-    function populateTables(selectedService, selectedSchema) {
+    async function populateTables(selectedService, selectedSchema) {
         tableSelect.disabled = true;
         tableSelect.innerHTML = '<option value="">Select a table</option>';
         selectedTable = null;
@@ -628,7 +629,7 @@
                 if (selectedSchema == matched.schemaId && matched.tableId) {
                     tableSelect.value = matched.tableId;
                     selectedTable = matched.tableId;
-                    fetchCreateTableStatement(matched.tableId);
+                    await fetchCreateTableStatement(matched.tableId);
                     return;
                 }
                 if (tables.length === 1) {
@@ -637,7 +638,7 @@
                     tableSelect.disabled = true;
                     tableSelect.insertAdjacentHTML("afterend", `<input id="table_id_hidden" type="hidden" name="table_id" value="${tableSelect.value}">`)
                     selectedTable = singleTableId;
-                    fetchCreateTableStatement(singleTableId);
+                    await fetchCreateTableStatement(singleTableId);
                 }
             }
         }
@@ -654,13 +655,37 @@
         editButton.disabled = !form.checkValidity() || hasInvalidValue;
     }
 
-    function fetchCreateTableStatement(tableId) {
+    async function fetchCreateTableStatement(tableId) {
         if (selectedService && selectedSchema && tableId) {
-            const tableData = serviceSchemas[selectedService][selectedSchema]["tables"][tableId];
-            const createTableSQL = tableData.create;
-            displayCreateTable(createTableSQL);
-            resultPanel.classList.remove("fade")
-            analyzeTableStructure(tableData);
+            if (tableDetailsCache[tableId]) {
+                const tableData = tableDetailsCache[tableId];
+                displayCreateTable(tableData.create);
+                resultPanel.classList.remove("fade");
+                analyzeTableStructure(tableData);
+                return;
+            }
+
+            createTableOutput.innerHTML = 'Loading table details...';
+            createTableOutput.classList.remove('hidden');
+            resultPanel.classList.remove("fade");
+            statusMessage.textContent = '';
+
+            try {
+                const response = await fetch(`/alters/table/${tableId}/details?syntax_highlight_style=monokai`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const tableData = await response.json();
+
+                tableDetailsCache[tableId] = tableData;
+
+                displayCreateTable(tableData.create);
+                analyzeTableStructure(tableData);
+            } catch (error) {
+                console.error('Error fetching table details:', error);
+                createTableOutput.innerHTML = 'Error loading table details. Please try again.';
+                statusMessage.textContent = '';
+            }
         }
     }
 
@@ -670,7 +695,6 @@
     }
 
     function analyzeTableStructure(tableData) {
-        // Extract keys from the updated data structure
         const keys = tableData.keys || {};
 
         const primaryKey = Object.values(keys).find(key => key.type === 'PRIMARY');
@@ -678,7 +702,6 @@
             .filter(([keyName, key]) => key.type === 'INDEX' && key.unique)
             .map(([keyName]) => keyName);
 
-        // Clear any existing success or error classes
         statusMessage.classList.remove('success', 'error');
 
         if (primaryKey || uniqueKeys.length > 0) {
@@ -720,8 +743,7 @@
           const unknownTables = {
             "-1": {
               name: "Unknown table: " + source_data.table,
-              create: "",
-              keys: {}
+              id: "-1"
             }
           };
 
@@ -765,8 +787,7 @@
             } else {
               matchedSchema.tables["-1"] = {
                 name: "Unknown table: " + source_data.table,
-                create: "",
-                keys: {}
+                id: "-1"
               };
               matched.tableId = "-1";
             }
@@ -775,8 +796,7 @@
             const unknownTables = {
               "-1": {
                 name: "Unknown table: " + source_data.table,
-                create: "",
-                keys: {}
+                id: "-1"
               }
             };
 
@@ -793,25 +813,24 @@
         }
       }
 
-    connectToSelect.addEventListener('change', function() {
+    connectToSelect.addEventListener('change', async function() {
         const hiddenSchemaInput = document.getElementById("schema_id_hidden");
         hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
         selectedService = this.value;
-        populateSchemas(selectedService);
+        await populateSchemas(selectedService);
     });
 
-    schemaSelect.addEventListener('change', function() {
+    schemaSelect.addEventListener('change', async function() {
         const hiddenTableInput = document.getElementById("table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         selectedSchema = this.value;
-        populateTables(connectToSelect.value, selectedSchema);
+        await populateTables(connectToSelect.value, selectedSchema);
     });
 
-    tableSelect.addEventListener('change', function() {
+    tableSelect.addEventListener('change', async function() {
         selectedTable = this.value;
         if (selectedTable) {
-            fetchCreateTableStatement(selectedTable);
-            resultPanel.classList.remove("fade")
+            await fetchCreateTableStatement(selectedTable);
         } else {
             createTableOutput.classList.add('hidden');
             statusMessage.textContent = '';
@@ -821,12 +840,12 @@
 
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
-    window.addEventListener('DOMContentLoaded', function() {
+    window.addEventListener('DOMContentLoaded', async function() {
         initSource();
         if (connectToSelect.options.length != 0) {
             const singleHost = connectToSelect.value;
             selectedService = singleHost;
-            populateSchemas(singleHost);
+            await populateSchemas(singleHost);
         }
         updateEditButtonState();
     });

@@ -69,31 +69,29 @@
     <section>
         <h2>Execution</h2>
         <br>
-        <h5>Command</h5>
-        <code>{{ task.cmd }}</code>
-        <br>
-        <br>
         <h5>Parameters</h5>
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
-                    <tr>
-                        <th>{{ k }}</th>
-                        <td>
-                            {% if v is mapping %}
-                                <ul>
-                                    {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% elif v is iterable and v is not string %}
-                                {#              TODO: Refactor all these weird tests #}
-                                <ul>
-                                    {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% else %}
-                                <code>{{ v }}</code>
-                            {% endif %}
-                        </td>
-                    </tr>
+                    {% if not k.startswith('_') %}
+                        <tr>
+                            <th>{{ k }}</th>
+                            <td>
+                                {% if v is mapping %}
+                                    <ul>
+                                        {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% elif v is iterable and v is not string %}
+                                    {#              TODO: Refactor all these weird tests #}
+                                    <ul>
+                                        {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% else %}
+                                    <code>{{ v }}</code>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>
