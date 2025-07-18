@@ -1,13 +1,15 @@
-<fieldset>
-    <legend>PBM Config</legend>
+<h5>PBM Configuration</h5>
     <input type="hidden" name="backup_config" value="{}">
+    <fieldset>
+    <legend>1. Storage Configuration</legend>
     <div id="storage_configuration">
-        <legend>1. Storage Configuration</legend>
         <label for="storage_type">Storage Type:</label>
-        <select id="storage_type" name="backup_config.storage.storage_type">
+        <select id="storage_type" name="storage_type">
             <option value="s3">S3-compatible Storage</option>
             <option value="filesystem">Filesystem</option>
+            <!-- out of scope
             <option value="azure">Azure Blob Storage</option>
+            -->
         </select>
     </div>
     <div id="s3_options">
@@ -18,19 +20,22 @@
             <option value="gcp">GCP</option>
         </select>
         <label for="s3_region">Region:</label>
-        <input type="text" id="s3_region" name="backup_config.storage.s3.region">
+        <input type="text" id="s3_region" name="storage_s3_region">
         <label for="s3_bucket">Bucket Name:</label>
-        <input type="text" id="s3_bucket" name="backup_config.storage.s3.bucket">
+        <input type="text" id="s3_bucket" name="storage_s3_bucket">
         <label for="s3_prefix">Prefix (Optional):</label>
-        <input type="text" id="s3_prefix" name="backup_config.storage.s3.prefix">
+        <input type="text" id="s3_prefix" name="storage_s3_prefix">
         <label for="s3_endpoint_url">Endpoint URL (Optional):</label>
         <input type="text"
                id="s3_endpoint_url"
-               name="backup_config.storage.s3.endpoint_url">
+               name="storage_s3_endpoint_url">
+<!-- Enabled this when requested, it requires dynamic entries
         <label for="s3_endpoint_url_map">Endpoint URL Map (Optional):</label>
         <input type="text"
                id="s3_endpoint_url_map"
                name="backup_config.storage.s3.endpoint_url_map">
+-->
+<!-- To be added later
         <label for="s3_force_path_style">Force Path Style:</label>
         <input type="checkbox"
                id="s3_force_path_style"
@@ -69,13 +74,15 @@
                id="s3_insecure_skip_tls_verify"
                name="backup_config.storage.s3.insecure_skip_tls_verify">
         Yes
+-->
     </div>
     <div id="filesystem_options" style="display: none;">
         <label for="filesystem_path">Filesystem Path:</label>
         <input type="text"
                id="filesystem_path"
-               name="backup_config.storage.filesystem.path">
+               name="storage_filesystem_path">
     </div>
+<!-- out of scope
     <div id="azure_options" style="display: none;">
         <label for="azure_account">Account Name:</label>
         <input type="text"
@@ -98,6 +105,8 @@
                id="azure_account_key"
                name="backup_config.storage.azure.account_key">
     </div>
+-->
+<!-- more S3 settings
     <label for="sse_algorithm">Server-Side Encryption Algorithm:</label>
     <input type="text"
            id="sse_algorithm"
@@ -126,6 +135,7 @@
     <input type="text"
            id="retryer_max_retry_delay"
            name="backup_config.storage.retryer.max_retry_delay">
+-->
 </fieldset>
 <fieldset>
     <legend>2. Point-in-Time Recovery (PITR) Configuration</legend>

@@ -1,6 +1,7 @@
 """Define models for the Backups plugin."""
 
 from enum import StrEnum
+from typing import Optional
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, Field, RequiredStr
@@ -70,10 +71,27 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
     """
 
     enabled: bool = False
-    oplogSpanMin: int
+    oplogSpanMin: int | None
     compression: RequiredStr
 
 
+class BackupConfigStorageFilesystem(BaseCaseInsensitiveModel):
+    """Represents a filesystem storage configuration."""
+
+    path: RequiredStr | EmptyStrToNone = None
+class BackupConfigStorageS3(BaseCaseInsensitiveModel):
+    """Represents an S3 storage configuration."""
+
+    region: RequiredStr | EmptyStrToNone = None
+    bucket: RequiredStr | EmptyStrToNone = None
+    prefix: RequiredStr | EmptyStrToNone = None
+    endpointUrl: RequiredStr | EmptyStrToNone = None
+class BackupConfigStorage(BaseCaseInsensitiveModel):
+    """Represent Storage configuration."""
+
+    type: StorageType
+    s3: BackupConfigStorageS3 | None
+    filesystem: BackupConfigStorageFilesystem | None
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
 
@@ -81,6 +99,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
     :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
     """
 
+    storage: BackupConfigStorage | EmptyStrToNone = None
     pitr: BackupConfigPITR | EmptyStrToNone = None
     pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
         None, serialization_alias="pbm_config_yaml_payload"
@@ -107,6 +126,12 @@ class BackupCreate(BaseCaseInsensitiveModel):
     service_id: int
     backup_type: BackupType
     alert_on_fail: bool = False
-    pitr_oplog_span_min: int
+    pitr_oplog_span_min: int | EmptyStrToNone = None
     pitr_enabled: bool = False
     pitr_compression: RequiredStr | EmptyStrToNone = None
+    storage_type: RequiredStr | EmptyStrToNone = None
+    storage_s3_region: RequiredStr | EmptyStrToNone = None
+    storage_s3_bucket: RequiredStr | EmptyStrToNone = None
+    storage_s3_prefix: RequiredStr | EmptyStrToNone = None
+    storage_s3_endpoint_url: RequiredStr | EmptyStrToNone = None
+    storage_filesystem_path: RequiredStr | EmptyStrToNone = None

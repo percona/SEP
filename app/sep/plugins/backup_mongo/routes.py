@@ -53,10 +53,26 @@ async def pbm_backups_create(
 ) -> RedirectResponse:
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)
+
+    # Create the config task
     await task_api.post(
         "/",
         json=task.model_dump(),
     )
+
+    # Create a logical backup task
+    logical_task = task.model_copy()
+    logical_task.data["backup_type"] = "pbm_logical"
+    logical_task.name = f"{task.name}-logical"
+    logical_task.data["parent"] = task.name
+    logical_task.data["payload"] = logical_task.data["payload"].replace('pbm_config', 'pbm_logical')
+
+
+    await task_api.post(
+        "/",
+        json=logical_task.model_dump(),
+    )
+
     task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,

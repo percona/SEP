@@ -19,6 +19,7 @@ from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
     BackupCreate,
     BackupConfigPITR,
+    BackupConfigStorage,
 )
 from app.tasks.models import (
     Task,
@@ -43,20 +44,43 @@ async def build_backup_task_payload(
         configuration to create the Backup task.
     :rtype: TaskWrite
     """
-    #all_config = form.model_dump(by_alias=True)
-
     pitr = {
         "enabled": form.pitr_enabled,
         "oplogSpanMin": form.pitr_oplog_span_min,
         "compression": form.pitr_compression,
     }
 
+    storage_config = {}
+    if form.storage_type == "s3":
+        storage_config = {
+            "region": form.storage_s3_region,
+            "bucket": form.storage_s3_bucket,
+            "prefix": form.storage_s3_prefix,
+            "endpointUrl": form.storage_s3_endpoint_url
+        }
+    elif form.storage_type == "filesystem":
+        storage_config = {
+            "path": form.storage_filesystem_path
+        }
+
+    storage = {
+        "type": form.storage_type,
+        form.storage_type: storage_config
+    }
+
     backup_config = BackupConfig(
+        storage=BackupConfigStorage.model_validate(storage),
         pitr=BackupConfigPITR.model_validate(pitr),
     )
 
-    requirements = "packaging\nPyYAML"
+    if form.backup_type == "pbm_config":
+        requirements = "packaging\nPyYAML"
+    else:
+        requirements = "packaging"
+
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
+#    print(form.backup_type)
+#    print(payload_path)
 
     return TaskWrite(
         name=form.task_name,

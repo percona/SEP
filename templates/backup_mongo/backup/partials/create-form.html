@@ -46,7 +46,7 @@
 </style>
 <form action="" method="post" class="{{ form_class }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-    <legend>Main Options</legend>
+    <h5>Main Options</h5>
     <fieldset>
         <legend>Executor Host</legend>
         {% set hostname_title = "Select the hostname of the target system for task execution." %}
@@ -84,7 +84,7 @@
             <br>
             {% set service_id_title = "Select the database host from the inventory to connect to." %}
             <label for="service_id" title="{{ service_id_title }}">
-                Select a Database Host:
+                Select a Database Service:
                 <select id="service_id" name="service_id" required>
                     <option value="" selected>Select a database host</option>
                     {% for service in services %}
@@ -94,6 +94,8 @@
             </label>
             <br>
             <br>
+            <input type="hidden" name="backup_type" value="pbm_config">
+            <!--
             {% set backup_type_title = "Select the type of backup type: Logical/Physical/Config" %}
             <label for="backup_type" title="{{ backup_type_title }}">
                 Backup Type:
@@ -101,11 +103,10 @@
                     <option value="" disabled>Select a backup method</option>
                     <option value="pbm_logical">Logical</option>
                     <option value="pbm_physical">Physical</option>
-                    <option value="pbm_config">Configuration Change</option>
+                    <option value="pbm_config" selected>Configuration Change</option>
                 </select>
             </label>
-            <br>
-            <br>
+            -->
         </fieldset>
         {% include "backup_mongo/backup/partials/pbm-config.html" %}
         {% include "tasks/partials/create-form-alert-on-failure-input.html" %}

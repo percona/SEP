@@ -33,13 +33,15 @@ PBM Backups - {{ task.name }}
 </div>
 {% endblock sticky %}
 {% block main %}
+<h1>PBM Backups: {{ task.name }}</h1>
+<h5>Executor Host: {{ task.hostname }}</h5>
+<p>{{ task }}</p>
 <table data-table>
     <caption>Overview</caption>
     <thead>
         <tr>
-            <th>Target</th>
-            <th>Host</th>
-            <th>Type</th>
+            <th>Executor Host</th>
+            <th>Created By</th>
             <th>Created at</th>
             <th>Updated at</th>
         </tr>
@@ -47,8 +49,7 @@ PBM Backups - {{ task.name }}
     <tbody>
         <tr>
             <td>{{ task.hostname }}</td>
-            <td>{{ task.host }} ({{ task.port }})</td>
-            <td>{{ task.backup_type }}</td>
+            <td>N/A</td>
             <td class="relativeTime">{{ task.created_at }}</td>
             <td class="relativeTime">{{ task.updated_at }}</td>
         </tr>
@@ -59,6 +60,7 @@ PBM Backups - {{ task.name }}
         </tr>
     </tfoot>
 </table>
+{% include "tasks/partials/run-python-form-backup_mongo.html" %}
 {% if running_tasks %}
 <section id="running-tasks">
     <h2>Running</h2>
@@ -66,13 +68,13 @@ PBM Backups - {{ task.name }}
 </section>
 {% endif %}
 <section>
-    <h2>Execution</h2>
-    <h5>Parameters</h5>
+    <h2>Configuration</h2>
     <table>
         <tbody>
             {% for k, v in task.meta.items() %}
+            {% if k == 'config' %}
             <tr>
-                <th>{{ k }}</th>
+                <th></th>
                 <td>
                     {% if v is mapping %}
                     <ul>
@@ -88,6 +90,7 @@ PBM Backups - {{ task.name }}
                     {% endif %}
                 </td>
             </tr>
+            {% endif %}
             {% endfor %}
         </tbody>
     </table>
