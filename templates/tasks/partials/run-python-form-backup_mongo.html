@@ -101,7 +101,7 @@
       id="{{ task.name }}-logical-send"
       data-confirm-message='Are you sure you want to run a logical backup for "{{ task.name }}"?'
       method="post"
-      action="{{ task.dry_run_url }}">
+      action="{{ task.logical_backup_url }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
 <form class="delete-task-form"

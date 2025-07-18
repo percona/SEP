@@ -97,6 +97,9 @@ async def pbm_backups_detail(
         "hostname": meta["target"],
         "meta": meta,
         "backup_type": data["backup_type"],
+        "logical_backup_url": request.url_for(
+            "pbm_backups_execute", task_name=task.name + "-logical"
+        ),
     }
 
     context["task"] = task_data
