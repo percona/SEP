@@ -20,7 +20,7 @@ def pbm():
     """ PBM Physical Payload """
 
     os.environ['PBM_MONGODB_URI'] = pbm_creds()
-    cmd = ['pbm', 'backup', '--type', 'physical']
+    cmd = ['pbm', 'backup', '--type', 'physical', '--wait']
 
     try:
         proc = subprocess.Popen(cmd)

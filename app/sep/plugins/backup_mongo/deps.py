@@ -143,7 +143,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     meta = data["meta"]
     return {
         "config": yaml.safe_load(meta["config"]),
-        "parent": meta.get("parent"),
+        "parent": data.get("parent"),
     }
 
 

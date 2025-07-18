@@ -67,10 +67,21 @@ async def pbm_backups_create(
     logical_task.data["parent"] = task.name
     logical_task.data["payload"] = logical_task.data["payload"].replace('pbm_config', 'pbm_logical')
 
-
     await task_api.post(
         "/",
         json=logical_task.model_dump(),
+    )
+
+    # Create a physical backup task
+    physical_task = task.model_copy()
+    physical_task.data["backup_type"] = "pbm_physical"
+    physical_task.name = f"{task.name}-physical"
+    physical_task.data["parent"] = task.name
+    physical_task.data["payload"] = logical_task.data["payload"].replace('pbm_logical', 'pbm_physical')
+
+    await task_api.post(
+        "/",
+        json=physical_task.model_dump(),
     )
 
     task_path = request.url_for("pbm_backups_detail", task_name=task.name)
@@ -89,6 +100,14 @@ async def pbm_backups_detail(
 ) -> HTMLResponse:
     """Retrieve backups task."""
     data = task.data
+
+    # If the task has a parent, redirect to the parent task detail page
+    if data.get("parent"):
+        task_path = request.url_for(
+            "pbm_backups_detail", task_name=data.get("parent")
+        )
+        return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
     meta = data["meta"]
     task_data = {
         "name": task.name,
@@ -100,12 +119,25 @@ async def pbm_backups_detail(
         "logical_backup_url": request.url_for(
             "pbm_backups_execute", task_name=task.name + "-logical"
         ),
+        "physical_backup_url": request.url_for(
+            "pbm_backups_execute", task_name=task.name + "-physical"
+        ),
     }
 
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    context["history_logical"] = await tasks_api.get(f"/{task.name}-logical/history/")
+    context["history_physical"] = await tasks_api.get(f"/{task.name}-physical/history/")
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["running_tasks"] += await tasks_api.get(
+        f"/{task.name}-logical/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
+    )
+    context["running_tasks"] += await tasks_api.get(
+        f"/{task.name}-physical/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
