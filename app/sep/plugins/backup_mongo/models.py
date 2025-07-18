@@ -90,8 +90,8 @@ class BackupConfigStorage(BaseCaseInsensitiveModel):
     """Represent Storage configuration."""
 
     type: StorageType
-    s3: BackupConfigStorageS3 | None
-    filesystem: BackupConfigStorageFilesystem | None
+    s3: BackupConfigStorageS3 | EmptyStrToNone = None
+    filesystem: BackupConfigStorageFilesystem | EmptyStrToNone = None
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
 
