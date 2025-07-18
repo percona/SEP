@@ -1,0 +1,143 @@
+name: pt-mysql-summary
+sudo: false
+tests:
+  - name: "default"
+    cmd: "pt-mysql-summary.sh"
+    args:
+    expected:
+      stdout:
+        file: "default.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "invalid-option"
+    cmd: "pt-mysql-summary.sh"
+    args:
+      - "--invalid-option" 
+    expected:
+      stdout:
+        file: "invalid.stdout"
+        isre: true
+      stderr:
+        file: "invalid.stderr"
+        isre: false
+      returncode: 1
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
+  - name: "help"
+    cmd: "pt-mysql-summary.sh"
+    args:
+      - "--help" 
+    expected:
+      stdout:
+        file: "help.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "save-samples"
+    cmd: "pt-mysql-summary.sh"
+    args:
+      - "--save-samples" 
+    expected:
+      stdout:
+        file: "default.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/mysql-processlist"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/mysqld-instances"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "dest"
+    cmd: "pt-mysql-summary.sh"
+    args:
+      - "--dest={{hostname}}"
+      - "--save-samples"
+    expected:
+      stdout:
+        file: "default.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs: 
+       - "{{hostname}}"
+      files:
+       - "{{hostname}}/mysql-processlist"
+       - "{{hostname}}/mysqld-instances"
+       - "{{hostname}}.tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/mysql-processlist"
+       - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/mysqld-instances"
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm {{hostname}}.tar.gz"
+  # This test is to check if pt-mysql-summary can handle MySQL options correctly
+  # Due to https://perconadev.atlassian.net/browse/PT-2466 it is expected to fail
+  # After the fix, this test should be updated to expect success
+  - name: "MySQL options"
+    cmd: "pt-mysql-summary.sh"
+    args:
+      - "--"
+      - "--init-command \"set sql_mode=''\"" 
+    expected:
+      stdout:
+        file: "mysql-options.stdout"
+        isre: false
+      stderr:
+        file: "mysql-options.stderr"
+        isre: true
+      returncode: 1
+      dirs: 
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
