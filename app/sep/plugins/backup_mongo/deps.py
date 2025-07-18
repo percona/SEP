@@ -141,7 +141,10 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    return yaml.safe_load(meta["config"])
+    return {
+        "config": yaml.safe_load(meta["config"]),
+        "parent": meta.get("parent"),
+    }
 
 
 async def get_backups_index_context(

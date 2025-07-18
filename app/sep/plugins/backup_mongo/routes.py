@@ -144,5 +144,6 @@ async def pbm_backups_delete(
 ) -> RedirectResponse:
     """Delete backups task."""
     await tasks_api.delete(f"/{task.name}")
+    await tasks_api.delete(f"/{task.name}-logical")
     task_path = request.url_for("pbm_backups_index")
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
