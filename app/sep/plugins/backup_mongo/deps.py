@@ -79,8 +79,6 @@ async def build_backup_task_payload(
         requirements = "packaging"
 
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
-#    print(form.backup_type)
-#    print(payload_path)
 
     return TaskWrite(
         name=form.task_name,
