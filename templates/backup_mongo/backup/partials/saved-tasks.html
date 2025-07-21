@@ -15,9 +15,9 @@
     <table data-table>
         <thead>
             <tr>
-                <th style="width: 200px;">Name</th>
-                <th style="width: 200px;">Type</th>
-                <th style="width: 200px;">Upload</th>
+                <th >Name</th>
+                <th >Target</th>
+                <th >Created at</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -28,15 +28,17 @@
                         <td>
                             <a href="{{ url_for('pbm_backups_detail', task_name=task.name) }}">{{ task.name }}</a>
                         </td>
-                        <td>{{ task.backup_type }}</td>
-                        <td>{{ task.upload }}</td>
+                        <td>{{ task.target }}</td>
+                        <td>{{ task.created_at }}</td>
                         <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                     </tr>
                 {% endif %}
             {% endfor %}
         </tbody>
     </table>
-    {% include "tasks/partials/scheduled-execution-dialog.html" %}
+<!--
+        {% include "tasks/partials/scheduled-execution-dialog.html" %}
+-->
 {% else %}
     <p>No data</p>
 {% endif %}

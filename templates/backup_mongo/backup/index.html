@@ -37,7 +37,7 @@ PBM Backups
 {% block main %}
 <p>
     Generate a <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backup, currently only
-    supporting Logical, Physical and Snapshot methods.
+    supporting Logical, Physical methods.
 </p>
 {% if not tasks and not history_tasks %}
 {% set modal_required = False %}
@@ -45,7 +45,7 @@ PBM Backups
 {# Note: commented out until services exists
 {% if services|length != 1 %}
 <p>Unable to find suitable database instances.</p>
-{% elif executor_hosts|length < 1 %} 
+{% elif executor_hosts|length < 1 %}
     <p>Unable to find suitable executor hosts.</p>
 {% else %}
     {% include "backup_mongo/backup/partials/create-form.html" %}
@@ -61,7 +61,7 @@ PBM Backups
     </section>
     {% endif %}
     <section id="saved-tasks">
-        <h2>Saved</h2>
+        <h2>Configured Backups</h2>
         {% include "backup_mongo/backup/partials/saved-tasks.html" %}
         <h2>Periodic Tasks</h2>
         {%- set detail_route = "pbm_backups_detail" %}

@@ -94,6 +94,7 @@ PBM Backups - {{ task.name }}
         </tbody>
     </table>
 </section>
+{#
 <section>
     <h2>Stats</h2>
     {% if stats and stats.total %}
@@ -128,6 +129,9 @@ PBM Backups - {{ task.name }}
     <p>No data</p>
     {% endif %}
 </section>
+#}
+<br>
+<br>
 {% set pending_tasks = history|selectattr("status", "equalto", "pending")|list %}
 {% if pending_tasks %}
 <section id="pending-tasks">
@@ -137,8 +141,26 @@ PBM Backups - {{ task.name }}
 <br>
 <br>
 {% endif %}
+{% if history_logical %}
 <section>
-    <h2>History</h2>
+    <h2>Logical Backup Runs</h2>
+    {% set history_tasks = history_logical %}
+    {% include "tasks/partials/completed-tasks.html" %}
+</section>
+<br>
+<br>
+{% endif %}
+{% if history_physical %}
+<section>
+    <h2>Physical Backup Runs</h2>
+    {% set history_tasks = history_physical %}
+    {% include "tasks/partials/completed-tasks.html" %}
+</section>
+<br>
+<br>
+{% endif %}
+<section>
+    <h2>Config Sync</h2>
     {% set history_tasks = history %}
     {% include "tasks/partials/completed-tasks.html" %}
 </section>
