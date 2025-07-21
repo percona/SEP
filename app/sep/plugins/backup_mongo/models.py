@@ -1,7 +1,6 @@
 """Define models for the Backups plugin."""
 
 from enum import StrEnum
-from typing import Optional
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, Field, RequiredStr
@@ -71,7 +70,7 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
     """
 
     enabled: bool = False
-    oplogSpanMin: int | None
+    oplogSpanMin: int | None # noqa: N815
     compression: RequiredStr
 
 
@@ -85,7 +84,7 @@ class BackupConfigStorageS3(BaseCaseInsensitiveModel):
     region: RequiredStr | EmptyStrToNone = None
     bucket: RequiredStr | EmptyStrToNone = None
     prefix: RequiredStr | EmptyStrToNone = None
-    endpointUrl: RequiredStr | EmptyStrToNone = None
+    endpointUrl: RequiredStr | EmptyStrToNone = None # noqa: N815
 class BackupConfigStorage(BaseCaseInsensitiveModel):
     """Represent Storage configuration."""
 

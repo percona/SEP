@@ -3,14 +3,12 @@
 import logging
 from typing import Annotated, Any
 
-import yaml
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, IsAuthenticated, IsCsrfValidated, TaskAPI
-from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.deps import (
     get_restores_index_context,
     RestoreGeneratedTask,

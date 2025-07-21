@@ -8,16 +8,13 @@ from fastapi import Depends, Form, Request
 from fastapi.encoders import jsonable_encoder
 
 from app.core.utils.pydantic import extract_model_from_instance
-from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
-    get_created_entity,
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
     RestoreConfig,
@@ -28,17 +25,9 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 async def build_restore_task_payload(
     form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build task payload for a restore operation."""
     all_config = extract_model_from_instance(form, RestoreConfig)
-
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MONGODB,
-    )
 
     backup_type_to_payload = {
         BackupType.PBM_PHYSICAL: "pbm_physical_restore_payload",

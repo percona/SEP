@@ -21,6 +21,7 @@ from app.sep.plugins.backup_mongo.deps import (
     get_backups_index_context,
 )
 from app.tasks.models import TaskHistoryStatusEnum
+
 from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ async def pbm_backups_create(
     logical_task.data["backup_type"] = "pbm_logical"
     logical_task.name = f"{task.name}-logical"
     logical_task.data["parent"] = task.name
-    logical_task.data["payload"] = logical_task.data["payload"].replace('pbm_config', 'pbm_logical')
+    logical_task.data["payload"] = logical_task.data["payload"].replace("pbm_config", "pbm_logical")
 
     await task_api.post(
         "/",
@@ -77,7 +78,7 @@ async def pbm_backups_create(
     physical_task.data["backup_type"] = "pbm_physical"
     physical_task.name = f"{task.name}-physical"
     physical_task.data["parent"] = task.name
-    physical_task.data["payload"] = logical_task.data["payload"].replace('pbm_logical', 'pbm_physical')
+    physical_task.data["payload"] = logical_task.data["payload"].replace("pbm_logical", "pbm_physical")
 
     await task_api.post(
         "/",
