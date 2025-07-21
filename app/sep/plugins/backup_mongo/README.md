@@ -118,3 +118,21 @@ sudo chown -R mongod:mongod
 sudo systemctl start mongod
 sudo systemctl start pbm-agent
 ```
+
+
+
+
+User
+
+New server on an existing cluster
+MongoDB
+mongo_uri
+pbm-agent
+
+
+New node logical only
+MongoDB
+mongo_uri
+pbm-agent
+pbm config --force-resync con bucket
+pbm restore
