@@ -56,17 +56,12 @@ async def build_backup_task_payload(
             "region": form.storage_s3_region,
             "bucket": form.storage_s3_bucket,
             "prefix": form.storage_s3_prefix,
-            "endpointUrl": form.storage_s3_endpoint_url
+            "endpointUrl": form.storage_s3_endpoint_url,
         }
     elif form.storage_type == "filesystem":
-        storage_config = {
-            "path": form.storage_filesystem_path
-        }
+        storage_config = {"path": form.storage_filesystem_path}
 
-    storage = {
-        "type": form.storage_type,
-        form.storage_type: storage_config
-    }
+    storage = {"type": form.storage_type, form.storage_type: storage_config}
 
     backup_config = BackupConfig(
         storage=BackupConfigStorage.model_validate(storage),
@@ -143,7 +138,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "config": yaml.safe_load(meta["config"]),
         "parent": data.get("parent"),
         "target": meta["target"],
-        "created_at": task["created_at"]
+        "created_at": task["created_at"],
     }
 
 

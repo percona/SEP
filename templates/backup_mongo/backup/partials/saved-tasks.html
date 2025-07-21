@@ -1,5 +1,5 @@
 {% if tasks %}
-{#
+    {#
     <!-- Debug output -->
         <div style="background: #f5f5f5; padding: 10px; margin: 10px 0; border: 1px solid #ddd;">
             <h4>Debug - Task Data:</h4>
@@ -12,33 +12,33 @@
         </div>
         <!-- End debug output -->
 #}
-    <table data-table>
-        <thead>
-            <tr>
-                <th >Name</th>
-                <th >Target</th>
-                <th >Created at</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for task in tasks %}
-                {% if not task.parent %}
-                    <tr id="{{ task.name }}">
-                        <td>
-                            <a href="{{ url_for('pbm_backups_detail', task_name=task.name) }}">{{ task.name }}</a>
-                        </td>
-                        <td>{{ task.target }}</td>
-                        <td>{{ task.created_at }}</td>
-                        <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
-                    </tr>
-                {% endif %}
-            {% endfor %}
-        </tbody>
-    </table>
+<table data-table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Target</th>
+            <th>Created at</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for task in tasks %}
+            {% if not task.parent %}
+                <tr id="{{ task.name }}">
+                    <td>
+                        <a href="{{ url_for('pbm_backups_detail', task_name=task.name) }}">{{ task.name }}</a>
+                    </td>
+                    <td>{{ task.target }}</td>
+                    <td>{{ task.created_at }}</td>
+                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
+                </tr>
+            {% endif %}
+        {% endfor %}
+    </tbody>
+</table>
 <!--
         {% include "tasks/partials/scheduled-execution-dialog.html" %}
 -->
 {% else %}
-    <p>No data</p>
+<p>No data</p>
 {% endif %}

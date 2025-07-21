@@ -56,7 +56,7 @@
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
             {% include "/backups/restore/partials/create-form.html" %}
-    {% endif %}
+        {% endif %}
     {% else %}
         {% set modal_required = True %}
         {% if running_tasks %}

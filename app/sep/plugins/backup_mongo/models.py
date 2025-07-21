@@ -58,6 +58,7 @@ class LogOutput(StrEnum):
     FILE = "file"
     SYSLOG = "syslog"
 
+
 class BackupConfigPITR(BaseCaseInsensitiveModel):
     """Represent Point In Time Recovery configuration.
 
@@ -70,7 +71,7 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
     """
 
     enabled: bool = False
-    oplogSpanMin: int | None # noqa: N815
+    oplogSpanMin: int | None  # noqa: N815
     compression: RequiredStr
 
 
@@ -78,19 +79,25 @@ class BackupConfigStorageFilesystem(BaseCaseInsensitiveModel):
     """Represents a filesystem storage configuration."""
 
     path: RequiredStr | EmptyStrToNone = None
+
+
 class BackupConfigStorageS3(BaseCaseInsensitiveModel):
     """Represents an S3 storage configuration."""
 
     region: RequiredStr | EmptyStrToNone = None
     bucket: RequiredStr | EmptyStrToNone = None
     prefix: RequiredStr | EmptyStrToNone = None
-    endpointUrl: RequiredStr | EmptyStrToNone = None # noqa: N815
+    endpointUrl: RequiredStr | EmptyStrToNone = None  # noqa: N815
+
+
 class BackupConfigStorage(BaseCaseInsensitiveModel):
     """Represent Storage configuration."""
 
     type: StorageType
     s3: BackupConfigStorageS3 | EmptyStrToNone = None
     filesystem: BackupConfigStorageFilesystem | EmptyStrToNone = None
+
+
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
 

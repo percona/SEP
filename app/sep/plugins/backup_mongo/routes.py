@@ -31,6 +31,7 @@ templates = sep_settings.TEMPLATES
 
 router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
+
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def pbm_backups_index(
     request: Request,
@@ -66,7 +67,9 @@ async def pbm_backups_create(
     logical_task.data["backup_type"] = "pbm_logical"
     logical_task.name = f"{task.name}-logical"
     logical_task.data["parent"] = task.name
-    logical_task.data["payload"] = logical_task.data["payload"].replace("pbm_config", "pbm_logical")
+    logical_task.data["payload"] = logical_task.data["payload"].replace(
+        "pbm_config", "pbm_logical"
+    )
 
     await task_api.post(
         "/",
@@ -78,7 +81,9 @@ async def pbm_backups_create(
     physical_task.data["backup_type"] = "pbm_physical"
     physical_task.name = f"{task.name}-physical"
     physical_task.data["parent"] = task.name
-    physical_task.data["payload"] = logical_task.data["payload"].replace("pbm_logical", "pbm_physical")
+    physical_task.data["payload"] = logical_task.data["payload"].replace(
+        "pbm_logical", "pbm_physical"
+    )
 
     await task_api.post(
         "/",
@@ -104,9 +109,7 @@ async def pbm_backups_detail(
 
     # If the task has a parent, redirect to the parent task detail page
     if data.get("parent"):
-        task_path = request.url_for(
-            "pbm_backups_detail", task_name=data.get("parent")
-        )
+        task_path = request.url_for("pbm_backups_detail", task_name=data.get("parent"))
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     meta = data["meta"]

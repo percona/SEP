@@ -15,6 +15,7 @@ class S3Tool(EnumFieldMixin, StrEnum):
     S3CMD = "s3cmd"
     AWSCLI = "awscli"
 
+
 class RestoreConfig(BaseCaseInsensitiveModel):
     """Define the complete configuration for a restore operation.
 

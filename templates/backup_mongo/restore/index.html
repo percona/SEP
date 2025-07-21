@@ -56,9 +56,9 @@
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
             {% include "/backup_mongo/restore/partials/create-form.html" %}
-    {% endif %}
+        {% endif %}
     {% else %}
-    {% include "/backup_mongo/restore/partials/create-form.html" %}
+        {% include "/backup_mongo/restore/partials/create-form.html" %}
         {% set modal_required = True %}
         {% if running_tasks %}
             <section id="running-tasks">

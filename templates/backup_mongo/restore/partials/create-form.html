@@ -56,17 +56,16 @@
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Select Executor Host:</span>
                     {% if executor_hosts|length == 1 %}
-                    {% set single_service = executor_hosts[0] %}
-                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
-                    </select>
-                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                        {% set single_service = executor_hosts[0] %}
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                        </select>
+                        <input type="hidden" name="hostname" value="{{ single_service }}">
                     {% else %}
-                    <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
-                        <option value="" selected>Select a host</option>
-                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}
-                        </option>{% endfor %}
-                    </select>
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+                            <option value="" selected>Select a host</option>
+                            {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                        </select>
                     {% endif %}
                 </label>
             </div>
@@ -77,8 +76,12 @@
             {% set task_name_title = "Type the name of task to be created." %}
             <label for="task_name" title="{{ task_name_title }}">
                 Task Name:
-                <input type="text" id="task_name" name="task_name" class="validate" required
-                    placeholder="Enter a unique task name" />
+                <input type="text"
+                       id="task_name"
+                       name="task_name"
+                       class="validate"
+                       required
+                       placeholder="Enter a unique task name" />
             </label>
             <br>
             <br>
@@ -88,16 +91,16 @@
                     <span class="material-symbols-outlined">arrow_drop_down</span>
                     <span class="label">Select a Database Host:</span>
                     {% if services|length == 1 %}
-                    {% set single_service = services[0] %}
-                    <select id="service_id" name="service_id" disabled>
-                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                    </select>
-                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                        {% set single_service = services[0] %}
+                        <select id="service_id" name="service_id" disabled>
+                            <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                        </select>
+                        <input type="hidden" name="service_id" value="{{ single_service.id }}">
                     {% else %}
-                    <select id="service_id" name="service_id" required>
-                        <option value="" selected>Select a database host</option>
-                        <option value="1">deb-1 1</option>
-                    </select>
+                        <select id="service_id" name="service_id" required>
+                            <option value="" selected>Select a database host</option>
+                            <option value="1">deb-1 1</option>
+                        </select>
                     {% endif %}
                 </label>
             </div>
@@ -117,50 +120,66 @@
     </fieldset>
     <fieldset>
         <legend>General Restore Configuration</legend>
-        <div class="checkbox-group">
-            {% set backup_name_title = "Type the backup name in UTC format" %}
-            <label for="backup_name" title="{{ backup_name_title }}">
-                Backup Name:
-                <input type="text" id="backup_name" name="backup_name" placeholder="1994-06-01T03:30:03Z" required>
-            </label>
-            <br>
-            <br>
-            {% set pitr_title = "Type the PITR UTC format" %}
-            <label for="pitr" title="{{ pitr_title }}">
-                PITR:
-                <input type="text" id="pitr" name="pitr" placeholder="1994-06-01T03:35:03Z">
-            </label>
-            <br>
-            <br>
-            {% set local_dbpath_title = "Type the directory where backup files will be stored." %}
-            <label for="local_dbpath" title="{{ local_dbpath_title }}">
-                Local DBPath:
-                <input type="text" id="local_dbpath" name="local_dbpath" placeholder="/data/mongo" required>
-            </label>
-            <br>
-            <br>
-            {% set logging_dir_title = "Type the directory where log files will be stored for backup operations." %}
-            <label for="logging_dir" title="{{ logging_dir_title }}">
-                Logging Directory (optional):
-                <input type="text" id="logging_dir" name="logging_dir" placeholder="/path/to/logs" />
-            </label>
-            <br>
-            <br>
-            {% set defaults_file_title = "the path to the defaults file containing preset configuration values for the
-            backup process." %}
-            <label for="defaults_file" title="{{ defaults_file_title }}">
-                Defaults File (optional):
-                <input type="text" id="defaults_file" name="defaults_file" placeholder="/etc/mongod.conf" />
-            </label>
-            <br>
-            <br>
+        {% set backup_name_title = "Type the backup name in UTC format" %}
+        <label for="backup_name" title="{{ backup_name_title }}">
+            Backup Name:
+            <input type="text"
+                   id="backup_name"
+                   name="backup_name"
+                   placeholder="1994-06-01T03:30:03Z"
+                   required>
+        </label>
+        <br>
+        <br>
+        {% set pitr_title = "Type the PITR UTC format" %}
+        <label for="pitr" title="{{ pitr_title }}">
+            PITR:
+            <input type="text" id="pitr" name="pitr" placeholder="1994-06-01T03:35:03Z">
+        </label>
+        <br>
+        <br>
+        {% set local_dbpath_title = "Type the directory where backup files will be stored." %}
+        <label for="local_dbpath" title="{{ local_dbpath_title }}">
+            Local DBPath:
+            <input type="text"
+                   id="local_dbpath"
+                   name="local_dbpath"
+                   placeholder="/data/mongo"
+                   required>
+        </label>
+        <br>
+        <br>
+        {% set logging_dir_title = "Type the directory where log files will be stored for backup operations." %}
+        <label for="logging_dir" title="{{ logging_dir_title }}">
+            Logging Directory (optional):
+            <input type="text"
+                   id="logging_dir"
+                   name="logging_dir"
+                   placeholder="/path/to/logs" />
+        </label>
+        <br>
+        <br>
+        {% set defaults_file_title = "the path to the defaults file containing preset configuration values for the
+                backup process." %}
+        <label for="defaults_file" title="{{ defaults_file_title }}">
+            Defaults File (optional):
+            <input type="text"
+                   id="defaults_file"
+                   name="defaults_file"
+                   placeholder="/etc/mongod.conf" />
+        </label>
+        <br>
+        <br>
     </fieldset>
     <fieldset>
         {% set pbm_extra_args_title = "Type additional command-line arguments for the backup process to customize
-        pbm restore behavior." %}
+                pbm restore behavior." %}
         <label for="pbm_extra_args" title="{{ pbm_extra_args_title }}">
             Extra Arguments (optional):
-            <input type="text" id="pbm_extra_args" name="pbm_extra_args" placeholder="e.g. --verbose=3" />
+            <input type="text"
+                   id="pbm_extra_args"
+                   name="pbm_extra_args"
+                   placeholder="e.g. --verbose=3" />
         </label>
     </fieldset>
     {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
@@ -172,6 +191,4 @@
         <button class="text large" type="reset">Reset</button>
     </div>
 </form>
-<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-
-</script>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}"></script>
