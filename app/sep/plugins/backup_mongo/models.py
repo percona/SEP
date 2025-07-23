@@ -13,6 +13,7 @@ class BackupType(EnumFieldMixin, StrEnum):
     PBM_PHYSICAL = "pbm_physical"
     PBM_SNAPSHOT = "pbm_snapshot"
     PBM_CONFIG = "pbm_config"
+    PBM_STATUS = "pbm_status"
 
 
 class StorageType(StrEnum):

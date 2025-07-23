@@ -90,6 +90,20 @@ async def pbm_backups_create(
         json=physical_task.model_dump(),
     )
 
+    # Create a physical backup task
+    status_task = task.model_copy()
+    status_task.data["backup_type"] = "pbm_status"
+    status_task.name = f"{task.name}-status"
+    status_task.data["parent"] = task.name
+    status_task.data["payload"] = logical_task.data["payload"].replace(
+        "pbm_physical", "pbm_status"
+    )
+
+    await task_api.post(
+        "/",
+        json=status_task.model_dump(),
+    )
+
     task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
