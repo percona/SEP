@@ -17,7 +17,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.checksums.models import ChecksumsCreate
-from app.tasks.models import GeneratedTask, Task, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 async def build_checksums_task_payload(
     form: Annotated[ChecksumsCreate, Form()],
     inventory_api: InventoryAPI,
-) -> GeneratedTask:
+) -> TaskWrite:
     """Build the checksums task payload from form.
 
     Build the payload for an Checksums task to be executed, including the
@@ -35,9 +35,9 @@ async def build_checksums_task_payload(
     :type form: ChecksumsCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `GeneratedTask` object containing all the necessary
+    :return: A fully constructed `TaskWrite` object containing all the necessary
         commands and parameters for the Checksums task execution.
-    :rtype: GeneratedTask
+    :rtype: TaskWrite
     """
     service = await get_created_entity(
         inventory_api,
@@ -130,24 +130,27 @@ async def build_checksums_task_payload(
     # Adding flag arguments if set to True
     args.extend(arg for key, arg in flag_args.items() if getattr(form, key))
 
-    return GeneratedTask(
-        app=TaskOwner.CHECKSUMS,
-        commands=[
-            {
-                "args": [*args],
+    return TaskWrite(
+        owner=TaskOwner.CHECKSUMS,
+        backend=TaskBackendEnum.PROXY,
+        data={
+            "task": "run-command",
+            "meta": {
                 "command": "pt-table-checksum",
-                "meta": {
-                    "service_name": service.name,
-                },
+                "args": shlex.join(args),
+                "target": form.hostname,
+                "_service_name": service.name,
+                "_service_host": service.node.address,
+                "_service_port": service.port,
             },
-        ],
+        },
         name=form.task_name,
         target=form.hostname,
         alert_on_fail=form.alert_on_fail,
     )
 
 
-ChecksumsGeneratedTask = Annotated[GeneratedTask, Depends(build_checksums_task_payload)]
+ChecksumsGeneratedTask = Annotated[TaskWrite, Depends(build_checksums_task_payload)]
 
 
 async def get_checksums_task(
@@ -185,13 +188,106 @@ def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     data = task["data"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = data["meta"]
     service_name = ""
-    if "service_name" in meta:
-        service_name = meta["service_name"]
+    if "_service_name" in meta:
+        service_name = meta["_service_name"]
     return {
-        "hostname": data["Constraints"][0]["RTarget"],
+        "hostname": meta["target"],
         "service_name": f"{service_name}",
+    }
+
+
+def parse_single_checksums_arg(arg: str, form_values: dict[str, Any]) -> None:
+    """Parse a single checksums argument and update form values.
+
+    :param arg: The argument to parse.
+    :type arg: str
+    :param form_values: The form values dictionary to update.
+    :type form_values: dict[str, Any]
+    """
+    arg_mappings = {
+        "--recursion-method=": "recursion_method",
+        "--databases=": "databases",
+        "--tables=": "tables",
+        "--pause-file=": "pause_file",
+        "--set-vars=": "set_vars",
+        "--max-load=": "max_load",
+        "--chunk-time=": "chunk_time",
+        "--max-lag=": "max_lag",
+        "--progress=": "progress",
+    }
+
+    for arg_pattern, field_name in arg_mappings.items():
+        if arg.startswith(arg_pattern):
+            form_values[field_name] = arg.split("=", 1)[1]
+            return
+
+    flag_mappings = {
+        "--binary-index": "binary_index",
+        "--explain": "explain_arg",
+        "--fail-on-stopped-replication": "fail_on_stopped_replication",
+        "--truncate-replicate-table": "truncate_replicate_table",
+    }
+
+    for flag, field_name in flag_mappings.items():
+        if arg == flag:
+            form_values[field_name] = True
+            return
+
+
+def parse_checksums_task_args(meta: dict[str, Any]) -> dict[str, Any]:
+    """Parse existing task arguments back into form field values.
+
+    Extracts form field values from the task configuration arguments for editing.
+
+    :param meta: The task meta containing the args string.
+    :type meta: dict[str, Any]
+    :return: A dictionary containing form field values.
+    :rtype: dict[str, Any]
+    """
+    form_values = {
+        "recursion_method": "processlist",
+        "databases": "",
+        "tables": "",
+        "pause_file": "",
+        "binary_index": False,
+        "explain_arg": False,
+        "fail_on_stopped_replication": False,
+        "truncate_replicate_table": False,
+        "progress": "",
+        "set_vars": "",
+        "max_load": "",
+        "chunk_time": "",
+        "max_lag": "",
+        "extra_args": "",
+    }
+
+    args_string = meta.get("args", "")
+    args = shlex.split(args_string)
+
+    # Skip the first argument (DSN)
+    if args:
+        args = args[1:]
+
+    for arg in args:
+        parse_single_checksums_arg(arg, form_values)
+
+    return form_values
+
+
+def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
+    """Extract service information from task meta.
+
+    :param meta: The task meta data.
+    :type meta: dict[str, Any]
+    :return: A dictionary containing service information.
+    :rtype: dict[str, Any]
+    """
+    return {
+        "service_host": meta.get("_service_host", ""),
+        "service_port": meta.get("_service_port", ""),
+        "service_name": meta.get("_service_name", ""),
     }
 
 
