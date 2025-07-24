@@ -22,6 +22,81 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 logger = logging.getLogger(__name__)
 
 
+def extract_databases_and_tables_from_extra_args(form: ChecksumsCreate) -> list[str]:
+    """Extract --databases and --tables from extra_args and add to form fields.
+
+    :param form: The form data for the Checksums creation.
+    :return: List of remaining arguments (excluding --databases and --tables).
+    """
+    if not form.extra_args:
+        return []
+
+    remaining_args = []
+    for arg in shlex.split(form.extra_args):
+        if arg.startswith("--databases="):
+            value = arg.split("=", 1)[1]
+            form.databases = form.databases + "," + value if form.databases else value
+        elif arg.startswith("--tables="):
+            value = arg.split("=", 1)[1]
+            form.tables = form.tables + "," + value if form.tables else value
+        else:
+            remaining_args.append(arg)
+
+    return remaining_args
+
+
+async def process_schema_and_table_ids(
+    form: ChecksumsCreate, inventory_api: InventoryAPI
+) -> None:
+    """Process schema_id and table_id to set databases and tables form fields.
+
+    :param form: The form data for the Checksums creation.
+    :param inventory_api: The Inventory API to get entities from.
+    """
+    if not form.schema_id or len(form.schema_id) == 0:
+        return
+
+    if -1 in form.schema_id:
+        return
+
+    database_names = []
+    for schema_id in form.schema_id:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            schema_id,
+        )
+        database_names.append(schema.name)
+
+    form.databases = ",".join(database_names)
+
+    if form.table_id and len(form.table_id) > 0:
+        table_entries = []
+        valid_table_ids = [t for t in form.table_id if t > 0]
+
+        for table_id in valid_table_ids:
+            table = await get_created_entity(
+                inventory_api,
+                SyncInventoryEntityTypeEnum.TABLE,
+                table_id,
+            )
+            table_schema = None
+            for schema_id in form.schema_id:
+                schema = await get_created_entity(
+                    inventory_api,
+                    SyncInventoryEntityTypeEnum.SCHEMA,
+                    schema_id,
+                )
+                if schema.id == table.schema_id:
+                    table_schema = schema
+                    break
+
+            if table_schema:
+                table_entries.append(f"{table_schema.name}.{table.name}")
+
+        form.tables = ",".join(table_entries)
+
+
 async def build_checksums_task_payload(
     form: Annotated[ChecksumsCreate, Form()],
     inventory_api: InventoryAPI,
@@ -60,49 +135,10 @@ async def build_checksums_task_payload(
     if form.recursion_method is not None and len(form.recursion_method) > 0:
         args.append(f"--recursion-method={form.recursion_method}")
 
-    # --databases and --tables options
-    if (
-        form.schema_id is not None
-        and len(form.schema_id) == 1
-        and form.table_id is not None
-    ):
-        schema_id = next(iter(form.schema_id))
-        valid_table_ids = [t for t in form.table_id if t > 0]
+    await process_schema_and_table_ids(form, inventory_api)
 
-        table_names = []
-        for t in valid_table_ids:
-            table = await get_created_entity(
-                inventory_api,
-                SyncInventoryEntityTypeEnum.TABLE,
-                t,
-                schema_id=schema_id,
-            )
-            table_names.append(table.name)
-
-        form.tables = ",".join(table_names)
-
-    tables = ""
-    if (
-        form.schema_id is not None
-        and len(form.schema_id) == 1
-        and form.table_id is not None
-    ):
-        schema_id = next(iter(form.schema_id))
-        valid_table_ids = [t for t in form.table_id if t > 0]
-
-        for t in valid_table_ids:
-            table = await get_created_entity(
-                inventory_api,
-                SyncInventoryEntityTypeEnum.TABLE,
-                t,
-                schema_id=schema_id,
-            )
-            tables += f"{table.name},"
-
-    form.tables = tables.rstrip(",")
-
-    if form.extra_args:
-        args.extend(shlex.split(form.extra_args))
+    remaining_args = extract_databases_and_tables_from_extra_args(form)
+    args.extend(remaining_args)
 
     # Mapping form fields to their respective arguments
     optional_args = {
