@@ -1,0 +1,408 @@
+<style>
+    fieldset {
+        width: 95%;
+        justify-content: flex-start;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        margin-bottom: 0.5em;
+    }
+
+    .field {
+        flex: 0 0 48%;
+        box-sizing: border-box;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+    }
+
+    fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1))>.field {
+        flex: 0 0 48%;
+    }
+
+    .field label {
+        width: 135px;
+        margin-right: 10px;
+    }
+
+    .field input,
+    .field select {
+        flex: 1;
+    }
+
+    label+select,
+    label+input {
+        vertical-align: middle;
+        margin-right: 0px;
+    }
+
+    label:has(+ select),
+    label:has(+ input) {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0px !important;
+        width: 130px;
+    }
+
+    input[type="checkbox"] {
+        flex: none;
+        margin-right: 0.5em;
+    }
+</style>
+<form id="edit-task-form"
+      class="edit-task-form window"
+      method="post"
+      action="{{ url_for('checksums_update', task_name=task.name) }}"
+      data-confirm-message='Are you sure you want to edit task "{{ task.name }}"?'>
+    <dialog id="modalEditTask"
+            aria-modal="true"
+            aria-labelledby="modalEditTaskTitle"
+            data-modal="target"
+            class="large">
+        <header>
+            <h3 id="modalEditTaskTitle" class="h5 title">Edit task</h3>
+        </header>
+        <section>
+            <p>
+                You are about to edit the task <strong id="modalTaskName"></strong>.
+            </p>
+            <div>
+                <fieldset>
+                    <legend>Executor Host</legend>
+                    <br>
+                    <div class="select">
+                        {% set hostname_title = "Select the hostname of the target system for task execution." %}
+                        <label for="hostname" title="{{ hostname_title }}">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Select host</span>
+                            {% set executor_hosts = executor_hosts | list %}
+                            {% if executor_hosts|length == 1 %}
+                                {% set single_service = executor_hosts[0] %}
+                                <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                                </select>
+                                <input type="hidden" name="hostname" value="{{ single_service }}">
+                            {% else %}
+                                <select id="hostname" name="hostname" title="{{ hostname_title }}">
+                                    {% for executor_host in executor_hosts %}
+                                        <option value="{{ executor_host }}"
+                                                {% if executor_host == task['hostname'] %}selected{% endif %}>
+                                            {{ executor_host }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            {% endif %}
+                        </label>
+                    </div>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <legend>Task details</legend>
+                    <br>
+                    <div class="field">
+                        {% set task_name_title = "Type the name of task to be created." %}
+                        <label for="task_name" title="{{ task_name_title }}">Task name</label>
+                        <input type="text"
+                               id="task_name"
+                               name="task_name"
+                               class="validate"
+                               required
+                               title="{{ task_name_title }}"
+                               value="{{ task.name }}"
+                               placeholder="Enter a unique task name">
+                    </div>
+                    <br>
+                    <div class="select">
+                        {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                        <label for="service_id" title="{{ service_id_title }}">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Database host</span>
+                            {% if services|length > 0 %}
+                                {% set matched_service_list = [] %}
+                                {% for service in services %}
+                                    {% if task["service_host"] == service.node.address and task["service_port"] == service.port %}
+                                        {% do matched_service_list.append(1) %}
+                                    {% endif %}
+                                {% endfor %}
+                                <select id="service_id"
+                                        name="service_id"
+                                        title="{{ service_id_title }}"
+                                        required>
+                                    <option value=""
+                                            {% if matched_service_list|length > 0 %}{% else %}selected{% endif %}>
+                                        Select a database host
+                                    </option>
+                                    {% if matched_service_list|length == 0 %}
+                                        <option value="-1" selected>Unknown({{ task["service_host"] }}:{{ task["service_port"] }})</option>
+                                    {% endif %}
+                                    {% for service in services %}
+                                        {% set is_selected = task["service_host"] == service.node.address and task["service_port"] == service.port %}
+                                        <option value="{{ service.id }}" {% if is_selected %}selected{% endif %}>
+                                            {{ service.name }} ({{ service.node_id }})
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            {% endif %}
+                        </label>
+                    </div>
+                    <br>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <legend>Advanced options</legend>
+                    <br>
+                    <div class="select">
+                        {% set recursion_method_title = "Select the method for handling recursion to discover replicas (e.g., processlist, hosts, dsn)." %}
+                        <label for="recursion_method" title="{{ recursion_method_title }}">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Recursion method</span>
+                            <select id="recursion_method"
+                                    name="recursion_method"
+                                    title="{{ recursion_method_title }}">
+                                <option value="processlist"
+                                        {% if task.recursion_method == "processlist" %}selected{% endif %}>
+                                    processlist
+                                </option>
+                                <option value="host"
+                                        {% if task.recursion_method == "host" %}selected{% endif %}>host</option>
+                                <option value="dsn"
+                                        {% if task.recursion_method == "dsn" %}selected{% endif %}>dsn</option>
+                                <option value="none"
+                                        {% if task.recursion_method == "none" %}selected{% endif %}>none</option>
+                            </select>
+                        </label>
+                    </div>
+                    <br>
+                    <div class="field">
+                        {% set dsn_table_title = "Type the DSN table to use for the recursion method when set to 'dsn'." %}
+                        <label for="dsn_table" title="{{ dsn_table_title }}">DSN Table</label>
+                        <input type="text"
+                               id="dsn_table"
+                               name="dsn_table"
+                               class="validate"
+                               value="{{ task.dsn_table }}"
+                               placeholder="schema.dsns"
+                               title="{{ dsn_table_title }}" />
+                    </div>
+                    <br>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set databases_title = "Type the database names to checksum, separated by commas." %}
+                        <label for="databases" title="{{ databases_title }}">Databases</label>
+                        <input type="text"
+                               id="databases"
+                               name="databases"
+                               class="validate"
+                               value="{{ task.databases }}"
+                               title="{{ databases_title }}"
+                               placeholder="db1,db2,db3" />
+                    </div>
+                    <br>
+                    <div class="field">
+                        {% set tables_title = "Type the table names to checksum, separated by commas." %}
+                        <label for="tables" title="{{ tables_title }}">Tables</label>
+                        <input type="text"
+                               id="tables"
+                               name="tables"
+                               class="validate"
+                               value="{{ task.tables }}"
+                               title="{{ tables_title }}"
+                               placeholder="table1,table2,table3" />
+                    </div>
+                    <br>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set pause_file_title = "Type a file path. Execution will pause while this file exists." %}
+                        <label for="pause_file" title="{{ pause_file_title }}">Pause file</label>
+                        <input type="text"
+                               id="pause_file"
+                               name="pause_file"
+                               class="validate"
+                               title="{{ pause_file_title }}"
+                               value="{{ task.pause_file }}"
+                               placeholder="/tmp/pause_file.txt" />
+                    </div>
+                    <br>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <label class="checkbox">
+                        {% set binary_index_title = "Modify the behavior of --create-replicate-table such that the replicate table's upper and lower boundary columns are created with the BLOB data type." %}
+                        <input type="checkbox"
+                               id="binary_index"
+                               name="binary_index"
+                               class="validate"
+                               {% if task.binary_index %}checked{% endif %}
+                               title="{{ binary_index_title }}" />
+                        <div class="checkmark">
+                            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                            <span class="material-symbols-outlined checked">check_box</span>
+                        </div>
+                        <span class="label">Binary index</span>
+                    </label>
+                    <label class="checkbox">
+                        {% set explain_arg_title = "Show, but do not execute, checksum queries." %}
+                        <input type="checkbox"
+                               id="explain_arg"
+                               name="explain_arg"
+                               class="validate"
+                               {% if task.explain_arg %}checked{% endif %}
+                               title="{{ explain_arg_title }}" />
+                        <div class="checkmark">
+                            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                            <span class="material-symbols-outlined checked">check_box</span>
+                        </div>
+                        <span class="label">Explain</span>
+                    </label>
+                    <label class="checkbox">
+                        {% set fail_on_stopped_replication_title = "If replication is stopped, fail with an error." %}
+                        <input type="checkbox"
+                               id="fail_on_stopped_replication"
+                               name="fail_on_stopped_replication"
+                               class="validate"
+                               {% if task.fail_on_stopped_replication %}checked{% endif %}
+                               title="{{ fail_on_stopped_replication_title }}" />
+                        <div class="checkmark">
+                            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                            <span class="material-symbols-outlined checked">check_box</span>
+                        </div>
+                        <span class="label">Fail on stopped replication</span>
+                    </label>
+                    <label class="checkbox">
+                        {% set truncate_replicate_table_title = "Truncate the replicate table before starting the checksum." %}
+                        <input type="checkbox"
+                               id="truncate_replicate_table"
+                               name="truncate_replicate_table"
+                               class="validate"
+                               {% if task.truncate_replicate_table %}checked{% endif %}
+                               title="{{ truncate_replicate_table_title }}" />
+                        <div class="checkmark">
+                            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                            <span class="material-symbols-outlined checked">check_box</span>
+                        </div>
+                        <span class="label">Truncate replicate table</span>
+                    </label>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set progress_title = "Type progress report settings. Use a comma-separated value: the first part defines the type (percentage, time, or iterations), and the second part specifies the frequency (percentage, seconds, or iterations)." %}
+                        <label for="progress" title="{{ progress_title }}">Progress</label>
+                        <input type="text"
+                               id="progress"
+                               name="progress"
+                               class="validate"
+                               size="15"
+                               value="{{ task.progress }}"
+                               title="{{ progress_title }}"
+                               placeholder="time,30 or percentage,10" />
+                    </div>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set set_vars_title = "Set the MySQL variables in this comma-separated list of variable=value pairs." %}
+                        <label for="set_vars" title="{{ set_vars_title }}">Set Vars</label>
+                        <input type="text"
+                               id="set_vars"
+                               name="set_vars"
+                               class="validate"
+                               title="{{ set_vars_title }}"
+                               value="{{ task.set_vars }}"
+                               placeholder="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5"
+                               size="70" />
+                    </div>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set max_load_title = "Type a comma-separated list of MySQL load thresholds to pause operation if exceeded. Default: Threads_running=25." %}
+                        <label for="max_load" title="{{ max_load_title }}">Max Load</label>
+                        <input type="text"
+                               id="max_load"
+                               name="max_load"
+                               class="validate"
+                               title="{{ max_load_title }}"
+                               value="{{ task.max_load }}"
+                               placeholder="Threads_running=30,Threads_connected=120"
+                               size="30" />
+                    </div>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set chunk_time_title = "Set the target execution time (in seconds) for each data-copy query. Default: 0.5 seconds." %}
+                        <label for="chunk_time" title="{{ chunk_time_title }}">Chunk Time</label>
+                        <input type="text"
+                               id="chunk_time"
+                               name="chunk_time"
+                               class="validate"
+                               title="{{ chunk_time_title }}"
+                               value="{{ task.chunk_time }}"
+                               placeholder="0.5"
+                               size="5" />
+                    </div>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set max_lag_title = "Set the maximum allowed replica lag before pausing data copy. Default: 1s." %}
+                        <label for="max_lag" title="{{ max_lag_title }}">Max Lag</label>
+                        <input type="text"
+                               id="max_lag"
+                               name="max_lag"
+                               class="validate"
+                               title="{{ max_lag_title }}"
+                               value="{{ task.max_lag }}"
+                               placeholder="150"
+                               size="5" />
+                    </div>
+                </fieldset>
+                <br>
+                <fieldset>
+                    <div class="field">
+                        {% set extra_args_title = "Type additional command-line arguments for pt-table-checksum." %}
+                        <label for="extra_args" title="{{ extra_args_title }}">Extra Arguments</label>
+                        <input type="text"
+                               id="extra_args"
+                               name="extra_args"
+                               class="validate"
+                               title="{{ extra_args_title }}"
+                               value="{{ task.extra_args }}"
+                               placeholder="--additional-arg=value"
+                               size="70" />
+                    </div>
+                </fieldset>
+                <br>
+                {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
+            </div>
+        </section>
+        <footer>
+            <button type="button" class="text large" data-modal-close>
+                Cancel<sup>ESC</sup>
+            </button>
+            <button id="modalEditTaskSubmitButton"
+                    type="submit"
+                    disabled
+                    class="contained large submitButton">Edit</button>
+        </footer>
+    </dialog>
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+</form>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    const form = document.getElementById('edit-task-form');
+    const editButton = form.querySelector('button[type="submit"]');
+
+    function updateEditButtonState() {
+        editButton.disabled = !form.checkValidity();
+    }
+
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
+
+    window.addEventListener('DOMContentLoaded', function() {
+        updateEditButtonState();
+    });
+</script>

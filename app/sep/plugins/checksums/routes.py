@@ -1,17 +1,18 @@
 """Define routes for the checksums plugin."""
 
 import logging
-import shlex
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     HasNoConflictedRunningTasks,
+    InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -19,7 +20,9 @@ from app.sep.deps import (
 from app.sep.plugins.checksums.deps import (
     ChecksumsGeneratedTask,
     ChecksumsTask,
+    extract_service_info,
     get_checksums_index_context,
+    parse_checksums_task_args,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -53,7 +56,7 @@ async def checksums_create(
     """Create an checksum task."""
     logger.debug("Create checksums task: %s", task)
     await task_api.post(
-        "/generate/",
+        "/",
         json=task.model_dump(),
     )
 
@@ -70,21 +73,46 @@ async def checksums_detail(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """Retrieve checksums task."""
     data = task.data
-    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = data["meta"]
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
-        "hostname": data["Constraints"][0]["RTarget"],
-        "cmd": f"{task_config['command']} {shlex.join(task_config['args'])}",
+        "hostname": meta["target"],
+        "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
         "delete_url": request.url_for("checksums_delete", task_name=task.name),
+        "alert_on_fail": task.alert_on_fail,
     }
+    task_data.update(extract_service_info(meta))
+    task_data.update(parse_checksums_task_args(meta))
+
     context["task"] = task_data
+
+    try:
+        executor_hosts = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        executor_hosts = {}
+        logger.warning("Failed to get executor hosts: %s", exc)
+    try:
+        services = await inventory_api.get(
+            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        )
+        for service in services:
+            service["schemas"] = await inventory_api.get(
+                f"/services/{service['id']}/schemas/",
+            )
+    except HTTPException as exc:
+        services = []
+        logger.warning("Failed to get services: %s", exc)
+
+    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["services"] = services
+
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["running_tasks"] = await tasks_api.get(
@@ -114,6 +142,30 @@ async def checksums_execute(
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     return RedirectResponse("/checksums", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def checksums_update(
+    request: Request,
+    task_name: str,
+    updated_task: ChecksumsGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update checksums task."""
+    logger.debug("Updating checksums task: %s", updated_task)
+    await tasks_api.put(
+        f"/{task_name}",
+        json=updated_task.model_dump(),
+    )
+
+    return RedirectResponse(
+        request.url_for("checksums_detail", task_name=updated_task.name),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post(
