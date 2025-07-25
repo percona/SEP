@@ -79,7 +79,7 @@ Command line options:
    --defaults-file         Path to MySQL defaults-file
    --pid                   pt-stalk PID file
    --log                   pt-stalk log file
-   -d, --dest              Destination for the summaries. 
+   -d, --dest              Destination for the summaries.
                            Default: .$(pwd)/$(hostname)
    --iterations            How many iterations to run
    --sleep                 Sleep time between iterations
@@ -176,5 +176,3 @@ case "$ACTION" in
       usage 255
       ;;
 esac
-
-
