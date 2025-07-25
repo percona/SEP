@@ -158,6 +158,14 @@ async def pbm_backups_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+
+    #get latest status
+    pbm_status_tasks = await tasks_api.get(f"/{task.name}-status/history/")
+    try:
+        context["latest_status"] = pbm_status_tasks[0]["execution_request"]["tracking"]["task_logs"]["run-script"]["stdout"]
+    except (IndexError, KeyError):
+        context["latest_status"] = None
+
     return templates.TemplateResponse(
         request=request,
         name="backup_mongo/backup/details.html",
