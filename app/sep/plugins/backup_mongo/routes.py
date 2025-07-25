@@ -159,10 +159,11 @@ async def pbm_backups_detail(
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    #get latest status
+    # get latest status
     pbm_status_tasks = await tasks_api.get(f"/{task.name}-status/history/")
     try:
-        context["latest_status"] = pbm_status_tasks[0]["execution_request"]["tracking"]["task_logs"]["run-script"]["stdout"]
+        tracking = pbm_status_tasks[0]["execution_request"]["tracking"]
+        context["latest_status"] = tracking["task_logs"]["run-script"]["stdout"]
     except (IndexError, KeyError):
         context["latest_status"] = None
 
