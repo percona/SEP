@@ -1,0 +1,250 @@
+name: pt-stalk
+sudo: true
+tests:
+  - name: "default"
+    cmd: "pt-stalk.sh"
+    args:
+    expected:
+      stdout:
+        file: "start.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/*df"
+        - "{{hostname}}/*ps"
+        - "{{hostname}}/*innodbstatus*"
+        - "{{hostname}}/*mysqladmin"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm -f {{hostname}}.tar.gz"
+  - name: "action start"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--action=start"
+    expected:
+      stdout:
+        file: "start.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/*df"
+        - "{{hostname}}/*ps"
+        - "{{hostname}}/*innodbstatus*"
+        - "{{hostname}}/*mysqladmin"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm -f {{hostname}}.tar.gz"
+  - name: "invalid action"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--action=invalid"
+    expected:
+      stdout:
+        file: "invalid-action.stdout"
+        isre: true
+      stderr:
+      returncode: 255
+      dirs:
+      files:
+    notExpected:
+      stdout:
+        file: "start.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/*df"
+        - "{{hostname}}/*ps"
+        - "{{hostname}}/*innodbstatus*"
+        - "{{hostname}}/*mysqladmin"
+    cleanup:
+  - name: "invalid-option"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--invalid-option"
+    expected:
+      stdout:
+        file: "invalid-option.stdout"
+        isre: true
+      stderr:
+        file: "invalid-option.stderr"
+        isre: false
+      returncode: 1
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
+  - name: "system-only"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--system-only"
+    expected:
+      stdout:
+        file: "system-only.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/*df"
+        - "{{hostname}}/*ps"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}/*innodbstatus*"
+        - "{{hostname}}/*mysqladmin"
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm -f {{hostname}}.tar.gz"
+  - name: "mysql-only"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--"
+      - "--mysql-only"
+    expected:
+      stdout:
+        file: "mysql-only.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/*innodbstatus*"
+        - "{{hostname}}/*mysqladmin"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}/*df"
+        - "{{hostname}}/*ps"
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm -f {{hostname}}.tar.gz"
+  - name: "custom options"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--iterations=3"
+      - "--sleep=10"
+      - "--dest={{hostname}}_custom"
+      - "--log={{hostname}}_custom/pt-stalk.custom.log"
+    expected:
+      stdout:
+        file: "custom-options.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}_custom"
+      files:
+        - "{{hostname}}_custom.tar.gz"
+        - "{{hostname}}_custom/*df"
+        - "{{hostname}}_custom/*ps"
+        - "{{hostname}}_custom/*innodbstatus*"
+        - "{{hostname}}_custom/*mysqladmin"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/*df"
+        - "{{hostname}}/*ps"
+        - "{{hostname}}/*innodbstatus*"
+        - "{{hostname}}/*mysqladmin"
+        - "{{hostname}}_custom/pt-stalk.custom.log"
+    cleanup:
+      - "rm -f {{hostname}}_custom/*"
+      - "rmdir {{hostname}}_custom"
+      - "rm -f {{hostname}}_custom.tar.gz"
+  - name: "daemon mode start"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--daemon"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}/pt-stalk.log"
+        - "{{hostname}}/pt-stalk.pid"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/*df"
+        - "{{hostname}}/*ps"
+        - "{{hostname}}/*innodbstatus*"
+        - "{{hostname}}/*mysqladmin"
+    cleanup:
+  - name: "daemon mode stop"
+    cmd: "pt-stalk.sh"
+    args:
+      - "--action=stop"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        - "{{hostname}}.tar.gz"
+        - "{{hostname}}/pt-stalk.log"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}/pt-stalk.pid"
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm -f {{hostname}}.tar.gz"
