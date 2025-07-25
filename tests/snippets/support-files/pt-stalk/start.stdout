@@ -1,0 +1,13 @@
+[0-9_]+ Starting (/\w*)*/pt-stalk --function=status --variable=Threads_running --threshold=25 --match= --cycles=0 --interval=1 --iterations=2 --run-time=30 --sleep=30 --dest=(/\w*)*/{{hostname}} --prefix= --notify-by-email= --log=(/\w*)*/{{hostname}}/pt-stalk.log --pid=(/\w*)*/{{hostname}}/pt-stalk.pid --plugin=
+[0-9_]+ Not stalking; collect triggered immediately
+[0-9_]+ Collect 1 triggered
+[0-9_]+ Collect 1 PID [0-9]+
+[0-9_]+ Collect 1 done
+[0-9_]+ Sleeping 30 seconds after collect
+[0-9_]+ Not stalking; collect triggered immediately
+[0-9_]+ Collect 2 triggered
+[0-9_]+ Collect 2 PID [0-9]+
+[0-9_]+ Collect 2 done
+[0-9_]+ Waiting up to 90 seconds for subprocesses to finish...
+[0-9_]+ Exiting because no more iterations
+[0-9_]+ /usr/bin/pt-stalk exit status 0
