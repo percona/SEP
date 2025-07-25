@@ -1,0 +1,11 @@
+Error parsing options
+Usage: pt-mysql-summary.sh \[OPTIONS\]
+Executes pt-mysql-summary script
+
+Command line options:
+
+   --defaults-file   Path to MySQL defaults-file
+   -d, --dest        Destination for the samples.
+                     Default: .+/{{hostname}}-\d\d(\d\d-){4}\d\d
+   --save-samples    Save samples
+   -h, --help        Show this help message
