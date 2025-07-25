@@ -10,9 +10,9 @@ tests:
         isre: true
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}"
-      files: 
+      files:
         - "{{hostname}}.tar.gz"
         - "{{hostname}}/*df"
         - "{{hostname}}/*ps"
@@ -30,7 +30,7 @@ tests:
       - "rm -f {{hostname}}.tar.gz"
   - name: "action start"
     cmd: "pt-stalk.sh"
-    args: 
+    args:
       - "--action=start"
     expected:
       stdout:
@@ -38,9 +38,9 @@ tests:
         isre: true
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}"
-      files: 
+      files:
         - "{{hostname}}.tar.gz"
         - "{{hostname}}/*df"
         - "{{hostname}}/*ps"
@@ -58,7 +58,7 @@ tests:
       - "rm -f {{hostname}}.tar.gz"
   - name: "invalid action"
     cmd: "pt-stalk.sh"
-    args: 
+    args:
       - "--action=invalid"
     expected:
       stdout:
@@ -74,9 +74,9 @@ tests:
         isre: true
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}"
-      files: 
+      files:
         - "{{hostname}}.tar.gz"
         - "{{hostname}}/*df"
         - "{{hostname}}/*ps"
@@ -86,7 +86,7 @@ tests:
   - name: "invalid-option"
     cmd: "pt-stalk.sh"
     args:
-      - "--invalid-option" 
+      - "--invalid-option"
     expected:
       stdout:
         file: "invalid-option.stdout"
@@ -95,7 +95,7 @@ tests:
         file: "invalid-option.stderr"
         isre: false
       returncode: 1
-      dirs: 
+      dirs:
       files:
     notExpected:
       stdout:
@@ -114,9 +114,9 @@ tests:
         isre: true
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}"
-      files: 
+      files:
         - "{{hostname}}.tar.gz"
         - "{{hostname}}/*df"
         - "{{hostname}}/*ps"
@@ -143,9 +143,9 @@ tests:
         isre: true
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}"
-      files: 
+      files:
         - "{{hostname}}.tar.gz"
         - "{{hostname}}/*innodbstatus*"
         - "{{hostname}}/*mysqladmin"
@@ -163,7 +163,7 @@ tests:
       - "rm -f {{hostname}}.tar.gz"
   - name: "custom options"
     cmd: "pt-stalk.sh"
-    args: 
+    args:
       - "--iterations=3"
       - "--sleep=10"
       - "--dest={{hostname}}_custom"
@@ -174,9 +174,9 @@ tests:
         isre: true
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}_custom"
-      files: 
+      files:
         - "{{hostname}}_custom.tar.gz"
         - "{{hostname}}_custom/*df"
         - "{{hostname}}_custom/*ps"
@@ -201,15 +201,15 @@ tests:
       - "rm -f {{hostname}}_custom.tar.gz"
   - name: "daemon mode start"
     cmd: "pt-stalk.sh"
-    args: 
+    args:
       - "--daemon"
     expected:
       stdout:
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}"
-      files: 
+      files:
         - "{{hostname}}/pt-stalk.log"
         - "{{hostname}}/pt-stalk.pid"
     notExpected:
@@ -232,9 +232,9 @@ tests:
       stdout:
       stderr:
       returncode: 0
-      dirs: 
+      dirs:
         - "{{hostname}}"
-      files: 
+      files:
         - "{{hostname}}.tar.gz"
         - "{{hostname}}/pt-stalk.log"
     notExpected:
@@ -248,6 +248,3 @@ tests:
       - "rm -f {{hostname}}/*"
       - "rmdir {{hostname}}"
       - "rm -f {{hostname}}.tar.gz"
-
-
-

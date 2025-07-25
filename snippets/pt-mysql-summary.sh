@@ -41,7 +41,7 @@ Executes pt-mysql-summary script
 Command line options:
 
    --defaults-file   Path to MySQL defaults-file
-   -d, --dest        Destination for the samples. 
+   -d, --dest        Destination for the samples.
                      Default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
    --save-samples    Save samples
    -h, --help        Show this help message
@@ -93,4 +93,3 @@ if [ $SAVE_SAMPLES -eq 1 ]; then
 else
    pt-mysql-summary ${DEFAULTS_FILE} "$@"
 fi
-
