@@ -389,7 +389,6 @@
         }
     });
 
-    // Flags explain_arg and truncate_replicate_table are mutually exclusive
     explain_arg.addEventListener('change', function () {
         if (this.checked) {
             truncate_replicate_table.checked = false;
@@ -399,7 +398,6 @@
         }
     });
 
-    // Flags explain_arg and truncate_replicate_table are mutually exclusive
     truncate_replicate_table.addEventListener('change', function () {
         if (this.checked) {
             explain_arg.checked = false;
@@ -411,7 +409,6 @@
 
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
-    // Service/Schema/Table selection logic (similar to create form)
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
@@ -423,7 +420,17 @@
 
     const serviceSchemas = {{ serviceSchemas|tojson }};
     const source_data = {{ source_data | tojson }};
-    source_data.table = source_data.table.split(".")[1];
+
+    const sourceSchemas = source_data.schema ? source_data.schema.split(',').map(s => s.trim()).filter(s => s) : [];
+    const sourceTables = source_data.table ? source_data.table.split(',').map(t => t.trim()).filter(t => t) : [];
+
+    const hasMultipleSchemas = sourceSchemas.length > 1;
+    const hasMultipleTables = sourceTables.length > 1;
+
+    if (sourceTables.length === 1 && sourceTables[0].includes('.')) {
+        sourceTables[0] = sourceTables[0].split('.')[1];
+    }
+
     const matched = {
         serviceId: null,
         schemaId: null,
@@ -437,6 +444,21 @@
         tableSelect.innerHTML = '<option value="">Select a table</option>';
         selectedSchema = null;
         selectedTable = null;
+
+        if (selectedService !== "-1" && selectedService !== "") {
+            extra_args.value = "";
+        }
+
+        if (sourceSchemas.length === 0 && sourceTables.length === 0) {
+            const noSelectedOption = document.createElement('option');
+            noSelectedOption.value = "-1";
+            noSelectedOption.textContent = "No selected";
+            noSelectedOption.selected = true;
+            schemaSelect.appendChild(noSelectedOption);
+            schemaSelect.disabled = false;
+            tableSelect.disabled = true;
+            return;
+        }
 
         if (selectedService && serviceSchemas[selectedService]) {
             const schemas = Object.entries(serviceSchemas[selectedService]);
@@ -470,6 +492,20 @@
         tableSelect.disabled = true;
         tableSelect.innerHTML = '<option value="">Select a table</option>';
         selectedTable = null;
+
+        if (selectedSchema !== "-1" && selectedSchema !== "") {
+            extra_args.value = "";
+        }
+
+        if (sourceTables.length === 0) {
+            const noSelectedOption = document.createElement('option');
+            noSelectedOption.value = "-1";
+            noSelectedOption.textContent = "No selected";
+            noSelectedOption.selected = true;
+            tableSelect.appendChild(noSelectedOption);
+            tableSelect.disabled = false;
+            return;
+        }
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
             const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
@@ -505,38 +541,89 @@
     });
 
     schemaSelect.addEventListener('change', function() {
-        extra_args.value = ""
+        if (this.value !== "-1" && this.value !== "") {
+            extra_args.value = "";
+        }
         const hiddenTableInput = document.getElementById("table_id_hidden");
         hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
         selectedSchema = this.value;
         populateTables(selectedService, selectedSchema);
     });
 
-    extra_args.addEventListener('change', function() {
-        schemaSelect.value = -1;
-        tableSelect.value = -1;
+    tableSelect.addEventListener('change', function() {
+        if (this.value !== "-1" && this.value !== "") {
+            extra_args.value = "";
+        }
+    });
+
+    extra_args.addEventListener('input', function() {
+        if (this.value.trim() !== "") {
+            if (schemaSelect.value !== "-1") {
+                schemaSelect.value = "";
+                selectedSchema = null;
+            }
+
+            if (tableSelect.value !== "-1") {
+                tableSelect.value = "";
+                selectedTable = null;
+            }
+
+            const hiddenSchemaInput = document.getElementById("schema_id_hidden");
+            const hiddenTableInput = document.getElementById("table_id_hidden");
+            hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
+            hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
+        }
     });
 
     function initSource() {
         const selectedServiceId = connectToSelect.value;
-        if (selectedServiceId === "-1") {
-            const unknownTables = {
-                "-1": {
-                    name: "Unknown table: " + (source_data.table || "unknown"),
-                    id: "-1"
-                }
-            };
 
-            serviceSchemas["-1"] = {
-                "-1": {
-                    name: "Unknown schema: " + (source_data.schema || "unknown"),
-                    tables: unknownTables
-                }
-            };
+        if (hasMultipleSchemas || hasMultipleTables) {
+            let extraArgsParts = [];
 
-            matched.serviceId = "-1";
+            if (hasMultipleSchemas) {
+                extraArgsParts.push(`--databases=${sourceSchemas.join(',')}`);
+            }
+
+            if (hasMultipleTables) {
+                extraArgsParts.push(`--tables=${sourceTables.join(',')}`);
+            }
+
+            extra_args.value = extraArgsParts.join(' ');
+
+            matched.serviceId = selectedServiceId;
             matched.schemaId = "-1";
             matched.tableId = "-1";
+            return;
+        }
+
+        if (sourceSchemas.length === 0 && sourceTables.length === 0) {
+            matched.serviceId = selectedServiceId;
+            matched.schemaId = "-1";
+            matched.tableId = "-1";
+            return;
+        }
+
+        if (selectedServiceId === "-1") {
+            if (sourceSchemas.length > 0 || sourceTables.length > 0) {
+                const unknownTables = {
+                    "-1": {
+                        name: "Unknown table: " + (sourceTables[0] || "unknown"),
+                        id: "-1"
+                    }
+                };
+
+                serviceSchemas["-1"] = {
+                    "-1": {
+                        name: "Unknown schema: " + (sourceSchemas[0] || "unknown"),
+                        tables: unknownTables
+                    }
+                };
+
+                matched.serviceId = "-1";
+                matched.schemaId = "-1";
+                matched.tableId = "-1";
+            }
         } else {
             matched.serviceId = selectedServiceId;
 
@@ -544,12 +631,14 @@
             let matchedSchema = null;
             let matchedSchemaKey = null;
 
-            for (const schemaId in schemas) {
-                const schema = schemas[schemaId];
-                if (schema.name === source_data.schema) {
-                    matchedSchema = schema;
-                    matchedSchemaKey = schemaId;
-                    break;
+            if (sourceSchemas.length > 0) {
+                for (const schemaId in schemas) {
+                    const schema = schemas[schemaId];
+                    if (schema.name === sourceSchemas[0]) {
+                        matchedSchema = schema;
+                        matchedSchemaKey = schemaId;
+                        break;
+                    }
                 }
             }
 
@@ -559,27 +648,27 @@
                 const tableNames = Object.values(matchedSchema.tables).map(table => table.name);
                 const tableIds = Object.keys(matchedSchema.tables);
 
-                if (tableNames.includes(source_data.table)) {
+                if (sourceTables.length > 0 && tableNames.includes(sourceTables[0])) {
                     matched.tableId = tableIds.find(
-                        id => matchedSchema.tables[id].name === source_data.table
+                        id => matchedSchema.tables[id].name === sourceTables[0]
                     );
-                } else {
+                } else if (sourceTables.length > 0) {
                     matchedSchema.tables["-1"] = {
-                        name: "Unknown table: " + (source_data.table || "unknown"),
+                        name: "Unknown table: " + (sourceTables[0] || "unknown"),
                         id: "-1"
                     };
                     matched.tableId = "-1";
                 }
-            } else {
+            } else if (sourceSchemas.length > 0) {
                 const unknownTables = {
                     "-1": {
-                        name: "Unknown table: " + (source_data.table || "unknown"),
+                        name: "Unknown table: " + (sourceTables[0] || "unknown"),
                         id: "-1"
                     }
                 };
 
                 schemas["-1"] = {
-                    name: "Unknown schema: " + (source_data.schema || "unknown"),
+                    name: "Unknown schema: " + (sourceSchemas[0] || "unknown"),
                     tables: unknownTables
                 };
 
@@ -599,5 +688,14 @@
             await populateSchemas(singleHost);
         }
         updateEditButtonState();
+    });
+
+    form.addEventListener('submit', function(e) {
+        if (schemaSelect.value === "") {
+            schemaSelect.value = "-1";
+        }
+        if (tableSelect.value === "") {
+            tableSelect.value = "-1";
+        }
     });
 </script>
