@@ -1,0 +1,3 @@
+[submodule "runstypy"]
+	path = runstypy
+	url = git@github.com:svetasmirnova/runstypy.git
