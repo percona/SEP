@@ -211,7 +211,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 for i, constraint in enumerate(task.data["Constraints"]):
                     meta = "${NOMAD_META_" + meta_var + "}"
                     task.data["Constraints"][i] = json.loads(
-                        json.dumps(constraint).replace(meta, meta_val),
+                        json.dumps(constraint).replace(meta, str(meta_val)),
                     )
         return task
 
@@ -256,10 +256,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             if self.minify_payload:
                 payload = minify_file_content(payload)
             payload = b2a_base64(gzip_compress(payload)).decode("utf-8")
+
+        filtered_meta = (
+            {
+                key: value
+                for key, value in queue_item.execution_request.meta.items()
+                if not key.startswith("_")
+            }
+            if queue_item.execution_request.meta
+            else {}
+        )
+
         job_status = self.backend.job.dispatch_job(
             task.data["ID"],
             payload=payload,
-            meta=queue_item.execution_request.meta,
+            meta=filtered_meta,
             id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}",
         )
         if not job_status:
