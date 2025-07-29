@@ -16,12 +16,16 @@
 """Define database operations for the Tasks API."""
 
 import logging
+from collections.abc import Sequence
 
-from sqlmodel import col, select
+from sqlalchemy import CursorResult
+from sqlalchemy.orm import aliased
+from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseSQLModelManager
+from app.core.db.utils import func_json_extract
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
@@ -137,6 +141,50 @@ class TaskManager(BaseSQLModelManager):
         task.deleted_at = utc_now()
         task.name = f"{task.name}-{task.deleted_at.strftime('%Y%m%d%H%M%S')}"
         return await cls.save(session, task)
+
+    @classmethod
+    async def delete_unattached_system_tasks(
+        cls, session: AsyncSession, exclude_task_names: Sequence[str]
+    ) -> CursorResult:
+        """Delete unattached system tasks that are not in the provided sequence.
+
+        This method identifies system tasks that are not attached to any task history
+        and are not in the provided sequence of task names. It then deletes these tasks.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param exclude_task_names: A sequence of task names to exclude from deletion.
+        :type exclude_task_names: Sequence[str]
+        :return: The result of the delete operation.
+        :rtype: CursorResult
+        """
+        proxy_task = aliased(Task)
+        query = (
+            select(Task)
+            .join(TaskHistory, isouter=True)
+            .join(
+                proxy_task,
+                and_(
+                    col(proxy_task.backend) == TaskBackendEnum.PROXY,
+                    func_json_extract(session.get_bind().name, proxy_task.data, "task")
+                    == col(Task.name),
+                    col(proxy_task.id) != col(Task.id),
+                ),
+                isouter=True,
+            )
+        )
+        query = TaskManager._filter_query(
+            query,
+            col(Task.name).not_in(exclude_task_names),
+            col(Task.protected).is_(True),
+            col(TaskHistory.task_id).is_(None),
+            col(proxy_task.id).is_(None),
+        )
+        result = await TaskManager._exec(session, query)
+        tasks_ids_to_delete = [task.id for task in result.unique().all()]
+        return await TaskManager.delete_where(
+            session, col(Task.id).in_(tasks_ids_to_delete)
+        )
 
     @classmethod
     async def get_root_task(cls, session: AsyncSession, task: Task) -> Task:
