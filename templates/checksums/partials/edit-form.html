@@ -445,7 +445,7 @@
         selectedSchema = null;
         selectedTable = null;
 
-        if (selectedService !== "-1" && selectedService !== "") {
+        if (selectedService !== "-1" && selectedService !== "" && !hasMultipleSchemas && !hasMultipleTables) {
             extra_args.value = "";
         }
 
@@ -493,7 +493,7 @@
         tableSelect.innerHTML = '<option value="">Select a table</option>';
         selectedTable = null;
 
-        if (selectedSchema !== "-1" && selectedSchema !== "") {
+        if (selectedSchema !== "-1" && selectedSchema !== "" && !hasMultipleSchemas && !hasMultipleTables) {
             extra_args.value = "";
         }
 
@@ -541,7 +541,7 @@
     });
 
     schemaSelect.addEventListener('change', function() {
-        if (this.value !== "-1" && this.value !== "") {
+        if (this.value !== "-1" && this.value !== "" && !hasMultipleSchemas && !hasMultipleTables) {
             extra_args.value = "";
         }
         const hiddenTableInput = document.getElementById("table_id_hidden");
@@ -551,7 +551,7 @@
     });
 
     tableSelect.addEventListener('change', function() {
-        if (this.value !== "-1" && this.value !== "") {
+        if (this.value !== "-1" && this.value !== "" && !hasMultipleSchemas && !hasMultipleTables) {
             extra_args.value = "";
         }
     });
@@ -690,12 +690,20 @@
         updateEditButtonState();
     });
 
-    form.addEventListener('submit', function(e) {
-        if (schemaSelect.value === "") {
-            schemaSelect.value = "-1";
-        }
-        if (tableSelect.value === "") {
-            tableSelect.value = "-1";
+    document.addEventListener('DOMContentLoaded', function() {
+        const originalConfirmYes = document.getElementById('confirmYes');
+        if (originalConfirmYes) {
+            originalConfirmYes.addEventListener('click', function(e) {
+                const confirmationMessage = document.getElementById('confirmationMessage');
+                if (confirmationMessage && confirmationMessage.textContent.includes('edit task')) {
+                    if (schemaSelect.value === "") {
+                        schemaSelect.value = "-1";
+                    }
+                    if (tableSelect.value === "") {
+                        tableSelect.value = "-1";
+                    }
+                }
+            }, true);
         }
     });
 </script>
