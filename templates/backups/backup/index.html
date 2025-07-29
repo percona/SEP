@@ -37,6 +37,14 @@
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Backup and Restore navigation">
+        <a href="{{ url_for('backups_index') }}" class="toggle-btn active">Backup</a>
+        <a href="{{ url_for('restores_index') }}" class="toggle-btn">Restore</a>
+    </div>
+{% endblock sticky %}
 {% block main %}
     <p>
         Perform a backup, currently only supporting MySQL and MariaDB with <a href="https://github.com/percona/percona-xtrabackup">Percona XtraBackup</a>
@@ -51,7 +59,7 @@
         {% elif executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
-            {% include "backups/partials/create-form.html" %}
+            {% include "backups/backup/partials/create-form.html" %}
         {% endif %}
     {% else %}
         {% set modal_required = True %}
@@ -63,7 +71,7 @@
         {% endif %}
         <section id="saved-tasks">
             <h2>Saved</h2>
-            {% include "backups/partials/saved-tasks.html" %}
+            {% include "backups/backup/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
             {%- set detail_route = "backups_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
@@ -71,7 +79,7 @@
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "backups/partials/create-form.html" %}
+                {% include "backups/backup/partials/create-form.html" %}
             {% endif %}
         </section>
         <br>

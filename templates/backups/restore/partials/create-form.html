@@ -1,0 +1,753 @@
+<style>
+
+    .hidden {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+        display: none;
+    }
+
+    .visible {
+        opacity: 1;
+        max-height: 1000px; /* Large enough to show all content */
+        pointer-events: auto;
+        display: flex;
+    }
+
+    /* Smaller containers might have less content, adjust accordingly if needed */
+    #myloader_container,
+    #xtrabackup_container,
+    #s3_container,
+    #rsync_container {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 0;
+        max-height: 0;
+    }
+
+    #myloader_container.visible,
+    #xtrabackup_container.visible,
+    #s3_container.visible,
+    #rsync_container.visible {
+        opacity: 1;
+        max-height: 1000px;
+    }
+
+    #s3_container.visible,
+    #rsync_container.visible{
+        display: block;
+    }
+
+
+    button {
+        margin-top: 1em;
+        margin-right: 1em;
+    }
+
+    .checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1em;
+        align-items: center;
+    }
+
+    .checkbox-group label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25em;
+        margin-top: 0;
+    }
+
+    .checkbox-group input {
+        margin-top: 0 !important;
+    }
+    fieldset + fieldset {
+        margin: 1em 0;
+    }
+</style>
+<form action=""  id="create_form"  method="post" class="{{ form_class }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <fieldset>
+        <legend>Main Options</legend>
+        <br>
+        <fieldset>
+            <legend>Executor Host</legend>
+            {% set hostname_title = "Select the hostname of the target system for task execution." %}
+            <div class="select">
+                <label for="hostname" title="{{ hostname_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Select Executor Host:</span>
+                    {% if executor_hosts|length == 1 %}
+                        {% set single_service = executor_hosts[0] %}
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                        </select>
+                        <input type="hidden" name="hostname" value="{{ single_service }}">
+                    {% else %}
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+                            <option value="" selected>Select a host</option>
+                            {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend>Basic Task Information</legend>
+            <br>
+            {% set task_name_title = "Type the name of task to be created." %}
+            <label for="task_name" title="{{ task_name_title }}">
+                Task Name:
+                <input type="text"
+                       id="task_name"
+                       name="task_name"
+                       class="validate"
+                       required
+                       placeholder="Enter a unique task name" />
+            </label>
+            <br>
+            <br>
+            {% set backup_type_title = "Select the type of restore: MyLoader or XtraBackup." %}
+            <div class="select">
+                <label for="backup_type" title="{{ backup_type_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Restore Type:</span>
+                    <select id="backup_type" name="backup_type" required>
+                        <option value="">Select a restore type</option>
+                        <option value="M">MyLoader</option>
+                        <option value="X">Xtrabackup</option>
+                        <option value="B">Binlog</option>
+                    </select>
+                </label>
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend>General Restore Configuration</legend>
+            <br>
+            {% set backup_source_title = "Type the path or identifier of the backup source to restore from. Examples: 192.168.88.10:/backup/xtrabackup/backup-gascan/latest, s3://dummy/binlogs/primary, s3://dummy/mydumper/backup-gascan/latest" %}
+            <label for="backup_source" title="{{ backup_source_title }}">
+                Backup Source:
+                <input type="text"
+                       id="backup_source"
+                       name="backup_source"
+                       style="width: 25em"
+                       required
+                       placeholder="127.0.0.1:/backup/xtrabackup/backup-gascan/latest" />
+            </label>
+            <br>
+            <br>
+            {% set logging_dir_title = "Type the directory where log files will be stored for restore operations." %}
+            <label for="logging_dir" title="{{ logging_dir_title }}">
+                Logging Directory (optional):
+                <input type="text"
+                       id="logging_dir"
+                       name="logging_dir"
+                       placeholder="/path/to/logs" />
+            </label>
+            <br>
+            <br>
+            {% set port_title = "Type the MySQL port number used to connect to the target database (default is 3306)." %}
+            <label for="port" title="{{ port_title }}">
+                Port:
+                <input type="number" id="port" name="port" value="3306" placeholder="3306" />
+            </label>
+            <br>
+            <br>
+            {% set custom_mysql_init_commad_title = "the path to the defaults file containing preset configuration values for the backup process." %}
+            <label for="custom_mysql_init_commad"
+                   title="{{ custom_mysql_init_commad_title }}">
+                Custom MySQL Init Command (optional):
+                <input type="text"
+                       id="custom_mysql_init_commad"
+                       name="custom_mysql_init_commad"
+                       placeholder="/etc/init.d/mysql" />
+            </label>
+            <br>
+            <br>
+            {% set ssh_user_title = "Type the SSH username to connect to the target host for restore operations (e.g., 'percona')." %}
+            <label for="ssh_user" title="{{ ssh_user_title }}">
+                SSH User:
+                <input type="text" id="ssh_user" name="ssh_user" placeholder="percona" />
+            </label>
+            <br>
+            <br>
+            {% set ssh_port_title = "Type the SSH port number used to connect to the target host (default is 22)." %}
+            <label for="ssh_port" title="{{ ssh_port_title }}">
+                SSH Port:
+                <input type="number"
+                       id="ssh_port"
+                       name="ssh_port"
+                       value="22"
+                       placeholder="22" />
+            </label>
+            <br>
+            <br>
+            {% set ssh_key_title = "Type the path to the SSH private key file for authentication (optional). Leave blank to use default key." %}
+            <label for="ssh_key" title="{{ ssh_key_title }}">
+                SSH Key:
+                <input type="text" id="ssh_key" name="ssh_key" placeholder="" />
+            </label>
+            <br>
+            <br>
+            {% set s3_tool_title = "Select the tool to use for uploading backups to S3 storage (e.g., S3 CMD or AWS CLI)." %}
+            <div class="select">
+                <label for="s3_tool" title="{{ s3_tool_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">S3 Tool:</span>
+                    <select id="s3_tool" name="s3_tool" required>
+                        <option value="">Select a S3 Tool type</option>
+                        <option selected value="s3cmd">S3 CMD</option>
+                        <option value="awscli">AWS CLI</option>
+                    </select>
+                </label>
+            </div>
+            <br>
+            {% set gpg_password_file_title = "Type the path to the file containing the GPG password for encrypting or decrypting backups (optional)." %}
+            <label for="gpg_password_file" title="{{ gpg_password_file_title }}">
+                GPG Password File:
+                <input type="text"
+                       id="gpg_password_file"
+                       name="gpg_password_file"
+                       placeholder="" />
+            </label>
+            <br>
+            <br>
+        </fieldset>
+        <fieldset id="myloader_container" style="flex-direction: column; gap: 1em">
+            <legend>Myloader Configuration</legend>
+            <br>
+            {% set service_id_title = "Select the destination database service where the restore will be applied." %}
+            <div class="select">
+                <label for="service_id" title="{{ service_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Destination Database</span>
+                    {% if services|length == 1 %}
+                        {% set single_service = services[0] %}
+                        <select id="service_id" name="service_id" disabled>
+                            <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                        </select>
+                        <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                    {% else %}
+                        <select id="service_id" name="service_id" required>
+                            <option value="" selected>Select a destination database</option>
+                            {% for service in services %}
+                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                </label>
+            </div>
+            <div class="select">
+                {% set schema_id_title = "Select the destination schema within the database for the restore operation." %}
+                <label for="schema_id" title="{{ schema_id_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Destination Schema</span>
+                    <select id="schema_id"
+                            name="schema_id"
+                            title="{{ schema_id_title }}"
+                            disabled></select>
+                </label>
+            </div>
+            <br>
+            <br>
+            {% set local_path_title = "Type the local path where the backup files are stored or will be restored to (optional)." %}
+            <label for="local_path" title="{{ local_path_title }}">
+                Local Path:
+                <input type="text" id="local_path" name="local_path" placeholder="" />
+            </label>
+            {% set overwrite_tables_title = "Enable this option to overwrite existing tables during the restore process." %}
+            <label class="checkbox"
+                   for="overwrite_tables"
+                   title="{{ overwrite_tables_title }}">
+                <input type="checkbox"
+                       id="overwrite_tables"
+                       name="overwrite_tables"
+                       value="1"
+                       checked />
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Overwrite Tables</span>
+            </label>
+            {% set myloader_extra_args_title = "Type any additional command-line arguments for MyLoader to customize the restore process (optional)." %}
+            <label for="myloader_extra_args" title="{{ myloader_extra_args_title }}">
+                MyLoader Extra Args:
+                <input type="text"
+                       id="myloader_extra_args"
+                       name="myloader_extra_args"
+                       placeholder="" />
+            </label>
+            <br>
+            <br>
+            {% set skip_databases_title = "Type a comma-separated list of databases to skip during the restore (optional)." %}
+            <label for="skip_databases" title="{{ skip_databases_title }}">
+                Skip Databases:
+                <input type="text" id="skip_databases" name="skip_databases" placeholder="" />
+            </label>
+            <br>
+            <br>
+            {% set include_databases_title = "Type a comma-separated list of databases to include in the restore (optional)." %}
+            <label for="include_databases" title="{{ include_databases_title }}">
+                Include Databases:
+                <input type="text"
+                       id="include_databases"
+                       name="include_databases"
+                       placeholder="" />
+            </label>
+            <br>
+            <br>
+            {% set pre_script_title = "Type the path to a script to run before the restore process begins (optional)." %}
+            <label for="pre_script" title="{{ pre_script_title }}">
+                Pre Script:
+                <input type="text" id="pre_script" name="pre_script" placeholder="" />
+            </label>
+            <br>
+            <br>
+            {% set post_title = "Type the path to a script to run after the restore process completes (optional)." %}
+            <label for="post" title="{{ post_title }}">
+                Post Script:
+                <input type="text" id="post" name="post" placeholder="" />
+            </label>
+            <br>
+            <br>
+            {% set myloader_threads_title = "Set the number of days after which old backups will be automatically deleted." %}
+            <label for="myloader_threads" title="{{ myloader_threads_title }}">
+                MyLoader Threads:
+                <input type="number"
+                       id="myloader_threads"
+                       name="myloader_threads"
+                       value="4"
+                       placeholder="e.g. 4" />
+            </label>
+            <br>
+        </fieldset>
+        <fieldset id="xtrabackup_container" style="flex-direction: column; gap: 1em">
+            <legend>Xtrabackup Configuration</legend>
+            {% set xtrabackup_copies_title = "Set the number of backup copies to retain for redundancy and recovery." %}
+            <label for="xtrabackup_copies" title="{{ xtrabackup_copies_title }}">
+                Number of Copies:
+                <input type="number"
+                       id="xtrabackup_copies"
+                       name="xtrabackup_copies"
+                       placeholder="e.g. 2" />
+            </label>
+            <div class="checkbox-group">
+                {% set xtrabackup_kill_queries_title = "Terminate long-running queries that may block the XtraBackup process to ensure a smooth backup." %}
+                <label class="checkbox"
+                       for="xtrabackup_kill_queries"
+                       title="{{ xtrabackup_kill_queries_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_kill_queries"
+                           name="xtrabackup_kill_queries"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Kill Queries</span>
+                </label>
+                {% set xtrabackup_verify_title = "Enable verification of the XtraBackup process to ensure data integrity and consistency." %}
+                <label class="cehckbox"
+                       for="xtrabackup_verify"
+                       title="{{ xtrabackup_verify_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_verify"
+                           name="xtrabackup_verify"
+                           value="1"
+                           checked>
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Verify Backup</span>
+                </label>
+                {% set xtrabackup_prepare_title = "Prepare the XtraBackup files for restoration by applying redo logs and ensuring consistency." %}
+                <label class="checkbox"
+                       for="xtrabackup_prepare"
+                       title="{{ xtrabackup_prepare_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_prepare"
+                           name="xtrabackup_prepare"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Prepare Backup</span>
+                </label>
+                {% set xtrabackup_desync_pxc_title = "Desynchronize the Percona XtraDB Cluster (PXC) node during XtraBackup to minimize replication impact." %}
+                <label class="checkbox"
+                       for="xtrabackup_desync_pxc"
+                       title="{{ xtrabackup_desync_pxc_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_desync_pxc"
+                           name="xtrabackup_desync_pxc"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Desync PXC</span>
+                </label>
+                {% set xtrabackup_rsync_title = "Use rsync to optimize file transfers during XtraBackup, reducing disk I/O and improving performance." %}
+                <label class="checkbox"
+                       for="xtrabackup_rsync"
+                       title="{{ xtrabackup_rsync_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_rsync"
+                           name="xtrabackup_rsync"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Use Rsync</span>
+                </label>
+                {% set xtrabackup_replica_info_title = "Include replica information in the backup to assist with replication recovery." %}
+                <label class="checkbox"
+                       for="xtrabackup_replica_info"
+                       title="{{ xtrabackup_replica_info_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_replica_info"
+                           name="xtrabackup_replica_info"
+                           value="1"
+                           checked>
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Include Replica Info</span>
+                </label>
+                {% set xtrabackup_stop_replica_title = "Stop replication before starting the backup to ensure data consistency." %}
+                <label class="checkbox"
+                       for="xtrabackup_stop_replica"
+                       title="{{ xtrabackup_stop_replica_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_stop_replica"
+                           name="xtrabackup_stop_replica"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Stop Replica Before Backup</span>
+                </label>
+                {% set xtrabackup_lock_ddl_title = "Lock Data Definition Language (DDL) operations during backup to prevent schema changes." %}
+                <label class="checkbox"
+                       for="xtrabackup_lock_ddl"
+                       title="{{ xtrabackup_lock_ddl_title }}">
+                    <input type="checkbox"
+                           id="xtrabackup_lock_ddl"
+                           name="xtrabackup_lock_ddl"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Lock DDL</span>
+                </label>
+            </div>
+            {% set xtrabackup_kill_queries_timeout_title = "Set the maximum time (in seconds) to wait before forcibly terminating long-running queries that block the backup process." %}
+            <label for="xtrabackup_kill_queries_timeout"
+                   title="{{ xtrabackup_kill_queries_timeout_title }}">
+                Kill Queries Timeout (seconds):
+                <input type="number"
+                       id="xtrabackup_kill_queries_timeout"
+                       name="xtrabackup_kill_queries_timeout"
+                       placeholder="e.g. 30" />
+            </label>
+            {% set xtrabackup_kill_query_type_title = "Choose which type of queries should be terminated to prevent backup interruptions." %}
+            <div class="select">
+                <label for="xtrabackup_kill_query_type"
+                       title="{{ xtrabackup_kill_query_type_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Query Type to Kill:</span>
+                    <select id="xtrabackup_kill_query_type" name="xtrabackup_kill_query_type">
+                        <option value="">Select one</option>
+                        <option value="select">select</option>
+                        <option value="all">all</option>
+                    </select>
+                </label>
+            </div>
+            {% set xtrabackup_prepare_memory_title = "Set the amount of memory to allocate for the prepare phase of XtraBackup. Leave empty for default." %}
+            <label for="xtrabackup_prepare_memory"
+                   title="{{ xtrabackup_prepare_memory_title }}">
+                Prepare Memory (optional):
+                <input type="text"
+                       id="xtrabackup_prepare_memory"
+                       name="xtrabackup_prepare_memory"
+                       placeholder="e.g. 1G" />
+            </label>
+            {% set xtrabackup_defaults_file_title = "Type the path to the optional defaults file for predefined configuration settings." %}
+            <label for="xtrabackup_defaults_file"
+                   title="{{ xtrabackup_defaults_file_title }}">
+                Defaults File (optional):
+                <input type="text"
+                       id="xtrabackup_defaults_file"
+                       name="xtrabackup_defaults_file"
+                       placeholder="/path/to/my.cnf" />
+            </label>
+            {% set xtrabackup_extra_args_title = "Type additional command-line arguments for XtraBackup to customize its behavior." %}
+            <label for="xtrabackup_extra_args" title="{{ xtrabackup_extra_args_title }}">
+                Extra Arguments (optional):
+                <input type="text"
+                       id="xtrabackup_extra_args"
+                       name="xtrabackup_extra_args"
+                       placeholder="e.g. --compact" />
+            </label>
+            {% set xtrabackup_incremental_method_title = "Choose the incremental backup method: 'less_space' (reduces storage usage) or 'fast_restore' (accelerates restoration)." %}
+            <div class="select">
+                <label for="xtrabackup_incremental_method"
+                       title="{{ xtrabackup_incremental_method_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Incremental Method:</span>
+                    <select id="xtrabackup_incremental_method"
+                            name="xtrabackup_incremental_method">
+                        <option value="">Select one</option>
+                        <option value="less_space">less_space</option>
+                        <option value="fast_restore">fast_restore</option>
+                    </select>
+                </label>
+            </div>
+            {% set xtrabackup_incremental_cycle_title = "Select the frequency for incremental backups: 'daily' for daily backups or 'weekly' for weekly backups." %}
+            <div class="select">
+                <label for="xtrabackup_incremental_cycle"
+                       title="{{ xtrabackup_incremental_cycle_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Incremental Cycle:</span>
+                    <select id="xtrabackup_incremental_cycle" name="xtrabackup_incremental_cycle">
+                        <option value="">Select one</option>
+                        <option value="daily">daily</option>
+                        <option value="weekly">weekly</option>
+                    </select>
+                </label>
+            </div>
+            {% set xtrabackup_local_ssh_destination_title = "Type the SSH destination for storing backups remotely. Format: user@host:/path" %}
+            <label for="xtrabackup_local_ssh_destination"
+                   title="{{ xtrabackup_local_ssh_destination_title }}">
+                Local SSH Destination (optional):
+                <input type="text"
+                       id="xtrabackup_local_ssh_destination"
+                       name="xtrabackup_local_ssh_destination"
+                       placeholder="user@host:/path" />
+            </label>
+            {% set xtrabackup_aes256_keyfile_title = "Type the path to the AES-256 encryption key file for securing backups." %}
+            <label for="xtrabackup_aes256_keyfile"
+                   title="{{ xtrabackup_aes256_keyfile_title }}">
+                AES256 Keyfile (optional):
+                <input type="text"
+                       id="xtrabackup_aes256_keyfile"
+                       name="xtrabackup_aes256_keyfile"
+                       placeholder="/path/to/keyfile" />
+            </label>
+            {% set xtrabackup_bin_cmd_title = "Select the backup tool to use: 'xtrabackup' (default for Percona), 'mariadb-backup' (MariaDB compatibility), or 'innobackupex' (legacy tool)." %}
+            <div class="select">
+                <label for="xtrabackup_bin_cmd" title="{{ xtrabackup_bin_cmd_title }}">
+                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                    <span class="label">Binary Command:</span>
+                    <select id="xtrabackup_bin_cmd" name="xtrabackup_bin_cmd">
+                        <option value="">Select one</option>
+                        <option value="xtrabackup">xtrabackup</option>
+                        <option value="mariadb-backup">mariadb-backup</option>
+                        <option value="innobackupex">innobackupex</option>
+                    </select>
+                </label>
+            </div>
+        </fieldset>
+        <fieldset id="binlog_container" style="flex-direction: column; gap: 1em">
+            <legend>Binlog Configuration</legend>
+            {% set binlog_alternative_host_title = "Type the alternative host address to use for binlog restore (optional)." %}
+            <label for="binlog_alternative_host"
+                   title="{{ binlog_alternative_host_title }}">
+                Alternative Host Address:
+                <input type="text"
+                       id="binlog_alternative_host"
+                       name="binlog_alternative_host"
+                       placeholder="e.g. localhost" />
+            </label>
+            {% set binlog_prefix_title = "Type the prefix of the binlog files to restore (e.g., mysql-bin)." %}
+            <label for="binlog_prefix" title="{{ binlog_prefix_title }}">
+                Binglog Prefix:
+                <input type="text"
+                       id="binlog_prefix"
+                       name="binlog_prefix"
+                       placeholder="e.g. mysql-bin"
+                       value="mysql-bin" />
+            </label>
+            {% set binlog_purge_days_title = "Set the number of days after which old binlog files will be purged (optional)." %}
+            <label for="binlog_purge_days" title="{{ binlog_purge_days_title }}">
+                Binglog Purge Days:
+                <input type="number"
+                       id="binlog_purge_days"
+                       name="binlog_purge_days"
+                       value="30"
+                       placeholder="e.g. 30" />
+            </label>
+            {% set binlog_extra_args_title = "Type any additional command-line arguments for the binlog restore process (optional)." %}
+            <label for="binlog_extra_args" title="{{ binlog_extra_args_title }}">
+                Binlog Extra Args:
+                <input type="text"
+                       id="binlog_extra_args"
+                       name="binlog_extra_args"
+                       placeholder="e.g. --compress" />
+            </label>
+            {% set binlog_compress_cmd_title = "Type the command to use for compressing binlog files during restore (optional)." %}
+            <label for="binlog_compress_cmd" title="{{ binlog_compress_cmd_title }}">
+                Binglog Compress Command:
+                <input type="text"
+                       id="binlog_compress_cmd"
+                       name="binlog_compress_cmd"
+                       placeholder="e.g. /usr/bin/pigz -p 3" />
+            </label>
+            {% set binlog_cmd_title = "Type the full path to the mysqlbinlog command to use for binlog restores (optional)." %}
+            <label for="binlog_cmd" title="{{ binlog_cmd_title }}">
+                Binglog Command:
+                <input type="text"
+                       size="55"
+                       id="binlog_cmd"
+                       name="binlog_cmd"
+                       placeholder="e.g. /usr/local/percona/msp/backup/bin/mysqlbinlog" />
+            </label>
+        </fieldset>
+    </fieldset>
+    <div style="display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.25em">
+        <button class="contained large" type="submit">Create</button>
+        <button class="text large" type="reset">Reset</button>
+    </div>
+</form>
+{% set serviceSchemas = {} %}
+{% for service in services %}
+    {% set schemas = {} %}
+    {% for schema in service.schemas %}
+        {% do schemas.update({schema.id: {"name": schema.name}}) %}
+    {% endfor %}
+    {% do serviceSchemas.update({service.id: schemas}) %}
+{% endfor %}
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    const serviceSchemas = {{ serviceSchemas|tojson }};
+    const backupTypeSelect = document.getElementById('backup_type');
+    const myloaderContainer = document.getElementById('myloader_container');
+    const xtrabackupContainer = document.getElementById('xtrabackup_container');
+    const binlogContainer = document.getElementById('binlog_container');
+
+    const serviceSelect = document.getElementById('service_id');
+    const schemaSelect = document.getElementById('schema_id');
+    const form = document.getElementById('create_form');
+    const createButton = form.querySelector('button[type="submit"]');
+
+
+    let selectedService = null;
+    let selectedSchema = null;
+
+    function populateSchemas(selectedService) {
+        const isDisabled = !(selectedService && serviceSchemas[selectedService]);
+        schemaSelect.disabled = isDisabled;
+        schemaSelect.innerHTML = `<option value="-1" selected>${isDisabled ? "No schema" : "Not selected"}</option>`;
+
+        selectedSchema = null;
+
+        if (!isDisabled) {
+            const schemas = Object.entries(serviceSchemas[selectedService]);
+            for (const [schemaId, schema] of schemas) {
+                const option = document.createElement('option');
+                option.value = schemaId;
+                option.textContent = schema.name;
+                schemaSelect.appendChild(option);
+            }
+        }
+    }
+
+    function disableAllMyloaderFields(disabled) {
+        myloaderContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+        serviceSelect.removeAttribute('required');
+    }
+
+    function disableAllXtrabackupFields(disabled) {
+        xtrabackupContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+        serviceSelect.setAttribute('required', '');
+    }
+
+    function disableAllBinlogFields(disabled) {
+        binlogContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
+        serviceSelect.setAttribute('required', '');
+    }
+
+    function showContainer(container, show) {
+        if (show) {
+            container.classList.add('visible');
+            container.classList.remove('hidden');
+        } else {
+            container.classList.add('hidden');
+            container.classList.remove('visible');
+        }
+    }
+
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
+
+    function updateBackupTypeUI() {
+        const restoreType = backupTypeSelect.value;
+        if (restoreType === 'M') {
+            // Show myloader, hide xtrabackup and binlog
+            showContainer(myloaderContainer, true);
+            disableAllMyloaderFields(false);
+
+            showContainer(xtrabackupContainer, false);
+            disableAllXtrabackupFields(true);
+
+            showContainer(binlogContainer, false);
+            disableAllBinlogFields(true);
+        } else if (restoreType === 'X') {
+            // Show xtrabackup, hide myloader and binlog
+            showContainer(xtrabackupContainer, true);
+            disableAllXtrabackupFields(false);
+
+            showContainer(myloaderContainer, false);
+            disableAllMyloaderFields(true);
+
+            showContainer(binlogContainer, false);
+            disableAllBinlogFields(true);
+        } else if (restoreType === 'B') {
+            showContainer(binlogContainer, true);
+            disableAllBinlogFields(false);
+
+            showContainer(myloaderContainer, false);
+            disableAllMyloaderFields(true);
+
+            showContainer(xtrabackupContainer, false);
+            disableAllXtrabackupFields(true);
+        }
+        else {
+            // No selection
+            showContainer(myloaderContainer, false);
+            disableAllMyloaderFields(true);
+
+            showContainer(xtrabackupContainer, false);
+            disableAllXtrabackupFields(true);
+
+            showContainer(binlogContainer, false);
+            disableAllBinlogFields(true);
+        }
+    }
+
+    backupTypeSelect.addEventListener('change', updateBackupTypeUI);
+    // Initialize
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
+
+    window.addEventListener('DOMContentLoaded', function () {
+    updateBackupTypeUI();
+    if (serviceSelect.options.length === 1) {
+        const singleHost = serviceSelect.options[0].value;
+        selectedService = singleHost;
+        populateSchemas(singleHost);
+        updateCreateButtonState();
+    }
+    });
+</script>
