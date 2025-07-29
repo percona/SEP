@@ -4,14 +4,15 @@ import logging
 import shlex
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     HasNoConflictedRunningTasks,
+    InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -21,6 +22,8 @@ from app.sep.plugins.alters.deps import (
     AltersTask,
     get_alters_index_context,
 )
+from app.sep.utils.decorators import csrf_exempt
+from app.sep.utils.jinja import syntax_highlight
 from app.tasks.anonymizer import decode_selection
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -40,6 +43,35 @@ async def alters_index(
         name="alters/index.html",
         context=context,
     )
+
+
+@router.get("/table/{table_id}/details", dependencies=[IsAuthenticated])
+@csrf_exempt
+async def get_table_details(
+    request: Request,  # noqa: ARG001
+    table_id: int,
+    inventory_api: InventoryAPI,
+    syntax_highlight_style: str | None = None,
+) -> JSONResponse:
+    """Get table details including create statement and keys."""
+    try:
+        table = await inventory_api.get(f"/tables/{table_id}")
+        create = table["create"]
+        if syntax_highlight_style:
+            create = syntax_highlight(create, "sql", style=syntax_highlight_style)
+        return JSONResponse(
+            {
+                "id": table["id"],
+                "name": table["name"],
+                "create": create,
+                "keys": table["keys"],
+            }
+        )
+    except HTTPException:
+        return JSONResponse(
+            {"error": "Failed to fetch table details"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @router.post(

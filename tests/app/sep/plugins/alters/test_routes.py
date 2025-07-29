@@ -177,3 +177,31 @@ def test_alters_delete(
     mock_task_api_dep.delete.assert_has_awaits(
         [call(f"/{created_task.name}"), call(f"/{created_task.name}-dry-run")]
     )
+
+
+def test_get_table_details(
+    test_client,
+    mock_inventory_api_dep,
+):
+    """Test getting table details via XHR endpoint."""
+    table_id = 123
+    mock_table_data = {
+        "id": table_id,
+        "name": "test_table",
+        "create": "CREATE TABLE test_table (id INT PRIMARY KEY, name VARCHAR(255))",
+        "keys": {"PRIMARY": {"type": "PRIMARY", "columns": ["id"]}},
+    }
+    mock_inventory_api_dep.get.side_effect = [mock_table_data]
+
+    response = test_client.get(f"/alters/table/{table_id}/details")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "application/json"
+
+    data = response.json()
+    assert data["id"] == table_id
+    assert data["name"] == "test_table"
+    assert data["create"] == mock_table_data["create"]
+    assert data["keys"] == mock_table_data["keys"]
+
+    mock_inventory_api_dep.get.assert_awaited_once_with(f"/tables/{table_id}")
