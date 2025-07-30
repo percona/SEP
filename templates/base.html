@@ -141,11 +141,18 @@
                     {% endif %}
                     <!-- Confirmation modal -->
                     {% include "confirm_modal.html" %}
+                    <!-- Sticky Header -->
+                    <div class="sticky-header">
+                        {% block sticky %}
+                        {% endblock sticky %}
+                    </div>
                     <!-- Content for the feature -->
-                    {% block main %}
-                        <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
-                        <p>Nothing to see here, move along.</p>
-                    {% endblock main %}
+                    <div>
+                        {% block main %}
+                            <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
+                            <p>Nothing to see here, move along.</p>
+                        {% endblock main %}
+                    </div>
                 </main>
             </div>
         </div>
