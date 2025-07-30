@@ -326,236 +326,166 @@
         </fieldset>
         <fieldset id="xtrabackup_container" style="flex-direction: column; gap: 1em">
             <legend>Xtrabackup Configuration</legend>
-            {% set xtrabackup_copies_title = "Set the number of backup copies to retain for redundancy and recovery." %}
-            <label for="xtrabackup_copies" title="{{ xtrabackup_copies_title }}">
-                Number of Copies:
-                <input type="number"
-                       id="xtrabackup_copies"
-                       name="xtrabackup_copies"
-                       placeholder="e.g. 2" />
-            </label>
+            <br>
             <div class="checkbox-group">
-                {% set xtrabackup_kill_queries_title = "Terminate long-running queries that may block the XtraBackup process to ensure a smooth backup." %}
+                {% set skip_incrementals_title = "Skip incremental backups during restore process. Useful when you want to restore only the base backup." %}
                 <label class="checkbox"
-                       for="xtrabackup_kill_queries"
-                       title="{{ xtrabackup_kill_queries_title }}">
+                       for="skip_incrementals"
+                       title="{{ skip_incrementals_title }}">
                     <input type="checkbox"
-                           id="xtrabackup_kill_queries"
-                           name="xtrabackup_kill_queries"
+                           id="skip_incrementals"
+                           name="skip_incrementals"
                            value="1" />
                     <div class="checkmark">
                         <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                         <span class="material-symbols-outlined checked">check_box</span>
                     </div>
-                    <span class="label">Kill Queries</span>
+                    <span class="label">Skip Incrementals</span>
                 </label>
-                {% set xtrabackup_verify_title = "Enable verification of the XtraBackup process to ensure data integrity and consistency." %}
-                <label class="cehckbox"
-                       for="xtrabackup_verify"
-                       title="{{ xtrabackup_verify_title }}">
-                    <input type="checkbox"
-                           id="xtrabackup_verify"
-                           name="xtrabackup_verify"
-                           value="1"
-                           checked>
+                {% set kill_mysql_title = "Automatically stop MySQL service before restore and start it after restore is complete." %}
+                <label class="checkbox" for="kill_mysql" title="{{ kill_mysql_title }}">
+                    <input type="checkbox" id="kill_mysql" name="kill_mysql" value="1" />
                     <div class="checkmark">
                         <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                         <span class="material-symbols-outlined checked">check_box</span>
                     </div>
-                    <span class="label">Verify Backup</span>
+                    <span class="label">Kill MySQL</span>
                 </label>
-                {% set xtrabackup_prepare_title = "Prepare the XtraBackup files for restoration by applying redo logs and ensuring consistency." %}
+                {% set restore_mycnf_title = "Restore MySQL configuration file (my.cnf) along with the data backup." %}
                 <label class="checkbox"
-                       for="xtrabackup_prepare"
-                       title="{{ xtrabackup_prepare_title }}">
-                    <input type="checkbox"
-                           id="xtrabackup_prepare"
-                           name="xtrabackup_prepare"
-                           value="1" />
+                       for="restore_mycnf"
+                       title="{{ restore_mycnf_title }}">
+                    <input type="checkbox" id="restore_mycnf" name="restore_mycnf" value="1" />
                     <div class="checkmark">
                         <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                         <span class="material-symbols-outlined checked">check_box</span>
                     </div>
-                    <span class="label">Prepare Backup</span>
-                </label>
-                {% set xtrabackup_desync_pxc_title = "Desynchronize the Percona XtraDB Cluster (PXC) node during XtraBackup to minimize replication impact." %}
-                <label class="checkbox"
-                       for="xtrabackup_desync_pxc"
-                       title="{{ xtrabackup_desync_pxc_title }}">
-                    <input type="checkbox"
-                           id="xtrabackup_desync_pxc"
-                           name="xtrabackup_desync_pxc"
-                           value="1" />
-                    <div class="checkmark">
-                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                        <span class="material-symbols-outlined checked">check_box</span>
-                    </div>
-                    <span class="label">Desync PXC</span>
-                </label>
-                {% set xtrabackup_rsync_title = "Use rsync to optimize file transfers during XtraBackup, reducing disk I/O and improving performance." %}
-                <label class="checkbox"
-                       for="xtrabackup_rsync"
-                       title="{{ xtrabackup_rsync_title }}">
-                    <input type="checkbox"
-                           id="xtrabackup_rsync"
-                           name="xtrabackup_rsync"
-                           value="1" />
-                    <div class="checkmark">
-                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                        <span class="material-symbols-outlined checked">check_box</span>
-                    </div>
-                    <span class="label">Use Rsync</span>
-                </label>
-                {% set xtrabackup_replica_info_title = "Include replica information in the backup to assist with replication recovery." %}
-                <label class="checkbox"
-                       for="xtrabackup_replica_info"
-                       title="{{ xtrabackup_replica_info_title }}">
-                    <input type="checkbox"
-                           id="xtrabackup_replica_info"
-                           name="xtrabackup_replica_info"
-                           value="1"
-                           checked>
-                    <div class="checkmark">
-                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                        <span class="material-symbols-outlined checked">check_box</span>
-                    </div>
-                    <span class="label">Include Replica Info</span>
-                </label>
-                {% set xtrabackup_stop_replica_title = "Stop replication before starting the backup to ensure data consistency." %}
-                <label class="checkbox"
-                       for="xtrabackup_stop_replica"
-                       title="{{ xtrabackup_stop_replica_title }}">
-                    <input type="checkbox"
-                           id="xtrabackup_stop_replica"
-                           name="xtrabackup_stop_replica"
-                           value="1" />
-                    <div class="checkmark">
-                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                        <span class="material-symbols-outlined checked">check_box</span>
-                    </div>
-                    <span class="label">Stop Replica Before Backup</span>
-                </label>
-                {% set xtrabackup_lock_ddl_title = "Lock Data Definition Language (DDL) operations during backup to prevent schema changes." %}
-                <label class="checkbox"
-                       for="xtrabackup_lock_ddl"
-                       title="{{ xtrabackup_lock_ddl_title }}">
-                    <input type="checkbox"
-                           id="xtrabackup_lock_ddl"
-                           name="xtrabackup_lock_ddl"
-                           value="1" />
-                    <div class="checkmark">
-                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                        <span class="material-symbols-outlined checked">check_box</span>
-                    </div>
-                    <span class="label">Lock DDL</span>
+                    <span class="label">Restore MyCNF</span>
                 </label>
             </div>
-            {% set xtrabackup_kill_queries_timeout_title = "Set the maximum time (in seconds) to wait before forcibly terminating long-running queries that block the backup process." %}
-            <label for="xtrabackup_kill_queries_timeout"
-                   title="{{ xtrabackup_kill_queries_timeout_title }}">
-                Kill Queries Timeout (seconds):
-                <input type="number"
-                       id="xtrabackup_kill_queries_timeout"
-                       name="xtrabackup_kill_queries_timeout"
-                       placeholder="e.g. 30" />
+            {% set datadir_title = "Specify the MySQL data directory where the backup will be restored. Default is usually /var/lib/mysql." %}
+            <label for="datadir" title="{{ datadir_title }}">
+                Data Dir:
+                <input type="text" id="datadir" name="datadir" placeholder="" required />
             </label>
-            {% set xtrabackup_kill_query_type_title = "Choose which type of queries should be terminated to prevent backup interruptions." %}
-            <div class="select">
-                <label for="xtrabackup_kill_query_type"
-                       title="{{ xtrabackup_kill_query_type_title }}">
-                    <span class="material-symbols-outlined">arrow_drop_down</span>
-                    <span class="label">Query Type to Kill:</span>
-                    <select id="xtrabackup_kill_query_type" name="xtrabackup_kill_query_type">
-                        <option value="">Select one</option>
-                        <option value="select">select</option>
-                        <option value="all">all</option>
-                    </select>
-                </label>
-            </div>
-            {% set xtrabackup_prepare_memory_title = "Set the amount of memory to allocate for the prepare phase of XtraBackup. Leave empty for default." %}
-            <label for="xtrabackup_prepare_memory"
-                   title="{{ xtrabackup_prepare_memory_title }}">
-                Prepare Memory (optional):
+            {% set xb_prepare_memory_title = "Amount of memory (in MB) to use for xtrabackup prepare operation. Higher values can speed up the prepare process." %}
+            <label for="xb_prepare_memory" title="{{ xb_prepare_memory_title }}">
+                XtraBackup Prepare Memory:
                 <input type="text"
-                       id="xtrabackup_prepare_memory"
-                       name="xtrabackup_prepare_memory"
-                       placeholder="e.g. 1G" />
+                       id="xb_prepare_memory"
+                       name="xb_prepare_memory"
+                       placeholder="" />
             </label>
-            {% set xtrabackup_defaults_file_title = "Type the path to the optional defaults file for predefined configuration settings." %}
-            <label for="xtrabackup_defaults_file"
-                   title="{{ xtrabackup_defaults_file_title }}">
-                Defaults File (optional):
-                <input type="text"
-                       id="xtrabackup_defaults_file"
-                       name="xtrabackup_defaults_file"
-                       placeholder="/path/to/my.cnf" />
+            {% set xb_parallel_title = "Number of threads to use for parallel operations during backup restore. Higher values can improve performance but require more system resources." %}
+            <label for="xb_parallel" title="{{ xb_parallel_title }}">
+                XtraBackup Parallel:
+                <input type="number" id="xb_parallel" name="xb_parallel" />
             </label>
-            {% set xtrabackup_extra_args_title = "Type additional command-line arguments for XtraBackup to customize its behavior." %}
-            <label for="xtrabackup_extra_args" title="{{ xtrabackup_extra_args_title }}">
-                Extra Arguments (optional):
-                <input type="text"
-                       id="xtrabackup_extra_args"
-                       name="xtrabackup_extra_args"
-                       placeholder="e.g. --compact" />
-            </label>
-            {% set xtrabackup_incremental_method_title = "Choose the incremental backup method: 'less_space' (reduces storage usage) or 'fast_restore' (accelerates restoration)." %}
-            <div class="select">
-                <label for="xtrabackup_incremental_method"
-                       title="{{ xtrabackup_incremental_method_title }}">
-                    <span class="material-symbols-outlined">arrow_drop_down</span>
-                    <span class="label">Incremental Method:</span>
-                    <select id="xtrabackup_incremental_method"
-                            name="xtrabackup_incremental_method">
-                        <option value="">Select one</option>
-                        <option value="less_space">less_space</option>
-                        <option value="fast_restore">fast_restore</option>
-                    </select>
-                </label>
-            </div>
-            {% set xtrabackup_incremental_cycle_title = "Select the frequency for incremental backups: 'daily' for daily backups or 'weekly' for weekly backups." %}
-            <div class="select">
-                <label for="xtrabackup_incremental_cycle"
-                       title="{{ xtrabackup_incremental_cycle_title }}">
-                    <span class="material-symbols-outlined">arrow_drop_down</span>
-                    <span class="label">Incremental Cycle:</span>
-                    <select id="xtrabackup_incremental_cycle" name="xtrabackup_incremental_cycle">
-                        <option value="">Select one</option>
-                        <option value="daily">daily</option>
-                        <option value="weekly">weekly</option>
-                    </select>
-                </label>
-            </div>
-            {% set xtrabackup_local_ssh_destination_title = "Type the SSH destination for storing backups remotely. Format: user@host:/path" %}
-            <label for="xtrabackup_local_ssh_destination"
-                   title="{{ xtrabackup_local_ssh_destination_title }}">
-                Local SSH Destination (optional):
-                <input type="text"
-                       id="xtrabackup_local_ssh_destination"
-                       name="xtrabackup_local_ssh_destination"
-                       placeholder="user@host:/path" />
-            </label>
-            {% set xtrabackup_aes256_keyfile_title = "Type the path to the AES-256 encryption key file for securing backups." %}
-            <label for="xtrabackup_aes256_keyfile"
-                   title="{{ xtrabackup_aes256_keyfile_title }}">
-                AES256 Keyfile (optional):
-                <input type="text"
-                       id="xtrabackup_aes256_keyfile"
-                       name="xtrabackup_aes256_keyfile"
-                       placeholder="/path/to/keyfile" />
-            </label>
-            {% set xtrabackup_bin_cmd_title = "Select the backup tool to use: 'xtrabackup' (default for Percona), 'mariadb-backup' (MariaDB compatibility), or 'innobackupex' (legacy tool)." %}
+            {% set xtrabackup_bin_cmd_title = "Select the backup tool to use for restore: InnoBackupPex (legacy), XtraBackup (recommended), or MariaDB Backup." %}
             <div class="select">
                 <label for="xtrabackup_bin_cmd" title="{{ xtrabackup_bin_cmd_title }}">
                     <span class="material-symbols-outlined">arrow_drop_down</span>
-                    <span class="label">Binary Command:</span>
-                    <select id="xtrabackup_bin_cmd" name="xtrabackup_bin_cmd">
-                        <option value="">Select one</option>
-                        <option value="xtrabackup">xtrabackup</option>
-                        <option value="mariadb-backup">mariadb-backup</option>
-                        <option value="innobackupex">innobackupex</option>
+                    <span class="label">XtraBackup Bin Command:</span>
+                    <select id="xtrabackup_bin_cmd" name="xtrabackup_bin_cmd" required>
+                        <option value="">Select a Command type</option>
+                        <option selected value="innobackupex">InnoBackupPex</option>
+                        <option value="xtrabackup">XtraBackup</option>
+                        <option value="mariadb-backup">MariaDB Backup</option>
                     </select>
                 </label>
             </div>
+            <br>
+            {% set incremental_dest_path_title = "Path where incremental backups will be stored during the restore process." %}
+            <label for="incremental_dest_path" title="{{ incremental_dest_path_title }}">
+                Incremental Destination Path:
+                <input type="text"
+                       id="incremental_dest_path"
+                       name="incremental_dest_path"
+                       placeholder="" />
+            </label>
+            {% set xtrabackup_restore_args_title = "Additional command-line arguments to pass to xtrabackup during restore operation." %}
+            <label for="xtrabackup_restore_args"
+                   title="{{ xtrabackup_restore_args_title }}">
+                Xtrabackup Restore Args:
+                <input type="text"
+                       id="xtrabackup_restore_args"
+                       name="xtrabackup_restore_args"
+                       placeholder="" />
+            </label>
+            {% set keyring_file_data_title = "Path to the keyring file containing encryption keys for encrypted backups." %}
+            <label for="keyring_file_data" title="{{ keyring_file_data_title }}">
+                KeyRing File Data:
+                <input type="text"
+                       id="keyring_file_data"
+                       name="keyring_file_data"
+                       placeholder="" />
+            </label>
+            {% set xtrabackup_aes256_keyfile_title = "Path to the AES256 key file used for encrypted backups." %}
+            <label for="xtrabackup_aes256_keyfile"
+                   title="{{ xtrabackup_aes256_keyfile_title }}">
+                AES256 Key File:
+                <input type="text"
+                       id="xtrabackup_aes256_keyfile"
+                       name="xtrabackup_aes256_keyfile"
+                       placeholder="" />
+            </label>
+            <br>
+            <br>
+            <div class="checkbox-group">
+                {% set slave_from_master_title = "Configure the restored instance as a replica (slave) of the specified master server." %}
+                <label class="checkbox"
+                       for="slave_from_master"
+                       title="{{ slave_from_master_title }}">
+                    <input type="checkbox"
+                           id="slave_from_master"
+                           name="slave_from_master"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Slave from Master</span>
+                </label>
+                {% set wait_for_catchup_title = "Wait for the replica to catch up with the master after restore is complete." %}
+                <label class="checkbox"
+                       for="wait_for_catchup"
+                       title="{{ wait_for_catchup_title }}">
+                    <input type="checkbox"
+                           id="wait_for_catchup"
+                           name="wait_for_catchup"
+                           value="1" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Wait for Catchup</span>
+                </label>
+            </div>
+            {% set master_ip_title = "IP address of the master server to replicate from." %}
+            <label for="master_ip" title="{{ master_ip_title }}">
+                Master IP:
+                <input type="text" id="master_ip" name="master_ip" placeholder="" />
+            </label>
+            {% set master_port_title = "Port number of the master server (default is 3306)." %}
+            <label for="master_port" title="{{ master_port_title }}">
+                Master Port:
+                <input type="number" id="master_port" name="master_port" />
+            </label>
+            {% set master_user_title = "Username for connecting to the master server." %}
+            <label for="master_user" title="{{ master_user_title }}">
+                Master User:
+                <input type="text" id="master_user" name="master_user" placeholder="" />
+            </label>
+            {% set master_password_title = "Password for the master user account." %}
+            <label for="master_password" title="{{ master_password_title }}">
+                Master Password:
+                <input type="text"
+                       id="master_password"
+                       name="master_password"
+                       placeholder="" />
+            </label>
+            <br>
+            <br>
         </fieldset>
         <fieldset id="binlog_container" style="flex-direction: column; gap: 1em">
             <legend>Binlog Configuration</legend>
