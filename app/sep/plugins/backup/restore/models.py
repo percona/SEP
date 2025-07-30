@@ -16,6 +16,7 @@ class S3Tool(EnumFieldMixin, StrEnum):
     AWSCLI = "awscli"
 
 
+
 class XtraBackupTool(EnumFieldMixin, StrEnum):
     """Allowed commands for XtraBackup-style restores."""
 
