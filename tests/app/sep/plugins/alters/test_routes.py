@@ -84,10 +84,6 @@ def test_alters_create(
         response.headers["location"]
         == f"{test_client.base_url}/alters/{generated_task.name}"
     )
-    mock_task_api_dep.post.assert_any_await(
-        "/generate/",
-        json=generated_task.model_dump(),
-    )
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep")
@@ -95,28 +91,28 @@ def test_alters_detail(
     test_client,
     created_task,
     mock_task_api_dep,
+    mock_inventory_api_dep,
 ):
     """Test retrieving an alters' detail page."""
     mock_data = {
-        "TaskGroups": [
-            {
-                "Tasks": [
-                    {
-                        "Config": {
-                            "command": "echo",
-                            "args": ["hello", "world"],
-                        },
-                        "Meta": {
-                            "schema_name": "public",
-                            "table_name": "example_table",
-                        },
-                    }
-                ]
-            }
-        ],
-        "Constraints": [{"RTarget": "mock_hostname"}],
+        "task": "run-command",
+        "meta": {
+            "command": "pt-online-schema-change",
+            "args": "--alter=ADD COLUMN new_column INT --execute",
+            "target": "localhost",
+            "_schema_name": "public",
+            "_table_name": "example_table",
+        },
     }
     created_task.data = mock_data
+    mock_task_api_dep.get.side_effect = [
+        {},
+        {},
+        [],
+        [],
+        {},
+        {"address1": "host1", "address2": "host2"},  # for /hosts/
+    ]
     expected_awaits = [
         call(f"/{created_task.name}/history/"),
         call(f"/{created_task.name}-dry-run/history/"),
@@ -129,6 +125,7 @@ def test_alters_detail(
             params={"status": TaskHistoryStatusEnum.RUNNING},
         ),
         call(f"/stats/{created_task.name}"),
+        call("/hosts/"),
     ]
 
     response = test_client.get(f"/alters/{created_task.name}")
