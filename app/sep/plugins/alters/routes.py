@@ -1,13 +1,14 @@
 """Define routes for the alters plugin."""
 
 import logging
-import shlex
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
@@ -20,7 +21,9 @@ from app.sep.deps import (
 from app.sep.plugins.alters.deps import (
     AltersGeneratedTask,
     AltersTask,
+    extract_service_info,
     get_alters_index_context,
+    parse_alters_task_args,
 )
 from app.sep.utils.decorators import csrf_exempt
 from app.sep.utils.jinja import syntax_highlight
@@ -86,7 +89,7 @@ async def alters_create(
 
     # Create the execute task
     await task_api.post(
-        "/generate/",
+        "/",
         json=task.model_dump(),
     )
 
@@ -94,16 +97,14 @@ async def alters_create(
     dry_run_task = task.model_copy()
     dry_run_task.name = f"{task.name}-dry-run"
     # Replace --execute with --dry-run in the task arguments and add parent reference
-    for command in dry_run_task.commands:
-        if "args" in command:
-            command["args"] = [
-                arg.replace("--execute", "--dry-run") for arg in command["args"]
-            ]
-        if "meta" in command:
-            command["meta"]["parent"] = task.name
+    if "meta" in dry_run_task.data:
+        dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
+            "--execute", "--dry-run"
+        )
+        dry_run_task.data["meta"]["parent"] = task.name
 
     await task_api.post(
-        "/generate/",
+        "/",
         json=dry_run_task.model_dump(),
     )
 
@@ -121,24 +122,26 @@ async def alters_detail(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """Retrieve alters task."""
     data = task.data
-    task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = data["meta"]
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
-        "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
-        "cmd": f"{task_config['command']} {shlex.join(task_config['args'])}",
+        "hostname": meta["target"],
+        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
+        "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
         "delete_url": request.url_for("alters_delete", task_name=task.name),
         "dry_run_url": request.url_for(
             "alters_execute", task_name=task.name + "-dry-run"
         ),
+        "alert_on_fail": task.alert_on_fail,
     }
+    task_data.update(extract_service_info(meta))
 
     # If the task has a parent, redirect to the parent task detail page
     if task_data["meta"].get("parent"):
@@ -159,6 +162,31 @@ async def alters_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+
+    task_data.update(parse_alters_task_args(meta))
+
+    try:
+        executor_hosts = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        executor_hosts = {}
+        logger.warning("Failed to get executor hosts: %s", exc)
+    try:
+        services = await inventory_api.get(
+            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        )
+        for service in services:
+            service["schemas"] = await inventory_api.get(
+                f"/services/{service['id']}/schemas/",
+            )
+    except HTTPException as exc:
+        services = []
+        logger.warning("Failed to get services: %s", exc)
+
+    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["services"] = services
+    context["alert_on_fail_default"] = task_data["alert_on_fail"]
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+
     return templates.TemplateResponse(
         request=request,
         name="alters/details.html",
@@ -184,6 +212,41 @@ async def alters_execute(
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     task_path = request.url_for("alters_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def alters_update(
+    request: Request,
+    task_name: str,
+    updated_task: AltersGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update alters task."""
+    logger.debug("Updating alters task: %s", updated_task)
+    await tasks_api.put(
+        f"/{task_name}",
+        json=updated_task.model_dump(),
+    )
+    dry_run_task = updated_task.model_copy()
+    dry_run_task.name = f"{updated_task.name}-dry-run"
+    if "meta" in dry_run_task.data:
+        dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
+            "--execute", "--dry-run"
+        )
+        dry_run_task.data["meta"]["parent"] = updated_task.name
+    await tasks_api.put(
+        f"/{task_name}-dry-run",
+        json=dry_run_task.model_dump(),
+    )
+
+    return RedirectResponse(
+        request.url_for("alters_detail", task_name=updated_task.name),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post(
