@@ -37,34 +37,32 @@ async def build_restore_task_payload(
     all_config_dict = extract_model_from_instance(form, RestoreConfigAll)
     base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
 
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MYSQL,
-    )
-
-    dest_host, dest_port = "localhost", 3306
-    if isinstance(service.address, str) and ":" in service.address:
-        host, port_str = service.address.split(":", 1)
-        dest_host = host.strip()
-        dest_port = int(port_str.strip())
-
-    restore_config_payload = {
+    restore_config_payload: dict[str, Any] = {
         **base_config_dict.model_dump(),
-        "dest_host": dest_host,
-        "dest_port": dest_port,
         "alias": form.task_name,
     }
 
-    if str(form.schema_id).isdigit() and int(form.schema_id) > 0:
-        schema = await get_created_entity(
+    if form.backup_type == BackupType.MYDUMPER:
+        service = await get_created_entity(
             inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            form.schema_id,
-            service_id=service.id,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            form.service_id,
+            type=ServiceTypeEnum.MYSQL,
         )
-        restore_config_payload["database"] = schema.name
+
+        if isinstance(service.address, str) and ":" in service.address:
+            host, port_str = service.address.split(":", 1)
+            restore_config_payload["dest_host"] = host.strip()
+            restore_config_payload["dest_port"] = int(port_str.strip())
+
+        if str(form.schema_id).isdigit() and int(form.schema_id) > 0:
+            schema = await get_created_entity(
+                inventory_api,
+                SyncInventoryEntityTypeEnum.SCHEMA,
+                form.schema_id,
+                service_id=service.id,
+            )
+            restore_config_payload["database"] = schema.name
 
     restore_config = RestoreConfig(
         all_servers=RestoreConfigAll.model_validate(all_config_dict),
