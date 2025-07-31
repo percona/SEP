@@ -112,40 +112,6 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUP_MONGO = auto()
 
 
-class TaskOutput(BaseModel):
-    """Represents stdout and stderr for a given task execution.
-
-    :param stdout: A list of dictionaries representing standard output logs.
-    :type stdout: list[dict]
-    :param stderr: A list of dictionaries representing standard error logs.
-    :type stderr: list[dict]
-    """
-
-    stdout: list[dict] | None
-    stderr: list[dict] | None
-
-
-class TaskExecutionResult(BaseModel):
-    """Represents the overall execution result with different task outputs.
-
-    :param prepare_env: The output of the 'prepare-env' task.
-    :type prepare_env: TaskOutput
-    :param clean_up: The output of the 'clean-up' task.
-    :type clean_up: TaskOutput
-    :param run_script: The output of the 'run-script' task.
-    :type run_script: TaskOutput
-    :param step1: The output of the alters task.
-    :type step1: TaskOutput
-    """
-
-    prepare_env: TaskOutput | None = Field(alias="prepare-env")
-    clean_up: TaskOutput | None = Field(alias="clean-up")
-    run_script: TaskOutput | None = Field(alias="run-script")
-    step: TaskOutput | None = Field(alias="step1")
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-
 class TaskExecutionRequest(BaseModel):
     """Represent an execution request.
 
