@@ -96,7 +96,7 @@ async def backups_detail(
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "delete_url": request.url_for("backups_delete", task_name=task.name),
-        "config": task_config["ALL_SERVERS"],
+        "config": task_config.get("ALL_SERVERS", {}),
     }
 
     task_data.update(parsed_task_data)

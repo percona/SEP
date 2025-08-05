@@ -146,7 +146,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
-    all_servers_config = task_config["ALL_SERVERS"]
+    all_servers_config = task_config.get("ALL_SERVERS", {})
 
     result = {
         "name": task["name"],
