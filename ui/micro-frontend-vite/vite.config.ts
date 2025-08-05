@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     federation({
-      name: 'remotevite',
+      name: 'micro-frontend-vite',
       filename: 'remoteEntry.js',
       manifest: true,
       exposes: { './Button': './src/Button.tsx' },
