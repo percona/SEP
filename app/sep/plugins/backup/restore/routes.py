@@ -4,15 +4,23 @@ import logging
 from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, IsAuthenticated, IsCsrfValidated, TaskAPI
+from app.sep.deps import (
+    DefaultContext,
+    InventoryAPI,
+    IsAuthenticated,
+    IsCsrfValidated,
+    TaskAPI,
+)
 from app.sep.plugins.backup.models import BackupType
 from app.sep.plugins.backup.restore.deps import (
     get_restores_index_context,
+    parse_restore_task_data,
     RestoreGeneratedTask,
     RestoresTask,
 )
@@ -62,6 +70,7 @@ async def restores_detail(
     task: RestoresTask,
     request: Request,
     context: DefaultContext,
+    inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve restores task."""
@@ -69,6 +78,9 @@ async def restores_detail(
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
+
+    parsed_task_data = parse_restore_task_data(task.model_dump())
+
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -81,12 +93,39 @@ async def restores_detail(
         "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "delete_url": request.url_for("restores_delete", task_name=task.name),
     }
+
+    task_data.update(parsed_task_data)
+
     context["task"] = task_data
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+
+    try:
+        executor_hosts = await tasks_api.get("/hosts/")
+        context["executor_hosts"] = set(executor_hosts.values()) | {
+            task_data["hostname"]
+        }
+    except HTTPException:
+        executor_hosts = {}
+        context["executor_hosts"] = {task_data["hostname"]}
+
+    try:
+        services = await inventory_api.get(
+            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        )
+        context["services"] = services
+    except HTTPException:
+        context["services"] = []
+
+    try:
+        schemas = await inventory_api.get("/schemas/")
+        context["schemas"] = schemas
+    except HTTPException:
+        context["schemas"] = []
+
     return templates.TemplateResponse(
         request=request,
         name="backups/restore/details.html",
@@ -112,6 +151,29 @@ async def restores_execute(
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     task_path = request.url_for("restores_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def restores_update(
+    request: Request,
+    task_name: str,
+    updated_task: RestoreGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update restores task."""
+    logger.debug("Updating restores task: %s", updated_task)
+    await tasks_api.put(
+        f"/{task_name}",
+        json=updated_task.model_dump(),
+    )
+    return RedirectResponse(
+        request.url_for("restores_detail", task_name=updated_task.name),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post(

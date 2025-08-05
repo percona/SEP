@@ -103,6 +103,39 @@ async def build_restore_task_payload(
     )
 
 
+def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
+    """Parse restore task data for editing.
+
+    Extracts configuration from an existing restore task to populate the edit form.
+
+    :param task: The task data retrieved from the Tasks API.
+    :type task: dict[str, Any]
+    :return: A dictionary containing parsed restore configuration.
+    :rtype: dict[str, Any]
+    """
+    data = task["data"]
+    meta = data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    server_config = task_config["SERVER_LIST"][0]
+    all_servers_config = task_config.get("ALL_SERVERS", {})
+
+    result = {
+        "name": task["name"],
+        "hostname": meta["target"],
+        "backup_type": server_config["BACKUP_TYPE"],
+        "service_id": None,
+        "host": server_config.get("dest_host"),
+        "port": server_config.get("dest_port") or 3306,
+        "database": server_config.get("database"),
+    }
+
+    for key, value in all_servers_config.items():
+        if key.lower() not in result:
+            result[key.lower()] = value
+
+    return result
+
+
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
