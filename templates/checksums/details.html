@@ -4,18 +4,18 @@
 {%- endblock title %}
 {% block style %}
     <style>
-    label+input[type=text] {
-        display: block
-    }
+        label+input[type=text] {
+            display: block
+        }
 
-    table form {
-        display: inline-block
-    }
+        table form {
+            display: inline-block
+        }
 
-    table button {
-        width: 2.2rem;
-        height: 2.2rem
-    }
+        table button {
+            width: 2.2rem;
+            height: 2.2rem
+        }
     </style>
     <link rel="stylesheet"
           href="{{ url_for('static', path='/css/saved.css') }}">
@@ -34,11 +34,12 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
+    <h2>Overview</h2>
     <table data-table>
-        <caption>Overview</caption>
         <thead>
             <tr>
                 <th>Hostname</th>
+                <th>Service</th>
                 <th>Created at</th>
                 <th>Updated at</th>
             </tr>
@@ -46,6 +47,7 @@
         <tbody>
             <tr>
                 <td>{{ task.hostname }}</td>
+                <td>{{ task.service_name }}</td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
             </tr>
@@ -57,6 +59,7 @@
         </tfoot>
     </table>
     {% include "tasks/partials/run-python-form.html" %}
+    {% include "checksums/partials/edit-form.html" %}
     {% if running_tasks %}
         <section id="running-tasks">
             <h2>Running</h2>
@@ -65,30 +68,30 @@
     {% endif %}
     <section>
         <h2>Execution</h2>
-        <h5>Command</h5>
-        <code>{{ task.cmd }}</code>
         <br>
         <h5>Parameters</h5>
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
-                    <tr>
-                        <th>{{ k }}</th>
-                        <td>
-                            {% if v is mapping %}
-                                <ul>
-                                    {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% elif v is iterable and v is not string %}
-                                {# TODO: Refactor all these weird tests #}
-                                <ul>
-                                    {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% else %}
-                                <code>{{ v }}</code>
-                            {% endif %}
-                        </td>
-                    </tr>
+                    {% if not k.startswith('_') %}
+                        <tr>
+                            <th>{{ k }}</th>
+                            <td>
+                                {% if v is mapping %}
+                                    <ul>
+                                        {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% elif v is iterable and v is not string %}
+                                    {# TODO: Refactor all these weird tests #}
+                                    <ul>
+                                        {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% else %}
+                                    <code>{{ v }}</code>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>
@@ -99,7 +102,7 @@
         <h2>Stats</h2>
         {% if stats and stats.total %}
             <table data-table>
-                <caption>Aggregated statistics for {{ task_name }}</caption>
+                <caption>Aggregated statistics for {{ task.name }}</caption>
                 <thead>
                     <tr>
                         <th>Executions</th>
@@ -119,7 +122,7 @@
                         <td>{{ stats.total }}</td>
                         <td>{{ stats.status.pass }}</td>
                         <td>{{ stats.status.fail }}</td>
-                        <td>{{ stats.last_finished_at }}</td>
+                        <td class="relativeTime">{{ stats.last_finished_at }}</td>
                         <td>{{ stats.duration.average_seconds or 0|round(3) }}</td>
                         <td>{{ stats.duration.last_seconds or 0|round(3) }}</td>
                     </tr>
