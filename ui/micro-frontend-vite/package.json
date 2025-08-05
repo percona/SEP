@@ -14,6 +14,13 @@
     "vite": "^5.0.0",
     "@vitejs/plugin-react": "^4.0.0",
     "@module-federation/vite": "1.7.1",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "@percona/design": "1.1.0",
+    "@percona/eslint-config-react": "1.1.0",
+    "@percona/prettier-config": "1.1.0",
+    "@percona/tsconfig": "1.1.0",
+    "@percona/types": "1.1.0",
+    "@percona/ui-lib": "1.1.0",
+    "@percona/utils": "1.1.0"
   }
 }
