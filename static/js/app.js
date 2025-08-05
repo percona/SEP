@@ -18,13 +18,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (linkPath === '/' && currentPath === '/') {
             link.classList.add('active');
-            console.log("rool")
         } else if (
             linkPath !== '/' &&
             (currentPath === linkPath || currentPath.startsWith(linkPath))
         ) {
             link.classList.add('active');
-            console.log("herer")
         }
     });
 

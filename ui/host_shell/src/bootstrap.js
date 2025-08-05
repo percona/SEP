@@ -2,10 +2,10 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-const rootElement = document.getElementById('root');
-if (rootElement) {
-  const root = createRoot(rootElement);
-  root.render(<App />);
+const reactElement = document.getElementById('react');
+if (reactElement) {
+  const react = createRoot(reactElement);
+  react.render(<App />);
 } else {
-  console.error("Elemento #root não encontrado.");
+  console.error("Element #react not found");
 }

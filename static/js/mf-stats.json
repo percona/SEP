@@ -1,0 +1,86 @@
+{
+  "id": "host",
+  "name": "host",
+  "metaData": {
+    "name": "host",
+    "type": "app",
+    "buildInfo": {
+      "buildVersion": "1.0.0",
+      "buildName": "host"
+    },
+    "remoteEntry": {
+      "name": "",
+      "path": "",
+      "type": "global"
+    },
+    "types": {
+      "path": "",
+      "name": "",
+      "zip": "",
+      "api": ""
+    },
+    "globalName": "host",
+    "pluginVersion": "0.17.1",
+    "prefetchInterface": false,
+    "publicPath": "auto"
+  },
+  "shared": [
+    {
+      "singleton": true,
+      "requiredVersion": "18.3.1",
+      "shareScope": "default",
+      "name": "react-dom",
+      "version": "18.3.1",
+      "eager": false,
+      "id": "host:react-dom",
+      "assets": {
+        "js": {
+          "async": [],
+          "sync": [
+            "143.js"
+          ]
+        },
+        "css": {
+          "async": [],
+          "sync": []
+        }
+      },
+      "usedIn": []
+    },
+    {
+      "singleton": true,
+      "requiredVersion": "18.3.1",
+      "shareScope": "default",
+      "name": "react",
+      "version": "18.3.1",
+      "eager": false,
+      "id": "host:react",
+      "assets": {
+        "js": {
+          "async": [],
+          "sync": [
+            "758.js"
+          ]
+        },
+        "css": {
+          "async": [],
+          "sync": []
+        }
+      },
+      "usedIn": []
+    }
+  ],
+  "remotes": [
+    {
+      "alias": "micro-frontend-vite",
+      "consumingFederationContainerName": "host",
+      "federationContainerName": "promise import('http://localhost:3001/remoteEntry.js')\n                         .then(module => ({\n                         get: request => module.get(request),\n                         init: arg => module.init(arg)\n                      }))",
+      "moduleName": "Button",
+      "usedIn": [
+        "src/App.jsx"
+      ],
+      "version": "*"
+    }
+  ],
+  "exposes": []
+}
