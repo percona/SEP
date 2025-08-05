@@ -59,6 +59,7 @@ sep_app = create_app(
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
+sep_app.mount("/bundle", StaticFiles(directory=sep_settings.BUNDLE_DIR), name="bundle")
 
 
 @CsrfProtect.load_config

@@ -188,6 +188,7 @@ class SEPSettings(BaseYamlAppSettings):
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
     STATIC_DIR: RelativeDirectoryPath = Path("static")
+    BUNDLE_DIR: RelativeDirectoryPath = Path("bundle")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()

@@ -1,0 +1,76 @@
+{
+  "id": "host",
+  "name": "host",
+  "metaData": {
+    "name": "host",
+    "type": "app",
+    "buildInfo": {
+      "buildVersion": "1.0.0",
+      "buildName": "host"
+    },
+    "remoteEntry": {
+      "name": "",
+      "path": "",
+      "type": "global"
+    },
+    "types": {
+      "path": "",
+      "name": "",
+      "zip": "",
+      "api": ""
+    },
+    "globalName": "host",
+    "pluginVersion": "0.17.1",
+    "prefetchInterface": false,
+    "publicPath": "auto"
+  },
+  "shared": [
+    {
+      "id": "host:react-dom",
+      "name": "react-dom",
+      "version": "18.3.1",
+      "singleton": true,
+      "requiredVersion": "18.3.1",
+      "assets": {
+        "js": {
+          "async": [],
+          "sync": [
+            "143.js"
+          ]
+        },
+        "css": {
+          "async": [],
+          "sync": []
+        }
+      }
+    },
+    {
+      "id": "host:react",
+      "name": "react",
+      "version": "18.3.1",
+      "singleton": true,
+      "requiredVersion": "18.3.1",
+      "assets": {
+        "js": {
+          "async": [],
+          "sync": [
+            "758.js"
+          ]
+        },
+        "css": {
+          "async": [],
+          "sync": []
+        }
+      }
+    }
+  ],
+  "remotes": [
+    {
+      "federationContainerName": "promise import('http://localhost:3001/remoteEntry.js')\n                         .then(module => ({\n                         get: request => module.get(request),\n                         init: arg => module.init(arg)\n                      }))",
+      "moduleName": "Button",
+      "alias": "micro-frontend-vite",
+      "entry": "*"
+    }
+  ],
+  "exposes": []
+}
