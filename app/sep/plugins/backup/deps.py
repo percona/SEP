@@ -173,8 +173,8 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         result["rsync_path"] = all_servers_config.get("rsync_path")
 
     for key, value in all_servers_config.items():
-        if key not in result:
-            result[key] = value
+        if key.lower() not in result:
+            result[key.lower()] = value
 
     return result
 

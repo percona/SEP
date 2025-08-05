@@ -11,12 +11,11 @@
 
     .visible {
         opacity: 1;
-        max-height: 1000px; /* Large enough to show all content */
+        max-height: 1000px;
         pointer-events: auto;
         display: flex;
     }
 
-    /* Smaller containers might have less content, adjust accordingly if needed */
     #mydumper_container,
     #xtrabackup_container,
     #s3_container,
@@ -171,7 +170,7 @@
                             <input type="text"
                                    id="encryption_recipient"
                                    name="encryption_recipient"
-                                   value="{{ task.encryption_recipient or '' }}"
+                                   value="{{ task.encryption_recipient }}"
                                    placeholder="Recipient email or key ID" />
                         </label>
                         <br>
@@ -921,7 +920,6 @@
     function updateBackupTypeUI() {
         const backupType = backupTypeSelect.value;
         if (backupType === 'M') {
-            // Show mydumper, hide xtrabackup and binlog
             showContainer(mydumperContainer, true);
             disableAllMydumperFields(false);
 
@@ -934,7 +932,6 @@
             showContainer(binlogContainer, false);
             disableAllBinlogFields(true);
         } else if (backupType === 'X') {
-            // Show xtrabackup, hide mydumper and binlog
             showContainer(xtrabackupContainer, true);
             disableAllXtrabackupFields(false);
 
@@ -960,7 +957,6 @@
             disableAllUploadFields(false);
         }
         else {
-            // No selection
             showContainer(mydumperContainer, false);
             disableAllMydumperFields(true);
 
@@ -1012,12 +1008,13 @@
     function updateCompressionOptions() {
         const isCompressChecked = compressCheckbox.checked;
         const backupType = backupTypeSelect.value;
+        const currentValue = '{{ task.compression_algorithm or "" }}';
 
         if (isCompressChecked && compressionOptions[backupType]) {
             const { title, options } = compressionOptions[backupType];
 
             compressionSelect.innerHTML = options
-                .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+                .map(opt => `<option value="${opt.value}" ${opt.value === currentValue ? 'selected' : ''}>${opt.label}</option>`)
                 .join('');
 
             compressionSelect.title = title;
@@ -1029,7 +1026,6 @@
         }
     }
 
-    // Event listeners
     compressCheckbox.addEventListener('change', updateCompressionOptions);
     backupTypeSelect.addEventListener('change', updateCompressionOptions);
 
@@ -1038,9 +1034,9 @@
     toggleRsyncBtn.addEventListener('click', toggleRsync);
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
-    // Initialize
     window.addEventListener('DOMContentLoaded', function() {
         updateBackupTypeUI();
+        updateCompressionOptions();
         showContainer(s3Container, false);
         showContainer(rsyncContainer, false);
         updateEditButtonState();
