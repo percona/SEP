@@ -22,6 +22,7 @@ from app.sep.plugins.backup.deps import (
     get_backups_index_context,
 )
 from app.sep.plugins.backup.models import BackupType
+from app.tasks.anonymizer import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
@@ -77,6 +78,7 @@ async def backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
+    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
     task_data = {
@@ -88,6 +90,7 @@ async def backups_detail(
         "host": server_config["HOST"],
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("backups_delete", task_name=task.name),
     }
 
