@@ -9,7 +9,7 @@ export default defineConfig({
       name: 'micro-frontend-vite',
       filename: 'remoteEntry.js',
       manifest: true,
-      exposes: { './Button': './src/Button.tsx' },
+      exposes: { './RemoteButton': './src/RemoteButton.tsx' },
       shared: {
         react: { singleton: true, requiredVersion: '18.3.1' },
         'react-dom': { singleton: true, requiredVersion: '18.3.1' }
