@@ -1,5 +1,6 @@
 import React from 'react';
+import Button from '@mui/material/Button';
 
 export default function Button() {
-  return <button style={{ padding: '1rem' }}>I definitely came from Vite</button>;
+  return <Button variant="contained">Hello world</Button>;
 }
