@@ -160,6 +160,7 @@
         nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/messages.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/app.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('bundle', path='/js/main.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     <script nonce="{{ request.state.csp_nonce }}">
         $('.submitNextForm').click(function () {
             $(this).next('form').submit();

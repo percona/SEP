@@ -67,7 +67,7 @@
   "remotes": [
     {
       "federationContainerName": "promise import('http://localhost:3001/remoteEntry.js')\n                         .then(module => ({\n                         get: request => module.get(request),\n                         init: arg => module.init(arg)\n                      }))",
-      "moduleName": "Button",
+      "moduleName": "RemoteButton",
       "alias": "micro-frontend-vite",
       "entry": "*"
     }
