@@ -203,8 +203,13 @@
                 <span class="label">Encrypt</span>
             </label>
             {% set post_run_encrypt_title = "Encrypt backup right after completion." %}
-            <label class="checkbox" for="post_run_encrypt" title="{{ post_run_encrypt_title }}">
-                <input type="checkbox" id="post_run_encrypt" name="post_run_encrypt" value="1" />
+            <label class="checkbox"
+                   for="post_run_encrypt"
+                   title="{{ post_run_encrypt_title }}">
+                <input type="checkbox"
+                       id="post_run_encrypt"
+                       name="post_run_encrypt"
+                       value="1" />
                 <div class="checkmark">
                     <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                     <span class="material-symbols-outlined checked">check_box</span>
