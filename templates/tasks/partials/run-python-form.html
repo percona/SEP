@@ -82,7 +82,7 @@
             <span class="material-symbols-outlined">send</span>
             <span class="label">Execute</span>
         </button>
-        {% if not task.protected %}
+        {% if task.is_edit_enabled %}
             <button type="button"
                     class="text medium edit-button submitButton triggerEditTask edit-tasks-button"
                     data-task="{{ task.name }}"
