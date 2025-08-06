@@ -85,6 +85,15 @@
         </table>
     </section>
     <section>
+        <h2>PII Anonymization</h2>
+        <p>The following sensitive data types are selected for anonymization:</p>
+        {% if task.entities %}
+            {% for entity, value in task.entities.items() %}<code>{{ entity }}, </code>{% endfor %}
+        {% else %}
+            <p>No entities selected.</p>
+        {% endif %}
+    </section>
+    <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
             <table data-table>
