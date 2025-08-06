@@ -38,7 +38,6 @@ def task_history_response(faker, created_task):
         status=TaskHistoryStatusEnum.SUCCESS,
         task=created_task,
         errors=[],
-        anonymized_items=None,
         started_at=started_at,
         finished_at=started_at + faker.time_delta(end_datetime="+1h"),
     )

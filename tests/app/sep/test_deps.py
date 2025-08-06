@@ -22,7 +22,6 @@ async def test_get_tasks_context(
             [],  # for /{task_name}/history/
             [],  # for /{task_name}/periodic/
             {"address1": "host1", "address2": "host2"},  # for /hosts/
-            {},  # for /entites/
         ]
     )
 

@@ -45,14 +45,6 @@ default:
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
-    MASKING_ENTITIES:
-      ALTERS:
-        - CREDIT_CARD
-        - EMAIL_ADDRESS
-        - IBAN_CODE
-      ARCHIVER:
-        - EMAIL_ADDRESS
-
 
 development:
   SEP:
@@ -130,6 +122,8 @@ production_docker:
       SSL_CAFILE: data/certs/sep-ca.pem
     SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
+    ANONYMIZER:
+      DEFAULT_ENTITIES: "*"
   BACKEND_CORS_ORIGINS:
     - https://localhost:9000
     - https://127.0.0.1:9000

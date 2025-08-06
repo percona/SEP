@@ -28,7 +28,6 @@ from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import alert_settings
-from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -54,7 +53,6 @@ from app.sep.inventory import (
 )
 from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.anonymizer import AnonymizerEntity
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
     Task,
@@ -143,24 +141,6 @@ async def get_current_user(
 
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
-
-
-async def get_current_admin(current_user: CurrentUser) -> User:
-    """Return the authenticated admin from a cookie token.
-
-    :param current_user: The current logged-in user.
-    :type current_user: CurrentUser
-    :return: The authenticated admin user.
-    :rtype: User
-    :raises HTTPForbiddenException: If the user is not an admin.
-    """
-    if not current_user.is_admin:
-        logger.debug("User %s doesn't have admin role", current_user.username)
-        raise HTTPForbiddenException
-    return current_user
-
-
-IsAdminDep = Depends(get_current_admin)
 
 
 async def redirect_if_user_is_authenticated(request: Request) -> None:
@@ -509,7 +489,6 @@ async def get_tasks_context(
             "executor_hosts": list(executor_hosts.values()),
             "services": services,
             "tasks": tasks,
-            "entities": list(AnonymizerEntity),
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,

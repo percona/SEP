@@ -30,17 +30,13 @@ from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
-from app.tasks.anonymizer import (
-    encode_selection,
-    presidio_anonymize_log,
-)
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.celery import (
     celery,
     dispatch_queue_item,
     execute_task_queue,
     get_executor_for_task,
 )
-from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
@@ -50,16 +46,9 @@ from app.tasks.deps import (
     TaskDep,
     TaskExecutor,
     TaskHistoryWithTaskDep,
-    TaskWriteWithAnonymizeDep,
 )
 from app.tasks.models import (
-    GeneratedTask,
     Task,
-    TaskBackendEnum,
-    TaskExecutionRequest,
-    TaskGroup,
-    TaskGroupTask,
-    TaskGroupTaskTemplate,
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -120,10 +109,12 @@ async def get_task(task: TaskDep) -> Task:
     status_code=status.HTTP_201_CREATED,
     response_model=TaskResponse,
 )
-async def create_task(session: SessionDep, task: TaskWriteWithAnonymizeDep) -> Task:
+async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
-    return await TaskManager.create(session, task)
+    return await TaskManager.create(
+        session, task, anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner]
+    )
 
 
 @router.put(
@@ -174,101 +165,6 @@ async def create_periodic_task_for_task_name(
     kwargs["periodic_task_name"] = periodic_task.name
     return await PeriodicTaskManager.create(
         celery_beat_session, periodic_task, kwargs=json.dumps(kwargs)
-    )
-
-
-@router.post(
-    "/generate/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
-)
-async def generate_task(
-    session: SessionDep,
-    generated_task: GeneratedTask,
-    executor: TaskExecutor,
-) -> TaskHistory:
-    """Generate a new task execution using a template."""
-    logger.debug(
-        "Generating task %s from %s",
-        generated_task.name,
-        generated_task.template,
-    )
-    template = await TaskManager.retrieve_by_name(
-        session=session,
-        name=f"generic-nomad-{generated_task.template}",
-        is_template=True,
-    )
-
-    # TODO: enhance options for generating tasks  # noqa: TD002, TD003
-    logger.info("GENERATE TASK ALERT ON FAIL: %s", generated_task.alert_on_fail)
-    task = Task(
-        name=generated_task.name,
-        owner=generated_task.app,
-        anonymize=encode_selection(tasks_settings.MASKING_ENTITIES[generated_task.app]),
-        backend=template.backend,
-        data=template.data,
-        alert_on_fail=generated_task.alert_on_fail,
-    )
-    tpl = task.data
-
-    # TODO: currently Nomad-only, with restricted customisation  # noqa: TD002, TD003
-    tg = TaskGroup(
-        engine=task.backend.name,
-        name="execution",
-        tasks=[],
-        parallel=generated_task.parallel and len(generated_task.commands) > 1,
-    )
-    for i, cmd in enumerate(generated_task.commands):
-        templates = [
-            TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])
-        ]
-        tg.tasks.append(
-            TaskGroupTask(
-                name=f"step{i + 1}" if not cmd.get("name") else cmd["name"],
-                config={
-                    "args": cmd.get("args"),
-                    "command": cmd.get("command"),
-                },
-                meta=cmd.get("meta", {}),
-                templates=templates,
-            ),
-        )
-    tpl.update(tg.to_payload())
-
-    # TODO: delete Periodic for now  # noqa: TD002, TD003
-    if "Periodic" in tpl:
-        if generated_task.schedule and not generated_task.schedule.get("save_only"):
-            tpl["Periodic"] = generated_task.schedule
-        else:
-            del tpl["Periodic"]
-
-    match task.backend:
-        case TaskBackendEnum.NOMAD:
-            match tpl["Type"]:
-                case "batch":
-                    # TODO: handle more than one constraint  # noqa: TD002, TD003
-                    if generated_task.target in ["all", "*"]:
-                        tpl["Constraints"][0]["RTarget"] = ".*"
-                        tpl["Constraints"][0]["Operand"] = "regexp"
-                    else:
-                        tpl["Constraints"][0]["RTarget"] = generated_task.target
-                        tpl["Constraints"][0]["Operand"] = "="
-            task.data = await executor.validate_job(tpl)
-        case _:
-            raise NotImplementedError(
-                f"{task.backend} is currently unsupported",
-            )
-
-    if generated_task.persist:
-        task = await TaskManager.save(session, task)
-
-    return TaskHistory(
-        task_id=task.id,
-        execution_request=TaskExecutionRequest(
-            task=generated_task.name,
-            target=generated_task.target,
-            meta={},
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
     )
 
 
@@ -363,35 +259,18 @@ async def stream_task_history_logs(
         raise HTTPConflictException("Task history is pending.")
     if task_history.status == TaskHistoryStatusEnum.RUNNING:
         stream_logs_generator = (
-            (
-                log_line.model_copy(
-                    update={
-                        "msg": presidio_anonymize_log(
-                            log_line.msg, task_history.task.anonymize
-                        )
-                        if log_line.step in ("run-script", "step1")
-                        else log_line.msg
-                    }
-                ).model_dump_json()
-                + "\n"
-            )
+            f"{log_line.model_dump_json()}\n" if log_line else ""
             async for log_line in executor.stream_logs(task_history, offsets)
         )
     else:
         stream_logs_generator = (
-            (
-                TaskLog(
-                    step=step,
-                    type=log_type,
-                    msg=(
-                        presidio_anonymize_log(msg, task_history.task.anonymize)
-                        if step in ("run-script", "step1")
-                        else msg
-                    ),
-                    offset=log.get(f"{log_type}_last_offset", 0),
-                ).model_dump_json()
-                + "\n"
-            )
+            TaskLog(
+                step=step,
+                type=log_type,
+                msg=msg,
+                offset=log.get(f"{log_type}_last_offset", 0),
+            ).model_dump_json()
+            + "\n"
             for step, log in task_history.execution_request.tracking.get(
                 "task_logs", {}
             ).items()

@@ -46,7 +46,7 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.tasks.anonymizer import presidio_anonymize_log
+from app.tasks.anonymizer import anonymize_text, PIIEntity
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundException,
@@ -489,8 +489,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     def get_logs_for_allocation(
         self,
         alloc: dict[str, Any],
-        anonymize: int | None = None,
         initial_logs: dict[str, dict[str, Any]] | None = None,
+        anonymize_entities: set[PIIEntity] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Get logs for a specific allocation.
 
@@ -536,8 +536,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         task_logs[step][last_offset_key] = log_data["Offset"]
                         decoded_data = b64decode_str(log_data["Data"])
                         if step in ("run-script", "step1"):
-                            decoded_data = presidio_anonymize_log(
-                                decoded_data, anonymize
+                            decoded_data = anonymize_text(
+                                decoded_data, anonymize_entities or set()
                             )
                         task_logs[step][log_type] += decoded_data
         return task_logs
@@ -608,8 +608,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         task_states = alloc["TaskStates"]
         task_logs = self.get_logs_for_allocation(
             alloc,
-            queue_item.task.anonymize,
             queue_item.execution_request.tracking.get("task_logs", {}),
+            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
         )
         logger.debug(
             "sync_task_history(queue_item_id=%s): tasks_logs = %r",
@@ -712,6 +712,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         log_type: TaskLogType,
         queue: asyncio.Queue,
         start_offset: int = 0,
+        anonymize_entities: set[PIIEntity] | None = None,
     ) -> None:
         """Push logs to the asynchronous queue for processing.
 
@@ -771,11 +772,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             )
                             if data and (msg := data.get("Data")):
                                 empty_data_count = 0
+                                decoded_msg = b64decode_str(msg)
+                                if step in ("run-script", "step1"):
+                                    decoded_msg = anonymize_text(
+                                        decoded_msg, anonymize_entities or set()
+                                    )
                                 await queue.put(
                                     TaskLog(
                                         step=step,
                                         type=log_type,
-                                        msg=b64decode_str(msg),
+                                        msg=decoded_msg,
                                         offset=offset,
                                     )
                                 )
@@ -840,6 +846,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             log_type,
                             queue,
                             start_offsets[step].get(log_type, 0),
+                            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
                         )
                     )
                 )
