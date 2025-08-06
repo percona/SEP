@@ -90,6 +90,7 @@ async def checksums_detail(
         "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("checksums_delete", task_name=task.name),
         "alert_on_fail": task.alert_on_fail,
+        "is_edit_enabled": not task.protected,
     }
     task_data.update(extract_service_info(meta))
     task_data.update(parse_checksums_task_args(meta))
