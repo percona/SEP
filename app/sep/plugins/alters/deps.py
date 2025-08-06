@@ -1,6 +1,7 @@
 """Define dependencies for the Alters plugin."""
 
 import logging
+import shlex
 from typing import Annotated, Any
 
 from fastapi import Depends, Form, Request
@@ -16,7 +17,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task, TaskOwner
+from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ async def build_alters_task_payload(
         "max_load": f"--max-load={form.max_load}",
         "chunk_time": f"--chunk-time={form.chunk_time}",
         "max_lag": f"--max-lag={form.max_lag}",
+        "max_flow_ctl": f"--max-flow-ctl={form.max_flow_ctl}",
     }
 
     # Adding optional arguments if their values exist
@@ -101,25 +103,29 @@ async def build_alters_task_payload(
     # Adding '--progress' argument if 'print_arg' is set
     if form.print_arg:
         args.append(f"--progress={form.progress}")
-
-    return GeneratedTask(
-        app=TaskOwner.ALTERS,
-        commands=[
-            {
-                "args": [*args, "--execute"],
+    args.append("--execute")
+    return TaskWrite(
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        data={
+            "task": "run-command",
+            "meta": {
                 "command": "pt-online-schema-change",
-                "meta": {
-                    "schema_name": schema.name,
-                    "table_name": table.name,
-                },
+                "args": shlex.join(args),
+                "target": form.hostname,
+                "_schema_name": schema.name,
+                "_table_name": table.name,
+                "_service_host": service.node.address,
+                "_service_port": service.port,
             },
-        ],
+        },
         name=form.task_name,
         target=form.hostname,
+        alert_on_fail=form.alert_on_fail,
     )
 
 
-AltersGeneratedTask = Annotated[GeneratedTask, Depends(build_alters_task_payload)]
+AltersGeneratedTask = Annotated[TaskWrite, Depends(build_alters_task_payload)]
 
 
 async def get_alters_task(
@@ -157,11 +163,143 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     data = task["data"]
-    meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+    meta = data["meta"]
+
     return {
-        "hostname": data["Constraints"][0]["RTarget"],
-        "table": f"{meta['schema_name']}.{meta['table_name']}",
+        "hostname": meta["target"],
+        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
+        "parent": meta.get("parent"),
     }
+
+
+def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
+    """Extract service information from task configuration.
+
+    :param meta: The task meta containing service information and args string.
+    :type meta: dict[str, Any]
+    :return: A dictionary containing service_host, service_port, schema_name, and table_name.
+    :rtype: dict[str, Any]
+    """
+    service_host = meta.get("_service_host", "")
+    service_port = meta.get("_service_port", 0)
+    schema_name = meta.get("_schema_name", "")
+    table_name = meta.get("_table_name", "")
+
+    if not service_host or service_port == 0:
+        args_string = meta.get("args", "")
+        if args_string:
+            args = shlex.split(args_string)
+
+            for task_arg in args:
+                if "=" in task_arg and not task_arg.startswith("--"):
+                    for param in task_arg.split(","):
+                        if "=" in param:
+                            key, value = param.split("=", 1)
+                            if key == "h" and not service_host:
+                                service_host = value
+                            elif key == "P" and service_port == 0:
+                                service_port = int(value)
+    if service_host == "":
+        service_host = "localhost"
+    return {
+        "service_host": service_host,
+        "service_port": service_port,
+        "schema_name": schema_name,
+        "table_name": table_name,
+    }
+
+
+def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
+    """Parse a single argument and update form values.
+
+    :param arg: The argument string to parse.
+    :type arg: str
+    :param form_values: The form values dictionary to update.
+    :type form_values: dict[str, Any]
+    """
+    if arg.startswith("--recursion-method="):
+        recursion_method = arg.split("=", 1)[1]
+        if recursion_method.startswith("dsn="):
+            form_values["recursion_method"] = "dsn"
+            form_values["dsn_table"] = recursion_method.split("=", 1)[1]
+        else:
+            form_values["recursion_method"] = recursion_method
+        return
+
+    if arg.startswith("--progress="):
+        form_values["progress"] = arg.split("=", 1)[1]
+        return
+
+    arg_mappings = {
+        "--alter=": "alter",
+        "--pause-file=": "pause_file",
+        "--new-table-name=": "new_table_name",
+        "--tries=": "tries",
+        "--set-vars=": "set_vars",
+        "--critical-load=": "critical_load",
+        "--max-load=": "max_load",
+        "--chunk-time=": "chunk_time",
+        "--max-lag=": "max_lag",
+        "--max-flow-ctl=": "max_flow_ctl",
+    }
+
+    for arg_pattern, field_name in arg_mappings.items():
+        if arg.startswith(arg_pattern):
+            form_values[field_name] = arg.split("=", 1)[1]
+            return
+
+    flag_mappings = {
+        "--print": "print_arg",
+        "--no-swap-tables": "no_swap_tables",
+        "--no-drop-old-table": "no_drop_old_table",
+        "--no-drop-new-table": "no_drop_new_table",
+        "--no-drop-triggers": "no_drop_triggers",
+    }
+
+    for flag, field_name in flag_mappings.items():
+        if arg == flag:
+            form_values[field_name] = True
+            return
+
+
+def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
+    """Parse existing task arguments back into form field values.
+
+    Extracts form field values from the task configuration arguments for editing.
+
+    :param meta: The task meta containing the args string.
+    :type meta: dict[str, Any]
+    :return: A dictionary containing form field values.
+    :rtype: dict[str, Any]
+    """
+    form_values = {
+        "alter": "",
+        "recursion_method": "processlist",
+        "dsn_table": "",
+        "pause_file": "",
+        "new_table_name": "",
+        "print_arg": False,
+        "progress": "",
+        "no_swap_tables": False,
+        "no_drop_old_table": False,
+        "no_drop_new_table": False,
+        "no_drop_triggers": False,
+        "tries": "",
+        "set_vars": "",
+        "critical_load": "",
+        "max_load": "",
+        "chunk_time": "",
+        "max_lag": "",
+        "max_flow_ctl": "",
+    }
+
+    args_string = meta.get("args", "")
+    args = shlex.split(args_string)
+
+    for arg in args:
+        parse_single_arg(arg, form_values)
+
+    return form_values
 
 
 async def get_alters_index_context(
@@ -194,4 +332,5 @@ async def get_alters_index_context(
         get_alters_task_info,
         context,
         TaskOwner.ALTERS,
+        alert_on_fail_default=True,
     )

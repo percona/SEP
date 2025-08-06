@@ -48,7 +48,7 @@ BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
 )
 BACKUP_TYPE = "Mydumper"
 DEFAULT_COMPRESSION_ALGORITHM = "gzip"
-AVAILABLE_COMPRESSION_ALGORITHMS = ["gzip"]
+AVAILABLE_COMPRESSION_ALGORITHMS = ["gzip", "zstd"]
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_CFG_DIR = Path(
     os.getenv(
@@ -637,7 +637,7 @@ class DirectoryEncryptor:
     def _set_default_config(self) -> None:
         """Set default configuration values."""
         self.config = {
-            "encryption recipient": "CHANGEME_GPG",
+            "encryption recipient": "directory.encryption@percona.com",
             "encryption home dir": "~/.gnupg",
             "max encryption processes": 5,
             "encryption nice": False,
@@ -738,7 +738,7 @@ class DirectoryEncryptor:
         :return: True if all files were encrypted successfully, False otherwise.
         :rtype: bool
         """
-        recipient = self.config.get("encryption recipient", "CHANGEME_GPG")
+        recipient = self.config.get("encryption recipient", "directory.encryption@percona.com")
         nice = bool(self.config.get("encryption nice", False))
         max_proc = int(self.config.get("max encryption processes", 5))
 
@@ -806,7 +806,7 @@ class BaseBackup:
             self.check_compression_algorithm(self.compression_algorithm)
 
         # Dynamically set
-        self.is_slave = False
+        self.is_replica = False
         self.last_backup_dir = None
 
     def check_compression_algorithm(self, algorithm: str) -> None:
@@ -836,7 +836,7 @@ class BaseBackup:
         if len(output) > 300:
             output = f"{output[:300]}..."
 
-        if isinstance(self, Backup) and self.is_slave:
+        if isinstance(self, Backup) and self.is_replica:
             output = f"Host {self.alias}. {output}"
 
         self.report_options["end_time"] = time.strftime(DATETIME_FORMAT, time.gmtime())
@@ -942,7 +942,7 @@ class Backup(BaseBackup):
         self.dir_encrypt_config = server_data.get("DIR_ENCRYPT_CONFIG", {})
         self.post_run_encrypt = server_data.get("POST_RUN_ENCRYPT", False)
         self.only_if_read_only = server_data.get("ONLY_IF_READ_ONLY")
-        self.only_if_running_slave = server_data.get("ONLY_IF_RUNNING_SLAVE")
+        self.only_if_running_replica = server_data.get("ONLY_IF_RUNNING_REPLICA")
         self.upload_type = server_data.get("UPLOAD", set())
         if isinstance(self.upload_type, str):
             self.upload_type = {self.upload_type}
@@ -1003,23 +1003,30 @@ class Backup(BaseBackup):
             msg = f'Error running query "{sql}": {err}'
             raise BackupError(msg) from err
 
-    def _is_running_slave(self) -> bool:
-        """Check if MySQL slave is running.
+    def _is_running_replica(self) -> bool:
+        """Check if MySQL replica is running.
 
-        :return: True if slave is running, False otherwise.
+        Supports both legacy `SHOW SLAVE STATUS` and newer `SHOW REPLICA STATUS` (MySQL 8.0.22+).
+
+        :return: True if replica is running, False otherwise.
         """
         result = None
-        for word in ["NONBLOCKING", "NOLOCK", ""]:
-            try:
-                result = self._query_mysql(f"SHOW SLAVE STATUS {word}")
-            except ProgrammingError:
-                pass
-            else:
+        # Try newer MySQL syntax first
+        for query in ["SHOW REPLICA STATUS", "SHOW SLAVE STATUS"]:
+            for suffix in [" NONBLOCKING", " NOLOCK", ""]:
+                try:
+                    result = self._query_mysql(f"{query}{suffix}")
+                except ProgrammingError:
+                    continue
+                if result:
+                    break
+            if result:
                 break
 
-        if result and result["Slave_IO_Running"] == "Yes":
-            self.logger.info("MySQL slave is running.")
+        if result and result.get("Replica_IO_Running", result.get("Slave_IO_Running")) == "Yes":
+            self.logger.info("MySQL replication is running.")
             return True
+
         return False
 
     def _is_read_only(self) -> bool:
@@ -1360,7 +1367,7 @@ class RsyncUploadProvider:
         logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
         log_file = (
             logging_dir
-            / f"rsync-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "rsync-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 
@@ -1429,7 +1436,7 @@ class S3UploadProvider:
 
         log_file = (
             self.logging_dir
-            / f"s3cmd-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+            / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
 
@@ -1580,11 +1587,14 @@ class MyDumperRunner(multiprocessing.Process):
                 self.logger.exception(exc.message)
                 self.logger.exception("Backup failed for this host.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                sys.exit(1)
             except:
                 self.logger.exception("Unhandled exception occurred.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                sys.exit(1)
 
             logging_set_host(None, LOGGING_NAME)
+
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         self.logger.info(
@@ -1655,15 +1665,15 @@ class MyDumper(Backup):
         """Start the backup for the individual server."""
         start_time = time.time()
 
-        if self.only_if_running_slave:
-            self.is_slave = self._is_running_slave()
-            if not self.is_slave:
-                self.logger.info("Not running slave, ignoring this host.")
+        if self.only_if_running_replica:
+            self.is_replica = self._is_running_replica()
+            if not self.is_replica:
+                self.logger.info("Not running replica, ignoring this host.")
                 return
 
         if self.only_if_read_only:
-            self.is_slave = self._is_read_only()
-            if not self.is_slave:
+            self.is_replica = self._is_read_only()
+            if not self.is_replica:
                 self.logger.info("Not read_only, ignoring this host.")
                 return
 
@@ -1852,6 +1862,7 @@ class MyDumper(Backup):
                 mydumper_cmd.extend(["/bin/numactl", "--interleave=all"])
 
             default_args = [
+                f"--defaults-file={self.defaults_cnf_file}",
                 f"--outputdir={self.backup_dir}",
                 "--verbose=3",
                 f"--host={self.host}",
@@ -1877,6 +1888,7 @@ class MyDumper(Backup):
 
             if self.compress:
                 mydumper_cmd.append("--compress")
+                mydumper_cmd.append(self.compression_algorithm.upper())
 
             if self.updated_since > 0:
                 mydumper_cmd.append(f"--updated-since={self.updated_since}")

@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define models for interacting with the Tasks API."""
 
 from typing import Any
@@ -19,8 +34,6 @@ class PeriodicTaskRequest(BaseModel):
 
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | EmptyStrToNone
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | EmptyStrToNone
     :param enabled: Whether the task is enabled.
     :type enabled: bool | EmptyStrToNone
     :param execute_request: The execution request details for the task.
@@ -32,7 +45,6 @@ class PeriodicTaskRequest(BaseModel):
     """
 
     start_time: UTCDatetime | EmptyStrToNone = None
-    expires: UTCDatetime | EmptyStrToNone = None
     enabled: bool | EmptyStrToNone = None
     execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone = None
     interval: IntervalSchedule | EmptyStrToNone = None
@@ -79,8 +91,6 @@ class PeriodicTaskCreateRequest(PeriodicTaskRequest):
 
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | EmptyStrToNone
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | EmptyStrToNone
     :param enabled: Whether the task is enabled.
     :type enabled: bool | EmptyStrToNone
     :param execute_request: The execution request details for the task.
@@ -104,8 +114,6 @@ class EnhancedPeriodicTaskCreateRequest(PeriodicTaskCreateRequest):
 
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | EmptyStrToNone
-    :param expires: The expiration time for the task execution.
-    :type expires: UTCDatetime | EmptyStrToNone
     :param enabled: Whether the task is enabled.
     :type enabled: bool | EmptyStrToNone
     :param execute_request: The execution request details for the task.

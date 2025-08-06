@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define models for the Tasks plugin."""
 
 from typing import Literal
@@ -22,6 +37,8 @@ class TaskCreateRequest(BaseModel):
     :type backend: TaskBackendEnum
     :param owner: The owner of the task.
     :type owner: TaskOwner
+    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
+    :type alert_on_fail: bool
     """
 
     name: RequiredStr
@@ -29,3 +46,4 @@ class TaskCreateRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
     backend: TaskBackendEnum
     owner: TaskOwner
+    alert_on_fail: bool = False

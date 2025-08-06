@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define SEP routes."""
 
 import logging.config
@@ -84,12 +99,21 @@ for plugin in sep_settings.PLUGINS:
     sep_app.include_router(router, prefix=plugin.uri_path)
     imported_plugins.add(plugin.module_name.split(".")[-1])
 
-if {"alters", "archives", "tasks"} & imported_plugins:
+if {
+    "alters",
+    "archives",
+    "tasks",
+    "backup",
+    "backup_mongo",
+    "checksums",
+} & imported_plugins:
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
+    from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
+    sep_app.include_router(stop_task_router, prefix="/stop-task")
 
 if "snippets" in imported_plugins:
     sep_app.mount(

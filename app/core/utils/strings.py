@@ -1,10 +1,27 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define utilities for text and strings."""
 
 import re
 import unicodedata
-from base64 import b64encode
+from base64 import b64decode, b64encode
+from typing import Any
 
 __all__ = [
+    "b64decode_str",
     "b64encode_str",
     "slugify",
     "to_uppercase",
@@ -59,3 +76,32 @@ def b64encode_str(value: str, encoding: str = "utf-8") -> str:
     :rtype: str
     """
     return b64encode(value.encode(encoding)).decode(encoding)
+
+
+def b64decode_str(value: str, encoding: str = "utf-8") -> str:
+    """Decode a Base64 string.
+
+    Decode the given string from Base64 format using the specified encoding.
+
+    :param value: The b64-encoded string.
+    :type value: str
+    :param encoding: The encoding to use for the string, defaults to "utf-8".
+    :type encoding: str, optional
+    :return: The decoded string.
+    :rtype: str
+    """
+    return b64decode(value).decode(encoding)
+
+
+def lower_if_string(value: Any) -> Any:
+    """Convert a value to lowercase if it is a string.
+
+    This function checks if the input value is a string and converts it to
+    lowercase. If the value is not a string, it returns the value unchanged.
+
+    :param value: The value to be checked and potentially converted.
+    :type value: Any
+    :return: The input value converted to lowercase if it is a string, otherwise unchanged.
+    :rtype: Any
+    """
+    return value.lower() if isinstance(value, str) else value

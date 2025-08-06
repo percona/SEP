@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define routes for the Tasks API."""
 
 import logging.config
@@ -46,6 +61,16 @@ tasks_app = create_app(
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,
     security_headers=tasks_settings.SECURITY_HEADERS,
 )
+
+
+@tasks_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
+async def internal_error_handler(
+    _: Request,
+    exc: BaseException,
+) -> None:
+    """Proper log unhandled exceptions."""
+    logger.exception("Unhandled exception:", exc_info=exc)
+    raise exc
 
 
 @tasks_app.exception_handler(BaseNomadException)

@@ -7,10 +7,6 @@
         {% include "inventory/partials/sync-button.html" %}
     {% endwith %}
     <dl>
-        <dt>ID</dt>
-        <dd>
-            {{ node.id }}
-        </dd>
         <dt>Name</dt>
         <dd>
             {{ node.name }}
@@ -36,13 +32,13 @@
             {% endif %}
         {% endif %}
     </dl>
+    <hr>
 {% endblock inventory_entity_details %}
 {% block inventory_table %}
     <h3>Services on this Node</h3>
-    <table>
+    <table data-table>
         <thead>
             <tr>
-                <th>ID</th>
                 <th>Name</th>
                 <th>Type</th>
                 <th>Port</th>
@@ -52,7 +48,6 @@
         <tbody>
             {% for service in node.services %}
                 <tr>
-                    <td>{{ service.id }}</td>
                     <td>
                         <a href="{{ url_for('service_detail', service_id=service.id) }}">{{ service.name }}</a>
                     </td>
@@ -65,7 +60,9 @@
                               class="confirmable-form"
                               data-confirm-message="Are you sure you want to delete service '{{ service.name }}' (#{{ service.id }})?">
                             <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-                            <button name="location" class="icons submitButton">delete forever</button>
+                            <button name="location" class="icon submitButton">
+                                <span class="material-symbols-outlined">delete_forever</span>
+                            </button>
                         </form>
                     </td>
                 </tr>

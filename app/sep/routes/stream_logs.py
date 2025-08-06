@@ -1,5 +1,21 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define routes for streaming tasks logs."""
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -10,7 +26,7 @@ from starlette.responses import StreamingResponse
 
 from app.sep.deps import get_task_history, IsAuthenticated, TaskAPI
 from app.sep.utils.decorators import csrf_exempt
-from app.tasks.models import TaskHistoryResponse
+from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -26,7 +42,7 @@ async def task_logs_event_stream(
     """Stream a task history's logs as server-sent events."""
     logger.debug("request.state.is_csrf_exempt is %s", request.state.is_csrf_exempt)
     return StreamingResponse(
-        task_history_logs_event_stream(tasks_api, task_history.id),
+        task_history_logs_event_stream(tasks_api, task_history.id, request),
         media_type="text/event-stream",
     )
 
@@ -34,7 +50,7 @@ async def task_logs_event_stream(
 # TODO(yan): Put stream_task_history_logs in a proper TasksAPI SDK class
 # SEP-130
 async def task_history_logs_event_stream(
-    tasks_api: TaskAPI, task_history_id: int
+    tasks_api: TaskAPI, task_history_id: int, request: Request
 ) -> AsyncGenerator[str, None]:
     """Stream logs from a task history as server-sent events.
 
@@ -45,16 +61,21 @@ async def task_history_logs_event_stream(
     :type tasks_api: RemoteAPI
     :param task_history_id: The ID of the task history whose logs to stream.
     :type task_history_id: int
+    :param request: The FastAPI request object, used to access query parameters.
+    :type request: Request
     :yield: Log entries formatted as server-sent events.
     :rtype: str
     """
-    i = 1
-    async for log_entry in tasks_api.stream(f"/history/{task_history_id}/logs/"):
+    async for log_entry in tasks_api.stream(
+        f"/history/{task_history_id}/logs/", params=request.query_params
+    ):
         if log_entry:
-            log_data = json.loads(log_entry)
-            for line in log_data["msg"].splitlines():
-                log_data["msg"] = f"{line}\n"
-                log_data["id"] = i
-                yield f"data: {json.dumps(log_data)}\n\n"
-                i += 1
-    yield "event: finish\ndata: true\n\n"
+            yield f"data: {log_entry.decode()}\n\n"
+    # TODO(yan): Don't wait for task to finish
+    # SEP-379
+    wait_interval = 5
+    task_history = await tasks_api.get(f"/history/{task_history_id}")
+    while task_history["status"] == TaskHistoryStatusEnum.RUNNING:
+        await asyncio.sleep(wait_interval)
+        task_history = await tasks_api.get(f"/history/{task_history_id}")
+    yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"

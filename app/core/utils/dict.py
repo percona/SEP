@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define utilities for handling dictionaries."""
 
 from collections.abc import Callable
@@ -5,6 +20,8 @@ from typing import Any
 
 __all__ = [
     "deep_dict_update",
+    "filter_dict",
+    "remove_falsy_values_from_dict",
     "sort_dict",
     "transform_dict_keys",
 ]
@@ -87,3 +104,37 @@ def sort_dict(unsorted_dict: dict, key: Callable[[Any], Any]) -> dict:
     :rtype: dict
     """
     return dict(sorted(unsorted_dict.items(), key=key))
+
+
+def filter_dict(
+    data: dict[Any, Any], filter_func: Callable[[Any], bool]
+) -> dict[Any, Any]:
+    """Filter a dictionary based on a specified filter function.
+
+    This function returns a new dictionary containing only the items for which the
+    provided `filter_func` returns `True`. The filtering is performed on the
+    dictionary's items.
+
+    :param data: The dictionary to be filtered.
+    :type data: dict[Any, Any]
+    :param filter_func: A function that takes a dictionary item and returns a boolean
+        indicating whether to include it in the result.
+    :type filter_func: Callable[[Any], bool]
+    :return: A new dictionary containing only the items that satisfy the filter
+        function.
+    :rtype: dict[Any, Any]
+    """
+    return {k: v for k, v in data.items() if filter_func(v)}
+
+
+def remove_falsy_values_from_dict(data: dict[Any, Any]) -> dict[Any, Any]:
+    """Remove all falsy values from a dictionary.
+
+    This function returns a new dictionary containing only the items with truthy values.
+
+    :param data: The dictionary to be filtered.
+    :type data: dict[Any, Any]
+    :return: A new dictionary with all falsy values removed.
+    :rtype: dict[Any, Any]
+    """
+    return filter_dict(data, lambda v: bool(v))

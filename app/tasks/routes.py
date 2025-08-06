@@ -1,43 +1,64 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define routes for the Tasks API."""
 
 import json
 import logging
+from collections import defaultdict
+from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
-from app.core.exceptions import HTTPBadRequestException
-from app.tasks.celery import execute_task_queue
+from app.core.config import settings
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.utils import utc_now
+from app.tasks.anonymizer.config import anonymizer_settings
+from app.tasks.celery import (
+    celery,
+    dispatch_queue_item,
+    execute_task_queue,
+    get_executor_for_task,
+)
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
-    CreatedTaskHistory,
     ExecutableTaskDep,
+    get_logs_offsets,
+    PreparedTaskHistory,
     SessionDep,
     TaskDep,
     TaskExecutor,
+    TaskHistoryWithTaskDep,
 )
 from app.tasks.models import (
-    GeneratedTask,
     Task,
-    TaskBackendEnum,
-    TaskExecutionRequest,
-    TaskGroup,
-    TaskGroupTask,
-    TaskGroupTaskTemplate,
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLog,
+    TaskLogType,
     TaskResponse,
     TaskStats,
     TaskWrite,
     TransformPayloadRequest,
 )
-from app.tasks.periodic.config import periodic_tasks_settings
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
 
@@ -67,8 +88,9 @@ async def delete_task(
     # TODO(yan): Delete for real
     # SEP-170
     task = await TaskManager.delete_by_name(session=session, name=task_name)
-    await PeriodicTaskManager.perform_action_by_task_names(
-        celery_beat_session, periodic_tasks_settings.ON_ORPHAN, task_name
+    await PeriodicTaskManager.delete_where(
+        celery_beat_session,
+        PeriodicTaskManager.build_where_clause_by_task_names(task_name),
     )
     return task
 
@@ -90,7 +112,23 @@ async def get_task(task: TaskDep) -> Task:
 async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
-    return await TaskManager.create(session, task)
+    return await TaskManager.create(
+        session, task, anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner]
+    )
+
+
+@router.put(
+    "/{task_name}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+    response_model=TaskResponse,
+)
+async def update_task(
+    session: SessionDep, existing_task: TaskDep, updated_task: TaskWrite
+) -> Task:
+    """Update an existing task."""
+    logger.debug("Updating task %s", existing_task.name)
+    return await TaskManager.update(session, existing_task, updated_task)
 
 
 @router.get(
@@ -124,120 +162,48 @@ async def create_periodic_task_for_task_name(
         periodic_task.name = f"run_{task.name}_{periodic_task.period}_{hash(periodic_task.kwargs)}".replace(
             " ", "_"
         )
+    kwargs["periodic_task_name"] = periodic_task.name
     return await PeriodicTaskManager.create(
         celery_beat_session, periodic_task, kwargs=json.dumps(kwargs)
     )
 
 
 @router.post(
-    "/generate/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
-)
-async def generate_task(
-    session: SessionDep,
-    generated_task: GeneratedTask,
-    executor: TaskExecutor,
-) -> TaskHistory:
-    """Generate a new task execution using a template."""
-    logger.debug(
-        "Generating task %s from %s",
-        generated_task.name,
-        generated_task.template,
-    )
-    template = await TaskManager.retrieve_by_name(
-        session=session,
-        name=f"generic-nomad-{generated_task.template}",
-        is_template=True,
-    )
-
-    # TODO: enhance options for generating tasks  # noqa: TD002, TD003
-    task = Task(
-        name=generated_task.name,
-        owner=generated_task.app,
-        backend=template.backend,
-        data=template.data,
-    )
-    tpl = task.data
-
-    # TODO: currently Nomad-only, with restricted customisation  # noqa: TD002, TD003
-    tg = TaskGroup(
-        engine=task.backend.name,
-        name="execution",
-        tasks=[],
-        parallel=generated_task.parallel and len(generated_task.commands) > 1,
-    )
-    for i, cmd in enumerate(generated_task.commands):
-        templates = [
-            TaskGroupTaskTemplate(**config) for config in cmd.get("config", [])
-        ]
-        tg.tasks.append(
-            TaskGroupTask(
-                name=f"step{i + 1}" if not cmd.get("name") else cmd["name"],
-                config={
-                    "args": cmd.get("args"),
-                    "command": cmd.get("command"),
-                },
-                meta=cmd.get("meta", {}),
-                templates=templates,
-            ),
-        )
-    tpl.update(tg.to_payload())
-
-    # TODO: delete Periodic for now  # noqa: TD002, TD003
-    if "Periodic" in tpl:
-        if generated_task.schedule and not generated_task.schedule.get("save_only"):
-            tpl["Periodic"] = generated_task.schedule
-        else:
-            del tpl["Periodic"]
-
-    match task.backend:
-        case TaskBackendEnum.NOMAD:
-            match tpl["Type"]:
-                case "batch":
-                    # TODO: handle more than one constraint  # noqa: TD002, TD003
-                    if generated_task.target in ["all", "*"]:
-                        tpl["Constraints"][0]["RTarget"] = ".*"
-                        tpl["Constraints"][0]["Operand"] = "regexp"
-                    else:
-                        tpl["Constraints"][0]["RTarget"] = generated_task.target
-                        tpl["Constraints"][0]["Operand"] = "="
-            task.data = await executor.validate_job(tpl)
-        case _:
-            raise NotImplementedError(
-                f"{task.backend} is currently unsupported",
-            )
-
-    if generated_task.persist:
-        task = await TaskManager.save(session, task)
-
-    return TaskHistory(
-        task_id=task.id,
-        execution_request=TaskExecutionRequest(
-            task=generated_task.name,
-            target=generated_task.target,
-            meta={},
-            tracking={"evaluation_id": ""},
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
-    )
-
-
-@router.post(
     "/execute/{task_name}",
     dependencies=[IsAuthenticatedDep],
-    response_class=JSONResponse,
+    response_model=TaskHistoryResponse,
 )
 async def execute_task_name(
+    session: SessionDep,
+    queue_item: PreparedTaskHistory,
     task_name: str,
-    history_recorded: CreatedTaskHistory,
-) -> TaskHistoryResponse:
+) -> TaskHistory:
     """Send a task for execution."""
     logger.debug(
-        "Executing task %s at %s", task_name, history_recorded.execution_request.eta
+        "Dispatching task %s at %s",
+        task_name,
+        queue_item.execution_request.eta or utc_now(),
     )
-    execute_task_queue.apply_async(
-        args=[history_recorded.id], eta=history_recorded.execution_request.eta
-    )
-    return history_recorded
+    root_task = await TaskManager.get_root_task(session, queue_item.task)
+    executor = get_executor_for_task(root_task)
+    if queue_item.execution_request.target not in executor.get_hosts().values():
+        raise HTTPBadRequestException(
+            f"Failed to dispatch task: Target {queue_item.execution_request.target!r}"
+            f"is not available in {executor.__class__.__name__} for task {task_name!r}"
+        )
+    if queue_item.execution_request.eta:
+        history_recorded = await TaskHistoryManager.save(session, queue_item)
+        celery_task = execute_task_queue.apply_async(
+            args=[history_recorded.id],
+            eta=history_recorded.execution_request.eta,
+            expires=history_recorded.execution_request.eta
+            + timedelta(seconds=settings.CELERY.global_expire_seconds),
+        )
+        history_recorded.execution_request.tracking["celery_task_id"] = celery_task.id
+        return await TaskHistoryManager.save(
+            session, history_recorded, flag_modified_fields=["execution_request"]
+        )
+    return await dispatch_queue_item(queue_item, session)
 
 
 @router.get("/history/", dependencies=[IsAuthenticatedDep])
@@ -274,56 +240,72 @@ async def get_task_history(
 
 @router.get("/history/{task_history_id}", dependencies=[IsAuthenticatedDep])
 async def retrieve_task_history(
-    session: SessionDep,
-    task_history_id: int,
+    task_history: TaskHistoryWithTaskDep,
 ) -> TaskHistoryResponse:
     """Retrieve a task history by id."""
-    logger.debug("Requesting task history %s", task_history_id)
-    return await TaskHistoryManager.get_or_404(
-        session=session,
-        select_related=(TaskHistory.task,),
-        id=task_history_id,
-    )
+    logger.debug("Requesting task history %s", task_history.id)
+    return task_history
 
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
-    session: SessionDep, executor: TaskExecutor, task_history_id: int
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+    offsets: Annotated[defaultdict[str, dict[str, int]], Depends(get_logs_offsets)],
 ) -> StreamingResponse:
     """Stream a task history's logs."""
-    logger.debug("Requesting logs for task history %s", task_history_id)
-    task_history = await TaskHistoryManager.get_or_404(
-        session=session,
-        id=task_history_id,
-    )
+    logger.debug("Requesting logs for task history %s", task_history.id)
     if task_history.status == TaskHistoryStatusEnum.PENDING:
-        raise HTTPBadRequestException("Task history is pending.")
-    stream_logs_generator = None
+        raise HTTPConflictException("Task history is pending.")
     if task_history.status == TaskHistoryStatusEnum.RUNNING:
-        if await executor.is_task_running(task_history):
-            stream_logs_generator = (
-                f"{log_line.model_dump_json()}\n" if log_line else ""
-                async for log_line in executor.stream_logs(task_history)
-            )
-        else:
-            task_history.status = (
-                TaskHistoryStatusEnum.SUCCESS
-                if task_history.execution_request.tracking.get("finished_at")
-                else TaskHistoryStatusEnum.FAILED
-            )
-            task_history = await TaskHistoryManager.save(session, task_history)
-    if stream_logs_generator is None:
         stream_logs_generator = (
-            f"{TaskLog(step=step, type=log_type, msg=log[log_type]).model_dump_json()}\n"
+            f"{log_line.model_dump_json()}\n" if log_line else ""
+            async for log_line in executor.stream_logs(task_history, offsets)
+        )
+    else:
+        stream_logs_generator = (
+            TaskLog(
+                step=step,
+                type=log_type,
+                msg=msg,
+                offset=log.get(f"{log_type}_last_offset", 0),
+            ).model_dump_json()
+            + "\n"
             for step, log in task_history.execution_request.tracking.get(
                 "task_logs", {}
             ).items()
-            for log_type in ("stdout", "stderr")
+            for log_type in TaskLogType
+            if (msg := log[log_type][offsets[step].get(log_type, 0) :])
         )
     return StreamingResponse(
         stream_logs_generator,
         media_type="application/json",
     )
+
+
+@router.post("/history/{task_history_id}/stop/", dependencies=[IsAuthenticatedDep])
+async def stop_task_history(
+    session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
+) -> TaskHistoryResponse:
+    """Stop a task history."""
+    logger.debug("Stopping task history %s", task_history.id)
+    if task_history.status == TaskHistoryStatusEnum.PENDING:
+        if celery_task_id := task_history.execution_request.tracking.get(
+            "celery_task_id"
+        ):
+            logger.debug(
+                "Cancelling pending task history %s with Celery task ID %s",
+                task_history.id,
+                celery_task_id,
+            )
+            celery.control.revoke(celery_task_id)
+        return await TaskHistoryManager.delete(session, task_history)
+    if task_history.status != TaskHistoryStatusEnum.RUNNING:
+        raise HTTPBadRequestException(
+            f"Cannot stop task history {task_history.id} ({task_history.task.name}): "
+            f"task is not running (current status: {task_history.status})."
+        )
+    return await executor.stop_task(session, task_history)
 
 
 @router.post(

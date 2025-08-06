@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define reusable fields, validators, and related utilities."""
 
 import logging
@@ -6,6 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
+from pathlib import Path
 from typing import Annotated, Any, Self, TypeVar
 
 from pydantic import (
@@ -386,6 +402,25 @@ RelativeDirectoryPath = Annotated[
 
 This annotated type ensures that the provided directory path is valid and resolves
 relative paths based on the application's directory structure.
+"""
+
+RelativePath = Annotated[
+    Path,
+    BeforeValidator(resolve_relative_path),
+    Field(validate_default=True),
+]
+"""Define a path that resolves relative paths.
+
+This annotated type ensures that the provided path is valid and resolves
+relative paths based on the application's directory structure. This type does not
+validate if the path exists, it only resolves the relative path to an absolute one.
+"""
+
+StrRelativePath = Annotated[str, AsTypeValidator(RelativePath, str)]
+"""Define a string field representing a relative paths.
+
+This annotated type validates the string as a relative path and ensures it is returned
+as a string.
 """
 
 DatabaseUrl = database_url_normalized_scheme_field_factory(DatabaseEngine)

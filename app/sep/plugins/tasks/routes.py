@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define routes for the Tasks Plugin."""
 
 import logging
@@ -7,6 +22,7 @@ from zoneinfo import available_timezones
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
@@ -43,6 +59,7 @@ async def tasks_list(
     )
     context["available_backends"] = TaskBackendEnum
     context["available_owners"] = TaskOwner
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,

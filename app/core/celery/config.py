@@ -1,12 +1,27 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define Celery settings."""
 
 from typing import Annotated, Self
 
 from annotated_types import Ge
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from app.core.models import BaseLowercaseModel
-from app.core.utils.fields import StrAnyUrl, StrDatabaseUrl
+from app.core.utils.fields import StrAnyUrl, StrDatabaseUrl, StrRelativePath
 
 
 class CeleryOptions(BaseLowercaseModel):
@@ -28,6 +43,9 @@ class CeleryOptions(BaseLowercaseModel):
     :param max_retries: The maximum number of times to retry failed tasks. Defaults
         to `0` (no retries).
     :type max_retries: int
+    :param global_expire_seconds: The number of seconds after which a periodic task
+        will no longer run. Defaults to `30`.
+    :type global_expire_seconds: int
     """
 
     model_config = ConfigDict(extra="allow")
@@ -35,8 +53,12 @@ class CeleryOptions(BaseLowercaseModel):
     task_track_started: bool = True
     result_backend: StrAnyUrl | None = None
     beat_dburi: StrDatabaseUrl = "sqlite:///schedule.db"
+    worker_state_db: StrRelativePath = Field(
+        ".celery_worker_state", validate_default=True
+    )
     beat_schema: str | None = None
     max_retries: Annotated[int, Ge(0)] = 0
+    global_expire_seconds: Annotated[int, Ge(0)] = 30
 
     @model_validator(mode="after")
     def set_default_beat_schema(self) -> Self:

@@ -7,6 +7,9 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
+from app.sep.deps import get_inventory_api
 from app.sep.main import sep_app
 from app.sep.plugins.archives.deps import (
     build_archives_task_payload,
@@ -19,6 +22,15 @@ from app.tasks.models import (
     TaskOwner,
 )
 from tests.app.factories import TaskFactory
+
+
+@pytest.fixture
+def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+    """Mock the InventoryAPI dependency."""
+    mock = AsyncMock(spec=RemoteAPI)
+    sep_app.dependency_overrides[get_inventory_api] = lambda: mock
+    yield mock
+    sep_app.dependency_overrides = {}
 
 
 @pytest.fixture
@@ -100,20 +112,23 @@ def test_archives_create(
 
 @pytest.mark.usefixtures("_mock_get_archives_task_dep")
 def test_archives_detail(
-    test_client,
-    created_task,
-    mock_task_api_dep,
+    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
 ):
     """Test retrieving an archives detail page."""
     mock_meta_config = yaml.dump(
         {
+            "ALL": {
+                "SOURCE_HOST": "127.0.0.1",
+                "SOURCE_PORT": 3306,
+            },
             "PURGE_LIST": [
                 {
+                    "ALIAS": "test_archiver_task",
                     "SOURCE_DB": "mock_source_db",
                     "SOURCE_TABLE": "mock_source_table",
                     "SWAP_DROP": 1,
                 }
-            ]
+            ],
         }
     )
 
@@ -121,9 +136,17 @@ def test_archives_detail(
         "meta": {
             "config": mock_meta_config,
             "target": "mock_target",
-        }
+        },
+        "hostname": "mock_nomad_host_name",
     }
     created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_task_api_dep.get.side_effect = [
+        [],  # for /{task.name}/history/
+        [],  # for running tasks at /{task.name}/history/
+        [],  # for /stats/{task.name}
+        {"127.0.0.1": "localhost"},  # for /hosts/
+    ]
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
@@ -133,9 +156,15 @@ def test_archives_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
+    mock_task_api_dep.get.assert_any_await("/hosts/")
+    mock_inventory_api_dep.get.assert_any_await(
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    )
 
 
-@pytest.mark.usefixtures("_mock_get_archives_task_dep")
+@pytest.mark.usefixtures(
+    "_mock_get_archives_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
 def test_archives_execute(
     test_client,
     created_task,

@@ -1,7 +1,23 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define middleware to manage temporary messages stored in cookies."""
 
 import json
 import logging
+from collections import OrderedDict
 from enum import IntEnum
 from typing import Any, ClassVar
 
@@ -69,6 +85,16 @@ class Message(BaseModel):
     level: MessageLevel = Field(alias="l")
     text: RequiredStr = Field(alias="t", max_length=512)
     sticky: bool = Field(default=False, exclude=True)
+
+    def __hash__(self) -> int:
+        """Return a hash of the message based on its level and text.
+
+        This method allows Message objects to be used in sets or as dictionary keys.
+
+        :return: A hash value for the message.
+        :rtype: int
+        """
+        return hash((self.level, self.text, self.sticky))
 
     @model_validator(mode="before")
     @classmethod
@@ -146,24 +172,23 @@ class MessagesMiddleware(BaseHTTPMiddleware):
             removed, in case no message is left in the queue.
         :rtype: Response
         """
-        request.state.messages = []
+        request.state.messages = OrderedDict()
         if old_cookie := request.cookies.get(self.COOKIE_NAME):
-            request.state.messages = [
+            request.state.messages = OrderedDict.fromkeys(
                 Message.model_validate(msg)
                 for msg in json.loads(crypto_serializer.loads(old_cookie))
-            ]
+            )
 
         response = await call_next(request)
-
         while (
             len(
                 new_cookie := crypto_serializer.dumps(
-                    json_serializer(request.state.messages, separators=(",", ":"))
+                    json_serializer(list(request.state.messages), separators=(",", ":"))
                 )
             )
             > self.MAX_COOKIE_SIZE
         ) and request.state.messages:
-            discarded_msg = request.state.messages.pop(0)
+            discarded_msg, _ = request.state.messages.popitem(last=False)
             logger.debug("Discarding message %s for %s", discarded_msg, request.client)
 
         if request.state.messages:
@@ -202,7 +227,7 @@ def add_message(
     """
     try:
         message = Message(level=level, text=text, sticky=sticky)
-        request.state.messages.append(message)
+        request.state.messages[message] = None
     except AttributeError:
         logger.exception("Unable to add messages without MessageMiddleware")
     except ValueError:
@@ -225,8 +250,11 @@ def get_messages(request: Request, max_qty: int | None = None) -> list[Message]:
     :return: A list of Message objects.
     :rtype: list[Message]
     """
-    if messages := getattr(request.state, "messages", [])[:max_qty]:
-        del request.state.messages[:max_qty]
+    messages = []
+    saved_messages = getattr(request.state, "messages", None)
+    while saved_messages and (max_qty is None or len(messages) < max_qty):
+        message, _ = saved_messages.popitem(last=False)
+        messages.append(message)
     return messages
 
 

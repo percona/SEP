@@ -1,7 +1,7 @@
 """Define tests for the app.sep.plugins.alters.routes module."""
 
 from datetime import datetime, timedelta, UTC
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 from fastapi import status
@@ -84,10 +84,6 @@ def test_alters_create(
         response.headers["location"]
         == f"{test_client.base_url}/alters/{generated_task.name}"
     )
-    mock_task_api_dep.post.assert_any_await(
-        "/generate/",
-        json=generated_task.model_dump(),
-    )
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep")
@@ -95,40 +91,54 @@ def test_alters_detail(
     test_client,
     created_task,
     mock_task_api_dep,
+    mock_inventory_api_dep,
 ):
     """Test retrieving an alters' detail page."""
     mock_data = {
-        "TaskGroups": [
-            {
-                "Tasks": [
-                    {
-                        "Config": {
-                            "command": "echo",
-                            "args": ["hello", "world"],
-                        },
-                        "Meta": {
-                            "schema_name": "public",
-                            "table_name": "example_table",
-                        },
-                    }
-                ]
-            }
-        ],
-        "Constraints": [{"RTarget": "mock_hostname"}],
+        "task": "run-command",
+        "meta": {
+            "command": "pt-online-schema-change",
+            "args": "--alter=ADD COLUMN new_column INT --execute",
+            "target": "localhost",
+            "_schema_name": "public",
+            "_table_name": "example_table",
+        },
     }
     created_task.data = mock_data
+    mock_task_api_dep.get.side_effect = [
+        {},
+        {},
+        [],
+        [],
+        {},
+        {"address1": "host1", "address2": "host2"},  # for /hosts/
+    ]
+    expected_awaits = [
+        call(f"/{created_task.name}/history/"),
+        call(f"/{created_task.name}-dry-run/history/"),
+        call(
+            f"/{created_task.name}/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        ),
+        call(
+            f"/{created_task.name}-dry-run/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        ),
+        call(f"/stats/{created_task.name}"),
+        call("/hosts/"),
+    ]
+
     response = test_client.get(f"/alters/{created_task.name}")
+
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
-    mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
-    mock_task_api_dep.get.assert_any_await(
-        f"/{created_task.name}/history/",
-        params={"status": TaskHistoryStatusEnum.RUNNING},
-    )
-    mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
+    assert mock_task_api_dep.get.await_count == len(expected_awaits)
+    mock_task_api_dep.get.assert_has_awaits(expected_awaits)
 
 
-@pytest.mark.usefixtures("_mock_get_alters_task_dep")
+@pytest.mark.usefixtures(
+    "_mock_get_alters_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
 def test_alters_execute(
     test_client,
     created_task,
@@ -161,4 +171,34 @@ def test_alters_delete(
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/alters"
-    mock_task_api_dep.delete.assert_awaited_once_with(f"/{created_task.name}")
+    mock_task_api_dep.delete.assert_has_awaits(
+        [call(f"/{created_task.name}"), call(f"/{created_task.name}-dry-run")]
+    )
+
+
+def test_get_table_details(
+    test_client,
+    mock_inventory_api_dep,
+):
+    """Test getting table details via XHR endpoint."""
+    table_id = 123
+    mock_table_data = {
+        "id": table_id,
+        "name": "test_table",
+        "create": "CREATE TABLE test_table (id INT PRIMARY KEY, name VARCHAR(255))",
+        "keys": {"PRIMARY": {"type": "PRIMARY", "columns": ["id"]}},
+    }
+    mock_inventory_api_dep.get.side_effect = [mock_table_data]
+
+    response = test_client.get(f"/alters/table/{table_id}/details")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "application/json"
+
+    data = response.json()
+    assert data["id"] == table_id
+    assert data["name"] == "test_table"
+    assert data["create"] == mock_table_data["create"]
+    assert data["keys"] == mock_table_data["keys"]
+
+    mock_inventory_api_dep.get.assert_awaited_once_with(f"/tables/{table_id}")

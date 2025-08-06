@@ -123,10 +123,11 @@ async def build_archives_task_payload(
                     purge_config.model_dump(by_alias=True, exclude_none=True)
                 ),
                 "target": form.hostname,
-                "requirements": "PyMySQL\nfilelock\nPyYAML",
+                "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
             },
             "payload": f"file://{payload_path}",
         },
+        alert_on_fail=form.alert_on_fail,
     )
 
 
@@ -222,4 +223,5 @@ async def get_archives_index_context(
         get_archives_task_info,
         context,
         TaskOwner.ARCHIVER,
+        alert_on_fail_default=True,
     )

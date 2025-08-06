@@ -17,21 +17,25 @@
             height: 2.2rem
         }
     </style>
-    {% if history or running_tasks %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/saved.css') }}">
+    {% if history or history_dry_run or running_tasks %}
         <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    {% if history or running_tasks %}
+    <script src="{{ url_for('static', path='/js/saved.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history or history_dry_run or running_tasks %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <table class="row section">
-        <caption>Overview</caption>
+    <h2>Overview</h2>
+    <table data-table>
         <thead>
             <tr>
                 <th>Hostname</th>
@@ -54,6 +58,8 @@
             </tr>
         </tfoot>
     </table>
+    {% include "tasks/partials/run-python-form-alters.html" %}
+    {% include "alters/partials/edit-form.html" %}
     {% if running_tasks %}
         <section id="running-tasks">
             <h2>Running</h2>
@@ -62,37 +68,49 @@
     {% endif %}
     <section>
         <h2>Execution</h2>
-        <h3>Command</h3>
-        <code>{{ task.cmd }}</code>
-        <h3>Parameters</h3>
+        <br>
+        <h5>Parameters</h5>
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
-                    <tr>
-                        <th>{{ k }}</th>
-                        <td>
-                            {% if v is mapping %}
-                                <ul>
-                                    {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% elif v is iterable and v is not string %}
-                                {#              TODO: Refactor all these weird tests #}
-                                <ul>
-                                    {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% else %}
-                                <code>{{ v }}</code>
-                            {% endif %}
-                        </td>
-                    </tr>
+                    {% if not k.startswith('_') %}
+                        <tr>
+                            <th>{{ k }}</th>
+                            <td>
+                                {% if v is mapping %}
+                                    <ul>
+                                        {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% elif v is iterable and v is not string %}
+                                    {#              TODO: Refactor all these weird tests #}
+                                    <ul>
+                                        {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% else %}
+                                    <code>{{ v }}</code>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>
     </section>
+    <br>
+    <br>
+    <section>
+        <h2>PII Anonymization</h2>
+        <p>The following sensitive data types are selected for anonymization:</p>
+        {% if task.entities %}
+            {% for entity, value in task.entities.items() %}<code>{{ entity }}, </code>{% endfor %}
+        {% else %}
+            <p>No entities selected.</p>
+        {% endif %}
+    </section>
     <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
-            <table class="responsive-table">
+            <table data-table>
                 <caption>Aggregated statistics for {{ task_name }}</caption>
                 <thead>
                     <tr>
@@ -123,6 +141,24 @@
             <p>No data</p>
         {% endif %}
     </section>
+    <br>
+    <br>
+    {% set pending_tasks = history|selectattr("status", "equalto", "pending")|list %}
+    {% if pending_tasks %}
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
+    <section>
+        <h2>Dry Run History</h2>
+        {% set history_tasks = history_dry_run %}
+        {% include "tasks/partials/completed-tasks.html" %}
+    </section>
+    <br>
+    <br>
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}

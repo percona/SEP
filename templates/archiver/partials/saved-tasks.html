@@ -1,9 +1,9 @@
 {% if tasks %}
-    <table>
+    <table data-table>
         <thead>
             <tr>
-                <th style="width: 200px;">Name</th>
-                <th style="width: 200px;">Host</th>
+                <th>Name</th>
+                <th>Host</th>
                 <th>Source Table</th>
                 <th>Destination</th>
                 <th>Actions</th>
@@ -12,15 +12,18 @@
         <tbody>
             {% for task in tasks %}
                 <tr id="{{ task.name }}">
-                    <td>{{ task.name }}</td>
+                    <td>
+                        <a href="{{ url_for('archives_detail', task_name=task.name) }}">{{ task.name }}</a>
+                    </td>
                     <td>{{ task.hostname }}</td>
                     <td>{{ task.source_table }} {{ task.source_query }}</td>
                     <td>{{ task.dest_table }} {{ task.dest_file }}</td>
-                    {% include "tasks/partials/saved-tasks-actions-column.html" %}
+                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
+    {% include "tasks/partials/scheduled-execution-dialog.html" %}
 {% else %}
-    <p>No data</p>
+    <span>No data</span>
 {% endif %}

@@ -33,7 +33,7 @@ logger.setLevel(logging.INFO)
 logger_formatter = logging.Formatter(
     "%(asctime)s %(levelname)s: PID<%(process)d> %(funcName)s() - %(message)s"
 )
-stream_handler = logging.StreamHandler()
+stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logger_formatter)
 stream_handler.setLevel(logging.INFO)
 logger.addHandler(stream_handler)
@@ -66,9 +66,10 @@ def main() -> None:
     logger.setLevel(log_level)
     stream_handler.setLevel(log_level)
 
-    log_dir = Path(config.get("LOG_DIR") or "/var/log/percona")
-    log_file = config.get("LOG_FILE", "purge_tables.log")
+    # Only set up file logging if LOG_FILE is explicitly specified
+    log_file = config.get("LOG_FILE")
     if log_file:
+        log_dir = Path(config.get("LOG_DIR") or "/tmp")
         log_path = log_dir / log_file
         try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -212,7 +213,7 @@ def main() -> None:
             time_spent = format_seconds_to_hhmmss(time.time() - start_time)
             if conf["prg_alias"] not in error_on_alias:
                 output = (
-                    f"OK <{conf['prg_alias']}> Purge complete. Duration: {time_spent}."
+                    "OK <{}> Purge complete. Duration: {}.".format(conf["prg_alias"], time_spent)
                 )
                 logger.info("<%s> %s", conf["prg_alias"], output)
             logger.info(
@@ -220,6 +221,7 @@ def main() -> None:
             )
     except:
         logger.exception("Unhandled exception")
+        sys.exit(1)
     finally:
         lock.release()
 
@@ -240,8 +242,8 @@ def drop_table(src_db: str, src_tbl: str, conf: dict[str, Any]) -> int:
     sql_cmd = f"DROP TABLE {src_db}.{src_tbl};"
     drp_cmd = [
         src_db,
-        f"-h{conf['src_host']}",
-        f"-P{conf['src_port']}",
+        "-h{}".format(conf["src_host"]),
+        "-P{}".format(conf["src_port"]),
         f"-e{sql_cmd}",
     ]
     return run_cmd("mysql", *drp_cmd)
@@ -257,16 +259,16 @@ def swap_create_table(
     )
     drp_swp_cmd = [
         src_db,
-        f"-h{conf['src_host']}",
-        f"-P{conf['src_port']}",
+        "-h{}".format(conf["src_host"]),
+        "-P{}".format(conf["src_port"]),
         f"-e{sql_cmd}",
     ]
     ret = run_cmd("mysql", *drp_swp_cmd)
     if ret == 0:
         # create table on dest
         dump_cmd = [
-            f"-h{conf['src_host']}",
-            f"-P{conf['src_port']}",
+            "-h{}".format(conf["src_host"]),
+            "-P{}".format(conf["src_port"]),
             "--skip-opt",
             "--no-data",
             "--no-create-db",
@@ -274,8 +276,8 @@ def swap_create_table(
             src_tbl_swapped,
         ]
         create_cmd = [
-            f"-h{conf['dst_host']}",
-            f"-P{conf['dst_port']}",
+            "-h{}".format(conf["dst_host"]),
+            "-P{}".format(conf["dst_port"]),
             conf["dst_db"],
         ]
         run_cmd("mysqldump", *dump_cmd)
@@ -290,8 +292,8 @@ def swap_drop_runner(src_db: str, src_tbl: str, conf: dict[str, Any]) -> int:
     sql_cmd = f"{sql_cmd} DROP TABLE {src_tbl}_old"
     drp_swp_cmd = [
         src_db,
-        f"-h{conf['src_host']}",
-        f"-P{conf['src_port']}",
+        "-h{}".format(conf["src_host"]),
+        "-P{}".format(conf["src_port"]),
         f"-e{sql_cmd}",
     ]
     return run_cmd("mysql", *drp_swp_cmd)
@@ -300,18 +302,31 @@ def swap_drop_runner(src_db: str, src_tbl: str, conf: dict[str, Any]) -> int:
 def pt_archive_runner(cmd: str, src_db: str, src_tbl: str, conf: dict[str, Any]) -> int:
     """Run pt-archiver."""
     if conf["prg_use_index"]:
-        source_args = f"--source=h={conf['src_host']},P={conf['src_port']},D={src_db},t={src_tbl},b={conf['prg_disable_binlog']},i={conf['prg_use_index']}"
+        source_args = "--source=h={},P={},D={},t={},b={},i={}".format(
+            conf["src_host"],
+            conf["src_port"],
+            src_db,
+            src_tbl,
+            conf["prg_disable_binlog"],
+            conf["prg_use_index"],
+        )
     else:
-        source_args = f"--source=h={conf['src_host']},P={conf['src_port']},D={src_db},t={src_tbl},b={conf['prg_disable_binlog']}"
+        source_args = "--source=h={},P={},D={},t={},b={}".format(
+            conf["src_host"],
+            conf["src_port"],
+            src_db,
+            src_tbl,
+            conf["prg_disable_binlog"],
+        )
 
     pt_archiver_cmd = [
         source_args,
-        f"--where={conf['prg_where']}",
-        f"--limit={conf['prg_limit']}",
+        "--where={}".format(conf["prg_where"]),
+        "--limit={}".format(conf["prg_limit"]),
         "--progress=100000",
         "--why-quit",
         "--header",
-        f"--sleep={conf['prg_sleep']}",
+        "--sleep={}".format(conf["prg_sleep"]),
         "--statistics",
         "--skip-foreign-key-checks",
         "--commit-each",
@@ -325,13 +340,19 @@ def pt_archive_runner(cmd: str, src_db: str, src_tbl: str, conf: dict[str, Any])
         pt_archiver_cmd.extend(["--bulk-delete", "--purge"])
     elif conf["dst_file"]:
         pt_archiver_cmd.extend(
-            ["--buffer", "--bulk-delete", f"--file={conf['dst_file']}"]
+            ["--buffer", "--bulk-delete", "--file={}".format(conf['dst_file'])]
         )
     else:
         pt_archiver_cmd.extend(
             [
                 "--bulk-insert",
-                f"--dest=h={conf['dst_host']},P={conf['dst_port']},D={conf['dst_db']},t={conf['dst_tbl']},b={conf['prg_disable_binlog']},L=yes",
+                "--dest=h={},P={},D={},t={},b={},L=yes".format(
+                    conf["dst_host"],
+                    conf["dst_port"],
+                    conf["dst_db"],
+                    conf["dst_tbl"],
+                    conf["prg_disable_binlog"],
+                ),
             ]
         )
 

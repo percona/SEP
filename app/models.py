@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define the app models."""
 
 from collections.abc import Sequence
@@ -190,7 +205,10 @@ class CasdoorUser(BaseUser):
         :param exclude_tokens: A sequence of access tokens to exclude from invalidation.
         :type exclude_tokens: Sequence[str]
         """
-        async for active_token in settings.CASDOOR.get_active_tokens(username):
+        app_data = await settings.CASDOOR.get_user_application(username)
+        async for active_token in settings.CASDOOR.get_active_tokens(
+            app_data["owner"], username
+        ):
             if active_token["accessToken"] not in exclude_tokens:
                 await settings.CASDOOR.delete_token(active_token)
 

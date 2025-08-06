@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define SEP settings."""
 
 import re
@@ -17,6 +32,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    ValidationError,
 )
 from sqlalchemy_celery_beat.models import Period
 
@@ -27,12 +43,18 @@ from app.core.config import (
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
-from app.core.utils import deep_dict_update, slugify, validate_module_is_importable
+from app.core.utils import (
+    deep_dict_update,
+    run_pydantic_type_validator,
+    slugify,
+    validate_module_is_importable,
+)
 from app.core.utils.fields import (
     FilenameExtension,
     MimeType,
     RelativeDirectoryPath,
     RequiredStr,
+    StrHttpUrl,
     StrImportableAttribute,
     StrImportableModule,
     TimedeltaSeconds,
@@ -140,17 +162,17 @@ class SessionOptions(BaseModel):
 class CsrfSettings(BaseModel):
     """Configuration for CSRF protection settings.
 
-    :param secret_key: Secret key used for CSRF token generation.
-    :type secret_key: str
-    :param cookie_secure: Whether the CSRF cookie should be accessible
+    :param SECRET_KEY: Secret key used for CSRF token generation.
+    :type SECRET_KEY: str
+    :param COOKIE_SECURE: Whether the CSRF cookie should be accessible
         only via HTTPS (except on localhost).
-    :type cookie_secure: bool
-    :param cookie_samesite: SameSite policy for the CSRF cookie.
-    :type cookie_samesite: str
-    :param token_key: Key name for the CSRF token.
-    :type token_key: str
-    :param token_location: Location where the CSRF token is expected.
-    :type token_location: str
+    :type COOKIE_SECURE: bool
+    :param COOKIE_SAMESITE: SameSite policy for the CSRF cookie.
+    :type COOKIE_SAMESITE: str
+    :param TOKEN_KEY: Key name for the CSRF token.
+    :type TOKEN_KEY: str
+    :param TOKEN_LOCATION: Location where the CSRF token is expected.
+    :type TOKEN_LOCATION: str
     """
 
     SECRET_KEY: str = settings.SECRET_KEY
@@ -296,11 +318,15 @@ class SEPSettings(BaseYamlAppSettings):
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty dictionary.
     :type SYNCER_EXTRA_KWARGS: dict[str, Any]
-    :param SYNC_REFRESH_TIME: Time (in seconds) to wait until page refresh while
-        inventory sync is in progress. Defaults to 5 seconds.
-    :type SYNC_REFRESH_TIME: int
     :param SNIPPETS: Snippets configuration options.
     :type SNIPPETS: SnippetsOptions
+    :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
+        synchronization. Defaults to 5 seconds.
+    :type SYNC_REFRESH_TIME: int
+    :param PMM_FRONTEND: The URL for the PMM frontend. Defaults to `None`. If not set,
+        it will be determined based on the `pmm.endpoint` from the `PMMSyncer` (if
+        available).
+    :type PMM_FRONTEND: StrHttpUrl | None
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -317,6 +343,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
     SNIPPETS: SnippetsOptions = SnippetsOptions()
+    PMM_FRONTEND: StrHttpUrl | None = None
 
     @computed_field
     @cached_property
@@ -334,7 +361,7 @@ class SEPSettings(BaseYamlAppSettings):
         env = Environment(
             loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
             autoescape=True,
-            extensions=["jinja2.ext.do"],
+            extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
         )
         env.filters |= DEFAULT_FILTERS
         env.globals["syntax_highlight_css"] = syntax_highlight_css
@@ -357,10 +384,11 @@ class SEPSettings(BaseYamlAppSettings):
 
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:
-        """Integrate extra keyword arguments into synchronizers.
+        """Integrate extra keyword arguments into synchronizers and set PMM_FRONTEND.
 
         Merge additional keyword arguments from `SYNCER_EXTRA_KWARGS` into each
-        synchronizer in `SYNCERS` and update the list accordingly.
+        synchronizer in `SYNCERS` and update the list accordingly. If `PMM_FRONTEND` is
+        not already set, check if `PMMSyncer` is enabled and use the `pmm.endpoint`.
 
         :return: The updated `SEPSettings` instance with modified `SYNCERS`.
         :rtype: Self
@@ -370,6 +398,19 @@ class SEPSettings(BaseYamlAppSettings):
             syncer_data = syncer.model_dump()
             deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
             syncers.append(SyncOptions.model_validate(syncer_data))
+            try:
+                if (
+                    self.PMM_FRONTEND is None
+                    and syncer_data["syncer"].endswith("PMMSyncer")
+                    and (pmm_endpoint := syncer_data.get("pmm", {}).get("endpoint"))
+                ):
+                    self.PMM_FRONTEND = run_pydantic_type_validator(
+                        StrHttpUrl, pmm_endpoint
+                    )
+            except AttributeError:
+                continue
+            except ValidationError:
+                raise ValueError("PMM endpoint should be a valid HTTP URL") from None
         self.SYNCERS = syncers
         return self
 

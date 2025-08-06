@@ -1,3 +1,19 @@
+/* Copyright (C) 2025 Percona LLC                                               */
+/*                                                                              */
+/* This program is free software: you can redistribute it and/or modify         */
+/* it under the terms of the GNU Affero General Public License as published by  */
+/* the Free Software Foundation, either version 3 of the License, or            */
+/* (at your option) any later version.                                          */
+/*                                                                              */
+/* This program is distributed in the hope that it will be useful,              */
+/* but WITHOUT ANY WARRANTY; without even the implied warranty of               */
+/* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the                 */
+/* GNU Affero General Public License for more details.                          */
+/*                                                                              */
+/* You should have received a copy of the GNU Affero General Public License     */
+/* along with this program. If not, see <https://www.gnu.org/licenses/>.        */
+
+/*
 .log-console {
     border: 1px solid #333;
     font-family: monospace;
@@ -5,19 +21,13 @@
     color: #d4d4d4;
 }
 
-.log-top-bar,
-.log-bottom-bar {
+.logs-footer {
     display: flex;
     align-items: center;
     background-color: #f5f5f5;
 }
 
-.log-top-bar {
-    border-bottom: 1px solid #444;
-    padding: 0.5em;
-}
-
-.log-bottom-bar {
+.logs-footer {
     border-top: 1px solid #444;
     padding: 0.5em;
 }
@@ -43,10 +53,22 @@
     border-bottom: 1px solid #1e1e1e;
 }
 
-.word-wrap-toggle {
+.toggle-row {
     display: flex;
     align-items: center;
     margin-left: auto;
+}
+
+.decrypt-toggle {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+}
+
+.word-wrap-toggle {
+    display: flex;
+    align-items: center;
+    margin-left: 1em;
 }
 
 .toggle-label {
@@ -104,7 +126,7 @@ input:checked+.slider:before {
     transform: translateX(26px);
 }
 
-.log-content {
+.logs-content {
     max-height: 400px;
     overflow: auto;
 }
@@ -135,6 +157,10 @@ input:checked+.slider:before {
     border: 2px solid #8ACE00;
 }
 
+.log-console.failed {
+    border: 2px solid #CE2900;
+}
+
 .tab-notification {
     position: relative;
 }
@@ -150,3 +176,12 @@ input:checked+.slider:before {
     background-color: red;
     border-radius: 50%;
 }
+
+.unselectable {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+} */

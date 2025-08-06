@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Provide the CasdoorSDK for interacting with Casdoor services."""
 
 from base64 import b64encode
@@ -338,15 +353,18 @@ class CasdoorSDK(RemoteAPI):
         return response["data"]
 
     async def get_tokens(
-        self, username: str, **params: Any
+        self, owner: str, username: str | None = None, **params: Any
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Retrieve the tokens for a username.
 
         Retrieves the tokens details from Casdoor from the provided username and yields
         each token data.
 
-        :param username: The username to retrieve tokens for.
-        :type username: str
+        :param owner: The owner of the tokens.
+        :type owner: str
+        :param username: The username to retrieve tokens for, or None to retrieve all
+            tokens. Defaults to None.
+        :type username: str | None
         :param params: Additional query parameters.
         :type params: Any
         :yield: The tokens details retrieved from Casdoor.
@@ -354,7 +372,7 @@ class CasdoorSDK(RemoteAPI):
         """
         page_size = 100
         params |= {
-            "owner": username,
+            "owner": owner,
             "organization": self.organization_name,
             "pageSize": page_size,
             "p": 1,
@@ -363,29 +381,37 @@ class CasdoorSDK(RemoteAPI):
             "/api/get-tokens",
             params=params,
         )
-        max_page = ceil(tokens["data2"] / page_size)
+        max_page = ceil(tokens.get("data2") or 0 / page_size)
         while params["p"] <= max_page:
             if tokens is None:
                 tokens = await self.get("/api/get-tokens", params=params)
             for token in tokens["data"]:
-                yield token
+                if username is None or token["user"] == username:
+                    yield token
             params["p"] += 1
             tokens = None
 
     async def get_active_tokens(
-        self, username: str
+        self, owner: str, username: str | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Retrieve the active tokens for a username.
 
         Retrieves the active tokens details from Casdoor from the provided username and
         yields each token data.
 
-        :param username: The username to retrieve tokens for.
-        :type username: str
+        :param owner: The owner of the tokens.
+        :type owner: str
+        :param username: The username to retrieve tokens for, or None to retrieve all
+            tokens. Defaults to None.
+        :type username: str | None
         :yield: The tokens details retrieved from Casdoor.
         :rtype: dict[str, Any]
         """
-        async for token in self.get_tokens(username, field="codeExpireIn", value=0):
+        async for token in self.get_tokens(
+            owner, username, sortField="codeExpireIn", sortOrder="ascend"
+        ):
+            if token["codeExpireIn"] > 0:
+                break
             yield token
 
     async def delete_token(self, token: dict[str, Any]) -> bool:
@@ -412,18 +438,34 @@ class CasdoorSDK(RemoteAPI):
         )
         return users["data"]
 
-    async def get_user(self, user_id: str) -> dict[str, Any]:
+    async def get_user(self, username: str) -> dict[str, Any]:
         """Retrieve a specific user's information from Casdoor.
 
-        Fetches the details of a user identified by the provided user ID.
+        Fetches the details of a user identified by the provided username.
 
-        :param user_id: The ID of the user to retrieve.
-        :type user_id: str
+        :param username: The username of the user to retrieve.
+        :type username: str
         :return: A dictionary containing the user's information.
         :rtype: dict[str, Any]
         """
         user = await self.get(
             "/api/get-user",
-            params={"id": f"{self.organization_name}/{user_id}"},
+            params={"id": f"{self.organization_name}/{username}"},
+        )
+        return user["data"]
+
+    async def get_user_application(self, username: str) -> dict[str, Any]:
+        """Retrieve a specific user's application information from Casdoor.
+
+        Fetches the details of a user's application by username.
+
+        :param username: The username of the user to retrieve.
+        :type username: str
+        :return: A dictionary containing the user's information.
+        :rtype: dict[str, Any]
+        """
+        user = await self.get(
+            "/api/get-user-application",
+            params={"id": f"{self.organization_name}/{username}"},
         )
         return user["data"]

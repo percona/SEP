@@ -22,26 +22,34 @@ default:
     SESSION:
       COOKIE_NAME: casdoorToken
     PLUGINS:
-      - NAME: Schema Change
-        MODULE_NAME: alters
-        URI_PATH: /alters
-        CSS_CLASS: alters
       - NAME: Inventory
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
-      - NAME: Archive
-        MODULE_NAME: archives
-        URI_PATH: /archives
-        CSS_CLASS: archive
-      - NAME: Backups
-        MODULE_NAME: backup
-        URI_PATH: /backups
-        CSS_CLASS: backups
       - NAME: Support Snippets
         MODULE_NAME: snippets
         URI_PATH: /snippets
         CSS_CLASS: snippets
+      - NAME: Schema Change
+        MODULE_NAME: alters
+        URI_PATH: /alters
+        CSS_CLASS: alters
+      - NAME: Archive
+        MODULE_NAME: archives
+        URI_PATH: /archives
+        CSS_CLASS: archive
+      - NAME: MySQL Backups
+        MODULE_NAME: backup
+        URI_PATH: /backups
+        CSS_CLASS: backups
+      - NAME: Checksums
+        MODULE_NAME: checksums
+        URI_PATH: /checksums
+        CSS_CLASS: checksums
+      - NAME: MongoDB Backups
+        MODULE_NAME: backup_mongo
+        URI_PATH: /backup_mongo
+        CSS_CLASS: backup_mongo
   TASKS:
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
@@ -80,7 +88,8 @@ development:
     RESULT_BACKEND: file://data/celery/results
     RESULT_PERSISTENT: true
     BEAT_DBURI: "sqlite:///schedule.db"
-    MAX_RETRIES: 3
+  ALERTING:
+    SOURCE_SUFFIX: ":dev"
 
 production_docker:
   CASDOOR:
@@ -121,6 +130,8 @@ production_docker:
       SSL_CAFILE: data/certs/sep-ca.pem
     SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
+    ANONYMIZER:
+      DEFAULT_ENTITIES: "*"
   BACKEND_CORS_ORIGINS:
     - https://localhost:9000
     - https://127.0.0.1:9000

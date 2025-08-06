@@ -11,9 +11,7 @@ from app.core.auth.models import OAuthToken
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
-from app.sep.deps import get_tasks_api
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
-from app.sep.main import sep_app
 from tests.app.factories import (
     CasdoorUserFactory,
     CreatedNodeFactory,
@@ -162,21 +160,6 @@ def regular_user(valid_username: str, faker: Faker) -> CasdoorUser:
 
 
 @pytest.fixture
-def mock_remote_api() -> AsyncMock:
-    """Mock a RemoteAPI object."""
-    return AsyncMock(spec=RemoteAPI)
-
-
-@pytest.fixture
-def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
-    """Mock the TaskAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
 def created_node() -> CreatedNode:
     """Return a fake created node."""
     return CreatedNodeFactory.build(address="localhost")
@@ -198,3 +181,9 @@ def created_schema() -> CreatedSchema:
 def created_table() -> CreatedTable:
     """Return a fake created Table."""
     return CreatedTableFactory.build()
+
+
+@pytest.fixture
+def mock_remote_api() -> AsyncMock:
+    """Mock a RemoteAPI object."""
+    return AsyncMock(spec=RemoteAPI)

@@ -1,38 +1,41 @@
-<div class="tasks-table-container">
-    <table class="responsive-table tasks-table">
+{% if pending_tasks %}
+    <table data-table="pending-tasks">
         <thead>
             <tr>
                 <th>Name</th>
                 <th>Host</th>
-                <th>Created At</th>
-                <th>Actions</th>
+                <th>Created at</th>
+                <th>ETA</th>
+                <th>Options</th>
             </tr>
         </thead>
         <tbody>
-            {% if pending_tasks %}
-                {% for task in pending_tasks %}
-                    {% set task_name = task["task"]["name"] %}
-                    <tr>
-                        <td>{{ task_name }}</td>
-                        <td>{{ task['execution_request']['target'] }}</td>
-                        <td class="relativeTime">{{ task['created_at'] }}</td>
-                        <td>
-                            <a href="{{ task_name }}"><i class="icons">visibility</i></a>
-                            <a href="#" class="submitNextForm">
-                                <i class="icons">delete forever</i></a>
-                            <form action="{{ task_path }}/delete"
-                                  method="post"
-                                  style="display:none"
-                                  id="deleteTaskForm">
-                            </form>
-                        </td>
-                    </tr>
-                {% endfor %}
-            {% else %}
+            {% for task in pending_tasks %}
+                {% set task_name = task["task"]["name"] %}
                 <tr>
-                    <td colspan="4" class="no-tasks">No tasks pending</td>
+                    <td>{{ task_name }}</td>
+                    <td>{{ task['execution_request']['target'] }}</td>
+                    <td class="relativeTime">{{ task['created_at'] }}</td>
+                    {% set eta = task['execution_request'].get('eta') %}
+                    <td {% if eta %}class="relativeTime"{% endif %}>{{ eta }}</td>
+                    <td>
+                        <a href="{{ task_name }}">
+                            <span class="material-symbols-outlined">visibility</span>
+                        </a>
+                        <a href="#" class="submitNextForm">
+                            <span class="material-symbols-outlined">cancel</span>
+                        </a>
+                        <form action="{{ url_for('stop_task_execution', task_history_id=task['id']) }}"
+                              method="post"
+                              style="display:none">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                        </form>
+                    </td>
                 </tr>
-            {% endif %}
+            {% endfor %}
         </tbody>
     </table>
-</div>
+{% else %}
+    <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
+    <span>No data</span>
+{% endif %}

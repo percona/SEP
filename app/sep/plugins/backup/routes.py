@@ -11,6 +11,7 @@ from pydantic import FutureDatetime
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    HasNoConflictedRunningTasks,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -21,11 +22,16 @@ from app.sep.plugins.backup.deps import (
     get_backups_index_context,
 )
 from app.sep.plugins.backup.models import BackupType
+from app.tasks.anonymizer import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
+
+from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
+
+router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -36,7 +42,7 @@ async def backups_index(
     """Homepage of backups plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/index.html",
+        name="backups/backup/index.html",
         context=context,
     )
 
@@ -72,6 +78,7 @@ async def backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
+    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
     task_data = {
@@ -83,6 +90,8 @@ async def backups_detail(
         "host": server_config["HOST"],
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
+        "delete_url": request.url_for("backups_delete", task_name=task.name),
     }
 
     context["task"] = task_data
@@ -93,14 +102,14 @@ async def backups_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     return templates.TemplateResponse(
         request=request,
-        name="backups/details.html",
+        name="backups/backup/details.html",
         context=context,
     )
 
 
 @router.post(
     "/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
 )
 async def backups_execute(

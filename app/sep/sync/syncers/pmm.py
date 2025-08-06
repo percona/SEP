@@ -1,14 +1,30 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Implement models and utilities for the PMM Inventory Sync."""
 
 import logging
 from collections import defaultdict
 from typing import ClassVar, Self
 
-from async_lru import alru_cache
-from pydantic import AliasChoices, Field
+from async_lru import _LRUCacheWrapper, alru_cache
+from pydantic import AliasChoices, ConfigDict, Field
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
+from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import RequiredStr
 from app.inventory.models import SourceEnum
 from app.sep.inventory import CreatedNode, CreatedService, Node, Service
@@ -74,10 +90,60 @@ class PMMRemoteAPI(RemoteAPI):
     :param error_code_key: The key to expect error codes to be, or None if no error
         code is expected. Defaults to "code".
     :type error_code_key: RequiredStr | None
+    :param default_to_v3: Whether to default to PMM v3 API endpoints if the API version
+        cannot be determined. Defaults to True.
+    :type default_to_v3: bool
     """
 
+    model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     error_detail_key: RequiredStr = "message"
     error_code_key: RequiredStr | None = "code"
+    default_to_v3: bool = True
+
+    @alru_cache(ttl=600)
+    async def is_older_than_v3(self) -> bool:
+        """Check if the PMM version is older than 3.
+
+        This method retrieves the PMM version and checks if it is older than 3.0.0.
+
+        :return: True if the PMM version is older than 3, False otherwise.
+        :rtype: bool
+        """
+        v3_major = 3
+        try:
+            version = await self.get_version()
+        except (TypeError, KeyError):
+            self.logger.exception(
+                "Failed to retrieve PMM version, defaulting to %s",
+                "v3" if self.default_to_v3 else "v2",
+            )
+            return not self.default_to_v3
+
+        try:
+            is_older = int(version.split(".")[0]) < v3_major
+        except (AttributeError, ValueError):
+            self.logger.exception(
+                "Failed to parse PMM version, defaulting to %s: %s",
+                "v3" if self.default_to_v3 else "v2",
+                version,
+            )
+            return not self.default_to_v3
+
+        if is_older:
+            self.logger.warning(
+                "Deprecation Warning: Support for PMM version < 3.0.0 is deprecated and will be removed in a future version (version found is %s).",
+                version,
+            )
+        return is_older
+
+    async def get_version(self) -> str:
+        """Retrieve the PMM version.
+
+        :return: The version of the PMM instance.
+        :rtype: str
+        """
+        version_data = await self.get("/v1/version")
+        return version_data["version"]
 
     async def get_node(self, node_id: str) -> Node:
         """Retrieve a PMM node by its external ID.
@@ -89,10 +155,15 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The retrieved node instance.
         :rtype: Node
         """
-        node_data = await self.post(
-            "/v1/inventory/Nodes/Get",
-            json={"node_id": node_id},
-        )
+        if await self.is_older_than_v3():
+            node_data = await self.post(
+                "/v1/inventory/Nodes/Get",
+                json={"node_id": node_id},
+            )
+        else:
+            node_data = await self.get(
+                f"/v1/inventory/nodes/{node_id}",
+            )
         node_type, node = next(iter(node_data.items()))
         node |= {
             "source": SourceEnum.PMM,
@@ -111,10 +182,15 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The retrieved service instance.
         :rtype: PMMService
         """
-        service_data = await self.post(
-            "/v1/inventory/Services/Get",
-            json={"service_id": service_id},
-        )
+        if await self.is_older_than_v3():
+            service_data = await self.post(
+                "/v1/inventory/Services/Get",
+                json={"service_id": service_id},
+            )
+        else:
+            service_data = await self.get(
+                f"/v1/inventory/services/{service_id}",
+            )
         service_type, service = next(iter(service_data.items()))
         service["type"] = service_type
         return PMMService.model_validate(service)
@@ -142,12 +218,16 @@ class PMMRemoteAPI(RemoteAPI):
         :return: A list of PMMService instances retrieved from the API.
         :rtype: list[PMMService]
         """
-        data = {
+        params = {
             "node_id": node_id,
             "service_type": service_type,
             "external_group": external_group,
         }
-        services_data = await self.post("/v1/inventory/Services/List", json=data)
+        params = remove_falsy_values_from_dict(params)
+        if await self.is_older_than_v3():
+            services_data = await self.post("/v1/inventory/Services/List", json=params)
+        else:
+            services_data = await self.get("/v1/inventory/services", params=params)
         return [
             PMMService.model_validate({"type": service_type, **service})
             for service_type, services in services_data.items()
@@ -183,10 +263,14 @@ class PMMRemoteAPI(RemoteAPI):
         :rtype: list[Node]
         """
         services_by_node_id = await self.get_services_by_node_external_id()
-        nodes_data = await self.post(
-            "/v1/inventory/Nodes/List",
-            json={"node_type": node_type},
-        )
+        params = remove_falsy_values_from_dict({"node_type": node_type})
+        if await self.is_older_than_v3():
+            nodes_data = await self.post(
+                "/v1/inventory/Nodes/List",
+                json=params,
+            )
+        else:
+            nodes_data = await self.get("/v1/inventory/nodes", params=params)
         return [
             Node(
                 **node,

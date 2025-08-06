@@ -1,5 +1,21 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define settings for the Tasks app."""
 
+from datetime import timedelta
 from typing import ClassVar
 
 from app.core.config import BaseYamlAppSettings
@@ -19,24 +35,25 @@ class TasksSettings(BaseYamlAppSettings):
     :type UVICORN_PORT: int
     :param NOMAD: The configuration options for integrating with Nomad.
     :type NOMAD: NomadOptions
-    :param EXECUTE_MODE: The execution mode for tasks. Defaults to 'background'.
-    :type EXECUTE_MODE: str
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
         Use `False` to disable the middleware completely.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
+    :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
+        minutes.
+    :type SYNC_LOCK_TTL: timedelta
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
     NOMAD: NomadExecutor
-    EXECUTE_MODE: str = "background"
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
         content_security_policy_strict=False
     )
+    SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
 
 
 tasks_settings = TasksSettings()

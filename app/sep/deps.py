@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define SEP dependencies."""
 
 import logging
@@ -12,10 +27,15 @@ from jwt import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import alert_settings
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
-from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPNotFoundException,
+    HTTPRedirectException,
+)
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
@@ -200,6 +220,7 @@ def get_default_context(
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "messages": messages.get_messages(request),
+        "pmm_url": sep_settings.PMM_FRONTEND,
     }
 
 
@@ -411,6 +432,8 @@ async def get_tasks_context(
     get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
     default_context: DefaultContext | None = None,
     owner: TaskOwner | None = None,
+    *,
+    alert_on_fail_default: bool = False,
 ) -> dict[str, Any]:
     """Assemble the template context for task-dependent plugins.
 
@@ -432,13 +455,21 @@ async def get_tasks_context(
     :type default_context: dict[str, Any] | None
     :param owner: The owner filter for retrieving tasks. Defaults to `None`.
     :type owner: TaskOwner | None
+    :param alert_on_fail_default: Default value for the alert on failure setting.
+    :type alert_on_fail_default: bool
     :return: The assembled context dictionary containing tasks and services information.
     :rtype: dict[str, Any]
     """
-    mysql_services = await inventory_api.get(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    service_type = (
+        ServiceTypeEnum.MONGODB
+        if owner == TaskOwner.BACKUP_MONGO
+        else ServiceTypeEnum.MYSQL
     )
-    for service in mysql_services:
+    services = await inventory_api.get(
+        "/services/", params={"service_type": service_type}
+    )
+
+    for service in services:
         service["schemas"] = await inventory_api.get(
             f"/services/{service['id']}/schemas/",
         )
@@ -456,12 +487,12 @@ async def get_tasks_context(
         history = await tasks_api.get(f"/{task['name']}/history/")
         for hist in history:
             match TaskHistoryStatusEnum(hist["status"]):
-                case TaskHistoryStatusEnum.SUCCESS | TaskHistoryStatusEnum.FAILED:
-                    history_tasks.append(hist)
                 case TaskHistoryStatusEnum.PENDING:
                     scheduled_tasks.append(hist)
                 case TaskHistoryStatusEnum.RUNNING:
                     running_tasks.append(hist)
+                case _:
+                    history_tasks.append(hist)
     periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
 
     try:
@@ -470,17 +501,20 @@ async def get_tasks_context(
         executor_hosts = {}
         messages.error(request, exc.detail)
 
+    alert_on_fail_available = bool(alert_settings.PROVIDERS)
     context = default_context or {}
     context.update(
         {
             "executor_hosts": list(executor_hosts.values()),
-            "mysql_services": mysql_services,
+            "services": services,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
             "AVAILABLE_TIMEZONES": list(available_timezones()),
+            "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
+            "alert_on_fail_available": alert_on_fail_available,
         }
     )
     return context
@@ -611,3 +645,32 @@ async def get_task_history(
     if owner is not None and owner != task_history.task.owner:
         raise HTTPNotFoundException
     return task_history
+
+
+async def check_for_conflicted_running_tasks(
+    task_name: str, tasks_api: TaskAPI
+) -> None:
+    """Check for running or pending tasks with the same name.
+
+    This function checks if there are any running or pending tasks with the same name
+    as the provided `task_name`. If such tasks are found, it raises an
+    HTTPConflictException.
+
+    :param task_name: The name of the task to check for.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :raises HTTPConflictException: If there are running or pending tasks with the same
+        name.
+    """
+    running_tasks = await tasks_api.get(
+        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    pending_tasks = await tasks_api.get(
+        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+    )
+    if running_tasks or pending_tasks:
+        raise HTTPConflictException("Task is already running or pending.")
+
+
+HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)

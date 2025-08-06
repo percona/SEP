@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define database operations for the Celery scheduler."""
 
 from collections.abc import Sequence
@@ -7,6 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy_celery_beat import CrontabSchedule, IntervalSchedule, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import settings
 from app.core.db.crud import BaseManager
 
 
@@ -78,6 +94,7 @@ class BasePeriodicTaskManager(BaseManager):
             ) = await CrontabScheduleManager.get_or_create(
                 session, instance_create.crontab
             )
+        extra_fields["expire_seconds"] = settings.CELERY.global_expire_seconds
         return await super().create(session, instance_create, **extra_fields)
 
     @classmethod

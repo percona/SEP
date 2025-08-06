@@ -1,3 +1,18 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define settings for periodic tasks in the Tasks app."""
 
 from enum import auto, StrEnum
@@ -5,7 +20,6 @@ from typing import ClassVar
 
 from app.core.config import BaseYamlSettings
 from app.core.utils.fields import EnumFieldMixin
-from app.tasks.models import TaskOwner
 
 
 class PeriodicTaskAction(EnumFieldMixin, StrEnum):
@@ -30,19 +44,9 @@ class PeriodicTasksSettings(BaseYamlSettings):
     :cvar SETTINGS_PREFIXES: The prefixes for periodic tasks related settings in the
         configuration file. Set to `["TASKS", "PERIODIC"]`.
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
-    :param AVAILABLE_TO_OWNERS: The task owners for which the periodic tasks feature
-        will be available. Defaults to {TaskOwner.ARCHIVER}.
-    :type AVAILABLE_TO_OWNERS: set[TaskOwner]
-    :param ON_EXPIRE: The action to perform for expired tasks. Defaults to DISABLE.
-    :type ON_EXPIRE: PeriodicTaskAction
-    :param ON_ORPHAN: The action to perform for orphaned tasks. Defaults to DELETE.
-    :type ON_ORPHAN: PeriodicTaskAction
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS", "PERIODIC"]
-    AVAILABLE_TO_OWNERS: set[TaskOwner] = [TaskOwner.ARCHIVER]
-    ON_EXPIRE: PeriodicTaskAction = PeriodicTaskAction.DISABLE
-    ON_ORPHAN: PeriodicTaskAction = PeriodicTaskAction.DELETE
 
 
 periodic_tasks_settings = PeriodicTasksSettings()
