@@ -100,6 +100,7 @@ async def backups_detail(
         "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
+        "is_edit_enabled": not task.protected,
     }
 
     task_data.update(parsed_task_data)
