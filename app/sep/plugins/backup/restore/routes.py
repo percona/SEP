@@ -92,6 +92,7 @@ async def restores_detail(
         "database": server_config.get("database"),
         "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "delete_url": request.url_for("restores_delete", task_name=task.name),
+        "is_edit_enabled": not task.protected,
     }
 
     task_data.update(parsed_task_data)
@@ -116,6 +117,10 @@ async def restores_detail(
         services = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
+        for service in services:
+            service["schemas"] = await inventory_api.get(
+                f"/services/{service['id']}/schemas/",
+            )
         context["services"] = services
     except HTTPException:
         context["services"] = []

@@ -259,15 +259,21 @@
                             <label for="service_id" title="{{ service_id_title }}">
                                 <span class="material-symbols-outlined">arrow_drop_down</span>
                                 <span class="label">Destination Database</span>
-                                {% if services|length == 1 %}
-                                    {% set single_service = services[0] %}
-                                    <select id="service_id" name="service_id" disabled>
-                                        <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
-                                    </select>
-                                    <input type="hidden" name="service_id" value="{{ single_service.id }}">
-                                {% else %}
+                                {% if services|length > 0 %}
+                                    {% set matched_service_list = [] %}
+                                    {% for service in services %}
+                                        {% if task["host"] == service.node.address and task["port"] == service.port %}
+                                            {% do matched_service_list.append(1) %}
+                                        {% endif %}
+                                    {% endfor %}
                                     <select id="service_id" name="service_id" required>
-                                        <option value="" selected>Select a destination database</option>
+                                        <option value=""
+                                                {% if matched_service_list|length > 0 %}{% else %}selected{% endif %}>
+                                            Select a destination database
+                                        </option>
+                                        {% if matched_service_list|length == 0 %}
+                                            <option value="-1" selected>Unknown({{ task["host"] }}:{{ task["port"] }})</option>
+                                        {% endif %}
                                         {% for service in services %}
                                             {% set is_selected = task["host"] == service.node.address and task["port"] == service.port %}
                                             <option value="{{ service.id }}" {% if is_selected %}selected{% endif %}>
@@ -287,13 +293,7 @@
                                         name="schema_id"
                                         title="{{ schema_id_title }}"
                                         disabled>
-                                    <option value="-1" selected>Not selected</option>
-                                    {% for schema in schemas %}
-                                        <option value="{{ schema.id }}"
-                                                {% if schema.name == task["database"] %}selected{% endif %}>
-                                            {{ schema.name }}
-                                        </option>
-                                    {% endfor %}
+                                    <option value="">Select a schema</option>
                                 </select>
                             </label>
                         </div>
@@ -643,6 +643,15 @@
     </dialog>
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
+{% set serviceSchemas = {} %}
+{% for service in services %}
+    {% set schemas = {} %}
+    {% for schema in service.schemas %}
+        {% do schemas.update({schema.id: schema.name}) %}
+    {% endfor %}
+    {% do serviceSchemas.update({service.id: schemas}) %}
+{% endfor %}
+{% set source_data = { "host": task.host, "port": task.port, "database": task.database } %}
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
     const myloaderContainer = document.getElementById('myloader_container');
@@ -650,6 +659,15 @@
     const binlogContainer = document.getElementById('binlog_container');
     const form = document.getElementById('edit-task-form');
     const editButton = form.querySelector('button[type="submit"]');
+    const serviceSelect = document.getElementById('service_id');
+    const schemaSelect = document.getElementById('schema_id');
+
+    const serviceSchemas = {{ serviceSchemas | tojson }};
+    const source_data = {{ source_data | tojson }};
+    const matched = {
+        serviceId: null,
+        schemaId: null
+    };
 
     function disableAllMyloaderFields(disabled) {
         if (myloaderContainer) {
@@ -677,6 +695,31 @@
             } else {
                 container.classList.add('hidden');
                 container.classList.remove('visible');
+            }
+        }
+    }
+
+    function populateSchemas(selectedService) {
+        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
+
+        if (selectedService && serviceSchemas[selectedService]) {
+            const schemas = Object.entries(serviceSchemas[selectedService]);
+            if (schemas.length > 0) {
+                for (const [schemaId, schemaName] of schemas) {
+                    const option = document.createElement('option');
+                    option.value = schemaId;
+                    option.textContent = schemaName;
+                    schemaSelect.appendChild(option);
+                    schemaSelect.disabled = false;
+                }
+                if (selectedService === matched.serviceId && matched.schemaId) {
+                    schemaSelect.value = matched.schemaId;
+                    return;
+                }
+                if (schemas.length === 1) {
+                    const [singleSchemaId, _] = schemas[0];
+                    schemaSelect.value = singleSchemaId;
+                }
             }
         }
     }
@@ -715,13 +758,72 @@
     }
 
     function updateEditButtonState() {
-        editButton.disabled = !form.checkValidity();
+        const selectElementValues = [
+            serviceSelect.value,
+            schemaSelect.value
+        ];
+
+        const hasInvalidValue = selectElementValues.includes("-1");
+        editButton.disabled = !form.checkValidity() || hasInvalidValue;
     }
+
+    // Initialize source data for unknown service/schema handling
+    function initSource() {
+        const selectedServiceId = serviceSelect.value;
+        if (selectedServiceId === "-1") {
+            // No matched service selected — completely unknown
+            const unknownSchemas = {
+                "-1": "Unknown schema: " + source_data.database
+            };
+
+            serviceSchemas["-1"] = unknownSchemas;
+
+            matched.serviceId = "-1";
+            matched.schemaId = "-1";
+        } else {
+            matched.serviceId = selectedServiceId;
+
+            const schemas = serviceSchemas[selectedServiceId] || {};
+            let matchedSchema = null;
+            let matchedSchemaKey = null;
+
+            for (const schemaId in schemas) {
+                const schemaName = schemas[schemaId];
+                if (schemaName === source_data.database) {
+                    matchedSchema = schemaName;
+                    matchedSchemaKey = schemaId;
+                    break;
+                }
+            }
+
+            if (matchedSchema) {
+                matched.schemaId = matchedSchemaKey;
+            } else {
+                // No schema matched → insert unknown schema inside selected service
+                schemas["-1"] = "Unknown schema: " + source_data.database;
+                matched.schemaId = "-1";
+                serviceSchemas[selectedServiceId] = schemas;
+            }
+        }
+    }
+
+    serviceSelect.addEventListener('change', function() {
+        const selectedService = this.value;
+        const hiddenSchemaInput = document.getElementById("schema_id_hidden");
+        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
+        populateSchemas(this.value);
+        updateEditButtonState();
+    });
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
     window.addEventListener('DOMContentLoaded', function() {
+        initSource();
+        if (serviceSelect.options.length != 0) {
+            const selectedService = serviceSelect.value;
+            populateSchemas(selectedService);
+        }
         updateBackupTypeUI();
         updateEditButtonState();
     });

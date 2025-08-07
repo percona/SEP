@@ -124,14 +124,15 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "hostname": meta["target"],
         "backup_type": server_config["BACKUP_TYPE"],
         "service_id": None,
-        "host": server_config.get("dest_host"),
-        "port": server_config.get("dest_port") or 3306,
-        "database": server_config.get("database"),
+        "host": server_config.get("DEST_HOST"),
+        "port": server_config.get("DEST_PORT") or 3306,
+        "database": server_config.get("DATABASE"),
     }
 
-    for key, value in all_servers_config.items():
-        if key.lower() not in result:
-            result[key.lower()] = value
+    for config in [server_config, all_servers_config]:
+        result.update(
+            {k.lower(): v for k, v in config.items() if k.lower() not in result}
+        )
 
     return result
 
