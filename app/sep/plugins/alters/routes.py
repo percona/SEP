@@ -27,6 +27,7 @@ from app.sep.plugins.alters.deps import (
 )
 from app.sep.utils.decorators import csrf_exempt
 from app.sep.utils.jinja import syntax_highlight
+from app.tasks.anonymizer import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,7 @@ async def alters_detail(
     """Retrieve alters task."""
     data = task.data
     meta = data["meta"]
+    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -135,6 +137,7 @@ async def alters_detail(
         "table": f"{meta['_schema_name']}.{meta['_table_name']}",
         "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("alters_delete", task_name=task.name),
         "dry_run_url": request.url_for(
             "alters_execute", task_name=task.name + "-dry-run"

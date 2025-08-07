@@ -214,7 +214,7 @@ class SEPSettings(BaseYamlAppSettings):
         env = Environment(
             loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
             autoescape=True,
-            extensions=["jinja2.ext.do"],
+            extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
         )
         env.filters["syntax_highlight"] = syntax_highlight
         env.globals["syntax_highlight_css"] = syntax_highlight_css
