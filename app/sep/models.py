@@ -18,7 +18,13 @@
 from enum import auto, IntEnum, StrEnum
 from typing import Any, Self
 
-from pydantic import computed_field, field_validator, HttpUrl, model_validator, UUID4
+from pydantic import (
+    computed_field,
+    field_validator,
+    HttpUrl,
+    model_validator,
+    UUID4,
+)
 from sqlalchemy import Column, Index
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
