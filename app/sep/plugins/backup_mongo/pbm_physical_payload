@@ -1,22 +1,36 @@
+""" PBM Physical Payload """
+
 import subprocess
 import os
-import logging
+import sys
+
+def pbm_creds():
+    """ PBM Credentials """
+    envhome = os.environ['HOME']
+    creds_path = f'{envhome}/.mongodb_uri'
+    try:
+        with open(creds_path, 'r', encoding='utf-8') as fpt:
+            creds = fpt.read().strip()
+    except Exception:
+        sys.exit(1)
+
+    return creds
 
 def pbm():
+    """ PBM Physical Payload """
 
-    pbm_create_physical = os.environ['PBM_CREATE_PHYSICAL']
-    command = ['bash', pbm_create_physical ]
+    os.environ['PBM_MONGODB_URI'] = pbm_creds()
+    cmd = ['pbm', 'backup', '--type', 'physical', '--wait']
+
     try:
-        result = subprocess.run(command,
-                              capture_output=True,  # Captures stdout and stderr
-                              text=True,           # Returns strings instead of bytes
-                              check=True)
+        proc = subprocess.Popen(cmd)
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            sys.exit(ret_code)
 
-        print("Output:", result.stdout)
-        print("Error (if any):", result.stderr)
-        print("Return code:", result.returncode)
-
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed with error: {e}")
+    except subprocess.CalledProcessError as err:
+        print(f"Command failed with error: {err}")
+        sys.exit(1)
 
 pbm()

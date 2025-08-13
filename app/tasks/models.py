@@ -112,6 +112,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     RESTORES = auto()
     CHECKSUMS = auto()
     BACKUP_MONGO = auto()
+    RESTORE_MONGO = auto()
 
 
 class TaskExecutionRequest(BaseModel):
@@ -342,9 +343,7 @@ class TaskBase(SQLModel):
     )
     owner: TaskOwner = SQLField(
         default=TaskOwner.ANY,
-        sa_column=Column(
-            EnumField(TaskOwner, native_enum=False), nullable=False, index=True
-        ),
+        index=True,
     )
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
