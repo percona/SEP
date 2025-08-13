@@ -34,8 +34,11 @@ usage() {
 Usage: $(basename "${0}") [OPTIONS]
 Returns the MySQL version.
 
-This snippet runs `mysqld --version` command to get the MySQL version.
-By default, it queries mysqld binary installed in the default location for your operating system and returns the full version string as printed by the command. You can specify a different MySQL base directory or change the output format.
+This snippet runs "mysqld --version" command to get the MySQL version.
+By default, it queries mysqld binary installed in the default location
+for your operating system and returns the full version string as
+printed by the command. You can specify a different MySQL base directory
+or change the output format.
 
 Command line options:
 

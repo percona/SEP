@@ -1,0 +1,1 @@
+\{"version": "\d+\.\d+\.\d+(-\w+)?", "platform": "[\w\s]+", "version_comment": ".+"\}
