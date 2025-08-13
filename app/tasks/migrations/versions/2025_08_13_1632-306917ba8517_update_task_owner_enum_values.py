@@ -24,7 +24,7 @@ def upgrade() -> None:
     with op.batch_alter_table('task', schema=None) as batch_op:
         batch_op.alter_column('owner',
                    existing_type=sa.VARCHAR(length=12),
-                   type_=sa.VARCHAR(length=32),
+                   type_=sa.Enum('ANY', 'ALTERS', 'ARCHIVER', 'BACKUPS', 'RESTORES', 'CHECKSUMS', 'BACKUP_MONGO', 'RESTORE_MONGO', name='taskowner', native_enum=False),
                    existing_nullable=False)
     # ### end Alembic commands ###
 
@@ -34,7 +34,7 @@ def downgrade() -> None:
 
     with op.batch_alter_table('task', schema=None) as batch_op:
         batch_op.alter_column('owner',
-                   existing_type=sa.VARCHAR(length=32),
+                   existing_type=sa.Enum('ANY', 'ALTERS', 'ARCHIVER', 'BACKUPS', 'RESTORES', 'CHECKSUMS', 'BACKUP_MONGO', 'RESTORE_MONGO', name='taskowner', native_enum=False),
                    type_=sa.VARCHAR(length=12),
                    existing_nullable=False)
     # ### end Alembic commands ###
