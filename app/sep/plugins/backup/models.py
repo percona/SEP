@@ -102,7 +102,9 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_incremental_method: (
         Literal["less_space", "fast_restore"] | EmptyStrToNone
     ) = None
-    xtrabackup_incremental_cycle: Literal["daily", "weekly"] | EmptyStrToNone = None
+    xtrabackup_incremental_cycle: (
+        Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
+    ) = None
     xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone = None
     xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone = None
     xtrabackup_stop_replica: bool = False
@@ -192,7 +194,7 @@ class BackupCreate(BackupConfigAll):
     :param xtrabackup_incremental_method: Method used for incremental backup.
     :type xtrabackup_incremental_method: Literal["less_space", "fast_restore"] | EmptyStrToNone
     :param xtrabackup_incremental_cycle: Frequency of incremental backups.
-    :type xtrabackup_incremental_cycle: Literal["daily", "weekly"] | EmptyStrToNone
+    :type xtrabackup_incremental_cycle: Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
     :param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.
     :type xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone
     :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.

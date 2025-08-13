@@ -659,7 +659,31 @@
                                 </option>
                                 <option value="weekly"
                                         {% if task.xtrabackup_incremental_cycle == "weekly" %}selected{% endif %}>
-                                    weekly
+                                    weekly on Monday
+                                </option>
+                                <option value="2"
+                                        {% if task.xtrabackup_incremental_cycle == "2" %}selected{% endif %}>
+                                    weekly on Tuesday
+                                </option>
+                                <option value="3"
+                                        {% if task.xtrabackup_incremental_cycle == "3" %}selected{% endif %}>
+                                    weekly on Wednesday
+                                </option>
+                                <option value="4"
+                                        {% if task.xtrabackup_incremental_cycle == "4" %}selected{% endif %}>
+                                    weekly on Thursday
+                                </option>
+                                <option value="5"
+                                        {% if task.xtrabackup_incremental_cycle == "5" %}selected{% endif %}>
+                                    weekly on Friday
+                                </option>
+                                <option value="6"
+                                        {% if task.xtrabackup_incremental_cycle == "6" %}selected{% endif %}>
+                                    weekly on Saturday
+                                </option>
+                                <option value="7"
+                                        {% if task.xtrabackup_incremental_cycle == "7" %}selected{% endif %}>
+                                    weekly on Sunday
                                 </option>
                             </select>
                         </label>
