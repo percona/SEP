@@ -72,6 +72,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     check_disk_space: bool = False
     encrypt: bool = False
     encrypt_using_tmpdir: bool = False
+    post_run_encrypt: bool = False
     only_if_running_replica: bool = False
     only_if_read_only: bool = False
     logging_dir: RequiredStr | EmptyStrToNone = None
@@ -134,6 +135,8 @@ class BackupCreate(BackupConfigAll):
     :type encrypt: bool
     :param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.
     :type encrypt_using_tmpdir: bool
+    :param post_run_encrypt: Whether to encrypt backup right after completion.
+    :type post_run_encrypt: bool
     :param only_if_running_replica: Only perform backup if the server is a replica.
     :type only_if_running_replica: bool
     :param only_if_read_only: Only perform backup if the server is in read-only mode.
