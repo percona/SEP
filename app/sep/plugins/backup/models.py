@@ -72,6 +72,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     check_disk_space: bool = False
     encrypt: bool = False
     encrypt_using_tmpdir: bool = False
+    post_run_encrypt: bool = False
     only_if_running_replica: bool = False
     only_if_read_only: bool = False
     logging_dir: RequiredStr | EmptyStrToNone = None
@@ -101,7 +102,9 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_incremental_method: (
         Literal["less_space", "fast_restore"] | EmptyStrToNone
     ) = None
-    xtrabackup_incremental_cycle: Literal["daily", "weekly"] | EmptyStrToNone = None
+    xtrabackup_incremental_cycle: (
+        Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
+    ) = None
     xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone = None
     xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone = None
     xtrabackup_stop_replica: bool = False
@@ -134,6 +137,8 @@ class BackupCreate(BackupConfigAll):
     :type encrypt: bool
     :param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.
     :type encrypt_using_tmpdir: bool
+    :param post_run_encrypt: Whether to encrypt backup right after completion.
+    :type post_run_encrypt: bool
     :param only_if_running_replica: Only perform backup if the server is a replica.
     :type only_if_running_replica: bool
     :param only_if_read_only: Only perform backup if the server is in read-only mode.
@@ -189,7 +194,7 @@ class BackupCreate(BackupConfigAll):
     :param xtrabackup_incremental_method: Method used for incremental backup.
     :type xtrabackup_incremental_method: Literal["less_space", "fast_restore"] | EmptyStrToNone
     :param xtrabackup_incremental_cycle: Frequency of incremental backups.
-    :type xtrabackup_incremental_cycle: Literal["daily", "weekly"] | EmptyStrToNone
+    :type xtrabackup_incremental_cycle: Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
     :param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.
     :type xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone
     :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.
