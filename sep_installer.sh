@@ -7,6 +7,9 @@ test "${DEBUG:-0}" = 0 || set -o xtrace
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 INSTALL_DIR="${INSTALL_DIR:-.}"
 
+# Get current user's group ID
+GID="${GID:-$(id -g)}"
+
 CERTLIST=all-in-one
 PROGRESS=0
 
