@@ -1,0 +1,167 @@
+name: mysql_version
+sudo: false
+tests:
+  - name: "default"
+    cmd: "mysql_version.sh"
+    args:
+    expected:
+      stdout:
+        file: "default.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "invalid-option"
+    cmd: "mysql_version.sh"
+    args:
+      - "--invalid-option"
+    expected:
+      stdout:
+        file: "invalid.stdout"
+        isre: false
+      stderr:
+        file: "invalid.stderr"
+        isre: false
+      returncode: 1
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
+  - name: "help"
+    cmd: "mysql_version.sh"
+    args:
+      - "--help"
+    expected:
+      stdout:
+        file: "help.stdout"
+        isre: false
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "output-format number"
+    cmd: "mysql_version.sh"
+    args:
+      - "--output-format=number"
+    expected:
+      stdout:
+        file: "number.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "output-format json"
+    cmd: "mysql_version.sh"
+    args:
+      - "--output-format=json"
+    expected:
+      stdout:
+        file: "json.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "output-format invalid"
+    cmd: "mysql_version.sh"
+    args:
+      - "--output-format=invalid"
+    expected:
+      stdout: "Invalid output format: invalid. Use json, full_string, or number."
+      stderr:
+      returncode: 1
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
+  - name: "basedir"
+    cmd: "mysql_version.sh"
+    args:
+      - "--basedir=../support-files/mysql_version/basedir"
+    expected:
+      stdout: "/basedir/bin/mysqld  Ver 8.4.5-5 for Linux on x86_64 (Mock MySQL Server)"
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "basedir with space"
+    cmd: "mysql_version.sh"
+    args:
+      - "--basedir=../support-files/mysql_version/base dir"
+    expected:
+      stdout: "/base dir/bin/mysqld  Ver 8.4.5-5 for Linux on x86_64 (Mock MySQL Server)"
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "invalid basedir"
+    cmd: "mysql_version.sh"
+    args:
+      - "--basedir=invalid"
+    expected:
+      stdout: "mysqld command not found in the specified base directory: invalid. Please ensure the path is correct."
+      stderr:
+      returncode: 1
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:

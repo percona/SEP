@@ -1,0 +1,15 @@
+Usage: mysql_version.sh [OPTIONS]
+Returns the MySQL version.
+
+This snippet runs "mysqld --version" command to get the MySQL version.
+By default, it queries mysqld binary installed in the default location
+for your operating system and returns the full version string as
+printed by the command. You can specify a different MySQL base directory
+or change the output format.
+
+Command line options:
+
+   --basedir         Path to the MySQL base directory
+   --output-format   Output format (json, full_string, number)
+                     Default: full_string
+   -h, --help        Show this help message
