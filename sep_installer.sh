@@ -38,7 +38,7 @@ generate_secrets() {
 get_engine_command() {
 	case "${CONTAINER_ENGINE}" in
 		docker) echo docker compose --file "${INSTALL_DIR}"/sep/compose.yaml --project-name sep;;
-		podman) echo podman-compos --file "${INSTALL_DIR}"/sep/compose.yaml --project-name sep;;
+		podman) echo podman-compose --file "${INSTALL_DIR}"/sep/compose.yaml --project-name sep;;
 		*) return 1
 	esac
 }
