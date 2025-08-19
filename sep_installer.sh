@@ -25,6 +25,9 @@ trap 'save_progress' HUP INT QUIT ABRT ALRM TERM
 trap 'cleanup' EXIT
 
 generate_secrets() {
+	# Create empty file with correct permissions first
+	install -m 640 /dev/null "${INSTALL_DIR}"/sep/.secrets
+
 	cat <<-EOS > "${INSTALL_DIR}"/sep/.secrets
 	SEP_ORG_CASDOOR_SALT=$(openssl rand -base64 8)
 	SEP_ORG_SEP_SALT=$(openssl rand -base64 8)
