@@ -102,7 +102,7 @@ async def alters_create(
         dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
             "--execute", "--dry-run"
         )
-        dry_run_task.data["meta"]["parent"] = task.name
+        dry_run_task.data["parent"] = task.name
 
     await task_api.post(
         "/",
@@ -147,9 +147,9 @@ async def alters_detail(
     task_data.update(extract_service_info(meta))
 
     # If the task has a parent, redirect to the parent task detail page
-    if task_data["meta"].get("parent"):
+    if data.get("parent"):
         task_path = request.url_for(
-            "alters_detail", task_name=task_data["meta"]["parent"]
+            "alters_detail", task_name=data["parent"]
         )
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
@@ -240,7 +240,7 @@ async def alters_update(
         dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
             "--execute", "--dry-run"
         )
-        dry_run_task.data["meta"]["parent"] = updated_task.name
+        dry_run_task.data["parent"] = updated_task.name
     await tasks_api.put(
         f"/{task_name}-dry-run",
         json=dry_run_task.model_dump(),
