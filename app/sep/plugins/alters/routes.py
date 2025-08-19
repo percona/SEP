@@ -148,9 +148,7 @@ async def alters_detail(
 
     # If the task has a parent, redirect to the parent task detail page
     if data.get("parent"):
-        task_path = request.url_for(
-            "alters_detail", task_name=data["parent"]
-        )
+        task_path = request.url_for("alters_detail", task_name=data["parent"])
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     context["task"] = task_data
