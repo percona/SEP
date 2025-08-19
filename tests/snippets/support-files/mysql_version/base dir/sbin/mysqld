@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+echo '/base dir/bin/mysqld  Ver 8.4.5-5 for Linux on x86_64 (Mock MySQL Server)'
