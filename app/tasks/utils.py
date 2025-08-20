@@ -115,7 +115,7 @@ NOMAD_RUN_COMMAND = {
     "ParameterizedJob": {
         "Payload": "forbidden",
         "MetaRequired": ["target", "command"],
-        "MetaOptional": ["args", "parent"],
+        "MetaOptional": ["args"],
     },
     "TaskGroups": [
         {
