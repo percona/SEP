@@ -163,14 +163,22 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     data = task["data"]
-    meta = data["meta"]
 
-    return {
-        "hostname": meta["target"],
-        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
-        # keep meta.get("parent") for backward compatibility with old tasks
-        "parent": data.get("parent") or meta.get("parent"),
-    }
+    try:
+        meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+        return {
+            "hostname": data["Constraints"][0]["RTarget"],
+            "table": f"{meta['schema_name']}.{meta['table_name']}",
+            "parent": meta.get("parent"),
+        }
+    except (KeyError, IndexError):
+        meta = data.get("meta")
+        return {
+            "hostname": meta["target"],
+            "table": f"{meta['_schema_name']}.{meta['_table_name']}",
+            # keep meta.get("parent") for backward compatibility with old tasks
+            "parent": data.get("parent") or meta.get("parent"),
+        }
 
 
 def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:

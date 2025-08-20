@@ -127,15 +127,25 @@ async def alters_detail(
 ) -> HTMLResponse:
     """Retrieve alters task."""
     data = task.data
-    meta = data["meta"]
+    try:
+        task_config = data["TaskGroups"][0]["Tasks"][0]["Config"]
+        meta = data["TaskGroups"][0]["Tasks"][0]["Meta"]
+        hostname = data["Constraints"][0]["RTarget"]
+        table = f"{meta['schema_name']}.{meta['table_name']}"
+        cmd = f"{task_config['command']} {' '.join(task_config['args'])}"
+    except (KeyError, IndexError):
+        meta = data.get("meta")
+        hostname = meta["target"]
+        table = f"{meta['_schema_name']}.{meta['_table_name']}"
+        cmd = f"{meta['command']} {meta['args']}"
     decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
-        "hostname": meta["target"],
-        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
-        "cmd": f"{meta['command']} {meta['args']}",
+        "hostname": hostname,
+        "table": table,
+        "cmd": cmd,
         "meta": meta,
         "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("alters_delete", task_name=task.name),
