@@ -151,6 +151,11 @@ while [[ -n "$*" ]]; do
          shift 1
          break
          ;;
+      # Need this to catch options mess up that getopt does not recognize
+      *)
+         echo "Unrecognized option '$1'"
+         usage 1
+         ;;
    esac
 done
 

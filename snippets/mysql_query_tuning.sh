@@ -19,6 +19,11 @@
 #    label: File, containing the query
 #    description: Path to a file containing the SQL query to analyze for performance tuning
 #    default: ""
+#  - name: database
+#    type: str
+#    label: Database to use
+#    description: Database to use for the query tuning
+#    default: ""
 #  - name: dest
 #    type: str
 #    label: Destination for the diagnostic queries file and results
@@ -36,12 +41,13 @@
 #    default: 0
 # ---
 
-# Usage: ./mysql_query_tuning.sh [--defaults-file=path] --query=query_string|--file=path [--dest=path] [--execute] [--help]
+# Usage: ./mysql_query_tuning.sh [--defaults-file=path] --query=query_string|--file=path [--database=name] [--dest=path] [--execute] [--help]
 # Example: ./mysql_query_tuning.sh --query="SELECT first_name, last_name FROM actor" --execute --dest=/tmp
 
 declare DEFAULTS_FILE=""
 declare QUERY=""
 declare FILE=""
+declare DATABASE=""
 declare DEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 declare EXECUTE=0
 
@@ -58,13 +64,14 @@ the results to a file "results.txt". Finally, it will compress the results into 
 
 Command line options:
 
-   --defaults-file   Path to MySQL defaults-file
-   -q, --query       SQL query to analyze for performance tuning
-   -f, --file        Path to a file containing the SQL query to analyze
-   -d, --dest        Destination directory for the diagnostic queries file and results 
-                     Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
-   -e, --execute     Execute diagnostic queries (default: 0)
-   -h, --help        Show this help message
+   --defaults-file  Path to MySQL defaults-file
+   -q, --query      SQL query to analyze for performance tuning
+   -f, --file       Path to a file containing the SQL query to analyze
+   -D, --database   Database to use for the query tuning
+   -d, --dest       Destination directory for the diagnostic queries file and results 
+                    Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
+   -e, --execute    Execute diagnostic queries (default: 0)
+   -h, --help       Show this help message
 
 EOS
    exit $1
@@ -74,7 +81,7 @@ compress_data() {
    tar czf "${DEST}.tar.gz" -C "$(dirname ${DEST})" "$(basename ${DEST})";
 }
 
-OPTS=$(getopt --options -q:f:d:eh --longoptions 'defaults-file:,query:,file:,dest:,execute,help' -- "$@")
+OPTS=$(getopt --options -q:f:D:d:eh --longoptions 'defaults-file:,query:,file:,database:,dest:,execute,help' -- "$@")
 
 if [ $? -gt 0 ]; then
    echo "Error parsing options"
@@ -97,6 +104,10 @@ while [[ -n "$*" ]]; do
          FILE="$2"
          shift 2
          ;;
+      -D | --database)
+         DATABASE="$2"
+         shift 2
+         ;;
       -d | --dest)
          DEST="$2"
          shift 2
@@ -111,6 +122,11 @@ while [[ -n "$*" ]]; do
       --)
          shift 1
          break
+         ;;
+      # Need this to catch options mess up that getopt does not recognize
+      *)
+         echo "Unrecognized option '$1'"
+         usage 1
          ;;
    esac
 done
@@ -155,6 +171,9 @@ fi
 QUERY_FILE="${DEST}/queries.sql"
 [ "$SEPDEBUG" ] && echo "Writing diagnostic queries to: ${QUERY_FILE}"
 echo "-- Diagnostic queries for: ${QUERY}" > "${QUERY_FILE}"
+if [[ -n "$DATABASE" ]]; then
+   echo "USE ${DATABASE};" >> "${QUERY_FILE}"
+fi
 echo "EXPLAIN ${QUERY}\G" >> "${QUERY_FILE}"
 echo "SHOW WARNINGS \G" >> "${QUERY_FILE}"
 echo "EXPLAIN FORMAT=JSON ${QUERY}\G" >> "${QUERY_FILE}"
