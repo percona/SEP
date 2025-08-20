@@ -168,8 +168,7 @@ def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "hostname": meta["target"],
         "table": f"{meta['_schema_name']}.{meta['_table_name']}",
-        # keep meta.get("parent") for backward compatibility with old tasks
-        "parent": data.get("parent") or meta.get("parent"),
+        "parent": data.get("parent"),
     }
 
 
