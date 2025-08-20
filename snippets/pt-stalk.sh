@@ -80,7 +80,7 @@ Command line options:
    --pid                   pt-stalk PID file
    --log                   pt-stalk log file
    -d, --dest              Destination for the summaries.
-                           Default: .$(pwd)/$(hostname)
+                           Default: $(pwd)/$(hostname)
    --iterations            How many iterations to run
    --sleep                 Sleep time between iterations
    --daemon                Run pt-stalk in daemon mode

@@ -42,7 +42,7 @@ Command line options:
 
    --defaults-file   Path to MySQL defaults-file
    -d, --dest        Destination for the samples.
-                     Default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
+                     Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
    --save-samples    Save samples
    -h, --help        Show this help message
 
