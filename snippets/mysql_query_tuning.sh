@@ -29,6 +29,16 @@
 #    label: Destination for the diagnostic queries file and results
 #    description: Path to the directory where the diagnostic queries file and results will be saved
 #    default: .$(pwd)/$(hostname)
+#  - name: profile
+#    type: int
+#    label: Profile the query
+#    description: If set to 1, the query will be run and additional profiling information will be collected. Not allowed for DML queries. CTE profiled only if option --force is set.
+#    default: 0
+#  - name: force
+#    type: int
+#    label: Force profiling
+#    description: If set to 1, the query will be profiled even if it is a CTE expression. It is your responsibility to ensure that the query only selects data and does not modify it.
+#    default: 0
 #  - name: execute
 #    type: int
 #    label: Execute diagnostic queries
@@ -49,6 +59,8 @@ declare QUERY=""
 declare FILE=""
 declare DATABASE=""
 declare DEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+declare PROFILE=0
+declare FORCE=0
 declare EXECUTE=0
 
 usage() {
@@ -68,9 +80,14 @@ Command line options:
    -q, --query      SQL query to analyze for performance tuning
    -f, --file       Path to a file containing the SQL query to analyze
    -D, --database   Database to use for the query tuning
-   -d, --dest       Destination directory for the diagnostic queries file and results 
+   -d, --dest       Destination directory for the diagnostic queries file and results.
                     Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
-   -e, --execute    Execute diagnostic queries (default: 0)
+   -p, --profile    Profile the query.
+                    Default: 0
+   -F, --force      Force profiling of CTE expressions.
+                    Default: 0                    
+   -e, --execute    Execute diagnostic queries.
+                    Default: 0
    -h, --help       Show this help message
 
 EOS
@@ -81,7 +98,7 @@ compress_data() {
    tar czf "${DEST}.tar.gz" -C "$(dirname ${DEST})" "$(basename ${DEST})";
 }
 
-OPTS=$(getopt --options -q:f:D:d:eh --longoptions 'defaults-file:,query:,file:,database:,dest:,execute,help' -- "$@")
+OPTS=$(getopt --options -q:f:D:d:pFeh --longoptions 'defaults-file:,query:,file:,database:,dest:,profile,force,execute,help' -- "$@")
 
 if [ $? -gt 0 ]; then
    echo "Error parsing options"
@@ -116,6 +133,14 @@ while [[ -n "$*" ]]; do
          EXECUTE=1
          shift 1
          ;;
+      -p | --profile)
+         PROFILE=1
+         shift 1
+         ;;
+      -F | --force)
+         FORCE=1
+         shift 1
+         ;;
       -h | --help)
          usage
          ;;
@@ -146,19 +171,35 @@ if [[ -z "$QUERY" ]]; then
    fi
 fi
 
+# Remove trailing spaces and semicolon from $QUERY
+# We do not care about comments here, so if someone passed
+# a query like "SELECT * FROM table; -- comment"
+# or "SELECT * FROM table; /* comment */", the trailing comment will not be removed
+# As a result, EXPLAIN output will be printed in the horizontal format and other
+# formatting issues may occur.
+# We may fix this later, but for now we will just remove trailing spaces and semicolon
+# and leave comments as they are.
+QUERY=$(echo "$QUERY" | sed -e 's/[;[:space:]]*$//')
+
+[ "$SEPDEBUG" ] && echo "Using query: '${QUERY}'"
+
 # We can only define MYSQL command after we have defaults-file
 MYSQL="mysql -B $DEFAULTS_FILE"
 
 # 1. Check if the query starts with "SELECT"
 # 2. Else, check if the query is DML (INSERT, UPDATE, DELETE)
 IS_SELECT=0
+IS_DML=0
+IS_CTE=0
 
 if [[ $(echo "$QUERY" | head -n 1 | grep -iP '^\s*(/\*.*?\*/)*\s*select(\s|(/\*.*?\*/))') ]]; then
    IS_SELECT=1
 elif [[ $(echo "$QUERY" | head -n 1 | grep -iP '^\s*(/\*.*?\*/)*\s*(insert|delete|update)(\s|(/\*.*?\*/))') ]]; then
    IS_DML=1
+elif [[ $(echo "$QUERY" | head -n 1 | grep -iP '^\s*(/\*.*?\*/)*\s*with(\s|(/\*.*?\*/))') ]]; then
+   IS_CTE=1
 else
-   echo "Error: The query must start with SELECT, INSERT, UPDATE, or DELETE."
+   echo "Error: The query must start with SELECT, INSERT, UPDATE, DELETE, or WITH."
    exit 1
 fi
 
@@ -180,23 +221,25 @@ echo "EXPLAIN FORMAT=JSON ${QUERY}\G" >> "${QUERY_FILE}"
 echo "SHOW WARNINGS \G" >> "${QUERY_FILE}"
 
 # 7. If query is SELECT, write unsafe statements to the query file
-if [[ $IS_SELECT -eq 1 ]]; then
-   echo "FLUSH STATUS;" >> "${QUERY_FILE}"
-   echo "SET optimizer_trace='enabled=on';" >> "${QUERY_FILE}"
-   echo "SET optimizer_trace_max_mem_size=1024*1024*16;" >> "${QUERY_FILE}"
-   # We need to manipulate with the session variable profiling_history_size,
-   # so that we can guess correct query number in SHOW PROFILES
-   echo "SET profiling_history_size=0;" >> "${QUERY_FILE}"
-   echo "SET profiling=1;" >> "${QUERY_FILE}"
-   echo "SET profiling_history_size=5;" >> "${QUERY_FILE}"
-   echo "PAGER md5sum;" >> "${QUERY_FILE}"
-   echo "${QUERY};" >> "${QUERY_FILE}"
-   echo "NOPAGER;" >> "${QUERY_FILE}"
-   echo "SHOW STATUS LIKE 'Handler%';" >> "${QUERY_FILE}"
-   echo "SELECT * FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE\G" >> "${QUERY_FILE}"
-   echo "SET optimizer_trace='enabled=off';" >> "${QUERY_FILE}"
-   echo "SHOW PROFILES;" >> "${QUERY_FILE}"
-   echo "SHOW PROFILE FOR QUERY 2;" >> "${QUERY_FILE}"          
+if [[ $PROFILE -eq 1 ]]; then
+   if [[ $IS_SELECT -eq 1 ]] || [[ $IS_CTE -eq 1 && $FORCE -eq 1 ]]; then
+      echo "FLUSH STATUS;" >> "${QUERY_FILE}"
+      echo "SET optimizer_trace='enabled=on';" >> "${QUERY_FILE}"
+      echo "SET optimizer_trace_max_mem_size=1024*1024*16;" >> "${QUERY_FILE}"
+      # We need to manipulate with the session variable profiling_history_size,
+      # so that we can guess correct query number in SHOW PROFILES
+      echo "SET profiling_history_size=0;" >> "${QUERY_FILE}"
+      echo "SET profiling=1;" >> "${QUERY_FILE}"
+      echo "SET profiling_history_size=5;" >> "${QUERY_FILE}"
+      echo "PAGER md5sum;" >> "${QUERY_FILE}"
+      echo "${QUERY};" >> "${QUERY_FILE}"
+      echo "NOPAGER;" >> "${QUERY_FILE}"
+      echo "SHOW STATUS LIKE 'Handler%';" >> "${QUERY_FILE}"
+      echo "SELECT * FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE\G" >> "${QUERY_FILE}"
+      echo "SET optimizer_trace='enabled=off';" >> "${QUERY_FILE}"
+      echo "SHOW PROFILES;" >> "${QUERY_FILE}"
+      echo "SHOW PROFILE FOR QUERY 2;" >> "${QUERY_FILE}"
+   fi
 fi
 
 # 8. TODO: Collect table statistics and definitions
