@@ -15,11 +15,8 @@
 
 """Define Celery tasks and utilities for the SEP app."""
 
-import asyncio
 import logging
-from typing import Any
 
-from celery.signals import worker_process_init
 from sqlmodel import col
 
 from app.celery import celery
@@ -30,14 +27,6 @@ from app.sep.snippets.models import Snippet
 from app.sep.snippets.utils import guess_mime_type
 
 logger = logging.getLogger(__name__)
-
-
-@worker_process_init.connect
-def init_child_event_loop(**kwargs: Any) -> None:
-    """Initialize a new event loop for each worker process."""
-    logger.debug("Initializing new event loop for worker process")
-    celery.loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(celery.loop)
 
 
 @celery.task
