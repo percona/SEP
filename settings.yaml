@@ -3,20 +3,39 @@ default:
     - "localhost"
     - "127.0.0.1"
   AUTH_USER_MODEL: app.models.CasdoorUser
+  ALLOW_CONCURRENT_SESSIONS: false
+  SECRET_KEY: ""  # Auto-generated if empty
+  LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  SSL_CAFILE: null
+  BASE_URL: null
+  BACKEND_CORS_ORIGINS:
+    - http://localhost:8000
+    - http://127.0.0.1:8000
   CASDOOR:
     ENDPOINT: http://localhost:9999
     FRONT_ENDPOINT: //:9999
     ALLOWED_ISSUERS:
       - http://localhost:9999
       - http://127.0.0.1:9999
-  BACKEND_CORS_ORIGINS:
-    - http://localhost:8000
-    - http://127.0.0.1:8000
+    CERTIFICATE_PATH: null  # Path to JWT key certificate
+    APPLICATION_NAME: sep-app
+    ORGANIZATION_NAME: built-in
   SEP:
+    UVICORN_HOST: "127.0.0.1"
+    UVICORN_PORT: 8000
+    SSL_KEYFILE: null
+    SSL_CERTFILE: null
+    PROXY_HEADERS: false
+    TEMPLATES_DIR: templates
+    STATIC_DIR: static
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:
       COOKIE_NAME: casdoorToken
+      SECURE: false
+      HTTP_ONLY: true
+      SAME_SITE: lax
+      MAX_AGE: 3600
     PLUGINS:
       - NAME: Schema Change
         MODULE_NAME: alters
@@ -42,9 +61,59 @@ default:
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo
         CSS_CLASS: backup_mongo
+    DATABASE:
+      ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
+      USER: null
+      PASSWORD: null
+      HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
+      PORT: null
+      NAME: sep.db
+    SYNCERS:
+      - SYNCER: PMMSyncer
+        PMM:
+          ENDPOINT: https://127.0.0.1:8443
+          VERIFY_SSL: true
+      - SYNCER: MySQLSyncer
+        IGNORE_SCHEMAS:
+          - sys
+          - performance_schema
+          - mysql
+          - information_schema
+    SYNC_REFRESH_TIME: 5  # Browser refresh interval during sync (seconds)
+    PMM_FRONTEND: null
+  INVENTORY:
+    SSL_KEYFILE: null
+    SSL_CERTFILE: null
+    DATABASE:
+      ENGINE: sqlite
+      USER: null
+      PASSWORD: null
+      HOST: ""  # Empty string for SQLite to avoid URL construction issues
+      PORT: null
+      NAME: inventory.db
   TASKS:
+    SSL_KEYFILE: null
+    SSL_CERTFILE: null
+    DATABASE:
+      ENGINE: sqlite
+      USER: null
+      PASSWORD: null
+      HOST: ""  # Empty string for SQLite to avoid URL construction issues
+      PORT: null
+      NAME: tasks.db
+    SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
+      SECURE: false
+      VERIFY_SSL: true
+      SSL_KEYFILE: null
+      SSL_CERTFILE: null
+      SSL_CAFILE: null
+      TIMEOUT: 10  # Request timeout in seconds
+      MINIFY_PAYLOAD: true  # Minify payloads before dispatch
+      LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
+    ANONYMIZER:
+      DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
 
 development:
   SEP:
