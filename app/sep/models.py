@@ -15,31 +15,20 @@
 
 """Define models for the SEP app."""
 
-import hashlib
 from enum import auto, IntEnum, StrEnum
-from os import PathLike
-from pathlib import Path
-from typing import Any, Self
+from typing import Self
 
-import aiofiles
-import yaml
-from aiofiles.ospath import getsize
 from pydantic import (
-    computed_field,
     model_validator,
-    PositiveInt,
     UUID4,
 )
-from sqlalchemy import Column, Index, JSON
+from sqlalchemy import Column, Index
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
-from app.core.db import BaseSQLModel
-from app.core.db.models import BaseUUIDSQLModel, DateTimeWithTimezone
-from app.core.utils import utc_now
-from app.core.utils.fields import RequiredStr, UTCDatetime
-from app.sep.config import sep_settings
+from app.core.db.models import BaseUUIDSQLModel
+from app.core.utils.fields import RequiredStr
 
 
 class SyncInventoryEntityTypeEnum(IntEnum):
@@ -242,142 +231,3 @@ class SyncItemWrite(SyncItemBase):
         instance.
     :type sync_instance_id: UUID4
     """
-
-
-class Snippet(BaseSQLModel, table=True):
-    """Represent a support snippet stored in the database.
-
-    :param filename: The snippet filename. Must be unique.
-    :type filename: str
-    :param md5_digest: The MD5 hash digest of the snippet file.
-    :type md5_digest: str
-    :param approved_at: The approval time for the snippet, or None if the snippet is not
-        approved.
-    :type approved_at: UTCDatetime | None
-    :param reason: The reason for the approval or disapproval of the snippet, if any.
-        Defaults to "New snippet".
-    :type reason: str
-    :param meta: Additional metadata about the snippet, such as title, description,
-        parameters, etc.
-    :type meta: dict[str, Any]
-    """
-
-    filename: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
-    size: PositiveInt
-    md5_digest: str = SQLField(min_length=32, max_length=32)
-    approved_at: UTCDatetime | None = SQLField(
-        sa_type=DateTimeWithTimezone,
-        default=None,
-        index=True,
-    )
-    reason: str = "New snippet"
-    meta: dict[str, Any] = SQLField(
-        sa_column=Column(JSON, nullable=False),
-        default_factory=dict,
-    )
-
-    def __repr__(self) -> str:
-        return f"'{self.filename}' ({self.md5_digest})"
-
-    def __str__(self) -> str:
-        return self.filename
-
-    def __hash__(self) -> int:
-        return hash((self.filename, self.md5_digest))
-
-    def __fspath__(self) -> str:
-        return str(sep_settings.SNIPPETS.SNIPPETS_DIR / self.filename)
-
-    @computed_field
-    @property
-    def is_approved(self) -> bool:
-        """Determine whether the snippet has been approved.
-
-        :return: True if the snippet is approved (i.e. approved_at is not None), else
-            False.
-        :rtype: bool
-        """
-        return self.approved_at is not None
-
-    @staticmethod
-    async def get_meta_by_path(path: PathLike) -> dict[str, Any]:
-        """Extract metadata from a snippet file.
-
-        This method reads the first few lines of the file and extracts metadata
-        according to the specified patterns. It returns a dictionary with the
-        extracted metadata.
-
-        :param path: The path to the snippet file.
-        :type path: PathLike
-        :return: A dictionary containing the extracted metadata.
-        :rtype: dict[str, Any]
-        """
-        try:
-            async with aiofiles.open(path) as f:
-                line = await f.readline()
-                front_matter_lines = None
-                while not sep_settings.SNIPPETS.META.STOP_SEARCH_PATTERN.match(line):
-                    match = sep_settings.SNIPPETS.META.LINE_PATTERN.match(line)
-                    if match:
-                        content = match.groupdict().get("line", match.group(0))
-                        if content == sep_settings.SNIPPETS.META.DELIMITER:
-                            if front_matter_lines is not None:
-                                break
-                            front_matter_lines = []
-                        elif front_matter_lines is not None:
-                            front_matter_lines.append(content)
-                    line = await f.readline()
-            return (
-                yaml.safe_load("\n".join(front_matter_lines))
-                if front_matter_lines
-                else {}
-            )
-        except UnicodeDecodeError:
-            return {}
-
-    @classmethod
-    async def from_path(cls, path: PathLike) -> Self:
-        """Create a new Snippet instance from a file path.
-
-        This method computes the MD5 hash digest of the file at the specified path and
-        instantiates a new Snippet with the filename and computed MD5 hash.
-
-        :param path: A path-like object pointing to the snippet file.
-        :type path: PathLike
-        :return: A new instance of Snippet with the corresponding filename and
-            md5_digest.
-        :rtype: Snippet
-        """
-        path = sep_settings.SNIPPETS.SNIPPETS_DIR / Path(path)
-        file_hash = hashlib.md5(usedforsecurity=False)
-        chunk_size = 8192
-        async with aiofiles.open(path, "rb") as f:
-            while chunk := await f.read(chunk_size):
-                file_hash.update(chunk)
-        return cls(
-            filename=path.name,
-            md5_digest=file_hash.hexdigest(),
-            size=await getsize(path),
-        )
-
-    def approve(self, reason: str) -> None:
-        """Mark the snippet as approved.
-
-        Set the snippet's approved_at to the current time and change the reason.
-
-        :param reason: The reason for the approval of the snippet.
-        :type reason: str
-        """
-        self.approved_at = utc_now()
-        self.reason = reason
-
-    def remove_approval(self, reason: str) -> None:
-        """Mark the snippet as unapproved.
-
-        Set the snippet's approved_at to None and change the reason.
-
-        :param reason: The reason for the approval removal of the snippet.
-        :type reason: str
-        """
-        self.approved_at = None
-        self.reason = reason

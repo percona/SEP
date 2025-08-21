@@ -24,12 +24,12 @@ from multiprocessing import Process
 from fastapi import FastAPI
 
 from app.api.main import api_router
+from app.celery import celery as celery_app
 from app.core.config import create_app, settings
 from app.inventory.main import inventory_app
-from app.sep.celery import init_periodic_tasks_db
 from app.sep.config import sep_settings
+from app.sep.db.seed import init_sep_db
 from app.sep.main import sep_app
-from app.tasks.celery import celery as celery_app
 from app.tasks.main import tasks_app, tasks_lifespan
 
 
@@ -46,7 +46,7 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
-    await init_periodic_tasks_db()
+    await init_sep_db()
     async with tasks_lifespan(app):
         yield
 
@@ -66,7 +66,7 @@ app.mount("/", sep_app)
 def start_celery_worker() -> None:
     """Start the Celery worker process."""
     worker = celery_app.Worker(
-        include=["app.tasks.celery"],
+        include=["app.tasks.celery", "app.sep.celery"],
     )
     worker.start()
 

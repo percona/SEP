@@ -3,7 +3,7 @@
    data-snippet-filename="{{ snippet.filename }}"
    download>download</a>
 <form class="downloadSnippetForm">
-    <button title="Download snippet" class="icons">download</button>
+    <button title="Download snippet" class="material-symbols-outlined">download</button>
 </form>
 {% if user.is_admin -%}
     {%- if snippet.is_approved -%}
@@ -24,6 +24,6 @@
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
         <button {% if download_before_approval %}disabled title="Please download and inspect the full snippet before approving it" data-next-title="{{ submit_title }}"{% else %}title="{{ submit_title }}"{% endif %}
                 type="submit"
-                class="icons approval-button submitButton">{{ icon }}</button>
+                class="material-symbols-outlined approval-button submitButton">{{ icon }}</button>
     </form>
 {%- endif %}

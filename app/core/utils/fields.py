@@ -47,7 +47,7 @@ from app.core.utils.imports import (
     validate_attribute_is_importable,
     validate_module_is_importable,
 )
-from app.core.utils.list import remove_duplicates
+from app.core.utils.iterators import unique_everseen
 from app.core.utils.path import resolve_relative_path
 
 E = TypeVar("E", bound=Enum)
@@ -423,6 +423,9 @@ This annotated type validates the string as a relative path and ensures it is re
 as a string.
 """
 
+FilePathLike = Annotated[FilePath, BeforeValidator(lambda v: Path(v))]
+"""Define a :class:`FilePath` that accepts any :class:`os.PathLike` object as input."""
+
 DatabaseUrl = database_url_normalized_scheme_field_factory(DatabaseEngine)
 """Define a normalized synchronous database URL.
 
@@ -504,11 +507,20 @@ UTCDatetime = Annotated[datetime, AfterValidator(make_datetime_utc)]
 This annotated type ensures that the `datetime` object is converted to UTC timezone.
 """
 
-UniqueList = Annotated[list[T], AfterValidator(remove_duplicates)]
+UniqueList = Annotated[list[T], AfterValidator(unique_everseen), AfterValidator(list)]
 """A list subclass that ensures all elements are unique.
 
 This class can be used with type parameters (e.g., `UniqueList[int]`) to create
 a list type where duplicates are automatically removed.
+"""
+
+UniqueTuple = Annotated[
+    tuple[T, ...], AfterValidator(unique_everseen), AfterValidator(tuple)
+]
+"""A tuple subclass that ensures all elements are unique.
+
+This class can be used with type parameters (e.g., `UniqueTuple[int]`) to create
+a tuple type where duplicates are automatically removed.
 """
 
 LowercaseStr = Annotated[str, StringConstraints(to_lower=True)]

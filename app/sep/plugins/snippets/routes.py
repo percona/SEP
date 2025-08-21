@@ -1,23 +1,27 @@
 """Define routes for the Support Snippets plugin."""
 
 import logging
-from os import SEEK_END
 
-import aiofiles
 from fastapi import APIRouter, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.auth.exceptions import HTTPForbiddenException
+from app.sep.celery import update_snippets
 from app.sep.config import sep_settings
-from app.sep.crud import SnippetManager
 from app.sep.deps import (
     AdminUser,
     DefaultContext,
+    ExecutorHosts,
     IsAuthenticated,
     SessionDep,
+    TaskAPI,
 )
 from app.sep.middleware import messages
-from app.sep.models import Snippet
 from app.sep.plugins.snippets.deps import ApprovedSnippet, SnippetDep, UnapprovedSnippet
+from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.models import Snippet
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,6 +36,7 @@ async def snippets_index(
 ) -> HTMLResponse:
     """Homepage of snippets plugin."""
     context["snippets"] = await SnippetManager.list(session)
+    context["enable_snippets_refresh"] = snippets_settings.ENABLE_MANUAL_SYNC
     return templates.TemplateResponse(
         request=request,
         name="snippets/index.html",
@@ -45,24 +50,28 @@ async def snippets_index(
 async def snippets_detail(
     request: Request,
     context: DefaultContext,
+    executor_hosts: ExecutorHosts,
     snippet: SnippetDep,
+    tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve and display information about a snippet."""
+    context |= {
+        "snippet": snippet,
+        "executor_hosts": list(executor_hosts.values()),
+        "history_tasks": await tasks_api.get(
+            "/exec-artifact/history/", params={"snippet_filename": snippet.filename}
+        ),
+        "running_tasks": await tasks_api.get(
+            "/exec-artifact/history/",
+            params={
+                "snippet_filename": snippet.filename,
+                "status": TaskHistoryStatusEnum.RUNNING,
+            },
+        ),
+    }
     context["snippet"] = snippet
-    context["snippet_size"] = await snippet.get_size()
-    max_lines = 500
-    max_chars = 10000
     try:
-        async with aiofiles.open(snippet) as f:
-            code = await f.readline()
-            line_number = 1
-            while len(code) < max_chars and line_number < max_lines:
-                code += await f.readline()
-                line_number += 1
-            context["snippet_code"] = code[:max_chars]
-            context["snippet_code_is_sliced"] = code != context[
-                "snippet_code"
-            ] or await f.tell() < await f.seek(0, SEEK_END)
+        context["snippet_preview"] = await snippet.get_preview()
     except UnicodeDecodeError:
         logger.debug("Could not decode snippet code", exc_info=True)
     return templates.TemplateResponse(
@@ -88,7 +97,7 @@ async def snippets_approve(
     request: Request, user: AdminUser, snippet: UnapprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
     """Approve a snippet."""
-    snippet.approve(f"Approved by {user.username}")
+    snippet.approve(f"Approved by {user.username}", str(user.id))
     await SnippetManager.save(session, snippet)
     return _get_snippet_approval_redirect(request, user, snippet, "Snippet approved")
 
@@ -98,8 +107,21 @@ async def snippets_remove_approval(
     request: Request, user: AdminUser, snippet: ApprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
     """Remove the approval of a snippet."""
-    snippet.remove_approval(f"Approval removed by {user.username}")
+    snippet.remove_approval(f"Approval removed by {user.username}", str(user.id))
     await SnippetManager.save(session, snippet)
     return _get_snippet_approval_redirect(
         request, user, snippet, "Snippet's approval removed"
+    )
+
+
+@router.post("/refresh")
+async def snippets_refresh(request: Request, user: AdminUser) -> RedirectResponse:
+    """Refresh the snippets."""
+    if not snippets_settings.ENABLE_MANUAL_SYNC:
+        raise HTTPForbiddenException
+    await update_snippets()
+    messages.success(request, "Snippets refreshed")
+    logger.info("Snippets refreshed by %s", user.username)
+    return RedirectResponse(
+        request.url_for("snippets_index"), status_code=status.HTTP_303_SEE_OTHER
     )

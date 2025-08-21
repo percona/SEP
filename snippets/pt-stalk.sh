@@ -35,24 +35,25 @@
 #    description: Sleep time between iterations
 #    default: 30
 #  - name: daemon
-#    type: int
+#    type: bool
 #    label: Run pt-stalk in daemon mode
 #    description: Run pt-stalk in daemon mode
-#    default: 0
 #  - name: system-only
-#    type: int
+#    type: bool
 #    label: Only operating system related captures
 #    description: Trigger only operating system related captures, ignoring all others
 #  - name: action
 #    type: str
-#    label: start or stop.
+#    label: Action
 #    description: Start or stop pt-stalk. Compresses data when stopped.
 #    default: start
+#    choices:
+#      - start
+#      - stop
 #  - name: help
-#    type: int
+#    type: bool
 #    label: Show help message
 #    description: Show help message
-#    default: 0
 # ---
 
 # Usage: ./pt-stalk.sh [--defaults-file=path]  start|stop [-- other args...]

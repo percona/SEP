@@ -15,15 +15,13 @@
 #    description: Destination for the summaries
 #    default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 #  - name: save-samples
-#    type: int
+#    type: bool
 #    label: Save samples
 #    description: Save samples
-#    default: 0
 #  - name: help
-#    type: int
+#    type: bool
 #    label: Show help message
 #    description: Show help message
-#    default: 0
 # ---
 
 # Usage: ./pt-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]

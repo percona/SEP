@@ -14,7 +14,6 @@ default:
     - http://127.0.0.1:8000
   SEP:
     SNIPPETS:
-      SYNC_INTERVAL: 10 seconds
       FILTER_EXTENSIONS:
         - .sh
     OAUTH:
@@ -26,7 +25,7 @@ default:
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
-      - NAME: Support Snippets
+      - NAME: Snippet Manager
         MODULE_NAME: snippets
         URI_PATH: /snippets
         CSS_CLASS: snippets

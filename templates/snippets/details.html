@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 {% block title -%}
-    Snippets - {{ snippet.filename }}
+    Snippets - {{ snippet.title }}
 {%- endblock title %}
 {% block style %}
     <link rel="stylesheet"
           href="{{ url_for('static', path='/css/snippets-details.css') }}">
-    <style>{{ syntax_highlight_css(style="monokai") }}</style>
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    {% endif %}
+    {% if snippet_preview %}<style>{{ syntax_highlight_css(style="monokai") }}</style>{% endif %}
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
@@ -17,13 +20,24 @@
     </script>
     <script src="{{ url_for('static', path='/js/snippets.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history_tasks or running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
+    <h2>Snippet - {{ snippet.title }}</h2>
     <dl>
         <dt>Filename</dt>
         <dd>
             {{ snippet.filename }}
         </dd>
+        {% if snippet.description %}
+            <dt>Description</dt>
+            <dd>
+                {{ snippet.description }}
+            </dd>
+        {% endif %}
         <dt>Created at</dt>
         <dd class="relativeTime">
             {{ snippet.created_at|utc_isoformat }}
@@ -37,12 +51,12 @@
             <dd class="iconTextLine relativeTime"
                 data-relative-date-value="{{ snippet.approved_at|utc_isoformat }}"
                 data-relative-date-title-prefix="Approved ">
-                <span>Approved at {{ snippet.approved_at|utc_isoformat }}</span> <i class="icons unselectable" style="color: #8ACE00;">check_circle</i>
+                <span>Approved at {{ snippet.approved_at|utc_isoformat }}</span> <i class="material-symbols-outlined unselectable" style="color: #8ACE00">check_circle</i>
             </dd>
         {%- else -%}
-            {%- set download_before_approval = snippet_code_is_sliced or not snippet_code -%}
+            {%- set download_before_approval = snippet_preview.is_truncated or not snippet_preview.content -%}
             <dd class="iconTextLine">
-                <span>Not approved</span> <i class="icons unselectable" style="color: gray;">unpublished</i>
+                <span>Not approved</span> <i class="material-symbols-outlined unselectable" style="color: gray;">unpublished</i>
             </dd>
         {%- endif -%}
         <dt>Reason</dt>
@@ -53,19 +67,25 @@
     <section id="actions">
         {% include "snippets/partials/download-approve.html" %}
     </section>
+    {% if running_tasks %}
+        <section id="running-tasks">
+            <h2>Running</h2>
+            {% include "tasks/partials/running-tasks.html" %}
+        </section>
+    {% endif %}
     <section id="snippetPreview">
         <h3>
             Preview
-            {% if snippet_code_is_sliced %}
+            {% if snippet_preview and snippet_preview.is_truncated %}
                 <span title="File is too large to preview. Please download the snippet to inspect its full contents."
                       style="border-bottom: 1px dotted black">(partial)</span>
             {% endif %}
         </h3>
-        {% if snippet_code -%}
-            {{ snippet_code|syntax_highlight(style="monokai", linenos=True, wrapcode=True) |safe }}
-            {% if snippet_code_is_sliced -%}
+        {% if snippet_preview -%}
+            {{ snippet_preview.content|syntax_highlight(style="monokai", linenos=True, wrapcode=True) |safe }}
+            {% if snippet_preview.is_truncated -%}
                 <p class="iconTextLine">
-                    <i class="icons unselectable" style="color: #e0b731;">warning</i> <span>File is too large to preview. Please <a class="downloadSnippet"
+                    <i class="material-symbols-outlined unselectable" style="color: #e0b731">warning</i> <span>File is too large to preview. Please <a class="downloadSnippet"
     href="{{ url_for('snippets_files', path=snippet.filename) }}"
     data-snippet-filename="{{ snippet.filename }}"
     download>download the snippet</a> to inspect its full contents.</span>
@@ -78,4 +98,16 @@
     download>download the snippet</a> to inspect its contents.
         {%- endif -%}
     </section>
+    {% if snippet.is_approved -%}
+        <section>
+            <h3>Execute Snippet</h3>
+            {{ snippet.to_form(executor_hosts) | safe }}
+        </section>
+    {% endif -%}
+    {% if history_tasks %}
+        <section>
+            <h2>History</h2>
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
+    {% endif %}
 {% endblock main %}

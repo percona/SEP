@@ -1220,6 +1220,10 @@ button.list-item:focus-visible {
     content: "snippet_folder";
 }
 
+.list-item.atw .icon::before {
+    content: "support";
+}
+
 /*=============================================*/
 /* Foundations for the sidebar type of layout */
 /*=============================================*/

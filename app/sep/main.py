@@ -36,8 +36,8 @@ from app.core.config import create_app, default_lifespan, settings
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
-from app.sep.celery import init_periodic_tasks_db
 from app.sep.config import CsrfSettings, sep_settings
+from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -50,6 +50,7 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.sep.snippets.config import snippets_settings
 from app.sep.utils.static import AuthenticatedStaticFiles
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
-    await init_periodic_tasks_db()
+    await init_sep_db()
     async with default_lifespan(app):
         yield
 
@@ -118,7 +119,7 @@ if {
 if "snippets" in imported_plugins:
     sep_app.mount(
         "/static/snippets",
-        AuthenticatedStaticFiles(directory=sep_settings.SNIPPETS.SNIPPETS_DIR),
+        AuthenticatedStaticFiles(directory=snippets_settings.SNIPPETS_DIR),
         name="snippets_files",
     )
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")

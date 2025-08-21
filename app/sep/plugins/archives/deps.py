@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form, Request
+from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHosts,
     get_created_entity,
     get_task_by_name,
     get_tasks_context,
@@ -194,10 +195,10 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
 
 
 async def get_archives_index_context(
-    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
+    executor_hosts: ExecutorHosts,
 ) -> dict[str, Any]:
     """Assemble the context for the Archives plugin index view.
 
@@ -205,22 +206,22 @@ async def get_archives_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
-    :param request: The HTTP request object.
-    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Archives-specific information.
     :type context: DefaultContext
+    :param executor_hosts: The executor hosts for the Archives tasks.
+    :type executor_hosts: ExecutorHosts
     :return: An updated context dictionary containing Archives-related data.
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        request,
         inventory_api,
         tasks_api,
         get_archives_task_info,
+        executor_hosts,
         context,
         TaskOwner.ARCHIVER,
         alert_on_fail_default=True,

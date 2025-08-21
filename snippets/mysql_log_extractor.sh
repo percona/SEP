@@ -23,6 +23,7 @@
 #    type: str
 #    description: Where to send the output
 #    label: Output destination
+#    default: stdout
 #    choices:
 #      - value: stdout
 #        label: Print to the terminal (default)

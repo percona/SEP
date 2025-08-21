@@ -115,6 +115,12 @@ optional = true
 [tool.poetry.group.syncpostgresql.dependencies]
 psycopg2-binary = "^2.9.10"
 
+[tool.poetry.group.magic]
+optional = true
+
+[tool.poetry.group.magic.dependencies]
+python-magic = "^0.4.27"
+
 [tool.poetry.group.redis]
 optional = true
 
@@ -245,7 +251,7 @@ order-by-type = false
 ]
 "app/core/config.py" = ["ARG003"]
 "app/core/utils/fields.py" = ["TRY004"] # Pydantic validation code should raise ValueError
-"app/tasks/celery.py" = ["ARG001"]
+"celery.py" = ["ARG001"]
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 

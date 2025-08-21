@@ -15,7 +15,6 @@
 
 """Define SEP settings."""
 
-import re
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
@@ -34,9 +33,7 @@ from pydantic import (
     model_validator,
     ValidationError,
 )
-from sqlalchemy_celery_beat.models import Period
 
-from app.core.celery.models import IntervalSchedule
 from app.core.config import (
     BaseYamlAppSettings,
     settings,
@@ -47,13 +44,9 @@ from app.core.utils import (
     deep_dict_update,
     run_pydantic_type_validator,
     slugify,
-    validate_module_is_importable,
 )
 from app.core.utils.fields import (
-    FilenameExtension,
-    MimeType,
     RelativeDirectoryPath,
-    RequiredStr,
     StrHttpUrl,
     StrImportableAttribute,
     StrImportableModule,
@@ -221,68 +214,6 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
-class SnippetsMetaOptions(BaseModel):
-    """Metadata options for snippets.
-
-    :param LINE_PATTERN: Regular expression to match metadata lines in the snippet file.
-        Use a group named "line" to capture only a part of the line. Defaults to
-        `^# (?P<line>.+)$`.
-    :type LINE_PATTERN: re.Pattern[str]
-    :param DELIMITER: The delimiter indicating the start/end of metadata in a snippet.
-        Defaults to "---".
-    :type DELIMITER: RequiredStr
-    :param STOP_SEARCH_PATTERN: Regular expression to stop searching for metadata lines.
-        Defaults to `^[^#].+$`.
-    :type STOP_SEARCH_PATTERN: re.Pattern[str]
-    """
-
-    LINE_PATTERN: re.Pattern[str] = re.compile(r"^# (?P<line>.+)$")
-    DELIMITER: RequiredStr = "---"
-    STOP_SEARCH_PATTERN: re.Pattern[str] = re.compile(r"^[^#].+$")
-
-
-class SnippetsOptions(BaseModel):
-    """Define configuration options for support snippets.
-
-    :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
-        `Path("snippets")`.
-    :type SNIPPETS_DIR: RelativeDirectoryPath
-    :param FILTER_EXTENSIONS: A list of file extensions to filter files by in
-        `SNIPPETS_DIR`. If `None`, no filtering is applied. Defaults to `None`.
-    :type FILTER_EXTENSIONS: list[FilenameExtension] | None
-    :param FILTER_MIME_TYPES: A list of MIME types to filter files by in
-        `SNIPPETS_DIR`. If `None`, no filtering is applied. Defaults to `None`.
-    :type FILTER_MIME_TYPES: list[MimeType] | None
-    :param USE_MAGIC: Whether to use the `python-magic` package to determine file types.
-        Defaults to `False`. If `True`, the `python-magic` package must be installed.
-    :type USE_MAGIC: bool
-    :param SYNC_INTERVAL: The interval schedule for synchronizing snippets. Defaults to
-        every 60 seconds.
-    :type SYNC_INTERVAL: IntervalSchedule
-    :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
-    :type META: SnippetsMetaOptions
-    """
-
-    SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
-    META: SnippetsMetaOptions = SnippetsMetaOptions()
-    FILTER_EXTENSIONS: list[FilenameExtension] | None = None
-    FILTER_MIME_TYPES: list[MimeType] | None = None
-    USE_MAGIC: bool = False
-    SYNC_INTERVAL: IntervalSchedule = IntervalSchedule(every=60, period=Period.SECONDS)
-
-    @field_validator("USE_MAGIC")
-    @classmethod
-    def _validate_python_magic_is_installed(cls, v: bool) -> bool:  # noqa: FBT001
-        if v:
-            try:
-                validate_module_is_importable("magic")
-            except ImportError:
-                raise ValueError(
-                    "The 'python-magic' package is required for this feature."
-                ) from None
-        return v
-
-
 class SEPSettings(BaseYamlAppSettings):
     """Settings for SEP.
 
@@ -318,8 +249,6 @@ class SEPSettings(BaseYamlAppSettings):
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty dictionary.
     :type SYNCER_EXTRA_KWARGS: dict[str, Any]
-    :param SNIPPETS: Snippets configuration options.
-    :type SNIPPETS: SnippetsOptions
     :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
         synchronization. Defaults to 5 seconds.
     :type SYNC_REFRESH_TIME: int
@@ -342,7 +271,6 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
-    SNIPPETS: SnippetsOptions = SnippetsOptions()
     PMM_FRONTEND: StrHttpUrl | None = None
 
     @computed_field

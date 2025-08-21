@@ -13,18 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define database initialization and utility functions for SEP."""
+"""Define database engine initialization for the Tasks API."""
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.sep.config import sep_settings
+from app.tasks.config import tasks_settings
+from app.tasks.db.utils import json_deserialize
+
+__all__ = ["engine", "get_async_session_maker"]
 
 engine = create_async_engine(
-    sep_settings.DATABASE.URL,
+    tasks_settings.DATABASE.URL,
     echo=False,
     json_serializer=json_serializer,
+    json_deserializer=json_deserialize,
 )
 
 
@@ -35,6 +39,6 @@ def get_async_session_maker() -> async_sessionmaker:
     predefined engine configuration.
 
     :return: A new asynchronous session maker.
-    :rtype: sessionmaker
+    :rtype: async_sessionmaker
     """
     return get_async_session_maker_from_engine(engine)

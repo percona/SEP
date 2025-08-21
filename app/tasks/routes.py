@@ -30,6 +30,7 @@ from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
+from app.core.utils.fields import RequiredStr
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.celery import (
     celery,
@@ -227,6 +228,7 @@ async def get_task_history(
     session: SessionDep,
     task: str,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
+    snippet_filename: RequiredStr | None = None,
 ) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
@@ -235,6 +237,7 @@ async def get_task_history(
         task_name=task,
         status=task_status,
         select_related_task=True,
+        snippet_filename=snippet_filename,
     )
 
 

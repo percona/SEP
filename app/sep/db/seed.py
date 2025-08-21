@@ -13,22 +13,28 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.core.utils.async_run import async_run
-from app.core.utils.cache import ttl_cache
-from app.core.utils.date_time import make_datetime_utc, utc_now
-from app.core.utils.dict import (
-    deep_dict_update,
-    filter_dict,
-    remove_falsy_values_from_dict,
-    sort_dict,
-    transform_dict_keys,
+"""Define the database initial data for the SEP app."""
+
+from app.core.celery.utils import (
+    init_periodic_tasks_db,
+    SystemPeriodicTaskData,
+    SystemPeriodicTaskSchedule,
 )
-from app.core.utils.imports import (
-    import_var,
-    validate_attribute_is_importable,
-    validate_module_is_importable,
-)
-from app.core.utils.iterators import unique_everseen
-from app.core.utils.pydantic import run_pydantic_type_validator
-from app.core.utils.serialization import json_serializer
-from app.core.utils.strings import b64decode_str, b64encode_str, slugify, to_uppercase
+from app.sep.snippets.config import snippets_settings
+
+SYSTEM_PERIODIC_TASKS = [
+    SystemPeriodicTaskSchedule(
+        schedule=snippets_settings.SYNC_INTERVAL,
+        tasks=[
+            SystemPeriodicTaskData(
+                name="sep__sync_snippets",
+                task_name="app.sep.celery.sync_snippets",
+            ),
+        ],
+    )
+]
+
+
+async def init_sep_db() -> None:
+    """Initialize the SEP database with periodic tasks."""
+    await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "sep__")

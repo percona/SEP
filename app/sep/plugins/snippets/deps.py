@@ -6,10 +6,10 @@ from typing import Annotated
 from fastapi import Depends, Header, Request, status
 
 from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
-from app.sep.crud import SnippetManager
 from app.sep.deps import SessionDep
 from app.sep.middleware import messages
-from app.sep.models import Snippet
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.models import Snippet
 
 
 async def get_snippet(

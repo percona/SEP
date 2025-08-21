@@ -16,7 +16,7 @@
 """Define database operations."""
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -48,6 +48,7 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 Whereable = Select | DMLWhereBase
+ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
 T = TypeVar("T")
 B = TypeVar("B", bound=BaseSQLModel)
@@ -59,11 +60,15 @@ M = TypeVar("M", bound="BaseSQLModelManager")
 class BaseManager:
     """Manage database operations for a SQLAlchemy model.
 
-    :param Model: The SQLAlchemy class for which this manager handles operations.
-    :type Model: type[T]
+    :cvar Model: The SQLAlchemy class for which this manager handles operations.
+    :vartype Model: type[T]
+    :cvar ordering: An iterable of column expressions or string labels to order the
+        results by. If None, no ordering is applied.
+    :vartype ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None
     """
 
     Model: type[T]
+    ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None = None
 
     @classmethod
     def _construct_instance(cls, instance_create: P, **extra_fields: Any) -> T:
@@ -105,6 +110,8 @@ class BaseManager:
         **equal_filters: Any,
     ) -> W:
         query = select(cls.Model)
+        if cls.ordering:
+            query = query.order_by(*cls.ordering)
         return cls._filter_query(
             query,
             *whereclause,

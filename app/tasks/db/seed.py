@@ -13,92 +13,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define utilities for the tasks app."""
+"""Define the database initial data for the Tasks app."""
 
 import logging
 
-from sqlalchemy_celery_beat import PeriodicTask
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel import col
 
-from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManager
-from app.core.celery.db import (
-    get_async_session_maker as get_celery_beat_async_session_maker,
+from app.core.celery.models import IntervalSchedule
+from app.core.celery.utils import (
+    init_periodic_tasks_db,
+    SystemPeriodicTaskData,
+    SystemPeriodicTaskSchedule,
 )
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task
-from app.tasks.periodic.models import IntervalSchedule
 
 logger = logging.getLogger(__name__)
-
-GENERIC_NOMAD_BATCH_TEMPLATE = {
-    "ID": "generic-nomad-batch",
-    "Name": "generic-nomad-batch",
-    "Type": "batch",
-    "Datacenters": ["*"],
-    "Constraints": [
-        {
-            "LTarget": "${node.unique.name}",
-            "RTarget": "valid_node_required",
-            "Operand": "=",
-        },
-    ],
-    "Periodic": None,
-    "TaskGroups": [
-        {
-            "Name": "execution",
-            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
-            "PreventRescheduleOnLost": True,
-            "ReschedulePolicy": {"Attempts": 0},
-            "Tasks": [
-                {
-                    "Name": "generic-task",
-                    "Driver": "raw_exec",
-                    "User": "",
-                    "Config": {
-                        "args": [],
-                        "command": "",
-                    },
-                    "Meta": {},
-                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
-                    "Templates": [],
-                },
-            ],
-        },
-    ],
-}
-
-GENERIC_NOMAD_SYSBATCH_TEMPLATE = {
-    "ID": "generic-nomad-sysbatch",
-    "Name": "generic-nomad-sysbatch",
-    "Type": "sysbatch",
-    "Datacenters": ["*"],
-    "Periodic": None,
-    "TaskGroups": [
-        {
-            "Name": "execution",
-            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
-            "PreventRescheduleOnLost": True,
-            "ReschedulePolicy": {"Attempts": 0},
-            "Tasks": [
-                {
-                    "Name": "generic-task",
-                    "Driver": "raw_exec",
-                    "User": "",
-                    "Config": {
-                        "args": [],
-                        "command": "",
-                    },
-                    "Meta": {},
-                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
-                    "Templates": [],
-                },
-            ],
-        },
-    ],
-}
 
 NOMAD_RUN_COMMAND = {
     "ID": "run-command",
@@ -239,36 +172,95 @@ NOMAD_RUN_PYTHON = {
     ],
 }
 
-SYSTEM_TASKS = [
-    Task(
-        name="generic-nomad-batch",
-        data=GENERIC_NOMAD_BATCH_TEMPLATE,
-        is_template=True,
-        protected=True,
-    ),
-    Task(
-        name="generic-nomad-sysbatch",
-        data=GENERIC_NOMAD_SYSBATCH_TEMPLATE,
-        is_template=True,
-        protected=True,
-    ),
-    Task(name="run-command", data=NOMAD_RUN_COMMAND, protected=True),
-    Task(name="run-python", data=NOMAD_RUN_PYTHON, is_template=False, protected=True),
-]
-
-PERIODIC_TASKS = {
-    IntervalSchedule(every=30, period=Period.SECONDS): [
-        (
-            "app.tasks.celery.sync_running_tasks",
-            "sync_running_tasks",
-            {"expire_seconds": 30},
-        ),
+NOMAD_EXEC_ARTIFACT = {
+    "ID": "exec-artifact",
+    "Name": "exec-artifact",
+    "Type": "batch",
+    "Datacenters": ["dc1"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": [
+            "target",
+            "snippet_source",
+            "interpreter",
+            "access_token",
+            "md5_checksum",
+        ],
+        "MetaOptional": ["args"],
+    },
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "Tasks": [
+                {
+                    "Name": "run-script",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "xargs",
+                        "args": [
+                            "--arg-file",
+                            "args_file",
+                            "${NOMAD_META_interpreter}",
+                            "${NOMAD_TASK_DIR}/script",
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_args" }}',
+                            "DestPath": "args_file",
+                        },
+                    ],
+                    "Artifacts": [
+                        {
+                            "GetterSource": "${NOMAD_META_snippet_source}",
+                            "GetterMode": "file",
+                            "RelativeDest": "local/script",
+                            "GetterHeaders": {
+                                "Authorization": "Bearer ${NOMAD_META_access_token}"
+                            },
+                            "GetterOptions": {
+                                "checksum": "md5:${NOMAD_META_md5_checksum}",
+                            },
+                        }
+                    ],
+                },
+            ],
+        },
     ],
 }
 
+SYSTEM_TASKS = [
+    Task(name="run-command", data=NOMAD_RUN_COMMAND, protected=True),
+    Task(name="run-python", data=NOMAD_RUN_PYTHON, protected=True),
+    Task(name="exec-artifact", data=NOMAD_EXEC_ARTIFACT, protected=True),
+]
+
+SYSTEM_PERIODIC_TASKS = [
+    SystemPeriodicTaskSchedule(
+        schedule=IntervalSchedule(every=30, period=Period.SECONDS),
+        tasks=[
+            SystemPeriodicTaskData(
+                name="tasks__sync_running_tasks",
+                task_name="app.tasks.celery.sync_running_tasks",
+                extra_kwargs={"expire_seconds": 30},
+            ),
+        ],
+    )
+]
+
 
 async def init_tasks_db() -> None:
-    """Initialize the database with generic Nomad task templates."""
+    """Initialize the Tasks database with system tasks and periodic tasks."""
     async_session = get_async_session_maker()
     async with async_session() as session:
         system_tasks_names = []
@@ -307,42 +299,4 @@ async def init_tasks_db() -> None:
                 "Marked %s unused system tasks with attached runs as deleted.",
                 update_delete_result.rowcount,
             )
-
-
-async def init_periodic_tasks_db() -> None:
-    """Initialize the database with required periodic tasks."""
-    celery_beat_async_session = get_celery_beat_async_session_maker()
-    system_task_names = [
-        "celery.backend_cleanup",
-        "app.tasks.celery.execute_task_by_name",
-    ]
-    async with celery_beat_async_session() as celery_beat_session:
-        for schedule, tasks in PERIODIC_TASKS.items():
-            created_schedule, _ = await IntervalScheduleManager.get_or_create(
-                celery_beat_session, schedule
-            )
-            for task_name, periodic_task_name, extra_kwargs in tasks:
-                system_task_names.append(task_name)
-                if (
-                    periodic_task := (
-                        await BasePeriodicTaskManager.first(
-                            celery_beat_session, task=task_name
-                        )
-                    )
-                ) is None:
-                    periodic_task = PeriodicTask(
-                        name=periodic_task_name,
-                        task=task_name,
-                        schedule_model=created_schedule,
-                        **extra_kwargs,
-                    )
-                else:
-                    periodic_task.schedule_model = created_schedule
-                    periodic_task.name = periodic_task_name
-                    for key, value in extra_kwargs.items():
-                        setattr(periodic_task, key, value)
-                celery_beat_session.add(periodic_task)
-        await BasePeriodicTaskManager.delete_where(
-            celery_beat_session, PeriodicTask.task.not_in(system_task_names)
-        )
-        await celery_beat_session.commit()
+    await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "tasks__")

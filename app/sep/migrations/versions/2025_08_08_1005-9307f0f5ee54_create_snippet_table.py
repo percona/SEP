@@ -1,8 +1,8 @@
 """Create Snippet table
 
-Revision ID: 3b03b79ab59a
+Revision ID: 9307f0f5ee54
 Revises: eeac2926bbea
-Create Date: 2025-03-19 22:51:06.590377
+Create Date: 2025-08-08 10:05:58.756958
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '3b03b79ab59a'
+revision: str = '9307f0f5ee54'
 down_revision: Union[str, None] = 'eeac2926bbea'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -29,6 +29,7 @@ def upgrade() -> None:
     sa.Column('size', sa.Integer(), nullable=False),
     sa.Column('md5_digest', sqlmodel.sql.sqltypes.AutoString(length=32), nullable=False),
     sa.Column('approved_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('updated_by', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('reason', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('meta', sa.JSON(), nullable=False),
     sa.PrimaryKeyConstraint('id')

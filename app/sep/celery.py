@@ -1,80 +1,71 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define Celery tasks and utilities for the SEP app."""
 
+import asyncio
 import logging
-from pathlib import Path
+from typing import Any
 
-from asgiref.sync import async_to_sync
-from sqlalchemy_celery_beat import PeriodicTask
+from celery.signals import worker_process_init
 from sqlmodel import col
 
-from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManager
-from app.core.celery.db import (
-    get_async_session_maker as get_celery_beat_async_session_maker,
-)
-from app.core.celery.utils import create_celery
-from app.sep.config import sep_settings
-from app.sep.crud import SnippetManager
+from app.celery import celery
 from app.sep.db import get_async_session_maker
-from app.sep.models import Snippet
+from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.models import Snippet
+from app.sep.snippets.utils import guess_mime_type
 
 logger = logging.getLogger(__name__)
-celery = create_celery("sep")
 
 
-if sep_settings.SNIPPETS.USE_MAGIC:
-    import magic
-
-    def guess_mime_type(file_path: Path) -> str | None:
-        """Guess the MIME type of a file using the `magic` library.
-
-        :param file_path: The path to the file.
-        :type file_path: Path
-        :return: The MIME type of the file, or None if it cannot be determined.
-        :rtype: str | None
-        """
-        return magic.from_file(file_path, mime=True) or None
-else:
-    import mimetypes
-
-    def guess_mime_type(file_path: Path) -> str | None:
-        """Guess the MIME type of a file using the file extension.
-
-        :param file_path: The path to the file.
-        :type file_path: Path
-        :return: The MIME type of the file, or None if it cannot be determined.
-        :rtype: str | None
-        """
-        return mimetypes.types_map.get(file_path.suffix)
+@worker_process_init.connect
+def init_child_event_loop(**kwargs: Any) -> None:
+    """Initialize a new event loop for each worker process."""
+    logger.debug("Initializing new event loop for worker process")
+    celery.loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(celery.loop)
 
 
 @celery.task
 def sync_snippets() -> None:
     """Define Celery task to sync snippets from `sep_setting.SNIPPETS.SNIPPETS_DIR`."""
-    async_to_sync(update_snippets)()
+    celery.loop.run_until_complete(update_snippets())
 
 
 async def update_snippets() -> None:
     """Search for new/updated/deleted snippets and creates/updates/deletes them."""
-    async_session = get_async_session_maker(create_new_engine=True)
+    async_session = get_async_session_maker()
     async with async_session() as session:
         updated_snippets = []
         processed_filenames = []
         skipped_filenames = []
         created_count = 0
-        for snippet_path in sep_settings.SNIPPETS.SNIPPETS_DIR.rglob("*"):
+        for snippet_path in snippets_settings.SNIPPETS_DIR.rglob("*"):
             if snippet_path.is_file():
                 snippet_name = str(
-                    snippet_path.relative_to(sep_settings.SNIPPETS.SNIPPETS_DIR)
+                    snippet_path.relative_to(snippets_settings.SNIPPETS_DIR)
                 )
                 processed_filenames.append(snippet_name)
                 if (
-                    (snippets_filter := sep_settings.SNIPPETS.FILTER_EXTENSIONS)
-                    is not None
+                    (snippets_filter := snippets_settings.FILTER_EXTENSIONS) is not None
                     and (snippet_filter_value := snippet_path.suffix.lower())
                     not in snippets_filter
                 ) or (
-                    (snippets_filter := sep_settings.SNIPPETS.FILTER_MIME_TYPES)
-                    is not None
+                    (snippets_filter := snippets_settings.FILTER_MIME_TYPES) is not None
                     and (snippet_filter_value := guess_mime_type(snippet_path))
                     not in snippets_filter
                 ):
@@ -98,14 +89,12 @@ async def update_snippets() -> None:
                     created_count += 1
                 elif created_snippet.md5_digest != snippet.md5_digest:
                     logger.debug(
-                        "Snippet %s has changed: %s > %s",
+                        "Snippet %s has changed: %s [before] != %s [now]",
                         created_snippet.filename,
                         created_snippet.md5_digest,
                         snippet.md5_digest,
                     )
-                    created_snippet.sqlmodel_update(snippet)
-                    created_snippet.meta = await Snippet.get_meta_by_path(snippet_path)
-                    created_snippet.remove_approval("File contents have changed")
+                    await created_snippet.update_from_snippet(snippet)
                     updated_snippets.append(created_snippet)
         if created_count:
             logger.info("Added %s new snippets", created_count)
@@ -131,28 +120,3 @@ async def update_snippets() -> None:
                 "Deleted %s non-approved snippets that don't match the defined filters",
                 delete_result.rowcount,
             )
-
-
-async def init_periodic_tasks_db() -> None:
-    """Initialize the database with required periodic tasks."""
-    celery_beat_async_session = get_celery_beat_async_session_maker()
-    periodic_task_name = "sync_snippets"
-    async with celery_beat_async_session() as celery_beat_session:
-        schedule, _ = await IntervalScheduleManager.get_or_create(
-            celery_beat_session, sep_settings.SNIPPETS.SYNC_INTERVAL
-        )
-        periodic_task = await BasePeriodicTaskManager.first(
-            celery_beat_session, name=periodic_task_name
-        )
-        if periodic_task and periodic_task.schedule_model == schedule:
-            return
-        if periodic_task is None:
-            periodic_task = PeriodicTask(
-                name=periodic_task_name,
-                task="app.sep.celery.sync_snippets",
-                schedule_model=schedule,
-            )
-        if periodic_task.schedule_model != schedule:
-            periodic_task.schedule_model = schedule
-        celery_beat_session.add(periodic_task)
-        await celery_beat_session.commit()
