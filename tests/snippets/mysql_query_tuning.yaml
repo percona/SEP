@@ -74,7 +74,7 @@ tests:
       dirs:
         - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
       files:
-        - 
+        -
           file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
           expected: "default_queries.sql"
           isre: false
@@ -103,7 +103,7 @@ tests:
       dirs:
         - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
       files:
-        - 
+        -
           file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
           expected: "database_queries.sql"
           isre: false
@@ -131,7 +131,7 @@ tests:
       dirs:
         - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
       files:
-        - 
+        -
           file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
           expected: "profile_select.sql"
           isre: false
@@ -161,7 +161,7 @@ tests:
       dirs:
         - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
       files:
-        - 
+        -
           file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
           expected: "profile_update.sql"
           isre: false
@@ -191,7 +191,7 @@ tests:
       dirs:
         - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
       files:
-        - 
+        -
           file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
           expected: "profile_cte.sql"
           isre: false
@@ -220,7 +220,7 @@ tests:
       dirs:
         - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
       files:
-        - 
+        -
           file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
           expected: "profile_cte_force.sql"
           isre: false
@@ -275,7 +275,7 @@ tests:
       dirs:
         - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
       files:
-        - 
+        -
           file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
           expected: "default_queries.sql"
           isre: false
@@ -303,7 +303,7 @@ tests:
       dirs:
         - "{{hostname}}"
       files:
-        - 
+        -
           file: "{{hostname}}/queries.sql"
           expected: "default_queries.sql"
           isre: false

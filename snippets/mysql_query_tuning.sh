@@ -85,7 +85,7 @@ Command line options:
    -p, --profile    Profile the query.
                     Default: 0
    -F, --force      Force profiling of CTE expressions.
-                    Default: 0                    
+                    Default: 0
    -e, --execute    Execute diagnostic queries.
                     Default: 0
    -h, --help       Show this help message
