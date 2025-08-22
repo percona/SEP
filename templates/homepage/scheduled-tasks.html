@@ -20,7 +20,7 @@
             {% if periodic_tasks %}
                 {% for periodic_task in periodic_tasks %}
                     {% set task_name = periodic_task.task %}
-                    <tr {% if not periodic_task.enabled %}class="disabled-row"{% endif %}>
+                    <tr>
                         <td>{{ task_name }}</td>
                         <td>{{ periodic_task.owner }}</td>
                         {% if periodic_task.crontab %}
