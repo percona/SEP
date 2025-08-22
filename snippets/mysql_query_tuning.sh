@@ -220,6 +220,10 @@ echo "SHOW WARNINGS \G" >> "${QUERY_FILE}"
 echo "EXPLAIN FORMAT=JSON ${QUERY}\G" >> "${QUERY_FILE}"
 echo "SHOW WARNINGS \G" >> "${QUERY_FILE}"
 
+# TODO: Enable this when everyone is on MySQL 8.0.18+
+#echo "EXPLAIN FORMAT=TREE ${QUERY}\G" >> "${QUERY_FILE}"
+#echo "SHOW WARNINGS \G" >> "${QUERY_FILE}"
+
 # 7. If query is SELECT, write unsafe statements to the query file
 if [[ $PROFILE -eq 1 ]]; then
    if [[ $IS_SELECT -eq 1 ]] || [[ $IS_CTE -eq 1 && $FORCE -eq 1 ]]; then
@@ -239,6 +243,14 @@ if [[ $PROFILE -eq 1 ]]; then
       echo "SET optimizer_trace='enabled=off';" >> "${QUERY_FILE}"
       echo "SHOW PROFILES;" >> "${QUERY_FILE}"
       echo "SHOW PROFILE FOR QUERY 2;" >> "${QUERY_FILE}"
+   else
+      if [[ $IS_CTE -eq 1 && $FORCE -eq 0 ]]; then
+         echo "Warning: The query is a CTE expression. Profiling of CTE expressions is only allowed if option --force is set. Skipping profiling." >&2
+      elif [[ $IS_DML -eq 1 ]]; then
+         echo "Warning: The query is a DML statement. Profiling of DML statements is not allowed. Skipping profiling." >&2
+      else
+         echo "Warning: The query is not a SELECT statement. Profiling is only allowed for SELECT statements. Skipping profiling." >&2
+      fi
    fi
 fi
 
