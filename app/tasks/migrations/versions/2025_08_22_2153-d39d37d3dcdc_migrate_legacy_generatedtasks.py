@@ -5,7 +5,7 @@ Revises: 8f61364b2c2c
 Create Date: 2025-08-22 21:53:11.356954
 
 """
-
+import logging
 import re
 import shlex
 from typing import Sequence, Union
@@ -146,6 +146,7 @@ def upgrade() -> None:
                 else:
                     continue
             except:
+                logging.exception("Failed to upgrade task id=%s", id_)
                 continue
             conn.execute(
                 task_table.update()
@@ -234,6 +235,7 @@ def downgrade() -> None:
                 else:
                     continue
             except:
+                logging.exception("Failed to downgrade task id=%s", id_)
                 continue
             conn.execute(
                 task_table.update()
