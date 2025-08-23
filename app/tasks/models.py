@@ -105,14 +105,14 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     :vartype CHECKSUMS: str
     """
 
-    ANY = "*"
-    ALTERS = auto()
-    ARCHIVER = auto()
-    BACKUPS = auto()
-    RESTORES = auto()
-    CHECKSUMS = auto()
-    BACKUP_MONGO = auto()
-    RESTORE_MONGO = auto()
+    ANY = "ANY"
+    ALTERS = "ALTERS"
+    ARCHIVER = "ARCHIVER"
+    BACKUPS = "BACKUPS"
+    RESTORES = "RESTORES"
+    CHECKSUMS = "CHECKSUMS"
+    BACKUP_MONGO = "BACKUP_MONGO"
+    RESTORE_MONGO = "RESTORE_MONGO"
 
 
 class TaskExecutionRequest(BaseModel):
@@ -322,7 +322,7 @@ class TaskBase(SQLModel):
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-    :type owner: TaskOwner
+    :type owner: str
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
@@ -341,7 +341,7 @@ class TaskBase(SQLModel):
         default=TaskBackendEnum.NOMAD,
         sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
     )
-    owner: TaskOwner = SQLField(
+    owner: str = SQLField(
         default=TaskOwner.ANY,
         index=True,
     )
