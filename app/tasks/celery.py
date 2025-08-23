@@ -337,7 +337,7 @@ async def sync_running_items() -> None:
             returning=("id",),
             status=TaskHistoryStatusEnum.RUNNING,
         )
-        args = [(item_id,) for item_id in result.scalars().all()]
+        args = [(item_id,) for item_id in result]
         if args:
             logger.debug("Dispatching sync of %d running tasks", len(args))
             chunk_size = 100

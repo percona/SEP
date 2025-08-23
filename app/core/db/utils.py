@@ -23,6 +23,8 @@ from sqlalchemy.sql.type_api import TypeEngine
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.utils.fields import DatabaseDialect
+
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
 
 
@@ -62,12 +64,12 @@ def json_join_path_elems(*path_elems: str) -> str:
 
 
 def func_json_extract(
-    db_engine: str, json_column: SQLAlchemyColumn, *path_elems: str
+    db_engine: DatabaseDialect, json_column: SQLAlchemyColumn, *path_elems: str
 ) -> Function:
     """Extract a value from a JSON column using the specified path.
 
     :param db_engine: The database engine type (e.g., "postgresql").
-    :type db_engine: str
+    :type db_engine: DatabaseDialect
     :param json_column: The JSON column to extract the value from.
     :type json_column: SQLAlchemyColumn
     :param path_elems: The JSON path elements to extract.
@@ -75,7 +77,7 @@ def func_json_extract(
     :return: The SQL function for extracting the value from the JSON column.
     :rtype: Function
     """
-    if db_engine.startswith("postgresql"):
+    if db_engine.startswith(DatabaseDialect.POSTGRESQL):
         return func.json_extract_path_text(cast(col(json_column), JSON), *path_elems)
     return func.json_extract(col(json_column), json_join_path_elems(*path_elems))
 
