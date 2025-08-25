@@ -511,11 +511,20 @@ class Snippet(BaseSQLModel, table=True):
             get_executor_hosts_fieldset(executor_hosts),
         ]
         parameters = json.loads(parameters_json) or []
+        if not isinstance(parameters, list):
+            logger.warning(
+                "Invalid snippet parameters, expected a list but got: %r", parameters
+            )
+            parameters = []
         logger.debug("Snippet params: %s", parameters)
-        fields = [
-            SnippetMetaParameter.model_validate(param).to_form_field()
-            for param in parameters
-        ]
+        fields = []
+        for param in parameters:
+            try:
+                fields.append(
+                    SnippetMetaParameter.model_validate(param).to_form_field()
+                )
+            except ValidationError:
+                logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
         if add_extra_field:
             fields.append(EXTRA_ARGS_INPUT)
         logger.debug("Generated snippet form fields from params: %s", fields)

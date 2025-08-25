@@ -116,6 +116,20 @@ class FormFieldMixin(BaseModel):
     required: bool = False
     label: RequiredStr | None = Field(None, exclude=True)
 
+    @model_validator(mode="after")
+    def set_label_by_name(self) -> Self:
+        """Set the label to the name if not provided.
+
+        If the label is not explicitly set, this method assigns the value of the
+        `name` attribute to the `label` attribute.
+
+        :return: The instance with the label set.
+        :rtype: Self
+        """
+        if self.label is None:
+            self.label = self.name
+        return self
+
     def to_html(self) -> str:
         """Return the HTML representation of the form field.
 
@@ -619,16 +633,13 @@ class SelectElement(FormFieldMixin, HTMLElement):
         :return: The updated instance with the default selection set.
         :rtype: SelectElement
         """
-        if self.default is None:
-            if len(self.children) > 1:
-                self.children.insert(
-                    0, OptionElement(value="", label="Select an option")
-                )
-        else:
+        if self.default is not None:
             for option in self.children:
                 if option.value == self.default:
                     option.selected = True
-                    break
+                    return self
+        if len(self.children) > 1:
+            self.children.insert(0, OptionElement(value="", label="Select an option"))
         return self
 
     @property
