@@ -209,7 +209,7 @@ class SnippetMetaParameter(BaseModel):
     label: RequiredStr | None = None
     placeholder: RequiredStr | None = None
     default: str | int | float | bool | None = None
-    choices: tuple[str | dict[str, str], ...] | None = Field(
+    choices: list[str | dict[str, str]] | None = Field(
         None, validation_alias=AliasChoices("choices", "options")
     )
     min_length: int | None = None

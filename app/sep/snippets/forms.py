@@ -16,10 +16,11 @@
 """Define HTML elements and form components using Pydantic models."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Hashable
 from enum import auto, StrEnum
 from functools import cached_property
 from html import escape as html_escape
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any, ClassVar, Self
 
 from pydantic import (
     AliasChoices,
@@ -33,7 +34,7 @@ from pydantic import (
 )
 
 from app.core.utils import ttl_cache
-from app.core.utils.fields import EnumFieldMixin, RequiredStr, UniqueTuple
+from app.core.utils.fields import EnumFieldMixin, RequiredStr
 
 HTMLClassName = Annotated[str, Field(pattern=r"^-?[_a-zA-Z]+[_a-zA-Z0-9-]*$")]
 _TWENTY_FOUR_HOURS = 24 * 60 * 60
@@ -63,289 +64,36 @@ class FormMethod(StrEnum):
     DIALOG = "dialog"
 
 
-class BaseHTMLEntity(BaseModel, ABC):
-    """Define base class for HTML entities.
+class CreateFromStrMixin(BaseModel):
+    """Mixin to create an instance from a string.
 
-    This class defines the interface for HTML entities that can be converted to HTML.
-    It requires subclasses to implement the `to_html` method, which should return
-    the HTML representation of the entity.
+    This mixin provides a validator that allows creating an instance of the model
+    from a simple string input. The string is assigned to a specific field defined by
+    the `POPULATE_FIELDS_FROM_STR` class variable.
+
+    :cvar POPULATE_FIELDS_FROM_STR: The field name to which the string input will be assigned.
+    :vartype: ClassVar[tuple[str, ...]]
     """
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
-
-    @abstractmethod
-    def to_html(self) -> str:
-        """Return HTML representation of entity.
-
-        :return: The HTML representation of the entity as a string.
-        :rtype: str
-        """
-
-
-class BaseHTMLElement(BaseHTMLEntity, ABC):
-    """Define base class for HTML elements.
-
-    This class provides common attributes and methods for HTML elements, including
-    handling of tag names, classes, IDs, titles, and HTML attributes. It also
-    provides methods for generating start and end tags, as well as converting the
-    element to HTML.
-
-    :cvar: TAG_NAME: The name of the HTML tag (e.g., 'div', 'span').
-    :vartype: TAG_NAME: ClassVar[str]
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueTuple[HTMLClassName]
-    :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
-    """
-
-    TAG_NAME: ClassVar[str]
-    classes: UniqueTuple[HTMLClassName] = Field(default_factory=tuple, exclude=True)
-    id: RequiredStr | None = Field(None, pattern=r"^\S+$")
-    title: RequiredStr | None = Field(None, validation_alias="description")
-
-    @computed_field(alias="class")
-    @property
-    def _class(self) -> str | None:
-        """Return the class attribute as a space-separated string of class names.
-
-        :return: A space-separated string of class names or None if no classes are set.
-        :rtype: str | None
-        """
-        return " ".join(self.classes) or None
-
-    @cached_property
-    def attributes(self) -> str:
-        """Return a string of HTML attributes from the model fields.
-
-        :return: A string of HTML attributes.
-        :rtype: str
-        """
-        return self._get_attributes_str(
-            sorted(self.model_dump(by_alias=True, exclude_none=True).items())
-        )
-
-    @cached_property
-    def start_tag(self) -> str:
-        """Return the opening tag for the HTML element.
-
-        :return: The opening tag as a string.
-        :rtype: str
-        """
-        tag = f"<{self.TAG_NAME}"
-        attrs = self.attributes
-        if attrs:
-            tag += f" {attrs}"
-        tag += ">"
-        return tag
-
-    @property
-    def prepend_raw(self) -> str:
-        """Return any raw HTML to prepend before the start tag.
-
-        This can be overridden in subclasses to add custom HTML before the element's
-        start tag.
-
-        :return: An empty string by default.
-        :rtype: str
-        """
-        return ""
-
-    @property
-    def append_raw(self) -> str:
-        """Return any raw HTML to append after the end tag.
-
-        This can be overridden in subclasses to add custom HTML after the element's
-        end tag.
-
-        :return: An empty string by default.
-        :rtype: str
-        """
-        return ""
-
-    @staticmethod
-    @validate_call
-    @ttl_cache(ttl=_TWENTY_FOUR_HOURS, maxsize=64)
-    def _get_attributes_str(attributes: tuple[tuple[str, Any], ...]) -> str:
-        """Convert a list of attribute-value pairs into a string of HTML attributes.
-
-        :param attributes: A tuple of (attribute, value) pairs.
-        :type attributes: tuple[tuple[str, Any], ...]
-        :return: A string of HTML attributes.
-        :rtype: str
-        """
-        attrs = []
-        for attr, value in attributes:
-            if isinstance(value, bool):
-                if value:
-                    attrs.append(attr)
-            else:
-                attrs.append(f'{attr}="{html_escape(str(value))}"')
-        return " ".join(attrs)
-
-
-class VoidHTMLElement(BaseHTMLElement, ABC):
-    """Define base class for void HTML elements (self-closing tags).
-
-    This class provides the interface for HTML elements that do not have closing tags,
-    such as `<input>`.
-
-    :cvar: TAG_NAME: The name of the HTML tag (e.g., 'div', 'span').
-    :vartype: TAG_NAME: ClassVar[str]
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
-    :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
-    """
-
-    def to_html(self) -> str:
-        """Return the HTML representation of the void element.
-
-        :return: The HTML representation of the void element.
-        :rtype: str
-        """
-        return self.prepend_raw + self.start_tag + self.append_raw
-
-
-class HTMLElement(BaseHTMLElement, ABC):
-    """Define base class for HTML elements that can have children.
-
-    This class provides methods for handling child elements and generating the full
-    HTML representation of the element, including its children.
-
-    :cvar: TAG_NAME: The name of the HTML tag (e.g., 'div', 'span').
-    :vartype: TAG_NAME: ClassVar[str]
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
-    :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
-    :param: children: A tuple of child HTML entities contained within this element.
-    :type: children: tuple[BaseHTMLEntity, ...]
-    """
-
-    children: tuple[BaseHTMLEntity, ...] = Field(default_factory=tuple, exclude=True)
-
-    @cached_property
-    def end_tag(self) -> str:
-        """Return the closing tag for the HTML element.
-
-        :return: The closing tag as a string.
-        :rtype: str
-        """
-        return f"</{self.TAG_NAME}>"
-
-    @cached_property
-    def inner_html(self) -> str:
-        """Return the inner HTML content of the element, including its children.
-
-        This property generates the HTML for all child elements contained within this
-        element by calling their `to_html` methods and concatenating the results.
-
-        :return: The inner HTML content as a string.
-        :rtype: str
-        """
-        return "".join(elem.to_html() for elem in self.children)
-
-    def to_html(self) -> str:
-        """Return the full HTML representation of the element.
-
-        This method combines the start tag, inner HTML, and end tag, along with any
-        raw HTML to prepend or append, to produce the complete HTML for the element.
-
-        :return: The full HTML representation of the element.
-        :rtype: str
-        """
-        return (
-            self.prepend_raw
-            + self.start_tag
-            + self.inner_html
-            + self.end_tag
-            + self.append_raw
-        )
-
-
-class TextContent(BaseHTMLEntity):
-    """Define a simple text content entity.
-
-    This class represents plain text content that can be included within HTML elements.
-
-    :param: text: The text content to be rendered.
-    :type: text: str
-    """
-
-    text: str
+    POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]] = ()
 
     @model_validator(mode="before")
     @classmethod
     def create_from_str(cls, data: Any) -> Any:
-        """Create a TextContent instance from a string.
+        """Create an instance from a string.
 
-        Converts a string into a `TextContent` instance, allowing it to be used as
-        a child of HTML elements.
+        Converts a string into an instance of the model by assigning the string to
+        specific fields defined by `POPULATE_FIELDS_FROM_STR`. This allows for easy
+        instantiation of models from simple string inputs.
 
-        :param data: The input data containing the text content.
+        :param data: The input data.
         :type data: Any
         :return: The validated data.
         :rtype: Any
         """
-        if isinstance(data, str):
-            return cls(text=data)
+        if isinstance(data, str) and cls.POPULATE_FIELDS_FROM_STR:
+            return {field_name: data for field_name in cls.POPULATE_FIELDS_FROM_STR}
         return data
-
-    def to_html(self) -> str:
-        """Return the HTML representation of the text content.
-
-        This method escapes the text content to ensure it is safe for inclusion in HTML,
-        preventing issues such as XSS attacks or HTML injection.
-
-        :return: The HTML representation of the text content.
-        :rtype: str
-        """
-        return html_escape(self.text)
-
-
-class FieldsetElement(HTMLElement):
-    """Define a fieldset HTML element with an optional legend.
-
-    This class represents a `<fieldset>` element, which can contain a legend and other
-    HTML elements. The legend is typically used to provide a caption for the fieldset.
-
-    :cvar: TAG_NAME: The name of the HTML tag ('fieldset').
-    :vartype: TAG_NAME: ClassVar[str]
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
-    :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
-    :param: children: A tuple of child HTML entities contained within this element.
-    :type: children: tuple[BaseHTMLEntity, ...]
-    :param: legend: The text for the legend of the fieldset, if any. Defaults to None.
-    :type: legend: RequiredStr | None
-    """
-
-    TAG_NAME: ClassVar[str] = "fieldset"
-    legend: RequiredStr | None = Field(None, exclude=True)
-
-    @cached_property
-    def inner_html(self) -> str:
-        """Return the inner HTML content of the fieldset, including the legend if set.
-
-        This property generates the HTML for the legend (if provided) and concatenates
-        it with the inner HTML of the fieldset's children.
-
-        :return: The inner HTML content as a string, including the legend if present.
-        :rtype: str
-        """
-        html = super().inner_html
-        if self.legend:
-            html = f"<legend>{html_escape(self.legend)}</legend>{html}"
-        return html
 
 
 class FormFieldMixin(BaseModel):
@@ -428,27 +176,299 @@ class TextFieldMixin(TypeableFieldMixin):
     )
 
 
-class SetChildrenByLabelMixin(BaseModel):
+class SetChildrenByLabelMixin(CreateFromStrMixin, BaseModel):
     """Mixin to set children based on a label.
 
     This mixin is used to automatically create a child TextContent element
     with the label text after the model is validated. It is useful for elements
     that need to display a label as their content, such as buttons or span elements.
 
+    :cvar: POPULATE_FIELDS_FROM_STR: The field names to which the string input will be
+        assigned (`("label",)`).
+    :vartype: POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]]
     :param: label: The label text to be used for the child TextContent element.
     :type: label: RequiredStr
     """
 
+    POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]] = ("label",)
     label: RequiredStr = Field(exclude=True)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _set_children_by_label(cls, data: Any) -> Any:
-        if isinstance(data, str):
-            data = {"label": data}
-        if isinstance(data, dict) and "label" in data:
-            data["children"] = (TextContent(text=data["label"]),)
-        return data
+    @model_validator(mode="after")
+    def _set_children_by_label(self) -> Self:
+        self.children = [TextContent(text=self.label)]
+        return self
+
+
+class BaseHTMLEntity(BaseModel, ABC):
+    """Define base class for HTML entities.
+
+    This class defines the interface for HTML entities that can be converted to HTML.
+    It requires subclasses to implement the `to_html` method, which should return
+    the HTML representation of the entity.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @abstractmethod
+    def to_html(self) -> str:
+        """Return HTML representation of entity.
+
+        :return: The HTML representation of the entity as a string.
+        :rtype: str
+        """
+
+
+class BaseHTMLElement(BaseHTMLEntity, ABC):
+    """Define base class for HTML elements.
+
+    This class provides common attributes and methods for HTML elements, including
+    handling of tag names, classes, IDs, titles, and HTML attributes. It also
+    provides methods for generating start and end tags, as well as converting the
+    element to HTML.
+
+    :cvar: TAG_NAME: The name of the HTML tag (e.g., 'div', 'span').
+    :vartype: TAG_NAME: ClassVar[str]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
+    :param: id: The ID attribute of the element.
+    :type: id: RequiredStr | None
+    :param: title: The title attribute of the element, used for tooltips descriptions.
+    :type: title: RequiredStr | None
+    """
+
+    TAG_NAME: ClassVar[str]
+    classes: set[HTMLClassName] = Field(default_factory=set, exclude=True)
+    id: RequiredStr | None = Field(None, pattern=r"^\S+$")
+    title: RequiredStr | None = Field(None, validation_alias="description")
+
+    @computed_field(alias="class")
+    @property
+    def _class(self) -> str | None:
+        """Return the class attribute as a space-separated string of class names.
+
+        :return: A space-separated string of class names or None if no classes are set.
+        :rtype: str | None
+        """
+        return " ".join(self.classes) or None
+
+    @cached_property
+    def attributes(self) -> str:
+        """Return a string of HTML attributes from the model fields.
+
+        :return: A string of HTML attributes.
+        :rtype: str
+        """
+        return self._get_attributes_str(
+            sorted(self.model_dump(by_alias=True, exclude_none=True).items())
+        )
+
+    @cached_property
+    def start_tag(self) -> str:
+        """Return the opening tag for the HTML element.
+
+        :return: The opening tag as a string.
+        :rtype: str
+        """
+        tag = f"<{self.TAG_NAME}"
+        attrs = self.attributes
+        if attrs:
+            tag += f" {attrs}"
+        tag += ">"
+        return tag
+
+    @property
+    def prepend_raw(self) -> str:
+        """Return any raw HTML to prepend before the start tag.
+
+        This can be overridden in subclasses to add custom HTML before the element's
+        start tag.
+
+        :return: An empty string by default.
+        :rtype: str
+        """
+        return ""
+
+    @property
+    def append_raw(self) -> str:
+        """Return any raw HTML to append after the end tag.
+
+        This can be overridden in subclasses to add custom HTML after the element's
+        end tag.
+
+        :return: An empty string by default.
+        :rtype: str
+        """
+        return ""
+
+    @staticmethod
+    @validate_call
+    @ttl_cache(ttl=_TWENTY_FOUR_HOURS, maxsize=64)
+    def _get_attributes_str(attributes: tuple[tuple[str, Hashable], ...]) -> str:
+        """Convert a list of attribute-value pairs into a string of HTML attributes.
+
+        :param attributes: A tuple of (attribute, value) pairs.
+        :type attributes: tuple[tuple[str, Hashable], ...]
+        :return: A string of HTML attributes.
+        :rtype: str
+        """
+        attrs = []
+        for attr, value in attributes:
+            if isinstance(value, bool):
+                if value:
+                    attrs.append(attr)
+            else:
+                attrs.append(f'{attr}="{html_escape(str(value))}"')
+        return " ".join(attrs)
+
+
+class VoidHTMLElement(BaseHTMLElement, ABC):
+    """Define base class for void HTML elements (self-closing tags).
+
+    This class provides the interface for HTML elements that do not have closing tags,
+    such as `<input>`.
+
+    :cvar: TAG_NAME: The name of the HTML tag (e.g., 'div', 'span').
+    :vartype: TAG_NAME: ClassVar[str]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
+    :param: id: The ID attribute of the element.
+    :type: id: RequiredStr | None
+    :param: title: The title attribute of the element, used for tooltips descriptions.
+    :type: title: RequiredStr | None
+    """
+
+    def to_html(self) -> str:
+        """Return the HTML representation of the void element.
+
+        :return: The HTML representation of the void element.
+        :rtype: str
+        """
+        return self.prepend_raw + self.start_tag + self.append_raw
+
+
+class HTMLElement(BaseHTMLElement, ABC):
+    """Define base class for HTML elements that can have children.
+
+    This class provides methods for handling child elements and generating the full
+    HTML representation of the element, including its children.
+
+    :cvar: TAG_NAME: The name of the HTML tag (e.g., 'div', 'span').
+    :vartype: TAG_NAME: ClassVar[str]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
+    :param: id: The ID attribute of the element.
+    :type: id: RequiredStr | None
+    :param: title: The title attribute of the element, used for tooltips descriptions.
+    :type: title: RequiredStr | None
+    :param: children: A list of child HTML entities contained within this element.
+    :type: children: list[BaseHTMLEntity]
+    """
+
+    children: list[BaseHTMLEntity] = Field(default_factory=list, exclude=True)
+
+    @cached_property
+    def end_tag(self) -> str:
+        """Return the closing tag for the HTML element.
+
+        :return: The closing tag as a string.
+        :rtype: str
+        """
+        return f"</{self.TAG_NAME}>"
+
+    @cached_property
+    def inner_html(self) -> str:
+        """Return the inner HTML content of the element, including its children.
+
+        This property generates the HTML for all child elements contained within this
+        element by calling their `to_html` methods and concatenating the results.
+
+        :return: The inner HTML content as a string.
+        :rtype: str
+        """
+        return "".join(elem.to_html() for elem in self.children)
+
+    def to_html(self) -> str:
+        """Return the full HTML representation of the element.
+
+        This method combines the start tag, inner HTML, and end tag, along with any
+        raw HTML to prepend or append, to produce the complete HTML for the element.
+
+        :return: The full HTML representation of the element.
+        :rtype: str
+        """
+        return (
+            self.prepend_raw
+            + self.start_tag
+            + self.inner_html
+            + self.end_tag
+            + self.append_raw
+        )
+
+
+class TextContent(CreateFromStrMixin, BaseHTMLEntity):
+    """Define a simple text content entity.
+
+    This class represents plain text content that can be included within HTML elements.
+
+    :cvar: POPULATE_FIELDS_FROM_STR: The field names to which the string input will be
+        assigned (`("text",)`).
+    :vartype: POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]]
+    :param: text: The text content to be rendered.
+    :type: text: str
+    """
+
+    POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]] = ("text",)
+    text: str
+
+    def to_html(self) -> str:
+        """Return the HTML representation of the text content.
+
+        This method escapes the text content to ensure it is safe for inclusion in HTML,
+        preventing issues such as XSS attacks or HTML injection.
+
+        :return: The HTML representation of the text content.
+        :rtype: str
+        """
+        return html_escape(self.text)
+
+
+class FieldsetElement(HTMLElement):
+    """Define a fieldset HTML element with an optional legend.
+
+    This class represents a `<fieldset>` element, which can contain a legend and other
+    HTML elements. The legend is typically used to provide a caption for the fieldset.
+
+    :cvar: TAG_NAME: The name of the HTML tag ('fieldset').
+    :vartype: TAG_NAME: ClassVar[str]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
+    :param: id: The ID attribute of the element.
+    :type: id: RequiredStr | None
+    :param: title: The title attribute of the element, used for tooltips descriptions.
+    :type: title: RequiredStr | None
+    :param: children: A list of child HTML entities contained within this element.
+    :type: children: list[BaseHTMLEntity]
+    :param: legend: The text for the legend of the fieldset, if any. Defaults to None.
+    :type: legend: RequiredStr | None
+    """
+
+    TAG_NAME: ClassVar[str] = "fieldset"
+    legend: RequiredStr | None = Field(None, exclude=True)
+
+    @cached_property
+    def inner_html(self) -> str:
+        """Return the inner HTML content of the fieldset, including the legend if set.
+
+        This property generates the HTML for the legend (if provided) and concatenates
+        it with the inner HTML of the fieldset's children.
+
+        :return: The inner HTML content as a string, including the legend if present.
+        :rtype: str
+        """
+        html = super().inner_html
+        if self.legend:
+            html = f"<legend>{html_escape(self.legend)}</legend>{html}"
+        return html
 
 
 class SpanElement(SetChildrenByLabelMixin, HTMLElement):
@@ -458,14 +478,14 @@ class SpanElement(SetChildrenByLabelMixin, HTMLElement):
     :vartype: TAG_NAME: ClassVar[str]
     :param: label: The label text to be used for the child TextContent element.
     :type: label: RequiredStr
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
     :type: title: RequiredStr | None
-    :param: children: A tuple of child HTML entities contained within this element.
-    :type: children: tuple[BaseHTMLEntity, ...]
+    :param: children: A list of child HTML entities contained within this element.
+    :type: children: list[BaseHTMLEntity]
     """
 
     TAG_NAME: ClassVar[str] = "span"
@@ -491,14 +511,14 @@ class TextareaElement(TextFieldMixin, HTMLElement):
     :param: minlength: The minimum length of the text input. If None, no minimum
         length is enforced. Defaults to None.
     :type: minlength: PositiveInt | None
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
     :type: title: RequiredStr | None
-    :param: children: A tuple of child HTML entities contained within this element.
-    :type: children: tuple[BaseHTMLEntity, ...]
+    :param: children: A list of child HTML entities contained within this element.
+    :type: children: list[BaseHTMLEntity]
     :param: rows: The number of rows in the textarea. If None, no specific
         number of rows is set. Defaults to None.
     :type: rows: PositiveInt | None
@@ -515,44 +535,31 @@ class TextareaElement(TextFieldMixin, HTMLElement):
 class OptionElement(SetChildrenByLabelMixin, HTMLElement):
     """Define an option HTML element.
 
+    :cvar: POPULATE_FIELDS_FROM_STR: The field names to which the string input will be
+        assigned (`["value", "label"]`).
+    :vartype: POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]]
     :cvar: TAG_NAME: The name of the HTML tag ('option').
     :vartype: TAG_NAME: ClassVar[str]
     :param: label: The label text to be used for the child TextContent element.
     :type: label: RequiredStr
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
     :type: title: RequiredStr | None
-    :param: children: A tuple of child HTML entities contained within this element.
-    :type: children: tuple[BaseHTMLEntity, ...]
+    :param: children: A list of child HTML entities contained within this element.
+    :type: children: list[BaseHTMLEntity]
     :param: value: The value of the option element, which is submitted with the form.
     :type: value: str
     :param: selected: Whether the option is selected by default. Defaults to False.
     :type: selected: bool
     """
 
+    POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]] = ("value", "label")
     TAG_NAME: ClassVar[str] = "option"
     value: str
     selected: bool = False
-
-    @model_validator(mode="before")
-    @classmethod
-    def create_from_str(cls, data: Any) -> Any:
-        """Create an OptionElement instance from a string.
-
-        Converts a string into an `OptionElement` instance, allowing it to be used as
-        an option in a select element.
-
-        :param data: The input data.
-        :type data: Any
-        :return: The validated data.
-        :rtype: Any
-        """
-        if isinstance(data, str):
-            return {"value": data, "label": data}
-        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -583,14 +590,14 @@ class SelectElement(FormFieldMixin, HTMLElement):
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
     :type: label: RequiredStr | None
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
     :type: title: RequiredStr | None
-    :param: children: A tuple of child options contained within this element.
-    :type: children: tuple[OptionElement, ...]
+    :param: children: A list of child options contained within this element.
+    :type: children: list[OptionElement]
     :param: default: The default selected option value. If None (default), no option is
         selected by default, but a placeholder option may be added if there are multiple
         options.
@@ -598,50 +605,31 @@ class SelectElement(FormFieldMixin, HTMLElement):
     """
 
     TAG_NAME: ClassVar[str] = "select"
-    children: tuple[OptionElement, ...] = Field(
-        default_factory=tuple,
+    children: list[OptionElement] = Field(
+        default_factory=list,
         exclude=True,
         validation_alias=AliasChoices("choices", "options"),
     )
     default: str | None = Field(None, exclude=True)
 
-    @model_validator(mode="before")
-    @classmethod
-    def set_default_selection(cls, data: Any) -> Any:
+    @model_validator(mode="after")
+    def set_default_selection(self) -> Self:
         """Set the default selected option based on the `default` attribute.
 
-        For `dict` and `__init__` input data, if `default` is None and there are
-        multiple options available, this validator inserts a placeholder "Select an
-        option" :class:`OptionElement` at the beginning of the options list.
-        If `default` is set, it marks the corresponding option as selected.
-
-        :return: The updated data with the default selection set.
-        :rtype: Any
+        :return: The updated instance with the default selection set.
+        :rtype: SelectElement
         """
-        if isinstance(data, dict) and (
-            children_key := next(
-                (key for key in ["choices", "options", "children"] if key in data), None
-            )
-        ):
-            if (default := data.get("default")) is None:
-                if len(data[children_key]) > 1:
-                    data[children_key] = (
-                        OptionElement(value="", label="Select an option"),
-                        *data[children_key],
-                    )
-            else:
-                raw_children = list(data[children_key])
-                data[children_key] = []
-                for _ in range(len(raw_children)):
-                    option = OptionElement.model_validate(raw_children.pop(0))
-                    if option.value == default:
-                        data[children_key].append(
-                            option.model_copy(update={"selected": True})
-                        )
-                        break
-                    data[children_key].append(option)
-                data[children_key].extend(raw_children)
-        return data
+        if self.default is None:
+            if len(self.children) > 1:
+                self.children.insert(
+                    0, OptionElement(value="", label="Select an option")
+                )
+        else:
+            for option in self.children:
+                if option.value == self.default:
+                    option.selected = True
+                    break
+        return self
 
     @property
     def prepend_raw(self) -> str:
@@ -666,8 +654,8 @@ class BaseInputElement(FormFieldMixin, VoidHTMLElement, ABC):
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
     :type: label: RequiredStr | None
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
@@ -710,8 +698,8 @@ class TextInputElement(TextFieldMixin, BaseInputElement):
     :param: minlength: The minimum length of the text input. If None, no minimum
         length is enforced. Defaults to None.
     :type: minlength: PositiveInt | None
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
@@ -748,8 +736,8 @@ class NumberInputElement(TypeableFieldMixin, BaseInputElement):
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
     :type: placeholder: RequiredStr | None
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
@@ -814,8 +802,8 @@ class CheckboxInputElement(BaseInputElement):
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
     :type: label: RequiredStr | None
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
@@ -859,14 +847,14 @@ class SubmitButtonElement(HTMLElement):
 
     :cvar: TAG_NAME: The name of the HTML tag ('button').
     :vartype: TAG_NAME: ClassVar[str]
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
     :type: title: RequiredStr | None
-    :param: children: A tuple of child HTML entities contained within this element.
-    :type: children: tuple[BaseHTMLEntity, ...]
+    :param: children: A list of child HTML entities contained within this element.
+    :type: children: list[BaseHTMLEntity]
     :param: label: The label text for the button.
     :type: label: RequiredStr
     :param: icon: The name of the icon to display on the button, if any. Defaults to
@@ -926,14 +914,14 @@ class FormElement(HTMLElement):
 
     :cvar: TAG_NAME: The name of the HTML tag ('form').
     :vartype: TAG_NAME: ClassVar[str]
-    :param: classes: A tuple of unique CSS class names associated with the element.
-    :type: classes: UniqueList[HTMLClassName]
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: RequiredStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
     :type: title: RequiredStr | None
-    :param: children: A tuple of child HTML entities contained within this element.
-    :type: children: tuple[BaseHTMLEntity, ...]
+    :param: children: A list of child HTML entities contained within this element.
+    :type: children: list[BaseHTMLEntity]
     :param: action: The URL to which the form data will be submitted. Defaults to an
         empty string, meaning the form will submit to the current page.
     :type: action: str
