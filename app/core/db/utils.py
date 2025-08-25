@@ -15,6 +15,8 @@
 
 """Define database utilities."""
 
+from typing import Any
+
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import cast, Column, ColumnClause, func, Function, JSON, Text
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
@@ -22,6 +24,8 @@ from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.utils.fields import DatabaseDialect
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
 
@@ -75,9 +79,28 @@ def func_json_extract(
     :return: The SQL function for extracting the value from the JSON column.
     :rtype: Function
     """
-    if db_engine.startswith("postgresql"):
+    if db_engine.startswith(DatabaseDialect.POSTGRESQL):
         return func.json_extract_path_text(cast(col(json_column), JSON), *path_elems)
     return func.json_extract(col(json_column), json_join_path_elems(*path_elems))
+
+
+def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:
+    """Prepare a value for JSON comparison based on the database engine.
+
+    Postgres `json_extract_path_text` treats all JSON values as strings, so we convert
+    the value to a string for comparison. For other databases, we return the value as
+    is.
+
+    :param db_engine: The database engine type (e.g., "postgresql").
+    :type db_engine: str
+    :param value: The value to prepare for comparison.
+    :type value: Any
+    :return: The prepared value for JSON comparison.
+    :rtype: Any
+    """
+    if db_engine.startswith(DatabaseDialect.POSTGRESQL):
+        return str(value)
+    return value
 
 
 def compare_type(
