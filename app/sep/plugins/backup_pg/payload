@@ -1,0 +1,704 @@
+"""pgBackRest wrapper lib."""
+
+# Copyright 2020-2023 by Percona LLC or its affiliates, all rights reserved.
+
+import configparser
+import datetime
+import hashlib
+import json
+import logging
+import multiprocessing
+import os
+import pwd
+import socket
+import subprocess
+import sys
+import time
+from enum import IntEnum, Enum, auto
+from getpass import getuser
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+BYTES_PER_MB = 1024**2
+CURRENT_USER = os.getenv("PERCONA_BACKUP_USER") or os.getenv("SUDO_USER") or getuser()
+CURRENT_USER_HOME_DIR = Path(pwd.getpwnam(CURRENT_USER).pw_dir)
+DEFAULT_COMPRESSION_ALGORITHM = "gzip"
+AVAILABLE_COMPRESSION_ALGORITHMS = ["gzip", "zstd"]
+BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
+    "PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR",
+    CURRENT_USER_HOME_DIR
+    / "pmm"
+    / "collectors"
+    / "textfile-collector"
+    / "low-resolution",
+)
+BACKUP_TYPE = "pgBackRest"
+DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+DEFAULT_CFG_DIR = Path(
+    os.getenv(
+        "PERCONA_BACKUP_DEFAULT_CFG_DIR",
+        CURRENT_USER_HOME_DIR / ".config" / "percona" / "backup",
+    )
+)
+DEFAULT_LOGGING_DIR = Path(
+    os.getenv(
+        "PERCONA_BACKUP_DEFAULT_LOGGING_DIR",
+        CURRENT_USER_HOME_DIR / ".local" / "percona" / "logs" / "backup",
+    )
+)
+DEFAULT_MYCNF = CURRENT_USER_HOME_DIR / ".my.cnf"
+LOGGING_FORMAT = "%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s"
+LOGGING_FORMAT_DEBUG = (
+    "%(asctime)s PID<%(process)d> %(levelname)s:%(lineno)d:%(alias)s%(message)s"
+)
+LOGGING_NAME = "pgbackrest.log"
+MD5SUM_FILE = "md5sum"
+ST_BLOCKS_SIZE = 512
+
+
+class BackupNotifyStatus(IntEnum):
+    OK = 0
+    WARNING = 1
+    CRITICAL = 2
+    UNKNOWN = 3
+
+
+class MSPAction(str, Enum):
+    BACKUP = auto()
+    UPLOAD = auto()
+
+
+class BackupError(Exception):
+    """Typical backup error."""
+
+    def __init__(self, message) -> None:
+        super().__init__(self, message)
+        self.message = message
+
+
+def md5sum_file(fpath: Path) -> str:
+    """Calculate the MD5 checksum of a file.
+
+    :param fpath: Path to the file.
+    :return: MD5 checksum as a hex string.
+    """
+    d = hashlib.md5()
+    with fpath.open("rb") as f:
+        buf = f.read(8192)
+        while buf:
+            d.update(buf)
+            buf = f.read(8192)
+    return d.hexdigest()
+
+
+def write_dict(data: dict[str, Any], fpath: Path) -> None:
+    """Write a dictionary to a JSON file.
+
+    :param data: Dictionary to write.
+    :param fpath: Path to the output file.
+    """
+    with fpath.open("w") as f:
+        json.dump(data, f, indent=2)
+
+
+def format_seconds_to_hhmmss(seconds: float) -> str:
+    """Format seconds into HH:MM:SS format.
+
+    :param seconds: Number of seconds.
+    :return: Formatted time string.
+    """
+    seconds = round(seconds)
+    hours = seconds // 3600
+    seconds %= 3600
+    minutes = seconds // 60
+    seconds %= 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def get_dir_dict(
+    path: Path, json_cache_file: Path | None = None, *, md5: bool = False
+) -> dict[str, dict[str, Any]]:
+    """Create a dictionary of files in a directory, including inode, size, and optional MD5.
+
+    :param path: Directory path.
+    :param md5: Whether to compute MD5 checksums.
+    :param json_cache_file: Path to a JSON cache file to store results.
+    :return: Dictionary with file info keyed by relative file path.
+    """
+    if json_cache_file is None:
+        json_cache_file = path / MD5SUM_FILE
+    ret = {}
+
+    for p in path.rglob("*"):
+        if p.is_file() and not p.name.endswith(".gpg") and p.name != MD5SUM_FILE:
+            stat_data = p.stat()
+            rel_path = str(p.relative_to(path))
+            file_md5 = md5sum_file(p) if md5 else None
+            ret[rel_path] = {
+                "inode": stat_data.st_ino,
+                "size": stat_data.st_size,
+                "md5": file_md5,
+            }
+
+    write_dict(ret, json_cache_file)
+    return ret
+
+
+def get_dir_size(start_path: Path) -> int:
+    """Calculate the total size of a directory.
+
+    :param path: Directory path.
+    :return: Total size in bytes.
+    """
+    total_size = start_path.stat().st_blocks * ST_BLOCKS_SIZE
+    try:
+        for file in start_path.rglob("*"):
+            if not file.is_symlink():
+                total_size += file.stat().st_blocks * ST_BLOCKS_SIZE
+    except Exception as e:
+        logging.warning(
+            "Error traversing directory %s: %s", start_path, e, exc_info=True
+        )
+    return total_size
+
+
+def logging_setup(
+    logging_dir: Path, log_name: str, level: int = logging.INFO
+) -> logging.Logger:
+    """Set up and return a configured logger.
+
+    :param logging_dir: Directory for log files.
+    :param log_name: Name of the log file.
+    :param level: Logging level.
+    :return: Configured logger instance.
+    """
+    real_logging_dir = logging_dir.expanduser().resolve()
+
+    if not real_logging_dir.is_dir():
+        real_logging_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        test_file = real_logging_dir / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+    except OSError:
+        print(f"Logging directory {logging_dir} is not writable.")
+        sys.exit(4)
+
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    name = log_name.replace(".log", "")
+    logger = logging.getLogger(name)
+    log_file = real_logging_dir / log_name
+
+    if not any(
+        isinstance(h, logging.FileHandler)
+        and getattr(h, "baseFilename", None) == str(log_file)
+        for h in logger.handlers
+    ):
+        file_handler = logging.FileHandler(str(log_file))
+        file_formatter = logging.Formatter(LOGGING_FORMAT)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
+    if not any(
+        isinstance(h, logging.StreamHandler) and h.stream == sys.stdout
+        for h in logger.handlers
+    ):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        if level <= logging.DEBUG:
+            stream_formatter = logging.Formatter(LOGGING_FORMAT_DEBUG)
+        else:
+            stream_formatter = logging.Formatter(LOGGING_FORMAT)
+        stream_handler.setFormatter(stream_formatter)
+        logger.addHandler(stream_handler)
+
+    logger.setLevel(level)
+    logging_set_host(None, name)
+    return logger
+
+
+def logging_set_host(alias: str | None, log_name: str) -> None:
+    """Set the host for logging.
+
+    :param host: Host name.
+    :param log_name: Name of the log file.
+    """
+    class ContextFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            record.alias = f"[{alias}] " if alias else ""
+            return True
+
+    log_name = log_name.replace(".log", "")
+    logging.getLogger(log_name).addFilter(ContextFilter())
+
+
+class BaseBackup:
+    """Base class for shared functionality across backup and restore operations."""
+
+    def __init__(
+        self,
+        server_data: dict[str, Any],
+        backup_code: str,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Initialize the BaseBackup object.
+
+        :param server_data: Dictionary of server configuration and runtime data.
+        :param backup_code: Backup code indicating the type of backup.
+        :param logger: Optional logger instance to use.
+        """
+        self.server_data = server_data
+        self.backup_code = backup_code
+        self.backup_textfile_collector_dir = Path(
+            self.server_data.get(
+                "BACKUP_TEXTFILE_COLLECTOR_DIR", BACKUP_TEXTFILE_COLLECTOR_DIR
+            )
+        )
+        self.alias = self.server_data.get("ALIAS")
+        self.report_options: dict[str, Any] = {}
+        self.logging_dir = Path(
+            self.server_data.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+        )
+        self.logger = logger
+
+        self.compress = self.server_data.get("COMPRESS", True)
+        self.compression_algorithm = self.server_data.get(
+            "COMPRESSION_ALGORITHM", DEFAULT_COMPRESSION_ALGORITHM
+        )
+        if self.compress:
+            self.check_compression_algorithm(self.compression_algorithm)
+
+        # Dynamically set
+        self.is_replica = False
+        self.last_backup_dir = None
+
+    def check_compression_algorithm(self, algorithm: str) -> None:
+        """Check if the given compression algorithm is compatible with the backup type.
+
+        :param algorithm: Compression algorithm name.
+        :raises BackupError: If the algorithm is not compatible.
+        """
+        if not self.compress:
+            self.logger.debug("Compression is disabled, skipping check")
+            return
+        if algorithm in AVAILABLE_COMPRESSION_ALGORITHMS:
+            self.logger.debug(
+                "Algorithm %s accepted for backup type %s", algorithm, self.backup_code
+            )
+            return
+        raise BackupError(
+            f"algorithm {algorithm} is not one of {AVAILABLE_COMPRESSION_ALGORITHMS}"
+        )
+
+    def notify(self, status: BackupNotifyStatus, output: str) -> None:
+        """Send notifications about backup or restore operations.
+
+        :param status: Operation status code.
+        :param output: Operation output or message.
+        """
+        if len(output) > 300:
+            output = f"{output[:300]}..."
+
+        if isinstance(self, Backup) and self.is_replica:
+            output = f"Host {self.alias}. {output}"
+
+        self.report_options["end_time"] = time.strftime(DATETIME_FORMAT, time.gmtime())
+
+        if status == BackupNotifyStatus.OK:
+            self.textfile_collector_notify(0)
+        else:
+            self.textfile_collector_notify(1)
+
+    def check_textcollector_dir(self) -> bool:
+        """Check if the textfile collector directory exists.
+
+        :return: True if directory exists, False otherwise.
+        """
+        backup_textfile_collector_dir = self.backup_textfile_collector_dir.parent
+        if not backup_textfile_collector_dir.is_dir():
+            self.logger.warning(
+                "Textfile Collector directory %s does not exist.",
+                backup_textfile_collector_dir,
+            )
+            return False
+        return True
+
+    def textfile_collector_write_status(
+        self,
+        backup_status: int,
+        msp_action: MSPAction = MSPAction.BACKUP,
+    ) -> None:
+        """Write backup status to textfile collector for Prometheus.
+
+        :param backup_status: Backup status code.
+        """
+        if not self.check_textcollector_dir():
+            return
+
+        collector_file = (
+            self.backup_textfile_collector_dir
+            / f"{msp_action}.{BACKUP_TYPE}.{self.alias}.prom"
+        )
+
+        encryption_val = self.report_options.get("encryption", "")
+        start_time_val = str(self.report_options.get("start_time", ""))
+        end_time_val = str(self.report_options.get("end_time", ""))
+
+        metrics_text = (
+            f"# HELP msp_{msp_action}_status The status of the job\n"
+            f"# TYPE msp_{msp_action}_status Untyped\n"
+            f"# HELP msp_{msp_action}_last_report_ts The Last Report Time\n"
+            f"# TYPE msp_{msp_action}_last_report_ts Untyped\n"
+            f'msp_{msp_action}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
+            f'backup_id="", start_time="{start_time_val}", end_time="{end_time_val}"'
+        )
+
+        size_bytes = (
+            get_dir_size(self.last_backup_dir)
+            if self.last_backup_dir is not None
+            else 0
+        )
+        metrics_text += f', backup_size="{size_bytes}"'
+
+        metrics_text += f"}} {backup_status}\n"
+        metrics_text += f'msp_{msp_action}_last_report_ts{{type="{BACKUP_TYPE}", alias="{self.alias}", backup_id=""}} {int(time.time())}\n'
+
+        with collector_file.open("w") as outfile:
+            outfile.write(metrics_text)
+
+    def textfile_collector_notify(self, backup_status: int) -> None:
+        """Notify status via textfile collector.
+
+        :param backup_status: Backup status code.
+        """
+        self.textfile_collector_write_status(backup_status)
+
+
+
+class Backup(BaseBackup):
+    """Common class for all backup types."""
+
+    def __init__(
+        self,
+        server_data: dict[str, Any],
+        backup_code: str,
+        logger: logging.Logger,
+    ) -> None:
+        """Initialize the Backup object with server data and backup code.
+
+        :param server_data: Server configuration and data.
+        :param backup_code: Backup code string.
+        :param logger: Optional logger instance.
+        """
+        self.backup_code = backup_code
+        super().__init__(server_data, backup_code, logger)
+        self.host = server_data.get("HOST", "localhost")
+        self.alias = server_data.get("ALIAS", self.host)
+        self.port = server_data.get("PORT", 3306)
+        self.hostname = str(
+            server_data.get("HOSTNAME", socket.gethostname().split(".")[0])
+        )
+        self.check_disk_space = server_data.get("CHECK_DISK_SPACE", True)
+        self.defaults_cnf_file = server_data.get("DEFAULTS_FILE", DEFAULT_MYCNF)
+        self.hardlink = server_data.get("HARDLINK", True)
+        self.dir_encrypt_config = server_data.get("DIR_ENCRYPT_CONFIG", {})
+        self.post_run_encrypt = server_data.get("POST_RUN_ENCRYPT", False)
+        self.only_if_read_only = server_data.get("ONLY_IF_READ_ONLY")
+        self.only_if_running_replica = server_data.get("ONLY_IF_RUNNING_REPLICA")
+        self.all_cnf_files = []
+        self.backup_textfile_collector_dir = Path(
+            self.server_data.get(
+                "BACKUP_TEXTFILE_COLLECTOR_DIR", BACKUP_TEXTFILE_COLLECTOR_DIR
+            )
+        )
+
+        self.logger = (
+            self.logger
+            or logger
+            or logging_setup(self.logging_dir, BACKUP_TYPE.lower() + ".log")
+        )
+        logging_set_host(self.alias, BACKUP_TYPE.lower() + ".log")
+
+        self.report_options = {
+            "host": self.alias,
+            "status": "error",
+            "start_time": time.strftime(DATETIME_FORMAT, time.gmtime()),
+            "end_time": "",
+            "size_mb": 0,
+            "hl_mb": None,
+            "options": {},
+            "encryption": "none",
+        }
+
+
+
+class LocalConfig:
+    """Local configuration class for backup/restore processes."""
+
+    default_nowrite_timeout = 1800  # 30 minutes
+    default_purge_days = 30
+
+    def __init__(self, cfg_path: Path) -> None:
+        """Initialize LocalConfig and populate configuration from the specified YAML file.
+
+        :param cfg_path: Path to the configuration file.
+        """
+        self.server_data_list: list[dict[str, Any]] = []
+        self.base: dict[str, Any] = {}
+        self.cfg_path = Path(cfg_path)
+        self.populated = False
+        self.raw_cfg_data: dict[str, Any] = {}
+        self._populate_cfg()
+
+    def _populate_cfg(self) -> None:
+        """Populate the configuration from the YAML file."""
+        try:
+            with self.cfg_path.open("r") as cfg_file:
+                cfg_file_contents = cfg_file.read()
+                data = yaml.safe_load(cfg_file_contents)
+        except Exception:
+            logging.exception("Could not read config file %r", self.cfg_path)
+            return
+
+        self.raw_cfg_data = data
+
+        default_server = {
+            "PORT": 3306,
+            "NOWRITE_TIMEOUT": LocalConfig.default_nowrite_timeout,
+            "BINLOG_PURGE_DAYS": LocalConfig.default_purge_days,
+        }
+        default_server.update(data["ALL_SERVERS"])
+        self.base = default_server.copy()
+
+        for server in data["SERVER_LIST"]:
+            if (
+                "HOST" in server
+                and isinstance(server["HOST"], str)
+                and server["HOST"].count(":") > 1
+            ):
+                logging.warning("Unsupported host format %s", server["HOST"])
+                continue
+            server_data = default_server.copy()
+            server_data.update(server)
+            self.server_data_list.append(server_data)
+        self.populated = True
+
+
+class PgBackRestRunner(multiprocessing.Process):
+
+    """pgBackRest multiprocessing class."""
+
+    def __init__(
+            self,
+            command_queue,
+            config_path: Path,
+            run_only_server: str | None,
+            *args: Any,
+            **kwargs: Any
+        ) -> None:
+        """Initialize PgBackRestRunner.
+
+        :param config_path: Path to the configuration file.
+        :param run_only_server: Server to run backup for.
+        """
+        multiprocessing.Process.__init__(self, *args, **kwargs)
+
+        self.command_queue = command_queue
+        self.config_path = config_path
+        self.run_only_server = run_only_server
+        self.logger = None
+
+    def run(self):
+        """Iterate over servers."""
+        # Read config
+        local_cfg = LocalConfig(self.config_path)
+
+        logging_dir = Path(
+            local_cfg.raw_cfg_data["ALL_SERVERS"].get(
+                "LOGGING_DIR", DEFAULT_LOGGING_DIR
+            )
+        )
+        self.logger = logging_setup(logging_dir, LOGGING_NAME)
+
+        # Obtain server list
+        servers = [b for b in local_cfg.server_data_list if b['BACKUP_TYPE'] == 'ALL' or 'P' in b['BACKUP_TYPE']]
+        if self.run_only_server:
+            servers = [s for s in servers if self.run_only_server in (s.get('HOST', None), s['ALIAS'])]
+
+        start_time = time.time()
+        self.logger.info('>>>>>>>>>>>>>>>>>> Backup started.')
+        self.logger.info('Total servers: %s', len(servers))
+
+        if servers:
+            settings = servers[0]  # Merged settings of 1st server
+            # Enable debug if configured
+            if settings.get('DEBUG'):
+                self.logger = logging_setup(logging_dir, LOGGING_NAME, logging.DEBUG)
+
+        # Iterate over servers
+        for server_data in servers:
+            bkp = PgBackRest(server_data, logger=self.logger)
+            # Catch exceptions so we can continue with other servers.
+            try:
+                bkp.run()
+            except BackupError as exc:
+                self.logger.error(exc.message)
+                self.logger.error('Backup failed for this host.')
+                bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+            except:
+                self.logger.exception('Unhandled exception occurred.')
+                bkp.notify(BackupNotifyStatus.CRITICAL, 'Unhandled exception occured.')
+
+            logging_set_host(None, LOGGING_NAME)
+
+        time_spent = format_seconds_to_hhmmss(time.time() - start_time)
+        self.logger.info('>>>>>>>>>>>>>>>>>> Backup finished. Total duration: %s.', time_spent)
+
+        if self.command_queue:
+            self.command_queue.put('result_ok')
+            self.logger.debug('pushed ok response to results queue.')
+
+class PgBackRest(Backup):
+    """Run pgBackRest for individual server."""
+
+    def __init__(self, server_data, logger=None):
+        """Define server options."""
+        # Init common options
+        super(PgBackRest, self).__init__(server_data, 'P', logger=logger)
+
+        # PgBackRest specific options
+        self.pgbackrest_bin = server_data.get('PGBACKREST_BIN', '/bin/pgbackrest')
+        self.pgbackrest_config_file = server_data.get('PGBACKREST_CONFIG_FILE', DEFAULT_CFG_DIR + '/pgbackrest/pgbackrest.conf')
+        self.pgbackrest_backup_type = server_data.get('PGBACKREST_BACKUP_TYPE', 'incr')
+        self.pg_datadir = server_data.get('PG_DATADIR', '/var/lib/pgsql/12/data/')
+        self.pg_retention_full = server_data.get('PG_RETENTION_FULL', '2')
+        self.pg_retention_archive = server_data.get('PG_RETENTION_ARCHIVE')
+        self.pg_process_max = server_data.get('PG_PROCESS_MAX', '4')
+        self.pg_repo = server_data.get('PG_REPO', '1')
+        self.pg_incremental_cycle = server_data.get('PG_INCREMENTAL_CYCLE', '1')
+        self.pg_aes256_passfile = server_data.get('PG_AES256_PASSFILE')
+
+        # Normalize settings
+        if self.pg_incremental_cycle == 'weekly':
+            self.pg_incremental_cycle = 1
+
+        # report options
+        self.report_options['options'] = {
+            'retention_full': self.pg_retention_full,
+            'retention_archive': self.pg_retention_archive
+        }
+
+        # Paths
+        self.today_str = time.strftime('%Y%m%d')
+        self.backup_server_dir = os.path.join(server_data['BACKUP_DIR'], 'pgbackrest', self.alias)
+        self.backup_dir = os.path.join(self.backup_server_dir, self.today_str)
+        self.latest_link = os.path.join(self.backup_server_dir, 'latest')
+
+        self.pg_log_file = os.path.join(self.logging_dir, 'pgbackrest-{0}-{1}.log'.format(self.alias, time.strftime('%Y%m%d')))
+
+    def run(self):
+        """Start backup for individual server."""
+        start_time = time.time()
+
+        if not os.path.isdir(self.backup_server_dir):
+            try:
+                os.makedirs(self.backup_server_dir)
+            except (OSError):
+                msg = "Failed to create backup dir: {0}".format(self.backup_server_dir)
+                raise BackupError(msg)
+
+        if not os.path.isfile(self.pgbackrest_config_file):
+            self._create_stanza()
+
+        self._check_stanza()
+
+        self._run_backup_command()
+
+        # Report we are OK :)
+        time_spent = format_seconds_to_hhmmss(time.time() - start_time)
+        msg = 'OK Backup complete. Duration: {0}.'.format(time_spent)
+        self.logger.info(msg)
+        self.notify(BackupNotifyStatus.OK, msg)
+
+    def _check_stanza(self):
+        """Check Stanza config"""
+
+        self.logger.info("Checking stanza configuration...")
+        try:
+            subprocess.check_output([self.pgbackrest_bin,
+                                     '--config={0}'.format(self.pgbackrest_config_file),
+                                     '--stanza={0}'.format(self.alias),
+                                     '--log-level-console=info',
+                                     'check'], stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as err:
+            raise BackupError(err.output)
+        self.logger.info("Stanza configuration OK")
+
+    def _create_stanza(self):
+        """Creates stanza file"""
+
+        stanza = configparser.RawConfigParser()
+
+        #Cluster
+        stanza.add_section(self.alias)
+        stanza.set(self.alias, 'pg1-path', self.pg_datadir)
+
+        #Globals
+        stanza.add_section('global')
+        stanza.set('global', 'process-max', self.pg_process_max)
+        stanza.set('global', 'repo1-path', self.backup_server_dir)
+        stanza.set('global', 'repo1-retention-full', self.pg_retention_full)
+        if self.pg_retention_archive is not None:
+            stanza.set('global', 'repo1-retention-archive', self.pg_retention_archive)
+        if self.pg_aes256_passfile:
+            try:
+                stanza.set('global', 'repo1-cipher-type', 'aes-256-cbc')
+                stanza.set('global', 'repo1-cipher-pass', open(self.pg_aes256_passfile, 'r').read().rstrip("\n"))
+            except IOError as err:
+                msg = "Failed to read pg_aes256_passfile: {0}".format(str(err))
+                raise BackupError(msg)
+
+        # Write to file
+        with open(self.pgbackrest_config_file, 'wb') as configfile:
+            stanza.write(configfile)
+
+        try:
+            subprocess.check_output([self.pgbackrest_bin,
+                                     '--config={0}'.format(self.pgbackrest_config_file),
+                                     '--stanza={0}'.format(self.alias),
+                                     '--log-level-console=info',
+                                     'stanza-create'], stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as err:
+            raise BackupError(err.output)
+        self.logger.info("Stanza creation OK")
+
+    def _run_backup_command(self):
+        """Run backup command."""
+
+        cmd = [self.pgbackrest_bin,
+               '--config={0}'.format(self.pgbackrest_config_file),
+               '--stanza={0}'.format(self.alias),
+               '--repo={0}'.format(self.pg_repo),
+               '--log-level-console=info',
+               'backup']
+
+        # Full backup today?
+        if self.pg_incremental_cycle == 'daily' or self.pg_incremental_cycle == datetime.datetime.today().isoweekday():
+            cmd.append('--type=full')
+        elif self.pgbackrest_backup_type == 'diff':
+            cmd.append('--type={0}'.format(self.pgbackrest_backup_type))
+
+        self.logger.info('Running: {0}'.format(' '.join(cmd)))
+        pg_log_stream = open(self.pg_log_file, 'a')
+        backup_proc = subprocess.Popen(cmd, stdout=pg_log_stream, stderr=pg_log_stream)
+
+        backup_proc.communicate()
+        if backup_proc.returncode != 0:
+            pg_log_stream = open(self.pg_log_file, 'r')
+            err = pg_log_stream.readlines()[-1]
+            msg = 'pgBackRest failed: %s For more details, see %s' % (err, self.pg_log_file)
+            raise BackupError(msg)
