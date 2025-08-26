@@ -656,28 +656,34 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     def iter_logs(
         self,
         start_offsets: dict[str, dict[str, int]] | None = None,
-        chunk_size: int = 8192,
+        chunk_size: int = 65536,
+        step: str | None = None,
     ) -> Generator[TaskLog]:
         """Yield task logs in chunks based on provided start offsets.
 
         :param start_offsets: A dictionary containing the starting offsets for each
             step and log type. If None, defaults to starting from the beginning.
         :type start_offsets: dict[str, dict[str, int]] | None
-        :param chunk_size: The size of each log chunk to yield. Defaults to 8192 bytes.
+        :param chunk_size: The size of each log chunk to yield. Defaults to 65536 bytes.
         :type chunk_size: int
+        :param step: If provided, only logs for this specific step will be yielded.
+            Defaults to None.
+        :type step: str | None
         :yield: TaskLog objects containing log chunks.
         :rtype: Generator[TaskLog]
         """
-        task_logs = self.execution_request.tracking.get("task_logs", {}).items()
+        task_logs = self.execution_request.tracking.get("task_logs", {})
+        if step is not None:
+            task_logs = {step: task_logs.get(step, {})}
         start_offsets = defaultdict(dict, start_offsets or {})
-        for (step, log), log_type in product(task_logs, TaskLogType):
+        for (cur_step, log), log_type in product(task_logs.items(), TaskLogType):
             msg = log.get(log_type) or ""
             for chunk_start in range(
-                start_offsets[step].get(log_type, 0), len(msg), chunk_size
+                start_offsets[cur_step].get(log_type, 0), len(msg), chunk_size
             ):
                 chunk_end = chunk_start + chunk_size
                 yield TaskLog(
-                    step=step,
+                    step=cur_step,
                     type=log_type,
                     msg=msg[chunk_start:chunk_end],
                     offset=chunk_end,
@@ -700,6 +706,22 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """
 
     task: TaskResponse
+
+    @field_validator("execution_request", mode="after")
+    @classmethod
+    def _remove_logs(cls, v: TaskExecutionRequest) -> TaskExecutionRequest:
+        """Remove logs from the execution request tracking data.
+
+        This validator ensures that any log data present in the tracking information
+        of the execution request is removed before returning the response.
+
+        :param v: The TaskExecutionRequest instance to validate.
+        :type v: TaskExecutionRequest
+        :return: The validated TaskExecutionRequest with logs removed.
+        :rtype: TaskExecutionRequest
+        """
+        v.tracking["task_logs"] = bool(v.tracking.get("task_logs"))
+        return v
 
 
 class TaskStats(BaseModel):
