@@ -17,7 +17,11 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.middleware import messages
-from app.sep.plugins.snippets.deps import ApprovedSnippet, SnippetDep, UnapprovedSnippet
+from app.sep.plugins.snippets.deps import (
+    ApprovedSnippet,
+    UnapprovedSnippet,
+    ValidatedSnippet,
+)
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -48,10 +52,10 @@ async def snippets_index(
     "/{snippet_filename}", dependencies=[IsAuthenticated], response_class=HTMLResponse
 )
 async def snippets_detail(
+    snippet: ValidatedSnippet,
     request: Request,
     context: DefaultContext,
     executor_hosts: ExecutorHosts,
-    snippet: SnippetDep,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve and display information about a snippet."""

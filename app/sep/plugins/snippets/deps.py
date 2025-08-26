@@ -36,6 +36,28 @@ async def get_snippet(
 SnippetDep = Annotated[Snippet, Depends(get_snippet)]
 
 
+def validate_snippet_parameters(request: Request, snippet: SnippetDep) -> Snippet:
+    """Validate the parameters of an approved snippet and add warnings to the request.
+
+    If the snippet is approved, validate its parameters and add any validation errors
+    as warning messages to the request.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param snippet: The snippet to validate.
+    :type snippet: Snippet
+    :return: The validated snippet.
+    :rtype: Snippet
+    """
+    if snippet.is_approved:
+        for error in snippet.get_validated_parameters().errors:
+            messages.warning(request, f"({snippet.filename!r}): {error}")
+    return snippet
+
+
+ValidatedSnippet = Annotated[Snippet, Depends(validate_snippet_parameters)]
+
+
 def _get_snippet_status_redirect_exc(
     request: Request, referer: str | None, msg: str
 ) -> HTTPRedirectException:

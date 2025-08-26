@@ -24,7 +24,7 @@ from functools import cached_property
 from io import SEEK_END
 from os import PathLike
 from pathlib import Path
-from typing import Any, NamedTuple, Self
+from typing import Any, NamedTuple, NotRequired, Self
 
 import aiofiles
 import yaml
@@ -42,13 +42,19 @@ from pydantic import (
     ValidationError,
 )
 from pydantic.fields import FieldInfo
-from pydantic_core.core_schema import ValidatorFunctionWrapHandler
+from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
 from sqlalchemy import Column, JSON
 from sqlmodel import Field as SQLField
+from typing_extensions import TypedDict
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
-from app.core.utils import json_serializer, ttl_cache, utc_now
+from app.core.utils import (
+    json_serializer,
+    run_pydantic_type_validator,
+    ttl_cache,
+    utc_now,
+)
 from app.core.utils.fields import EnumFieldMixin, FilePathLike, RequiredStr, UTCDatetime
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.forms import (
@@ -70,6 +76,8 @@ __all__ = ["FilePreview", "Snippet", "SnippetMetaParameter"]
 
 _ONE_HOUR = 60 * 60
 logger = logging.getLogger(__name__)
+
+DefaultValueType = str | int | float | bool | None
 
 
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
@@ -140,6 +148,33 @@ class FilePreview(NamedTuple):
         return cls(content=preview_content, is_truncated=is_truncated)
 
 
+class SnippetMetaValidatedParameters(NamedTuple):
+    """A collection of validated snippet parameters and any validation errors.
+
+    :param parameters: A list of validated snippet parameters.
+    :type parameters: list[SnippetMetaParameter]
+    :param errors: A list of validation error messages.
+    :type errors: list[str]
+    """
+
+    parameters: list["SnippetMetaParameter"]
+    errors: list[str]
+
+
+class SnippetMetaParameterChoice(TypedDict):
+    """Represent a choice for a snippet parameter.
+
+    :param value: The value of the choice.
+    :type value: str
+    :param label: The label for the choice. If not provided, the value will be used as
+        the label.
+    :type label: NotRequired[str]
+    """
+
+    value: str
+    label: NotRequired[str]
+
+
 class SnippetMetaParameter(BaseModel):
     """Represent a parameter for a support snippet.
 
@@ -168,7 +203,7 @@ class SnippetMetaParameter(BaseModel):
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
         in input data.
-    :type choices: list[str | dict[str, str]] | None
+    :type choices: list[str | SnippetMetaParameterChoice] | None
     :param min_length: The minimum length for string parameters. Defaults to None,
         meaning it won't be used for validation.
     :type min_length: int | None
@@ -208,8 +243,8 @@ class SnippetMetaParameter(BaseModel):
     description: RequiredStr | None = None
     label: RequiredStr | None = None
     placeholder: RequiredStr | None = None
-    default: str | int | float | bool | None = None
-    choices: list[str | dict[str, str]] | None = Field(
+    default: DefaultValueType = None
+    choices: list[str | SnippetMetaParameterChoice] | None = Field(
         None, validation_alias=AliasChoices("choices", "options")
     )
     min_length: int | None = None
@@ -258,6 +293,25 @@ class SnippetMetaParameter(BaseModel):
                 "Unknown type %s for snippet parameter, defaulting to str", value
             )
             return SnippetMetaParameterType.STR
+
+    @field_validator("default")
+    @classmethod
+    def validate_default(
+        cls, value: DefaultValueType, info: ValidationInfo
+    ) -> DefaultValueType:
+        """Validate the default value against the parameter type.
+
+        :param value: The default value to validate.
+        :type value: DefaultValueType
+        :param info: The validation information.
+        :type info: ValidationInfo
+        :return: The validated default value.
+        :rtype: DefaultValueType
+        """
+        if value is None:
+            return value
+        param_type = info.data["py_type"]
+        return run_pydantic_type_validator(param_type.value, value)
 
     @property
     def form_field_element_cls(self) -> type[FormFieldElement]:
@@ -387,6 +441,18 @@ class Snippet(BaseSQLModel, table=True):
         """
         return self.meta.get("description", "")
 
+    def get_validated_parameters(self) -> SnippetMetaValidatedParameters:
+        """Get the validated parameters of the snippet.
+
+        :return: A SnippetMetaValidatedParameters instance containing the list of valid
+            parameters and any validation errors encountered.
+        :rtype: SnippetMetaValidatedParameters
+        """
+        parameters = self.meta.get("parameters", [])
+        return self._get_parameters_from_json(
+            json_serializer(parameters, sort_keys=True),
+        )
+
     async def get_preview(self) -> FilePreview:
         """Get a preview of the snippet code.
 
@@ -502,6 +568,41 @@ class Snippet(BaseSQLModel, table=True):
             return {}
 
     @staticmethod
+    @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
+    def _get_parameters_from_json(
+        parameters_json: str,
+    ) -> SnippetMetaValidatedParameters:
+        """Parse and validate snippet parameters from a JSON string.
+
+        :param parameters_json: A JSON string representing a list of snippet parameters.
+        :type parameters_json: str
+        :return: A SnippetMetaValidatedParameters instance containing the list of valid
+            parameters and any validation errors encountered.
+        :rtype: SnippetMetaValidatedParameters
+        """
+        parameters = json.loads(parameters_json) or []
+        if not isinstance(parameters, list):
+            error_msg = f"Invalid snippet parameters, expected a list but got {parameters.__class__.__name__}"
+            logger.warning("%s: %r", error_msg, parameters)
+            return SnippetMetaValidatedParameters(parameters=[], errors=[error_msg])
+        valid_parameters = []
+        errors = []
+        param_preview_max_size = 100
+        for param in parameters:
+            try:
+                valid_parameters.append(SnippetMetaParameter.model_validate(param))
+            except ValidationError:
+                error_msg = "Invalid snippet parameter"
+                param_preview = repr(param)
+                logger.warning("%s: %s", error_msg, param_preview, exc_info=True)
+                if len(param_preview) > param_preview_max_size:
+                    param_preview = f"{param_preview[:param_preview_max_size]}..."
+                errors.append(f"{error_msg}: {param_preview}")
+        return SnippetMetaValidatedParameters(
+            parameters=valid_parameters, errors=errors
+        )
+
+    @staticmethod
     @validate_call
     @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
     def _to_form(
@@ -510,19 +611,12 @@ class Snippet(BaseSQLModel, table=True):
         fieldsets = [
             get_executor_hosts_fieldset(executor_hosts),
         ]
-        parameters = json.loads(parameters_json) or []
-        if not isinstance(parameters, list):
-            logger.warning(
-                "Invalid snippet parameters, expected a list but got: %r", parameters
-            )
-            parameters = []
+        parameters = Snippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
         fields = []
         for param in parameters:
             try:
-                fields.append(
-                    SnippetMetaParameter.model_validate(param).to_form_field()
-                )
+                fields.append(param.to_form_field())
             except ValidationError:
                 logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
         if add_extra_field:
