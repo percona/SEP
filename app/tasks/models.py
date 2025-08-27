@@ -632,6 +632,15 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         sa_type=DateTimeWithTimezone,
     )
 
+    @property
+    def is_running(self) -> bool:
+        """Check if the task is currently running.
+
+        :return: True if the task status is RUNNING, False otherwise.
+        :rtype: bool
+        """
+        return self.status == TaskHistoryStatusEnum.RUNNING
+
     async def alert_for_status(self) -> None:
         """Trigger an alert for failing statuses."""
         if self.status == TaskHistoryStatusEnum.FAILED:
