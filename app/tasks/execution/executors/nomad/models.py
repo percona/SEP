@@ -545,7 +545,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     async def _sync_task_history(
         self,
-        session: AsyncSession,
         queue_item: TaskHistory,
     ) -> TaskHistory:
         """Synchronize the task history with the current state of the task in Nomad.
@@ -554,9 +553,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         with the current status, task states, and logs. If the task is no longer
         running, it updates the status accordingly.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
         :return: The updated task history with execution details.
@@ -588,22 +584,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
                     queue_item.status = TaskHistoryStatusEnum.FAILED
                     queue_item.started_at = None
-                    return await TaskHistoryManager.save(
-                        session,
-                        queue_item,
-                        flag_modified_fields=["execution_request"],
-                    )
-
             except JobNotFoundException:
                 logger.warning(
                     "Lost job and allocation from task history %s", queue_item.id
                 )
                 queue_item.status = TaskHistoryStatusEnum.LOST
-                return await TaskHistoryManager.save(
-                    session,
-                    queue_item,
-                    flag_modified_fields=["execution_request"],
-                )
             return queue_item
 
         task_states = alloc["TaskStates"]
@@ -646,12 +631,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.status,
                     stopped=job.get("Stop", False),
                 )
-
-        return await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=["execution_request"],
-        )
+        return queue_item
 
     def task_needs_new_job(self, task: Task) -> bool:
         """Determine whether a new job needs to be created for the task.
