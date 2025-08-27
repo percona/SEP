@@ -86,8 +86,8 @@ class BackupNotifyStatus(IntEnum):
 
 
 class MSPAction(str, Enum):
-    BACKUP = auto()
-    UPLOAD = auto()
+    BACKUP = "backup"
+    UPLOAD = "upload"
 
 
 def ftwrl_guardian(
