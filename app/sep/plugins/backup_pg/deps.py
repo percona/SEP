@@ -68,7 +68,7 @@ async def get_backups_index_context(
 ) -> dict[str, Any]:
     """Assemble the context for the Backups plugin index view.
 
-    Retrieves MySQL services and associated tasks, organizing them based on their
+    Retrieves PostgreSQL services and associated tasks, organizing them based on their
     execution status. Integrates this information into the default context for
     rendering in templates.
 
@@ -89,6 +89,6 @@ async def get_backups_index_context(
         tasks_api,
         get_backups_task_info,
         context,
-        TaskOwner.BACKUPS,
+        TaskOwner.BACKUP_PG,
         alert_on_fail_default=True,
     )
