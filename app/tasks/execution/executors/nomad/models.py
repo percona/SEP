@@ -16,8 +16,10 @@
 """Provide task execution management for Nomad jobs."""
 
 import asyncio
+import gzip
 import json
 import logging
+from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -594,8 +596,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         task_states = alloc["TaskStates"]
         task_logs = self.get_logs_for_allocation(
             alloc,
-            queue_item.execution_request.tracking.get("task_logs", {}),
-            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
+            queue_item.task_logs,
+            queue_item.task.anonymized_entities,
         )
         logger.debug(
             "sync_task_history(queue_item_id=%s): tasks_logs = %r",
@@ -607,9 +609,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             job_id=job_id,
             evaluation_id=alloc["EvalID"],
             task_states=task_states,
-            task_logs=sort_dict(
-                task_logs, lambda item: list(task_states.keys()).index(item[0])
-            ),
+            task_logs=b64encode(
+                gzip.compress(
+                    json.dumps(
+                        sort_dict(
+                            task_logs,
+                            lambda item: list(task_states.keys()).index(item[0]),
+                        )
+                    ).encode()
+                )
+            ).decode(),
         )
 
         try:

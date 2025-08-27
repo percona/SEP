@@ -15,6 +15,9 @@
 
 """Define models for the Task API."""
 
+import base64
+import gzip
+import json
 from collections import defaultdict
 from collections.abc import Generator
 from datetime import datetime
@@ -416,6 +419,15 @@ class TaskBase(SQLModel):
             raise ValueError("data must contain 'task' for Proxy backend")
         return self
 
+    @property
+    def anonymized_entities(self) -> set[PIIEntity]:
+        """Return the set of PII entities to be anonymized.
+
+        :return: A set of PIIEntity members to be anonymized.
+        :rtype: set[PIIEntity]
+        """
+        return PIIEntity.decode_selection(self.anonymize_mask)
+
 
 class Task(TaskBase, BaseSQLModel, table=True):
     """Represent a task stored in the database.
@@ -662,6 +674,14 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         }
         await alert_service.trigger(alert_data)
 
+    @cached_property
+    def task_logs(self) -> dict:
+        """Return task logs."""
+        logs = self.execution_request.tracking.get("task_logs", {})
+        if isinstance(logs, str):
+            return json.loads(gzip.decompress(base64.b64decode(logs)))
+        return logs
+
     def iter_logs(
         self,
         start_offsets: dict[str, dict[str, int]] | None = None,
@@ -681,7 +701,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         :yield: TaskLog objects containing log chunks.
         :rtype: Generator[TaskLog]
         """
-        task_logs = self.execution_request.tracking.get("task_logs", {})
+        task_logs = self.task_logs
         if step is not None:
             task_logs = {step: task_logs.get(step, {})}
         start_offsets = defaultdict(dict, start_offsets or {})
