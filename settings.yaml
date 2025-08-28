@@ -3,7 +3,7 @@ default:
     - "localhost"
     - "127.0.0.1"
   AUTH_USER_MODEL: app.models.CasdoorUser
-  ALLOW_CONCURRENT_SESSIONS: false
+  ALLOW_CONCURRENT_SESSIONS: False
   SECRET_KEY: ""  # Auto-generated if empty
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
   SSL_CAFILE: null
@@ -24,15 +24,15 @@ default:
     UVICORN_PORT: 8000
     SSL_KEYFILE: null
     SSL_CERTFILE: null
-    PROXY_HEADERS: false
+    PROXY_HEADERS: False
     TEMPLATES_DIR: templates
     STATIC_DIR: static
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:
       COOKIE_NAME: casdoorToken
-      SECURE: false
-      HTTP_ONLY: true
+      SECURE: False
+      HTTP_ONLY: True
       SAME_SITE: lax
       MAX_AGE: 3600
     PLUGINS:
@@ -71,7 +71,7 @@ default:
       - SYNCER: PMMSyncer
         PMM:
           ENDPOINT: https://127.0.0.1:8443
-          VERIFY_SSL: true
+          VERIFY_SSL: True
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -103,13 +103,13 @@ default:
     SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
-      SECURE: false
-      VERIFY_SSL: true
+      SECURE: False
+      VERIFY_SSL: True
       SSL_KEYFILE: null
       SSL_CERTFILE: null
       SSL_CAFILE: null
       TIMEOUT: 10  # Request timeout in seconds
-      MINIFY_PAYLOAD: true  # Minify payloads before dispatch
+      MINIFY_PAYLOAD: True  # Minify payloads before dispatch
       LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
     ANONYMIZER:
       DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
@@ -131,7 +131,7 @@ development:
       - SYNCER: PMMSyncer
         PMM:
           ENDPOINT: https://127.0.0.1:8443
-          VERIFY_SSL: false
+          VERIFY_SSL: False
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -148,13 +148,13 @@ development:
       PROCESSED_FOLDER: data/celery/processed
       CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
-    RESULT_PERSISTENT: true
+    RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
   ALERTING:
     SOURCE_SUFFIX: ":dev"
 
 production_docker:
-  ALLOW_CONCURRENT_SESSIONS: true
+  ALLOW_CONCURRENT_SESSIONS: True
   ALLOWED_HOSTS:
     - "*"
   AUTH_USER_MODEL: app.models.CasdoorUser
@@ -202,7 +202,7 @@ production_docker:
     INVENTORY_ENDPOINT: https://127.0.0.1:9001
     OAUTH:
       REDIRECT_URI: /oauth/callback
-    PROXY_HEADERS: true
+    PROXY_HEADERS: True
     SSL_CERTFILE: /data/certs/sep/localhost-cert.pem
     SSL_KEYFILE: /data/certs/sep/localhost-cert-key.pem
     SECURITY_HEADERS:
@@ -211,13 +211,13 @@ production_docker:
         - /api/tasks/docs
     SESSION:
       COOKIE_NAME: casdoorToken
-      SECURE: true
+      SECURE: True
     SYNCERS:
       - SYNCER: PMMSyncer
         PMM:
           API_KEY: "xxx"
           ENDPOINT: https://127.0.0.1
-          VERIFY_SSL: false
+          VERIFY_SSL: False
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -236,7 +236,7 @@ production_docker:
       USER: postgres
     NOMAD:
       ENDPOINT: https://127.0.0.1:4647
-      SECURE: false
+      SECURE: False
       SSL_CAFILE: /data/certs/nomad/nomad-agent-ca.pem
       SSL_CERTFILE: /data/certs/nomad/global-client-nomad.pem
       SSL_KEYFILE: /data/certs/nomad/global-client-nomad-key.pem
