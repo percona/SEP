@@ -110,8 +110,8 @@ class BackupNotifyStatus(IntEnum):
 
 
 class MSPAction(str, Enum):
-    BACKUP = auto()
-    UPLOAD = auto()
+    BACKUP = "backup"
+    UPLOAD = "upload"
 
 
 class DirectoryEncryptor:
