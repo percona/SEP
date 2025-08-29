@@ -509,6 +509,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         alloc_id = alloc["ID"]
         task_logs = defaultdict(dict, initial_logs or {})
+        # TODO(yan): Refactor logs
+        # SEP-564
+        max_lines = 100000
         if task_states := alloc["TaskStates"]:
             for step, log_type in product(task_states, TaskLogType):
                 task_logs[step][log_type] = task_logs[step].get(log_type) or ""
@@ -540,9 +543,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 "Offset", task_logs[step][last_offset_key]
                             )
                             msg = b64decode_str(raw_msg)
-                            if step in ("run-script", "step1"):
-                                msg = anonymize_text(msg, anonymize_entities or set())
+                            if step in ("run-script", "step1") and anonymize_entities:
+                                msg = anonymize_text(msg, anonymize_entities)
                             task_logs[step][log_type] += msg
+                            task_logs[step][log_type] = "\n".join(
+                                task_logs[step][log_type].splitlines()[-max_lines:]
+                            )
         return task_logs
 
     async def _sync_task_history(

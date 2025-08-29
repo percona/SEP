@@ -677,6 +677,8 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     @cached_property
     def task_logs(self) -> dict:
         """Return task logs."""
+        # TODO(yan): Refactor logs
+        # SEP-564
         logs = self.execution_request.tracking.get("task_logs", {})
         if isinstance(logs, str):
             return json.loads(gzip.decompress(base64.b64decode(logs)))
@@ -749,6 +751,8 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         :return: The validated TaskExecutionRequest with logs removed.
         :rtype: TaskExecutionRequest
         """
+        # TODO(yan): Refactor logs
+        # SEP-564
         v.tracking["task_logs"] = bool(v.tracking.get("task_logs"))
         return v
 
