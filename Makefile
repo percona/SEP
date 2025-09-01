@@ -33,7 +33,7 @@ build: venv app/
 pack:
 ifndef BUNDLE
 	@echo Exporting bundle
-	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app static templates
+	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets static templates
 else
 	@echo Copying custom bundle "${BUNDLE}"
 	@cp -a "${BUNDLE}" bundle.tgz
