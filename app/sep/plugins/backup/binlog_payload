@@ -401,6 +401,11 @@ def logging_setup(
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
+    # Configure root logger to prevent stderr output
+    logging.root.setLevel(logging.WARNING)  # Set to WARNING to suppress INFO messages
+    # Or alternatively, add a null handler to suppress all root logger output
+    # logging.root.addHandler(logging.NullHandler())
+
     name = log_name.replace(".log", "")
     logger = logging.getLogger(name)
     log_file = real_logging_dir / log_name
@@ -1104,7 +1109,7 @@ def run_binlog_process(server_data, lock_file, command_queue):
                         last_source_status = source_status
 
                 # Manage upload
-                if last_upload_time + server_data.get("UPLOAD_INTERVAL", 60 * 1) < time.time():
+                if last_upload_time + server_data.get("UPLOAD_INTERVAL", 600 * 1) < time.time():
                     LOGGER.info("Binlog upload starting ...")
                     for upload_type in server_data.get("UPLOAD"):
                         if upload_type == "rsync":
