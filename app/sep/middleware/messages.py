@@ -17,6 +17,7 @@
 
 import json
 import logging
+import re
 from collections import OrderedDict
 from enum import IntEnum
 from typing import Any, ClassVar
@@ -77,6 +78,9 @@ class Message(BaseModel):
     :type level: MessageLevel
     :param text: The content of the message. Must not exceed 512 characters.
     :type text: str
+    :param path_pattern: An optional URI path pattern associated with the message.
+        If provided, the message will only be shown on requests matching this pattern.
+    :type path_pattern: re.Pattern[str] | None
     :param sticky: A flag indicating whether the message should persist until dismissed.
     :type sticky: bool
     """
@@ -84,6 +88,7 @@ class Message(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     level: MessageLevel = Field(alias="l")
     text: RequiredStr = Field(alias="t", max_length=512)
+    path_pattern: re.Pattern[str] | None = Field(default=None, alias="p")
     sticky: bool = Field(default=False, exclude=True)
 
     def __hash__(self) -> int:
@@ -183,7 +188,11 @@ class MessagesMiddleware(BaseHTTPMiddleware):
         while (
             len(
                 new_cookie := crypto_serializer.dumps(
-                    json_serializer(list(request.state.messages), separators=(",", ":"))
+                    json_serializer(
+                        list(request.state.messages),
+                        encoders_kwargs={"exclude_none": True},
+                        separators=(",", ":"),
+                    )
                 )
             )
             > self.MAX_COOKIE_SIZE
@@ -205,7 +214,12 @@ class MessagesMiddleware(BaseHTTPMiddleware):
 
 
 def add_message(
-    request: Request, level: MessageLevel, text: str, *, sticky: bool = False
+    request: Request,
+    level: MessageLevel,
+    text: str,
+    path_pattern: str | None = None,
+    *,
+    sticky: bool = False,
 ) -> None:
     """Add a message to the current request's message queue.
 
@@ -219,6 +233,9 @@ def add_message(
     :type level: MessageLevel
     :param text: The text content of the message.
     :type text: str
+    :param path_pattern: An optional path regex pattern associated with the message.
+        If provided, the message will only be shown on requests matching this pattern.
+    :type path_pattern: str | None
     :param sticky: Whether the message should persist until explicitly dismissed,
         defaults to False.
     :type sticky: bool
@@ -226,7 +243,9 @@ def add_message(
     :raises ValueError: If the message data is invalid and fails validation.
     """
     try:
-        message = Message(level=level, text=text, sticky=sticky)
+        message = Message(
+            level=level, text=text, path_pattern=path_pattern, sticky=sticky
+        )
         request.state.messages[message] = None
     except AttributeError:
         logger.exception("Unable to add messages without MessageMiddleware")
@@ -240,7 +259,9 @@ def get_messages(request: Request, max_qty: int | None = None) -> list[Message]:
     """Retrieve and remove messages from the request state.
 
     This function fetches messages stored in the request state (up to `max_qty` if
-    specified), removes them from the state, and returns them as a list.
+    specified), removes them from the state, and returns them as a list. Messages with
+    non-nullable path patterns that doesn't match the current requested path are
+    retained in the state for future retrieval.
 
     :param request: The HTTP request object.
     :type request: Request
@@ -251,14 +272,31 @@ def get_messages(request: Request, max_qty: int | None = None) -> list[Message]:
     :rtype: list[Message]
     """
     messages = []
+    messages_to_save = []
     saved_messages = getattr(request.state, "messages", None)
+    current_path = request.scope.get("path_pattern") or request.url.path
+    logger.debug("Retrieving messages for %s: %s", current_path, saved_messages)
     while saved_messages and (max_qty is None or len(messages) < max_qty):
         message, _ = saved_messages.popitem(last=False)
-        messages.append(message)
+        if message.path_pattern is None or message.path_pattern.match(current_path):
+            messages.append(message)
+        else:
+            messages_to_save.append(message)
+    logger.debug("Retrieved messages for %s: %s", current_path, messages)
+    logger.debug("Saving messages for %s: %s", current_path, messages_to_save)
+    request.state.messages = OrderedDict.fromkeys(
+        messages_to_save + list(saved_messages or [])
+    )
     return messages
 
 
-def info(request: Request, text: str, *, sticky: bool = False) -> None:
+def info(
+    request: Request,
+    text: str,
+    path_pattern: str | None = None,
+    *,
+    sticky: bool = False,
+) -> None:
     """Add an informational message to the request's message queue.
 
     This is a convenience function that adds a message with the INFO level.
@@ -267,14 +305,23 @@ def info(request: Request, text: str, *, sticky: bool = False) -> None:
     :type request: Request
     :param text: The informational message text.
     :type text: str
+    :param path_pattern: An optional path regex pattern associated with the message.
+        If provided, the message will only be shown on requests matching this pattern.
+    :type path_pattern: str | None
     :param sticky: Whether the message should persist until explicitly dismissed,
         defaults to False.
     :type sticky: bool
     """
-    add_message(request, MessageLevel.INFO, text, sticky=sticky)
+    add_message(request, MessageLevel.INFO, text, path_pattern, sticky=sticky)
 
 
-def success(request: Request, text: str, *, sticky: bool = False) -> None:
+def success(
+    request: Request,
+    text: str,
+    path_pattern: str | None = None,
+    *,
+    sticky: bool = False,
+) -> None:
     """Add a success message to the request's message queue.
 
     This is a convenience function that adds a message with the SUCCESS level.
@@ -283,14 +330,23 @@ def success(request: Request, text: str, *, sticky: bool = False) -> None:
     :type request: Request
     :param text: The success message text.
     :type text: str
+    :param path_pattern: An optional path regex pattern associated with the message.
+        If provided, the message will only be shown on requests matching this pattern.
+    :type path_pattern: str | None
     :param sticky: Whether the message should persist until explicitly dismissed,
         defaults to False.
     :type sticky: bool
     """
-    add_message(request, MessageLevel.SUCCESS, text, sticky=sticky)
+    add_message(request, MessageLevel.SUCCESS, text, path_pattern, sticky=sticky)
 
 
-def warning(request: Request, text: str, *, sticky: bool = False) -> None:
+def warning(
+    request: Request,
+    text: str,
+    path_pattern: str | None = None,
+    *,
+    sticky: bool = False,
+) -> None:
     """Add a warning message to the request's message queue.
 
     This is a convenience function that adds a message with the WARNING level.
@@ -299,14 +355,23 @@ def warning(request: Request, text: str, *, sticky: bool = False) -> None:
     :type request: Request
     :param text: The warning message text.
     :type text: str
+    :param path_pattern: An optional path regex pattern associated with the message.
+        If provided, the message will only be shown on requests matching this pattern.
+    :type path_pattern: str | None
     :param sticky: Whether the message should persist until explicitly dismissed,
         defaults to False.
     :type sticky: bool
     """
-    add_message(request, MessageLevel.WARNING, text, sticky=sticky)
+    add_message(request, MessageLevel.WARNING, text, path_pattern, sticky=sticky)
 
 
-def error(request: Request, text: str, *, sticky: bool = False) -> None:
+def error(
+    request: Request,
+    text: str,
+    path_pattern: str | None = None,
+    *,
+    sticky: bool = False,
+) -> None:
     """Add an error message to the request's message queue.
 
     This is a convenience function that adds a message with the ERROR level.
@@ -315,8 +380,11 @@ def error(request: Request, text: str, *, sticky: bool = False) -> None:
     :type request: Request
     :param text: The error message text.
     :type text: str
+    :param path_pattern: An optional path regex pattern associated with the message.
+        If provided, the message will only be shown on requests matching this pattern.
+    :type path_pattern: str | None
     :param sticky: Whether the message should persist until explicitly dismissed,
         defaults to False.
     :type sticky: bool
     """
-    add_message(request, MessageLevel.ERROR, text, sticky=sticky)
+    add_message(request, MessageLevel.ERROR, text, path_pattern, sticky=sticky)
