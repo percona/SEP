@@ -15,12 +15,12 @@
 
 """Utilities for serializing data."""
 
+__all__ = ["json_serializer"]
+
 import json
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
-
-__all__ = ["json_serializer"]
 
 
 def json_serializer(

@@ -15,6 +15,8 @@
 
 """Define cache utilities."""
 
+__all__ = ["ttl_cache"]
+
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,8 +26,6 @@ from time import monotonic
 from typing import Any, Generic, NamedTuple, ParamSpec, TypeVar
 
 from pydantic import PositiveFloat, PositiveInt, validate_call
-
-__all__ = ["ttl_cache"]
 
 P = ParamSpec("P")
 T = TypeVar("T")

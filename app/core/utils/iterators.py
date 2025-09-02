@@ -15,10 +15,10 @@
 
 """Define iterator utilities."""
 
+__all__ = ["unique_everseen"]
+
 from collections.abc import Callable, Generator, Iterable
 from typing import Any, TypeVar
-
-__all__ = ["unique_everseen"]
 
 T = TypeVar("T")
 
