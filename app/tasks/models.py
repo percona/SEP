@@ -15,9 +15,12 @@
 
 """Define models for the Task API."""
 
+from collections import defaultdict
+from collections.abc import Generator
 from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
+from itertools import product
 from pathlib import Path
 from statistics import mean
 from typing import Any, Literal, Self
@@ -114,6 +117,36 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUP_MONGO = "BACKUP_MONGO"
     RESTORE_MONGO = "RESTORE_MONGO"
     BACKUP_PG = "BACKUP_PG"
+
+
+class TaskLogType(StrEnum):
+    """Define the type of task log.
+
+    :cvar STDOUT: Enum value for standard output logs.
+    :vartype STDOUT: str
+    :cvar STDERR: Enum value for standard error logs.
+    :vartype STDERR: str
+    """
+
+    STDOUT = "stdout"
+    STDERR = "stderr"
+
+
+class TaskLog(BaseModel):
+    """Define a task log line.
+
+    :param step: The task step name.
+    :type step: str
+    :param type: The type of log to stream ('stdout' or 'stderr').
+    :type type: TaskLogType
+    :param msg: The log message. If None, represents the end of the log for that step.
+    :type msg: str | None
+    """
+
+    step: str
+    type: TaskLogType
+    msg: str | None
+    offset: int = 0
 
 
 class TaskExecutionRequest(BaseModel):
@@ -621,6 +654,36 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         }
         await alert_service.trigger(alert_data)
 
+    def iter_logs(
+        self,
+        start_offsets: dict[str, dict[str, int]] | None = None,
+        chunk_size: int = 8192,
+    ) -> Generator[TaskLog]:
+        """Yield task logs in chunks based on provided start offsets.
+
+        :param start_offsets: A dictionary containing the starting offsets for each
+            step and log type. If None, defaults to starting from the beginning.
+        :type start_offsets: dict[str, dict[str, int]] | None
+        :param chunk_size: The size of each log chunk to yield. Defaults to 8192 bytes.
+        :type chunk_size: int
+        :yield: TaskLog objects containing log chunks.
+        :rtype: Generator[TaskLog]
+        """
+        task_logs = self.execution_request.tracking.get("task_logs", {}).items()
+        start_offsets = defaultdict(dict, start_offsets or {})
+        for (step, log), log_type in product(task_logs, TaskLogType):
+            msg = log.get(log_type) or ""
+            for chunk_start in range(
+                start_offsets[step].get(log_type, 0), len(msg), chunk_size
+            ):
+                chunk_end = chunk_start + chunk_size
+                yield TaskLog(
+                    step=step,
+                    type=log_type,
+                    msg=msg[chunk_start:chunk_end],
+                    offset=chunk_end,
+                )
+
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """Represent a task history API response.
@@ -761,36 +824,6 @@ class TransformPayloadRequest(BaseModel):
 
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
-
-
-class TaskLogType(StrEnum):
-    """Define the type of task log.
-
-    :cvar STDOUT: Enum value for standard output logs.
-    :vartype STDOUT: str
-    :cvar STDERR: Enum value for standard error logs.
-    :vartype STDERR: str
-    """
-
-    STDOUT = "stdout"
-    STDERR = "stderr"
-
-
-class TaskLog(BaseModel):
-    """Define a task log line.
-
-    :param step: The task step name.
-    :type step: str
-    :param type: The type of log to stream ('stdout' or 'stderr').
-    :type type: TaskLogType
-    :param msg: The log message. If None, represents the end of the log for that step.
-    :type msg: str | None
-    """
-
-    step: str
-    type: TaskLogType
-    msg: str | None
-    offset: int = 0
 
 
 class DispatchLock(BaseSQLModel, table=True):
