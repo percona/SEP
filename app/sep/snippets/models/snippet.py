@@ -13,80 +13,64 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define models for the snippets feature as part of the SEP app."""
+"""Define the main models for the snippets feature as part of the SEP app."""
+
+__all__ = ["FilePreview", "Snippet"]
 
 import hashlib
 import json
 import logging
+import shlex
 from collections.abc import Iterable
-from enum import Enum
 from functools import cached_property
 from io import SEEK_END
 from os import PathLike
 from pathlib import Path
-from typing import Any, NamedTuple, NotRequired, Self
+from typing import Annotated, Any, NamedTuple, Self
 
 import aiofiles
 import yaml
 from aiofiles.ospath import getsize
 from async_lru import alru_cache
 from pydantic import (
-    AliasChoices,
     BaseModel,
+    BeforeValidator,
     computed_field,
+    create_model,
     Field,
-    field_validator,
-    model_validator,
     PositiveInt,
     validate_call,
     ValidationError,
 )
-from pydantic.fields import FieldInfo
-from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandler
 from sqlalchemy import Column, JSON
 from sqlmodel import Field as SQLField
-from typing_extensions import TypedDict
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils import (
     json_serializer,
-    run_pydantic_type_validator,
     ttl_cache,
     utc_now,
 )
-from app.core.utils.fields import EnumFieldMixin, FilePathLike, RequiredStr, UTCDatetime
+from app.core.utils.fields import FilePathLike, UTCDatetime
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.forms import (
-    CheckboxInputElement,
     EXTRA_ARGS_INPUT,
     FieldsetElement,
     FormElement,
-    FormFieldElement,
     get_executor_hosts_fieldset,
-    NumberInputElement,
-    SelectElement,
     SubmitButtonElement,
-    TextareaElement,
-    TextInputElement,
-    TextInputHTMLElement,
 )
-
-__all__ = ["FilePreview", "Snippet", "SnippetMetaParameter"]
+from app.sep.snippets.models.meta import (
+    SnippetMetaParameter,
+    SnippetMetaParametersValidationResult,
+)
+from app.sep.snippets.utils import generate_unique_identifiers
 
 _ONE_HOUR = 60 * 60
 logger = logging.getLogger(__name__)
 
-DefaultValueType = str | int | float | bool | None
-
-
-class SnippetMetaParameterType(EnumFieldMixin, Enum):
-    """Enumerate the possible types for snippet parameters."""
-
-    STR = str
-    INT = int
-    FLOAT = float
-    BOOL = bool
+ExtraArgsField = Annotated[list[str], BeforeValidator(shlex.split)]
 
 
 class FilePreview(NamedTuple):
@@ -146,226 +130,6 @@ class FilePreview(NamedTuple):
                 0, SEEK_END
             )
         return cls(content=preview_content, is_truncated=is_truncated)
-
-
-class SnippetMetaValidatedParameters(NamedTuple):
-    """A collection of validated snippet parameters and any validation errors.
-
-    :param parameters: A list of validated snippet parameters.
-    :type parameters: list[SnippetMetaParameter]
-    :param errors: A list of validation error messages.
-    :type errors: list[str]
-    """
-
-    parameters: list["SnippetMetaParameter"]
-    errors: list[str]
-
-
-class SnippetMetaParameterChoice(TypedDict):
-    """Represent a choice for a snippet parameter.
-
-    :param value: The value of the choice.
-    :type value: str
-    :param label: The label for the choice. If not provided, the value will be used as
-        the label.
-    :type label: NotRequired[str]
-    """
-
-    value: str
-    label: NotRequired[str]
-
-
-class SnippetMetaParameter(BaseModel):
-    """Represent a parameter for a support snippet.
-
-    :param name: The name of the parameter.
-    :type name: RequiredStr
-    :param py_type: The type of the parameter (`str`, `int`, `float`, `bool`). Defaults
-        to `str`. This parameter is validated as "type" in input data.
-    :type py_type: SnippetMetaParameterType
-    :param required: Whether the parameter is required. Defaults to False.
-    :type required: bool
-    :param positional: Whether the parameter is positional. Defaults to False.
-    :type positional: bool
-    :param description: A description of the parameter. Defaults to None, meaning it
-        won't be used for validation.
-    :type description: RequiredStr | None
-    :param label: A label for the parameter. Defaults to None, meaning it won't be used
-        for validation.
-    :type label: RequiredStr | None
-    :param placeholder: A placeholder for the parameter. Defaults to None, meaning it
-        won't be used for validation.
-    :type placeholder: RequiredStr | None
-    :param default: The default value for the parameter. Defaults to None, meaning no
-        default.
-    :type default: str | int | float | bool | None
-    :param choices: A list of choices for the parameter. Each choice can be a string or
-        a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
-        be used for validation. This parameter is validated as "options" or "choices"
-        in input data.
-    :type choices: list[str | SnippetMetaParameterChoice] | None
-    :param min_length: The minimum length for string parameters. Defaults to None,
-        meaning it won't be used for validation.
-    :type min_length: int | None
-    :param max_length: The maximum length for string parameters. Defaults to None,
-        meaning it won't be used for validation.
-    :type max_length: int | None
-    :param pattern: A regex pattern that the parameter value must match. Defaults to
-        None, meaning it won't be used for validation.
-    :type pattern: RequiredStr | None
-    :param gt: The value must be greater than this for numeric parameters. Defaults to
-        None, meaning it won't be used for validation.
-    :type gt: float | None
-    :param lt: The value must be less than this for numeric parameters. Defaults to
-        None, meaning it won't be used for validation.
-    :type lt: float | None
-    :param ge: The value must be greater than or equal to this for numeric parameters.
-        Defaults to None, meaning it won't be used for validation.
-    :type ge: float | None
-    :param le: The value must be less than or equal to this for numeric parameters.
-        Defaults to None, meaning it won't be used for validation.
-    :type le: float | None
-    :param step: The step value for numeric parameters. Defaults to None, which sets
-        step to 1 for int and 0.1 for float types.
-    :type step: float | None
-    :param html_elem: The HTML element to use for text input parameters. Can be
-        TextInputHTMLElement.TEXT or TextInputHTMLElement.TEXTAREA. Defaults to None,
-        which uses TextInputHTMLElement.TEXT.
-    :type html_elem: TextInputHTMLElement | None
-    """
-
-    name: RequiredStr = Field(..., serialization_alias="title")
-    py_type: SnippetMetaParameterType = Field(
-        SnippetMetaParameterType.STR, validation_alias="type"
-    )
-    required: bool = False
-    positional: bool = False
-    description: RequiredStr | None = None
-    label: RequiredStr | None = None
-    placeholder: RequiredStr | None = None
-    default: DefaultValueType = None
-    choices: list[str | SnippetMetaParameterChoice] | None = Field(
-        None, validation_alias=AliasChoices("choices", "options")
-    )
-    min_length: int | None = None
-    max_length: int | None = None
-    pattern: RequiredStr | None = None
-    gt: float | None = None
-    lt: float | None = None
-    ge: float | None = None
-    le: float | None = None
-    step: float | None = None
-    html_elem: TextInputHTMLElement | None = None
-
-    @model_validator(mode="after")
-    def set_default_step(self) -> Self:
-        """Set default step for numeric parameters if not provided.
-
-        :return: The instance of SnippetMetaParameter with the step set if it is a
-            numeric type.
-        :rtype: SnippetMetaParameter
-        """
-        if self.step is None:
-            if self.py_type == SnippetMetaParameterType.FLOAT:
-                self.step = 0.1
-            elif self.py_type == SnippetMetaParameterType.INT:
-                self.step = 1.0
-        return self
-
-    @field_validator("py_type", mode="wrap")
-    @classmethod
-    def set_default_type_if_unknown(
-        cls, value: Any, handler: ValidatorFunctionWrapHandler
-    ) -> SnippetMetaParameterType:
-        """Set default type to str if the provided type is unknown.
-
-        :param value: The input value to validate.
-        :type value: Any
-        :param handler: The validation handler function.
-        :type handler: ValidatorFunctionWrapHandler
-        :return: The validated type, defaulting to str if unknown.
-        :rtype: SnippetMetaParameterType
-        """
-        try:
-            return handler(value)
-        except ValidationError:
-            logger.debug(
-                "Unknown type %s for snippet parameter, defaulting to str", value
-            )
-            return SnippetMetaParameterType.STR
-
-    @field_validator("default")
-    @classmethod
-    def validate_default(
-        cls, value: DefaultValueType, info: ValidationInfo
-    ) -> DefaultValueType:
-        """Validate the default value against the parameter type.
-
-        :param value: The default value to validate.
-        :type value: DefaultValueType
-        :param info: The validation information.
-        :type info: ValidationInfo
-        :return: The validated default value.
-        :rtype: DefaultValueType
-        """
-        if value is None:
-            return value
-        param_type = info.data["py_type"]
-        return run_pydantic_type_validator(param_type.value, value)
-
-    @property
-    def form_field_element_cls(self) -> type[FormFieldElement]:
-        """Get the form field element class based on the parameter type.
-
-        :return: The appropriate form field element class for the parameter type.
-        :rtype: type[FormFieldElement]
-        """
-        if self.choices:
-            return SelectElement
-        if self.py_type == SnippetMetaParameterType.BOOL:
-            return CheckboxInputElement
-        if self.py_type in [
-            SnippetMetaParameterType.INT,
-            SnippetMetaParameterType.FLOAT,
-        ]:
-            return NumberInputElement
-        if self.html_elem == TextInputHTMLElement.TEXTAREA:
-            return TextareaElement
-        return TextInputElement
-
-    def to_field(self) -> FieldInfo:
-        """Convert the SnippetMetaParameter to a Pydantic Field.
-
-        :return: A Pydantic Field instance with the attributes of the parameter.
-        :rtype: FieldInfo
-        """
-        attrs = self.model_dump(
-            include={
-                "name",
-                "description",
-                "default",
-                "min_length",
-                "max_length",
-                "pattern",
-                "gt",
-                "lt",
-                "ge",
-                "le",
-            },
-            by_alias=True,
-            exclude_none=True,
-        )
-        return Field(**attrs, validate_default=True)
-
-    def to_form_field(self) -> FormFieldElement:
-        """Convert the SnippetMetaParameter to a form field element.
-
-        :return: An instance of the form field element class corresponding to the
-            parameter type, populated with the parameter's attributes.
-        :rtype: FormFieldElement
-        """
-        instance_data = self.model_dump(exclude_none=True)
-        return self.form_field_element_cls.model_validate(instance_data)
 
 
 class Snippet(BaseSQLModel, table=True):
@@ -441,12 +205,40 @@ class Snippet(BaseSQLModel, table=True):
         """
         return self.meta.get("description", "")
 
-    def get_validated_parameters(self) -> SnippetMetaValidatedParameters:
+    @property
+    def allow_extra_args(self) -> bool:
+        """Determine whether extra arguments are allowed for the snippet.
+
+        :return: `True` if extra arguments are allowed, else `False`. Defaults to the value
+            specified in the snippets settings if not explicitly set in the metadata.
+        :rtype: bool
+        """
+        return self.meta.get(
+            "allow_extra_args", snippets_settings.META.DEFAULT_ALLOW_EXTRA_ARGS
+        )
+
+    @property
+    def can_execute(self) -> bool:
+        """Determine whether the snippet can be executed.
+
+        A snippet can be executed if it is approved and either parameter errors are
+        ignored in the settings or there are no validation errors in the parameters.
+
+        :return: `True` if the snippet can be executed, else `False`.
+        :rtype: bool
+        """
+        return self.is_approved and (
+            snippets_settings.META.IGNORE_INVALID_PARAMETERS
+            or not self.validated_parameters.errors
+        )
+
+    @cached_property
+    def validated_parameters(self) -> SnippetMetaParametersValidationResult:
         """Get the validated parameters of the snippet.
 
-        :return: A SnippetMetaValidatedParameters instance containing the list of valid
+        :return: A `SnippetMetaParametersValidationResult` instance containing the list of valid
             parameters and any validation errors encountered.
-        :rtype: SnippetMetaValidatedParameters
+        :rtype: SnippetMetaParametersValidationResult
         """
         parameters = self.meta.get("parameters", [])
         return self._get_parameters_from_json(
@@ -526,9 +318,25 @@ class Snippet(BaseSQLModel, table=True):
         return self._to_form(
             json_serializer(parameters, sort_keys=True),
             executor_hosts,
-            add_extra_field=not self.meta.get(
-                "strict", snippets_settings.META.DEFAULT_STRICT
-            ),
+            add_extra_args_field=self.allow_extra_args,
+            disabled=not self.can_execute,
+        )
+
+    def get_execution_model(self) -> type[BaseModel]:
+        """Generate a Pydantic model for validating snippet execution parameters.
+
+        This method creates a dynamic Pydantic model based on the snippet's metadata,
+        which can be used to validate the parameters required for executing the snippet.
+
+        :return: A Pydantic model class for validating the snippet's execution
+            parameters.
+        :rtype: type[BaseModel]
+        """
+        parameters = self.meta.get("parameters", [])
+        logger.debug("Meta Snippet parameters: %s)", parameters)
+        return self._get_execution_model(
+            json_serializer(parameters, sort_keys=True),
+            add_extra_args_field=self.allow_extra_args,
         )
 
     @staticmethod
@@ -571,34 +379,33 @@ class Snippet(BaseSQLModel, table=True):
     @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
     def _get_parameters_from_json(
         parameters_json: str,
-    ) -> SnippetMetaValidatedParameters:
+    ) -> SnippetMetaParametersValidationResult:
         """Parse and validate snippet parameters from a JSON string.
 
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
-        :return: A SnippetMetaValidatedParameters instance containing the list of valid
+        :return: A SnippetMetaParametersValidationResult instance containing the list of valid
             parameters and any validation errors encountered.
-        :rtype: SnippetMetaValidatedParameters
+        :rtype: SnippetMetaParametersValidationResult
         """
         parameters = json.loads(parameters_json) or []
         if not isinstance(parameters, list):
             error_msg = f"Invalid snippet parameters, expected a list but got {parameters.__class__.__name__}"
             logger.warning("%s: %r", error_msg, parameters)
-            return SnippetMetaValidatedParameters(parameters=[], errors=[error_msg])
+            return SnippetMetaParametersValidationResult(
+                parameters=[], errors=[error_msg]
+            )
         valid_parameters = []
         errors = []
-        param_preview_max_size = 100
         for param in parameters:
             try:
                 valid_parameters.append(SnippetMetaParameter.model_validate(param))
-            except ValidationError:
-                error_msg = "Invalid snippet parameter"
-                param_preview = repr(param)
-                logger.warning("%s: %s", error_msg, param_preview, exc_info=True)
-                if len(param_preview) > param_preview_max_size:
-                    param_preview = f"{param_preview[:param_preview_max_size]}..."
-                errors.append(f"{error_msg}: {param_preview}")
-        return SnippetMetaValidatedParameters(
+            except ValidationError as exc:
+                logger.warning("Invalid snippet parameter %r", param, exc_info=True)
+                errors.extend(
+                    SnippetMetaParameter.convert_validation_errors(exc, param)
+                )
+        return SnippetMetaParametersValidationResult(
             parameters=valid_parameters, errors=errors
         )
 
@@ -606,10 +413,16 @@ class Snippet(BaseSQLModel, table=True):
     @validate_call
     @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
     def _to_form(
-        parameters_json: str, executor_hosts: frozenset[str], *, add_extra_field: bool
+        parameters_json: str,
+        executor_hosts: frozenset[str],
+        *,
+        add_extra_args_field: bool,
+        disabled: bool = False,
     ) -> str:
+        executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
+        executor_hosts_fieldset.disabled = disabled
         fieldsets = [
-            get_executor_hosts_fieldset(executor_hosts),
+            executor_hosts_fieldset,
         ]
         parameters = Snippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
@@ -619,18 +432,48 @@ class Snippet(BaseSQLModel, table=True):
                 fields.append(param.to_form_field())
             except ValidationError:
                 logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
-        if add_extra_field:
+        if add_extra_args_field:
             fields.append(EXTRA_ARGS_INPUT)
         logger.debug("Generated snippet form fields from params: %s", fields)
         if fields:
-            fieldsets.append(FieldsetElement(legend="Parameters", children=fields))
+            fieldsets.append(
+                FieldsetElement(legend="Parameters", children=fields, disabled=disabled)
+            )
         return FormElement(
             id="snippetExecuteForm",
             children=fieldsets,
             submit_button=SubmitButtonElement(
-                label="Execute", icon="send", classes=("text", "medium")
+                label="Execute",
+                icon="send",
+                classes=("text", "medium"),
+                disabled=disabled,
             ),
         ).to_html()
+
+    @staticmethod
+    @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
+    def _get_execution_model(
+        parameters_json: str, *, add_extra_args_field: bool
+    ) -> type[BaseModel]:
+        parameters = Snippet._get_parameters_from_json(parameters_json).parameters
+        logger.debug("Snippet params: %s", parameters)
+        unique_identifiers = generate_unique_identifiers()
+        fields = {}
+        positional_fields = {}
+        for param in parameters:
+            field_name = next(unique_identifiers)
+            field = (param.validation_type, param.to_validation_field())
+            if param.positional:
+                positional_fields[field_name] = field
+            else:
+                fields[field_name] = field
+        if add_extra_args_field:
+            fields["extra_args"] = (
+                ExtraArgsField,
+                Field(None, alias=EXTRA_ARGS_INPUT.name),
+            )
+        logger.debug("Generated snippet model fields from params: %s", fields)
+        return create_model("DynamicSnippetExecution", **fields, **positional_fields)
 
     @classmethod
     async def from_path(cls, path: PathLike, *, update_meta: bool = False) -> Self:

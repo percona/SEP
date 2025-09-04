@@ -31,4 +31,10 @@ from app.core.utils.imports import (
 from app.core.utils.iterators import unique_everseen
 from app.core.utils.pydantic import run_pydantic_type_validator
 from app.core.utils.serialization import json_serializer
-from app.core.utils.strings import b64decode_str, b64encode_str, slugify, to_uppercase
+from app.core.utils.strings import (
+    b64decode_str,
+    b64encode_str,
+    shorten_text,
+    slugify,
+    to_uppercase,
+)

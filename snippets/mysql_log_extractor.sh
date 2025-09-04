@@ -3,17 +3,19 @@
 # ---
 # title: MySQL Log Extractor
 # description: This script extracts a portion of the MySQL error log
-# strict: false
+# allow_extra_args: false
 # parameters:
 #  - name: time
 #    type: str
 #    label: Issue Time
 #    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    required: true
 #  - name: minutes
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
-#    default: true
+#    required: true
+#    ge: 1
 #  - name: log-file
 #    type: str
 #    label: Log file path

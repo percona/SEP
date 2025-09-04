@@ -8,8 +8,9 @@ from fastapi import Depends, Header, Request, status
 from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
 from app.sep.deps import SessionDep
 from app.sep.middleware import messages
+from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
-from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.snippet import Snippet
 
 
 async def get_snippet(
@@ -50,8 +51,16 @@ def validate_snippet_parameters(request: Request, snippet: SnippetDep) -> Snippe
     :rtype: Snippet
     """
     if snippet.is_approved:
-        for error in snippet.get_validated_parameters().errors:
-            messages.warning(request, f"({snippet.filename!r}): {error}")
+        snippet_path = request.url_for(
+            "snippets_detail", snippet_filename=snippet.filename
+        ).path
+        add_msg_func = (
+            messages.warning
+            if snippets_settings.META.IGNORE_INVALID_PARAMETERS
+            else messages.error
+        )
+        for error in snippet.validated_parameters.errors:
+            add_msg_func(request, error, snippet_path, sticky=True)
     return snippet
 
 

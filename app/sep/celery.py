@@ -23,7 +23,7 @@ from app.celery import celery
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
-from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.snippet import Snippet
 from app.sep.snippets.utils import guess_mime_type
 
 logger = logging.getLogger(__name__)

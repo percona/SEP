@@ -101,6 +101,9 @@
     {% if snippet.is_approved -%}
         <section>
             <h3>Execute Snippet</h3>
+            {% if not snippet.can_execute and snippet.validated_parameters.errors %}
+                <span id="snippetDisabledWarning">Execution is disabled: snippet has invalid parameters</span>
+            {% endif %}
             {{ snippet.to_form(executor_hosts) | safe }}
         </section>
     {% endif -%}

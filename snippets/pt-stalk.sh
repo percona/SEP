@@ -3,7 +3,7 @@
 # ---
 # title: "pt-stalk"
 # description: "Executes pt-stalk command"
-# strict: false
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str

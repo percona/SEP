@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ---
-# strict: true
+# allow_extra_args: false
 # ---
 
 # This script executes the 'dmesg -T' command with sudo.

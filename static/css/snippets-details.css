@@ -69,7 +69,13 @@ fieldset {
     gap: 0.625em;
 }
 
-label:has(> input[type="checkbox"]) {
+fieldset:disabled,
+fieldset:disabled * {
+    color: var(--textDisabled);
+    cursor: not-allowed;
+}
+
+label:has(> input[type="checkbox"]:not(:disabled)) {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -77,7 +83,20 @@ label:has(> input[type="checkbox"]) {
     cursor: pointer;
 }
 
+label:has(> input[type="checkbox"]:disabled)>.checkmark {
+    opacity: 0.5;
+}
+
 .checkmark {
     margin-left: -10px;
     justify-content: left;
+}
+
+#snippetExecuteForm input:disabled {
+    display: initial;
+}
+
+#snippetDisabledWarning {
+    color: #d22929;
+    font-weight: 600;
 }

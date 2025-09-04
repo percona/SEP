@@ -3,7 +3,7 @@
 # ---
 # title: "Disk Usage"
 # description: "This snippet displays the device usage for the specified target."
-# strict: false
+# allow_extra_args: true
 # parameters:
 #  - name: apparent-size
 #    type: bool
@@ -42,6 +42,7 @@
 #    description: the file or folder to check device usage for
 #    placeholder: e.g. /home/user/folder/; file.zip
 #    positional: true
+#    required: true
 # ---
 
 usage() {

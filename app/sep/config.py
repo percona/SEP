@@ -31,6 +31,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    NonNegativeInt,
     ValidationError,
 )
 
@@ -272,6 +273,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
     PMM_FRONTEND: StrHttpUrl | None = None
+    MESSAGES_LEVEL: NonNegativeInt = 0
 
     @computed_field
     @cached_property

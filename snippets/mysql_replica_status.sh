@@ -3,7 +3,7 @@
 # ---
 # title: "Show Replica Status"
 # description: "Prints the output of SHOW REPLICA STATUS."
-# strict: false
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str

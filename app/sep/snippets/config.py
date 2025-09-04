@@ -17,6 +17,7 @@
 
 import re
 from pathlib import Path
+from string import Template
 from typing import ClassVar
 
 from pydantic import BaseModel, field_validator, PositiveInt
@@ -46,15 +47,47 @@ class SnippetsMetaOptions(BaseModel):
     :param STOP_SEARCH_PATTERN: Regular expression to stop searching for metadata lines.
         Defaults to `r"r"^[^#].+$"`.
     :type STOP_SEARCH_PATTERN: re.Pattern[str]
-    :param DEFAULT_STRICT: Whether to block extra arguments by default. Defaults to
-        `False`, meaning extra arguments are allowed.
-    :type DEFAULT_STRICT: bool
+    :param DEFAULT_ALLOW_EXTRA_ARGS: Whether to allow extra arguments by default.
+        Defaults to `False`.
+    :type DEFAULT_ALLOW_EXTRA_ARGS: bool
+    :param DEFAULT_ARG_FORMAT: The default format for arguments. Use `${name}` and
+        `${value}` as placeholders. Defaults to `"--$name $value"`.
+    :type DEFAULT_ARG_FORMAT: RequiredStr
+    :param DEFAULT_FLAG_FORMAT: The default format for flags. Use `$name` as a
+        placeholder. Defaults to `"--$name"`.
+    :type DEFAULT_FLAG_FORMAT: RequiredStr
+    :param IGNORE_INVALID_PARAMETERS: Whether to ignore parameters with errors. If
+        `True`, such parameters are skipped in execution validation and a warning is
+        logged. If `False`, an error is logged and the snippet execution is blocked.
+        Defaults to `False`.
+    :type IGNORE_INVALID_PARAMETERS: bool
     """
 
     LINE_PATTERN: re.Pattern[str] = re.compile(r"^# (?P<line>.+)$")
     DELIMITER: RequiredStr = "---"
     STOP_SEARCH_PATTERN: re.Pattern[str] = re.compile(r"^[^#].+$")
-    DEFAULT_STRICT: bool = False
+    DEFAULT_ALLOW_EXTRA_ARGS: bool = False
+    DEFAULT_ARG_FORMAT: RequiredStr = "--$name $value"
+    DEFAULT_FLAG_FORMAT: RequiredStr = "--$name"
+    IGNORE_INVALID_PARAMETERS: bool = False
+
+    @field_validator("DEFAULT_ARG_FORMAT")
+    @classmethod
+    def _validate_value_identifier_is_in_template(cls, v: str) -> str:
+        """Ensure the 'value' placeholder is present in the argument format string.
+
+        :param v: The argument format string to validate.
+        :type v: str
+        :return: The validated argument format string.
+        :rtype: str
+        :raises ValueError: If the 'value' placeholder is missing.
+        """
+        if "value" not in Template(v).get_identifiers():
+            raise ValueError(
+                f"Invalid argument format string '{v}': the 'value' placeholder is required."
+                f" Use '${{value}}' to include it."
+            )
+        return v
 
 
 class SnippetsSettings(BaseYamlSettings):

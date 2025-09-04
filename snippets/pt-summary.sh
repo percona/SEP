@@ -3,7 +3,7 @@
 # ---
 # title: "pt-summary"
 # description: "Executes pt-summary command"
-# strict: false
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -48,7 +48,7 @@ EOS
    exit $1
 }
 
-OPTS=$(getopt --options -d:h --longoptions 'dest:,save-samples,help' -- "$@")
+OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@")
 
 if [ $? -gt 0 ]; then
    echo "Error parsing options"

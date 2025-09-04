@@ -746,7 +746,7 @@ select,
 
 input[type="search"]:hover,
 input[type="datetime-local"]:hover,
-select:not([disabled]):hover {
+select:not(:disabled):hover {
     border-color: var(--lineDividerStrong);
     cursor: pointer;
 }
@@ -784,7 +784,7 @@ select[multiple] option+option {
     margin-top: 0.25em;
 }
 
-select[disabled] {
+select:disabled {
     color: var(--textDisabled);
     background: var(--actionDisabled);
 }

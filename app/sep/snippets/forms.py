@@ -464,10 +464,13 @@ class FieldsetElement(HTMLElement):
     :type: children: list[BaseHTMLEntity]
     :param: legend: The text for the legend of the fieldset, if any. Defaults to None.
     :type: legend: RequiredStr | None
+    :param: disabled: Whether the fieldset is disabled. Defaults to False.
+    :type: disabled: bool
     """
 
     TAG_NAME: ClassVar[str] = "fieldset"
     legend: RequiredStr | None = Field(None, exclude=True)
+    disabled: bool = False
 
     @cached_property
     def inner_html(self) -> str:
@@ -871,11 +874,14 @@ class SubmitButtonElement(HTMLElement):
     :param: icon: The name of the icon to display on the button, if any. Defaults to
         None.
     :type: icon: RequiredStr | None
+    :param: disabled: Whether the button is disabled. Defaults to False.
+    :type: disabled: bool
     """
 
     TAG_NAME: ClassVar[str] = "button"
     label: RequiredStr = Field(exclude=True, validation_alias="text")
     icon: RequiredStr | None = Field(None, exclude=True)
+    disabled: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -971,7 +977,8 @@ class FormElement(HTMLElement):
 def get_executor_hosts_fieldset(executor_hosts: frozenset[str]) -> FieldsetElement:
     """Create a fieldset for executor hosts with a legend and input fields.
 
-    :param executor_hosts: A variable number of executor host strings.
+    :param executor_hosts: A set of executor host strings.
+    :type executor_hosts: frozenset[str]
     :return: A FieldsetElement containing the input fields for the executor hosts.
     :rtype: FieldsetElement
     """
@@ -992,7 +999,7 @@ def get_executor_hosts_fieldset(executor_hosts: frozenset[str]) -> FieldsetEleme
 FormFieldElement = BaseInputElement | SelectElement | TextareaElement
 
 EXTRA_ARGS_INPUT = TextInputElement(
-    name="extra",
+    name="-extra_args-",
     placeholder="e.g. --verbose",
     title="Any extra args to pass to the snippet execution command",
     label="Extra Args",

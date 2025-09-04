@@ -15,6 +15,9 @@
 
 """Define utilities for the SEP app snippets."""
 
+import string
+from collections.abc import Generator
+from itertools import product
 from pathlib import Path
 
 from app.sep.snippets.config import snippets_settings
@@ -38,3 +41,28 @@ def guess_mime_type(file_path: Path) -> str | None:
     import mimetypes
 
     return mimetypes.types_map.get(file_path.suffix)
+
+
+def generate_unique_identifiers() -> Generator[str]:
+    """Generate unique identifiers.
+
+    Generate unique valid Python/Pydantic identifiers that start with a letter,
+    can contain letters, digits, and underscores in the middle, and end with a digit.
+    The length of the identifiers increases as needed to ensure uniqueness.
+
+    :yield: A unique identifier.
+    :rtype: Generator[str]
+    """
+    start_chars = string.ascii_letters
+    mid_chars = string.ascii_letters + string.digits + "_"
+    end_chars = string.digits
+    length = 1
+    while True:
+        for first in start_chars:
+            if length == 1:
+                yield first
+            else:
+                for mids in product(mid_chars, repeat=length - 2):
+                    for last in end_chars:
+                        yield f"{first}{''.join(mids)}{last}"
+        length += 1
