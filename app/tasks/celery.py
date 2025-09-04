@@ -38,7 +38,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.celery import celery
 from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
-from app.core.db.utils import func_json_extract
+from app.core.db.utils import (
+    func_json_extract,
+    prepare_unsafe_value_for_json_comparison,
+)
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
@@ -158,9 +161,9 @@ def sync_task_history(task_history_id: int) -> None:
     :param task_history_id: The unique identifier of the task history item to sync.
     :type task_history_id: int
     """
-    logger.debug("Syncing task history %s", task_history_id)
+    logger.info("Syncing task history %s", task_history_id)
     celery.loop.run_until_complete(sync_queue_item(task_history_id))
-    logger.debug("Finished syncing task history %s", task_history_id)
+    logger.info("Finished syncing task history %s", task_history_id)
 
 
 async def delete_task_history(queue_id: int) -> None:
@@ -238,7 +241,6 @@ async def dispatch_queue_item(
 async def _dispatch_queue_item(
     queue_item: TaskHistory, session: AsyncSession
 ) -> TaskHistory:
-    engine_name = session.get_bind().name
     if queue_item.status != TaskHistoryStatusEnum.PENDING:
         raise HTTPConflictException("Queue item is not in a pending state.")
 
@@ -254,53 +256,65 @@ async def _dispatch_queue_item(
             sort_keys=True,
         ).encode()
     ).hexdigest()
-    await DispatchLockManager.delete_where(
-        session,
-        col(DispatchLock.created_at) < (utc_now() - timedelta(seconds=30)),
-        name=dispatch_lock_name,
-    )
-    try:
-        dispatch_lock = await DispatchLockManager.create(
-            session, DispatchLock(name=dispatch_lock_name)
+
+    lock_session_maker = get_async_session_maker()
+    async with lock_session_maker() as lock_session:
+        await DispatchLockManager.delete_where(
+            lock_session,
+            col(DispatchLock.created_at) < (utc_now() - timedelta(seconds=30)),
+            name=dispatch_lock_name,
         )
-    except IntegrityError as exc:
-        raise HTTPConflictException("Identical dispatch in progress.") from exc
+        try:
+            dispatch_lock = await DispatchLockManager.create(
+                lock_session, DispatchLock(name=dispatch_lock_name)
+            )
+        except IntegrityError as exc:
+            raise HTTPConflictException("Identical dispatch in progress.") from exc
 
     try:
-        meta_where_clauses = []
-        if queue_item.execution_request.meta:
-            meta_where_clauses = [
-                func_json_extract(
-                    engine_name, TaskHistory.execution_request, "meta", field
-                )
-                == value
-                for field, value in queue_item.execution_request.meta.items()
-            ]
-        if identical_task := (
-            await TaskHistoryManager.first(
-                session,
-                func_json_extract(engine_name, TaskHistory.execution_request, "task")
-                == queue_item.execution_request.task,
-                func_json_extract(engine_name, TaskHistory.execution_request, "target")
-                == queue_item.execution_request.target,
-                func_json_extract(engine_name, TaskHistory.execution_request, "payload")
-                == queue_item.execution_request.payload,
-                *meta_where_clauses,
-                col(TaskHistory.status).in_(
-                    [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
-                ),
-                col(TaskHistory.id) != queue_item.id,
-                task_id=queue_item.task_id,
-            )
-        ):
-            raise HTTPConflictException(
-                f"Identical queue item already running ({identical_task.id})."
-            )
+        await _raise_if_identical_task_conflict(queue_item, session)
         task = await TaskManager.get_root_task(session, queue_item.task)
         executor = get_executor_for_task(task)
         return await executor.dispatch_task(session, queue_item, task)
+    except Exception:
+        logger.exception("Failed to dispatch queue item")
+        raise
     finally:
-        await DispatchLockManager.delete(session, dispatch_lock)
+        async with lock_session_maker() as async_session:
+            await DispatchLockManager.delete(async_session, dispatch_lock)
+
+
+async def _raise_if_identical_task_conflict(
+    queue_item: TaskHistory, session: AsyncSession
+) -> None:
+    engine_name = session.get_bind().name
+    meta_where_clauses = []
+    if queue_item.execution_request.meta:
+        meta_where_clauses = [
+            func_json_extract(engine_name, TaskHistory.execution_request, "meta", field)
+            == prepare_unsafe_value_for_json_comparison(engine_name, value)
+            for field, value in queue_item.execution_request.meta.items()
+        ]
+    if identical_task := (
+        await TaskHistoryManager.first(
+            session,
+            func_json_extract(engine_name, TaskHistory.execution_request, "task")
+            == queue_item.execution_request.task,
+            func_json_extract(engine_name, TaskHistory.execution_request, "target")
+            == queue_item.execution_request.target,
+            func_json_extract(engine_name, TaskHistory.execution_request, "payload")
+            == queue_item.execution_request.payload,
+            *meta_where_clauses,
+            col(TaskHistory.status).in_(
+                [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
+            ),
+            col(TaskHistory.id) != queue_item.id,
+            task_id=queue_item.task_id,
+        )
+    ):
+        raise HTTPConflictException(
+            f"Identical queue item already running ({identical_task.id})."
+        )
 
 
 async def sync_running_items() -> None:
@@ -323,7 +337,7 @@ async def sync_running_items() -> None:
             returning=("id",),
             status=TaskHistoryStatusEnum.RUNNING,
         )
-        args = [(item_id,) for item_id in result.scalars().all()]
+        args = [(item_id,) for item_id in result]
         if args:
             logger.debug("Dispatching sync of %d running tasks", len(args))
             chunk_size = 100

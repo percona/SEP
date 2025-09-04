@@ -90,6 +90,7 @@ async def archives_detail(
         "meta": meta,
         "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("archives_delete", task_name=task.name),
+        "is_edit_enabled": not task.protected,
     }
 
     source_db = purge_item.get("SOURCE_DB")

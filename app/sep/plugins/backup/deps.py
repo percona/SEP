@@ -101,6 +101,7 @@ async def build_backup_task_payload(
         all_servers=BackupConfigAll.model_validate(all_config),
         server_list=[BackupConfigServer.model_validate(server_config)],
     )
+
     requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
     if form.backup_type == BackupType.MYDUMPER:
         payload_name = "mydumper_payload"
@@ -130,6 +131,53 @@ async def build_backup_task_payload(
         },
         alert_on_fail=form.alert_on_fail,
     )
+
+
+def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
+    """Parse backup task data for editing.
+
+    Extracts configuration from an existing backup task to populate the edit form.
+
+    :param task: The task data retrieved from the Tasks API.
+    :type task: dict[str, Any]
+    :return: A dictionary containing parsed backup configuration.
+    :rtype: dict[str, Any]
+    """
+    data = task["data"]
+    meta = data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    server_config = task_config["SERVER_LIST"][0]
+    all_servers_config = task_config.get("ALL_SERVERS", {})
+
+    result = {
+        "name": task["name"],
+        "hostname": meta["target"],
+        "backup_type": server_config["BACKUP_TYPE"],
+        "service_id": None,
+        "host": server_config["HOST"],
+        "port": server_config.get("PORT") or 3306,
+    }
+
+    if "dir_encrypt_config" in server_config:
+        result["encryption_recipient"] = server_config["dir_encrypt_config"].get(
+            "encryption_recipient"
+        )
+
+    upload_providers = server_config.get("UPLOAD", [])
+    if "S3" in upload_providers:
+        result["s3_bucket"] = all_servers_config.get("s3_bucket")
+        result["s3_storage_class"] = all_servers_config.get("s3_storage_class")
+        result["skip_s3_safety_check"] = all_servers_config.get(
+            "skip_s3_safety_check", False
+        )
+    if "RSYNC" in upload_providers:
+        result["rsync_path"] = all_servers_config.get("rsync_path")
+
+    for key, value in all_servers_config.items():
+        if key.lower() not in result:
+            result[key.lower()] = value
+
+    return result
 
 
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]

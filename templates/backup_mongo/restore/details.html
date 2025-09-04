@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title -%}
-    PBM Backups - {{ task.name }}
+    Restores - {{ task.name }}
 {%- endblock title %}
 {% block style %}
     <style>
@@ -14,16 +14,28 @@
 
         {{ syntax_highlight_css(style="sas") }}
     </style>
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/saved.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/saved.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     {% if history %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Backup and Restore navigation">
+        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn">Backup</a>
+        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn active">Restore</a>
+    </div>
+{% endblock sticky %}
 {% block main %}
     <table data-table>
         <caption>Overview</caption>
@@ -40,7 +52,7 @@
             <tr>
                 <td>{{ task.hostname }}</td>
                 <td>{{ task.host }} ({{ task.port }})</td>
-                <td>{{ task.backup_type }}</td>
+                <td>{{ task.restore_type }}</td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
             </tr>
@@ -51,6 +63,7 @@
             </tr>
         </tfoot>
     </table>
+    {% include "tasks/partials/run-python-form.html" %}
     {% if running_tasks %}
         <section id="running-tasks">
             <h2>Running</h2>
@@ -84,6 +97,8 @@
             </tbody>
         </table>
     </section>
+    <br>
+    <br>
     <section>
         <h2>PII Anonymization</h2>
         <p>The following sensitive data types are selected for anonymization:</p>
@@ -127,15 +142,8 @@
             <p>No data</p>
         {% endif %}
     </section>
-    {% set pending_tasks = history|selectattr("status", "equalto", "pending")|list %}
-    {% if pending_tasks %}
-        <section id="pending-tasks">
-            <h2>Pending</h2>
-            {% include "tasks/partials/pending-tasks.html" %}
-        </section>
-        <br>
-        <br>
-    {% endif %}
+    <br>
+    <br>
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}

@@ -37,10 +37,18 @@
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <!--
+<div class="toggle-btn-group" role="group" aria-label="Backup and Restore navigation">
+    <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn active">Backup</a>
+    <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn">Restore</a>
+</div>
+-->
+{% endblock sticky %}
 {% block main %}
     <p>
         Generate a <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backup, currently only
-        supporting Logical, Physical and Snapshot methods.
+        supporting Logical, Physical methods.
     </p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
@@ -48,12 +56,13 @@
         {# Note: commented out until services exists
 {% if services|length != 1 %}
 <p>Unable to find suitable database instances.</p>
-{% elif executor_hosts|length < 1 %} <p>Unable to find suitable executor hosts.</p>
-    {% else %}
-    {% include "backup_mongo/partials/create-form.html" %}
-    {% endif %}
-    #}
-        {% include "backup_mongo/partials/create-form.html" %}
+{% elif executor_hosts|length < 1 %}
+    <p>Unable to find suitable executor hosts.</p>
+{% else %}
+    {% include "backup_mongo/backup/partials/create-form.html" %}
+{% endif %}
+ #}
+        {% include "backup_mongo/backup/partials/create-form.html" %}
     {% else %}
         {% set modal_required = True %}
         {% if running_tasks %}
@@ -63,8 +72,8 @@
             </section>
         {% endif %}
         <section id="saved-tasks">
-            <h2>Saved</h2>
-            {% include "backup_mongo/partials/saved-tasks.html" %}
+            <h2>Configured Backups</h2>
+            {% include "backup_mongo/backup/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
             {%- set detail_route = "pbm_backups_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
@@ -72,7 +81,7 @@
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "backup_mongo/partials/create-form.html" %}
+                {% include "backup_mongo/backup/partials/create-form.html" %}
             {% endif %}
         </section>
         <section id="pending-tasks">

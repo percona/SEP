@@ -482,7 +482,7 @@ async def get_tasks_context(
     """
     service_type = (
         ServiceTypeEnum.MONGODB
-        if owner == TaskOwner.BACKUP_MONGO
+        if owner in {TaskOwner.BACKUP_MONGO, TaskOwner.RESTORE_MONGO}
         else ServiceTypeEnum.MYSQL
     )
     services = await inventory_api.get(

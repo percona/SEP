@@ -299,6 +299,14 @@ class LogLevel(EnumFieldMixin, IntEnum):
     DISABLED = logging.NOTSET
 
 
+class DatabaseDialect(EnumFieldMixin, StrEnum):
+    """Enum representing supported database dialect names."""
+
+    SQLITE = "sqlite"
+    MYSQL = "mysql"
+    POSTGRESQL = "postgresql"
+
+
 class DatabaseEngine(EnumFieldMixin, StrEnum):
     """Enum representing supported database engines.
 

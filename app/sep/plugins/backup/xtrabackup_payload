@@ -125,7 +125,7 @@ DEFAULT_LOGGING_DIR = os.getenv(
     "PERCONA_BACKUP_DEFAULT_LOGGING_DIR",
     str(Path(CURRENT_USER_HOME_DIR) / ".local" / "percona" / "logs" / "backup"),
 )
-DEFAULT_LOGGING_STDOUT = False
+DEFAULT_LOGGING_STDOUT = True
 DEFAULT_MYCNF = "{}/.my.cnf".format(os.environ.get("HOME"))
 LOGGING_FORMAT = "%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s"
 LOGGING_FORMAT_DEBUG = (
@@ -2782,8 +2782,7 @@ class Xtrabackup(Backup):
         weekly - a full backup runs once a week on Monday.
         1..7 - also weekly cycle but a full backup runs once a week on the specified day Monday-Sunday.
         """
-        cycles = ['daily', 'weekly']
-        cycles.extend(list(range(1, 8)))
+        cycles = ['daily', 'weekly', '2', '3', '4', '5', '6', '7']
         if cycle not in cycles:
             msg = 'Invalid XTRABACKUP_INCREMENTAL_CYCLE setting: %s. Should be one of : %s.' % (cycle, cycles)
             self._clean_after_error()
@@ -2798,7 +2797,7 @@ class Xtrabackup(Backup):
             if cycle == 'weekly':
                 cycle = 1  # Monday
 
-            if cycle != datetime.datetime.today().isoweekday() or path.startswith(today):
+            if int(cycle) != datetime.datetime.today().isoweekday() or path.startswith(today):
                 return True
 
         return False

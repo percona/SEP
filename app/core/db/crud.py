@@ -16,8 +16,8 @@
 """Define database operations."""
 
 import logging
-from collections.abc import Iterable, Sequence
-from typing import Any, TypeVar
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any, NamedTuple, ParamSpec, TypeVar
 
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -34,7 +34,7 @@ from sqlalchemy.exc import DatabaseError, NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import ColumnExpressionArgument
-from sqlalchemy.sql.dml import DMLWhereBase
+from sqlalchemy.sql.dml import DMLWhereBase, Update
 from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -44,6 +44,7 @@ from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
 )
+from app.core.utils.fields import DatabaseDialect
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +52,50 @@ Whereable = Select | DMLWhereBase
 ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
 T = TypeVar("T")
-B = TypeVar("B", bound=BaseSQLModel)
 S = TypeVar("S", bound=SQLModel)
-P = TypeVar("P", bound=BaseModel)
+BS = TypeVar("BS", bound=BaseSQLModel)
+B = TypeVar("B", bound=BaseModel)
 M = TypeVar("M", bound="BaseSQLModelManager")
+P = ParamSpec("P")
+
+
+class _QueryBuilder(NamedTuple):
+    """A named tuple to hold a query builder function and its arguments.
+
+    :param function: The function to build the query.
+    :type function: Callable[P, W]
+    :param args: The arguments to pass to the function. Defaults to an empty tuple.
+    :type args: P.args
+    """
+
+    function: Callable[P, W]
+    args: P.args = ()
+
+
+def _select_builder(*args: P.args) -> _QueryBuilder:
+    """Create a query builder for SELECT statements."""
+    return _QueryBuilder(select, args)
+
+
+def _update_builder(*args: P.args, values: Mapping[str, Any]) -> _QueryBuilder:
+    """Create a query builder for UPDATE statements.
+
+    This function returns a query builder that can be used to create an UPDATE
+    statement with the specified values.
+    """
+
+    def _update(table: T) -> Update:
+        return update(table).values(**values)
+
+    return _QueryBuilder(_update, args)
+
+
+def _delete_builder(*args: P.args) -> _QueryBuilder:
+    """Create a query builder for DELETE statements."""
+    return _QueryBuilder(delete, args)
+
+
+_DEFAULT_SELECT_QUERY_BUILDER = _select_builder()
 
 
 class BaseManager:
@@ -71,12 +112,34 @@ class BaseManager:
     ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None = None
 
     @classmethod
-    def _construct_instance(cls, instance_create: P, **extra_fields: Any) -> T:
+    def _construct_instance(cls, instance_create: B, **extra_fields: Any) -> T:
         instance_data = {
             **instance_create.model_dump(include=cls.Model.__table__.columns.keys()),
             **extra_fields,
         }
         return cls.Model(**instance_data)
+
+    @classmethod
+    def _get_column(cls, name: str) -> ColumnExpressionArgument:
+        """Get the column expression for a field in the model.
+
+        :param name: The name of the field.
+        :type name: str
+        :return: The column expression for the field.
+        :rtype: ColumnExpressionArgument
+        """
+        return col(getattr(cls.Model, name))
+
+    @classmethod
+    def _get_columns(cls, *names: str) -> list[ColumnExpressionArgument]:
+        """Get the column expressions for multiple fields in the model.
+
+        :param names: The names of the fields.
+        :type names: str
+        :return: A list of column expressions for the fields.
+        :rtype: list[ColumnExpressionArgument]
+        """
+        return [cls._get_column(field_name) for field_name in names]
 
     @classmethod
     def _filter_query(
@@ -97,7 +160,7 @@ class BaseManager:
                     field_name,
                 )
                 continue
-            query = query.where(col(getattr(cls.Model, field_name)) == value)
+            query = query.where(cls._get_column(field_name) == value)
         if select_related:
             query = query.options(*[joinedload(attr) for attr in select_related])
         return query
@@ -106,18 +169,22 @@ class BaseManager:
     def _build_query(
         cls,
         *whereclause: ColumnExpressionArgument[bool],
+        builder: _QueryBuilder = _DEFAULT_SELECT_QUERY_BUILDER,
         select_related: Sequence = (),
+        returning: Iterable[str] | bool = False,
         **equal_filters: Any,
     ) -> W:
-        query = select(cls.Model)
-        if cls.ordering:
-            query = query.order_by(*cls.ordering)
-        return cls._filter_query(
-            query,
+        query = cls._filter_query(
+            builder.function(*(builder.args or (cls.Model,))),
             *whereclause,
             select_related=select_related,
             **equal_filters,
         )
+        if returning is True:
+            query = query.returning(cls.Model)
+        elif returning:
+            query = query.returning(*cls._get_columns(*returning))
+        return query
 
     @classmethod
     async def _exec(
@@ -141,8 +208,180 @@ class BaseManager:
             select_related=select_related,
             **equal_filters,
         )
+        if cls.ordering:
+            query = query.order_by(*cls.ordering)
         result = await cls._exec(session, query)
         return result.unique()
+
+    @classmethod
+    async def _mutate_where(
+        cls,
+        session: AsyncSession,
+        builder: _QueryBuilder,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> CursorResult | ChunkedIteratorResult:
+        """Execute a DML statement (UPDATE or DELETE) with the specified filters."""
+        query = cls._build_query(
+            *whereclause, builder=builder, returning=returning, **equal_filters
+        )
+        result = await cls._exec(session, query)
+        await session.commit()
+        return result
+
+    @classmethod
+    async def _mutate_where_returning_with_for_update(
+        cls,
+        session: AsyncSession,
+        builder: _QueryBuilder,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | bool,
+        **equal_filters: Any,
+    ) -> list[Any]:
+        """Execute a DML statement with `FOR UPDATE`.
+
+        This method is a workaround for MySQL, which does not support `RETURNING` in
+        UPDATE/DELETE statements. It first selects the rows with `FOR UPDATE`, then
+        executes the DML statement, and finally returns the selected rows.
+        """
+        query = cls._build_query(
+            *whereclause, builder=_select_builder(col(cls.Model.id)), **equal_filters
+        ).with_for_update()
+        result = await cls._exec(session, query)
+
+        if row_ids := result.all():
+            ids_filter = col(cls.Model.id).in_(row_ids)
+            await cls._mutate_where(session, builder, ids_filter, returning=False)
+        else:
+            return []
+
+        if returning is True:
+            return await cls.list(session, ids_filter)
+
+        if set(returning) == {"id"}:
+            return row_ids
+
+        return await cls.values_list(session, returning, ids_filter)
+
+    @classmethod
+    async def _dml_where(
+        cls,
+        session: AsyncSession,
+        builder: _QueryBuilder,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> CursorResult | ChunkedIteratorResult | list:
+        """Execute a DML statement (UPDATE or DELETE) with the specified filters.
+
+        This method ensures that at least one filter is provided to avoid unintentional
+        mass updates or deletions, and checks for database dialect-specific handling of
+        the `RETURNING` clause.
+        """
+        if not whereclause and not equal_filters:
+            raise ValueError(
+                "You must specify at least one filter in *whereclause or **equal_filters"
+            )
+
+        if returning and session.get_bind().name == DatabaseDialect.MYSQL:
+            return await cls._mutate_where_returning_with_for_update(
+                session,
+                builder,
+                *whereclause,
+                returning=returning,
+                **equal_filters,
+            )
+
+        result = await cls._mutate_where(
+            session,
+            builder,
+            *whereclause,
+            returning=returning,
+            **equal_filters,
+        )
+
+        if returning is True or (returning and len(returning) > 1):
+            return list(result.all())
+        if returning:
+            return list(result.scalars().all())
+        return result
+
+    @classmethod
+    async def update_where(
+        cls,
+        session: AsyncSession,
+        values: Mapping[str, Any],
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> CursorResult | ChunkedIteratorResult | list:
+        """Execute an UPDATE statement.
+
+        This method executes an UPDATE statement to update specific values for rows
+        matching the specified filters.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param values: A mapping with column names as keys and values as values.
+        :type values: Mapping[str, Any]
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param returning: If True, return the updated rows as objects of `cls.Model`. If
+            a list of column names is provided, return only those columns. Defaults to
+            False, meaning no rows are returned from the statement.
+        :type returning: Iterable[str] | bool
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The result of the UPDATE statement execution.
+        :rtype: CursorResult | ChunkedIteratorResult | list
+        """
+        return await cls._dml_where(
+            session,
+            _update_builder(values=values),
+            *whereclause,
+            returning=returning,
+            **equal_filters,
+        )
+
+    @classmethod
+    async def delete_where(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> CursorResult | ChunkedIteratorResult | list:
+        """Execute a DELETE statement.
+
+        This method executes a DELETE statement to delete specific rows matching the
+        specified filters.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the `where` clause of the query.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param returning: If True, return the updated rows as objects of `cls.Model`. If
+            a list of column names is provided, return only those columns. Defaults to
+            False, meaning no rows are returned from the statement.
+        :type returning: Iterable[str] | bool
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: The result of the DELETE statement execution.
+        :rtype: CursorResult | ChunkedIteratorResult | list
+        """
+        return await cls._dml_where(
+            session,
+            _delete_builder(),
+            *whereclause,
+            returning=returning,
+            values=None,
+            **equal_filters,
+        )
 
     @classmethod
     async def values_list(
@@ -185,7 +424,7 @@ class BaseManager:
                 for item in items
             ]
         query = cls._filter_query(
-            select(*(getattr(cls.Model, field) for field in fields)),
+            select(*cls._get_columns(*fields)),
             *whereclause,
             select_related=select_related,
             **equal_filters,
@@ -388,7 +627,7 @@ class BaseManager:
     async def create(
         cls,
         session: AsyncSession,
-        instance_create: P,
+        instance_create: B,
         **extra_fields: Any,
     ) -> T:
         """Create and save a new model instance in the database.
@@ -397,7 +636,7 @@ class BaseManager:
             operations.
         :type session: AsyncSession
         :param instance_create: The data used to create the new model instance.
-        :type instance_create: P
+        :type instance_create: B
         :param extra_fields: Additional fields to be set on the model instance.
         :type extra_fields: Any
         :return: The newly created and saved instance.
@@ -411,7 +650,7 @@ class BaseManager:
     async def get_or_create(
         cls,
         session: AsyncSession,
-        instance_create: P,
+        instance_create: B,
         filter_include: set[str] | None = None,
         **extra_fields: Any,
     ) -> tuple[T, bool]:
@@ -426,7 +665,7 @@ class BaseManager:
         :type session: AsyncSession
         :param instance_create: The data used to filter and possibly create the
             instance.
-        :type instance_create: P
+        :type instance_create: B
         :param filter_include: The set of fields of `instance_create` to be included in
             the search filter. Use None (default) for all fields.
         :param extra_fields: Additional fields to be set on the created instance.
@@ -447,7 +686,7 @@ class BaseManager:
         cls,
         session: AsyncSession,
         existing_instance: T,
-        updated_instance: P,
+        updated_instance: B,
         *,
         flag_modified_fields: Sequence[str] = (),
     ) -> T:
@@ -459,7 +698,7 @@ class BaseManager:
         :param existing_instance: The existing model instance to be updated.
         :type existing_instance: T
         :param updated_instance: The new data to update the model instance with.
-        :type updated_instance: P
+        :type updated_instance: B
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
         :return: The updated and saved instance.
@@ -482,52 +721,6 @@ class BaseManager:
         )
 
     @classmethod
-    async def update_where(
-        cls,
-        session: AsyncSession,
-        values: dict[str, Any],
-        *whereclause: ColumnExpressionArgument[bool],
-        returning: Sequence[str] | bool = False,
-        **equal_filters: Any,
-    ) -> CursorResult | ChunkedIteratorResult:
-        """Execute an UPDATE statement.
-
-        This method executes an UPDATE statement to update specific values for rows
-        matching the specified filters.
-
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
-        :param values: A dict with column names as keys and values as values.
-        :type values: dict[str, Any]
-        :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
-        :param returning: If True, return the updated rows as objects of `cls.Model`. If
-            a list of column names is provided, return only those columns. Defaults to
-            False, meaning no rows are returned from the statement.
-        :type returning: Sequence[str] | bool
-        :param equal_filters: Keyword arguments representing column names and their
-            respective filter values.
-        :type equal_filters: Any
-        :return: The result of the UPDATE statement execution.
-        :rtype: CursorResult | ChunkedIteratorResult
-        """
-        if not whereclause and not equal_filters:
-            raise ValueError(
-                "You must specify at least one filter in *whereclause or **equal_filters"
-            )
-        query = cls._filter_query(
-            update(cls.Model), *whereclause, **equal_filters
-        ).values(**values)
-        if returning is True:
-            query = query.returning(cls.Model)
-        elif returning:
-            query = query.returning(*(getattr(cls.Model, field) for field in returning))
-        result = await cls._exec(session, query)
-        await session.commit()
-        return result
-
-    @classmethod
     async def delete(cls, session: AsyncSession, instance: T) -> T:
         """Delete a model instance from the database.
 
@@ -542,47 +735,6 @@ class BaseManager:
         await session.delete(instance)
         await session.commit()
         return instance
-
-    @classmethod
-    async def delete_where(
-        cls,
-        session: AsyncSession,
-        *whereclause: ColumnExpressionArgument[bool],
-        returning: Sequence[str] | bool = False,
-        **equal_filters: Any,
-    ) -> CursorResult | ChunkedIteratorResult:
-        """Execute a DELETE statement.
-
-        This method executes a DELETE statement to delete specific rows matching the
-        specified filters.
-
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
-        :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
-        :param returning: If True, return the updated rows as objects of `cls.Model`. If
-            a list of column names is provided, return only those columns. Defaults to
-            False, meaning no rows are returned from the statement.
-        :type returning: Sequence[str] | bool
-        :param equal_filters: Keyword arguments representing column names and their
-            respective filter values.
-        :type equal_filters: Any
-        :return: The result of the DELETE statement execution.
-        :rtype: CursorResult | ChunkedIteratorResult
-        """
-        if not whereclause and not equal_filters:
-            raise ValueError(
-                "You must specify at least one filter in *whereclause or **equal_filters"
-            )
-        query = cls._filter_query(delete(cls.Model), *whereclause, **equal_filters)
-        if returning is True:
-            query = query.returning(cls.Model)
-        elif returning:
-            query = query.returning(*(getattr(cls.Model, field) for field in returning))
-        result = await cls._exec(session, query)
-        await session.commit()
-        return result
 
     @classmethod
     async def count(
@@ -615,13 +767,13 @@ class BaseSQLModelManager(BaseManager):
     """Manage database operations for a BaseSQLModel-based model.
 
     :param Model: The BaseSQLModel class for which this manager handles operations.
-    :type Model: type[B]
+    :type Model: type[BS]
     """
 
-    Model: type[B]
+    Model: type[BS]
 
     @classmethod
-    def _construct_instance(cls, instance_create: S, **extra_fields: Any) -> B:
+    def _construct_instance(cls, instance_create: S, **extra_fields: Any) -> BS:
         pk_column = inspect(cls.Model).primary_key[0]
         if pk_column.autoincrement and isinstance(
             None,
@@ -678,24 +830,24 @@ class BaseSQLModelManager(BaseManager):
     async def update(
         cls,
         session: AsyncSession,
-        existing_instance: B,
+        existing_instance: BS,
         updated_instance: S,
         *,
         flag_modified_fields: Sequence[str] = (),
-    ) -> B:
+    ) -> BS:
         """Update an existing model instance with new data and save it.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :type session: AsyncSession
         :param existing_instance: The existing model instance to be updated.
-        :type existing_instance: B
+        :type existing_instance: BS
         :param updated_instance: The new data to update the model instance with.
         :type updated_instance: S
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
         :return: The updated and saved instance.
-        :rtype: B
+        :rtype: BS
         """
         logger.debug(
             "Updating existing instance of %s (%s): %s",
@@ -730,7 +882,7 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         existing_instance: T,
-        updated_instance: P,
+        updated_instance: B,
         *,
         flag_modified_fields: Sequence[str] = (),
     ) -> T:
@@ -742,7 +894,7 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
         :param existing_instance: The existing child model instance to be updated.
         :type existing_instance: T
         :param updated_instance: The new data to update the child model instance with.
-        :type updated_instance: P
+        :type updated_instance: B
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
         :return: The updated and saved child instance.

@@ -202,6 +202,20 @@
                 </div>
                 <span class="label">Encrypt</span>
             </label>
+            {% set post_run_encrypt_title = "Encrypt backup right after completion." %}
+            <label class="checkbox"
+                   for="post_run_encrypt"
+                   title="{{ post_run_encrypt_title }}">
+                <input type="checkbox"
+                       id="post_run_encrypt"
+                       name="post_run_encrypt"
+                       value="1" />
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Post Run Encrypt</span>
+            </label>
             {% set encrypt_using_tmpdir_title = "Use a temporary directory for encryption to optimize performance and avoid direct disk writes." %}
             <label class="checkbox"
                    for="encrypt_using_tmpdir"
@@ -587,7 +601,13 @@
                 <select id="xtrabackup_incremental_cycle" name="xtrabackup_incremental_cycle">
                     <option value="">Select one</option>
                     <option value="daily">daily</option>
-                    <option value="weekly">weekly</option>
+                    <option value="weekly">weekly on Monday</option>
+                    <option value="2">weekly on Tuesday</option>
+                    <option value="3">weekly on Wednesday</option>
+                    <option value="4">weekly on Thursday</option>
+                    <option value="5">weekly on Friday</option>
+                    <option value="6">weekly on Saturday</option>
+                    <option value="7">weekly on Sunday</option>
                 </select>
             </label>
         </div>

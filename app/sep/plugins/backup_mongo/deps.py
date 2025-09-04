@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form
+from fastapi.encoders import jsonable_encoder
 
 from app.sep.deps import (
     DefaultContext,
@@ -17,6 +18,8 @@ from app.sep.deps import (
 )
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
+    BackupConfigPITR,
+    BackupConfigStorage,
     BackupCreate,
 )
 from app.tasks.models import (
@@ -42,13 +45,35 @@ async def build_backup_task_payload(
         configuration to create the Backup task.
     :rtype: TaskWrite
     """
-    all_config = form.model_dump(by_alias=True)
+    pitr = {
+        "enabled": form.pitr_enabled,
+        "oplogSpanMin": form.pitr_oplog_span_min,
+        "compression": form.pitr_compression,
+    }
+
+    storage_config = {}
+    if form.storage_type == "s3":
+        storage_config = {
+            "region": form.storage_s3_region,
+            "bucket": form.storage_s3_bucket,
+            "prefix": form.storage_s3_prefix,
+            "endpointUrl": form.storage_s3_endpoint_url,
+        }
+    elif form.storage_type == "filesystem":
+        storage_config = {"path": form.storage_filesystem_path}
+
+    storage = {"type": form.storage_type, form.storage_type: storage_config}
 
     backup_config = BackupConfig(
-        backup_config=[BackupConfig.model_validate(all_config)],
+        storage=BackupConfigStorage.model_validate(storage),
+        pitr=BackupConfigPITR.model_validate(pitr),
     )
 
-    requirements = "packaging\nPyYAML\nPyMongo\nboto3"
+    if form.backup_type == "pbm_config":
+        requirements = "packaging\nPyYAML"
+    else:
+        requirements = "packaging"
+
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     return TaskWrite(
@@ -59,7 +84,7 @@ async def build_backup_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    backup_config.model_dump(by_alias=True, exclude_none=True)
+                    jsonable_encoder(backup_config, by_alias=False, exclude_none=True)
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
@@ -110,7 +135,12 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    return yaml.safe_load(meta["config"])
+    return {
+        "config": yaml.safe_load(meta["config"]),
+        "parent": data.get("parent"),
+        "target": meta["target"],
+        "created_at": task["created_at"],
+    }
 
 
 async def get_backups_index_context(
