@@ -273,6 +273,8 @@ env = [
     "CASDOOR__CLIENT_SECRET=test-client-secret",
     'CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
     'ALLOWED_HOSTS=["testserver", "test"]',
+    "SEP__MESSAGES__LEVEL=0",
+    "ALLOW_CONCURRENT_SESSIONS=false"
 ]
 
 [tool.coverage.run]

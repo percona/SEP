@@ -13,5 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.middleware.csrf import CSRFMiddleware
-from app.sep.middleware.messages import MessagesMiddleware
+"""Define middleware to manage temporary messages stored in cookies."""
+
+from app.sep.middleware.messages._middleware import MessagesMiddleware
+from app.sep.middleware.messages._utils import (
+    add_message,
+    error,
+    get_messages,
+    info,
+    success,
+    warning,
+)
