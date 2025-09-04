@@ -53,9 +53,6 @@ class SnippetsMetaOptions(BaseModel):
     :param DEFAULT_ARG_FORMAT: The default format for arguments. Use `${name}` and
         `${value}` as placeholders. Defaults to `"--$name $value"`.
     :type DEFAULT_ARG_FORMAT: RequiredStr
-    :param DEFAULT_FLAG_FORMAT: The default format for flags. Use `$name` as a
-        placeholder. Defaults to `"--$name"`.
-    :type DEFAULT_FLAG_FORMAT: RequiredStr
     :param IGNORE_INVALID_PARAMETERS: Whether to ignore parameters with errors. If
         `True`, such parameters are skipped in execution validation and a warning is
         logged. If `False`, an error is logged and the snippet execution is blocked.
@@ -68,7 +65,6 @@ class SnippetsMetaOptions(BaseModel):
     STOP_SEARCH_PATTERN: re.Pattern[str] = re.compile(r"^[^#].+$")
     DEFAULT_ALLOW_EXTRA_ARGS: bool = False
     DEFAULT_ARG_FORMAT: RequiredStr = "--$name $value"
-    DEFAULT_FLAG_FORMAT: RequiredStr = "--$name"
     IGNORE_INVALID_PARAMETERS: bool = False
 
     @field_validator("DEFAULT_ARG_FORMAT")

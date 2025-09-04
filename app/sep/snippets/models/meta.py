@@ -23,10 +23,10 @@ __all__ = [
 ]
 
 import logging
-from enum import Enum
+from enum import Enum, StrEnum
 from functools import cached_property
 from string import Template
-from typing import Any, NamedTuple, NotRequired, Self
+from typing import Annotated, Any, NamedTuple, NotRequired, Self
 
 from pydantic import (
     AliasChoices,
@@ -35,6 +35,7 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    StringConstraints,
     ValidationError,
 )
 from pydantic.fields import FieldInfo
@@ -66,7 +67,7 @@ logger = logging.getLogger(__name__)
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
     """Enumerate the possible types for snippet parameters."""
 
-    STR = RequiredStr
+    STR = Annotated[str, StringConstraints(min_length=1)]
     INT = int
     FLOAT = float
     BOOL = bool
@@ -131,7 +132,7 @@ class SnippetMetaParameter(BaseModel):
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
         in input data.
-    :type choices: list[str | SnippetMetaParameterChoice] | None
+    :type choices: list[SnippetMetaParameterChoice] | None
     :param min_length: The minimum length for string parameters. Defaults to None,
         meaning it won't be used for validation.
     :type min_length: int | None
@@ -175,7 +176,7 @@ class SnippetMetaParameter(BaseModel):
     label: RequiredStr | None = None
     placeholder: RequiredStr | None = None
     default: DefaultValueType = None
-    choices: list[str | SnippetMetaParameterChoice] | None = Field(
+    choices: list[SnippetMetaParameterChoice] | None = Field(
         None, validation_alias=AliasChoices("choices", "options")
     )
     min_length: int | None = None
@@ -221,6 +222,23 @@ class SnippetMetaParameter(BaseModel):
                 "arg_format must include '${value}' for non-flag parameters"
             )
         return self
+
+    @field_validator("choices", mode="before")
+    @classmethod
+    def normalize_choices(cls, value: Any) -> Any:
+        """Normalize choices to a list of dictionaries with 'value'.
+
+        :param value: The input value to normalize.
+        :type value: Any
+        :return: The normalized list of choices or the original input value.
+        :rtype: Any
+        """
+        if isinstance(value, list):
+            return [
+                {"value": choice} if isinstance(choice, str) else choice
+                for choice in value
+            ]
+        return value
 
     @field_validator("py_type", mode="wrap")
     @classmethod
@@ -302,21 +320,11 @@ class SnippetMetaParameter(BaseModel):
         :return: The type to use for validating the parameter value.
         :rtype: type[type[ParameterType] | type[EmptyStrToNone]] | type[ParameterType]
         """
+        if self.choices:
+            return StrEnum("ParamChoices", [choice["value"] for choice in self.choices])
         if not self.required and self.default is None:
             return self.py_type.value | EmptyStrToNone
         return self.py_type.value
-
-    @cached_property
-    def arg_format_template(self) -> Template:
-        """Get the argument format as a Template.
-
-        The returned template uses the arg_format string, or defaults to "$value" if
-        `arg_format` is None.
-
-        :return: A :class:`Template` instance for formatting the argument.
-        :rtype: Template
-        """
-        return Template(self.arg_format or "$value")
 
     def to_validation_field(self) -> FieldInfo:
         """Convert the SnippetMetaParameter to a Pydantic Field.
@@ -346,7 +354,9 @@ class SnippetMetaParameter(BaseModel):
             **attrs,
             alias=self.name,
             metadata=self.model_dump(
-                include={"positional", "is_flag", "arg_format"}, exclude_none=True
+                include={"positional", "is_flag", "arg_format"},
+                exclude_none=True,
+                exclude_defaults=True,
             ),
         )
 

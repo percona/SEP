@@ -15,6 +15,24 @@
 
 """Define HTML elements and form components using Pydantic models."""
 
+__all__ = [
+    "CheckboxInputElement",
+    "FieldsetElement",
+    "FormElement",
+    "FormFieldElement",
+    "FormMethod",
+    "InputType",
+    "NumberInputElement",
+    "OptionElement",
+    "SelectElement",
+    "SpanElement",
+    "SubmitButtonElement",
+    "TextContent",
+    "TextInputElement",
+    "TextInputHTMLElement",
+    "TextareaElement",
+]
+
 from abc import ABC, abstractmethod
 from collections.abc import Hashable
 from enum import auto, StrEnum
@@ -37,8 +55,8 @@ from app.core.utils import ttl_cache
 from app.core.utils.fields import EnumFieldMixin, RequiredStr
 
 HTMLClassName = Annotated[str, Field(pattern=r"^-?[_a-zA-Z]+[_a-zA-Z0-9-]*$")]
+ICON_CLASS = "material-symbols-outlined"
 _TWENTY_FOUR_HOURS = 24 * 60 * 60
-_SEVEN_DAYS = 7 * _TWENTY_FOUR_HOURS
 
 
 class TextInputHTMLElement(EnumFieldMixin, StrEnum):
@@ -654,7 +672,7 @@ class SelectElement(FormFieldMixin, HTMLElement):
         :return: An HTML span element with an icon for dropdown indication.
         :rtype: str
         """
-        return '<span class="material-symbols-outlined">arrow_drop_down</span>'
+        return f'<span class="{ICON_CLASS}">arrow_drop_down</span>'
 
 
 class BaseInputElement(FormFieldMixin, VoidHTMLElement, ABC):
@@ -850,8 +868,8 @@ class CheckboxInputElement(BaseInputElement):
         """
         return (
             '<div class="checkmark">'
-            '<span class="material-symbols-outlined unchecked">check_box_outline_blank</span>'
-            '<span class="material-symbols-outlined checked">check_box</span>'
+            f'<span class="{ICON_CLASS} unchecked">check_box_outline_blank</span>'
+            f'<span class="{ICON_CLASS} checked">check_box</span>'
             "</div>"
         )
 
@@ -910,7 +928,7 @@ class SubmitButtonElement(HTMLElement):
                 data["children"] = (TextContent(text=data["label"]),)
             else:
                 data["children"] = (
-                    SpanElement(label=icon, classes=("material-symbols-outlined",)),
+                    SpanElement(label=icon, classes=(ICON_CLASS,)),
                     SpanElement(label=data["label"]),
                 )
         return data
@@ -953,9 +971,7 @@ class FormElement(HTMLElement):
     action: str = ""
     method: FormMethod = FormMethod.POST
     submit_button: SubmitButtonElement = Field(
-        SubmitButtonElement(
-            label="send", classes=("material-symbols-outlined", "text")
-        ),
+        SubmitButtonElement(label="send", classes=(ICON_CLASS, "text")),
         exclude=True,
     )
 
@@ -972,35 +988,4 @@ class FormElement(HTMLElement):
         return super().inner_html + self.submit_button.to_html()
 
 
-@validate_call
-@ttl_cache(ttl=_SEVEN_DAYS, maxsize=4)
-def get_executor_hosts_fieldset(executor_hosts: frozenset[str]) -> FieldsetElement:
-    """Create a fieldset for executor hosts with a legend and input fields.
-
-    :param executor_hosts: A set of executor host strings.
-    :type executor_hosts: frozenset[str]
-    :return: A FieldsetElement containing the input fields for the executor hosts.
-    :rtype: FieldsetElement
-    """
-    return FieldsetElement(
-        legend="Executor Host",
-        children=[
-            SelectElement(
-                children=executor_hosts,
-                name="hostname",
-                title="Select the hostname of the target system for snippet execution.",
-                label="Select host",
-                required=True,
-            ),
-        ],
-    )
-
-
 FormFieldElement = BaseInputElement | SelectElement | TextareaElement
-
-EXTRA_ARGS_INPUT = TextInputElement(
-    name="-extra_args-",
-    placeholder="e.g. --verbose",
-    title="Any extra args to pass to the snippet execution command",
-    label="Extra Args",
-)
