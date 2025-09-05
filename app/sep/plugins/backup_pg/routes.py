@@ -43,3 +43,24 @@ async def backups_index(
         name="backup_pg/index.html",
         context=context,
     )
+
+
+@router.post(
+    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+)
+async def backups_create(
+    request: Request,
+    task: BackupGeneratedTask,
+    task_api: TaskAPI,
+) -> RedirectResponse:
+    """Create new backups task."""
+    logger.debug("Create backups task: %s", task)
+    await task_api.post(
+        "/",
+        json=task.model_dump(),
+    )
+    task_path = request.url_for("backups_detail", task_name=task.name)
+    return RedirectResponse(
+        task_path,
+        status_code=status.HTTP_303_SEE_OTHER,
+    )  # TODO: Custom redirect class  # noqa: TD002, TD003

@@ -19,12 +19,11 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup.models import (
-#    BackupConfig,
-#    BackupConfigAll,
-#    BackupConfigServer,
-#    BackupCreate,
+    BackupConfig,
+    BackupConfigAll,
+    BackupConfigServer,
+    BackupCreate,
     BackupType,
-#    UploadProvider,
 )
 from app.tasks.models import (
     Task,
@@ -35,6 +34,99 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
+
+async def build_backup_task_payload(
+    form: Annotated[BackupCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the backup task payload from form.
+
+    Build the payload for a Backups task to be executed.
+
+    :param form: The form data for the Backups creation.
+    :type form: BackupCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed `TaskWrite` object containing all the necessary
+        configuration to create the Backup task.
+    :rtype: TaskWrite
+    """
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        form.service_id,
+        type=ServiceTypeEnum.MYSQL,
+    )
+
+    all_config = form.model_dump(
+        exclude={
+            "task_name",
+            "hostname",
+            "service_id",
+            "backup_type",
+            "encryption_recipient",
+        },
+        by_alias=True,
+    )
+
+
+    server_config = {
+        "alias": service.node.address,
+        "backup_type": form.backup_type,
+        # for now only localhost allowed for X
+        "host": (
+            "localhost"
+            if form.backup_type == "X"
+            else form.binlog_alternative_host
+            if form.backup_type == "B" and form.binlog_alternative_host
+            else service.node.address
+        ),
+        "port": service.port,
+        "upload": upload_providers,
+    }
+
+    if form.encryption_recipient:
+        server_config["dir_encrypt_config"] = {
+            "encryption_recipient": form.encryption_recipient
+        }
+
+    backup_config = BackupConfig(
+        all_servers=BackupConfigAll.model_validate(all_config),
+        server_list=[BackupConfigServer.model_validate(server_config)],
+    )
+
+    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
+    if form.backup_type == BackupType.MYDUMPER:
+        payload_name = "mydumper_payload"
+    elif form.backup_type == BackupType.XTRABACKUP:
+        payload_name = "xtrabackup_payload"
+        requirements += "\nfilelock"
+    elif form.backup_type == BackupType.BINLOG:
+        payload_name = "binlog_payload"
+    else:
+        raise ValueError(f"Invalid Backup Type {form.backup_type}")
+    payload_path = Path(__file__).parent / payload_name
+
+    return TaskWrite(
+        name=form.task_name,
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUPS,
+        data={
+            "task": "run-python",
+            "meta": {
+                "config": yaml.dump(
+                    jsonable_encoder(backup_config, by_alias=True, exclude_none=True)
+                ),
+                "target": form.hostname,
+                "requirements": requirements,
+            },
+            "payload": f"file://{payload_path}",
+        },
+        alert_on_fail=form.alert_on_fail,
+    )
+
+
+BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant information from a task for the Backups plugin.
