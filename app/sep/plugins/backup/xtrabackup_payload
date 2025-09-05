@@ -1054,20 +1054,6 @@ class BaseBackup:
                 f"{1 if backup_enabled else 0}\n"
             )
 
-    def textfile_collector_job_enabled(
-        self, backup_type: str, alias: str, backup_enabled: bool, job_type: str
-    ) -> None:
-        """Record if a backup job is started and backup types are enabled.
-
-        :param backup_type: Backup type code.
-        :param alias: Host alias.
-        :param backup_enabled: Whether backup is enabled.
-        :param job_type: Job type.
-        """
-        self.textfile_collector_write_enable(
-            backup_type, alias, backup_enabled, job_type
-        )
-
     def textfile_collector_notify(self, backup_status: int) -> None:
         """Notify status via textfile collector.
 
@@ -1249,6 +1235,8 @@ class Backup(BaseBackup):
         if not uploadme_path.is_file():
             uploadme_path.touch()
             self.logger.info("Backup marked for upload.")
+            # enable textfile collector metric
+            self.textfile_collector_write_enable("X", self.alias, True, "upload")
 
     def _query_mysql(self, sql: str, fetchall: bool = False) -> Any:
         """Execute a MySQL query and return the result.
@@ -2018,6 +2006,9 @@ class Xtrabackup(Backup):
         self.report_options['options'] = {
             'copies': self.max_copies
         }
+
+        # enable textfile collector metric
+        self.textfile_collector_write_enable("X", self.alias, True, "backup")
 
         if self.xtrabackup_aes256_keyfile and self.post_run_encrypt:
             self.report_options['encryption'] = 'dual'
