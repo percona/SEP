@@ -1160,7 +1160,7 @@ def run_binlog_process(server_data, lock_file, command_queue):
                                                 logger=LOGGER).run()
                             else:
                                 LOGGER.warning("Unsupported upload type: %r", upload_type)
-                        last_upload_time = time.time()
+                    last_upload_time = time.time()
             else:
                 last_binlog = cur_last_binlog
                 last_binlog_size = cur_last_binlog_size
