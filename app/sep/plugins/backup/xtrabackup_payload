@@ -125,7 +125,7 @@ DEFAULT_LOGGING_DIR = os.getenv(
     "PERCONA_BACKUP_DEFAULT_LOGGING_DIR",
     str(Path(CURRENT_USER_HOME_DIR) / ".local" / "percona" / "logs" / "backup"),
 )
-DEFAULT_LOGGING_STDOUT = False
+DEFAULT_LOGGING_STDOUT = True
 DEFAULT_MYCNF = "{}/.my.cnf".format(os.environ.get("HOME"))
 LOGGING_FORMAT = "%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s"
 LOGGING_FORMAT_DEBUG = (
