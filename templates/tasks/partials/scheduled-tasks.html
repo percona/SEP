@@ -17,7 +17,7 @@
     </thead>
     <tbody>
         {% for periodic_task in periodic_tasks %}
-            <tr {% if not periodic_task.enabled %}class="disabled-row"{% endif %}>
+            <tr>
                 <td>
                     {%- if detail_route -%}
                         <a href="{{ url_for(detail_route, task_name=periodic_task.task) }}"
