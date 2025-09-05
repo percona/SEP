@@ -52,8 +52,6 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
-    TaskLog,
-    TaskLogType,
     TaskResponse,
     TaskStats,
     TaskWrite,
@@ -264,18 +262,7 @@ async def stream_task_history_logs(
         )
     else:
         stream_logs_generator = (
-            TaskLog(
-                step=step,
-                type=log_type,
-                msg=msg,
-                offset=log.get(f"{log_type}_last_offset", 0),
-            ).model_dump_json()
-            + "\n"
-            for step, log in task_history.execution_request.tracking.get(
-                "task_logs", {}
-            ).items()
-            for log_type in TaskLogType
-            if (msg := log[log_type][offsets[step].get(log_type, 0) :])
+            log.model_dump_json() + "\n" for log in task_history.iter_logs(offsets)
         )
     return StreamingResponse(
         stream_logs_generator,

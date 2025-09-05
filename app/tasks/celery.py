@@ -175,9 +175,9 @@ def sync_task_history(task_history_id: int) -> None:
     :param task_history_id: The unique identifier of the task history item to sync.
     :type task_history_id: int
     """
-    logger.debug("Syncing task history %s", task_history_id)
+    logger.info("Syncing task history %s", task_history_id)
     celery.loop.run_until_complete(sync_queue_item(task_history_id))
-    logger.debug("Finished syncing task history %s", task_history_id)
+    logger.info("Finished syncing task history %s", task_history_id)
 
 
 async def delete_task_history(queue_id: int) -> None:

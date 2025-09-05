@@ -533,13 +533,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         "{" + item for item in raw_log_data.split("{") if item
                     ):
                         log_data = json.loads(raw_log_data_item)
-                        task_logs[step][last_offset_key] = log_data["Offset"]
-                        decoded_data = b64decode_str(log_data["Data"])
-                        if step in ("run-script", "step1"):
-                            decoded_data = anonymize_text(
-                                decoded_data, anonymize_entities or set()
+                        if raw_msg := log_data.get("Data"):
+                            task_logs[step][last_offset_key] = log_data.get(
+                                "Offset", task_logs[step][last_offset_key]
                             )
-                        task_logs[step][log_type] += decoded_data
+                            msg = b64decode_str(raw_msg)
+                            if step in ("run-script", "step1"):
+                                msg = anonymize_text(msg, anonymize_entities or set())
+                            task_logs[step][log_type] += msg
         return task_logs
 
     async def _sync_task_history(
