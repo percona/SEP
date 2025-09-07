@@ -23,10 +23,8 @@
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    {% if history %}
-        <script src="{{ url_for('static', path='/js/logs.js') }}"
-                nonce="{{ request.state.csp_nonce }}"></script>
-    {% endif %}
+    <script src="{{ url_for('static', path='/js/logs.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
 {% block main %}
     <h1>PBM Backups: {{ task.name }}</h1>
