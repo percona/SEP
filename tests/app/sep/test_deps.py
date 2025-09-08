@@ -12,7 +12,12 @@ async def test_get_tasks_context(
     dummy_request, created_service, created_schema, mock_remote_api
 ):
     """Test for assembling the template context for task-dependent plugins."""
-    task_data = {"name": "fakeTask", "id": 1}
+    task_data = {
+        "name": "fakeTask",
+        "id": 1,
+        "created_by": "valid-username",
+        "last_edit_by": "valid-username",
+    }
     extra_data = {"success": True, "extra": "extra_data"}
     mock_remote_api.get = AsyncMock(
         side_effect=[
