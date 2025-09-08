@@ -88,10 +88,10 @@ async def alters_create(
     """Create alter tasks - one for execution and one for dry run."""
     logger.debug("Create alters tasks: %s", task)
 
-    task_data = task.model_dump()
+    # Create the execute task
     await task_api.post(
         "/",
-        json=task_data,
+        json=task.model_dump(),
     )
 
     # Create the dry-run task
@@ -104,10 +104,9 @@ async def alters_create(
         )
         dry_run_task.data["parent"] = task.name
 
-    dry_run_data = dry_run_task.model_dump()
     await task_api.post(
         "/",
-        json=dry_run_data,
+        json=dry_run_task.model_dump(),
     )
 
     # Redirect to the execute task detail page
@@ -231,10 +230,9 @@ async def alters_update(
 ) -> RedirectResponse:
     """Update alters task."""
     logger.debug("Updating alters task: %s", updated_task)
-    update_data = updated_task.model_dump()
     await tasks_api.put(
         f"/{task_name}",
-        json=update_data,
+        json=updated_task.model_dump(),
     )
     dry_run_task = updated_task.model_copy()
     dry_run_task.name = f"{updated_task.name}-dry-run"
@@ -243,10 +241,9 @@ async def alters_update(
             "--execute", "--dry-run"
         )
         dry_run_task.data["parent"] = updated_task.name
-    dry_run_data = dry_run_task.model_dump()
     await tasks_api.put(
         f"/{task_name}-dry-run",
-        json=dry_run_data,
+        json=dry_run_task.model_dump(),
     )
 
     return RedirectResponse(
