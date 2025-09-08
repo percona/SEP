@@ -22,7 +22,6 @@ from app.sep.plugins.backup_mongo.deps import (
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
