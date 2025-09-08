@@ -125,9 +125,7 @@ async def tasks_execute(
     execute_data: Annotated[TaskExecuteRequest, Form()],
 ) -> RedirectResponse:
     """Execute task."""
-    execution_payload = execute_data.model_dump()
-
-    await tasks_api.post(f"/execute/{task.name}", json=execution_payload)
+    await tasks_api.post(f"/execute/{task.name}", json=execute_data.model_dump())
     task_path = request.url_for("tasks_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 

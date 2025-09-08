@@ -82,11 +82,7 @@ def test_task_create(
         "/transform/", json=transform_data, params={"backend": TaskBackendEnum.NOMAD}
     )
     mock_task_api_dep.post.assert_awaited_with(
-        "/",
-        json=task_data
-        | {
-            "data": transform_return,
-        },
+        "/", json=task_data | {"data": transform_return}
     )
 
 
@@ -139,8 +135,7 @@ def test_task_execute(
         == f"{test_client.base_url}/tasks/{created_task.name}"
     )
     mock_task_api_dep.post.assert_awaited_once_with(
-        f"/execute/{created_task.name}",
-        json=execute_data,
+        f"/execute/{created_task.name}", json=execute_data
     )
 
 
