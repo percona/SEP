@@ -401,6 +401,11 @@ def logging_setup(
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
+    # Configure root logger to prevent stderr output
+    logging.root.setLevel(logging.WARNING)  # Set to WARNING to suppress INFO messages
+    # Or alternatively, add a null handler to suppress all root logger output
+    # logging.root.addHandler(logging.NullHandler())
+
     name = log_name.replace(".log", "")
     logger = logging.getLogger(name)
     log_file = real_logging_dir / log_name
@@ -869,6 +874,32 @@ class BaseBackup:
     def textfile_collector_notify(self, backup_status: int) -> None:
         self.textfile_collector_write_status(backup_status)
 
+    def textfile_collector_write_enable(
+        self, alias: str, backup_enabled: bool, job_type: str
+    ) -> None:
+        """Add the enabled backup types to the textfile collector.
+        :param alias: Host alias.
+        :param backup_enabled: Whether the backup type is enabled.
+        :param job_type: Job type name.
+        """
+        if not self.check_textcollector_dir():
+            return
+
+        collector_file = (
+            self.backup_textfile_collector_dir
+            / f"driver.{job_type}.Binlogs.{alias}.prom"
+        )
+
+        with collector_file.open("w") as outfile:
+            outfile.write(
+                f"# HELP msp_{job_type}_enabled The status of the cron\n"
+                f"# TYPE msp_{job_type}_enabled Untyped\n"
+            )
+            outfile.write(
+                f'msp_{job_type}_enabled{{type="Binlogs", alias="{alias}"}} '
+                f"{1 if backup_enabled else 0}\n"
+            )
+
 
 class Backup(BaseBackup):
     def __init__(
@@ -959,6 +990,10 @@ def run_binlog_backup(server_data, command_queue):
     server_data["BINLOG_BACKUP_START"] = time.strftime(
         "%Y-%m-%d %H:%M:%S", time.gmtime()
     )
+
+    # enable textfile collector metric
+    enable_backup = BaseBackup(server_data, "B", LOGGER)
+    enable_backup.textfile_collector_write_enable(alias, True, "backup")
 
     lockfile_name = "/tmp/.lock_binlog_puller_%s_%s" % (
         server_data["HOST"],
@@ -1104,23 +1139,27 @@ def run_binlog_process(server_data, lock_file, command_queue):
                         last_source_status = source_status
 
                 # Manage upload
-                if last_upload_time + server_data.get("UPLOAD_INTERVAL", 60 * 1) < time.time():
-                    LOGGER.info("Binlog upload starting ...")
-                    for upload_type in server_data.get("UPLOAD"):
-                        if upload_type == "rsync":
-                            LOGGER.info("Binlog upload rsync ...")
-                            BinaryLogUpload(upload_type=upload_type,
-                                            upload_provider=RsyncUploadProvider,
-                                            settings=server_data,
-                                            logger=LOGGER).run()
-                        elif upload_type == "s3":
-                            LOGGER.info("Binlog upload s3 ...")
-                            BinaryLogUpload(upload_type=upload_type,
-                                            upload_provider=S3UploadProvider,
-                                            settings=server_data,
-                                            logger=LOGGER).run()
-                        else:
-                            LOGGER.warning("Unsupported upload type: %r", upload_type)
+                if last_upload_time + server_data.get("UPLOAD_INTERVAL", 60 * 3) < time.time():
+                    if server_data.get("UPLOAD"):
+                        # enable textfile collector metric
+                        enable_backup = BaseBackup(server_data, "B")
+                        enable_backup.textfile_collector_write_enable(alias, True, "upload")
+                        LOGGER.info("Binlog upload starting ...")
+                        for upload_type in server_data.get("UPLOAD"):
+                            if upload_type == "rsync":
+                                LOGGER.info("Binlog upload rsync ...")
+                                BinaryLogUpload(upload_type=upload_type,
+                                                upload_provider=RsyncUploadProvider,
+                                                settings=server_data,
+                                                logger=LOGGER).run()
+                            elif upload_type == "s3":
+                                LOGGER.info("Binlog upload s3 ...")
+                                BinaryLogUpload(upload_type=upload_type,
+                                                upload_provider=S3UploadProvider,
+                                                settings=server_data,
+                                                logger=LOGGER).run()
+                            else:
+                                LOGGER.warning("Unsupported upload type: %r", upload_type)
                     last_upload_time = time.time()
             else:
                 last_binlog = cur_last_binlog
@@ -1644,6 +1683,7 @@ class Upload(Backup):
 
         if not self.paths:
             self.logger.debug("Nothing to upload of %s backup.", self.backup_type)
+            self.textfile_collector_write_status(0, MSPAction.UPLOAD)
             return "OK no new binlogs to upload." if self.backup_code == "B" else ""
 
         start_time = time.time()
@@ -1664,6 +1704,7 @@ class Upload(Backup):
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         msg = f"OK {self.upload_type} upload complete. Duration: {time_spent}."
         self.logger.info(msg)
+        self.textfile_collector_write_status(0, MSPAction.UPLOAD)
         #self.textfile_collector_write_status(0, self.backup_code, self.alias, True)
 
         return msg
