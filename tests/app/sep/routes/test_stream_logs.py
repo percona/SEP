@@ -40,6 +40,7 @@ def task_history_response(faker, created_task):
         errors=[],
         started_at=started_at,
         finished_at=started_at + faker.time_delta(end_datetime="+1h"),
+        executed_by="valid-username",
     )
 
 
