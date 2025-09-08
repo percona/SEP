@@ -31,11 +31,13 @@
                 <th>Task</th>
                 <th>Engine</th>
                 <th>Created</th>
+                <th>Created by</th>
+                <th>Last edit by</th>
             </tr>
         </thead>
         <tfoot>
             <tr>
-                <td colspan="3"></td>
+                <td colspan="5"></td>
             </tr>
         </tfoot>
         <tbody>
@@ -46,6 +48,8 @@
                     </th>
                     <td>{{ task["backend"].capitalize() }}</td>
                     <td class="relativeTime">{{ task["created_at"] }}</td>
+                    <td>{{ task.get('created_by', 'System') }}</td>
+                    <td>{{ task.get('last_edit_by', 'System') }}</td>
                 </tr>
             {% endfor %}
         </tbody>

@@ -60,6 +60,18 @@
         <dd class="relativeTime">
             {{ task.created_at }}
         </dd>
+        {% if task.created_by %}
+            <dt>Created by</dt>
+            <dd>
+                {{ task.created_by }}
+            </dd>
+        {% endif %}
+        {% if task.last_edit_by %}
+            <dt>Last modified by</dt>
+            <dd>
+                {{ task.last_edit_by }}
+            </dd>
+        {% endif %}
         <dt>Specification</dt>
         <dd>
             <code>

@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import CurrentUser, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
@@ -107,11 +107,17 @@ async def get_task(task: TaskDep) -> Task:
     status_code=status.HTTP_201_CREATED,
     response_model=TaskResponse,
 )
-async def create_task(session: SessionDep, task: TaskWrite) -> Task:
+async def create_task(
+    session: SessionDep, task: TaskWrite, current_user: CurrentUser
+) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
     return await TaskManager.create(
-        session, task, anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner]
+        session,
+        task,
+        created_by=current_user.username,
+        last_edit_by=current_user.username,
+        anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner],
     )
 
 
@@ -122,11 +128,16 @@ async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     response_model=TaskResponse,
 )
 async def update_task(
-    session: SessionDep, existing_task: TaskDep, updated_task: TaskWrite
+    session: SessionDep,
+    existing_task: TaskDep,
+    updated_task: TaskWrite,
+    current_user: CurrentUser,
 ) -> Task:
     """Update an existing task."""
     logger.debug("Updating task %s", existing_task.name)
-    return await TaskManager.update(session, existing_task, updated_task)
+    return await TaskManager.update(
+        session, existing_task, updated_task, last_edit_by=current_user.username
+    )
 
 
 @router.get(
@@ -175,6 +186,7 @@ async def execute_task_name(
     session: SessionDep,
     queue_item: PreparedTaskHistory,
     task_name: str,
+    current_user: CurrentUser,
 ) -> TaskHistory:
     """Send a task for execution."""
     logger.debug(
@@ -182,6 +194,8 @@ async def execute_task_name(
         task_name,
         queue_item.execution_request.eta or utc_now(),
     )
+    queue_item.executed_by = current_user.username
+
     root_task = await TaskManager.get_root_task(session, queue_item.task)
     executor = get_executor_for_task(root_task)
     if queue_item.execution_request.target not in executor.get_hosts().values():

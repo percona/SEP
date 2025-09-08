@@ -226,7 +226,7 @@ async def prepare_periodic_task_history(
     async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_executable_task_by_name(session, task_name)
-        return prepare_task_history(task, execution_data)
+        return await prepare_task_history(task, execution_data, executed_by="system")
 
 
 async def dispatch_queue_item(
