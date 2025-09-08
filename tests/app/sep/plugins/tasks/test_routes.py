@@ -86,8 +86,6 @@ def test_task_create(
         json=task_data
         | {
             "data": transform_return,
-            "created_by": "valid-username",
-            "last_edit_by": "valid-username",
         },
     )
 
@@ -142,7 +140,7 @@ def test_task_execute(
     )
     mock_task_api_dep.post.assert_awaited_once_with(
         f"/execute/{created_task.name}",
-        json=execute_data | {"executed_by": "valid-username"},
+        json=execute_data,
     )
 
 

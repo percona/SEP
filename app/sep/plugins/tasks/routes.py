@@ -25,7 +25,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
-    CurrentUser,
     DefaultContext,
     IsAuthenticated,
     IsCsrfValidated,
@@ -76,7 +75,6 @@ async def task_create(
     request: Request,
     create_task_form: Annotated[TaskCreateRequest, Form()],
     tasks_api: TaskAPI,
-    current_user: CurrentUser,
 ) -> RedirectResponse:
     """Create task."""
     logger.debug("Create task: %s", create_task_form)
@@ -86,9 +84,6 @@ async def task_create(
         json=create_task_form.model_dump(include={"payload", "fmt"}),
         params={"backend": create_task_form.backend},
     )
-
-    task_data["created_by"] = current_user.username
-    task_data["last_edit_by"] = current_user.username
 
     await tasks_api.post("/", json=task_data)
     task_path = request.url_for("tasks_detail", task_name=create_task_form.name)
@@ -128,11 +123,9 @@ async def tasks_execute(
     task: TaskDep,
     tasks_api: TaskAPI,
     execute_data: Annotated[TaskExecuteRequest, Form()],
-    current_user: CurrentUser,
 ) -> RedirectResponse:
     """Execute task."""
     execution_payload = execute_data.model_dump()
-    execution_payload["executed_by"] = current_user.username
 
     await tasks_api.post(f"/execute/{task.name}", json=execution_payload)
     task_path = request.url_for("tasks_detail", task_name=task.name)
