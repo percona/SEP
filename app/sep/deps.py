@@ -462,6 +462,8 @@ async def get_tasks_context(
         task_info = {
             "name": task["name"],
             "id": task["id"],
+            "created_by": task.get("created_by"),
+            "last_edit_by": task.get("last_edit_by"),
         }
         task_info |= get_task_info_func(task)
         tasks.append(task_info)

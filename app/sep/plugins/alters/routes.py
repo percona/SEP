@@ -11,6 +11,7 @@ from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
+    CurrentUser,
     DefaultContext,
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -84,14 +85,17 @@ async def alters_create(
     request: Request,
     task: AltersGeneratedTask,
     task_api: TaskAPI,
+    current_user: CurrentUser,
 ) -> RedirectResponse:
     """Create alter tasks - one for execution and one for dry run."""
     logger.debug("Create alters tasks: %s", task)
 
-    # Create the execute task
+    task_data = task.model_dump()
+    task_data["created_by"] = current_user.username
+    task_data["last_edit_by"] = current_user.username
     await task_api.post(
         "/",
-        json=task.model_dump(),
+        json=task_data,
     )
 
     # Create the dry-run task
@@ -104,9 +108,12 @@ async def alters_create(
         )
         dry_run_task.data["parent"] = task.name
 
+    dry_run_data = dry_run_task.model_dump()
+    dry_run_data["created_by"] = current_user.username
+    dry_run_data["last_edit_by"] = current_user.username
     await task_api.post(
         "/",
-        json=dry_run_task.model_dump(),
+        json=dry_run_data,
     )
 
     # Redirect to the execute task detail page
@@ -204,12 +211,13 @@ async def alters_execute(
     request: Request,
     task: AltersTask,
     tasks_api: TaskAPI,
+    current_user: CurrentUser,
     eta: Annotated[FutureDatetime | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute alters task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta},
+        json={"eta": eta, "executed_by": current_user.username},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
     task_path = request.url_for("alters_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
@@ -225,12 +233,15 @@ async def alters_update(
     task_name: str,
     updated_task: AltersGeneratedTask,
     tasks_api: TaskAPI,
+    current_user: CurrentUser,
 ) -> RedirectResponse:
     """Update alters task."""
     logger.debug("Updating alters task: %s", updated_task)
+    update_data = updated_task.model_dump()
+    update_data["last_edit_by"] = current_user.username
     await tasks_api.put(
         f"/{task_name}",
-        json=updated_task.model_dump(),
+        json=update_data,
     )
     dry_run_task = updated_task.model_copy()
     dry_run_task.name = f"{updated_task.name}-dry-run"
@@ -239,9 +250,11 @@ async def alters_update(
             "--execute", "--dry-run"
         )
         dry_run_task.data["parent"] = updated_task.name
+    dry_run_data = dry_run_task.model_dump()
+    dry_run_data["last_edit_by"] = current_user.username
     await tasks_api.put(
         f"/{task_name}-dry-run",
-        json=dry_run_task.model_dump(),
+        json=dry_run_data,
     )
 
     return RedirectResponse(
