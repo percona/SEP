@@ -18,7 +18,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup.models import (
+from app.sep.plugins.backup_pg.models import (
     BackupConfig,
     BackupConfigAll,
     BackupConfigServer,
@@ -55,7 +55,7 @@ async def build_backup_task_payload(
         inventory_api,
         SyncInventoryEntityTypeEnum.SERVICE,
         form.service_id,
-        type=ServiceTypeEnum.MYSQL,
+        type=ServiceTypeEnum.POSTGRESQL,
     )
 
     all_config = form.model_dump(
@@ -64,7 +64,7 @@ async def build_backup_task_payload(
             "hostname",
             "service_id",
             "backup_type",
-            "encryption_recipient",
+            # "encryption_recipient",
         },
         by_alias=True,
     )
@@ -74,43 +74,23 @@ async def build_backup_task_payload(
         "alias": service.node.address,
         "backup_type": form.backup_type,
         # for now only localhost allowed for X
-        "host": (
-            "localhost"
-            if form.backup_type == "X"
-            else form.binlog_alternative_host
-            if form.backup_type == "B" and form.binlog_alternative_host
-            else service.node.address
-        ),
+        "host": "localhost", #service.node.address
         "port": service.port,
-        "upload": upload_providers,
+        # "upload": upload_providers,
     }
-
-    if form.encryption_recipient:
-        server_config["dir_encrypt_config"] = {
-            "encryption_recipient": form.encryption_recipient
-        }
 
     backup_config = BackupConfig(
         all_servers=BackupConfigAll.model_validate(all_config),
         server_list=[BackupConfigServer.model_validate(server_config)],
     )
 
-    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
-    if form.backup_type == BackupType.MYDUMPER:
-        payload_name = "mydumper_payload"
-    elif form.backup_type == BackupType.XTRABACKUP:
-        payload_name = "xtrabackup_payload"
-        requirements += "\nfilelock"
-    elif form.backup_type == BackupType.BINLOG:
-        payload_name = "binlog_payload"
-    else:
-        raise ValueError(f"Invalid Backup Type {form.backup_type}")
-    payload_path = Path(__file__).parent / payload_name
+    requirements = "packaging\nPyYAML"
+    payload_path = Path(__file__).parent / "payload"
 
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUPS,
+        owner=TaskOwner.BACKUP_PG,
         data={
             "task": "run-python",
             "meta": {
@@ -147,7 +127,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "hostname": meta["target"],
         "host": backup_server.get("HOST"),
         "port": backup_server.get("PORT") or 3306,
-        "upload": ", ".join(backup_server.get("UPLOAD")),
+        #"upload": ", ".join(backup_server.get("UPLOAD")),
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
     }
 
@@ -184,3 +164,59 @@ async def get_backups_index_context(
         TaskOwner.BACKUP_PG,
         alert_on_fail_default=True,
     )
+
+
+async def get_backups_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Fetch and validate a task for the Backups plugin.
+
+    This function retrieves a task by its name from the Tasks API and validates
+    that it is owned by the Backups plugin. If the task does not exist or is not
+    owned by Backups, it raises a 404 HTTP exception.
+
+    :param task_name: The name of the task to retrieve.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :return: The retrieved task.
+    :rtype: Task
+    :raises HTTPNotFoundException: If the task is not found or is not owned by Backups.
+    """
+    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUP_PG)
+
+
+BackupsTask = Annotated[Task, Depends(get_backups_task)]
+
+
+def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
+    """Parse backup task data for editing.
+
+    Extracts configuration from an existing backup task to populate the edit form.
+
+    :param task: The task data retrieved from the Tasks API.
+    :type task: dict[str, Any]
+    :return: A dictionary containing parsed backup configuration.
+    :rtype: dict[str, Any]
+    """
+    data = task["data"]
+    meta = data["meta"]
+    task_config = yaml.safe_load(meta["config"])
+    server_config = task_config["SERVER_LIST"][0]
+    all_servers_config = task_config.get("ALL_SERVERS", {})
+
+    result = {
+        "name": task["name"],
+        "hostname": meta["target"],
+        "backup_type": server_config["BACKUP_TYPE"],
+        "service_id": None,
+        "host": server_config["HOST"],
+        "port": server_config.get("PORT") or 3306,
+    }
+
+    for key, value in all_servers_config.items():
+        if key.lower() not in result:
+            result[key.lower()] = value
+
+    return result

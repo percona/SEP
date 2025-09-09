@@ -61,7 +61,7 @@
         {% endif %}
         <section id="saved-tasks">
             <h2>Saved</h2>
-            {% include "backups/backup/partials/saved-tasks.html" %}
+            {% include "backup_pg/partials/saved-tasks.html" %}
             <h2>Periodic Tasks</h2>
             {%- set detail_route = "backups_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
@@ -69,7 +69,7 @@
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "backups/backup/partials/create-form.html" %}
+                {% include "backup_pg/partials/create-form.html" %}
             {% endif %}
         </section>
         <br>
