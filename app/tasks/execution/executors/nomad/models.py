@@ -610,6 +610,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             queue_item.id,
             task_logs,
         )
+        # TODO(yan): Refactor logs
+        # SEP-564
         queue_item.execution_request.tracking.update(
             allocation_id=alloc["ID"],
             job_id=job_id,
