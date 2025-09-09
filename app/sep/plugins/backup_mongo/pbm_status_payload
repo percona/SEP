@@ -1,0 +1,36 @@
+""" PBM Logical Payload """
+
+import subprocess
+import os
+import sys
+
+def pbm_creds():
+    """ PBM Credentials """
+    envhome = os.environ['HOME']
+    creds_path = f'{envhome}/.mongodb_uri'
+    try:
+        with open(creds_path, 'r', encoding='utf-8') as fpt:
+            creds = fpt.read().strip()
+    except Exception:
+        sys.exit(1)
+
+    return creds
+
+def pbm():
+    """ PBM Logical Payload """
+
+    os.environ['PBM_MONGODB_URI'] = pbm_creds()
+    cmd = ['pbm', 'status', '-o', 'json']
+
+    try:
+        proc = subprocess.Popen(cmd)
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            sys.exit(ret_code)
+
+    except subprocess.CalledProcessError as err:
+        print(f"Command failed with error: {err}")
+        sys.exit(1)
+
+pbm()
