@@ -47,6 +47,8 @@
                 <th>Destination</th>
                 <th>Created at</th>
                 <th>Updated at</th>
+                <th>Created by</th>
+                <th>Last edit by</th>
             </tr>
         </thead>
         <tbody>
@@ -56,11 +58,13 @@
                 <td>{{ task.dest_table }} {{ task.dest_file }}</td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
+                <td>{{ task.get('created_by', 'None') }}</td>
+                <td>{{ task.get('last_edit_by', 'None') }}</td>
             </tr>
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="4"></td>
+                <td colspan="7"></td>
             </tr>
         </tfoot>
     </table>
