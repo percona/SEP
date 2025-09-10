@@ -2,6 +2,7 @@
 
 # Copyright 2020-2023 by Percona LLC or its affiliates, all rights reserved.
 
+import argparse
 import configparser
 import datetime
 import hashlib
@@ -496,7 +497,6 @@ class PgBackRestRunner(multiprocessing.Process):
             self,
             command_queue,
             config_path: Path,
-            run_only_server: str | None,
             *args: Any,
             **kwargs: Any
         ) -> None:
@@ -509,7 +509,6 @@ class PgBackRestRunner(multiprocessing.Process):
 
         self.command_queue = command_queue
         self.config_path = config_path
-        self.run_only_server = run_only_server
         self.logger = None
 
     def run(self):
@@ -526,8 +525,6 @@ class PgBackRestRunner(multiprocessing.Process):
 
         # Obtain server list
         servers = [b for b in local_cfg.server_data_list if b['BACKUP_TYPE'] == 'ALL' or 'P' in b['BACKUP_TYPE']]
-        if self.run_only_server:
-            servers = [s for s in servers if self.run_only_server in (s.get('HOST', None), s['ALIAS'])]
 
         start_time = time.time()
         self.logger.info('>>>>>>>>>>>>>>>>>> Backup started.')
@@ -572,7 +569,7 @@ class PgBackRest(Backup):
 
         # PgBackRest specific options
         self.pgbackrest_bin = server_data.get('PGBACKREST_BIN', '/bin/pgbackrest')
-        self.pgbackrest_config_file = server_data.get('PGBACKREST_CONFIG_FILE', DEFAULT_CFG_DIR + '/pgbackrest/pgbackrest.conf')
+        self.pgbackrest_config_file = server_data.get('PGBACKREST_CONFIG_FILE', str(DEFAULT_CFG_DIR) + '/pgbackrest/pgbackrest.conf')
         self.pgbackrest_backup_type = server_data.get('PGBACKREST_BACKUP_TYPE', 'incr')
         self.pg_datadir = server_data.get('PG_DATADIR', '/var/lib/pgsql/12/data/')
         self.pg_retention_full = server_data.get('PG_RETENTION_FULL', '2')
@@ -663,7 +660,7 @@ class PgBackRest(Backup):
                 raise BackupError(msg)
 
         # Write to file
-        with open(self.pgbackrest_config_file, 'wb') as configfile:
+        with open(self.pgbackrest_config_file, 'w') as configfile:
             stanza.write(configfile)
 
         try:
@@ -702,3 +699,27 @@ class PgBackRest(Backup):
             err = pg_log_stream.readlines()[-1]
             msg = 'pgBackRest failed: %s For more details, see %s' % (err, self.pg_log_file)
             raise BackupError(msg)
+
+def main() -> None:
+    """Run main program."""
+    options = parse_args()
+    pg_runner = PgBackRestRunner(command_queue=None, config_path=options.config)
+    pg_runner.run()
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments.
+
+    :return: Parsed arguments namespace.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c", "--config", type=Path, help="File name of the YAML config"
+    )
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    if os.geteuid() == 0:
+        main()
+    else:
+        os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
