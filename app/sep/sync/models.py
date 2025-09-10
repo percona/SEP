@@ -16,7 +16,9 @@
 """Define base sync models for SEP."""
 
 import asyncio
+import json
 import logging
+from collections import defaultdict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
@@ -53,7 +55,7 @@ from app.sep.models import (
     SyncItemWrite,
 )
 from app.sep.sync.exceptions import SyncFailError, SyncItemAlreadyInProgressError
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
 
@@ -1173,14 +1175,16 @@ class BaseTaskSyncer(BaseSyncer):
         if status in [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]:
             raise TimeoutError(f"Task {task_name} timed out")
 
-        # TODO: Avoid keeping duplicate logs  # noqa: TD002, TD003
-        task_logs = task_history["execution_request"]["tracking"]["task_logs"][
-            stdout_step
-        ]
-        output = task_logs.get("stdout", "")
-        error_output = task_logs.get("stderr", "")
-        exc_detail = f"Task {task_name} failed"
+        output = defaultdict(str)
+        async for log_entry in self.tasks_api.stream(
+            f"/history/{task_history_id}/logs/", params={"step": stdout_step}
+        ):
+            if log_entry:
+                log_data = json.loads(log_entry)
+                output[log_data["type"]] += log_data["msg"]
 
+        exc_detail = f"Task {task_name} failed"
+        error_output = output[TaskLogType.STDERR]
         if error_output:
             logger.warning(
                 "Task %s (%s) returned an error message: %s",
@@ -1194,4 +1198,4 @@ class BaseTaskSyncer(BaseSyncer):
             # TODO: Create custom exceptions  # noqa: TD002, TD003
             raise ValueError(exc_detail)
 
-        return output
+        return output[TaskLogType.STDOUT]
