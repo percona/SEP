@@ -111,7 +111,9 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :rtype: TaskHistory
         """
         await self._stop_task(queue_item)
-        queue_item = await self.sync_task_history(session, queue_item)
+        # TODO(yan): Remove sync_task_history from here as it can keep the db session open for too long
+        # SEP-554
+        queue_item = await self.sync_task_history(queue_item)
         queue_item.status = TaskHistoryStatusEnum.STOPPED
         queue_item.finished_at = utc_now()
         return await TaskHistoryManager.save(session, queue_item)
@@ -166,20 +168,16 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
 
     async def sync_task_history(
         self,
-        session: AsyncSession,
         queue_item: TaskHistory,
     ) -> TaskHistory:
         """Sync the task history with the backend and trigger the configured alerts.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """
-        queue_item = await self._sync_task_history(session, queue_item)
+        queue_item = await self._sync_task_history(queue_item)
         if queue_item.task.alert_on_fail:
             await queue_item.alert_for_status()
         return queue_item
@@ -187,14 +185,10 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     @abstractmethod
     async def _sync_task_history(
         self,
-        session: AsyncSession,
         queue_item: TaskHistory,
     ) -> TaskHistory:
         """Sync the task history with the backend.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
         :return: The updated task history with execution details.

@@ -15,6 +15,9 @@
 
 """Define models for the Task API."""
 
+import base64
+import gzip
+import json
 from collections import defaultdict
 from collections.abc import Generator
 from datetime import datetime
@@ -416,6 +419,15 @@ class TaskBase(SQLModel):
             raise ValueError("data must contain 'task' for Proxy backend")
         return self
 
+    @property
+    def anonymized_entities(self) -> set[PIIEntity]:
+        """Return the set of PII entities to be anonymized.
+
+        :return: A set of PIIEntity members to be anonymized.
+        :rtype: set[PIIEntity]
+        """
+        return PIIEntity.decode_selection(self.anonymize_mask)
+
 
 class Task(TaskBase, BaseSQLModel, table=True):
     """Represent a task stored in the database.
@@ -632,6 +644,15 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         sa_type=DateTimeWithTimezone,
     )
 
+    @property
+    def is_running(self) -> bool:
+        """Check if the task is currently running.
+
+        :return: True if the task status is RUNNING, False otherwise.
+        :rtype: bool
+        """
+        return self.status == TaskHistoryStatusEnum.RUNNING
+
     async def alert_for_status(self) -> None:
         """Trigger an alert for failing statuses."""
         if self.status == TaskHistoryStatusEnum.FAILED:
@@ -653,31 +674,47 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         }
         await alert_service.trigger(alert_data)
 
+    @cached_property
+    def task_logs(self) -> dict:
+        """Return task logs."""
+        # TODO(yan): Refactor logs
+        # SEP-564
+        logs = self.execution_request.tracking.get("task_logs", {})
+        if isinstance(logs, str):
+            return json.loads(gzip.decompress(base64.b64decode(logs)))
+        return logs
+
     def iter_logs(
         self,
         start_offsets: dict[str, dict[str, int]] | None = None,
-        chunk_size: int = 8192,
+        chunk_size: int = 65536,
+        step: str | None = None,
     ) -> Generator[TaskLog]:
         """Yield task logs in chunks based on provided start offsets.
 
         :param start_offsets: A dictionary containing the starting offsets for each
             step and log type. If None, defaults to starting from the beginning.
         :type start_offsets: dict[str, dict[str, int]] | None
-        :param chunk_size: The size of each log chunk to yield. Defaults to 8192 bytes.
+        :param chunk_size: The size of each log chunk to yield. Defaults to 65536 bytes.
         :type chunk_size: int
+        :param step: If provided, only logs for this specific step will be yielded.
+            Defaults to None.
+        :type step: str | None
         :yield: TaskLog objects containing log chunks.
         :rtype: Generator[TaskLog]
         """
-        task_logs = self.execution_request.tracking.get("task_logs", {}).items()
+        task_logs = self.task_logs
+        if step is not None:
+            task_logs = {step: task_logs.get(step, {})}
         start_offsets = defaultdict(dict, start_offsets or {})
-        for (step, log), log_type in product(task_logs, TaskLogType):
+        for (cur_step, log), log_type in product(task_logs.items(), TaskLogType):
             msg = log.get(log_type) or ""
             for chunk_start in range(
-                start_offsets[step].get(log_type, 0), len(msg), chunk_size
+                start_offsets[cur_step].get(log_type, 0), len(msg), chunk_size
             ):
                 chunk_end = chunk_start + chunk_size
                 yield TaskLog(
-                    step=step,
+                    step=cur_step,
                     type=log_type,
                     msg=msg[chunk_start:chunk_end],
                     offset=chunk_end,
@@ -700,6 +737,24 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """
 
     task: TaskResponse
+
+    @field_validator("execution_request", mode="after")
+    @classmethod
+    def _remove_logs(cls, v: TaskExecutionRequest) -> TaskExecutionRequest:
+        """Remove logs from the execution request tracking data.
+
+        This validator ensures that any log data present in the tracking information
+        of the execution request is removed before returning the response.
+
+        :param v: The TaskExecutionRequest instance to validate.
+        :type v: TaskExecutionRequest
+        :return: The validated TaskExecutionRequest with logs removed.
+        :rtype: TaskExecutionRequest
+        """
+        # TODO(yan): Refactor logs
+        # SEP-564
+        v.tracking["task_logs"] = bool(v.tracking.get("task_logs"))
+        return v
 
 
 class TaskStats(BaseModel):
