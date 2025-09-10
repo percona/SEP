@@ -179,7 +179,11 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     source_query = purge_item.get("SOURCE_QUERY")
     dest_file = purge_item.get("DEST_FILE")
 
-    result = {"hostname": meta["target"]}
+    result = {
+        "hostname": meta["target"],
+        "created_by": task.get("created_by"),
+        "last_edit_by": task.get("last_edit_by"),
+    }
 
     if source_db and source_table:
         result["source_table"] = f"{source_db}.{source_table}"

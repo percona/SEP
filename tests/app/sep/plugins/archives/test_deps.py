@@ -144,6 +144,8 @@ def test_get_archives_task_info(created_task):
     expected_output = {
         "hostname": "mock_target",
         "source_table": "mock_source_db.mock_source_table",
+        "created_by": created_task.created_by,
+        "last_edit_by": created_task.last_edit_by,
     }
     result = get_archives_task_info(created_task.model_dump())
     assert result == expected_output
