@@ -30,12 +30,22 @@
     <dl>
         <dt>Filename</dt>
         <dd>
-            {{ snippet.filename }}
+            <pre>{{ snippet.filename }}</pre>
         </dd>
         {% if snippet.description %}
             <dt>Description</dt>
             <dd>
                 {{ snippet.description }}
+            </dd>
+        {% endif %}
+        <dt>Interpreter</dt>
+        {% if snippet.execution_interpreter is none -%}
+            <dd class="snippetDisabledWarning">
+                No interpreter is configured for extension '{{ snippet.path.suffix.lower() }}' and MIME type '{{ snippet.mime_type }}'
+            </dd>
+        {% else -%}
+            <dd>
+                <pre>{{ snippet.execution_interpreter }}</pre>
             </dd>
         {% endif %}
         <dt>Created at</dt>
@@ -101,8 +111,14 @@
     {% if snippet.is_approved -%}
         <section>
             <h3>Execute Snippet</h3>
-            {% if not snippet.can_execute and snippet.validated_parameters.errors %}
-                <span id="snippetDisabledWarning">Execution is disabled: snippet has invalid parameters</span>
+            {% if not snippet.can_execute %}
+                <span class="snippetDisabledWarning">Execution is disabled
+                    {%- if snippet.validated_parameters.errors -%}
+                        : snippet has invalid parameters
+                    {%- elif snippet.execution_interpreter is none -%}
+                        : no interpreter is configured for extension '{{ snippet.path.suffix.lower() }}' and MIME type '{{ snippet.mime_type }}'
+                    {%- endif -%}
+                </span>
             {% endif %}
             {{ snippet.to_form(executor_hosts) | safe }}
         </section>

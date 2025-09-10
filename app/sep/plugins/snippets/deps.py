@@ -1,16 +1,23 @@
 """Define dependencies for the Support Snippets plugin."""
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
 
 from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
-from app.sep.deps import SessionDep
+from app.sep.deps import CurrentUser, SessionDep
 from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
-from app.sep.snippets.models.snippet import Snippet
+from app.sep.snippets.models.snippet import (
+    BaseSnippetArgs,
+    Snippet,
+    SnippetExecutionMeta,
+)
+
+logger = logging.getLogger(__name__)
 
 
 async def get_snippet(
@@ -137,3 +144,85 @@ def get_unapproved_snippet(
 
 
 UnapprovedSnippet = Annotated[Snippet, Depends(get_unapproved_snippet)]
+
+
+def get_executable_snippet(
+    request: Request,
+    snippet: SnippetDep,
+    referer: Annotated[str | None, Header()] = None,
+) -> Snippet:
+    """Verify if a snippet can be executed before returning it.
+
+    If the snippet cannot be executed, add an error message to the request and raise an
+    HTTPRedirectException back to the referer.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param snippet: The snippet to verify if it can be executed.
+    :type snippet: Snippet
+    :param referer: The referer URL. If None is specified, it defaults to the
+        snippets_index route.
+    :type referer: str | None
+    :return: The retrieved snippet.
+    :rtype: Snippet
+    :raises HTTPRedirectException: If the snippet cannot be executed.
+    """
+    if snippet.can_execute:
+        return snippet
+    raise _get_snippet_status_redirect_exc(
+        request, referer, f"Snippet {snippet} cannot be executed"
+    )
+
+
+ExecutableSnippet = Annotated[Snippet, Depends(get_executable_snippet)]
+
+
+async def get_validated_execution_args(
+    request: Request, snippet: ExecutableSnippet
+) -> BaseSnippetArgs:
+    """Validate and return the execution arguments for an executable snippet.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param snippet: The executable snippet.
+    :type snippet: Snippet
+    :return: The validated execution arguments.
+    :rtype: BaseSnippetArgs
+    """
+    execution_model = snippet.get_execution_model()
+    async with request.form() as form:
+        data = dict(form)
+        logger.debug(
+            "Validating execution args for snippet %r: %s", snippet.filename, data
+        )
+        return execution_model.model_validate(dict(form))
+
+
+def get_snippet_execution_request_meta(
+    request: Request,
+    user: CurrentUser,
+    snippet: ExecutableSnippet,
+    execution_args: Annotated[BaseSnippetArgs, Depends(get_validated_execution_args)],
+) -> SnippetExecutionMeta:
+    """Prepare and return the execution metadata for a snippet execution request.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param user: The current authenticated user.
+    :type user: CurrentUser
+    :param snippet: The executable snippet.
+    :type snippet: Snippet
+    :param execution_args: The execution arguments for the snippet.
+    :type execution_args: BaseSnippetArgs
+    :return: The prepared execution metadata.
+    :rtype: SnippetExecutionMeta
+    """
+    return SnippetExecutionMeta(
+        target=execution_args.executor_host,
+        interpreter=snippet.execution_interpreter,
+        snippet_source=str(request.url_for("snippets_files", path=snippet.filename)),
+        access_token=user.access_token,
+        snippet_filename=snippet.filename,
+        md5_checksum=snippet.md5_digest,
+        args=execution_args.to_args_string(),
+    )

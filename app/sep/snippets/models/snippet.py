@@ -15,7 +15,7 @@
 
 """Define the main models for the snippets feature as part of the SEP app."""
 
-__all__ = ["Snippet"]
+__all__ = ["BaseSnippetArgs", "Snippet", "SnippetExecutionMeta"]
 
 import hashlib
 import json
@@ -53,9 +53,15 @@ from app.core.utils import (
     ttl_cache,
     utc_now,
 )
-from app.core.utils.fields import FilePathLike, UTCDatetime
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    FilePathLike,
+    NonEmptyStr,
+    StrAnyUrl,
+    UTCDatetime,
+)
 from app.core.utils.pydantic import CustomFieldMetadata
-from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.config import SnippetFilterType, snippets_settings
 from app.sep.snippets.forms import (
     FieldsetElement,
     FormElement,
@@ -67,19 +73,22 @@ from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParametersValidationResult,
 )
-from app.sep.snippets.utils import generate_unique_identifiers
+from app.sep.snippets.utils import generate_unique_identifiers, guess_mime_type
 
 _ONE_HOUR = 60 * 60
 _SEVEN_DAYS = 7 * 24 * _ONE_HOUR
-logger = logging.getLogger(__name__)
-
-ExtraArgsField = Annotated[list[str], BeforeValidator(shlex.split)]
+EXECUTOR_HOSTS_INPUT_NAME = "-hostname-"
+EXTRA_ARGS_INPUT_NAME = "-extra_args-"
 EXTRA_ARGS_INPUT = TextInputElement(
-    name="-extra_args-",
+    name=EXTRA_ARGS_INPUT_NAME,
     placeholder="e.g. --verbose",
     title="Any extra args to pass to the snippet execution command",
     label="Extra Args",
 )
+
+logger = logging.getLogger(__name__)
+
+ExtraArgsField = Annotated[list[str], BeforeValidator(shlex.split)]
 
 
 @validate_call
@@ -97,7 +106,7 @@ def get_executor_hosts_fieldset(executor_hosts: frozenset[str]) -> FieldsetEleme
         children=[
             SelectElement(
                 children=executor_hosts,
-                name="hostname",
+                name=EXECUTOR_HOSTS_INPUT_NAME,
                 title="Select the hostname of the target system for snippet execution.",
                 label="Select host",
                 required=True,
@@ -112,8 +121,8 @@ class FilePreview(NamedTuple):
     :param content: A preview of the snippet's content, limited to a certain number of
         characters and lines.
     :type content: str
-    :param is_truncated: Whether the preview content is truncated (i.e., if the full content
-        exceeds the preview limits).
+    :param is_truncated: Whether the preview content is truncated (i.e., if the full
+        content exceeds the preview limits).
     :type is_truncated: bool
     """
 
@@ -165,17 +174,23 @@ class FilePreview(NamedTuple):
         return cls(content=preview_content, is_truncated=is_truncated)
 
 
-class BaseSnippetArgsValidation(BaseModel):
+class BaseSnippetArgs(BaseModel):
     """Base model for validating snippet execution arguments.
 
     :cvar extra_args_field: The name of the field used to store extra arguments
         ("extra_args").
     :vartype extra_args_field: ClassVar[str]
+    :param executor_host: The hostname of the target system where the snippet will be
+        executed.
+    :type executor_host: NonEmptyStr
     """
 
     extra_args_field: ClassVar[str] = "extra_args"
+    executor_host: NonEmptyStr = Field(
+        validation_alias=EXECUTOR_HOSTS_INPUT_NAME, exclude=True
+    )
 
-    def to_args(self) -> str:
+    def to_args_string(self) -> str:
         """Convert the model instance to a command-line argument string.
 
         :return: A string representing the command-line arguments.
@@ -315,35 +330,59 @@ class Snippet(BaseSQLModel, table=True):
     def allow_extra_args(self) -> bool:
         """Determine whether extra arguments are allowed for the snippet.
 
-        :return: `True` if extra arguments are allowed, else `False`. Defaults to the value
-            specified in the snippets settings if not explicitly set in the metadata.
+        :return: `True` if extra arguments are allowed, else `False`. Defaults to the
+            value specified in the snippets settings if not explicitly set in the
+            metadata.
         :rtype: bool
         """
         return self.meta.get(
             "allow_extra_args", snippets_settings.META.DEFAULT_ALLOW_EXTRA_ARGS
         )
 
+    @cached_property
+    def path(self) -> Path:
+        """Get the full path to the snippet file.
+
+        :return: The full path to the snippet file.
+        :rtype: Path
+        """
+        return Path(self)
+
+    @cached_property
+    def mime_type(self) -> str:
+        """Get the MIME type of the snippet.
+
+        :return: The MIME type of the snippet.
+        :rtype: str
+        """
+        return guess_mime_type(self.path)
+
     @property
     def can_execute(self) -> bool:
         """Determine whether the snippet can be executed.
 
-        A snippet can be executed if it is approved and either parameter errors are
-        ignored in the settings or there are no validation errors in the parameters.
+        A snippet can be executed if it is approved, it has a valid executor
+        interpreter, and either parameter errors are ignored in the settings or there
+        are no validation errors in the parameters.
 
         :return: `True` if the snippet can be executed, else `False`.
         :rtype: bool
         """
-        return self.is_approved and (
-            snippets_settings.META.IGNORE_INVALID_PARAMETERS
-            or not self.validated_parameters.errors
+        return (
+            self.is_approved
+            and self.execution_interpreter is not None
+            and (
+                snippets_settings.META.IGNORE_INVALID_PARAMETERS
+                or not self.validated_parameters.errors
+            )
         )
 
     @cached_property
     def validated_parameters(self) -> SnippetMetaParametersValidationResult:
         """Get the validated parameters of the snippet.
 
-        :return: A `SnippetMetaParametersValidationResult` instance containing the list of valid
-            parameters and any validation errors encountered.
+        :return: A `SnippetMetaParametersValidationResult` instance containing the list
+            of valid parameters and any validation errors encountered.
         :rtype: SnippetMetaParametersValidationResult
         """
         parameters = self.meta.get("parameters", [])
@@ -351,10 +390,21 @@ class Snippet(BaseSQLModel, table=True):
             json_serializer(parameters, sort_keys=True),
         )
 
+    @property
+    def execution_interpreter(self) -> str | None:
+        """Get the interpreter for executing the snippet.
+
+        :return: The interpreter for executing the snippet, or None if no interpreter is
+            found.
+        :rtype: str | None
+        """
+        return self._get_execution_interpreter(self.path)
+
     async def get_preview(self) -> FilePreview:
         """Get a preview of the snippet code.
 
-        :return: A :class:`FilePreview` instance containing a preview of the snippet code.
+        :return: A :class:`FilePreview` instance containing a preview of the snippet
+            code.
         :rtype: FilePreview
         """
         return await FilePreview.from_path(
@@ -428,7 +478,7 @@ class Snippet(BaseSQLModel, table=True):
             disabled=not self.can_execute,
         )
 
-    def get_execution_model(self) -> type[BaseSnippetArgsValidation]:
+    def get_execution_model(self) -> type[BaseSnippetArgs]:
         """Generate a Pydantic model for validating snippet execution parameters.
 
         This method creates a dynamic Pydantic model based on the snippet's metadata,
@@ -436,7 +486,7 @@ class Snippet(BaseSQLModel, table=True):
 
         :return: A Pydantic model class for validating the snippet's execution
             parameters.
-        :rtype: type[BaseSnippetArgsValidation]
+        :rtype: type[BaseSnippetArgs]
         """
         parameters = self.meta.get("parameters", [])
         logger.debug("Meta Snippet parameters: %s)", parameters)
@@ -490,8 +540,8 @@ class Snippet(BaseSQLModel, table=True):
 
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
-        :return: A SnippetMetaParametersValidationResult instance containing the list of valid
-            parameters and any validation errors encountered.
+        :return: A SnippetMetaParametersValidationResult instance containing the list of
+            valid parameters and any validation errors encountered.
         :rtype: SnippetMetaParametersValidationResult
         """
         parameters = json.loads(parameters_json) or []
@@ -581,7 +631,7 @@ class Snippet(BaseSQLModel, table=True):
     @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
     def _get_execution_model(
         parameters_json: str, *, add_extra_args_field: bool
-    ) -> type[BaseSnippetArgsValidation]:
+    ) -> type[BaseSnippetArgs]:
         """Generate a Pydantic model for validating snippet execution parameters.
 
         This internal method creates a dynamic Pydantic model based on the snippet's
@@ -594,7 +644,7 @@ class Snippet(BaseSQLModel, table=True):
         :type add_extra_args_field: bool
         :return: A Pydantic model class for validating the snippet's execution
             parameters.
-        :rtype: type[BaseSnippetArgsValidation]
+        :rtype: type[BaseSnippetArgs]
         """
         parameters = Snippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
@@ -612,16 +662,43 @@ class Snippet(BaseSQLModel, table=True):
             else:
                 fields[field_name] = field
         if add_extra_args_field:
-            fields[BaseSnippetArgsValidation.extra_args_field] = (
+            fields[BaseSnippetArgs.extra_args_field] = (
                 ExtraArgsField,
-                Field(default_factory=list, alias=EXTRA_ARGS_INPUT.name),
+                Field(default_factory=list, alias=EXTRA_ARGS_INPUT_NAME),
             )
         return create_model(
             "SnippetArgs",
             **fields,
             **positional_fields,
-            __base__=BaseSnippetArgsValidation,
+            __base__=BaseSnippetArgs,
         )
+
+    @staticmethod
+    @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
+    def _get_execution_interpreter(snippet_path: Path) -> str | None:
+        """Determine the execution interpreter for a snippet path.
+
+        This method checks the snippet's file extension and MIME type against the
+        configured list of interpreters in the settings. It returns the most appropriate
+        interpreter found, or None if no interpreter matches.
+
+        :param snippet_path: The path to the snippet file.
+        :type snippet_path: Path
+        :return: The interpreter for executing the snippet, or None if no interpreter is
+            found.
+        :rtype: str | None
+        """
+        interpreters = snippets_settings.INTERPRETERS
+        snippet_filters = [
+            (snippet_path.suffix.lower(), SnippetFilterType.EXTENSION),
+            (guess_mime_type(snippet_path), SnippetFilterType.MIME_TYPE),
+        ]
+        snippet_filters.sort(
+            key=lambda f: f in interpreters
+            and len(interpreters) - list(interpreters).index(f),
+            reverse=True,
+        )
+        return interpreters.get(snippet_filters[0])
 
     @classmethod
     async def from_path(cls, path: PathLike, *, update_meta: bool = False) -> Self:
@@ -653,3 +730,33 @@ class Snippet(BaseSQLModel, table=True):
         if update_meta:
             await snippet.update_meta()
         return snippet
+
+
+class SnippetExecutionMeta(BaseModel):
+    """Metadata required for executing a snippet.
+
+    :param target: The target hostname where the snippet will be executed.
+    :type target: NonEmptyStr
+    :param interpreter: The interpreter to use for executing the snippet (e.g., bash,
+        python).
+    :type interpreter: NonEmptyStr
+    :param snippet_source: The URL to the snippet source file.
+    :type snippet_source: StrAnyUrl
+    :param access_token: The access token for authentication when fetching the snippet.
+    :type access_token: NonEmptyStr
+    :param md5_checksum: The MD5 checksum of the snippet file to verify integrity.
+    :type md5_checksum: str
+    :param snippet_filename: The filename of the snippet.
+    :type snippet_filename: NonEmptyStr
+    :param args: Additional command-line arguments to pass to the snippet during
+        execution.
+    :type args: NonEmptyStr | None
+    """
+
+    target: NonEmptyStr
+    interpreter: NonEmptyStr
+    snippet_source: StrAnyUrl
+    access_token: NonEmptyStr
+    snippet_filename: NonEmptyStr = Field(..., serialization_alias="_snippet_filename")
+    md5_checksum: str = Field(min_length=32, max_length=32)
+    args: NonEmptyStr | EmptyStrToNone = None

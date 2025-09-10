@@ -28,6 +28,10 @@ from functools import cached_property
 from string import Template
 from typing import Annotated, Any, NamedTuple, NotRequired, Self
 
+from annotated_types import (
+    GroupedMetadata,
+    Interval,
+)
 from pydantic import (
     AliasChoices,
     BaseModel,
@@ -35,6 +39,7 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    PositiveInt,
     StringConstraints,
     ValidationError,
 )
@@ -43,7 +48,7 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import TypedDict
 
 from app.core.utils import run_pydantic_type_validator, shorten_text
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
@@ -58,8 +63,7 @@ from app.sep.snippets.forms import (
     TextInputHTMLElement,
 )
 
-ParameterType = str | int | float | bool
-DefaultValueType = ParameterType | None
+ParameterType = str | int | float | bool | None
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +71,7 @@ logger = logging.getLogger(__name__)
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
     """Enumerate the possible types for snippet parameters."""
 
-    STR = Annotated[str, StringConstraints(min_length=1)]
+    STR = str
     INT = int
     FLOAT = float
     BOOL = bool
@@ -104,7 +108,7 @@ class SnippetMetaParameter(BaseModel):
     """Represent a parameter for a support snippet.
 
     :param name: The name of the parameter.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param py_type: The type of the parameter (`str`, `int`, `float`, `bool`). Defaults
         to `str`. This parameter is validated as "type" in input data.
     :type py_type: SnippetMetaParameterType
@@ -115,16 +119,16 @@ class SnippetMetaParameter(BaseModel):
     :param arg_format: The format string for the parameter when used as a command-line
         argument. Use `${value}` as a placeholder (required for non-flag arguments).
         Defaults to None, which uses the default format from the snippets settings.
-    :type arg_format: RequiredStr | None
+    :type arg_format: NonEmptyStr | None
     :param description: A description of the parameter. Defaults to None, meaning it
         won't be used for validation.
-    :type description: RequiredStr | None
+    :type description: NonEmptyStr | None
     :param label: A label for the parameter. Defaults to None, meaning it won't be used
         for validation.
-    :type label: RequiredStr | None
+    :type label: NonEmptyStr | None
     :param placeholder: A placeholder for the parameter. Defaults to None, meaning it
         won't be used for validation.
-    :type placeholder: RequiredStr | None
+    :type placeholder: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
     :type default: str | int | float | bool | None
@@ -133,15 +137,14 @@ class SnippetMetaParameter(BaseModel):
         be used for validation. This parameter is validated as "options" or "choices"
         in input data.
     :type choices: list[SnippetMetaParameterChoice] | None
-    :param min_length: The minimum length for string parameters. Defaults to None,
+    :param min_length: The minimum length for string parameters. Defaults to 1.
+    :type min_length: PositiveInt | None
+    :param max_length: The maximum length for string parameters. Defaults to 1,
         meaning it won't be used for validation.
-    :type min_length: int | None
-    :param max_length: The maximum length for string parameters. Defaults to None,
-        meaning it won't be used for validation.
-    :type max_length: int | None
+    :type max_length: PositiveInt | None
     :param pattern: A regex pattern that the parameter value must match. Defaults to
         None, meaning it won't be used for validation.
-    :type pattern: RequiredStr | None
+    :type pattern: NonEmptyStr | None
     :param gt: The value must be greater than this for numeric parameters. Defaults to
         None, meaning it won't be used for validation.
     :type gt: float | None
@@ -163,7 +166,7 @@ class SnippetMetaParameter(BaseModel):
     :type html_elem: TextInputHTMLElement | None
     """
 
-    name: RequiredStr = Field(
+    name: NonEmptyStr = Field(
         ..., pattern=r"^\w(?:[\w-]+\w)?$", serialization_alias="title"
     )
     py_type: SnippetMetaParameterType = Field(
@@ -171,21 +174,21 @@ class SnippetMetaParameter(BaseModel):
     )
     required: bool = False
     positional: bool = False
-    arg_format: RequiredStr | None = None
-    description: RequiredStr | None = None
-    label: RequiredStr | None = None
-    placeholder: RequiredStr | None = None
-    default: DefaultValueType = None
+    arg_format: NonEmptyStr | None = None
+    description: NonEmptyStr | None = None
+    label: NonEmptyStr | None = None
+    placeholder: NonEmptyStr | None = None
+    default: ParameterType = None
     choices: list[SnippetMetaParameterChoice] | None = Field(
         None, validation_alias=AliasChoices("choices", "options")
     )
-    min_length: int | None = None
-    max_length: int | None = None
-    pattern: RequiredStr | None = None
-    gt: float | None = None
-    lt: float | None = None
-    ge: float | None = None
-    le: float | None = None
+    min_length: PositiveInt = 1
+    max_length: PositiveInt | None = None
+    pattern: NonEmptyStr | None = None
+    gt: ParameterType = None
+    lt: ParameterType = None
+    ge: ParameterType = None
+    le: ParameterType = None
     step: float | None = None
     html_elem: TextInputHTMLElement | None = None
 
@@ -262,19 +265,19 @@ class SnippetMetaParameter(BaseModel):
             )
             return SnippetMetaParameterType.STR
 
-    @field_validator("default")
+    @field_validator("default", "gt", "lt", "ge", "le")
     @classmethod
-    def validate_default(
-        cls, value: DefaultValueType, info: ValidationInfo
-    ) -> DefaultValueType:
-        """Validate the default value against the parameter type.
+    def coerce_to_type(
+        cls, value: ParameterType, info: ValidationInfo
+    ) -> ParameterType:
+        """Validate and coerce the value to the specified parameter type.
 
-        :param value: The default value to validate.
-        :type value: DefaultValueType
+        :param value: The value to validate.
+        :type value: ParameterType
         :param info: The validation information.
         :type info: ValidationInfo
         :return: The validated default value.
-        :rtype: DefaultValueType
+        :rtype: ParameterType
         """
         if value is None:
             return value
@@ -312,19 +315,46 @@ class SnippetMetaParameter(BaseModel):
         return TextInputElement
 
     @cached_property
+    def constraints(self) -> list[GroupedMetadata]:
+        """Get the constraints for the parameter based on its type and attributes.
+
+        :return: A list of constraint metadata instances applicable to the parameter.
+        :rtype: list[GroupedMetadata]
+        """
+        constraints = []
+        if self.py_type == SnippetMetaParameterType.STR:
+            constraints.append(
+                StringConstraints(
+                    **self.model_dump(
+                        include={"min_length", "max_length", "pattern"},
+                        exclude_none=True,
+                    )
+                )
+            )
+        interval_constraints = self.model_dump(
+            include={"gt", "lt", "ge", "le"}, exclude_none=True
+        )
+        if interval_constraints:
+            constraints.append(Interval(**interval_constraints))
+        return constraints
+
+    @cached_property
     def validation_type(
         self,
-    ) -> type[type[ParameterType] | type[EmptyStrToNone]] | type[ParameterType]:
+    ) -> type:
         """Get the validation type for the parameter.
 
         :return: The type to use for validating the parameter value.
-        :rtype: type[type[ParameterType] | type[EmptyStrToNone]] | type[ParameterType]
+        :rtype: type
         """
         if self.choices:
             return StrEnum("ParamChoices", [choice["value"] for choice in self.choices])
+        raw_type = self.py_type.value
+        if self.constraints:
+            raw_type = Annotated[raw_type, *self.constraints]
         if not self.required and self.default is None:
-            return self.py_type.value | EmptyStrToNone
-        return self.py_type.value
+            return raw_type | EmptyStrToNone
+        return raw_type
 
     def to_validation_field(self) -> FieldInfo:
         """Convert the SnippetMetaParameter to a Pydantic Field.
@@ -337,13 +367,6 @@ class SnippetMetaParameter(BaseModel):
                 "name",
                 "description",
                 "default",
-                "min_length",
-                "max_length",
-                "pattern",
-                "gt",
-                "lt",
-                "ge",
-                "le",
             },
             by_alias=True,
             exclude_none=True,

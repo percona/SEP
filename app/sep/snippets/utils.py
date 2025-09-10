@@ -15,15 +15,21 @@
 
 """Define utilities for the SEP app snippets."""
 
+__all__ = ["generate_unique_identifiers", "guess_mime_type"]
+
 import string
 from collections.abc import Generator
 from itertools import product
 from pathlib import Path
 
+from app.core.utils import ttl_cache
 from app.sep.snippets.config import snippets_settings
 
+_ONE_HOUR = 60 * 60
 
-def guess_mime_type(file_path: Path) -> str | None:
+
+@ttl_cache(ttl=_ONE_HOUR, maxsize=16)
+def guess_mime_type(file_path: Path) -> str:
     """Guess the MIME type of a file based on its path.
 
     Uses the `python-magic` library if `USE_MAGIC` is enabled in settings,
@@ -31,16 +37,16 @@ def guess_mime_type(file_path: Path) -> str | None:
 
     :param file_path: The path to the file.
     :type file_path: Path
-    :return: The MIME type of the file, or None if it cannot be determined.
-    :rtype: str | None
+    :return: The MIME type of the file, defaulting to "text/plain" if unknown.
+    :rtype: str
     """
     if snippets_settings.USE_MAGIC:
         import magic
 
-        return magic.from_file(file_path, mime=True) or None
+        return magic.from_file(file_path, mime=True) or "text/plain"
     import mimetypes
 
-    return mimetypes.types_map.get(file_path.suffix)
+    return mimetypes.types_map.get(file_path.suffix) or "text/plain"
 
 
 def generate_unique_identifiers() -> Generator[str]:

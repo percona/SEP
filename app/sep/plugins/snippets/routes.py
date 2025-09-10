@@ -1,8 +1,9 @@
 """Define routes for the Support Snippets plugin."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.auth.exceptions import HTTPForbiddenException
@@ -19,12 +20,15 @@ from app.sep.deps import (
 from app.sep.middleware import messages
 from app.sep.plugins.snippets.deps import (
     ApprovedSnippet,
+    ExecutableSnippet,
+    get_snippet_execution_request_meta,
     UnapprovedSnippet,
     ValidatedSnippet,
 )
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.snippet import SnippetExecutionMeta
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -85,8 +89,8 @@ async def snippets_detail(
     )
 
 
-def _get_snippet_approval_redirect(
-    request: Request, user: AdminUser, snippet: Snippet, msg: str
+def _get_snippet_success_redirect(
+    request: Request, user: AdminUser, snippet: Snippet, msg: str | None = None
 ) -> RedirectResponse:
     messages.success(request, msg)
     logger.info("%s by %s: %r", msg, user.username, snippet)
@@ -103,7 +107,7 @@ async def snippets_approve(
     """Approve a snippet."""
     snippet.approve(f"Approved by {user.username}", str(user.id))
     await SnippetManager.save(session, snippet)
-    return _get_snippet_approval_redirect(request, user, snippet, "Snippet approved")
+    return _get_snippet_success_redirect(request, user, snippet, "Snippet approved")
 
 
 @router.post("/{snippet_filename}/remove-approval")
@@ -113,7 +117,7 @@ async def snippets_remove_approval(
     """Remove the approval of a snippet."""
     snippet.remove_approval(f"Approval removed by {user.username}", str(user.id))
     await SnippetManager.save(session, snippet)
-    return _get_snippet_approval_redirect(
+    return _get_snippet_success_redirect(
         request, user, snippet, "Snippet's approval removed"
     )
 
@@ -128,4 +132,32 @@ async def snippets_refresh(request: Request, user: AdminUser) -> RedirectRespons
     logger.info("Snippets refreshed by %s", user.username)
     return RedirectResponse(
         request.url_for("snippets_index"), status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/{snippet_filename}", dependencies=[IsAuthenticated])
+async def snippets_execute(
+    request: Request,
+    tasks_api: TaskAPI,
+    snippet: ExecutableSnippet,
+    execution_request_meta: Annotated[
+        SnippetExecutionMeta, Depends(get_snippet_execution_request_meta)
+    ],
+) -> RedirectResponse:
+    """Execute a snippet."""
+    logger.info(
+        "Executing snippet %r with args: %r",
+        snippet.filename,
+        execution_request_meta.args,
+    )
+    logger.debug(
+        "Execution meta for snippet %r: %s", snippet.filename, execution_request_meta
+    )
+    await tasks_api.post(
+        "/execute/exec-artifact",
+        json={"meta": execution_request_meta.model_dump(by_alias=True)},
+    )
+    return RedirectResponse(
+        request.url_for("snippets_detail", snippet_filename=snippet.filename),
+        status_code=status.HTTP_303_SEE_OTHER,
     )

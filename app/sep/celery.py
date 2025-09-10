@@ -16,12 +16,13 @@
 """Define Celery tasks and utilities for the SEP app."""
 
 import logging
+from pathlib import Path
 
 from sqlmodel import col
 
 from app.celery import celery
 from app.sep.db import get_async_session_maker
-from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.config import SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
 from app.sep.snippets.utils import guess_mime_type
@@ -49,21 +50,7 @@ async def update_snippets() -> None:
                     snippet_path.relative_to(snippets_settings.SNIPPETS_DIR)
                 )
                 processed_filenames.append(snippet_name)
-                if (
-                    (snippets_filter := snippets_settings.FILTER_EXTENSIONS) is not None
-                    and (snippet_filter_value := snippet_path.suffix.lower())
-                    not in snippets_filter
-                ) or (
-                    (snippets_filter := snippets_settings.FILTER_MIME_TYPES) is not None
-                    and (snippet_filter_value := guess_mime_type(snippet_path))
-                    not in snippets_filter
-                ):
-                    logger.debug(
-                        "Skipping file %s due to filter (%r doesn't match %r)",
-                        snippet_path,
-                        snippet_filter_value,
-                        snippets_filter,
-                    )
+                if should_skip_snippet(snippet_path):
                     skipped_filenames.append(snippet_name)
                     continue
                 snippet = await Snippet.from_path(snippet_path)
@@ -109,3 +96,31 @@ async def update_snippets() -> None:
                 "Deleted %s non-approved snippets that don't match the defined filters",
                 delete_result.rowcount,
             )
+
+
+def should_skip_snippet(snippet_path: Path) -> bool:
+    """Determine if a snippet file should be skipped based on defined filters.
+
+    :param snippet_path: The path to the snippet file.
+    :type snippet_path: Path
+    :return: True if the snippet should be skipped, False otherwise.
+    :rtype: bool
+    """
+    if snippets_settings.SYNC_FILTER is not None:
+        extension = snippet_path.suffix.lower()
+        mime = guess_mime_type(snippet_path)
+        if (
+            extension,
+            SnippetFilterType.EXTENSION,
+        ) not in snippets_settings.SYNC_FILTER and (
+            mime,
+            SnippetFilterType.MIME_TYPE,
+        ) not in snippets_settings.SYNC_FILTER:
+            logger.debug(
+                "Skipping file %s since no match found in defined filters (%r, %r)",
+                snippet_path,
+                extension,
+                mime,
+            )
+            return True
+    return False

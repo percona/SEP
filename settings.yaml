@@ -14,7 +14,7 @@ default:
     - http://127.0.0.1:8000
   SEP:
     SNIPPETS:
-      FILTER_EXTENSIONS:
+      FILTERS:
         - .sh
     OAUTH:
       REDIRECT_URI: /oauth/callback

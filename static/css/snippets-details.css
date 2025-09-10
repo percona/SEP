@@ -96,7 +96,7 @@ label:has(> input[type="checkbox"]:disabled)>.checkmark {
     display: initial;
 }
 
-#snippetDisabledWarning {
+.snippetDisabledWarning {
     color: #d22929;
     font-weight: 600;
 }

@@ -208,6 +208,8 @@ NOMAD_EXEC_ARTIFACT = {
                         "args": [
                             "--arg-file",
                             "args_file",
+                            "env",
+                            "-S",
                             "${NOMAD_META_interpreter}",
                             "${NOMAD_TASK_DIR}/script",
                         ],

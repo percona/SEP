@@ -82,7 +82,9 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
                 raise ValueError(
                     f"Value not found and is not a valid name for {enum_class_name}: {value_or_name!r}"
                 ) from None
-            enum_dict = {enum_obj.name.upper(): enum_obj for enum_obj in enum_class}
+            enum_dict = {
+                name.upper(): value for name, value in enum_class.__members__.items()
+            }
             try:
                 return enum_dict[value_or_name.upper()]
             except KeyError:
@@ -384,7 +386,12 @@ def database_url_normalized_scheme_field_factory(
     ]
 
 
+# TODO(yan): Replace RequiredStr with NonEmptyStr accross the codebase
+# SEP-579
 RequiredStr = Annotated[str, Field(min_length=1)]
+"""Define a string field that must not be empty."""
+
+NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
@@ -542,8 +549,8 @@ FilenameExtension = Annotated[
 This annotated type ensures that the string is lowercase and starts with a single dot.
 """
 
-MimeType = Annotated[LowercaseStr, Field(pattern=r"^\w+\/[-+.\w]+$")]
-"""A string field representing a MIME type.
+MimeType = Annotated[LowercaseStr, StringConstraints(pattern=r"^\w+\/[-+.\w]+$")]
+"""A string type representing a MIME type.
 
 This annotated type ensures that the string is lowercase and matches the MIME type
 format.
