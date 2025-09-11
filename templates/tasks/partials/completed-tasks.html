@@ -15,7 +15,7 @@
         </thead>
         <tbody>
             {% for task_history in history_tasks %}
-                {%- set task_logs = task_history.execution_request.tracking.task_logs or {} -%}
+                {%- set task_logs = task_history.execution_request.tracking.task_logs or False -%}
                 {% if task_history.status in ['success', 'failed', 'stopped', 'lost'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>
