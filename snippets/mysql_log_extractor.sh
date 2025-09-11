@@ -14,8 +14,8 @@
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
-#    required: true
 #    ge: 1
+#    required: true
 #  - name: log-file
 #    type: str
 #    label: Log file path
@@ -31,6 +31,10 @@
 #        label: Print to the terminal (default)
 #      - value: file
 #        label: Write the output to a file named by the timestamp
+# atw:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - GROUP_REPLICATION
 # ---
 
 # mysql_log_extractor.sh

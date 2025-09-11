@@ -456,7 +456,7 @@ class Snippet(BaseSQLModel, table=True):
         """Update the snippet's metadata."""
         self.meta = await self.get_meta_by_path(self)
 
-    def to_form(self, executor_hosts: Iterable[str]) -> str:
+    def to_form(self, executor_hosts: Iterable[str], form_action: str = "") -> str:
         """Generate an HTML form for executing the snippet.
 
         This method creates a form with fields based on the snippet's metadata and
@@ -466,15 +466,20 @@ class Snippet(BaseSQLModel, table=True):
         :param executor_hosts: An iterable  of hostnames where the snippet can be
             executed.
         :type executor_hosts: Iterable[str]
+        :param form_action: The action URL for the form submission. Defaults to an
+            empty string.
+        :type form_action: str
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
+        logger.info("Generating execution form for snippet %s (%s)", self, form_action)
         parameters = self.meta.get("parameters", [])
         logger.debug("Meta Snippet parameters: %s)", parameters)
         return self._to_form(
             json_serializer(parameters, sort_keys=True),
             executor_hosts,
             add_extra_args_field=self.allow_extra_args,
+            form_action=form_action,
             disabled=not self.can_execute,
         )
 
@@ -573,6 +578,7 @@ class Snippet(BaseSQLModel, table=True):
         executor_hosts: frozenset[str],
         *,
         add_extra_args_field: bool,
+        form_action: str = "",
         disabled: bool = False,
     ) -> str:
         """Generate an HTML form for executing a snippet.
@@ -590,6 +596,9 @@ class Snippet(BaseSQLModel, table=True):
         :param add_extra_args_field: Whether to include an extra arguments field in the
             form.
         :type add_extra_args_field: bool
+        :param form_action: The action URL for the form submission. Defaults to an
+            empty string.
+        :type form_action: str
         :param disabled: Whether to disable the form fields and submit button. Defaults
             to `False`.
         :type disabled: bool
@@ -625,6 +634,7 @@ class Snippet(BaseSQLModel, table=True):
                 classes=("text", "medium"),
                 disabled=disabled,
             ),
+            action=form_action,
         ).to_html()
 
     @staticmethod

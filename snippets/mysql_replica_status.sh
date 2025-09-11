@@ -9,6 +9,9 @@
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# atw:
+#  - NATIVE_ASYNC_REPLICATION
+#  - MULTI_SOURCE_REPLICATION
 # ---
 
 # Usage: ./mysql_replica_status.sh [--defaults-file=path] [mysql_args...]

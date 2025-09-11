@@ -22,6 +22,16 @@
 #    type: bool
 #    label: Show help message
 #    description: Show help message
+# atw:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - WRITES_ARE_BLOCKED
+#  - PERFORMANCE_OTHER
+#  - TEMPORARY_STALLS
+#  - NATIVE_ASYNC_REPLICATION
+#  - GALERA
+#  - GROUP_REPLICATION
 # ---
 
 # Usage: ./pt-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]

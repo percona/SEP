@@ -9,6 +9,8 @@
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# atw:
+#  - NATIVE_ASYNC_REPLICATION
 # ---
 
 # Usage: ./mysql_tables_without_pk.sh [--defaults-file=path] [mysql_args...]

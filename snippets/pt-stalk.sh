@@ -54,6 +54,15 @@
 #    type: bool
 #    label: Show help message
 #    description: Show help message
+# atw:
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - WRITES_ARE_BLOCKED
+#  - PERFORMANCE_OTHER
+#  - TEMPORARY_STALLS
+#  - NATIVE_ASYNC_REPLICATION
+#  - GALERA
+#  - GROUP_REPLICATION
 # ---
 
 # Usage: ./pt-stalk.sh [--defaults-file=path]  start|stop [-- other args...]

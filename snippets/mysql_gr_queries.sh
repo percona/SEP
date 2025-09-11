@@ -10,6 +10,8 @@
 #    label: Path to defaults-file
 #    description: Path to defaults-file
 #    arg_format: --defaults-file=${value}
+# atw:
+#  - GROUP_REPLICATION
 # ---
 
 # Usage: ./mysql_replica_status.sh [--defaults-file=path] [mysql_args...]

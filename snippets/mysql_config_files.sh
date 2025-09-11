@@ -5,6 +5,8 @@
 # description: This script finds all MySQL config files, including those referenced by !include and !includedir directives.
 # allow_extra_args: true
 # parameters: []
+# atw:
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # ---
 
 

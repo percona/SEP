@@ -14,7 +14,7 @@ default:
     - http://127.0.0.1:8000
   SEP:
     SNIPPETS:
-      FILTERS:
+      FILTER_EXTENSIONS:
         - .sh
     OAUTH:
       REDIRECT_URI: /oauth/callback
@@ -29,6 +29,10 @@ default:
         MODULE_NAME: snippets
         URI_PATH: /snippets
         CSS_CLASS: snippets
+      - NAME: Answers That Work
+        MODULE_NAME: atw
+        URI_PATH: /atw
+        CSS_CLASS: atw
       - NAME: Schema Change
         MODULE_NAME: alters
         URI_PATH: /alters

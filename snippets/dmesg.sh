@@ -2,6 +2,11 @@
 
 # ---
 # allow_extra_args: false
+# atw:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - NOT_RESPONDING
+#  - TEMPORARY_STALLS
 # ---
 
 # This script executes the 'dmesg -T' command with sudo.
