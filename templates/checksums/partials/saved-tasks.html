@@ -5,6 +5,8 @@
                 <th>Name</th>
                 <th>Host</th>
                 <th>Service Name</th>
+                <th>Created by</th>
+                <th>Last edit by</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -16,6 +18,8 @@
                     </td>
                     <td>{{ task.hostname }}</td>
                     <td>{{ task.service_name }}</td>
+                    <td>{{ task.get('created_by', 'None') }}</td>
+                    <td>{{ task.get('last_edit_by', 'None') }}</td>
                     <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
             {% endfor %}
