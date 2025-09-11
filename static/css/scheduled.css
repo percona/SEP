@@ -75,7 +75,7 @@
 
 .toggle-label {
     margin-left: 0.5em;
-    color: #2C323E;
+    color: var(--textPrimary);
     font-weight: bold;
     font-size: 1em;
     cursor: default;
@@ -99,7 +99,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
+    background-color: var(--actionDisabled);
     transition: 0.1s;
     border-radius: 24px;
 }
@@ -121,11 +121,11 @@
 }
 
 input:checked+.slider {
-    background-color: #1060FF;
+    background-color: var(--primaryMain);
 }
 
 input:focus+.slider {
-    box-shadow: 0 0 1px #1060FF;
+    box-shadow: 0 0 1px var(--primaryMain);
 }
 
 input:checked+.slider:before {
@@ -164,7 +164,7 @@ input:checked+.slider:before {
 .start-time-input {
     padding: 0.5em;
     margin-right: 0.5em;
-    border: 0.2em solid #F0F1F4;
+    border: 0.2em solid var(--lineDivider);
     border-radius: 2em;
     font-size: 1em;
 }
@@ -187,7 +187,7 @@ input:checked+.slider:before {
 .cron-description {
     font-style: italic;
     font-size: 10px;
-    color: #555;
+    color: var(--textSecondary);
 }
 
 .invalid {
@@ -197,7 +197,7 @@ input:checked+.slider:before {
 .change-to-cron,
 .change-to-interval {
     font-size: 0.9em;
-    color: #1060FF;
+    color: var(--primaryMain);
     cursor: pointer;
     text-decoration: underline;
     margin-top: 0.5em;
@@ -210,7 +210,7 @@ input:checked+.slider:before {
 
 @keyframes highlight-animation {
     0% {
-        background-color: #ffffcc;
+        background-color: var(--primarySelected);
     }
 
     100% {
@@ -218,9 +218,6 @@ input:checked+.slider:before {
     }
 }
 
-.disabled-row {
-    background-color: #f0f0f0;
-}
 
 .hidden {
     display: none;

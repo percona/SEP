@@ -1,6 +1,6 @@
 [project]
 name = "sep"
-version = "0.6.2"
+version = "0.7.0"
 description = "SEP: Services Enablement Platform"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
@@ -73,6 +73,7 @@ dependencies = [
     "presidio-anonymizer (>=2.2.358,<3.0.0)",
     "aiofiles (>=24.1.0,<25.0.0)",
     "typing-extensions (>=4.15.0,<5.0.0)",
+    "en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl"
 ]
 
 [tool.poetry]

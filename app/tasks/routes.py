@@ -253,6 +253,7 @@ async def stream_task_history_logs(
     executor: TaskExecutor,
     task_history: TaskHistoryWithTaskDep,
     offsets: Annotated[defaultdict[str, dict[str, int]], Depends(get_logs_offsets)],
+    step: str | None = None,
 ) -> StreamingResponse:
     """Stream a task history's logs."""
     logger.debug("Requesting logs for task history %s", task_history.id)
@@ -265,7 +266,8 @@ async def stream_task_history_logs(
         )
     else:
         stream_logs_generator = (
-            log.model_dump_json() + "\n" for log in task_history.iter_logs(offsets)
+            log.model_dump_json() + "\n"
+            for log in task_history.iter_logs(offsets, step=step)
         )
     return StreamingResponse(
         stream_logs_generator,
