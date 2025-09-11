@@ -72,7 +72,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
 
-lifespan = default_lifespan if __name__ == "__main__" else None
+lifespan = sep_lifespan if __name__ == "__main__" else None
 
 
 sep_app = create_app(
