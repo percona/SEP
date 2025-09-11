@@ -14,18 +14,34 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 """Define the main anonymizing functions."""
+__all__ = ["anonymize_text"]
 
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine, OperatorConfig
 
 from app.tasks.anonymizer.entities import PIIEntity
 
-__all__ = ["anonymize_text"]
+
+from presidio_analyzer.nlp_engine import SpacyNlpEngine
+import spacy
+
+class LoadedSpacyNlpEngine(SpacyNlpEngine):
+    def __init__(self, loaded_spacy_model):
+        super().__init__()
+        self.nlp = {"en": loaded_spacy_model}
+
+# Load a model a-priori
+nlp = spacy.load("en_core_web_sm")
+
+# Pass the loaded model to the new LoadedSpacyNlpEngine
+loaded_nlp_engine = LoadedSpacyNlpEngine(loaded_spacy_model = nlp)
+
+# Pass the engine to the analyzer
+analyzer = AnalyzerEngine(nlp_engine = loaded_nlp_engine)
 
 ANONYMIZER_OPERATORS = {
     "DEFAULT": OperatorConfig("replace", {}),
 }
-analyzer = AnalyzerEngine()
 anonymizer = AnonymizerEngine()
 
 
