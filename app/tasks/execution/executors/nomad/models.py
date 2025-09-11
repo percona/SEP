@@ -16,8 +16,10 @@
 """Provide task execution management for Nomad jobs."""
 
 import asyncio
+import gzip
 import json
 import logging
+from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -507,6 +509,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         alloc_id = alloc["ID"]
         task_logs = defaultdict(dict, initial_logs or {})
+        # TODO(yan): Refactor logs
+        # SEP-564
+        max_lines = 100000
         if task_states := alloc["TaskStates"]:
             for step, log_type in product(task_states, TaskLogType):
                 task_logs[step][log_type] = task_logs[step].get(log_type) or ""
@@ -538,14 +543,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 "Offset", task_logs[step][last_offset_key]
                             )
                             msg = b64decode_str(raw_msg)
-                            if step in ("run-script", "step1"):
-                                msg = anonymize_text(msg, anonymize_entities or set())
+                            if step in ("run-script", "step1") and anonymize_entities:
+                                msg = anonymize_text(msg, anonymize_entities)
                             task_logs[step][log_type] += msg
+                            task_logs[step][log_type] = "\n".join(
+                                task_logs[step][log_type].splitlines()[-max_lines:]
+                            )
         return task_logs
 
     async def _sync_task_history(
         self,
-        session: AsyncSession,
         queue_item: TaskHistory,
     ) -> TaskHistory:
         """Synchronize the task history with the current state of the task in Nomad.
@@ -554,9 +561,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         with the current status, task states, and logs. If the task is no longer
         running, it updates the status accordingly.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
         :return: The updated task history with execution details.
@@ -588,43 +592,41 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
                     queue_item.status = TaskHistoryStatusEnum.FAILED
                     queue_item.started_at = None
-                    return await TaskHistoryManager.save(
-                        session,
-                        queue_item,
-                        flag_modified_fields=["execution_request"],
-                    )
-
             except JobNotFoundException:
                 logger.warning(
                     "Lost job and allocation from task history %s", queue_item.id
                 )
                 queue_item.status = TaskHistoryStatusEnum.LOST
-                return await TaskHistoryManager.save(
-                    session,
-                    queue_item,
-                    flag_modified_fields=["execution_request"],
-                )
             return queue_item
 
         task_states = alloc["TaskStates"]
         task_logs = self.get_logs_for_allocation(
             alloc,
-            queue_item.execution_request.tracking.get("task_logs", {}),
-            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
+            queue_item.task_logs,
+            queue_item.task.anonymized_entities,
         )
         logger.debug(
             "sync_task_history(queue_item_id=%s): tasks_logs = %r",
             queue_item.id,
             task_logs,
         )
+        # TODO(yan): Refactor logs
+        # SEP-564
         queue_item.execution_request.tracking.update(
             allocation_id=alloc["ID"],
             job_id=job_id,
             evaluation_id=alloc["EvalID"],
             task_states=task_states,
-            task_logs=sort_dict(
-                task_logs, lambda item: list(task_states.keys()).index(item[0])
-            ),
+            task_logs=b64encode(
+                gzip.compress(
+                    json.dumps(
+                        sort_dict(
+                            task_logs,
+                            lambda item: list(task_states.keys()).index(item[0]),
+                        )
+                    ).encode()
+                )
+            ).decode(),
         )
 
         try:
@@ -646,12 +648,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.status,
                     stopped=job.get("Stop", False),
                 )
-
-        return await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=["execution_request"],
-        )
+        return queue_item
 
     def task_needs_new_job(self, task: Task) -> bool:
         """Determine whether a new job needs to be created for the task.
