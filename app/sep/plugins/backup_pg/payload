@@ -626,11 +626,13 @@ class PgBackRest(Backup):
 
         self.logger.info("Checking stanza configuration...")
         try:
-            subprocess.check_output([self.pgbackrest_bin,
-                                     '--config={0}'.format(self.pgbackrest_config_file),
-                                     '--stanza={0}'.format(self.alias),
-                                     '--log-level-console=info',
-                                     'check'], stderr=subprocess.STDOUT)
+            cmd = [self.pgbackrest_bin,
+                    '--config={0}'.format(self.pgbackrest_config_file),
+                    '--stanza={0}'.format(self.alias),
+                    '--log-level-console=info',
+                    'check']
+            self.logger.info('Running: {0}'.format(' '.join(cmd)))
+            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as err:
             raise BackupError(err.output)
         self.logger.info("Stanza configuration OK")
@@ -719,7 +721,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 if __name__ == "__main__":
-    if os.geteuid() == 0:
+    # Allow override via environment variable, default to postgres
+    target_user = os.getenv("PGBACKREST_USER", "postgres")
+    current_user = getuser()
+
+    if current_user == target_user:
         main()
+    elif os.geteuid() == 0:
+        # If running as root, switch to target user
+        os.execvp("sudo", ["sudo", "-u", target_user, sys.executable] + sys.argv)
     else:
-        os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
+        # If not root and not target user, use sudo to become target user
+        os.execvp("sudo", ["sudo", "-u", target_user, sys.executable] + sys.argv)
