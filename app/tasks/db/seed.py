@@ -295,6 +295,7 @@ async def init_tasks_db() -> None:
             {"deleted_at": utc_now()},
             col(Task.name).not_in(system_tasks_names),
             col(Task.protected).is_(True),
+            col(Task.deleted_at).is_(None),
         )
         if update_delete_result.rowcount:
             logger.info(
