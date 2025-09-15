@@ -282,8 +282,14 @@ async def init_tasks_db() -> None:
                     created_task.name,
                     task.data,
                 )
+        await TaskManager.update_where(
+            session,
+            {"deleted_at": None},
+            col(Task.name).in_(system_tasks_names),
+            col(Task.deleted_at).is_not(None),
+        )
         delete_result = await TaskManager.delete_unattached_system_tasks(
-            session, system_tasks_names
+            session, exclude_task_names=system_tasks_names
         )
         if delete_result.rowcount:
             logger.info(

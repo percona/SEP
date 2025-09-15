@@ -472,7 +472,9 @@ class Snippet(BaseSQLModel, table=True):
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
-        logger.info("Generating execution form for snippet %s (%s)", self, form_action)
+        logger.debug(
+            "Generating execution form for snippet %s (action=%r)", self, form_action
+        )
         parameters = self.meta.get("parameters", [])
         logger.debug("Meta Snippet parameters: %s)", parameters)
         return self._to_form(

@@ -857,6 +857,20 @@ class CheckboxInputElement(BaseInputElement):
         return InputType.CHECKBOX
 
     @property
+    def prepend_raw(self) -> str:
+        """Return raw HTML to prepend before the checkbox input element.
+
+        This property returns a hidden input element with the same name as the checkbox.
+        This is done to ensure that a value is always submitted for the checkbox, even
+        when it is unchecked (since unchecked checkboxes do not send any value).
+
+        :return: A hidden HTML input element with the same name as the checkbox and
+            falsy value.
+        :rtype: str
+        """
+        return f'<input name="{html_escape(self.name)}" type="hidden" value="0">'
+
+    @property
     def append_raw(self) -> str:
         """Return raw HTML to append after the checkbox input element.
 

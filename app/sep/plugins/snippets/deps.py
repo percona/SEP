@@ -5,8 +5,12 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
+from pydantic import ValidationError
 
-from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
+from app.core.exceptions import (
+    HTTPNotFoundException,
+    HTTPRedirectException,
+)
 from app.sep.deps import CurrentUser, get_base_url, SessionDep
 from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
@@ -74,10 +78,11 @@ def validate_snippet_parameters(request: Request, snippet: SnippetDep) -> Snippe
 ValidatedSnippet = Annotated[Snippet, Depends(validate_snippet_parameters)]
 
 
-def _get_snippet_status_redirect_exc(
-    request: Request, referer: str | None, msg: str
+def _get_snippet_redirect_exc(
+    request: Request, referer: str | None, msg: str | None = None
 ) -> HTTPRedirectException:
-    messages.error(request, msg)
+    if msg:
+        messages.error(request, msg)
     location = referer or request.url_for("snippets_index")
     return HTTPRedirectException(
         location=location, status_code=status.HTTP_303_SEE_OTHER
@@ -107,7 +112,7 @@ def get_approved_snippet(
     """
     if snippet.is_approved:
         return snippet
-    raise _get_snippet_status_redirect_exc(
+    raise _get_snippet_redirect_exc(
         request, referer, f"Snippet {snippet} is not approved"
     )
 
@@ -138,7 +143,7 @@ def get_unapproved_snippet(
     """
     if not snippet.is_approved:
         return snippet
-    raise _get_snippet_status_redirect_exc(
+    raise _get_snippet_redirect_exc(
         request, referer, f"Snippet {snippet} is already approved"
     )
 
@@ -169,7 +174,7 @@ def get_executable_snippet(
     """
     if snippet.can_execute:
         return snippet
-    raise _get_snippet_status_redirect_exc(
+    raise _get_snippet_redirect_exc(
         request, referer, f"Snippet {snippet} cannot be executed"
     )
 
@@ -193,7 +198,9 @@ def get_snippet_source(request: Request, snippet: SnippetDep) -> str:
 
 
 async def get_validated_execution_args(
-    request: Request, snippet: ExecutableSnippet
+    request: Request,
+    snippet: ExecutableSnippet,
+    referer: Annotated[str | None, Header()] = None,
 ) -> BaseSnippetArgs:
     """Validate and return the execution arguments for an executable snippet.
 
@@ -201,16 +208,30 @@ async def get_validated_execution_args(
     :type request: Request
     :param snippet: The executable snippet.
     :type snippet: Snippet
+    :param referer: The referer URL. If None is specified, it defaults to the
+        snippets_index route.
+    :type referer: str | None
     :return: The validated execution arguments.
     :rtype: BaseSnippetArgs
     """
     execution_model = snippet.get_execution_model()
     async with request.form() as form:
-        data = dict(form)
+        form_data = dict(form)
         logger.debug(
-            "Validating execution args for snippet %r: %s", snippet.filename, data
+            "Validating execution args for snippet %r: %s", snippet.filename, form_data
         )
-        return execution_model.model_validate(dict(form))
+    try:
+        return execution_model.model_validate(form_data)
+    except ValidationError as exc:
+        for error in exc.errors():
+            if error.get("type") != "none_required":
+                error_msg = "Error executing snippet"
+                if error_loc := error.get("loc", ()):
+                    error_msg += f" [{error_loc[0]}]"
+                if error_msg_detail := error.get("msg"):
+                    error_msg += f": {error_msg_detail}"
+                messages.error(request, error_msg, request.url.path)
+        raise _get_snippet_redirect_exc(request, referer) from None
 
 
 def get_snippet_execution_request_meta(

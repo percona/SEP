@@ -348,10 +348,13 @@ class SnippetMetaParameter(BaseModel):
         :rtype: type
         """
         if self.choices:
-            return StrEnum("ParamChoices", [choice["value"] for choice in self.choices])
-        raw_type = self.py_type.value
-        if self.constraints:
-            raw_type = Annotated[raw_type, *self.constraints]
+            raw_type = StrEnum(
+                "ParamChoices", [choice["value"] for choice in self.choices]
+            )
+        else:
+            raw_type = self.py_type.value
+            if self.constraints:
+                raw_type = Annotated[raw_type, *self.constraints]
         if not self.required and self.default is None:
             return raw_type | EmptyStrToNone
         return raw_type
