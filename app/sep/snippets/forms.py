@@ -283,7 +283,7 @@ class BaseHTMLElement(BaseHTMLEntity, ABC):
         """
         return " ".join(self.classes) or None
 
-    @cached_property
+    @property
     def attributes(self) -> str:
         """Return a string of HTML attributes from the model fields.
 
@@ -294,7 +294,7 @@ class BaseHTMLElement(BaseHTMLEntity, ABC):
             sorted(self.model_dump(by_alias=True, exclude_none=True).items())
         )
 
-    @cached_property
+    @property
     def start_tag(self) -> str:
         """Return the opening tag for the HTML element.
 
@@ -407,7 +407,7 @@ class HTMLElement(BaseHTMLElement, ABC):
         """
         return f"</{self.TAG_NAME}>"
 
-    @cached_property
+    @property
     def inner_html(self) -> str:
         """Return the inner HTML content of the element, including its children.
 
@@ -490,7 +490,7 @@ class FieldsetElement(HTMLElement):
     legend: RequiredStr | None = Field(None, exclude=True)
     disabled: bool = False
 
-    @cached_property
+    @property
     def inner_html(self) -> str:
         """Return the inner HTML content of the fieldset, including the legend if set.
 
