@@ -47,6 +47,7 @@ from app.core.utils.fields import (
     MimeType,
     RelativeDirectoryPath,
     RequiredStr,
+    URL,
 )
 
 
@@ -261,11 +262,14 @@ class SnippetsSettings(BaseYamlSettings):
     :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
         `Path("snippets")`.
     :type SNIPPETS_DIR: RelativeDirectoryPath
+    :param SNIPPETS_BASE_URL: The base URL for accessing snippets. If `None`, the URL
+        is dynamically built on execution. Defaults to `None`.
+    :type SNIPPETS_BASE_URL: URL | None
     :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
     :type META: SnippetsMetaOptions
-    :param SYNC_FILTER: A set of filters to apply when loading snippets from `SNIPPETS_DIR`.
-        Each filter can specify a file extension or MIME type. If `None`, no filtering
-        is applied. Defaults to `None`.
+    :param SYNC_FILTER: A set of filters to apply when loading snippets from
+        `SNIPPETS_DIR`. Each filter can specify a file extension or MIME type. If
+        `None`, no filtering is applied. Defaults to `None`.
     :type SYNC_FILTER: set[SnippetFilter] | None
     :param INTERPRETERS: A mapping of `SnippetFilter` to interpreter command names.
         This defines which interpreter to use for snippets matching the specified
@@ -290,6 +294,7 @@ class SnippetsSettings(BaseYamlSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "SNIPPETS"]
     SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
+    SNIPPETS_BASE_URL: URL | None = None
     META: SnippetsMetaOptions = SnippetsMetaOptions()
     SYNC_FILTER: set[SnippetFilter] | None = None
     INTERPRETERS: OrderedDict[SnippetFilter, str] = DEFAULT_INTERPRETERS
