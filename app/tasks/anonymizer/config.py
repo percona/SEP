@@ -36,12 +36,16 @@ class AnonymizerSettings(BaseYamlSettings):
         If a list of anonymizer entities is provided, it will be used as default for all
         owners. Defaults to an empty set.
     :type DEFAULT_ENTITIES: defaultdict[TaskOwner, set[PIIEntity]]
+    :param NLP_MODELS: A mapping of language codes to spaCy model names for NLP
+        processing. Defaults to `{"en": "en_core_web_md"}`.
+    :type NLP_MODELS: dict[str, str]
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS", "ANONYMIZER"]
     DEFAULT_ENTITIES: defaultdict[TaskOwner, set[PIIEntity]] = Field(
         default_factory=dict, validate_default=True
     )
+    NLP_MODELS: dict[str, str] = Field({"en": "en_core_web_md"}, min_length=1)
 
     @field_validator("DEFAULT_ENTITIES", mode="before")
     @classmethod
@@ -65,6 +69,15 @@ class AnonymizerSettings(BaseYamlSettings):
             return defaultdict(set, v)
 
         return v
+
+    @property
+    def default_analyzer_language(self) -> str:
+        """Get the default language code for the NLP models.
+
+        :return: The first language code from the NLP_MODELS dictionary.
+        :rtype: str
+        """
+        return next(iter(self.NLP_MODELS))
 
 
 anonymizer_settings = AnonymizerSettings()
