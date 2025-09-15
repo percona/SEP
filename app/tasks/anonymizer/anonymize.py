@@ -15,35 +15,56 @@
 
 """Define the main anonymizing functions."""
 
+__all__ = ["anonymize_text"]
+
 from presidio_analyzer import AnalyzerEngine
+from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine, OperatorConfig
 
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
-
-__all__ = ["anonymize_text"]
 
 ANONYMIZER_OPERATORS = {
     "DEFAULT": OperatorConfig("replace", {}),
 }
-analyzer = AnalyzerEngine()
+NLP_CONFIG = {
+    "nlp_engine_name": "spacy",
+    "models": [
+        {"lang_code": lang, "model_name": model}
+        for lang, model in anonymizer_settings.NLP_MODELS.items()
+    ],
+}
+
+nlp_provider = NlpEngineProvider(nlp_configuration=NLP_CONFIG)
+nlp_engine = nlp_provider.create_engine()
+analyzer = AnalyzerEngine(
+    nlp_engine=nlp_engine, supported_languages=list(anonymizer_settings.NLP_MODELS)
+)
 anonymizer = AnonymizerEngine()
 
 
-def anonymize_text(text: str, selected_entities: set[PIIEntity]) -> str:
+def anonymize_text(
+    text: str, selected_entities: set[PIIEntity], language: str | None = None
+) -> str:
     """Anonymize text using Microsoft Presidio.
 
     :param text: The original log text.
     :type text: str
     :param selected_entities: A set of selected anonymizer entities to apply.
     :type selected_entities: set[PIIEntity]
+    :param language: The language code of the text. If None, the default language from
+        settings will be used. Defaults to None.
+    :type language: str | None
     :return: The encrypted log text.
     :rtype: str
     """
     if selected_entities:
+        if language is None:
+            language = anonymizer_settings.default_analyzer_language
         results = analyzer.analyze(
             text=text,
             entities=[entity.name for entity in selected_entities],
-            language="en",
+            language=language,
         )
         if results:
             anonymized_result = anonymizer.anonymize(
