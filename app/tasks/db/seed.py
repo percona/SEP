@@ -233,6 +233,7 @@ NOMAD_EXEC_ARTIFACT = {
                             "GetterOptions": {
                                 "checksum": "md5:${NOMAD_META_md5_checksum}",
                             },
+                            "GetterInsecure": True,
                         }
                     ],
                 },
