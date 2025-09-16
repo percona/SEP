@@ -608,7 +608,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         task_logs = self.get_logs_for_allocation(
             alloc,
             queue_item.task_logs,
-            queue_item.task.anonymized_entities,
+            queue_item.anonymized_entities,
         )
         logger.debug(
             "sync_task_history(queue_item_id=%s): tasks_logs = %r",
@@ -849,7 +849,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             log_type,
                             queue,
                             start_offsets[step].get(log_type, 0),
-                            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
+                            queue_item.anonymized_entities,
                         )
                     )
                 )

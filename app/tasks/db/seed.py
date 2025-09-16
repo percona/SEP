@@ -243,9 +243,16 @@ NOMAD_EXEC_ARTIFACT = {
 }
 
 SYSTEM_TASKS = [
-    Task(name="run-command", data=NOMAD_RUN_COMMAND, protected=True),
-    Task(name="run-python", data=NOMAD_RUN_PYTHON, protected=True),
-    Task(name="exec-artifact", data=NOMAD_EXEC_ARTIFACT, protected=True),
+    Task(
+        name="run-command", data=NOMAD_RUN_COMMAND, protected=True, anonymize_mask=None
+    ),
+    Task(name="run-python", data=NOMAD_RUN_PYTHON, protected=True, anonymize_mask=None),
+    Task(
+        name="exec-artifact",
+        data=NOMAD_EXEC_ARTIFACT,
+        protected=True,
+        anonymize_mask=None,
+    ),
 ]
 
 SYSTEM_PERIODIC_TASKS = [
@@ -283,6 +290,15 @@ async def init_tasks_db() -> None:
                     created_task.name,
                     task.data,
                 )
+            elif created_task.model_dump(
+                exclude={"id", "created_at", "updated_at", "deleted_at"}
+            ) != task.model_dump(
+                exclude={"id", "created_at", "updated_at", "deleted_at"}
+            ):
+                logger.debug("Created task: %s", created_task.model_dump())
+                logger.debug("New task: %s", task.model_dump())
+                await TaskManager.update(session, created_task, task)
+                logger.info("Updated system task %s", created_task.name)
         await TaskManager.update_where(
             session,
             {"deleted_at": None},

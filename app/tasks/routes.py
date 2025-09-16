@@ -31,7 +31,6 @@ from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
 from app.core.utils.fields import RequiredStr
-from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.celery import (
     celery,
     dispatch_queue_item,
@@ -111,9 +110,7 @@ async def get_task(task: TaskDep) -> Task:
 async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
-    return await TaskManager.create(
-        session, task, anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner]
-    )
+    return await TaskManager.create(session, task)
 
 
 @router.put(

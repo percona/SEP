@@ -25,6 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
 from app.core.exceptions import HTTPBadRequestException
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -149,6 +150,9 @@ def prepare_task_history(
             eta=execution_data.eta,
         ),
         status=TaskHistoryStatusEnum.PENDING,
+        anonymize_mask=anonymizer_settings.get_anonymize_mask(task.owner)
+        if task.anonymize_mask is None
+        else task.anonymize_mask,
     )
 
 

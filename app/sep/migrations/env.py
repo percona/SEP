@@ -19,12 +19,14 @@ from logging.config import fileConfig
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlmodel import SQLModel
 
 from alembic import context
 
 from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
 from app.sep.models import *
+from app.sep.snippets.models import *
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
