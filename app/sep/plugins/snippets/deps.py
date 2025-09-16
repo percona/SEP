@@ -11,6 +11,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPRedirectException,
 )
+from app.core.utils import remove_falsy_values_from_dict
 from app.sep.deps import CurrentUser, get_base_url, SessionDep
 from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
@@ -221,7 +222,7 @@ async def get_validated_execution_args(
             "Validating execution args for snippet %r: %s", snippet.filename, form_data
         )
     try:
-        return execution_model.model_validate(form_data)
+        return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
     except ValidationError as exc:
         for error in exc.errors():
             if error.get("type") != "none_required":

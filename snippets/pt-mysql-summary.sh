@@ -13,7 +13,7 @@
 #    type: str
 #    label: Destination for the summaries
 #    description: Destination for the summaries
-#    default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+#    default: ".$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 #  - name: save-samples
 #    type: bool
 #    label: Save samples
