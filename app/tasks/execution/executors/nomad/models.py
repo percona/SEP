@@ -271,11 +271,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             else {}
         )
 
+        custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
+        if custom_prefix:
+            custom_prefix = f"-{slugify(custom_prefix)}"
+
         job_status = self.backend.job.dispatch_job(
             task.data["ID"],
             payload=payload,
             meta=filtered_meta,
-            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}",
+            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}{custom_prefix}",
         )
         if not job_status:
             logger.error("Unable to dispatch task %s", task.id)

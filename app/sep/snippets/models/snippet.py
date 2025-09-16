@@ -772,3 +772,13 @@ class SnippetExecutionMeta(BaseModel):
     snippet_filename: NonEmptyStr = Field(..., serialization_alias="_snippet_filename")
     md5_checksum: str = Field(min_length=32, max_length=32)
     args: NonEmptyStr | EmptyStrToNone = None
+
+    @computed_field
+    @property
+    def _job_id_prefix(self) -> str:
+        """Get a prefix for job IDs based on the snippet filename.
+
+        :return: A string prefix for job IDs.
+        :rtype: str
+        """
+        return self.snippet_filename
