@@ -175,9 +175,12 @@ class TypeableFieldMixin(FormFieldMixin):
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
     :type: placeholder: RequiredStr | None
+    :param: value: The default value of the form field, if any. Defaults to None.
+    :type: value: str | None
     """
 
     placeholder: RequiredStr | None = None
+    value: str | None = Field(None, validation_alias="default")
 
 
 class TextFieldMixin(TypeableFieldMixin):
@@ -192,6 +195,8 @@ class TextFieldMixin(TypeableFieldMixin):
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
     :type: placeholder: RequiredStr | None
+    :param: value: The default value of the form field, if any. Defaults to None.
+    :type: value: str | None
     :param: maxlength: The maximum length of the text input. If None, no maximum
         length is enforced. Defaults to None.
     :type: maxlength: PositiveInt | None
@@ -540,6 +545,8 @@ class TextareaElement(TextFieldMixin, HTMLElement):
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
     :type: placeholder: RequiredStr | None
+    :param: value: The default value of the form field, if any. Defaults to None.
+    :type: value: str | None
     :param: maxlength: The maximum length of the text input. If None, no maximum
         length is enforced. Defaults to None.
     :type: maxlength: PositiveInt | None
@@ -724,6 +731,8 @@ class TextInputElement(TextFieldMixin, BaseInputElement):
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
     :type: placeholder: RequiredStr | None
+    :param: value: The default value of the form field, if any. Defaults to None.
+    :type: value: str | None
     :param: maxlength: The maximum length of the text input. If None, no maximum
         length is enforced. Defaults to None.
     :type: maxlength: PositiveInt | None
@@ -768,6 +777,8 @@ class NumberInputElement(TypeableFieldMixin, BaseInputElement):
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
     :type: placeholder: RequiredStr | None
+    :param: value: The default value of the form field, if any. Defaults to None.
+    :type: value: str | None
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
