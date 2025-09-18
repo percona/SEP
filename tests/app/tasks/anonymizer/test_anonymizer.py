@@ -4,7 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.tasks.anonymizer import anonymize_text, PIIEntity
+from app.tasks.anonymizer import anonymize_text
+from app.tasks.anonymizer.entities import PIIEntity
 
 
 @pytest.fixture

@@ -51,7 +51,7 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     UTCDatetime,
 )
-from app.tasks.anonymizer import PIIEntity
+from app.tasks.anonymizer.entities import PIIEntity
 
 TASK_ALIAS_LENGTH = 100
 

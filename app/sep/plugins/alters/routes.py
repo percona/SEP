@@ -27,7 +27,7 @@ from app.sep.plugins.alters.deps import (
 )
 from app.sep.utils.decorators import csrf_exempt
 from app.sep.utils.jinja import syntax_highlight
-from app.tasks.anonymizer import PIIEntity
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
