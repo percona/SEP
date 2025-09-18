@@ -25,7 +25,7 @@ from app.sep.plugins.backup.deps import (
     parse_backup_task_data,
 )
 from app.sep.plugins.backup.models import BackupType
-from app.tasks.anonymizer import PIIEntity
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
