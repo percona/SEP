@@ -444,7 +444,6 @@ async def get_tasks_context(
     service_type = (
         ServiceTypeEnum.MONGODB
         if owner in {TaskOwner.BACKUP_MONGO, TaskOwner.RESTORE_MONGO}
-        # TODO: Please improve me!!!!!!
         else ServiceTypeEnum.POSTGRESQL
         if owner in {TaskOwner.BACKUP_PG}
         else ServiceTypeEnum.MYSQL

@@ -1,23 +1,23 @@
 """Define models for the Backups plugin."""
 
-from enum import auto, IntEnum, StrEnum
-from typing import Literal, Self
-
-from pydantic import BaseModel, Field, model_validator
+from enum import StrEnum
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
+
 
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""
 
     PGBACKREST = "P"
 
+
 class PgBackRestBackupType(EnumFieldMixin, StrEnum):
     """PgBackRest backup types."""
 
     INCR = "incr"
     DIFF = "diff"
+
 
 class BackupConfigAll(BaseCaseInsensitiveModel):
     """Represent the general configuration for the backup task."""
@@ -31,6 +31,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     pgbackrest_retention_full: int | EmptyStrToNone = None
     pgbackrest_retention_archive: int | EmptyStrToNone = None
     pgbackrest_incremental_cycle: int | str | EmptyStrToNone = None
+
 
 class BackupConfigServer(BaseCaseInsensitiveModel):
     """Represent an individual server configuration.
@@ -62,6 +63,7 @@ class BackupCreate(BackupConfigAll):
     service_id: int
     backup_type: BackupType
     alert_on_fail: bool = False
+
 
 class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.

@@ -69,14 +69,12 @@ async def build_backup_task_payload(
         by_alias=True,
     )
 
-
     server_config = {
         "alias": service.node.address,
         "backup_type": form.backup_type,
         # for now only localhost allowed for X
-        "host": "localhost", #service.node.address
+        "host": "localhost",  # service.node.address
         "port": service.port,
-        # "upload": upload_providers,
     }
 
     backup_config = BackupConfig(
@@ -108,6 +106,7 @@ async def build_backup_task_payload(
 
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
+
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant information from a task for the Backups plugin.
 
@@ -127,7 +126,6 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "hostname": meta["target"],
         "host": backup_server.get("HOST"),
         "port": backup_server.get("PORT") or 3306,
-        #"upload": ", ".join(backup_server.get("UPLOAD")),
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
     }
 

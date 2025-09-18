@@ -38,9 +38,7 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
-    <p>
-        Perform PostgreSQL backups with PGBackRest.
-    </p>
+    <p>Perform PostgreSQL backups with PGBackRest.</p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         <h2>Configure a backup task</h2>

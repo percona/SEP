@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
+
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def pg_backups_index(
     request: Request,

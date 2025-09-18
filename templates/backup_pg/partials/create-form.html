@@ -157,7 +157,8 @@
         <br>
         <br>
         {% set pgbackrest_config_file_title = "The path to the pgbackrest configuration file." %}
-        <label for="pgbackrest_config_file" title="{{ pgbackrest_config_file_title }}">
+        <label for="pgbackrest_config_file"
+               title="{{ pgbackrest_config_file_title }}">
             PgBackRest Config File Path:
             <input type="text"
                    id="pgbackrest_config_file"
@@ -183,29 +184,31 @@
         <label for="pgbackrest_datadir" title="{{ pgbackrest_datadir_title }}">
             PostgreSQL Datadir Path:
             <input type="text"
-                id="pgbackrest_datadir"
-                name="pgbackrest_datadir"
-                placeholder="/var/lib/pgsql/12/data/" />
+                   id="pgbackrest_datadir"
+                   name="pgbackrest_datadir"
+                   placeholder="/var/lib/pgsql/12/data/" />
         </label>
         <br>
         <br>
         {% set pgbackrest_retention_full_title = "The number of full backups to retain." %}
-        <label for="pgbackrest_retention_full" title="{{ pgbackrest_retention_full_title }}">
+        <label for="pgbackrest_retention_full"
+               title="{{ pgbackrest_retention_full_title }}">
             Retention Full:
             <input type="number"
-                id="pgbackrest_retention_full"
-                name="pgbackrest_retention_full"
-                placeholder="e.g. 2" />
+                   id="pgbackrest_retention_full"
+                   name="pgbackrest_retention_full"
+                   placeholder="e.g. 2" />
         </label>
         <br>
         <br>
         {% set pgbackrest_retention_archive_title = "The number of archive backups to retain." %}
-        <label for="pgbackrest_retention_archive" title="{{ pgbackrest_retention_archive_title }}">
+        <label for="pgbackrest_retention_archive"
+               title="{{ pgbackrest_retention_archive_title }}">
             Retention Archive:
             <input type="number"
-                id="pgbackrest_retention_archive"
-                name="pgbackrest_retention_archive"
-                placeholder="e.g. 1" />
+                   id="pgbackrest_retention_archive"
+                   name="pgbackrest_retention_archive"
+                   placeholder="e.g. 1" />
         </label>
         <br>
         <br>
@@ -229,12 +232,13 @@
             </label>
         </div>
         {% set pgbackrest_process_max_title = "The maximum number of processes to use for the backup." %}
-        <label for="pgbackrest_process_max" title="{{ pgbackrest_process_max_title }}">
+        <label for="pgbackrest_process_max"
+               title="{{ pgbackrest_process_max_title }}">
             Process Max:
             <input type="number"
-                id="pgbackrest_process_max"
-                name="pgbackrest_process_max"
-                placeholder="e.g.4" />
+                   id="pgbackrest_process_max"
+                   name="pgbackrest_process_max"
+                   placeholder="e.g.4" />
         </label>
         <br>
         <br>
@@ -242,19 +246,20 @@
         <label for="pgbackrest_repo" title="{{ pgbackrest_repo_title }}">
             Repository:
             <input type="number"
-                id="pgbackrest_repo"
-                name="pgbackrest_repo"
-                placeholder="e.g. 1" />
+                   id="pgbackrest_repo"
+                   name="pgbackrest_repo"
+                   placeholder="e.g. 1" />
         </label>
         <br>
         <br>
         {% set pgbackrest_aes256_passfile_title = "The path to the AES-256 encryption key file for securing backups." %}
-        <label for="pgbackrest_aes256_passfile" title="{{ pgbackrest_aes256_passfile_title }}">
+        <label for="pgbackrest_aes256_passfile"
+               title="{{ pgbackrest_aes256_passfile_title }}">
             AES256 Passfile Path:
             <input type="text"
-                id="pgbackrest_aes256_passfile"
-                name="pgbackrest_aes256_passfile"
-                placeholder="e.g. ~/.config/percona/pgbackrest/pg_passfile" />
+                   id="pgbackrest_aes256_passfile"
+                   name="pgbackrest_aes256_passfile"
+                   placeholder="e.g. ~/.config/percona/pgbackrest/pg_passfile" />
         </label>
     </fieldset>
     {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
