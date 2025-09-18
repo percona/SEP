@@ -64,7 +64,6 @@ async def build_backup_task_payload(
             "hostname",
             "service_id",
             "backup_type",
-            # "encryption_recipient",
         },
         by_alias=True,
     )
