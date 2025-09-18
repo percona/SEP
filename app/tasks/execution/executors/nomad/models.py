@@ -48,7 +48,8 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.tasks.anonymizer import anonymize_text, PIIEntity
+from app.tasks.anonymizer import anonymize_text
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundException,
