@@ -30,7 +30,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     pgbackrest_datadir: RequiredStr | EmptyStrToNone = None
     pgbackrest_retention_full: int | EmptyStrToNone = None
     pgbackrest_retention_archive: int | EmptyStrToNone = None
-    pgbackrest_incremental_cycle: int | EmptyStrToNone = None
+    pgbackrest_incremental_cycle: int | str | EmptyStrToNone = None
 
 class BackupConfigServer(BaseCaseInsensitiveModel):
     """Represent an individual server configuration.
