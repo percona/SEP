@@ -75,7 +75,6 @@ async def pg_backups_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve backups task."""
-    print("AAAAAAA")
     data = task.data
     meta = data["meta"]
     decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)

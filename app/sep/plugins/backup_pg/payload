@@ -379,7 +379,6 @@ class BaseBackup:
         self.textfile_collector_write_status(backup_status)
 
 
-
 class Backup(BaseBackup):
     """Common class for all backup types."""
 
@@ -722,7 +721,7 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     # Allow override via environment variable, default to postgres
-    target_user = os.getenv("PGBACKREST_USER", "postgres")
+    target_user = os.getenv("SEP_PGBACKREST_USER", "postgres")
     current_user = getuser()
 
     if current_user == target_user:
