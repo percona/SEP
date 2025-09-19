@@ -105,7 +105,7 @@ class PresidioEngineManager:
         models specified in the anonymizer settings.
 
         :return: A dictionary containing the NLP engine configuration.
-        :rtype: dict
+        :rtype: dict[str, Any]
         """
         return {
             "nlp_engine_name": "spacy",
