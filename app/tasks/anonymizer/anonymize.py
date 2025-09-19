@@ -17,8 +17,11 @@
 
 __all__ = ["anonymize_text"]
 
+import threading
+from typing import Any
+
 from presidio_analyzer import AnalyzerEngine
-from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_analyzer.nlp_engine import NlpEngine, NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine, OperatorConfig
 
 from app.tasks.anonymizer.config import anonymizer_settings
@@ -27,20 +30,93 @@ from app.tasks.anonymizer.entities import PIIEntity
 ANONYMIZER_OPERATORS = {
     "DEFAULT": OperatorConfig("replace", {}),
 }
-NLP_CONFIG = {
-    "nlp_engine_name": "spacy",
-    "models": [
-        {"lang_code": lang, "model_name": model}
-        for lang, model in anonymizer_settings.NLP_MODELS.items()
-    ],
-}
 
-nlp_provider = NlpEngineProvider(nlp_configuration=NLP_CONFIG)
-nlp_engine = nlp_provider.create_engine()
-analyzer = AnalyzerEngine(
-    nlp_engine=nlp_engine, supported_languages=list(anonymizer_settings.NLP_MODELS)
-)
-anonymizer = AnonymizerEngine()
+
+class PresidioEngineManager:
+    """Manage instances of Presidio's NLP, Analyzer, and Anonymizer engines."""
+
+    def __init__(self) -> None:
+        self._nlp_engine = None
+        self._analyzer_engine = None
+        self._anonymizer_engine = None
+        self._engine_lock = threading.RLock()
+
+    @property
+    def nlp_engine(self) -> NlpEngine:
+        """Initialize and return the NLP engine.
+
+        This property initializes the NLP engine if it hasn't been created yet,
+        using the configuration defined in the `_build_nlp_config` method. It ensures
+        thread-safe initialization using a reentrant lock.
+
+        :return: The NLP engine instance.
+        :rtype: NlpEngine
+        """
+        if self._nlp_engine is None:
+            with self._engine_lock:
+                if self._nlp_engine is None:
+                    nlp_provider = NlpEngineProvider(
+                        nlp_configuration=self._build_nlp_config()
+                    )
+                    self._nlp_engine = nlp_provider.create_engine()
+        return self._nlp_engine
+
+    @property
+    def analyzer(self) -> AnalyzerEngine:
+        """Initialize and return the Analyzer engine.
+
+        This property initializes the Analyzer engine if it hasn't been created yet,
+        using the NLP engine and supported languages defined in the settings. It ensures
+        thread-safe initialization using a reentrant lock.
+
+        :return: The Analyzer engine instance.
+        :rtype: AnalyzerEngine
+        """
+        if self._analyzer_engine is None:
+            with self._engine_lock:
+                if self._analyzer_engine is None:
+                    self._analyzer_engine = AnalyzerEngine(
+                        nlp_engine=self.nlp_engine,
+                        supported_languages=list(anonymizer_settings.NLP_MODELS),
+                    )
+        return self._analyzer_engine
+
+    @property
+    def anonymizer(self) -> AnonymizerEngine:
+        """Initialize and return the Anonymizer engine.
+
+        This property initializes the Anonymizer engine if it hasn't been created yet.
+        It ensures thread-safe initialization using a reentrant lock.
+
+        :return: The Anonymizer engine instance.
+        :rtype: AnonymizerEngine
+        """
+        if self._anonymizer_engine is None:
+            with self._engine_lock:
+                if self._anonymizer_engine is None:
+                    self._anonymizer_engine = AnonymizerEngine()
+        return self._anonymizer_engine
+
+    @staticmethod
+    def _build_nlp_config() -> dict[str, Any]:
+        """Build the NLP engine configuration.
+
+        This method constructs the NLP engine configuration dictionary based on the
+        models specified in the anonymizer settings.
+
+        :return: A dictionary containing the NLP engine configuration.
+        :rtype: dict
+        """
+        return {
+            "nlp_engine_name": "spacy",
+            "models": [
+                {"lang_code": lang, "model_name": model}
+                for lang, model in anonymizer_settings.NLP_MODELS.items()
+            ],
+        }
+
+
+engine_manager = PresidioEngineManager()
 
 
 def anonymize_text(
@@ -61,13 +137,13 @@ def anonymize_text(
     if selected_entities:
         if language is None:
             language = anonymizer_settings.default_analyzer_language
-        results = analyzer.analyze(
+        results = engine_manager.analyzer.analyze(
             text=text,
             entities=[entity.name for entity in selected_entities],
             language=language,
         )
         if results:
-            anonymized_result = anonymizer.anonymize(
+            anonymized_result = engine_manager.anonymizer.anonymize(
                 text, results, ANONYMIZER_OPERATORS
             )
             return anonymized_result.text
