@@ -1208,6 +1208,10 @@ button.list-item:focus-visible {
     content: "nature";
 }
 
+.list-item.backup_pg .icon::before {
+    content: "backup";
+}
+
 .list-item.inventory .icon::before {
     content: "graph_4";
 }

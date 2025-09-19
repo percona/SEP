@@ -1,23 +1,33 @@
 """Define tests for the app.tasks.anonymizer.anonymize module."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, PropertyMock
 
 import pytest
 
-from app.tasks.anonymizer import anonymize_text
+from app.tasks.anonymizer.anonymize import anonymize_text, PresidioEngineManager
 from app.tasks.anonymizer.entities import PIIEntity
 
 
 @pytest.fixture
 def mock_analyzer(mocker) -> Mock:
     """Mock the analyzer engine."""
-    return mocker.patch("app.tasks.anonymizer.anonymize.analyzer")
+    pm = mocker.patch.object(
+        PresidioEngineManager, "analyzer", new_callable=PropertyMock
+    )
+    analyzer = Mock()
+    pm.return_value = analyzer
+    return analyzer
 
 
 @pytest.fixture
 def mock_anonymizer(mocker) -> Mock:
-    """Mock the analyzer engine."""
-    return mocker.patch("app.tasks.anonymizer.anonymize.anonymizer")
+    """Mock the anonymizer engine."""
+    pm = mocker.patch.object(
+        PresidioEngineManager, "anonymizer", new_callable=PropertyMock
+    )
+    anonymizer = Mock()
+    pm.return_value = anonymizer
+    return anonymizer
 
 
 def test_anonymize_text_with_multiple_entities(mock_analyzer, mock_anonymizer):

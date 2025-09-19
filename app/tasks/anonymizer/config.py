@@ -36,7 +36,7 @@ class AnonymizerSettings(BaseYamlSettings):
         owners. Defaults to an empty set.
     :type DEFAULT_ENTITIES: defaultdict[str, set[PIIEntity]]
     :param NLP_MODELS: A mapping of language codes to spaCy model names for NLP
-        processing. Defaults to `{"en": "en_core_web_md"}`.
+        processing. Defaults to `{"en": "en_core_web_sm"}`.
     :type NLP_MODELS: dict[str, str]
     """
 
@@ -44,7 +44,7 @@ class AnonymizerSettings(BaseYamlSettings):
     DEFAULT_ENTITIES: defaultdict[str, set[PIIEntity]] = Field(
         default_factory=dict, validate_default=True
     )
-    NLP_MODELS: dict[str, str] = Field({"en": "en_core_web_md"}, min_length=1)
+    NLP_MODELS: dict[str, str] = Field({"en": "en_core_web_sm"}, min_length=1)
 
     @field_validator("DEFAULT_ENTITIES", mode="before")
     @classmethod
