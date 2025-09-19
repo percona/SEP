@@ -119,6 +119,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     CHECKSUMS = "CHECKSUMS"
     BACKUP_MONGO = "BACKUP_MONGO"
     RESTORE_MONGO = "RESTORE_MONGO"
+    BACKUP_PG = "BACKUP_PG"
 
 
 class TaskLogType(StrEnum):
