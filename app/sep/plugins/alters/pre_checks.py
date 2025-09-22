@@ -6,18 +6,20 @@ against a MySQL table to ensure the operation can be safely performed.
 
 Usage:
     python pre_checks.py --schema <database_name> --table <table_name> [options]
+    python pre_checks.py --config <config.yaml>
 """
 
 import argparse
 import logging
 import shutil
 import sys
-from typing import Tuple, Union, Optional
+from configparser import ConfigParser
+from pathlib import Path
+from typing import Any
 
 import pymysql
+import yaml
 from pymysql import Error as PyMySQLError
-import os
-from configparser import ConfigParser
 
 
 class PreCheckError(Exception):
@@ -31,32 +33,23 @@ class MySQLPreChecks:
         self,
         host: str = "127.0.0.1",
         port: int = 3306,
-        user: str = None,
-        password: str = None,
         schema: str = "",
         table: str = "",
-        config_file: str = None,
+        config_file: str = "~/.my.cnf",
     ) -> None:
         """Initialize the pre-checks class.
 
         Args:
             host: MySQL host
             port: MySQL port
-            user: MySQL username
-            password: MySQL password
             schema: Database name
             table: Table name
             config_file: Path to .my.cnf file
 
         """
-        # Read .my.cnf configuration
-        # cnf_config = self.read_my_cnf(config_file)
-
         # Use .my.cnf values as defaults, but allow command line to override
         self.host = host
         self.port = port
-        self.user = user
-        self.password = password
         self.schema = schema
         self.table = table
         self.connection = None
@@ -84,19 +77,20 @@ class MySQLPreChecks:
             self.connection = pymysql.connect(
                 host=self.host,
                 port=self.port,
-                user=self.user,
-                password=self.password,
                 database=self.schema,
                 read_default_file=self.config_file,
                 charset="utf8mb4",
             )
-            self.logger.info("Successfully connected to MySQL at %s:%s", self.host, self.port)
-            return True
+            self.logger.info(
+                "Successfully connected to MySQL at %s:%s", self.host, self.port
+            )
         except PyMySQLError:
             self.logger.exception("Failed to connect to MySQL")
             return False
+        else:
+            return True
 
-    def get_table_size_mb(self) -> Optional[float]:
+    def get_table_size_mb(self) -> float:
         """Get the size of the table in MB.
 
         Returns:
@@ -120,16 +114,20 @@ class MySQLPreChecks:
 
                 if result and result[0] is not None:
                     size_mb = float(result[0])
-                    self.logger.info("Table %s.%s size: %s MB", self.schema, self.table, size_mb)
+                    self.logger.info(
+                        "Table %s.%s size: %s MB", self.schema, self.table, size_mb
+                    )
                     return size_mb
-                self.logger.error("Table %s.%s not found or has no data", self.schema, self.table)
+                self.logger.error(
+                    "Table %s.%s not found or has no data", self.schema, self.table
+                )
                 return None
 
         except PyMySQLError:
             self.logger.exception("Failed to get table size")
             return None
 
-    def get_mysql_datadir(self) -> Optional[str]:
+    def get_mysql_datadir(self) -> str:
         """Get the MySQL datadir path.
 
         Returns:
@@ -158,7 +156,7 @@ class MySQLPreChecks:
             self.logger.exception("Failed to get MySQL datadir")
             return None
 
-    def get_disk_space_mb(self, path: str) -> Optional[Tuple[float, float]]:
+    def get_disk_space_mb(self, path: str) -> tuple[float, float]:
         """Get free and total disk space for a given path.
 
         Args:
@@ -176,12 +174,17 @@ class MySQLPreChecks:
             free_mb = free / (1024 * 1024)
             total_mb = total / (1024 * 1024)
 
-            self.logger.info("Disk space for %s: %.2f MB free / %.2f MB total", path, free_mb, total_mb)
-            return free_mb, total_mb
-
+            self.logger.info(
+                "Disk space for %s: %.2f MB free / %.2f MB total",
+                path,
+                free_mb,
+                total_mb,
+            )
         except OSError:
             self.logger.exception("Failed to get disk space for %s", path)
             return None
+        else:
+            return free_mb, total_mb
 
     def check_disk_space(self) -> bool:
         """Check if there's enough free disk space in the MySQL datadir partition.
@@ -222,7 +225,10 @@ class MySQLPreChecks:
             free_space_mb,
             table_size_mb,
         )
-        self.logger.error("Need at least %.2f MB free space for pt-online-schema-change", table_size_mb)
+        self.logger.error(
+            "Need at least %.2f MB free space for pt-online-schema-change",
+            table_size_mb,
+        )
         return False
 
     def run_all_checks(self) -> bool:
@@ -243,9 +249,13 @@ class MySQLPreChecks:
 
         self.logger.info("=" * 50)
         if all_passed:
-            self.logger.info("[PASS] All pre-checks PASSED - pt-online-schema-change can proceed")
+            self.logger.info(
+                "[PASS] All pre-checks PASSED - pt-online-schema-change can proceed"
+            )
         else:
-            self.logger.error("[FAIL] Some pre-checks FAILED - pt-online-schema-change should NOT proceed")
+            self.logger.error(
+                "[FAIL] Some pre-checks FAILED - pt-online-schema-change should NOT proceed"
+            )
 
         return all_passed
 
@@ -255,7 +265,7 @@ class MySQLPreChecks:
             self.connection.close()
             self.logger.info("MySQL connection closed")
 
-    def read_my_cnf(self, config_file: str = None) -> dict:
+    def read_my_cnf(self, config_file: str) -> dict:
         """Read MySQL configuration from .my.cnf file.
 
         Args:
@@ -263,12 +273,13 @@ class MySQLPreChecks:
 
         Returns:
             dict: Configuration parameters
+
         """
         if config_file is None:
-            config_file = os.path.expanduser("~/.my.cnf")
+            config_file = Path.expanduser("~/.my.cnf")
 
         config = {}
-        if os.path.exists(config_file):
+        if Path.exists(config_file):
             parser = ConfigParser()
             parser.read(config_file)
 
@@ -283,38 +294,128 @@ class MySQLPreChecks:
         return config
 
 
-def main() -> None:
-    """Run the pre-checks script."""
+def load_yaml_config(config_file: str) -> dict[str, Any]:
+    """Load configuration from YAML file.
+
+    Args:
+        config_file: Path to YAML configuration file
+
+    Returns:
+        dict: Configuration parameters
+
+    Raises:
+        PreCheckError: If config file cannot be read or parsed
+
+    """
+    try:
+        with Path(config_file).open(encoding="utf-8") as file:
+            config = yaml.safe_load(file)
+            if config is None:
+                config = {}
+            return config
+    except FileNotFoundError as err:
+        raise PreCheckError(f"Configuration file not found: {config_file}") from err
+    except yaml.YAMLError as err:
+        raise PreCheckError(f"Error parsing YAML configuration file: {err}") from err
+    except Exception as err:
+        raise PreCheckError(f"Error reading configuration file: {err}") from err
+
+
+def parse_arguments() -> argparse.Namespace:
+    """Parse command line arguments with support for YAML config file.
+
+    Returns:
+        argparse.Namespace: Parsed arguments
+
+    """
     parser = argparse.ArgumentParser(
         description="Pre-checks for pt-online-schema-change operations",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Using command line arguments
   python pre_checks.py --schema mydb --table mytable
-  python pre_checks.py --schema mydb --table mytable --host 192.168.1.100 --user myuser
-  python pre_checks.py --schema mydb --table mytable --password mypass --port 3307
+  python pre_checks.py --schema mydb --table mytable --host 192.168.1.100
+  python pre_checks.py --schema mydb --table mytable --port 3307
+
+  # Using YAML configuration file
+  python pre_checks.py --config config.yaml
+
+  # YAML config file format:
+  # schema: mydb
+  # table: mytable
+  # host: 192.168.1.100
+  # port: 3306
+  # mysql_config_file: ~/.my.cnf
         """,
     )
 
-    parser.add_argument("--schema", required=True, help="Database name")
-    parser.add_argument("--table", required=True, help="Table name")
-    parser.add_argument("--host", default="127.0.0.1", help="MySQL host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=3306, help="MySQL port (default: 3306)")
-    parser.add_argument("--user", default="", help="MySQL username (default: root)")
-    parser.add_argument("--password", default="", help="MySQL password (default: empty)")
-    parser.add_argument("--config-file", default="~/.my.cnf", type=str, help="Path to .my.cnf file (default: ~/.my.cnf)")
+    # Add config file argument
+    parser.add_argument(
+        "--config",
+        type=str,
+        help="Path to YAML configuration file (alternative to command line arguments)",
+    )
+
+    # Add individual arguments (these can be overridden by config file)
+    parser.add_argument("--schema", help="Database name")
+    parser.add_argument("--table", help="Table name")
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="MySQL host (default: 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=3306, help="MySQL port (default: 3306)"
+    )
+    parser.add_argument(
+        "--mysql-config-file",
+        default="~/.my.cnf",
+        type=str,
+        help="Path to .my.cnf file (default: ~/.my.cnf)",
+    )
 
     args = parser.parse_args()
+
+    # If config file is provided, load configuration from it
+    if args.config:
+        try:
+            config = load_yaml_config(args.config)
+
+            # Override command line arguments with config file values
+            # Command line arguments still take precedence if provided
+            if "schema" in config and args.schema is None:
+                args.schema = config["schema"]
+            if "table" in config and args.table is None:
+                args.table = config["table"]
+            if "host" in config:
+                args.host = config["host"]
+            if "port" in config:
+                args.port = config["port"]
+            if "mysql_config_file" in config:
+                args.mysql_config_file = config["mysql_config_file"]
+
+        except PreCheckError as e:
+            parser.error(str(e))
+
+    # Validate required arguments
+    if not args.schema:
+        parser.error("--schema is required (either via command line or config file)")
+    if not args.table:
+        parser.error("--table is required (either via command line or config file)")
+
+    return args
+
+
+def main() -> None:
+    """Run the pre-checks script."""
+    args = parse_arguments()
 
     # Create pre-checks instance
     pre_checks = MySQLPreChecks(
         host=args.host,
         port=args.port,
-        user=args.user,
-        password=args.password,
         schema=args.schema,
         table=args.table,
-        config_file=args.config_file,
+        config_file=args.mysql_config_file,
     )
 
     try:
@@ -331,8 +432,8 @@ Examples:
     except KeyboardInterrupt:
         logging.exception("\nOperation cancelled by user")
         sys.exit(1)
-    except Exception as e:  # noqa: BLE001
-        logging.exception("Unexpected error: %s", e)
+    except Exception:
+        logging.exception("Unexpected error occurred")
         sys.exit(1)
     finally:
         pre_checks.close_connection()
