@@ -277,6 +277,27 @@ async def alters_update(
         json=dry_run_task.model_dump(),
     )
 
+    # Create the pre-checks task
+    pre_checks_task = updated_task.model_copy()
+    pre_checks_task.name = f"{updated_task.name}-pre-checks"
+    pre_checks_task.data["task"] = "run-python"
+    del pre_checks_task.data["meta"]["command"]
+    del pre_checks_task.data["meta"]["args"]
+    pre_checks_task.data["meta"]["config"] = (
+        f"schema: {updated_task.data['meta']['_schema_name']}\ntable: {updated_task.data['meta']['_table_name']}"
+    )
+    pre_checks_task.data["meta"]["requirements"] = (
+        "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
+    )
+    payload_path = Path(__file__).parent / "pre_checks.py"
+    pre_checks_task.data["payload"] = f"file://{payload_path}"
+    pre_checks_task.data["parent"] = updated_task.name
+
+    await tasks_api.put(
+        f"/{task_name}-pre-checks",
+        json=pre_checks_task.model_dump(),
+    )
+
     return RedirectResponse(
         request.url_for("alters_detail", task_name=updated_task.name),
         status_code=status.HTTP_303_SEE_OTHER,
