@@ -19,19 +19,15 @@
     </style>
     <link rel="stylesheet"
           href="{{ url_for('static', path='/css/saved.css') }}">
-    {% if history or history_dry_run or running_tasks %}
-        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
-    {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/saved.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    {% if history or history_dry_run or running_tasks %}
-        <script src="{{ url_for('static', path='/js/logs.js') }}"
-                nonce="{{ request.state.csp_nonce }}"></script>
-    {% endif %}
+    <script src="{{ url_for('static', path='/js/logs.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
 {% block main %}
     <h2>Overview</h2>
@@ -152,6 +148,13 @@
         <br>
         <br>
     {% endif %}
+    <section>
+        <h2>Pre Checks History</h2>
+        {% set history_tasks = history_pre_checks %}
+        {% include "tasks/partials/completed-tasks.html" %}
+    </section>
+    <br>
+    <br>
     <section>
         <h2>Dry Run History</h2>
         {% set history_tasks = history_dry_run %}

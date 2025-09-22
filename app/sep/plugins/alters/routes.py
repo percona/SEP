@@ -1,6 +1,7 @@
 """Define routes for the alters plugin."""
 
 import logging
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -109,6 +110,27 @@ async def alters_create(
         json=dry_run_task.model_dump(),
     )
 
+    # Create the pre-checks task
+    pre_checks_task = task.model_copy()
+    pre_checks_task.name = f"{task.name}-pre-checks"
+    pre_checks_task.data["task"] = "run-python"
+    del pre_checks_task.data["meta"]["command"]
+    del pre_checks_task.data["meta"]["args"]
+    pre_checks_task.data["meta"]["config"] = (
+        f"schema: {task.data['meta']['_schema_name']}\ntable: {task.data['meta']['_table_name']}"
+    )
+    pre_checks_task.data["meta"]["requirements"] = (
+        "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
+    )
+    payload_path = Path(__file__).parent / "pre_checks.py"
+    pre_checks_task.data["payload"] = f"file://{payload_path}"
+    pre_checks_task.data["parent"] = task.name
+
+    await task_api.post(
+        "/",
+        json=pre_checks_task.model_dump(),
+    )
+
     # Redirect to the execute task detail page
     task_path = request.url_for("alters_detail", task_name=task.name)
     return RedirectResponse(
@@ -127,6 +149,12 @@ async def alters_detail(
 ) -> HTMLResponse:
     """Retrieve alters task."""
     data = task.data
+
+    # If the task has a parent, redirect to the parent task detail page
+    if data.get("parent"):
+        task_path = request.url_for("alters_detail", task_name=data["parent"])
+        return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
     meta = data["meta"]
     decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
     task_data = {
@@ -142,24 +170,29 @@ async def alters_detail(
         "dry_run_url": request.url_for(
             "alters_execute", task_name=task.name + "-dry-run"
         ),
+        "pre_checks_url": request.url_for(
+            "alters_execute", task_name=task.name + "-pre-checks"
+        ),
         "alert_on_fail": task.alert_on_fail,
     }
     task_data.update(extract_service_info(meta))
-
-    # If the task has a parent, redirect to the parent task detail page
-    if data.get("parent"):
-        task_path = request.url_for("alters_detail", task_name=data["parent"])
-        return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
     context["history"] = await tasks_api.get(f"/{task.name}/history/")
     context["history_dry_run"] = await tasks_api.get(f"/{task.name}-dry-run/history/")
+    context["history_pre_checks"] = await tasks_api.get(
+        f"/{task.name}-pre-checks/history/"
+    )
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     context["running_tasks"] += await tasks_api.get(
         f"/{task.name}-dry-run/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
+    )
+    context["running_tasks"] += await tasks_api.get(
+        f"/{task.name}-pre-checks/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
@@ -262,4 +295,5 @@ async def alters_delete(
     """Delete alters tasks."""
     await tasks_api.delete(f"/{task.name}")
     await tasks_api.delete(f"/{task.name}-dry-run")
+    await tasks_api.delete(f"/{task.name}-pre-checks")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
