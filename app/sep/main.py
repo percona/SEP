@@ -16,10 +16,12 @@
 """Define SEP routes."""
 
 import logging.config
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from traceback import format_exception
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
@@ -31,9 +33,11 @@ from starlette.staticfiles import StaticFiles
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
+from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
+from app.inventory.config import inventory_settings
 from app.sep.config import CsrfSettings, sep_settings
 from app.sep.deps import (
     AccessTokenCookie,
@@ -47,10 +51,40 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
-lifespan = default_lifespan if __name__ == "__main__" else None
+
+@asynccontextmanager
+async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage SEP's lifespan.
+
+    Initializes the RemoteAPI clients for inventory and tasks services, ensuring they
+    are properly managed during the application's startup and shutdown phases.
+
+    :param app: The FastAPI application instance.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    app.state.inventory_api = RemoteAPI(
+        endpoint=sep_settings.INVENTORY_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=inventory_settings.SSL_KEYFILE,
+        ssl_certfile=inventory_settings.SSL_CERTFILE,
+    )
+    app.state.tasks_api = RemoteAPI(
+        endpoint=sep_settings.TASKS_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=tasks_settings.SSL_KEYFILE,
+        ssl_certfile=tasks_settings.SSL_CERTFILE,
+    )
+    async with app.state.inventory_api, app.state.tasks_api, default_lifespan(app):
+        yield
+
+
+lifespan = sep_lifespan if __name__ == "__main__" else None
 sep_app = create_app(
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,

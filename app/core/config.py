@@ -22,9 +22,8 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self
+from typing import Any, ClassVar, Literal, Self, TypeVar
 
-from aiohttp import ClientSession
 from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +32,6 @@ from pydantic import (
     DirectoryPath,
     Field,
     field_validator,
-    HttpUrl,
     model_validator,
     validate_call,
 )
@@ -54,8 +52,8 @@ from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
 )
-from app.core.requests import RemoteAPI
-from app.core.utils import deep_dict_update, json_serializer
+from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
+from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
     LogLevel,
     RelativeFilePath,
@@ -242,6 +240,9 @@ class BaseYamlSettings(BaseSettings):
         )
 
 
+T = TypeVar("T", bound=BaseRemoteAPI)
+
+
 class Settings(BaseYamlSettings):
     """Main application settings class.
 
@@ -290,7 +291,7 @@ class Settings(BaseYamlSettings):
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
-    _EXTRA_CLIENT_SESSIONS: dict[tuple[str, str | None], ClientSession] = {}
+    _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field
     @property
@@ -331,50 +332,30 @@ class Settings(BaseYamlSettings):
         return self
 
     @validate_call
-    async def get_extra_client_session(
+    async def get_remote_api(
         self,
-        endpoint: HttpUrl,
-        api_key: str | None = None,
-        *,
-        include_headers: bool = True,
-    ) -> ClientSession:
-        """Retrieve or create an extra client session for a given endpoint.
+        cls: type[T] = RemoteAPI,
+        **kwargs: Any,
+    ) -> T:
+        """Get or create a RemoteAPI client instance.
 
-        Manages additional `ClientSession` instances for interacting with external APIs
-        that are not created at startup. Ensures that each unique combination of
-        endpoint and API key has its own session.
-
-        :param endpoint: The base URL of the external API.
-        :type endpoint: HttpUrl
-        :param api_key: The API key for authentication. Defaults to None.
-        :type api_key: str | None
-        :param include_headers: Whether to include default headers. Defaults to True.
-        :type include_headers: bool
-        :return: An aiohttp `ClientSession` instance.
-        :rtype: ClientSession
-        :raises ClientError: If the session creation fails.
+        :param cls: The class of the RemoteAPI client. Defaults to :class:`RemoteAPI`.
+        :type cls: type[T]
+        :param kwargs: Additional keyword arguments to configure the RemoteAPI client.
+        :type kwargs: Any
+        :return: An instance of the requested RemoteAPI client.
+        :rtype: T
         """
-        remote_api = RemoteAPI(endpoint=endpoint, api_key=api_key)
-        key = (remote_api.base_url, api_key)
-        if key not in self._EXTRA_CLIENT_SESSIONS:
-            headers = remote_api.headers if include_headers else None
-            logger.debug("Opening ClientSession for %s", remote_api.base_url)
-            self._EXTRA_CLIENT_SESSIONS[key] = ClientSession(
-                base_url=remote_api.base_url,
-                headers=headers,
-                json_serialize=json_serializer,
-            )
-        return self._EXTRA_CLIENT_SESSIONS[key]
+        logger.debug(
+            "Getting remote API client from registry for %s with kwargs %s",
+            cls.__name__,
+            kwargs,
+        )
+        return await self._CLIENT_REGISTRY.get(cls, **kwargs)
 
-    async def close_extra_client_sessions(self) -> None:
-        """Close all extra client sessions.
-
-        Ensures that all additional `ClientSession` instances are properly closed
-        when the application shuts down.
-        """
-        for (endpoint, _), client_session in self._EXTRA_CLIENT_SESSIONS.items():
-            logger.debug("Closing ClientSession for %s", endpoint)
-            await client_session.close()
+    async def close_client_registry(self) -> None:
+        """Close the client registry and all its managed clients."""
+        await self._CLIENT_REGISTRY.close_all()
 
 
 settings = Settings()
@@ -454,7 +435,7 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa:
     """
     async with settings.CASDOOR:
         yield
-    await settings.close_extra_client_sessions()
+    await settings.close_client_registry()
 
 
 def create_app(
