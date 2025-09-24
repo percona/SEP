@@ -21,10 +21,15 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import StreamingResponse
 
-from app.sep.deps import get_task_history, IsAuthenticated, TaskAPI
+from app.sep.deps import (
+    CurrentUser,
+    get_task_history,
+    IsAuthenticated,
+    TasksClient,
+)
 from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
@@ -36,13 +41,16 @@ router = APIRouter()
 @csrf_exempt
 async def task_logs_event_stream(
     request: Request,
+    user: CurrentUser,
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
-    tasks_api: TaskAPI,
+    tasks_client: TasksClient,
 ) -> StreamingResponse:
     """Stream a task history's logs as server-sent events."""
     logger.debug("request.state.is_csrf_exempt is %s", request.state.is_csrf_exempt)
     return StreamingResponse(
-        task_history_logs_event_stream(tasks_api, task_history.id, request),
+        task_history_logs_event_stream(
+            tasks_client, task_history.id, request, user.access_token
+        ),
         media_type="text/event-stream",
     )
 
@@ -50,15 +58,15 @@ async def task_logs_event_stream(
 # TODO(yan): Put stream_task_history_logs in a proper TasksAPI SDK class
 # SEP-130
 async def task_history_logs_event_stream(
-    tasks_api: TaskAPI, task_history_id: int, request: Request
+    tasks_client: TasksClient, task_history_id: int, request: Request, access_token: str
 ) -> AsyncGenerator[str, None]:
     """Stream logs from a task history as server-sent events.
 
     Streams log lines for a given task history ID from the Tasks API and yields them
     formatted as server-sent events.
 
-    :param tasks_api: The TaskAPI client for interacting with the Tasks service.
-    :type tasks_api: RemoteAPI
+    :param tasks_client: The TaskAPI client for interacting with the Tasks service.
+    :type tasks_client: RemoteAPI
     :param task_history_id: The ID of the task history whose logs to stream.
     :type task_history_id: int
     :param request: The FastAPI request object, used to access query parameters.
@@ -66,16 +74,25 @@ async def task_history_logs_event_stream(
     :yield: Log entries formatted as server-sent events.
     :rtype: str
     """
-    async for log_entry in tasks_api.stream(
-        f"/history/{task_history_id}/logs/", params=request.query_params
-    ):
-        if log_entry:
-            yield f"data: {log_entry.decode()}\n\n"
-    # TODO(yan): Don't wait for task to finish
-    # SEP-379
-    wait_interval = 5
-    task_history = await tasks_api.get(f"/history/{task_history_id}")
-    while task_history["status"] == TaskHistoryStatusEnum.RUNNING:
-        await asyncio.sleep(wait_interval)
-        task_history = await tasks_api.get(f"/history/{task_history_id}")
-    yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
+    try:
+        with tasks_client.auth(access_token) as tasks_api:
+            async for log_entry in tasks_api.stream(
+                f"/history/{task_history_id}/logs/", params=request.query_params
+            ):
+                if log_entry:
+                    yield f"data: {log_entry.decode()}\n\n"
+            # TODO(yan): Don't wait for task to finish
+            # SEP-379
+            wait_interval = 5
+            task_history = await tasks_api.get(f"/history/{task_history_id}")
+            while task_history["status"] == TaskHistoryStatusEnum.RUNNING:
+                await asyncio.sleep(wait_interval)
+                task_history = await tasks_api.get(f"/history/{task_history_id}")
+        yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
+    except HTTPException as exc:
+        logger.exception("HTTP error streaming task logs [%s]", exc.status_code)
+        payload = {"code": exc.status_code, "detail": exc.detail}
+        yield f"event: sep-error\ndata: {json.dumps(payload)}\n\n"
+    except Exception as exc:
+        logger.exception("Error streaming task logs")
+        yield f"event: sep-error\ndata: {json.dumps({'detail': str(exc)})}\n\n"

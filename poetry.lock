@@ -597,7 +597,7 @@ version = "1.17.1"
 description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "syncmysql"]
 markers = "platform_python_implementation != \"PyPy\""
 files = [
     {file = "cffi-1.17.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:df8b1c11f177bc2313ec4b2d46baec87a5f3e71fc8b45dab2ee7cae86d9aba14"},
@@ -982,7 +982,7 @@ version = "44.0.3"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
 optional = false
 python-versions = "!=3.9.0,!=3.9.1,>=3.7"
-groups = ["main"]
+groups = ["main", "syncmysql"]
 files = [
     {file = "cryptography-44.0.3-cp37-abi3-macosx_10_9_universal2.whl", hash = "sha256:962bc30480a08d133e631e8dfd4783ab71cc9e33d5d7c1e192f0b7c06397bb88"},
     {file = "cryptography-44.0.3-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4ffc61e8f3bf5b60346d89cd3d37231019c17a081208dfbbd6e1605ba03fa137"},
@@ -2419,6 +2419,21 @@ files = [
 ]
 
 [[package]]
+name = "myloginpath"
+version = "0.0.4"
+description = "MySQL login path file reader"
+optional = false
+python-versions = ">=3.7"
+groups = ["syncmysql"]
+files = [
+    {file = "myloginpath-0.0.4-py3-none-any.whl", hash = "sha256:6d99d2e517b6c3a575032bcaa66f34f4bdea08116c97cf6a4977596af2498277"},
+    {file = "myloginpath-0.0.4.tar.gz", hash = "sha256:c44b8d11e8f35a02eeac4b88bf244203c09cc496bfa19ce99a79561c038f9d09"},
+]
+
+[package.dependencies]
+cryptography = "*"
+
+[[package]]
 name = "nodeenv"
 version = "1.9.1"
 description = "Node.js virtual environment builder"
@@ -3030,7 +3045,7 @@ version = "2.22"
 description = "C parser in Python"
 optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "syncmysql"]
 markers = "platform_python_implementation != \"PyPy\""
 files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
@@ -4865,4 +4880,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "f21426d85e58d533d2861fba237aa3a63f0a272a48acc6a705abaa6b5ef010e0"
+content-hash = "5f6982556bbb8102a8f7494fa30f4cfb464bc8fce0df533fbeea664e30d79478"

@@ -162,10 +162,10 @@ def test_settings_customise_sources(
 async def test_default_lifespan():
     """Test default_lifespan manages CASDOOR and closes sessions."""
     mock_casdoor = AsyncMock()
-    mock_close_extra = AsyncMock()
+    mock_close_registry = AsyncMock()
 
     with (
-        patch.object(Settings, "close_extra_client_sessions", mock_close_extra),
+        patch.object(Settings, "close_client_registry", mock_close_registry),
         patch("app.core.config.settings.CASDOOR", mock_casdoor),
     ):
         app = FastAPI()
@@ -175,4 +175,4 @@ async def test_default_lifespan():
 
     mock_casdoor.__aenter__.assert_called_once()
     mock_casdoor.__aexit__.assert_called_once()
-    mock_close_extra.assert_called_once()
+    mock_close_registry.assert_called_once()
