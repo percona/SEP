@@ -23,7 +23,12 @@ def mock_pmm_api() -> AsyncMock:
 @pytest.fixture
 def pmmsyncer(mock_pmm_api, mock_remote_api) -> PMMSyncer:
     """Mock PMMSyncer instance with mocked APIs."""
-    return PMMSyncer(pmm=mock_pmm_api, inventory_api=mock_remote_api)
+    syncer = PMMSyncer(
+        pmm={"endpoint": "http://localhost", "api_key": "test-key"},
+        inventory_api=mock_remote_api,
+    )
+    syncer._pmm_api = mock_pmm_api
+    return syncer
 
 
 @pytest.fixture
@@ -86,7 +91,7 @@ class TestPMMRemoteAPI:
     @pytest.fixture
     def pmm_remote_api(self) -> PMMRemoteAPI:
         """Return a PMMRemoteAPI instance."""
-        return PMMRemoteAPI(endpoint="http://localhost")
+        return PMMRemoteAPI(endpoint="http://localhost", api_key="test-key")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

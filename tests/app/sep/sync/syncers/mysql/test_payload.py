@@ -15,10 +15,8 @@ try:
         get_table,
         parse_host_port,
     )
-except ImportError:
-    pytest.skip(
-        "skipping mysql payload tests (pymysql not installed)", allow_module_level=True
-    )
+except ImportError as exc:
+    pytest.skip(f"skipping mysql payload tests ({exc})", allow_module_level=True)
 
 
 @pytest.fixture
