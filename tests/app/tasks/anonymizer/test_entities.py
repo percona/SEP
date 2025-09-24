@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.tasks.anonymizer import PIIEntity
+from app.tasks.anonymizer.entities import PIIEntity
 
 
 @pytest.mark.parametrize(

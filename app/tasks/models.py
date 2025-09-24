@@ -15,9 +15,15 @@
 
 """Define models for the Task API."""
 
+import base64
+import gzip
+import json
+from collections import defaultdict
+from collections.abc import Generator
 from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
+from itertools import product
 from pathlib import Path
 from statistics import mean
 from typing import Any, Literal, Self
@@ -45,7 +51,7 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     UTCDatetime,
 )
-from app.tasks.anonymizer import PIIEntity
+from app.tasks.anonymizer.entities import PIIEntity
 
 TASK_ALIAS_LENGTH = 100
 
@@ -105,14 +111,45 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     :vartype CHECKSUMS: str
     """
 
-    ANY = "*"
-    ALTERS = auto()
-    ARCHIVER = auto()
-    BACKUPS = auto()
-    RESTORES = auto()
-    CHECKSUMS = auto()
-    BACKUP_MONGO = auto()
-    RESTORE_MONGO = auto()
+    ANY = "ANY"
+    ALTERS = "ALTERS"
+    ARCHIVER = "ARCHIVER"
+    BACKUPS = "BACKUPS"
+    RESTORES = "RESTORES"
+    CHECKSUMS = "CHECKSUMS"
+    BACKUP_MONGO = "BACKUP_MONGO"
+    RESTORE_MONGO = "RESTORE_MONGO"
+    BACKUP_PG = "BACKUP_PG"
+
+
+class TaskLogType(StrEnum):
+    """Define the type of task log.
+
+    :cvar STDOUT: Enum value for standard output logs.
+    :vartype STDOUT: str
+    :cvar STDERR: Enum value for standard error logs.
+    :vartype STDERR: str
+    """
+
+    STDOUT = "stdout"
+    STDERR = "stderr"
+
+
+class TaskLog(BaseModel):
+    """Define a task log line.
+
+    :param step: The task step name.
+    :type step: str
+    :param type: The type of log to stream ('stdout' or 'stderr').
+    :type type: TaskLogType
+    :param msg: The log message. If None, represents the end of the log for that step.
+    :type msg: str | None
+    """
+
+    step: str
+    type: TaskLogType
+    msg: str | None
+    offset: int = 0
 
 
 class TaskExecutionRequest(BaseModel):
@@ -322,7 +359,7 @@ class TaskBase(SQLModel):
     :param backend: The backend used for task execution. Defaults to Nomad.
     :type backend: TaskBackendEnum
     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-    :type owner: TaskOwner
+    :type owner: str
     :param is_template: Whether the task is a template. Defaults to False.
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
@@ -341,7 +378,7 @@ class TaskBase(SQLModel):
         default=TaskBackendEnum.NOMAD,
         sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
     )
-    owner: TaskOwner = SQLField(
+    owner: str = SQLField(
         default=TaskOwner.ANY,
         index=True,
     )
@@ -382,6 +419,15 @@ class TaskBase(SQLModel):
         if self.backend == TaskBackendEnum.PROXY and not self.data.get("task"):
             raise ValueError("data must contain 'task' for Proxy backend")
         return self
+
+    @property
+    def anonymized_entities(self) -> set[PIIEntity]:
+        """Return the set of PII entities to be anonymized.
+
+        :return: A set of PIIEntity members to be anonymized.
+        :rtype: set[PIIEntity]
+        """
+        return PIIEntity.decode_selection(self.anonymize_mask)
 
 
 class Task(TaskBase, BaseSQLModel, table=True):
@@ -599,6 +645,15 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         sa_type=DateTimeWithTimezone,
     )
 
+    @property
+    def is_running(self) -> bool:
+        """Check if the task is currently running.
+
+        :return: True if the task status is RUNNING, False otherwise.
+        :rtype: bool
+        """
+        return self.status == TaskHistoryStatusEnum.RUNNING
+
     async def alert_for_status(self) -> None:
         """Trigger an alert for failing statuses."""
         if self.status == TaskHistoryStatusEnum.FAILED:
@@ -620,6 +675,52 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         }
         await alert_service.trigger(alert_data)
 
+    @cached_property
+    def task_logs(self) -> dict:
+        """Return task logs."""
+        # TODO(yan): Refactor logs
+        # SEP-564
+        logs = self.execution_request.tracking.get("task_logs", {})
+        if isinstance(logs, str):
+            return json.loads(gzip.decompress(base64.b64decode(logs)))
+        return logs
+
+    def iter_logs(
+        self,
+        start_offsets: dict[str, dict[str, int]] | None = None,
+        chunk_size: int = 65536,
+        step: str | None = None,
+    ) -> Generator[TaskLog]:
+        """Yield task logs in chunks based on provided start offsets.
+
+        :param start_offsets: A dictionary containing the starting offsets for each
+            step and log type. If None, defaults to starting from the beginning.
+        :type start_offsets: dict[str, dict[str, int]] | None
+        :param chunk_size: The size of each log chunk to yield. Defaults to 65536 bytes.
+        :type chunk_size: int
+        :param step: If provided, only logs for this specific step will be yielded.
+            Defaults to None.
+        :type step: str | None
+        :yield: TaskLog objects containing log chunks.
+        :rtype: Generator[TaskLog]
+        """
+        task_logs = self.task_logs
+        if step is not None:
+            task_logs = {step: task_logs.get(step, {})}
+        start_offsets = defaultdict(dict, start_offsets or {})
+        for (cur_step, log), log_type in product(task_logs.items(), TaskLogType):
+            msg = log.get(log_type) or ""
+            for chunk_start in range(
+                start_offsets[cur_step].get(log_type, 0), len(msg), chunk_size
+            ):
+                chunk_end = chunk_start + chunk_size
+                yield TaskLog(
+                    step=cur_step,
+                    type=log_type,
+                    msg=msg[chunk_start:chunk_end],
+                    offset=chunk_end,
+                )
+
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """Represent a task history API response.
@@ -637,6 +738,24 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """
 
     task: TaskResponse
+
+    @field_validator("execution_request", mode="after")
+    @classmethod
+    def _remove_logs(cls, v: TaskExecutionRequest) -> TaskExecutionRequest:
+        """Remove logs from the execution request tracking data.
+
+        This validator ensures that any log data present in the tracking information
+        of the execution request is removed before returning the response.
+
+        :param v: The TaskExecutionRequest instance to validate.
+        :type v: TaskExecutionRequest
+        :return: The validated TaskExecutionRequest with logs removed.
+        :rtype: TaskExecutionRequest
+        """
+        # TODO(yan): Refactor logs
+        # SEP-564
+        v.tracking["task_logs"] = bool(v.tracking.get("task_logs"))
+        return v
 
 
 class TaskStats(BaseModel):
@@ -760,36 +879,6 @@ class TransformPayloadRequest(BaseModel):
 
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
-
-
-class TaskLogType(StrEnum):
-    """Define the type of task log.
-
-    :cvar STDOUT: Enum value for standard output logs.
-    :vartype STDOUT: str
-    :cvar STDERR: Enum value for standard error logs.
-    :vartype STDERR: str
-    """
-
-    STDOUT = "stdout"
-    STDERR = "stderr"
-
-
-class TaskLog(BaseModel):
-    """Define a task log line.
-
-    :param step: The task step name.
-    :type step: str
-    :param type: The type of log to stream ('stdout' or 'stderr').
-    :type type: TaskLogType
-    :param msg: The log message. If None, represents the end of the log for that step.
-    :type msg: str | None
-    """
-
-    step: str
-    type: TaskLogType
-    msg: str | None
-    offset: int = 0
 
 
 class DispatchLock(BaseSQLModel, table=True):

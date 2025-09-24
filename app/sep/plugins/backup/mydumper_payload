@@ -86,8 +86,8 @@ class BackupNotifyStatus(IntEnum):
 
 
 class MSPAction(str, Enum):
-    BACKUP = auto()
-    UPLOAD = auto()
+    BACKUP = "backup"
+    UPLOAD = "upload"
 
 
 def ftwrl_guardian(
@@ -912,6 +912,33 @@ class BaseBackup:
         """
         self.textfile_collector_write_status(backup_status)
 
+    def textfile_collector_write_enable(
+        self, alias: str, backup_enabled: bool, job_type: str
+    ) -> None:
+        """Add the enabled backup types to the textfile collector.
+
+        :param alias: Host alias.
+        :param backup_enabled: Whether the backup type is enabled.
+        :param job_type: Job type name.
+        """
+        if not self.check_textcollector_dir():
+            return
+
+        collector_file = (
+            self.backup_textfile_collector_dir
+            / f"driver.{job_type}.{BACKUP_TYPE}.{alias}.prom"
+        )
+
+        with collector_file.open("w") as outfile:
+            outfile.write(
+                f"# HELP msp_{job_type}_enabled The status of the cron\n"
+                f"# TYPE msp_{job_type}_enabled Untyped\n"
+            )
+            outfile.write(
+                f'msp_{job_type}_enabled{{type="{BACKUP_TYPE}", alias="{alias}"}} '
+                f"{1 if backup_enabled else 0}\n"
+            )
+
 
 class Backup(BaseBackup):
     """Common class for all backup types."""
@@ -981,6 +1008,8 @@ class Backup(BaseBackup):
         if not uploadme_path.is_file():
             uploadme_path.touch()
             self.logger.info("Backup marked for upload.")
+            # enable textfile collector metric
+            self.textfile_collector_write_enable(self.alias, True, "upload")
 
     def _query_mysql(self, sql: str) -> Any:
         """Execute a MySQL query and return the result.
@@ -1614,6 +1643,9 @@ class MyDumper(Backup):
         :type logger: logging.Logger, optional
         """
         super().__init__(server_data, "M", logger=logger)
+
+        #Mark the backup as enabled in the textfile collector
+        self.textfile_collector_write_enable(self.alias, True, "backup")
 
         self.daily_purge: int = server_data.get("MYDUMPER_DAILY_PURGE", 7)
         self.weekly_purge: int = server_data.get("MYDUMPER_WEEKLY_PURGE", 4)

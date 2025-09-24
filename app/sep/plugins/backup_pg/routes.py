@@ -18,34 +18,30 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.plugins.backup.deps import (
+from app.sep.plugins.backup_pg.deps import (
     BackupGeneratedTask,
     BackupsTask,
     get_backups_index_context,
     parse_backup_task_data,
 )
-from app.sep.plugins.backup.models import BackupType
+from app.sep.plugins.backup_pg.models import BackupType
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
-
-from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
-router.include_router(restore_router, prefix="/restores", tags=["restores"])
-
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def backups_index(
+async def pg_backups_index(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
 ) -> HTMLResponse:
-    """Homepage of backups plugin."""
+    """Homepage of PG backups plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/index.html",
+        name="backup_pg/index.html",
         context=context,
     )
 
@@ -53,7 +49,7 @@ async def backups_index(
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
-async def backups_create(
+async def pg_backups_create(
     request: Request,
     task: BackupGeneratedTask,
     task_api: TaskAPI,
@@ -64,7 +60,7 @@ async def backups_create(
         "/",
         json=task.model_dump(),
     )
-    task_path = request.url_for("backups_detail", task_name=task.name)
+    task_path = request.url_for("pg_backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -72,7 +68,7 @@ async def backups_create(
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def backups_detail(
+async def pg_backups_detail(
     task: BackupsTask,
     request: Request,
     context: DefaultContext,
@@ -123,7 +119,7 @@ async def backups_detail(
 
     try:
         services = await inventory_api.get(
-            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+            "/services/", params={"service_type": ServiceTypeEnum.POSTGRESQL}
         )
         context["services"] = services
     except HTTPException:
@@ -131,7 +127,7 @@ async def backups_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/details.html",
+        name="backup_pg/details.html",
         context=context,
     )
 
@@ -141,7 +137,7 @@ async def backups_detail(
     dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
 )
-async def backups_execute(
+async def pg_backups_execute(
     request: Request,
     task: BackupsTask,
     tasks_api: TaskAPI,
@@ -152,42 +148,5 @@ async def backups_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    task_path = request.url_for("backups_detail", task_name=task.name)
+    task_path = request.url_for("pg_backups_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post(
-    "/{task_name}/update",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
-    response_class=RedirectResponse,
-)
-async def backups_update(
-    request: Request,
-    task_name: str,
-    updated_task: BackupGeneratedTask,
-    tasks_api: TaskAPI,
-) -> RedirectResponse:
-    """Update backups task."""
-    logger.debug("Updating backups task: %s", updated_task)
-    await tasks_api.put(
-        f"/{task_name}",
-        json=updated_task.model_dump(),
-    )
-    return RedirectResponse(
-        request.url_for("backups_detail", task_name=updated_task.name),
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
-@router.post(
-    "/{task_name}/delete",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
-    response_class=RedirectResponse,
-)
-async def backups_delete(
-    task: BackupsTask,
-    tasks_api: TaskAPI,
-) -> RedirectResponse:
-    """Delete backups task."""
-    await tasks_api.delete(f"/{task.name}")
-    return RedirectResponse("/backups", status_code=status.HTTP_303_SEE_OTHER)

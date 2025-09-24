@@ -1,6 +1,6 @@
 [project]
 name = "sep"
-version = "0.6.2"
+version = "0.7.0"
 description = "SEP: Services Enablement Platform"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
@@ -119,6 +119,24 @@ optional = true
 
 [tool.poetry.group.redis.dependencies]
 kombu = {extras = ["redis"], version = "^5.5.3"}
+
+[tool.poetry.group.spacy_en_model_sm]
+optional = true
+
+[tool.poetry.group.spacy_en_model_sm.dependencies]
+en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"}
+
+[tool.poetry.group.spacy_en_model_md]
+optional = true
+
+[tool.poetry.group.spacy_en_model_md.dependencies]
+en-core-web-md = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl"}
+
+[tool.poetry.group.spacy_en_model_lg]
+optional = true
+
+[tool.poetry.group.spacy_en_model_lg.dependencies]
+en-core-web-lg = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl"}
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
