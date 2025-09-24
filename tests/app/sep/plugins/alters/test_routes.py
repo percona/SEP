@@ -111,17 +111,24 @@ def test_alters_detail(
         [],
         [],
         {},
+        {},
+        {},
         {"address1": "host1", "address2": "host2"},  # for /hosts/
     ]
     expected_awaits = [
         call(f"/{created_task.name}/history/"),
         call(f"/{created_task.name}-dry-run/history/"),
+        call(f"/{created_task.name}-pre-checks/history/"),
         call(
             f"/{created_task.name}/history/",
             params={"status": TaskHistoryStatusEnum.RUNNING},
         ),
         call(
             f"/{created_task.name}-dry-run/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        ),
+        call(
+            f"/{created_task.name}-pre-checks/history/",
             params={"status": TaskHistoryStatusEnum.RUNNING},
         ),
         call(f"/stats/{created_task.name}"),
