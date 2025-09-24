@@ -90,7 +90,7 @@ Command line options:
    --pid                   pt-stalk PID file
    --log                   pt-stalk log file
    -d, --dest              Destination for the summaries.
-                           Default: .$(pwd)/$(hostname)
+                           Default: $(pwd)/$(hostname)
    --iterations            How many iterations to run
    --sleep                 Sleep time between iterations
    --daemon                Run pt-stalk in daemon mode
@@ -160,6 +160,11 @@ while [[ -n "$*" ]]; do
       --)
          shift 1
          break
+         ;;
+      # Need this to catch options mess up that getopt does not recognize
+      *)
+         echo "Unrecognized option '$1'"
+         usage 1
          ;;
    esac
 done

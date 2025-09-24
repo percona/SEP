@@ -103,6 +103,7 @@ optional = true
 
 [tool.poetry.group.syncmysql.dependencies]
 pymysql = "^1.1.1"
+myloginpath = "^0.0.4"
 
 [tool.poetry.group.postgresql]
 optional = true
@@ -271,7 +272,7 @@ order-by-type = false
 "app/core/config.py" = ["ARG003"]
 "app/core/utils/fields.py" = ["TRY004"] # Pydantic validation code should raise ValueError
 "celery.py" = ["ARG001"]
-"test_*.py" = ["S", "ARG001", "ARG002", "ANN"]
+"test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 
 

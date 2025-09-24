@@ -31,7 +31,13 @@ $(document).ready(function() {
 
         const eventSource = new EventSource(`/stream-logs/${taskId}?${offsetQueryString}`);
         eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch (e) {
+                console.warn("Non-JSON log chunk, ignoring:", event.data);
+                return;
+            }
             console.log(`Received log message for task ${taskId}:`, data);
 
             const {
@@ -40,6 +46,11 @@ $(document).ready(function() {
                 type,
                 offset
             } = data;
+
+            if (!msg || !step || !type || offset === undefined) {
+                console.warn("Ignoring malformed log chunk, missing fields:", data);
+                return;
+            }
 
             const offsetKey = `${step}_${type}`;
             if (offset <= (lastOffsets[taskId][offsetKey] || 0)) return;
@@ -133,6 +144,32 @@ $(document).ready(function() {
 
                 loadedCompletedTasks.add(taskId);
             }
+        });
+
+        eventSource.addEventListener('sep-error', function(event) {
+            let payload;
+            try {
+                payload = JSON.parse(event.data);
+            } catch {
+                payload = {
+                    detail: String(event.data || 'Unknown error')
+                };
+            }
+            console.error(`SSE server error for task ${taskId}:`, payload);
+
+            const statusEl = $(`
+                    <div class="status">
+                        <div class="failed">
+                            <span class="badge material-symbols-outlined">chat_error</span>
+                            <span class="label">Stream error</span>
+                        </div>
+                    </div>
+                `);
+
+            $logConsole.find('.log-footer .log-tabs').append(statusEl);
+            $logConsole.addClass('failed');
+
+            eventSource.close();
         });
 
         eventSource.onerror = function(e) {

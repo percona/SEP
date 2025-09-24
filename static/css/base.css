@@ -1325,7 +1325,8 @@ footer .link svg {
     color: var(--successContrast);
 }
 
-.status .error {
+.status .error,
+.status .failed {
     color: var(--errorContrast);
 }
 
@@ -1341,7 +1342,8 @@ footer .link svg {
     background: var(--successSurface);
 }
 
-.error .badge {
+.error .badge,
+.failed .badge {
     background: var(--errorSurface);
 }
 

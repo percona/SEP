@@ -1,0 +1,1 @@
+Warning: The query is a CTE expression. Profiling of CTE expressions is only allowed if option --force is set. Skipping profiling.

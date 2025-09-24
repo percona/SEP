@@ -227,11 +227,38 @@ def get_default_context(
 DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
 
 
-# TODO(yan): Proper SDK
-# SEP-130
-async def get_inventory_api(user: CurrentUser) -> RemoteAPI:
+async def get_inventory_client(request: Request) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Inventory API.
 
+    :param request: The HTTP request object.
+    :type request: Request
+    :return: An instance of `RemoteAPI` configured for the Inventory service, including
+        the endpoint, API key, and SSL settings.
+    :rtype: RemoteAPI
+    """
+    return getattr(
+        request.app.state, "inventory_api", None
+    ) or await settings.get_remote_api(
+        endpoint=sep_settings.INVENTORY_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=inventory_settings.SSL_KEYFILE,
+        ssl_certfile=inventory_settings.SSL_CERTFILE,
+        logger_name="inventory_api",
+    )
+
+
+InventoryClient = Annotated[RemoteAPI, Depends(get_inventory_client)]
+
+
+# TODO(yan): Proper SDK
+# SEP-130
+async def get_inventory_api(
+    inventory_client: InventoryClient, user: CurrentUser
+) -> AsyncGenerator[RemoteAPI]:
+    """Construct a `RemoteAPI` instance for interacting with the Inventory API.
+
+    :param inventory_client: The Inventory API client.
+    :type inventory_client: RemoteAPI
     :param user: The current authenticated user, from which the access token is
         extracted.
     :type user: User
@@ -239,23 +266,43 @@ async def get_inventory_api(user: CurrentUser) -> RemoteAPI:
         the endpoint, API key, and SSL settings.
     :rtype: RemoteAPI
     """
-    api = RemoteAPI(
-        endpoint=sep_settings.INVENTORY_ENDPOINT,
-        api_key=user.access_token,
-        ssl_cafile=settings.SSL_CAFILE,
-        ssl_keyfile=inventory_settings.SSL_KEYFILE,
-        ssl_certfile=inventory_settings.SSL_CERTFILE,
-    )
-    api.session = await settings.get_extra_client_session(api.endpoint, api.api_key)
-    return api
+    with inventory_client.auth(user.access_token) as authenticated_api:
+        yield authenticated_api
 
 
 InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 
 
-async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
+async def get_tasks_client(request: Request) -> RemoteAPI:
     """Construct a `RemoteAPI` instance for interacting with the Tasks API.
 
+    :param request: The HTTP request object.
+    :type request: Request
+    :return: An instance of `RemoteAPI` configured for the Tasks service, including
+        the endpoint, API key, and SSL settings.
+    :rtype: RemoteAPI
+    """
+    return getattr(
+        request.app.state, "tasks_api", None
+    ) or await settings.get_remote_api(
+        endpoint=sep_settings.TASKS_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=tasks_settings.SSL_KEYFILE,
+        ssl_certfile=tasks_settings.SSL_CERTFILE,
+        logger_name="tasks_api",
+    )
+
+
+TasksClient = Annotated[RemoteAPI, Depends(get_tasks_client)]
+
+
+async def get_tasks_api(
+    tasks_client: TasksClient, user: CurrentUser
+) -> AsyncGenerator[RemoteAPI]:
+    """Construct a `RemoteAPI` instance for interacting with the Tasks API.
+
+    :param tasks_client: The Tasks API client.
+    :type tasks_client: RemoteAPI
     :param user: The current authenticated user, from which the access token is
         extracted.
     :type user: User
@@ -263,15 +310,8 @@ async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
         the endpoint, API key, and SSL settings.
     :rtype: RemoteAPI
     """
-    api = RemoteAPI(
-        endpoint=sep_settings.TASKS_ENDPOINT,
-        api_key=user.access_token,
-        ssl_cafile=settings.SSL_CAFILE,
-        ssl_keyfile=tasks_settings.SSL_KEYFILE,
-        ssl_certfile=tasks_settings.SSL_CERTFILE,
-    )
-    api.session = await settings.get_extra_client_session(api.endpoint, api.api_key)
-    return api
+    with tasks_client.auth(user.access_token) as authenticated_api:
+        yield authenticated_api
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]

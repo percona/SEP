@@ -105,11 +105,7 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         :return: The RemoteAPI client for PagerDuty.
         :rtype: RemoteAPI
         """
-        remote_api = RemoteAPI(endpoint=self.API_ENDPOINT)
-        remote_api.session = await settings.get_extra_client_session(
-            remote_api.endpoint
-        )
-        return remote_api
+        return await settings.get_remote_api(endpoint=self.API_ENDPOINT)
 
     @validate_call
     async def send_alert(self, alert: PagerDutyAlert) -> None:
