@@ -78,6 +78,12 @@
         </button>
         <button type="submit"
                 class="text medium send-button submitButton"
+                form="{{ task.name }}-pre-checks-send">
+            <span class="material-symbols-outlined">play_arrow</span>
+            <span class="label">Pre-checks run</span>
+        </button>
+        <button type="submit"
+                class="text medium send-button submitButton"
                 form="{{ task.name }}-dry-run-send">
             <span class="material-symbols-outlined">play_arrow</span>
             <span class="label">Dry run</span>
@@ -107,6 +113,13 @@
             </button>
         {% endif %}
     </div>
+</form>
+<form class="send-form"
+      id="{{ task.name }}-pre-checks-send"
+      data-confirm-message='Are you sure you want to run pre-checks for "{{ task.name }}"?'
+      method="post"
+      action="{{ task.pre_checks_url }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
 <form class="send-form"
       id="{{ task.name }}-dry-run-send"

@@ -1,0 +1,25 @@
+Unrecognized option 'mysql'
+Usage: mysql_query_tuning.sh \[OPTIONS\]
+Collects data for MySQL query tuning.
+
+This snippet runs set of MySQL queries to collect data for query tuning.
+It takes a SQL query as input, either directly or from a file, and writes
+diagnostic queries to a file "queries.sql" in the specified destination directory.
+If option --execute is set, it will execute the diagnostic queries and write
+the results to a file "results.txt". Finally, it will compress the results into a tar.gz file.
+
+Command line options:
+
+   --defaults-file  Path to MySQL defaults-file
+   -q, --query      SQL query to analyze for performance tuning
+   -f, --file       Path to a file containing the SQL query to analyze
+   -D, --database   Database to use for the query tuning
+   -d, --dest       Destination directory for the diagnostic queries file and results
+                    Default: .+/{{hostname}}-{{date}}-\d\d-\d\d-\d\d
+   -p, --profile    Profile the query.
+                    Default: 0
+   -F, --force      Force profiling of CTE expressions.
+                    Default: 0
+   -e, --execute    Execute diagnostic queries.
+                    Default: 0
+   -h, --help       Show this help message
