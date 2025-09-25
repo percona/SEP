@@ -4,6 +4,7 @@
 # title: "pt-summary"
 # description: "Executes pt-summary command"
 # allow_extra_args: true
+# sudo: always
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -13,7 +14,7 @@
 #    type: str
 #    label: Destination for the summaries
 #    description: Destination for the summaries
-#    default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+#    default: ".$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 #  - name: save-samples
 #    type: bool
 #    label: Save samples
@@ -101,8 +102,8 @@ fi
 
 if [ $SAVE_SAMPLES -eq 1 ]; then
    mkdir -p "${PTDEST}"
-   sudo pt-summary ${DEFAULTS_FILE} --save-samples="${PTDEST}" "$@"
+   pt-summary ${DEFAULTS_FILE} --save-samples="${PTDEST}" "$@"
    tar czf "${PTDEST}.tar.gz" -C "$(dirname ${PTDEST})" "$(basename ${PTDEST})"
 else
-   sudo pt-summary ${DEFAULTS_FILE} "$@"
+   pt-summary ${DEFAULTS_FILE} "$@"
 fi

@@ -339,7 +339,7 @@ class BaseHTMLElement(BaseHTMLEntity, ABC):
 
     @staticmethod
     @validate_call
-    @ttl_cache(ttl=_TWENTY_FOUR_HOURS, maxsize=64)
+    @ttl_cache(ttl=_TWENTY_FOUR_HOURS, maxsize=32)
     def _get_attributes_str(attributes: tuple[tuple[str, Hashable], ...]) -> str:
         """Convert a list of attribute-value pairs into a string of HTML attributes.
 

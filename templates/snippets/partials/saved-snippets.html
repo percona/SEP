@@ -28,11 +28,9 @@
                     <td>{{ snippet.reason }}</td>
                     <td class="actions-cell">
                         <div class="info-delete-container flex">
-                            <form id="{{ snippet.filename }}-info"
-                                  method="get"
-                                  action="{{ snippet.filename }}">
+                            <a href="{{ snippet.filename }}" id="{{ snippet.filename }}-info">
                                 <button title="Detail" class="material-symbols-outlined info-button">info</button>
-                            </form>
+                            </a>
                             {% include "snippets/partials/download-approve.html" %}
                         </div>
                     </td>

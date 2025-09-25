@@ -17,6 +17,7 @@
 
 __all__ = ["BaseSnippetArgs", "Snippet", "SnippetExecutionMeta"]
 
+
 import hashlib
 import json
 import logging
@@ -50,6 +51,7 @@ from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils import (
     json_serializer,
+    run_pydantic_type_validator,
     ttl_cache,
     utc_now,
 )
@@ -61,8 +63,13 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.pydantic import CustomFieldMetadata
-from app.sep.snippets.config import SnippetFilterType, snippets_settings
+from app.sep.snippets.config import (
+    SnippetFilterType,
+    snippets_settings,
+    SnippetSudoOption,
+)
 from app.sep.snippets.forms import (
+    CheckboxInputElement,
     FieldsetElement,
     FormElement,
     SelectElement,
@@ -84,6 +91,13 @@ EXTRA_ARGS_INPUT = TextInputElement(
     placeholder="e.g. --verbose",
     title="Any extra args to pass to the snippet execution command",
     label="Extra Args",
+)
+SUDO_INPUT_NAME = "-sudo-"
+SUDO_INPUT = CheckboxInputElement(
+    name=SUDO_INPUT_NAME,
+    title="Execute the snippet with sudo",
+    label="Use sudo",
+    id="sudoCheckbox",
 )
 
 logger = logging.getLogger(__name__)
@@ -186,6 +200,7 @@ class BaseSnippetArgs(BaseModel):
     """
 
     extra_args_field: ClassVar[str] = "extra_args"
+    sudo_field: ClassVar[str] = "sudo"
     executor_host: NonEmptyStr = Field(
         validation_alias=EXECUTOR_HOSTS_INPUT_NAME, exclude=True
     )
@@ -199,7 +214,7 @@ class BaseSnippetArgs(BaseModel):
         args = [
             arg
             for field_identifier, value in self.model_dump(
-                exclude={self.extra_args_field}, exclude_none=True
+                exclude={self.extra_args_field, self.sudo_field}, exclude_none=True
             ).items()
             for arg in self.format_args(field_identifier, value)
         ]
@@ -326,7 +341,7 @@ class Snippet(BaseSQLModel, table=True):
         """
         return self.meta.get("description", "")
 
-    @property
+    @cached_property
     def allow_extra_args(self) -> bool:
         """Determine whether extra arguments are allowed for the snippet.
 
@@ -338,6 +353,20 @@ class Snippet(BaseSQLModel, table=True):
         return self.meta.get(
             "allow_extra_args", snippets_settings.META.DEFAULT_ALLOW_EXTRA_ARGS
         )
+
+    @cached_property
+    def sudo(self) -> SnippetSudoOption:
+        """Get the sudo option for the snippet.
+
+        :return: The sudo option for the snippet. Defaults to the value specified in the
+            snippets settings if not explicitly set in the metadata or if the value is
+            invalid.
+        :rtype: SnippetSudoOption
+        """
+        try:
+            return run_pydantic_type_validator(SnippetSudoOption, self.meta.get("sudo"))
+        except ValidationError:
+            return snippets_settings.META.DEFAULT_SUDO_OPTION
 
     @cached_property
     def path(self) -> Path:
@@ -481,6 +510,7 @@ class Snippet(BaseSQLModel, table=True):
             json_serializer(parameters, sort_keys=True),
             executor_hosts,
             add_extra_args_field=self.allow_extra_args,
+            add_sudo_field=self.sudo == SnippetSudoOption.OPTIONAL,
             form_action=form_action,
             disabled=not self.can_execute,
         )
@@ -500,6 +530,7 @@ class Snippet(BaseSQLModel, table=True):
         return self._get_execution_model(
             json_serializer(parameters, sort_keys=True),
             add_extra_args_field=self.allow_extra_args,
+            add_sudo_field=self.sudo == SnippetSudoOption.OPTIONAL,
         )
 
     @staticmethod
@@ -539,7 +570,7 @@ class Snippet(BaseSQLModel, table=True):
             return {}
 
     @staticmethod
-    @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
+    @ttl_cache(ttl=_ONE_HOUR, maxsize=8)
     def _get_parameters_from_json(
         parameters_json: str,
     ) -> SnippetMetaParametersValidationResult:
@@ -574,12 +605,13 @@ class Snippet(BaseSQLModel, table=True):
 
     @staticmethod
     @validate_call
-    @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
+    @ttl_cache(ttl=_ONE_HOUR, maxsize=8)
     def _to_form(
         parameters_json: str,
         executor_hosts: frozenset[str],
         *,
-        add_extra_args_field: bool,
+        add_extra_args_field: bool = False,
+        add_sudo_field: bool = False,
         form_action: str = "",
         disabled: bool = False,
     ) -> str:
@@ -596,8 +628,11 @@ class Snippet(BaseSQLModel, table=True):
             executed. This will be coerced to a frozenset for caching purposes.
         :type executor_hosts: frozenset[str]
         :param add_extra_args_field: Whether to include an extra arguments field in the
-            form.
+            form. Defaults to `False`.
         :type add_extra_args_field: bool
+        :param add_sudo_field: Whether to include a sudo checkbox in the form.
+            Defaults to `False`.
+        :type add_sudo_field: bool
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
@@ -622,6 +657,8 @@ class Snippet(BaseSQLModel, table=True):
                 logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
         if add_extra_args_field:
             fields.append(EXTRA_ARGS_INPUT)
+        if add_sudo_field:
+            fields.append(SUDO_INPUT)
         logger.debug("Generated snippet form fields from params: %s", fields)
         if fields:
             fieldsets.append(
@@ -640,9 +677,12 @@ class Snippet(BaseSQLModel, table=True):
         ).to_html()
 
     @staticmethod
-    @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
+    @ttl_cache(ttl=_ONE_HOUR, maxsize=8)
     def _get_execution_model(
-        parameters_json: str, *, add_extra_args_field: bool
+        parameters_json: str,
+        *,
+        add_extra_args_field: bool = False,
+        add_sudo_field: bool = False,
     ) -> type[BaseSnippetArgs]:
         """Generate a Pydantic model for validating snippet execution parameters.
 
@@ -652,8 +692,11 @@ class Snippet(BaseSQLModel, table=True):
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
         :param add_extra_args_field: Whether to include an extra arguments field in the
-            model.
+            model. Defaults to `False`.
         :type add_extra_args_field: bool
+        :param add_sudo_field: Whether to include a sudo field in the model. Defaults to
+            `False`.
+        :type add_sudo_field: bool
         :return: A Pydantic model class for validating the snippet's execution
             parameters.
         :rtype: type[BaseSnippetArgs]
@@ -673,11 +716,22 @@ class Snippet(BaseSQLModel, table=True):
                 positional_fields[field_name] = field
             else:
                 fields[field_name] = field
+
         if add_extra_args_field:
             fields[BaseSnippetArgs.extra_args_field] = (
                 ExtraArgsField,
                 Field(default_factory=list, alias=EXTRA_ARGS_INPUT_NAME),
             )
+
+        if add_sudo_field:
+            fields[BaseSnippetArgs.sudo_field] = (
+                bool,
+                Field(
+                    default=False,
+                    alias=SUDO_INPUT_NAME,
+                ),
+            )
+
         return create_model(
             "SnippetArgs",
             **fields,

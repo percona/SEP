@@ -20,7 +20,7 @@ __all__ = ["SnippetFilter", "SnippetFilterType", "snippets_settings"]
 import re
 from collections import OrderedDict
 from contextlib import suppress
-from enum import StrEnum
+from enum import Enum, StrEnum
 from functools import lru_cache
 from pathlib import Path
 from string import Template
@@ -49,6 +49,14 @@ from app.core.utils.fields import (
     RequiredStr,
     URL,
 )
+
+
+class SnippetSudoOption(EnumFieldMixin, Enum):
+    """Enumerate options for executing a snippet with sudo."""
+
+    NEVER = 0
+    ALWAYS = 1
+    OPTIONAL = 2
 
 
 class SnippetFilterType(EnumFieldMixin, StrEnum):
@@ -217,6 +225,9 @@ class SnippetsMetaOptions(BaseModel):
     :param DEFAULT_ALLOW_EXTRA_ARGS: Whether to allow extra arguments by default.
         Defaults to `False`.
     :type DEFAULT_ALLOW_EXTRA_ARGS: bool
+    :param DEFAULT_SUDO_OPTION: The default option for executing snippets with sudo.
+        Defaults to `SnippetSudoOption.NEVER`.
+    :type DEFAULT_SUDO_OPTION: SnippetSudoOption
     :param DEFAULT_ARG_FORMAT: The default format for arguments. Use `${name}` and
         `${value}` as placeholders. Defaults to `"--$name $value"`.
     :type DEFAULT_ARG_FORMAT: RequiredStr
@@ -231,6 +242,7 @@ class SnippetsMetaOptions(BaseModel):
     DELIMITER: RequiredStr = "---"
     STOP_SEARCH_PATTERN: re.Pattern[str] = re.compile(r"^[^#].+$")
     DEFAULT_ALLOW_EXTRA_ARGS: bool = False
+    DEFAULT_SUDO_OPTION: SnippetSudoOption = SnippetSudoOption.NEVER
     DEFAULT_ARG_FORMAT: RequiredStr = "--$name $value"
     IGNORE_INVALID_PARAMETERS: bool = False
 

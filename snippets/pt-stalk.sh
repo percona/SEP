@@ -4,6 +4,7 @@
 # title: "pt-stalk"
 # description: "Executes pt-stalk command"
 # allow_extra_args: true
+# sudo: always
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -177,14 +178,14 @@ case "$ACTION" in
    start)
       mkdir -p "${PTDEST}"
       if [ $IS_DAEMON -eq 1 ]; then
-         sudo pt-stalk "${DEFAULTS_FILE}" --daemonize --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
+         pt-stalk "${DEFAULTS_FILE}" --daemonize --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
       else
-         sudo pt-stalk "${DEFAULTS_FILE}" --no-stalk --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
+         pt-stalk "${DEFAULTS_FILE}" --no-stalk --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
          compress_data
       fi
       ;;
    stop)
-      sudo kill `cat ${PID}` && compress_data
+      kill `cat ${PID}` && compress_data
       ;;
    *)
       echo "Unrecognized action '$ACTION'"

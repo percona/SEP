@@ -14,7 +14,7 @@ from app.core.exceptions import (
 from app.core.utils import remove_falsy_values_from_dict
 from app.sep.deps import CurrentUser, get_base_url, SessionDep
 from app.sep.middleware import messages
-from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
@@ -254,9 +254,14 @@ def get_snippet_execution_request_meta(
     :return: The prepared execution metadata.
     :rtype: SnippetExecutionMeta
     """
+    interpreter = snippet.execution_interpreter
+    if snippet.sudo == SnippetSudoOption.ALWAYS or getattr(
+        execution_args, execution_args.sudo_field, False
+    ):
+        interpreter = f"sudo {interpreter}"
     return SnippetExecutionMeta(
         target=execution_args.executor_host,
-        interpreter=snippet.execution_interpreter,
+        interpreter=interpreter,
         snippet_source=snippet_source,
         access_token=user.access_token,
         snippet_filename=snippet.filename,

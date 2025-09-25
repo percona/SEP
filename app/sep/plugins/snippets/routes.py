@@ -146,7 +146,8 @@ async def snippets_execute(
 ) -> RedirectResponse:
     """Execute a snippet."""
     logger.info(
-        "Executing snippet %r with args: %r",
+        "Executing [%s] snippet %r with args: %r",
+        execution_request_meta.interpreter,
         snippet.filename,
         execution_request_meta.args,
     )

@@ -48,6 +48,10 @@
                 <pre>{{ snippet.execution_interpreter }}</pre>
             </dd>
         {% endif %}
+        <dt class="sudo{{ snippet.sudo.name|capitalize }}">Sudo</dt>
+        <dd class="sudo{{ snippet.sudo.name|capitalize }}">
+            {{ snippet.sudo.name|capitalize }}
+        </dd>
         <dt>Created at</dt>
         <dd class="relativeTime">
             {{ snippet.created_at|utc_isoformat }}

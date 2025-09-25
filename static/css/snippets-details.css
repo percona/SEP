@@ -100,3 +100,13 @@ label:has(> input[type="checkbox"]:disabled)>.checkmark {
     color: #d22929;
     font-weight: 600;
 }
+
+.sudoAlways {
+    color: #d22929;
+    font-weight: 600;
+}
+
+.sudoOptional {
+    color: #fd720c;
+    font-weight: 500;
+}
