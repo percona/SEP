@@ -257,6 +257,7 @@ SYSTEM_TASKS = [
         data=NOMAD_EXEC_ARTIFACT,
         protected=True,
         anonymize_mask=None,
+        output_files_path="run-script/local/output_files",
     ),
 ]
 

@@ -110,3 +110,27 @@ label:has(> input[type="checkbox"]:disabled)>.checkmark {
     color: #fd720c;
     font-weight: 500;
 }
+
+.download-file-button.loading {
+    opacity: 0.75;
+    cursor: not-allowed;
+}
+
+.download-file-button.loading .material-symbols-outlined {
+    animation: pulse 1s infinite ease-in-out;
+    display: initial;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: .5
+    }
+
+    50% {
+        opacity: 1
+    }
+
+    100% {
+        opacity: .5
+    }
+}

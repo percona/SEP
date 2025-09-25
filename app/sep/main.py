@@ -123,11 +123,13 @@ if {
     "backup_mongo",
     "checksums",
 } & imported_plugins:
+    from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
+    sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
 

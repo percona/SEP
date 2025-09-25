@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.auth.exceptions import HTTPForbiddenException
@@ -63,12 +63,25 @@ async def snippets_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve and display information about a snippet."""
+    history_tasks = await tasks_api.get(
+        "/exec-artifact/history/", params={"snippet_filename": snippet.filename}
+    )
+    for history in history_tasks:
+        try:
+            history["available_files"] = await tasks_api.get(
+                f"/history/{history['id']}/files/"
+            )
+        except HTTPException:
+            logger.debug(
+                "Could not fetch available files for task history %s",
+                history["id"],
+                exc_info=True,
+            )
+            history["available_files"] = []
     context |= {
         "snippet": snippet,
         "executor_hosts": list(executor_hosts.values()),
-        "history_tasks": await tasks_api.get(
-            "/exec-artifact/history/", params={"snippet_filename": snippet.filename}
-        ),
+        "history_tasks": history_tasks,
         "running_tasks": await tasks_api.get(
             "/exec-artifact/history/",
             params={
