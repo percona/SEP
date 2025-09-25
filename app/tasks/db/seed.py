@@ -207,19 +207,24 @@ NOMAD_EXEC_ARTIFACT = {
                         "command": "xargs",
                         "args": [
                             "--arg-file",
-                            "args_file",
+                            "${NOMAD_TASK_DIR}/args_file",
                             "env",
                             "-S",
                             "${NOMAD_META_interpreter}",
                             "${NOMAD_TASK_DIR}/script",
                         ],
+                        "work_dir": "${NOMAD_TASK_DIR}/output_files",
                     },
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                     "Templates": [
                         {
                             "EmbeddedTmpl": '{{ env "NOMAD_META_args" }}',
-                            "DestPath": "args_file",
+                            "DestPath": "local/args_file",
+                        },
+                        {
+                            "EmbeddedTmpl": ".keep",
+                            "DestPath": "local/output_files/.keep",
                         },
                     ],
                     "Artifacts": [
