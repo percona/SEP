@@ -154,7 +154,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "backup_type": server_config["BACKUP_TYPE"],
         "service_id": None,
         "host": server_config["HOST"],
-        "port": server_config.get("PORT") or 3306,
+        "port": server_config.get("PORT"),
     }
 
     if "dir_encrypt_config" in server_config:
@@ -224,7 +224,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "hostname": meta["target"],
         "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT") or 3306,
+        "port": backup_server.get("PORT"),
         "upload": ", ".join(backup_server.get("UPLOAD")),
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
     }
