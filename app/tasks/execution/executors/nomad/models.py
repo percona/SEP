@@ -923,7 +923,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             "Could not decode file content, sending raw bytes",
                             exc_info=True,
                         )
-                    yield content
+                yield content
 
     async def list_files(self, queue_item: TaskHistory, path: str) -> dict[str, int]:
         """List files in a directory on the allocation's filesystem.
