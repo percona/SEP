@@ -221,6 +221,7 @@ def get_default_context(
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "messages": messages.get_messages(request),
         "pmm_url": sep_settings.PMM_FRONTEND,
+        "footer_text": sep_settings.FOOTER_TEXT,
     }
 
 

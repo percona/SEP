@@ -18,6 +18,7 @@
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
+from string import Template
 from typing import Any, ClassVar, Literal, Self
 
 from fastapi.templating import Jinja2Templates
@@ -31,10 +32,10 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
-    NonNegativeInt,
     ValidationError,
 )
 
+from app import __summary__, __version__
 from app.core.config import (
     BaseYamlAppSettings,
     settings,
@@ -273,7 +274,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
     PMM_FRONTEND: StrHttpUrl | None = None
-    MESSAGES_LEVEL: NonNegativeInt = 0
+    FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field
     @cached_property
@@ -311,6 +312,37 @@ class SEPSettings(BaseYamlAppSettings):
         return Jinja2Templates(
             env=self.JINJA_ENVIRONMENT,
         )
+
+    @property
+    def FOOTER_TEXT(self) -> str:
+        """Return the rendered footer template.
+
+        This property renders the `FOOTER_TEMPLATE` with the current application
+        version and summary, returning the resulting string.
+
+        :return: The rendered footer string.
+        :rtype: str
+        """
+        return self.FOOTER_TEMPLATE.safe_substitute(
+            version=__version__, summary=__summary__
+        )
+
+    @field_validator("FOOTER_TEMPLATE", mode="before")
+    @classmethod
+    def coerce_footer_template(cls, v: Any) -> Any:
+        """Coerce the footer template to a Template object.
+
+        If the provided value is a string, convert it to a `Template` object. Else,
+        return it as is.
+
+        :param v: The footer template value to coerce.
+        :type v: Any
+        :return: The coerced `Template` object or the original input value.
+        :rtype: Any
+        """
+        if isinstance(v, str):
+            return Template(v)
+        return v
 
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:
