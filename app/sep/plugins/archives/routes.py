@@ -25,7 +25,7 @@ from app.sep.plugins.archives.deps import (
     get_archives_index_context,
 )
 from app.sep.plugins.archives.models import PurgeConfigItem
-from app.tasks.anonymizer import PIIEntity
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)

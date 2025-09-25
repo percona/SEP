@@ -15,18 +15,28 @@
 
 """Manage remote API interactions."""
 
+__all__ = ["BaseRemoteAPI", "RemoteAPI"]
+
 import logging
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from functools import cached_property
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar, Token
+from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
 from typing import Any, Self
 from urllib.parse import urljoin
 
-from aiohttp import ClientResponse, ClientResponseError, ClientSession, ContentTypeError
+from aiohttp import (
+    ClientResponse,
+    ClientResponseError,
+    ClientSession,
+    ClientTimeout,
+    ContentTypeError,
+    TCPConnector,
+)
 from fastapi import HTTPException
-from pydantic import computed_field, HttpUrl
+from pydantic import computed_field, Field, HttpUrl, PrivateAttr
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
@@ -53,13 +63,16 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :type logger_name: str
     """
 
-    endpoint: HttpUrl
-    verify_ssl: bool = True
-    ssl_cafile: RelativeFilePath | None = None
-    ssl_keyfile: RelativeFilePath | None = None
-    ssl_certfile: RelativeFilePath | None = None
+    endpoint: HttpUrl = Field(..., frozen=True)
+    verify_ssl: bool = Field(default=True, frozen=True)
+    ssl_cafile: RelativeFilePath | None = Field(None, frozen=True)
+    ssl_keyfile: RelativeFilePath | None = Field(None, frozen=True)
+    ssl_certfile: RelativeFilePath | None = Field(None, frozen=True)
     logger_name: str = __name__
     _session: ClientSession | None = None
+    _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
+        default_factory=lambda: ContextVar("api_extra_headers", default=None)
+    )
 
     def __hash__(self) -> int:
         """Compute the hash based on the endpoint and SSL configuration.
@@ -87,32 +100,97 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """
         if getattr(self, "_session", None) is None:
             self.logger.debug("Opening ClientSession for %s", self.base_url)
-            headers = self.headers or None
+            connector = TCPConnector(
+                ssl=self.ssl_context,
+                enable_cleanup_closed=True,
+                limit=25,
+                limit_per_host=10,
+                ttl_dns_cache=300,
+                keepalive_timeout=15,
+            )
+            timeout = ClientTimeout(total=30, connect=5, sock_connect=5, sock_read=20)
             self._session = ClientSession(
-                base_url=self.base_url, headers=headers, json_serialize=json_serializer
+                base_url=self.base_url,
+                headers=self.headers or None,
+                json_serialize=json_serializer,
+                connector=connector,
+                timeout=timeout,
             )
         return self
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Exit the asynchronous context manager.
 
         Closes the aiohttp `ClientSession` if it was initialized.
 
         :param exc_type: The exception type, if any.
-        :type exc_type: type[BaseException]
+        :type exc_type: type[BaseException] | None
         :param exc_val: The exception value, if any.
-        :type exc_val: BaseException
+        :type exc_val: BaseException | None
         :param exc_tb: The traceback, if any.
-        :type exc_tb: Any
+        :type exc_tb: TracebackType | None
         """
-        self.logger.debug("Closing ClientSession for %s", self.base_url)
-        await self._session.close()
+        if self._session and not self._session.closed:
+            self.logger.debug("Closing ClientSession for %s", self.base_url)
+            await self._session.close()
+        else:
+            self.logger.debug("ClientSession already closed for %s", self.base_url)
         self._session = None
+
+    async def open(self) -> Self:
+        """Open the asynchronous context manager.
+
+        Initializes the aiohttp `ClientSession` if not already present.
+
+        :return: The `BaseRemoteAPI` instance.
+        :rtype: BaseRemoteAPI
+        """
+        return await self.__aenter__()
+
+    async def close(self) -> None:
+        """Close the asynchronous context manager.
+
+        Closes the aiohttp `ClientSession` if it was initialized.
+        """
+        await self.__aexit__(None, None, None)
+
+    def set_extra_headers(self, extra_headers: dict[str, str] | None) -> Token:
+        """Set extra headers to be included in API requests.
+
+        :param extra_headers: A mapping of additional headers to include in requests.
+        :type extra_headers: dict[str, str] | None
+        :return: A token that can be used to reset the context variable.
+        :rtype: Token
+        """
+        return self._extra_headers.set(extra_headers)
+
+    def reset_extra_headers(self, token: Token) -> None:
+        """Reset the extra headers context variable to a previous state.
+
+        :param token: The token returned by `set_extra_headers`.
+        :type token: Token
+        """
+        self._extra_headers.reset(token)
+
+    @contextmanager
+    def extra_headers(self, extra_headers: dict[str, str] | None) -> Generator[Self]:
+        """Define context manager to temporarily set extra headers for API requests.
+
+        :param extra_headers: A mapping of additional headers to include in requests.
+        :type extra_headers: dict[str, str] | None
+        :yield: The `BaseRemoteAPI` instance with the extra headers set.
+        :rtype: Generator[Self]
+        """
+        token = self.set_extra_headers(extra_headers)
+        try:
+            yield self
+        finally:
+            self.reset_extra_headers(token)
 
     @cached_property
     def logger(self) -> logging.Logger:
@@ -138,18 +216,23 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """Set the ClientSession used in requests."""
         self._session = session
 
-    @cached_property
-    def ssl_context(self) -> SSLContext:
+    @property
+    def ssl_context(self) -> SSLContext | bool:
         """Initialize and return the SSL context for secure connections.
 
         Configures the SSL context based on the provided SSL certificate files
-        and verification settings.
+        and verification settings. If `verify_ssl` is False, returns False to disable
+        SSL verification.
 
         :return: The configured SSL context for HTTPS connections.
-        :rtype: SSLContext
+        :rtype: SSLContext | bool
         """
-        return self.create_ssl_context(
-            self.ssl_cafile, self.ssl_certfile, self.ssl_keyfile
+        return (
+            self.create_ssl_context(
+                self.ssl_cafile, self.ssl_certfile, self.ssl_keyfile
+            )
+            if self.verify_ssl
+            else False
         )
 
     @computed_field
@@ -210,7 +293,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
 
     @asynccontextmanager
     async def _request(
-        self, method: str, path: str, **kwargs: Any
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
     ) -> AsyncGenerator[ClientResponse, None]:
         """Define internal method to perform an HTTP request.
 
@@ -226,7 +312,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :rtype: AsyncGenerator[ClientResponse, None]
         """
         prepared_path = self.prepare_path(path)
-        kwargs["ssl"] = self.ssl_context if self.verify_ssl else False
+        if extra_headers := self._extra_headers.get():
+            kwargs["headers"] = kwargs.pop("headers", {}) | extra_headers
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
             self.endpoint,
@@ -256,6 +343,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                 yield line
 
     @staticmethod
+    @lru_cache(maxsize=8)
     def create_ssl_context(
         cafile: RelativeFilePath | None = None,
         certfile: RelativeFilePath | None = None,
@@ -302,11 +390,6 @@ class RemoteAPI(BaseRemoteAPI):
     :type ssl_certfile: RelativeFilePath | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
-    :param api_key: The API key for authentication. Defaults to None.
-    :type api_key: str | None
-    :param auth_scheme: The authentication scheme to use (e.g., "Bearer", "Basic").
-        Defaults to "Bearer".
-    :type auth_scheme: RequiredStr
     :param error_detail_key: The key to expect error details to be. Defaults to
         "detail".
     :type error_detail_key: RequiredStr
@@ -315,45 +398,38 @@ class RemoteAPI(BaseRemoteAPI):
     :type error_code_key: RequiredStr | None
     """
 
-    api_key: str | None = None
-    auth_scheme: RequiredStr = "Bearer"
     error_detail_key: RequiredStr = "detail"
     error_code_key: RequiredStr | None = None
 
-    def __hash__(self) -> int:
-        """Compute the hash based on the endpoint, SSL configuration, and auth data.
-
-        :return: The hash value of the remote API instance.
-        :rtype: int
-        """
-        return hash(
-            (
-                self.endpoint,
-                self.verify_ssl,
-                self.ssl_cafile,
-                self.ssl_keyfile,
-                self.ssl_certfile,
-                self.auth_scheme,
-                self.api_key,
-            )
-        )
-
     @property
     def headers(self) -> dict[str, str]:
-        """Return the headers to be used in API requests.
+        """Return the default headers to be used in API requests.
 
-        Includes content type, accept headers, and authorization with the API key.
+        Includes content type and accept headers.
 
         :return: A dictionary containing the headers for API requests.
         :rtype: dict[str, str]
         """
-        headers = {
+        return {
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        if self.api_key:
-            headers["Authorization"] = f"{self.auth_scheme} {self.api_key}"
-        return headers
+
+    @contextmanager
+    def auth(self, api_key: str, auth_scheme: str = "Bearer") -> AsyncGenerator[Self]:
+        """Define context manager to temporarily set authentication for API requests.
+
+        :param api_key: The API key to use for authentication.
+        :type api_key: str
+        :param auth_scheme: The authentication scheme to use. Defaults to "Bearer".
+        :type auth_scheme: str
+        :yield: The `RemoteAPI` instance with authentication headers set.
+        :rtype: AsyncGenerator[Self]
+        """
+        with self.extra_headers(
+            {"Authorization": f"{auth_scheme} {api_key}".strip()}
+        ) as api:
+            yield api
 
     async def request(
         self,

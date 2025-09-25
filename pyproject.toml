@@ -1,6 +1,6 @@
 [project]
 name = "sep"
-version = "0.7.0"
+version = "0.8.0"
 description = "SEP: Services Enablement Platform"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
@@ -71,7 +71,6 @@ dependencies = [
     "httpcore (>=1.0.9,<2.0.0)",
     "presidio-analyzer (>=2.2.358,<3.0.0)",
     "presidio-anonymizer (>=2.2.358,<3.0.0)",
-    "en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl"
 ]
 
 [tool.poetry]
@@ -102,6 +101,7 @@ optional = true
 
 [tool.poetry.group.syncmysql.dependencies]
 pymysql = "^1.1.1"
+myloginpath = "^0.0.4"
 
 [tool.poetry.group.postgresql]
 optional = true
@@ -120,6 +120,24 @@ optional = true
 
 [tool.poetry.group.redis.dependencies]
 kombu = {extras = ["redis"], version = "^5.5.3"}
+
+[tool.poetry.group.spacy_en_model_sm]
+optional = true
+
+[tool.poetry.group.spacy_en_model_sm.dependencies]
+en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"}
+
+[tool.poetry.group.spacy_en_model_md]
+optional = true
+
+[tool.poetry.group.spacy_en_model_md.dependencies]
+en-core-web-md = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl"}
+
+[tool.poetry.group.spacy_en_model_lg]
+optional = true
+
+[tool.poetry.group.spacy_en_model_lg.dependencies]
+en-core-web-lg = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl"}
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
@@ -246,7 +264,7 @@ order-by-type = false
 "app/core/config.py" = ["ARG003"]
 "app/core/utils/fields.py" = ["TRY004"] # Pydantic validation code should raise ValueError
 "app/tasks/celery.py" = ["ARG001"]
-"test_*.py" = ["S", "ARG001", "ARG002", "ANN"]
+"test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 
 

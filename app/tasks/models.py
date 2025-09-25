@@ -51,7 +51,7 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     UTCDatetime,
 )
-from app.tasks.anonymizer import PIIEntity
+from app.tasks.anonymizer.entities import PIIEntity
 
 TASK_ALIAS_LENGTH = 100
 
@@ -119,6 +119,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     CHECKSUMS = "CHECKSUMS"
     BACKUP_MONGO = "BACKUP_MONGO"
     RESTORE_MONGO = "RESTORE_MONGO"
+    BACKUP_PG = "BACKUP_PG"
 
 
 class TaskLogType(StrEnum):
