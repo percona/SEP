@@ -48,9 +48,9 @@
                     </th>
                     <td>{{ task["backend"].capitalize() }}</td>
                     <td class="relativeTime">{{ task["created_at"] }}</td>
-                    <td>{{ user_id_to_username.get(task.get('created_by') , 'System') if user_id_to_username is defined else '' }}</td>
+                    <td>{{ user_id_to_username.get(task.get('created_by') |string, '') if user_id_to_username is defined else '' }}</td>
                     <td>
-                        {{ user_id_to_username.get(task.get('last_updated_by') , 'System') if user_id_to_username is defined else '' }}
+                        {{ user_id_to_username.get(task.get('last_updated_by') |string, '') if user_id_to_username is defined else '' }}
                     </td>
                 </tr>
             {% endfor %}

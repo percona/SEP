@@ -33,6 +33,8 @@ from app.tasks.periodic.models import IntervalSchedule
 
 logger = logging.getLogger(__name__)
 
+SYSTEM_USER = "SYSTEM"
+
 GENERIC_NOMAD_BATCH_TEMPLATE = {
     "ID": "generic-nomad-batch",
     "Name": "generic-nomad-batch",
@@ -245,15 +247,28 @@ SYSTEM_TASKS = [
         data=GENERIC_NOMAD_BATCH_TEMPLATE,
         is_template=True,
         protected=True,
+        created_by=SYSTEM_USER,
     ),
     Task(
         name="generic-nomad-sysbatch",
         data=GENERIC_NOMAD_SYSBATCH_TEMPLATE,
         is_template=True,
         protected=True,
+        created_by=SYSTEM_USER,
     ),
-    Task(name="run-command", data=NOMAD_RUN_COMMAND, protected=True),
-    Task(name="run-python", data=NOMAD_RUN_PYTHON, is_template=False, protected=True),
+    Task(
+        name="run-command",
+        data=NOMAD_RUN_COMMAND,
+        protected=True,
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name="run-python",
+        data=NOMAD_RUN_PYTHON,
+        is_template=False,
+        protected=True,
+        created_by=SYSTEM_USER,
+    ),
 ]
 
 PERIODIC_TASKS = {
@@ -274,8 +289,6 @@ async def init_tasks_db() -> None:
         system_tasks_names = []
         for task in SYSTEM_TASKS:
             system_tasks_names.append(task.name)
-            task.created_by = None
-            task.last_updated_by = None
             created_task, created = await TaskManager.get_or_create(
                 session, task, {"name"}
             )

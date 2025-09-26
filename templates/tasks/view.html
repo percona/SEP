@@ -63,13 +63,13 @@
         {% if task.created_by %}
             <dt>Created by</dt>
             <dd>
-                {{ user_id_to_username.get(task.created_by, 'System') if user_id_to_username is defined else '' }}
+                {{ user_id_to_username.get(task.created_by|string, '') if user_id_to_username is defined else '' }}
             </dd>
         {% endif %}
         {% if task.last_updated_by %}
             <dt>Last modified by</dt>
             <dd>
-                {{ user_id_to_username.get(task.last_updated_by, 'System') if user_id_to_username is defined else '' }}
+                {{ user_id_to_username.get(task.last_updated_by|string, '') if user_id_to_username is defined else '' }}
             </dd>
         {% endif %}
         <dt>Specification</dt>
