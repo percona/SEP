@@ -115,8 +115,8 @@ async def create_task(
     return await TaskManager.create(
         session,
         task,
-        created_by=current_user.username,
-        last_edit_by=current_user.username,
+        created_by=current_user.id,
+        last_updated_by=current_user.id,
         anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner],
     )
 
@@ -136,7 +136,7 @@ async def update_task(
     """Update an existing task."""
     logger.debug("Updating task %s", existing_task.name)
     return await TaskManager.update(
-        session, existing_task, updated_task, last_edit_by=current_user.username
+        session, existing_task, updated_task, last_updated_by=current_user.id
     )
 
 
@@ -194,7 +194,7 @@ async def execute_task_name(
         task_name,
         queue_item.execution_request.eta or utc_now(),
     )
-    queue_item.executed_by = current_user.username
+    queue_item.executed_by = current_user.id
 
     root_task = await TaskManager.get_root_task(session, queue_item.task)
     executor = get_executor_for_task(root_task)

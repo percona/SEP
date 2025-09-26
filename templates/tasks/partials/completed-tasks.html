@@ -45,7 +45,7 @@
                         <td class="relativeTime code">{{ task_history.started_at }}</td>
                         <td class="relativeTime code">{{ task_history.finished_at }}</td>
                         <td class="number code">{{ task_history.duration }}</td>
-                        <td>{{ task_history.executed_by or 'System' }}</td>
+                        <td>{{ user_id_to_username.get(task_history.executed_by, 'System') if user_id_to_username is defined else '' }}</td>
                         <td class="options">
                             {%- if task_logs %}
                                 <button type="button"

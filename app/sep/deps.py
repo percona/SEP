@@ -20,6 +20,7 @@ from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
+from async_lru import alru_cache
 from fastapi import Depends, HTTPException, Request, status
 from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
@@ -256,6 +257,25 @@ async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
+
+
+@alru_cache(ttl=300)
+async def get_username_mapping() -> dict[str, str]:
+    """Create a cached mapping from user ID to username using Casdoor.
+
+    This function fetches all users from Casdoor and creates a mapping from
+    user ID to username. The result is cached for 5 minutes to avoid repeated
+    API calls to Casdoor.
+
+    :return: A dictionary mapping user IDs to usernames.
+    :rtype: dict[str, str]
+    """
+    try:
+        users = await settings.CASDOOR.get_users()
+        return {str(user["id"]): user["name"] for user in users}
+    except ValueError:
+        logger.exception("Failed to get username mapping from Casdoor")
+        return {}
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

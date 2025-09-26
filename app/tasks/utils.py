@@ -274,8 +274,8 @@ async def init_tasks_db() -> None:
         system_tasks_names = []
         for task in SYSTEM_TASKS:
             system_tasks_names.append(task.name)
-            task.created_by = "System"
-            task.last_edit_by = "System"
+            task.created_by = None
+            task.last_updated_by = None
             created_task, created = await TaskManager.get_or_create(
                 session, task, {"name"}
             )
@@ -287,7 +287,7 @@ async def init_tasks_db() -> None:
                     created_task,
                     task,
                     flag_modified_fields=["data"],
-                    last_edit_by="System",
+                    last_updated_by=None,
                 )
                 logger.info(
                     "Updated system task %s with new data: %s",
