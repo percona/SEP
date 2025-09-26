@@ -24,6 +24,7 @@ from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
+from app.api.deps import CurrentUserID
 from app.core.exceptions import HTTPBadRequestException
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -113,8 +114,8 @@ ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
 
 def prepare_task_history(
     task: ExecutableTaskDep,
+    executed_by: CurrentUserID,
     execution_data: TaskExecuteRequest | None = None,
-    executed_by: str | None = None,
 ) -> TaskHistory:
     """Prepare the history of a task execution request.
 
@@ -122,8 +123,8 @@ def prepare_task_history(
     :type task: Task
     :param execution_data: Execution details and parameters, if any.
     :type execution_data: TaskExecuteRequest | None
-    :param executed_by: The username of the user executing the task.
-    :type executed_by: str | None
+    :param executed_by: The ID of the user executing the task.
+    :type executed_by: CurrentUserID
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
     """
