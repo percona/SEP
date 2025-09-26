@@ -682,6 +682,7 @@ class BaseManager:
         updated_instance: B,
         *,
         flag_modified_fields: Sequence[str] = (),
+        **extra_fields: Any,
     ) -> T:
         """Update an existing model instance with new data and save it.
 
@@ -694,6 +695,8 @@ class BaseManager:
         :type updated_instance: B
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
+        :param extra_fields: Additional fields to be set on the model instance.
+        :type extra_fields: Any
         :return: The updated and saved instance.
         :rtype: T
         """
@@ -703,9 +706,11 @@ class BaseManager:
             existing_instance.id,
             updated_instance,
         )
-        for key, value in updated_instance.model_dump(
-            include=cls.Model.__table__.columns.keys()
-        ).items():
+        updated_data = (
+            updated_instance.model_dump(include=cls.Model.__table__.columns.keys())
+            | extra_fields
+        )
+        for key, value in updated_data.items():
             setattr(existing_instance, key, value)
         return await cls.save(
             session,
@@ -827,6 +832,7 @@ class BaseSQLModelManager(BaseManager):
         updated_instance: S,
         *,
         flag_modified_fields: Sequence[str] = (),
+        **extra_fields: Any,
     ) -> BS:
         """Update an existing model instance with new data and save it.
 
@@ -839,6 +845,8 @@ class BaseSQLModelManager(BaseManager):
         :type updated_instance: S
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
+        :param extra_fields: Additional fields to be set on the model instance.
+        :type extra_fields: Any
         :return: The updated and saved instance.
         :rtype: BS
         """
@@ -848,7 +856,9 @@ class BaseSQLModelManager(BaseManager):
             existing_instance.id,
             updated_instance,
         )
-        updated_instance_data = updated_instance.model_dump(exclude_unset=True)
+        updated_instance_data = (
+            updated_instance.model_dump(exclude_unset=True) | extra_fields
+        )
         existing_instance.sqlmodel_update(updated_instance_data)
         return await cls.save(
             session,
@@ -878,6 +888,7 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
         updated_instance: B,
         *,
         flag_modified_fields: Sequence[str] = (),
+        **extra_fields: Any,
     ) -> T:
         """Update an existing child model instance, ensuring parent association.
 
@@ -890,6 +901,8 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
         :type updated_instance: B
         :param flag_modified_fields: Fields to be flagged as modified before saving.
         :type flag_modified_fields: Sequence[str]
+        :param extra_fields: Additional fields to be set on the model instance.
+        :type extra_fields: Any
         :return: The updated and saved child instance.
         :rtype: T
         :raises HTTPBadRequestException: If the associated parent instance does not
@@ -907,4 +920,5 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
             existing_instance,
             updated_instance,
             flag_modified_fields=flag_modified_fields,
+            **extra_fields,
         )
