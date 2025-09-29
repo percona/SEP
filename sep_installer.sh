@@ -131,7 +131,12 @@ generate_secrets() {
 
 get_engine_command() {
 	case "${CONTAINER_ENGINE}" in
-		docker) echo "${CONTAINER_ENGINE}" compose --file "${INSTALL_DIR}"/compose.yaml --project-name sep;;
+		docker)
+			set +o errexit;
+			"${CONTAINER_ENGINE}" compose --file 2>&1 | grep -Fq 'unknown flag: --file' && \
+				echo "${CONTAINER_ENGINE}"-compose --file "${INSTALL_DIR}"/compose.yaml --project-name sep || \
+				echo "${CONTAINER_ENGINE}" compose --file "${INSTALL_DIR}"/compose.yaml --project-name sep;
+			set -o errexit;;
 		podman) echo "${CONTAINER_ENGINE}"-compose --file "${INSTALL_DIR}"/compose.yaml --project-name sep;;
 		*) return 1
 	esac
@@ -203,6 +208,8 @@ generate_tls() {
 	generate_secrets
 
 	cd "${INSTALL_DIR}"/certs || exit 3
+
+	find . -type f -perm 0444 -exec chmod -f u+w {} \;
 
 	# Generate JWT for Casdoor
 	openssl genpkey -algorithm RSA -out sep_token_jwt_key.key -pkeyopt rsa_keygen_bits:4096
