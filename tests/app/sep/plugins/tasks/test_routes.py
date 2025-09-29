@@ -7,6 +7,7 @@ from fastapi import status
 
 from app.sep.deps import (
     get_task_by_name,
+    get_username_mapping,
 )
 from app.sep.main import sep_app
 from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
@@ -23,10 +24,14 @@ def created_task() -> Task:
 def _mock_task_dep(created_task):
     """Mock the TaskDep dependency."""
     sep_app.dependency_overrides[get_task_by_name] = lambda: created_task
+    sep_app.dependency_overrides[get_username_mapping] = lambda: {
+        "12345678-1234-5678-9abc-123456789012": "test-user"
+    }
     yield
     sep_app.dependency_overrides = {}
 
 
+@pytest.mark.usefixtures("_mock_task_dep")
 def test_tasks_list(
     test_client,
     mock_task_api_dep,
@@ -47,6 +52,7 @@ def test_tasks_list(
     )
 
 
+@pytest.mark.usefixtures("_mock_task_dep")
 def test_task_create(
     test_client,
     mock_task_api_dep,

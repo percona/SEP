@@ -61,7 +61,7 @@ async def tasks_list(
     context["available_backends"] = TaskBackendEnum
     context["available_owners"] = TaskOwner
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
-    context["user_id_to_username"] = await user_id_to_username
+    context["user_id_to_username"] = user_id_to_username
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
@@ -113,7 +113,7 @@ async def tasks_detail(
     executor_hosts = await tasks_api.get("/hosts/")
     context["executor_hosts"] = list(executor_hosts.values())
     context["AVAILABLE_TIMEZONES"] = list(available_timezones())
-    context["user_id_to_username"] = await user_id_to_username
+    context["user_id_to_username"] = user_id_to_username
     return templates.TemplateResponse(
         request=request,
         name="tasks/view.html",
