@@ -83,7 +83,6 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     mydumper_weekly_purge: int | EmptyStrToNone = None
     mydumper_dump_triggers: bool = False
     mydumper_desync_pxc: bool = False
-    mydumper_less_locking: bool = False
     mydumper_use_numa: bool = False
     mydumper_extra_args: str | EmptyStrToNone = None
     use_ftwrl_guardian: bool = False
@@ -159,8 +158,6 @@ class BackupCreate(BackupConfigAll):
     :type mydumper_dump_triggers: bool
     :param mydumper_desync_pxc: Whether to desynchronize PXC node before mydumper backup.
     :type mydumper_desync_pxc: bool
-    :param mydumper_less_locking: Whether to use less locking during mydumper backup.
-    :type mydumper_less_locking: bool
     :param mydumper_use_numa: Whether to enable NUMA support during mydumper backup.
     :type mydumper_use_numa: bool
     :param mydumper_extra_args: Additional command-line arguments for mydumper.

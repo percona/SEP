@@ -1,0 +1,323 @@
+name: mysql_query_tuning
+sudo: false
+tests:
+  - name: "invalid-option"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--invalid-option"
+    expected:
+      stdout:
+        file: "invalid.stdout"
+        isre: true
+      stderr:
+        file: "invalid.stderr"
+        isre: false
+      returncode: 1
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
+  - name: "arguments mess up"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=SELECT user, host FROM user;"
+      - "-f"
+      - "-D"
+      - "mysql"
+    expected:
+      stdout:
+        file: "arg_mess.stdout"
+        isre: true
+      stderr:
+      returncode: 1
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    cleanup:
+  - name: "help"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--help"
+    expected:
+      stdout:
+        file: "help.stdout"
+        isre: true
+      stderr:
+      returncode: 0
+      dirs:
+      files:
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+  - name: "default"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=SELECT user, host FROM mysql.user;"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+          expected: "default_queries.sql"
+          isre: false
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "database"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=SELECT user, host FROM user;"
+      - "-D"
+      - "mysql"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+          expected: "database_queries.sql"
+          isre: false
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "profile select"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=SELECT user, host FROM mysql.user;"
+      - "-p"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+          expected: "profile_select.sql"
+          isre: false
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "profile update"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=UPDATE mysql.user SET user='foo' WHERE host='bar';"
+      - "-p"
+    expected:
+      stdout:
+      stderr:
+        file: "profile_update.stderr"
+        isre: false
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+          expected: "profile_update.sql"
+          isre: false
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "profile CTE"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=with cte as (select user, host from mysql.user) select user, host from cte;;"
+      - "-p"
+    expected:
+      stdout:
+      stderr:
+        file: "profile_cte.stderr"
+        isre: false
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+          expected: "profile_cte.sql"
+          isre: false
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "profile CTE force"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=with cte as (select user, host from mysql.user) select user, host from cte;;"
+      - "-p"
+      - "--force"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+          expected: "profile_cte_force.sql"
+          isre: false
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "execute"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=SELECT user, host FROM mysql.user;"
+      - "-e"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+          expected: "results.txt"
+          isre: true
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "file"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--file=../support-files/mysql_query_tuning/file_input.sql"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        -
+          file: "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+          expected: "default_queries.sql"
+          isre: false
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+      files:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/results.txt"
+    cleanup:
+      - "rm -f {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/*"
+      - "rmdir {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      - "rm {{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9].tar.gz"
+  - name: "dest"
+    cmd: "mysql_query_tuning.sh"
+    args:
+      - "--query=SELECT user, host FROM mysql.user;"
+      - "--dest={{hostname}}"
+    expected:
+      stdout:
+      stderr:
+      returncode: 0
+      dirs:
+        - "{{hostname}}"
+      files:
+        -
+          file: "{{hostname}}/queries.sql"
+          expected: "default_queries.sql"
+          isre: false
+        - "{{hostname}}.tar.gz"
+    notExpected:
+      stdout:
+      stderr:
+      returncode: "!= 0"
+      dirs:
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+      files:
+        - "{{hostname}}/results.txt"
+        - "{{hostname}}-{{date}}-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/queries.sql"
+    cleanup:
+      - "rm -f {{hostname}}/*"
+      - "rmdir {{hostname}}"
+      - "rm {{hostname}}.tar.gz"

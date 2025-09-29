@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title -%}
-    Restores - {{ task.name }}
+    Backups - {{ task.name }}
 {%- endblock title %}
 {% block style %}
     <style>
@@ -32,8 +32,8 @@
     <div class="toggle-btn-group"
          role="group"
          aria-label="Backup and Restore navigation">
-        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn">Backup</a>
-        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn active">Restore</a>
+        <a href="{{ url_for('backups_index') }}" class="toggle-btn active">Backup</a>
+        <a href="{{ url_for('restores_index') }}" class="toggle-btn">Restore</a>
     </div>
 {% endblock sticky %}
 {% block main %}
@@ -52,7 +52,7 @@
             <tr>
                 <td>{{ task.hostname }}</td>
                 <td>{{ task.host }} ({{ task.port }})</td>
-                <td>{{ task.restore_type }}</td>
+                <td>{{ task.backup_type }}</td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
             </tr>
@@ -144,9 +144,19 @@
     </section>
     <br>
     <br>
+    {% set pending_tasks = history|selectattr("status", "equalto", "pending")|list %}
+    {% if pending_tasks %}
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html" %}
     </section>
+    {% include "backups/backup/partials/edit-form.html" %}
 {% endblock main %}
