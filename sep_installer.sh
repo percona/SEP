@@ -189,6 +189,9 @@ check_prereqs() {
 	# sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
 	# sudo dnf install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+	### Example for Ubuntu 24.04
+	# sudo apt install docker docker-compose-v2
+
 	test "${check_prereqs_out}" = "" || {
 		printf "ERROR: the following commands are unavailable - %s\n" "${check_prereqs_out}";
 		return 1
