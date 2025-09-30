@@ -99,7 +99,6 @@ h4/4iWlW5qSeZHoiluXktIsproqlVPFTj+2Ajh2v4fQjSbbKvy+V3kuZ//+9+A92vGjiEwsAAA=='
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.0}"
 
-
 save_progress() {
 	test ! -d "${INSTALL_DIR}"/ || printf "%d" "${PROGRESS}" > "${INSTALL_DIR}"/.progress
 }
