@@ -126,6 +126,8 @@ generate_secrets() {
 	SEP_USER_SEP_ADMIN_PASSWD=$(openssl rand -hex 20)
 	SEP_USER_SEP_USER_PASSWD=$(openssl rand -hex 20)
 	SEP_BACKEND_DB_PASSWORD=$(openssl rand -hex 20)
+	SEP_CASDOOR_CERTIFICATE_JSON=
+	SEP_CASDOOR_PRIVATE_KEY_JSON=
 	#
 	GF_SECURITY_ADMIN_PASSWORD=$(openssl rand -hex 20)
 	INSTALL_DIR=$(realpath "${INSTALL_DIR}")
@@ -264,6 +266,13 @@ generate_tls() {
 	done
 
 	find . -type f -exec chmod 0444 {} \;
+
+	jwt_cert=$(sed ':a;N;$!ba;s/\n/\\n/g' sep_token_jwt_key.pem)
+	jwt_key=$(sed ':a;N;$!ba;s/\n/\\n/g' sep_token_jwt_key.key)
+
+	sed -i "s#^SEP_CASDOOR_CERTIFICATE_JSON=.*#SEP_CASDOOR_CERTIFICATE_JSON=\"${jwt_cert}\"#;
+		s#^SEP_CASDOOR_PRIVATE_KEY_JSON=.*#SEP_CASDOOR_PRIVATE_KEY_JSON=\"${jwt_key}\"#" "${INSTALL_DIR}"/.secrets
+
 
 	cd - || exit 3
 
