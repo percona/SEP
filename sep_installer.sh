@@ -5,6 +5,9 @@ set -o nounset
 
 test "${DEBUG:-0}" = 0 || set -o xtrace
 
+CHECK_LIST="openssl sed docker podman podman-compose"
+
+AUTOSTART="${AUTOSTART:-0}"
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 
@@ -175,7 +178,7 @@ check_prereqs() {
 	# Pre-requisites
 	check_prereqs_out=
 
-	for cmd in openssl docker podman podman-compose; do
+	for cmd in ${CHECK_LIST}; do
 		case "${cmd}" in
 			docker) test "${CONTAINER_ENGINE}" = docker || continue;;
 			podman|podman-compose) test "${CONTAINER_ENGINE}" = podman || continue;;
@@ -316,8 +319,13 @@ test "${PROGRESS}" -gt 4 || generate_stack
 
 echo Setup complete
 
-echo Do you want to start the stack now?
-read -r STARTSTACK
+test "${AUTOSTART}" = "1" || {
+        echo "To start the stack, please execute the following command:"
+        echo "$(get_engine_command) --file ${INSTALL_DIR}/compose.yaml --project-name sep start"
+        echo
+        echo "You can follow the progress by executing:"
+        echo "$(get_engine_command) --file ${INSTALL_DIR}/compose.yaml --project-name sep logs --follow"
+        exit 0
+}
 
-echo "${STARTSTACK}" | grep -qi "^y$" || exit 0
 start_stack
