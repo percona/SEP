@@ -148,6 +148,7 @@ faker = "^30.8.2"
 polyfactory = "^2.18.0"
 pytest-asyncio = "^0.24.0"
 pytest-env = "^1.1.5"
+pip = "^25.2.0"
 
 [build-system]
 requires = ["poetry-core"]
