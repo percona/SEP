@@ -1,5 +1,6 @@
 """Define tests for the app.sep.plugins.inventory.sync module."""
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,13 +24,17 @@ from tests.app.factories import (
 
 @pytest.fixture
 def mock_base_syncer_factory():
-    """Create a new mock BaseSyncer instance."""
+    """Create a mock BaseSyncer whose api_auth is an async context manager."""
 
     def _create_mock_syncer():
-        mock_syncer = AsyncMock(BaseSyncer)
-        mock_syncer.__aenter__.return_value = mock_syncer
-        mock_syncer.__aexit__.return_value = None
-        return mock_syncer
+        syncer = AsyncMock(spec=BaseSyncer)
+
+        @asynccontextmanager
+        async def api_auth(_api_key: str):
+            yield syncer
+
+        syncer.api_auth = api_auth
+        return syncer
 
     return _create_mock_syncer
 
@@ -68,7 +73,7 @@ async def test_run_inventory_sync(mock_base_syncer_factory):
     syncer1 = mock_base_syncer_factory()
     syncer2 = mock_base_syncer_factory()
 
-    await run_inventory_sync(syncer1, syncer2)
+    await run_inventory_sync("test-key", syncer1, syncer2)
 
     syncer1.sync_inventory.assert_awaited_once()
     syncer2.sync_inventory.assert_awaited_once()
@@ -80,7 +85,7 @@ async def test_run_node_sync(created_node, mock_base_syncer_factory):
     syncer1 = mock_base_syncer_factory()
     syncer2 = mock_base_syncer_factory()
 
-    await run_node_sync(created_node, syncer1, syncer2)
+    await run_node_sync(created_node, "test-key", syncer1, syncer2)
 
     syncer1.sync_node.assert_awaited_once_with(created_node, refresh_at_start=False)
     syncer2.sync_node.assert_awaited_once_with(created_node, refresh_at_start=True)
@@ -92,7 +97,7 @@ async def test_run_service_sync(created_service, mock_base_syncer_factory):
     syncer1 = mock_base_syncer_factory()
     syncer2 = mock_base_syncer_factory()
 
-    await run_service_sync(created_service, syncer1, syncer2)
+    await run_service_sync(created_service, "test-key", syncer1, syncer2)
 
     syncer1.sync_service.assert_awaited_once_with(
         created_service, refresh_at_start=False
@@ -108,7 +113,7 @@ async def test_run_schema_sync(created_schema, mock_base_syncer_factory):
     syncer1 = mock_base_syncer_factory()
     syncer2 = mock_base_syncer_factory()
 
-    await run_schema_sync(created_schema, syncer1, syncer2)
+    await run_schema_sync(created_schema, "test-key", syncer1, syncer2)
 
     syncer1.sync_schema.assert_awaited_once_with(created_schema, refresh_at_start=False)
     syncer2.sync_schema.assert_awaited_once_with(created_schema, refresh_at_start=True)
@@ -120,7 +125,7 @@ async def test_run_table_sync(created_table, mock_base_syncer_factory):
     syncer1 = mock_base_syncer_factory()
     syncer2 = mock_base_syncer_factory()
 
-    await run_table_sync(created_table, syncer1, syncer2)
+    await run_table_sync(created_table, "test-key", syncer1, syncer2)
 
     syncer1.sync_table.assert_awaited_once_with(created_table, refresh_at_start=False)
     syncer2.sync_table.assert_awaited_once_with(created_table, refresh_at_start=True)

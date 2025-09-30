@@ -19,7 +19,7 @@ from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, Create
 from app.sep.sync.models import BaseSyncer
 
 
-async def run_inventory_sync(*syncers: BaseSyncer) -> None:
+async def run_inventory_sync(api_key: str, *syncers: BaseSyncer) -> None:
     """Execute inventory synchronization using the provided syncers.
 
     Iterates over each `BaseSyncer` instance and invokes the `sync_inventory` method
@@ -30,12 +30,13 @@ async def run_inventory_sync(*syncers: BaseSyncer) -> None:
     :type syncers: BaseSyncer
     """
     for syncer in syncers:
-        async with syncer as sync:
+        async with syncer.api_auth(api_key) as sync:
             await sync.sync_inventory()
 
 
 async def run_node_sync(
     created_node: CreatedNode,
+    api_key: str,
     *syncers: BaseSyncer,
 ) -> None:
     """Execute node synchronization for a created node using the provided syncers.
@@ -51,12 +52,13 @@ async def run_node_sync(
     :type syncers: BaseSyncer
     """
     for syncer_index, syncer in enumerate(syncers):
-        async with syncer as sync:
+        async with syncer.api_auth(api_key) as sync:
             await sync.sync_node(created_node, refresh_at_start=bool(syncer_index))
 
 
 async def run_service_sync(
     created_service: CreatedService,
+    api_key: str,
     *syncers: BaseSyncer,
 ) -> None:
     """Execute service synchronization for a created service using the provided syncers.
@@ -73,7 +75,7 @@ async def run_service_sync(
     :type syncers: BaseSyncer
     """
     for syncer_index, syncer in enumerate(syncers):
-        async with syncer as sync:
+        async with syncer.api_auth(api_key) as sync:
             await sync.sync_service(
                 created_service,
                 refresh_at_start=bool(syncer_index),
@@ -82,6 +84,7 @@ async def run_service_sync(
 
 async def run_schema_sync(
     created_schema: CreatedSchema,
+    api_key: str,
     *syncers: BaseSyncer,
 ) -> None:
     """Execute schema synchronization for a created schema using the provided syncers.
@@ -98,12 +101,13 @@ async def run_schema_sync(
     :type syncers: BaseSyncer
     """
     for syncer_index, syncer in enumerate(syncers):
-        async with syncer as sync:
+        async with syncer.api_auth(api_key) as sync:
             await sync.sync_schema(created_schema, refresh_at_start=bool(syncer_index))
 
 
 async def run_table_sync(
     created_table: CreatedTable,
+    api_key: str,
     *syncers: BaseSyncer,
 ) -> None:
     """Execute table synchronization for a created table using the provided syncers.
@@ -119,5 +123,5 @@ async def run_table_sync(
     :type syncers: BaseSyncer
     """
     for syncer_index, syncer in enumerate(syncers):
-        async with syncer as sync:
+        async with syncer.api_auth(api_key) as sync:
             await sync.sync_table(created_table, refresh_at_start=bool(syncer_index))

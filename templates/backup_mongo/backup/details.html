@@ -23,19 +23,9 @@
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
-    {% if history %}
-        <script src="{{ url_for('static', path='/js/logs.js') }}"
-                nonce="{{ request.state.csp_nonce }}"></script>
-    {% endif %}
+    <script src="{{ url_for('static', path='/js/logs.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
-{% block sticky %}
-    <div class="toggle-btn-group"
-         role="group"
-         aria-label="Backup and Restore navigation">
-        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn active">Backup</a>
-        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn">Restore</a>
-    </div>
-{% endblock sticky %}
 {% block main %}
     <h1>PBM Backups: {{ task.name }}</h1>
     <h5>Executor Host: {{ task.hostname }}</h5>
