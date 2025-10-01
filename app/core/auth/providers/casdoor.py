@@ -72,12 +72,8 @@ class CasdoorSDK(RemoteAPI):
     :type ssl_keyfile: RelativeFilePath | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :type ssl_certfile: RelativeFilePath | None
-    :param api_key: The API key for authentication. Defaults to None.
-    :type api_key: str | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
-    :param auth_scheme: The authentication scheme to use. Defaults to "Basic".
-    :type auth_scheme: str
     :param client_id: The client ID for Casdoor authentication.
     :type client_id: str
     :param client_secret: The client secret for Casdoor authentication.
@@ -106,7 +102,6 @@ class CasdoorSDK(RemoteAPI):
     """
 
     logger_name: str = __name__
-    auth_scheme: RequiredStr = "Basic"
     client_id: str
     client_secret: str
     organization_name: str = "built-in"
@@ -132,15 +127,32 @@ class CasdoorSDK(RemoteAPI):
                 return certificate_file.read()
         return None
 
-    @model_validator(mode="after")
-    def _set_auth_scheme_to_basic(self) -> Self:
-        """Ensure the authentication scheme is set to 'Basic'.
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the headers to be used in Casdoor requests.
 
-        :return: The updated instance with `auth_scheme` set to 'Basic'.
-        :rtype: Self
+        Includes content type, accept headers, and authorization with the API key.
+
+        :return: A dictionary containing the headers for Casdoor API requests.
+        :rtype: dict[str, str]
         """
-        self.auth_scheme = "Basic"
-        return self
+        return {
+            **super().headers,
+            "Authorization": f"Basic {self.api_key}",
+        }
+
+    @property
+    def api_key(self) -> str:
+        """Return the API key by encoding client credentials.
+
+        Encodes the `client_id` and `client_secret` into a Base64 string and returns it.
+
+        :return: The Base64-encoded API key.
+        :rtype: str
+        """
+        return b64encode(
+            f"{self.client_id}:{self.client_secret}".encode(),
+        ).decode("utf-8")
 
     @model_validator(mode="after")
     def _set_default_allowed_issuers(self) -> Self:
@@ -155,21 +167,6 @@ class CasdoorSDK(RemoteAPI):
         str_endpoint = str(self.endpoint).rstrip("/")
         if self.allowed_issuers != "*":
             self.allowed_issuers.add(str_endpoint)
-        return self
-
-    @model_validator(mode="after")
-    def _set_api_key_from_credentials(self) -> Self:
-        """Set the API key by encoding client credentials.
-
-        Encodes the `client_id` and `client_secret` into a Base64 string and sets it
-        as the `api_key` for authentication.
-
-        :return: The updated instance with the `api_key` set.
-        :rtype: Self
-        """
-        self.api_key = b64encode(
-            f"{self.client_id}:{self.client_secret}".encode(),
-        ).decode("utf-8")
         return self
 
     def get_frontend_url(self, base_url: URL | None = None) -> URL:

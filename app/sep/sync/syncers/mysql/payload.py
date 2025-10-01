@@ -191,7 +191,7 @@ def main() -> None:
         # Try to read creds from .mylogin.cnf
         try:
             creds = myloginpath.parse('client')
-        except (FileNotFoundError):
+        except Exception:
             creds = {}
 
         try:

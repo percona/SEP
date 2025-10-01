@@ -375,12 +375,15 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
             select_related=[TaskHistory.task],
             id=queue_id,
         )
-        if queue_item.status == TaskHistoryStatusEnum.RUNNING:
-            task = await TaskManager.get_root_task(session, queue_item.task)
-            executor = get_executor_for_task(task)
-            queue_item = await executor.sync_task_history(session, queue_item)
-        queue_item.sync_in_progress_started_at = None
-        return await TaskHistoryManager.save(session, queue_item)
+        task = await TaskManager.get_root_task(session, queue_item.task)
+    if queue_item.is_running:
+        executor = get_executor_for_task(task)
+        queue_item = await executor.sync_task_history(queue_item)
+    queue_item.sync_in_progress_started_at = None
+    async with async_session() as session:
+        return await TaskHistoryManager.save(
+            session, queue_item, flag_modified_fields=["execution_request"]
+        )
 
 
 def get_executor_for_task(task: Task) -> BaseExecutor:

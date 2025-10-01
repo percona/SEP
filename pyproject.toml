@@ -1,6 +1,6 @@
 [project]
 name = "sep"
-version = "0.6.2"
+version = "0.8.0"
 description = "SEP: Services Enablement Platform"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
@@ -34,7 +34,7 @@ classifiers = [
     "Topic :: System :: Systems Administration",
     "Typing :: Typed"
 ]
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11.4,<3.14"
 dependencies = [
     "aiohttp (>=3.12.14,<4.0.0)",
     "uvicorn[standard] (>=0.32.0,<0.33.0)",
@@ -101,6 +101,7 @@ optional = true
 
 [tool.poetry.group.syncmysql.dependencies]
 pymysql = "^1.1.1"
+myloginpath = "^0.0.4"
 
 [tool.poetry.group.postgresql]
 optional = true
@@ -120,6 +121,24 @@ optional = true
 [tool.poetry.group.redis.dependencies]
 kombu = {extras = ["redis"], version = "^5.5.3"}
 
+[tool.poetry.group.spacy_en_model_sm]
+optional = true
+
+[tool.poetry.group.spacy_en_model_sm.dependencies]
+en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"}
+
+[tool.poetry.group.spacy_en_model_md]
+optional = true
+
+[tool.poetry.group.spacy_en_model_md.dependencies]
+en-core-web-md = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl"}
+
+[tool.poetry.group.spacy_en_model_lg]
+optional = true
+
+[tool.poetry.group.spacy_en_model_lg.dependencies]
+en-core-web-lg = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl"}
+
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.1"
 pytest = "^8.3.3"
@@ -129,6 +148,7 @@ faker = "^30.8.2"
 polyfactory = "^2.18.0"
 pytest-asyncio = "^0.24.0"
 pytest-env = "^1.1.5"
+pip = "^25.2.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -245,7 +265,7 @@ order-by-type = false
 "app/core/config.py" = ["ARG003"]
 "app/core/utils/fields.py" = ["TRY004"] # Pydantic validation code should raise ValueError
 "app/tasks/celery.py" = ["ARG001"]
-"test_*.py" = ["S", "ARG001", "ARG002", "ANN"]
+"test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 
 

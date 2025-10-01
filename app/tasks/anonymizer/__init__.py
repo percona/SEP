@@ -14,4 +14,3 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from app.tasks.anonymizer.anonymize import anonymize_text
-from app.tasks.anonymizer.entities import PIIEntity
