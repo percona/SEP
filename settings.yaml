@@ -29,7 +29,7 @@ default:
         MODULE_NAME: snippets
         URI_PATH: /snippets
         CSS_CLASS: snippets
-      - NAME: Answers That Work
+      - NAME: Collect Diagnostic Data
         MODULE_NAME: atw
         URI_PATH: /atw
         CSS_CLASS: atw
