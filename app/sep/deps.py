@@ -20,7 +20,6 @@ from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
-from async_lru import alru_cache
 from fastapi import Depends, HTTPException, Request, status
 from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
@@ -259,13 +258,12 @@ async def get_tasks_api(user: CurrentUser) -> RemoteAPI:
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
 
 
-@alru_cache(ttl=300)
 async def get_username_mapping() -> dict[str, str]:
-    """Create a cached mapping from user ID to username using Casdoor.
+    """Create a mapping from user ID to username using Casdoor.
 
     This function fetches all users from Casdoor and creates a mapping from
-    user ID to username. The result is cached for 5 minutes to avoid repeated
-    API calls to Casdoor.
+    user ID to username. Caching should be implemented in the Casdoor SDK
+    to avoid repeated API calls.
 
     :return: A dictionary mapping user IDs to usernames.
     :rtype: dict[str, str]
