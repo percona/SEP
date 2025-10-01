@@ -67,7 +67,7 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
-
+_ONE_MEBIBYTE = 1024 * 1024
 NOMAD_DEAD_JOB_STATUS = "dead"
 
 
@@ -271,11 +271,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             else {}
         )
 
+        custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
+        if custom_prefix:
+            custom_prefix = f"-{slugify(custom_prefix)}"
+
         job_status = self.backend.job.dispatch_job(
             task.data["ID"],
             payload=payload,
             meta=filtered_meta,
-            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}",
+            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}{custom_prefix}",
         )
         if not job_status:
             logger.error("Unable to dispatch task %s", task.id)
@@ -604,7 +608,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         task_logs = self.get_logs_for_allocation(
             alloc,
             queue_item.task_logs,
-            queue_item.task.anonymized_entities,
+            queue_item.anonymized_entities,
         )
         logger.debug(
             "sync_task_history(queue_item_id=%s): tasks_logs = %r",
@@ -845,7 +849,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             log_type,
                             queue,
                             start_offsets[step].get(log_type, 0),
-                            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
+                            queue_item.anonymized_entities,
                         )
                     )
                 )
@@ -870,3 +874,76 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 await asyncio.gather(*push_logs_tasks, return_exceptions=True)
         else:
             yield None
+
+    async def stream_file(
+        self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
+    ) -> AsyncGenerator[bytes, None]:
+        """Stream a file from the allocation's filesystem in chunks.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :param path: The path to the file to be streamed.
+        :type path: str
+        :param chunk_size: The size of each chunk to read from the file. Defaults to
+            1 MiB.
+        :type chunk_size: int
+        :yield: Chunks of the file as bytes.
+        :rtype: AsyncGenerator[bytes, None]
+        """
+        alloc = self.get_allocation_for_task_history(queue_item)
+        alloc_id = alloc["ID"]
+        params = {"path": path}
+        async with self._request(
+            "GET", f"/v1/client/fs/stat/{alloc_id}", params=params
+        ) as response:
+            response.raise_for_status()
+            stat = await response.json()
+        logger.debug("File stat: %r", stat)
+        file_size = stat.get("Size", 0)
+        if file_size == 0:
+            logger.warning("File %s is empty or does not exist", path)
+            yield b""
+            return
+        logger.info("Starting to stream file %s of size %s", path, file_size)
+        endpoint = f"/v1/client/fs/readat/{alloc_id}"
+        params["limit"] = chunk_size
+        for offset in range(0, file_size, chunk_size):
+            params["offset"] = offset
+            async with self._request("GET", endpoint, params=params) as response:
+                response.raise_for_status()
+                content = await response.read()
+                if queue_item.anonymized_entities:
+                    try:
+                        text = content.decode()
+                        yield anonymize_text(
+                            text, queue_item.anonymized_entities
+                        ).encode()
+                    except UnicodeDecodeError:
+                        logger.debug(
+                            "Could not decode file content, sending raw bytes",
+                            exc_info=True,
+                        )
+                yield content
+
+    async def list_files(self, queue_item: TaskHistory, path: str) -> dict[str, int]:
+        """List files in a directory on the allocation's filesystem.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :param path: The path to the directory to list files from.
+        :type path: str
+        :return: A dictionary with filenames as keys and their sizes as values.
+        :rtype: dict[str, int]
+        """
+        alloc = self.get_allocation_for_task_history(queue_item)
+        alloc_id = alloc["ID"]
+        async with self._request(
+            "GET", f"/v1/client/fs/ls/{alloc_id}", params={"path": path}
+        ) as response:
+            response.raise_for_status()
+            files = await response.json()
+        return {
+            filename: file["Size"]
+            for file in files
+            if not (filename := file["Name"]).startswith(".")
+        }

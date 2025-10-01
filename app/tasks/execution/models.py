@@ -30,6 +30,7 @@ from app.tasks.crud import TaskHistoryManager
 from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
 
 logger = logging.getLogger(__name__)
+_ONE_MEBIBYTE = 1024 * 1024
 
 
 class BaseExecutor(BaseCaseInsensitiveModel, ABC):
@@ -164,6 +165,35 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :type start_offsets: dict[str, dict[str, int]] | None
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog
+        """
+
+    @abstractmethod
+    async def stream_file(
+        self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
+    ) -> AsyncGenerator[bytes, None]:
+        """Stream a file from a task history record.
+
+        :param queue_item: The task history record for tracking the file.
+        :type queue_item: TaskHistory
+        :param path: The path to the file to be streamed.
+        :type path: str
+        :param chunk_size: The size of each chunk to be read from the file, in bytes.
+            Defaults to 1 MiB.
+        :type chunk_size: int
+        :yield: Chunks of the file as bytes.
+        :rtype: AsyncGenerator[bytes, None]
+        """
+
+    @abstractmethod
+    async def list_files(self, queue_item: TaskHistory, path: str) -> dict[str, int]:
+        """List files in a directory from a task history record.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :param path: The path to the directory to list files from.
+        :type path: str
+        :return: A dictionary with filenames as keys and their sizes as values.
+        :rtype: dict[str, int]
         """
 
     async def sync_task_history(

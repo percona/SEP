@@ -49,6 +49,7 @@ from app.core.utils.fields import DatabaseDialect
 logger = logging.getLogger(__name__)
 
 Whereable = Select | DMLWhereBase
+ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
 T = TypeVar("T")
 S = TypeVar("S", bound=SQLModel)
@@ -100,11 +101,15 @@ _DEFAULT_SELECT_QUERY_BUILDER = _select_builder()
 class BaseManager:
     """Manage database operations for a SQLAlchemy model.
 
-    :param Model: The SQLAlchemy class for which this manager handles operations.
-    :type Model: type[T]
+    :cvar Model: The SQLAlchemy class for which this manager handles operations.
+    :vartype Model: type[T]
+    :cvar ordering: An iterable of column expressions or string labels to order the
+        results by. If None, no ordering is applied.
+    :vartype ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None
     """
 
     Model: type[T]
+    ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None = None
 
     @classmethod
     def _construct_instance(cls, instance_create: B, **extra_fields: Any) -> T:
@@ -203,6 +208,8 @@ class BaseManager:
             select_related=select_related,
             **equal_filters,
         )
+        if cls.ordering:
+            query = query.order_by(*cls.ordering)
         result = await cls._exec(session, query)
         return result.unique()
 

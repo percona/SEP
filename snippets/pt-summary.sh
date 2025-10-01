@@ -3,7 +3,8 @@
 # ---
 # title: "pt-summary"
 # description: "Executes pt-summary command"
-# strict: false
+# allow_extra_args: true
+# sudo: always
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -13,17 +14,25 @@
 #    type: str
 #    label: Destination for the summaries
 #    description: Destination for the summaries
-#    default: .$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+#    default: ".$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 #  - name: save-samples
-#    type: int
+#    type: bool
 #    label: Save samples
 #    description: Save samples
-#    default: 0
 #  - name: help
-#    type: int
+#    type: bool
 #    label: Show help message
 #    description: Show help message
-#    default: 0
+# atw:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - WRITES_ARE_BLOCKED
+#  - PERFORMANCE_OTHER
+#  - TEMPORARY_STALLS
+#  - NATIVE_ASYNC_REPLICATION
+#  - GALERA
+#  - GROUP_REPLICATION
 # ---
 
 # Usage: ./pt-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]
@@ -50,7 +59,7 @@ EOS
    exit $1
 }
 
-OPTS=$(getopt --options -d:h --longoptions 'dest:,save-samples,help' -- "$@")
+OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@")
 
 if [ $? -gt 0 ]; then
    echo "Error parsing options"
@@ -93,8 +102,8 @@ fi
 
 if [ $SAVE_SAMPLES -eq 1 ]; then
    mkdir -p "${PTDEST}"
-   sudo pt-summary ${DEFAULTS_FILE} --save-samples="${PTDEST}" "$@"
+   pt-summary ${DEFAULTS_FILE} --save-samples="${PTDEST}" "$@"
    tar czf "${PTDEST}.tar.gz" -C "$(dirname ${PTDEST})" "$(basename ${PTDEST})"
 else
-   sudo pt-summary ${DEFAULTS_FILE} "$@"
+   pt-summary ${DEFAULTS_FILE} "$@"
 fi
