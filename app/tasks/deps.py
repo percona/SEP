@@ -138,6 +138,11 @@ def prepare_task_history(
             "Execution target is required in execution data meta."
         )
 
+    anonymize_mask = (
+        execution_data.anonymize_mask
+        if task.anonymize_mask is None
+        else task.anonymize_mask
+    )
     return TaskHistory(
         task_id=task.id,
         task=task,
@@ -151,8 +156,8 @@ def prepare_task_history(
         ),
         status=TaskHistoryStatusEnum.PENDING,
         anonymize_mask=anonymizer_settings.get_anonymize_mask(task.owner)
-        if task.anonymize_mask is None
-        else task.anonymize_mask,
+        if anonymize_mask is None
+        else anonymize_mask,
     )
 
 

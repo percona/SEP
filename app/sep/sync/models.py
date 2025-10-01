@@ -1197,7 +1197,7 @@ class BaseTaskSyncer(BaseSyncer):
         """
         task_history = await self.tasks_api.post(
             f"/execute/{task_name}",
-            json={"meta": meta, "payload": payload},
+            json={"meta": meta, "payload": payload, "anonymize_mask": 0},
         )
         task_history_id = task_history["id"]
         status = task_history["status"]

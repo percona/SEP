@@ -421,6 +421,7 @@ class TaskExecuteRequest(BaseModel):
     meta: dict[str, Any] = {}
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
+    anonymize_mask: int | None = None
 
     @model_validator(mode="before")
     @classmethod
