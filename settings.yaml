@@ -23,6 +23,7 @@ default:
     SNIPPETS:
       FILTER_EXTENSIONS:
         - .sh
+      SYNC_INTERVAL: 60 seconds
     UVICORN_HOST: "127.0.0.1"
     UVICORN_PORT: 8000
     SSL_KEYFILE: null
