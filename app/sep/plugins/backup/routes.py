@@ -25,7 +25,6 @@ from app.sep.plugins.backup.deps import (
     parse_backup_task_data,
 )
 from app.sep.plugins.backup.models import BackupType
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
@@ -82,7 +81,7 @@ async def backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
 

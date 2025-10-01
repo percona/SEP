@@ -21,6 +21,7 @@ from typing import Any
 __all__ = [
     "deep_dict_update",
     "filter_dict",
+    "merge_dict_at_start",
     "remove_falsy_values_from_dict",
     "sort_dict",
     "transform_dict_keys",
@@ -138,3 +139,25 @@ def remove_falsy_values_from_dict(data: dict[Any, Any]) -> dict[Any, Any]:
     :rtype: dict[Any, Any]
     """
     return filter_dict(data, lambda v: bool(v))
+
+
+def merge_dict_at_start(
+    main_dict: dict[Any, Any], prepend_dict: dict[Any, Any]
+) -> dict[Any, Any]:
+    """Prepend one dictionary to another.
+
+    This function returns a new dictionary that contains all items from `prepend_dict`
+    followed by all items from `main_dict`. If a key exists in both dictionaries, the
+    value from `main_dict` is retained.
+
+    :param main_dict: The main dictionary.
+    :type main_dict: dict[Any, Any]
+    :param prepend_dict: The dictionary to prepend.
+    :type prepend_dict: dict[Any, Any]
+    :return: A new dictionary with `prepend_dict` items followed by `main_dict` items.
+    :rtype: dict[Any, Any]
+    """
+    new_dict = prepend_dict.copy()
+    for key, value in main_dict.items():
+        new_dict.setdefault(key, value)
+    return new_dict

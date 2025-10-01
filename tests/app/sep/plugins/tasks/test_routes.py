@@ -132,6 +132,7 @@ def test_task_execute(
         "meta": {},
         "payload": None,
         "eta": None,
+        "anonymize_mask": None,
     }
 
     response = test_client.post(f"/tasks/{created_task.name}", follow_redirects=False)

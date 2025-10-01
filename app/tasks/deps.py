@@ -26,6 +26,7 @@ from starlette.requests import Request
 
 from app.api.deps import CurrentUserID
 from app.core.exceptions import HTTPBadRequestException
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -141,6 +142,11 @@ def prepare_task_history(
             "Execution target is required in execution data meta."
         )
 
+    anonymize_mask = (
+        execution_data.anonymize_mask
+        if task.anonymize_mask is None
+        else task.anonymize_mask
+    )
     return TaskHistory(
         task_id=task.id,
         task=task,
@@ -154,6 +160,9 @@ def prepare_task_history(
         ),
         status=TaskHistoryStatusEnum.PENDING,
         executed_by=executed_by,
+        anonymize_mask=anonymizer_settings.get_anonymize_mask(task.owner)
+        if anonymize_mask is None
+        else anonymize_mask,
     )
 
 

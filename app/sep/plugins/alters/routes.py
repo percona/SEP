@@ -28,7 +28,6 @@ from app.sep.plugins.alters.deps import (
 )
 from app.sep.utils.decorators import csrf_exempt
 from app.sep.utils.jinja import syntax_highlight
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -156,7 +155,7 @@ async def alters_detail(
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_data = {
         "name": task.name,
         "created_at": task.created_at,

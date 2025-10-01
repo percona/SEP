@@ -17,6 +17,7 @@
 
 import json
 import logging
+import os
 from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any
@@ -30,7 +31,7 @@ from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
-from app.tasks.anonymizer.config import anonymizer_settings
+from app.core.utils.fields import RequiredStr
 from app.tasks.celery import (
     celery,
     dispatch_queue_item,
@@ -117,8 +118,8 @@ async def create_task(
         task,
         created_by=current_user.id,
         last_updated_by=current_user.id,
-        anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner],
     )
+    return await TaskManager.create(session, task)
 
 
 @router.put(
@@ -239,6 +240,7 @@ async def get_task_history(
     session: SessionDep,
     task: str,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
+    snippet_filename: RequiredStr | None = None,
 ) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
@@ -247,6 +249,7 @@ async def get_task_history(
         task_name=task,
         status=task_status,
         select_related_task=True,
+        snippet_filename=snippet_filename,
     )
 
 
@@ -283,6 +286,45 @@ async def stream_task_history_logs(
     return StreamingResponse(
         stream_logs_generator,
         media_type="application/json",
+    )
+
+
+@router.get("/history/{task_history_id}/files/", dependencies=[IsAuthenticatedDep])
+async def list_task_history_files(
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+) -> dict[str, int]:
+    """List files from a task history."""
+    logger.debug("Requesting files for task history %s", task_history.id)
+    if not task_history.status.is_finished():
+        raise HTTPConflictException(f"Task history is {task_history.status}.")
+    if task_history.task.output_files_path is None:
+        raise HTTPBadRequestException(
+            f"Task {task_history.task.name} does not have output_files_path set."
+        )
+    return await executor.list_files(task_history, task_history.task.output_files_path)
+
+
+@router.get("/history/{task_history_id}/file/", dependencies=[IsAuthenticatedDep])
+async def stream_task_history_file(
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+    path: str,
+) -> StreamingResponse:
+    """Stream a file from a task history."""
+    logger.debug("Requesting file %s for task history %s", path, task_history.id)
+    if not task_history.status.is_finished():
+        raise HTTPConflictException(f"Task history is {task_history.status}.")
+    if task_history.task.output_files_path is None:
+        raise HTTPBadRequestException(
+            f"Task {task_history.task.name} does not have output_files_path set."
+        )
+    return StreamingResponse(
+        executor.stream_file(
+            task_history,
+            os.path.join(task_history.task.output_files_path, path.lstrip("/")),  # noqa: PTH118
+        ),
+        media_type="application/octet-stream",
     )
 
 

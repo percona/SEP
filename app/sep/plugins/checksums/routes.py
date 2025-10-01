@@ -24,7 +24,6 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_index_context,
     parse_checksums_task_args,
 )
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -79,7 +78,7 @@ async def checksums_detail(
     """Retrieve checksums task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_data = {
         "name": task.name,
         "created_at": task.created_at,

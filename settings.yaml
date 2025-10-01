@@ -20,6 +20,10 @@ default:
     CERTIFICATE_PATH: null  # Path to JWT key certificate
     APPLICATION_NAME: sep-app
   SEP:
+    SNIPPETS:
+      FILTER_EXTENSIONS:
+        - .sh
+      SYNC_INTERVAL: 60 seconds
     UVICORN_HOST: "127.0.0.1"
     UVICORN_PORT: 8000
     SSL_KEYFILE: null
@@ -36,14 +40,22 @@ default:
       SAME_SITE: lax
       MAX_AGE: 3600
     PLUGINS:
-      - NAME: Schema Change
-        MODULE_NAME: alters
-        URI_PATH: /alters
-        CSS_CLASS: alters
       - NAME: Inventory
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
+      - NAME: Snippet Manager
+        MODULE_NAME: snippets
+        URI_PATH: /snippets
+        CSS_CLASS: snippets
+      - NAME: Collect Diagnostic Data
+        MODULE_NAME: atw
+        URI_PATH: /atw
+        CSS_CLASS: atw
+      - NAME: Schema Change
+        MODULE_NAME: alters
+        URI_PATH: /alters
+        CSS_CLASS: alters
       - NAME: Archive
         MODULE_NAME: archives
         URI_PATH: /archives

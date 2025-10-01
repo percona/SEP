@@ -17,12 +17,11 @@ from app.sep.middleware.messages import (
     error,
     get_messages,
     info,
-    Message,
-    MessageLevel,
     MessagesMiddleware,
     success,
     warning,
 )
+from app.sep.middleware.messages.models import Message, MessageLevel
 
 
 @pytest.fixture
@@ -52,9 +51,9 @@ def test_client(app_with_middleware) -> TestClient:
 
 
 @pytest.fixture
-def logger_mock(mocker) -> Mock:
+def utils_logger_mock(mocker) -> Mock:
     """Mock the logger for the app.sep.middleware.messages module."""
-    return mocker.patch("app.sep.middleware.messages.logger")
+    return mocker.patch("app.sep.middleware.messages._utils.logger")
 
 
 class TestMessage:
@@ -145,20 +144,20 @@ class TestMessageFunctions:
         assert ret == msgs[:2]
         assert dummy_request.state.messages == OrderedDict.fromkeys(msgs[2:])
 
-    def test_add_message_no_state(self, logger_mock):
+    def test_add_message_no_state(self, utils_logger_mock):
         """Assert add_message logs an error when state lacks messages."""
         scope = {"type": "http", "headers": []}
         req = Request(scope)
         assert not hasattr(req.state, "messages")
         add_message(req, MessageLevel.INFO, "Test")
-        logger_mock.exception.assert_called_with(
+        utils_logger_mock.exception.assert_called_with(
             "Unable to add messages without MessageMiddleware"
         )
 
-    def test_add_message_invalid(self, dummy_request, logger_mock):
+    def test_add_message_invalid(self, dummy_request, utils_logger_mock):
         """Assert add_message logs an error when Message validation fails."""
         add_message(dummy_request, MessageLevel.INFO, "a" * 513)
-        logger_mock.exception.assert_called_with("Error building Message object")
+        utils_logger_mock.exception.assert_called_with("Error building Message object")
 
     def test_add_duplicate_message(self, dummy_request):
         """Assert add_message does not duplicate messages."""
@@ -202,12 +201,14 @@ class TestMessagesMiddleware:
         assert 'messages="";' in set_cookie
 
     def test_middleware_cookie_size_limit(
-        self, app_with_middleware, test_client, monkeypatch, logger_mock
+        self, app_with_middleware, test_client, monkeypatch, mocker
     ):
         """Assert middleware pops messages to satisfy the cookie size limit."""
         monkeypatch.setattr(
-            "app.sep.middleware.messages.crypto_serializer.dumps", b64encode_str
+            "app.sep.middleware.messages._middleware.crypto_serializer.dumps",
+            b64encode_str,
         )
+        logger_mock = mocker.patch("app.sep.middleware.messages._middleware.logger")
 
         @app_with_middleware.get("/add-two-messages")
         async def add_two_messages(request: Request):
