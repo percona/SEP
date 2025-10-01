@@ -55,7 +55,7 @@ class DatabaseOptions(BaseModel):
         """
         host = self.HOST
         name = self.NAME
-        if self.HOST is None:
+        if self.HOST is None or self.HOST == "":
             host = f"/{self.NAME}"
             name = None
         return str(

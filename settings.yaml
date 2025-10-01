@@ -3,23 +3,41 @@ default:
     - "localhost"
     - "127.0.0.1"
   AUTH_USER_MODEL: app.models.CasdoorUser
+  ALLOW_CONCURRENT_SESSIONS: False
+  SECRET_KEY: ""  # Auto-generated if empty
+  LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  SSL_CAFILE: null
+  BASE_URL: null
+  BACKEND_CORS_ORIGINS:
+    - http://localhost:8000
+    - http://127.0.0.1:8000
   CASDOOR:
     ENDPOINT: http://localhost:9999
     FRONT_ENDPOINT: //:9999
     ALLOWED_ISSUERS:
       - http://localhost:9999
       - http://127.0.0.1:9999
-  BACKEND_CORS_ORIGINS:
-    - http://localhost:8000
-    - http://127.0.0.1:8000
+    CERTIFICATE_PATH: null  # Path to JWT key certificate
+    APPLICATION_NAME: sep-app
   SEP:
     SNIPPETS:
       FILTER_EXTENSIONS:
         - .sh
+    UVICORN_HOST: "127.0.0.1"
+    UVICORN_PORT: 8000
+    SSL_KEYFILE: null
+    SSL_CERTFILE: null
+    PROXY_HEADERS: False
+    TEMPLATES_DIR: templates
+    STATIC_DIR: static
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:
       COOKIE_NAME: casdoorToken
+      SECURE: False
+      HTTP_ONLY: True
+      SAME_SITE: lax
+      MAX_AGE: 3600
     PLUGINS:
       - NAME: Inventory
         MODULE_NAME: inventory
@@ -53,9 +71,59 @@ default:
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo
         CSS_CLASS: backup_mongo
+    DATABASE:
+      ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
+      USER: null
+      PASSWORD: null
+      HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
+      PORT: null
+      NAME: sep.db
+    SYNCERS:
+      - SYNCER: PMMSyncer
+        PMM:
+          ENDPOINT: https://127.0.0.1:8443
+          VERIFY_SSL: True
+      - SYNCER: MySQLSyncer
+        IGNORE_SCHEMAS:
+          - sys
+          - performance_schema
+          - mysql
+          - information_schema
+    SYNC_REFRESH_TIME: 5  # Browser refresh interval during sync (seconds)
+    PMM_FRONTEND: null
+  INVENTORY:
+    SSL_KEYFILE: null
+    SSL_CERTFILE: null
+    DATABASE:
+      ENGINE: sqlite
+      USER: null
+      PASSWORD: null
+      HOST: ""  # Empty string for SQLite to avoid URL construction issues
+      PORT: null
+      NAME: inventory.db
   TASKS:
+    SSL_KEYFILE: null
+    SSL_CERTFILE: null
+    DATABASE:
+      ENGINE: sqlite
+      USER: null
+      PASSWORD: null
+      HOST: ""  # Empty string for SQLite to avoid URL construction issues
+      PORT: null
+      NAME: tasks.db
+    SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
+      SECURE: False
+      VERIFY_SSL: True
+      SSL_KEYFILE: null
+      SSL_CERTFILE: null
+      SSL_CAFILE: null
+      TIMEOUT: 10  # Request timeout in seconds
+      MINIFY_PAYLOAD: True  # Minify payloads before dispatch
+      LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
+    ANONYMIZER:
+      DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
 
 development:
   SEP:
@@ -74,13 +142,15 @@ development:
       - SYNCER: PMMSyncer
         PMM:
           ENDPOINT: https://127.0.0.1:8443
-          VERIFY_SSL: false
+          VERIFY_SSL: False
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
           - performance_schema
           - mysql
           - information_schema
+  CASDOOR:
+    ORGANIZATION_NAME: built-in
   CELERY:
     BROKER_URL: "filesystem://"
     BROKER_TRANSPORT_OPTIONS:
@@ -89,53 +159,97 @@ development:
       PROCESSED_FOLDER: data/celery/processed
       CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
-    RESULT_PERSISTENT: true
+    RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
   ALERTING:
     SOURCE_SUFFIX: ":dev"
 
 production_docker:
+  ALLOW_CONCURRENT_SESSIONS: True
+  ALLOWED_HOSTS:
+    - "*"
+  AUTH_USER_MODEL: app.models.CasdoorUser
+  BACKEND_CORS_ORIGINS:
+    - https://127.0.0.1:8444
   CASDOOR:
-    ENDPOINT: http://casdoor:8000
-    CERTIFICATE_PATH: data/certs/casdoor/sep_token_jwt_key.pem
+    ALLOWED_ISSUERS: '*'
     APPLICATION_NAME: sep-app
+    CERTIFICATE_PATH: /data/certs/casdoor/sep_token_jwt_key.pem
+    CLIENT_ID: redacted_match_casdoor_json
+    CLIENT_SECRET: redacted_match_casdoor_json
+    ENDPOINT: http://127.0.0.1:8000
+    FRONT_ENDPOINT: //:9999
     ORGANIZATION_NAME: sep
-    ALLOWED_ISSUERS:
-      - http://host.docker.internal:9999
+  CELERY:
+    BEAT_DBURI: postgresql://postgres:xxx@sep-db:5432
+    BEAT_SCHEMA: sep
+    BROKER_URL: redis://redis:6379/0
+    WORKER_STATE_DB: celery_worker_state
+  DATABASE:
+    ENGINE: postgresql
+    HOST: sep-db
+    NAME: sep
+    PASSWORD: xxx
+    PORT: 5432
+    USER: postgres
+  INVENTORY:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: sep-db
+      NAME: sep
+      PASSWORD: xxx
+      PORT: 5432
+      USER: postgres
+    SSL_CERTFILE: /data/certs/sep/inventory_api-cert.pem
+    SSL_KEYFILE: /data/certs/sep/inventory_api-cert-key.pem
   SEP:
-    INVENTORY_ENDPOINT: https://inventory_api:9001
-    TASKS_ENDPOINT: https://tasks_api:9002
-    SSL_KEYFILE: data/certs/sep/localhost-cert-key.pem
-    SSL_CERTFILE: data/certs/sep/localhost-cert.pem
-    PROXY_HEADERS: true
+    DATABASE:
+      ENGINE: postgresql
+      HOST: sep-db
+      NAME: sep
+      PASSWORD: xxx
+      PORT: 5432
+      USER: postgres
+    INVENTORY_ENDPOINT: https://127.0.0.1:9001
+    OAUTH:
+      REDIRECT_URI: /oauth/callback
+    PROXY_HEADERS: True
+    SSL_CERTFILE: /data/certs/sep/localhost-cert.pem
+    SSL_KEYFILE: /data/certs/sep/localhost-cert-key.pem
+    SECURITY_HEADERS:
+      CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+        - /api/inventory/docs
+        - /api/tasks/docs
     SESSION:
-      SECURE: true
+      COOKIE_NAME: casdoorToken
+      SECURE: True
     SYNCERS:
       - SYNCER: PMMSyncer
         PMM:
-          ENDPOINT: https://host.docker.internal:8443
-          VERIFY_SSL: false
+          API_KEY: "xxx"
+          ENDPOINT: https://127.0.0.1
+          VERIFY_SSL: False
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
           - performance_schema
           - mysql
           - information_schema
-  INVENTORY:
-    SSL_KEYFILE: data/certs/sep/inventory_api-cert-key.pem
-    SSL_CERTFILE: data/certs/sep/inventory_api-cert.pem
+    TASKS_ENDPOINT: https://127.0.0.1:9002
+  SSL_CAFILE: /data/certs/sep-ca.pem
   TASKS:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: sep-db
+      NAME: sep
+      PASSWORD: xxx
+      PORT: 5432
+      USER: postgres
     NOMAD:
-      ENDPOINT: https://host.docker.internal:4646
-      SECURE: true
-      SSL_KEYFILE: data/certs/nomad/global-client-nomad-key.pem
-      SSL_CERTFILE: data/certs/nomad/global-client-nomad.pem
-      SSL_CAFILE: data/certs/sep-ca.pem
-    SSL_KEYFILE: data/certs/sep/tasks_api-cert-key.pem
-    SSL_CERTFILE: data/certs/sep/tasks_api-cert.pem
-    ANONYMIZER:
-      DEFAULT_ENTITIES: "*"
-  BACKEND_CORS_ORIGINS:
-    - https://localhost:9000
-    - https://127.0.0.1:9000
-  SSL_CAFILE: data/certs/sep-ca.pem
+      ENDPOINT: https://127.0.0.1:4647
+      SECURE: False
+      SSL_CAFILE: /data/certs/nomad/nomad-agent-ca.pem
+      SSL_CERTFILE: /data/certs/nomad/global-client-nomad.pem
+      SSL_KEYFILE: /data/certs/nomad/global-client-nomad-key.pem
+    SSL_KEYFILE: /data/certs/sep/tasks_api-cert-key.pem
+    SSL_CERTFILE: /data/certs/sep/tasks_api-cert.pem
