@@ -1,8 +1,8 @@
 """add_user_tracking_fields
 
-Revision ID: 4ac8c028542f
-Revises: d39d37d3dcdc
-Create Date: 2025-09-24 12:15:31.800709
+Revision ID: 3b8d4913d5f5
+Revises: 4e346919fc0f
+Create Date: 2025-10-01 18:29:56.792700
 
 """
 from typing import Sequence, Union
@@ -13,8 +13,8 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '4ac8c028542f'
-down_revision: Union[str, None] = 'd39d37d3dcdc'
+revision: str = '3b8d4913d5f5'
+down_revision: Union[str, None] = '4e346919fc0f'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

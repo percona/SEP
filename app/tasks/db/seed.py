@@ -33,7 +33,6 @@ from app.tasks.models import Task
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_USER = "SYSTEM"
 
 NOMAD_RUN_COMMAND = {
     "ID": "run-command",
@@ -255,14 +254,14 @@ SYSTEM_TASKS = [
         data=NOMAD_RUN_COMMAND,
         protected=True,
         anonymize_mask=None,
-        created_by=SYSTEM_USER,
+        created_by=None,
     ),
     Task(
         name="run-python",
         data=NOMAD_RUN_PYTHON,
         protected=True,
         anonymize_mask=None,
-        created_by=SYSTEM_USER,
+        created_by=None,
     ),
     Task(
         name="exec-artifact",
@@ -270,7 +269,7 @@ SYSTEM_TASKS = [
         protected=True,
         anonymize_mask=None,
         output_files_path="run-script/local/output_files",
-        created_by=SYSTEM_USER,
+        created_by=None,
     ),
 ]
 
