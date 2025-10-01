@@ -29,7 +29,7 @@ async def test_get_tasks_context(created_service, created_schema, mock_remote_ap
         mock_remote_api,
         mock_remote_api,
         get_task_info,
-        {"address1": "host1", "address2": "host2"},
+        {"host1": "address1", "host2": "address2"},
     )
     assert context["services"][0]["id"] == created_service.id
     assert context["executor_hosts"] == ["host1", "host2"]

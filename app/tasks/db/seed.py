@@ -176,7 +176,7 @@ NOMAD_EXEC_ARTIFACT = {
     "ID": "exec-artifact",
     "Name": "exec-artifact",
     "Type": "batch",
-    "Datacenters": ["dc1"],
+    "Datacenters": ["*"],
     "Constraints": [
         {
             "LTarget": "${node.unique.name}",

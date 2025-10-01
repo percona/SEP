@@ -562,7 +562,7 @@ async def get_tasks_context(
     context = default_context or {}
     context.update(
         {
-            "executor_hosts": list(executor_hosts.values()),
+            "executor_hosts": list(executor_hosts),
             "services": services,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,

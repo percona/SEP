@@ -80,7 +80,7 @@ async def snippets_detail(
             history["available_files"] = []
     context |= {
         "snippet": snippet,
-        "executor_hosts": list(executor_hosts.values()),
+        "executor_hosts": list(executor_hosts),
         "history_tasks": history_tasks,
         "running_tasks": await tasks_api.get(
             "/exec-artifact/history/",

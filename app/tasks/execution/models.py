@@ -142,7 +142,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     def get_hosts(self) -> dict[str, str]:
         """Get the list of valid executor hosts.
 
-        :return: A dictionary with host addresses as key and the respective hostnames
+        :return: A dictionary with node names as key and the respective addresses
             as values.
         :rtype: list[str]
         """
