@@ -215,7 +215,7 @@ async def alters_detail(
         services = []
         logger.warning("Failed to get services: %s", exc)
 
-    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     context["services"] = services
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)

@@ -133,7 +133,7 @@ async def archives_detail(
         )
     context["services"] = services
 
-    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
 
     return templates.TemplateResponse(
         request=request,

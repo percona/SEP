@@ -326,13 +326,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     def get_hosts(self) -> dict[str, str]:
         """Get healthy node names from Nomad backend.
 
-        :return: A dictionary with node addresses as key and the respective node names
+        :return: A dictionary with node names as key and the respective addresses
             as values.
         :rtype: dict[str, str]
         """
         filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
         return {
-            node["Address"]: node["Name"]
+            node["Name"]: node["Address"]
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
 
