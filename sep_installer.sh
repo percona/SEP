@@ -29,9 +29,11 @@
 # SEP_IMAGE_NAME    the registry address, default docker.io/percona/percona-sep (login required)
 # SEP_IMAGE_TAG     the image tag for SEP, default v0.9.0
 #
-# Additional options that have an effect if set are as follows:
+# Additional options that have an effect if set are as follows, these should be set before installing:
 #
-# HOST_IP           the IP address that maps to the PMM server, used in containers
+# HOST_IP                   the IP address that maps to the PMM server, used in containers
+# SEP_PMM_URL_AUTH_TOKEN    a service account token with admin privileges
+# SEP_PMM_URL_AUTH_USER     a user:password string for an admin account to use Nomad via PMM
 #
 #######################################################################################################################
 # Credentials
@@ -68,6 +70,10 @@
 #
 #    $ docker compose --file ./sep/compose.yaml --project-name sep up --no-recreate --detach
 #
+# N.B. if you are using an external PMM then you will need to set the SEP_PMM_URL_AUTH_TOKEN and SEP_PMM_URL_AUTH_USER
+#      environment variables; if using ENABLE_PMM=1 then you will need to create a token in PMM, update the
+#      settings.yaml and then restart the app container
+#
 #######################################################################################################################
 # Troubleshooting and additional information
 #######################################################################################################################
@@ -89,11 +95,14 @@ INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.0}"
 
-test "${ENABLE_PMM}" = "1" || test "${SEP_PMM_URL_AUTH:-undef}" != "undef"
+test "${ENABLE_PMM}" = "1" || \
+	test "${SEP_PMM_URL_AUTH_TOKEN:-undef}" != "undef" || \
+	test "${SEP_PMM_URL_AUTH_USER:-undef}" != "undef"
 
 CERTLIST=all-in-one
 CHECK_LIST="openssl sed docker podman podman-compose yq"
 PROGRESS=0
+SEP_PMM_PORT=443  # Forced for the time being
 
 # shellcheck disable=SC2016
 CASDOOR_INIT_JSON_DATA='H4sIAAAAAAACA+1YbW/bNhD+vl8hCPsYx066dG2+qX5J1SS2YdktuqEwaIm2OVOkQFJOnSL/fXcU
@@ -133,48 +142,50 @@ o8wf01vUfvr9BrKxDeVbaGv5rOAb8bNmi7abQdEzskptVL2Dutk7N7lhSgSFmDU2eEZztwvpn5E9
 w/+6z/KxXB8KGa3jTBkDOGL3bV0ju7AawZdTyVvk8Q8mD5mJc4xWCLPFl7e/alkM54rEB1/s3dnM
 exktloiX8//x/PB4/gbqdx6+3wUAAA=='
 
-SEP_COMPOSE_YAML='H4sICETz22gCA2NvbXBvc2UueWFtbADdWN1v2zYQf/dfQXhFH4pSchI3bbn2QYlVx5i/YMnd+iTQ
-EmtrkUiNop24Rf73HaVYkWQ5SYclHZYAgu5Tx/vdnUlijFu/oE0YE8QFDQkXTLVa15gmIWZ8E0rB
-Y8YVaSFUJtHLmgLIEfpkOa41HXj2+DNBiRTB2leh4F4g/EsmMxUQeZ8GQ5sgM2Abk6+jKOM7tusO
-xn1nJ1RxYqZMqZAvU2NL42gXVLB4OK6qTub/wweCXjXF3LNc68xybA+i7g/G8O1EpGopWfpX9s2A
-p5hdK0nxCvhp9kFNejmJXtYUMqcYtVMmN0way0gsaGRwEdOAvPh+MXFcbzAlmS5eUsWu6PamvTPS
-XCPPlhFyxSSn0T1WEF7KErwR0TpmWWi7V/RSC1LmS1aE9OL7YAz4DIdebzAj2LgxfSZVCmlOPCUu
-Gff+vFLeJdsaCYuJSZPEBEZGSPH628NesE/vTG/fH2FJowiHHAvOsGaUXOyoH3eCK8vYEff6qVQb
-2S/A3LrFmboS8jLLdhLHJPPHOF1EzAuTzSlBX2mUshq7S5CSa9YCNgT0g0aaS5Wi/kpLdrotXWGh
-z6qRhDFdgsquhoSZMOkLTk3QwHlNkpNMs1Q1eUq0RkAVJWYqNxk3EVKVFN51uydEP27jrHSh/puO
-Rl7PPpv3CeqUWPbYOhvanjW0Z7rHCTraF55Z57/Np97IGlt9e2SP3UYX48nI6jXau/YQzNzZl0a7
-+RTa3Haqsun8bDg496xeb2Y7IDvUZ3dLRqj/yXPs8/ls4H4Bw9Fg7E0tx/l9Mutp+3ukmAZxyG/y
-zJXnx6um+QHTR1EJ44xGEEHOKxdeAZguKJ+mgRDyAP4gXYTcvFXCd33SXAQ7vbwQNlSaUbgw4y1M
-Q/LttbwqFBsaMTf1Qh4q489UcGLqV0+7yumi/9g1DFlWqqxOp/PI1OynARqqMWnADBYHsgKLklRu
-zd2sJ0enB4saiqIPFeL1zgiCKVdnzx17dvejUZeWy8Oxp1md2+MeOCtEN3WbrAytuXvhQUVfTMA2
-9SWF9l1RfPzmtBk4PX+roN39jpmZoICvnv033ZPjp8i+ZEGYPgBArvMW6jIJb2uyHt7pydv3TxGe
-zyImt542YNXuyaEajGAUeWNrZN+QMse1+jlka5inBLWPOp0joh/t2xJScpuIUO9G8k9kbF/EMeUB
-QdjSQRmKppepkSugPAaEcSSWEduw6GPIv4rMLmAJ40HqQfsUiwoWxWuWv3r37pVyvvVp2BYV+4VX
-9f3C0yR7waj6uanWEdQTDXTqr1iwBo2P0C80Aire/p/yH/INfFMABBDJ0yBg6t+ZdFWDwEdtGrF4
-EfqQZU5j9rEIBa2TpaQBQytGg19RslUrwRGOM9AKLSOmIW8fxKLSxXWuBvvQXC9OBA2wIDT/PDif
-zMbZLIZtg5H912TTyQxk7yEZjXOrEDwbyFmh/3yAszDuBTfvyP8+sMeHgD1+XmCLM8PPghTWdy+g
-IH8IztJo1HRlIBXcooKfAdzOIXA7zwsuX4b8+oFtUq5zZBxXdkq181n7xXd9hfGHd+G603yd+F3n
-XQdOMPBsN+s5O8Vut5sddboVxXPL6U0ms1ul9/B3Q/TzMNC7le7tUPdPDNmqDDiefiUmU35Om5o2
-ArPT0ZcbubQ4ODz2BuLOW4n7KC+NtxE1d3v3Ev/oZqLqdO+O4l+tshIYlRNesTPDeqIWvOIqAN6L
-g0XLMIzW3+V6HNwwFAAA'
-SEP_SETTINGS_YAML='H4sICKDI22gCA3NldHRpbmdzLnlhbWwAzVZNb9s4EL3nVxDdBQwUjeU02W2jU2WJSQjLoktKbbyL
-BSHLbOz1h1RRTmEU/u8dilIkOc5ht5cmB1t8o5k3wzcz/g0pWRTL7YPq7+PN+uwsy9P5LimW6VbM
-02Qlc/sMIcf36Wfh0sCNGMNBKDjmnNCA26jId7K2wJ64ozzk+hWEztGr1680FIV3IuKYiTH1sG+j
-OMv6m3Qu16rvxmqepnmkZA6WQ8cd4cCDQIwLysgtCZ58LYoiU7ZlXbx91x/A/4X9/urqCkDX4R6l
-zNjVNAjnEWZAr/e6Z4DJxCeuEwJpEThjbEPe2TkwKVEXs5DcaByLiRPe2cgCyPr3W9HP5MaY+EQn
-Tjwb/f6d44kAj0J/PgGHth3HLsPhC7YGNPaQ74SSAEx1hpBgYkpivx8MBqXFDaPwTmNnWfY1/JUY
-ZbdOQP46yktXBfuYTU1RhtgJhTeMGLFRlqriIZfq6xpC1Q+2YVmX3xtCETj/TJl3+DCf2X9cXb5t
-HHH3Do+dOg4cMjqCu40Y3Gwu50t9Sebzz8t315bJAXxpIx7qCntDGyVyLfO9+JbmIDGhirjQKvKc
-0Bk6HNtVaUAAuM25PNYSs9F8Vj60c0aopl3X/VRGxpAy8PGUmFZnEweOSPAJLorWFezyepHZEbdj
-dv+B3zOGJzgixLkvtHRviI8rySYybzSr8RGetuCV3FcohP+lc3u6AdHtEC2v5fZRbosU9BNnS/t6
-MLgwzaAnTZ0Gwx5h2A1FKXsrjXfFAnprvZ7FycpUJyCTCa6nFfQZ8UPQKL4PcWCGWwXo8dNXCyMc
-PyqnEvr7e09XoAcjhicLuYmRu4i3D7L3BvVgzkU+FjUerwuZKw0Al3K+6FOrOXY5h9EARWpZH96g
-JgKpEz7hfdnGOgE6SCdGg3TCOHmyWD6eTMEgJ5JoAd00Kl+dAEOo/S5TJwLMSuSZ+1nzQsd7fd7x
-7i5kslK7zSn/SRvrhOggnSANcvjHXD6j91Nxhx2v3C3V6vu5PtSdCFuVhI3jSnawbsNqWxh8QmGF
-QT/cu37kmUXV0Sh4XjaXbsH6VsdoEauVapBqjTcR6Yjgao9UeyhMV3Jb4SUT3E58GrgtxufVgY0m
-4zHfb5Nyq1c9Px43XI/Xnm5qMzXATK8SoVv58AF+FjzKvP+wTmfxur9NN/Fcr/3LlqNPmJGbqYAS
-2+hLvFbyGZfxnn/0j9iQ24AyXO0y3iZ2jtRedZ4zmX9J800MDoQqW70Db/bNiDQny21pX/6Gar0Q
-OnzET0yz8k7qSaYnYiknpy2muBJL6eKXHtsBHTtew+lnLtkqv74kvZdu/v/34g91ULGmCwsAAA=='
+SEP_COMPOSE_YAML='H4sIAAAAAAACA91Y3XPaOBB/56/QcJk+dCqbJDRNdc2DE1zCHF+DTe/6pBG2Cm5s2ZUFCc3kf7+V
+DQ42kKQ3l+TmYMZj7ZdW+9tdS8IY135DiyAiSMQsICLmqla7wSwJMBeLQMYi4kKRGkKbQ/SmIgB8
+hD5bjmsNO9TufyEokbE/91QQC+rH3hWXmQiw6OdO1ybI9PnCFPMwzOiO7bqdfttZM1WUmClXKhDT
+1FiyKFw75U8e96ssk9n/9Imgt7t8blmudW45NgWv250+zJ3EqZpKnv7I5vRFivmNkgzPgJ5mE+oh
+zYfoTUUgM4pRPeVywaUxDeMJCw0RR8wnB7eXA8elnSHJZPGUKX7Nlnf1tZKmGnm0jEAoLgULH9AC
+91Ke4EUcziOeubZ+RW80I+We5IVLB7edPuDT7dJWZ0SwcWd6XKoUwpxQFV9xQb9fK3rFl0bCI2Ky
+JDGBkA1k/O7n41awx+5VV+9P0GRhiAOBY8GxJmyYWI9+3QguLWM9eNBOKdvIdgLm2jXB1XUsr7Jo
+J1FEMntcsEnIaZAsTgj6xsKUV8hNgpSc8xqQwaFfVNJUphTzZpqzlq3pDAs8XvYkiNgURNY5FJsJ
+l14smAkSOM9JcpxJbmRNHhIt4TPFiJnKRUZNYqk2BA5uHXtIh70eHQ5G7h05bTaPC2bzpPmB6Mdq
+EaUS1T+t17LPx22CGhsku2+dd21qde2RbgAEHW4zz62LP8ZD2rP6Vtvu2X13p4n+oGe1duq7dhfU
+3NHXnXrjIfQA2ynzhuPzbueCWq3WyHaAt68IVyrtz9SxL8ajjvsVdHqdPh1ajvPnYNTSqg9wMfOj
+QORmSn3l7a6+Al1JMQltjoUweU7bTMgCSJ1oHkv9OJZ78gK4k0CYKyF8Xz+7k2MtlyfIgkkzDCZm
+tIQuSX6+k9cbSbJVoLkqDUSgjO9pLIipX6k2lY+LuuQ30Hz5/aynjUbjiaHZDgMU2s6gAdGf7IkK
+LEoyuTTX3wByeLI3nyEf2pActHVOEHS/Knns2KP7j0mVu5keuqp0itv9FhgrWHdVnSwDrbF7SSGZ
+Lwegm3qSQVnPGD56f7IbON2Xy6Ddf9/MjFHAV43+++bx0XNEX3I/SB8BIJf5AHmZBKucrLp3cvzh
+43O45/GQyyXVCrxcPTlUnR50Idq3evYd2aS4VjuHbA59lqD6YaNxSPSjvkohJZdJHOhdSj5FRvbi
+KGLCJwhb2ilDsfQqNXIBlPuAMA7jacgXPDwLxLc40/N5woWfUiifYlH+pHjN4let3q1UzrdEO7ZL
+xT7ibXUf8TzBnnCmXjfU2oNqoGGcejPuz0HiDOqFhTCKlv+n+AdiAXPGAAF48jwImPo7k84qEHio
+zkIeTQIPoixYxM8KV9A8mUrmczTjzP8dJUs1iwXCUQZaIWVELBD1vViUqrhK1WDv6+vFSWEHLAiN
+v3QuBqN+1othx2Bk/wpP744I+gjB2Nm3CsaLgZwl+usDnLnxILh5Rf73gT3aB+zRywJbnCVeC1JY
+34OAAv8xODdaox6XGlJBLTL4BcBt7AO38bLgimkgbh7ZJuUyh8ZRaadUObfVD2711cZf9NJ1h/k6
+8WnjtAEnOHjWd8s5a8Fms5kd9ZolwQvLaQ0Go5XQR/jdEf3cD/R6pVs71O0TQ7YqA46t34jJlZeP
+TT02fLPR0JceObc4ODz1ZuLe2gb1SVZ23lJUzG3dV/yjG4uy0a27i381yzbAKJ3wip0Z1h21oBVX
+BPBeHCxqhmHU/gZsMfkTSBQAAA=='
+
+SEP_SETTINGS_YAML='H4sIAAAAAAACA81W3W+bSBB/z1+x6p1kqWqM0+auDU/FsElQMLi7uE3udFqt8dbmjIGyJJFV+X/v
+LAsGbOfhPh5qPyDmN8z85mNn9hckRVnG6VIOt3yTnJ3lRbZ4jMo4S9kii9aiMM8Qsjwv+MLswLdn
+hGA/ZBRT6gY+NVFZPIpGAzvsNqAhVZ8gdI5evX6loFl4y2YUEzYJHOyZiOf5cJMtRCKHNpeLLCtm
+UhSgObbsO+w74IhQFhD3xvX3tlZlmUvTMC7evh+O4H9hfri8vATQtqgTBETrNTRcSmeYAL3B64EG
+plPPta0QSDPfmmAT4s7PgUmF2piE7rXCMZta4a2JDICMv5/LYS42WsVzVeCuY6Jfv1M8ZWCRqece
+2HX1KLYJDl/Q1aDWh3ingeuDqooQAox0SswPo9Go0rgmAXzT6hmGeQW/CgvIjeW7fxzEpbKCPUwe
+dFLG2AqZM54R10R5JstlIeS3BFw1L6Zm2aTfGUMSKP0SEGf3cTE3f7t897Y1RO1bPLEaPyAkwR3U
+dkagsoVYxKpI+vn7u/dXho4BbCklGqoMO2MTRSIRxZY9ZwW0GJMlL1UXOVZojS2KzTo10AC4y7kS
+qxYz0WJevXRjRqih3eT9VERaMSBgYx+Y6s7WD4hc/zMUKmgy2Of1IrMDbofs/gG/I4YnOCJEqcdU
+6167Hq5bNhJF27MKv8MPHXgttjUK7n/q2PYVYP0TotorTp9EWmbQPzyPzavR6EIfBjVpmjAIdlyC
+7ZBVbW9k/LFcwdlKkjmP1jo7vjud4mZawTlzvRB6FN+H2NfDrQbU+BnKlW4cb1ZNJfTn94HKwABG
+DI1WYsORveLpUgzeoAHMuZmHWYPzpBSFVABwqeaLkhqt2KYURgMkqaO9e4NaD24T8AnrcRfrOegh
+PR8t0nNjFdEqfjoZgkZOBNEB+mHUtnoOxpD7x1yecDCvkCPz8/aDnvVG3rNur0S0lo+bU/ajLtZz
+0UN6Tlqk54amcZ6LEk14ypeiOOFMao1jX12g52oP9APKkkREJXJivkzhcMQRcnjJT9WnfD4ujZb1
+qwKy3V+6k0lw/8BuseVUi7Le4/9tqKixAlcEN2wN12cI7g5hvfo0Pg1gH8Phvre9maO3bu/AgeW4
+7WAD7iLyEC25XMsWqe8krcfgzsX1UqyXapitRVrjFRPcDfzBtzuMz2uBiaaTCd2mUXVFqQfYZNJy
+PdzhakLpEQhqai8yNZd2H+GO8ySK4TLJ5jwZptmGL8xWT83EXcfmZ0zc6wcG2TbRV55IcURrsqWf
+vANi7o0fEFzvaNrleI7kVvbec1F8zYoNBwNMViOsB2+27ejXkjit9Ku7YeeD0KJ39MSUrsrTTGg1
+6avOsrp9xeu+qUz81OvIDyaW03L6n+ptVNKXGvKlJvj3J/QHvVzUxe4LAAA='
 
 save_progress() {
 	test ! -d "${INSTALL_DIR}"/ || printf "%d" "${PROGRESS}" > "${INSTALL_DIR}"/.progress
@@ -358,13 +369,13 @@ generate_configs() {
 	# shellcheck disable=SC1091
 	. "${INSTALL_DIR}"/.secrets
 
-	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g" >"${INSTALL_DIR}"/compose.yaml
+	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g" >"${INSTALL_DIR}"/compose.yaml
 	${SEP_COMPOSE_YAML}
 	EOS
 
 	test "${ENABLE_PMM}" = "1" || yq -i -y 'del(.services.pmm)' "${INSTALL_DIR}"/compose.yaml
 
-	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_URL_AUTH}#${SEP_PMM_URL_AUTH}#g" >"${INSTALL_DIR}"/settings.yaml
+	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_URL_AUTH}#${SEP_PMM_URL_AUTH}#g; s#\${SEP_PMM_URL_AUTH_ACCOUNT}#${SEP_PMM_URL_AUTH_ACCOUNT}#g; s#\${SEP_PMM_URL_AUTH_TOKEN}#${SEP_PMM_URL_AUTH_TOKEN}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g" >"${INSTALL_DIR}"/settings.yaml
 	${SEP_SETTINGS_YAML}
 	EOS
 
@@ -376,6 +387,7 @@ generate_configs() {
 	${CASDOOR_INIT_JSON_DATA}
 	EOS
 
+	# shellcheck disable=SC3034
 	jq --arg SEP_CASDOOR_CERTIFICATE_JSON "$(< "${INSTALL_DIR}"/certs/sep_token_jwt_key.pem)" --arg SEP_CASDOOR_PRIVATE_KEY_JSON "$(< "${INSTALL_DIR}"/certs/sep_token_jwt_key.key)" \
 		'.certs[0].certificate = $SEP_CASDOOR_CERTIFICATE_JSON | .certs[0].privateKey = $SEP_CASDOOR_PRIVATE_KEY_JSON' "${INSTALL_DIR}"/casdoor_init.json.tmp >"${INSTALL_DIR}"/casdoor_init.json
 
