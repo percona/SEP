@@ -3,12 +3,14 @@
 # ---
 # title: "Tables without Primary Key"
 # description: "Prints all tables in all databases that do not have a primary key."
-# strict: false
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# atw:
+#  - NATIVE_ASYNC_REPLICATION
 # ---
 
 # Usage: ./mysql_tables_without_pk.sh [--defaults-file=path] [mysql_args...]

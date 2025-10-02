@@ -25,7 +25,6 @@ from app.sep.plugins.archives.deps import (
     get_archives_index_context,
 )
 from app.sep.plugins.archives.models import PurgeConfigItem
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -78,7 +77,7 @@ async def archives_detail(
     """Retrieve archives task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_config = yaml.safe_load(meta["config"])
     all_server = task_config["ALL"]
     purge_item = task_config["PURGE_LIST"][0]
@@ -134,7 +133,7 @@ async def archives_detail(
         )
     context["services"] = services
 
-    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
 
     return templates.TemplateResponse(
         request=request,

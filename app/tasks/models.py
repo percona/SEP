@@ -26,11 +26,11 @@ from functools import cached_property
 from itertools import product
 from pathlib import Path
 from statistics import mean
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
-    AliasGenerator,
     BaseModel,
+    BeforeValidator,
     computed_field,
     ConfigDict,
     Field,
@@ -51,9 +51,31 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     UTCDatetime,
 )
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 
 TASK_ALIAS_LENGTH = 100
+
+
+def _encode_anonymize_mask(v: Any) -> Any:
+    """Encode the anonymize mask from a set of PII entities.
+
+    If the input is a set of PIIEntity, it encodes it into an integer bitmask.
+    Otherwise, it returns it as is.
+
+    :param v: The input value to encode.
+    :type v: Any
+    :return: The encoded anonymize mask as an integer or the original input in case of
+        a TypeError.
+    :rtype: Any
+    """
+    try:
+        return PIIEntity.encode_selection(v)
+    except TypeError:
+        return v
+
+
+AnonymizeMask = Annotated[int, BeforeValidator(_encode_anonymize_mask)]
 
 
 class TaskBackendEnum(StrEnum):
@@ -92,6 +114,19 @@ class TaskHistoryStatusEnum(StrEnum):
     SUCCESS = auto()
     STOPPED = auto()
     LOST = auto()
+
+    def is_finished(self) -> bool:
+        """Check if the task status indicates that it is finished.
+
+        :return: True if the task status is one of FAILED, SUCCESS, or STOPPED;
+            False otherwise.
+        :rtype: bool
+        """
+        return self in [
+            TaskHistoryStatusEnum.FAILED,
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.STOPPED,
+        ]
 
 
 class TaskOwner(EnumFieldMixin, StrEnum):
@@ -197,158 +232,6 @@ class TaskExecutionRequest(BaseModel):
         return self.payload
 
 
-class TaskGroupTaskTemplate(BaseModel):
-    """Represent a task group for controlling task templates.
-
-    :param content: The content of the task template.
-    :type content: str | bytes
-    :param path: The file path where the template will be applied.
-    :type path: str
-    :param mode: The execution mode of the task. Defaults to "restart".
-    :type mode: str
-    :param perms: The file permissions for the template. Defaults to "0644".
-    :type perms: str
-    """
-
-    content: str | bytes
-    path: str
-    mode: str = "restart"
-    perms: str = "0644"
-
-    _transform_fields = {
-        "nomad": {
-            "content": "EmbeddedTmpl",
-            "mode": "ChangeMode",
-            "path": "DestPath",
-            "perms": "Perms",
-        },
-    }
-
-
-class TaskGroupTask(BaseModel):
-    """Represent a task that belongs to a job task group.
-
-    :param name: The name of the task.
-    :type name: str
-    :param driver: The driver to be used for task execution. Defaults to "raw_exec".
-    :type driver: str
-    :param user: The user who will execute the task. Defaults to an empty string.
-    :type user: str
-    :param config: The configuration details for the task.
-    :type config: dict | list | str | bytes
-    :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-    :type meta: dict
-    :param restart: Task restart policy. Defaults to a dictionary specifying no retries.
-    :type restart: dict
-    :param templates: A list of task templates to be applied. Defaults to an empty list.
-    :type templates: list[TaskGroupTaskTemplate]
-    """
-
-    model_config = ConfigDict(
-        alias_generator=AliasGenerator(
-            serialization_alias=lambda field_name: field_name.title(),
-        ),
-    )  # TODO: Reuse  # noqa: TD002, TD003
-    name: str
-    driver: str = "raw_exec"
-    user: str = ""
-    config: dict | list | str | bytes
-    meta: dict = {}  # TODO  # noqa: TD002, TD003, TD004
-    restart: dict = {"attempts": 0, "mode": "fail"}  # TODO  # noqa: TD002, TD003, TD004
-    templates: list[TaskGroupTaskTemplate] = []  # TODO  # noqa: TD002, TD003, TD004
-
-
-class TaskGroup(BaseModel):
-    """Represent a task group.
-
-    :param engine: The backend engine for task execution. Defaults to "nomad".
-    :type engine: str
-    :param name: The name of the task group. Defaults to "execution".
-    :type name: str
-    :param parallel: Whether tasks should be executed in parallel. Defaults to False.
-    :type parallel: bool
-    :param tasks: A list of tasks in the group.
-    :type tasks: list[TaskGroupTask]
-    """
-
-    engine: str = "nomad"
-    name: str = "execution"
-    parallel: bool = False
-    tasks: list[TaskGroupTask] = []
-
-    # TODO: Return Pydantic model  # noqa: TD002, TD003
-    def to_payload(self) -> dict[str, list[dict]]:
-        """Convert to a backend-specific payload format.
-
-        :return: A dictionary representing the payload for the task group.
-        :rtype: dict[str, list[dict[str, Any]]]
-        """
-        data = {"TaskGroups": []}
-        match self.engine:
-            case _:  # Nomad by default and parallelisation is controlled here for now
-                if self.parallel:
-                    for i, task in enumerate(self.tasks):
-                        data["TaskGroups"].append(
-                            {
-                                "Name": f"{self.name}{i + 1}",
-                                "RestartPolicy": {"Attempts": 0},
-                                "ReschedulePolicy": {"Attempts": 0},
-                                "Tasks": [task.model_dump(by_alias=True)],
-                            },
-                        )
-                else:
-                    data["TaskGroups"].append(
-                        {
-                            "Name": self.name,
-                            "RestartPolicy": {"Attempts": 0},
-                            "ReschedulePolicy": {"Attempts": 0},
-                            "Tasks": [
-                                task.model_dump(by_alias=True) for task in self.tasks
-                            ],
-                        },
-                    )
-        return data
-
-
-class GeneratedTask(BaseModel):
-    """Represent a generated task.
-
-    :param app: The application name associated with the task.
-    :type app: TaskOwner
-    :param commands: A list of commands to execute the task.
-    :type commands: list[dict[str, Any]]
-    :param name: The task name.
-    :type name: str
-    :param target: The target system for task execution.
-    :type target: str
-    :param artifacts: Artifacts produced by the task. Defaults to None.
-    :type artifacts: list | None
-    :param parallel: Whether the task will run in parallel. Defaults to False.
-    :type parallel: bool
-    :param persist: Whether the task should persist after completion. Defaults to True.
-    :type persist: bool
-    :param schedule: The scheduling configuration for the task. Defaults to
-        {"save_only": True}.
-    :type schedule: dict
-    :param template: The task template type. Defaults to "batch".
-    :type template: str
-    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
-        False.
-    :type alert_on_fail: bool
-    """
-
-    app: TaskOwner
-    commands: list[dict[str, Any]]
-    name: str
-    target: str
-    artifacts: list | None = None
-    parallel: bool = False
-    persist: bool = True
-    schedule: dict = {"save_only": True}
-    template: str = "batch"
-    alert_on_fail: bool = False
-
-
 class TaskBase(SQLModel):
     """Define the base structure for task-related operations.
 
@@ -365,8 +248,11 @@ class TaskBase(SQLModel):
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
-        logs and files generated by the task. Defaults to 0 (no anonymization).
-    :type anonymize_mask: int
+        logs and files generated by the task. Defaults to None, meaning the entities
+        defined in
+        :attr:`app.tasks.anonymizer.config.AnonymizerSettings.DEFAULT_ENTITIES` will be
+        used.
+    :type anonymize_mask: int | None
     :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
         False.
     :type alert_on_fail: bool
@@ -385,25 +271,7 @@ class TaskBase(SQLModel):
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
     alert_on_fail: bool = False
-    anonymize_mask: int = SQLField(default=0)
-
-    @field_validator("anonymize_mask", mode="before")
-    @classmethod
-    def _encode_anonymize_mask(cls, v: Any) -> int:
-        """Encode the anonymize mask from a set of PII entities.
-
-        If the input is a set of PIIEntity, it encodes it into an integer bitmask.
-        If the input is already an integer, it returns it as is.
-
-        :param v: The input value to encode.
-        :type v: Any
-        :return: The encoded anonymize mask as an integer.
-        :rtype: int
-        """
-        try:
-            return PIIEntity.encode_selection(v)
-        except TypeError:
-            return v
+    anonymize_mask: AnonymizeMask | None = None
 
     @model_validator(mode="after")
     def validate_data_for_backend(self) -> Self:
@@ -419,15 +287,6 @@ class TaskBase(SQLModel):
         if self.backend == TaskBackendEnum.PROXY and not self.data.get("task"):
             raise ValueError("data must contain 'task' for Proxy backend")
         return self
-
-    @property
-    def anonymized_entities(self) -> set[PIIEntity]:
-        """Return the set of PII entities to be anonymized.
-
-        :return: A set of PIIEntity members to be anonymized.
-        :rtype: set[PIIEntity]
-        """
-        return PIIEntity.decode_selection(self.anonymize_mask)
 
 
 class Task(TaskBase, BaseSQLModel, table=True):
@@ -454,7 +313,11 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :type deleted_at: UTCDatetime | None
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to 0 (no anonymization).
-    :type anonymize_mask: int
+    :type anonymize_mask: int | None
+    :param output_files_path: The path where output files generated by the task are
+        expected. Only files in this path will be considered for user pulling. Defaults
+        to None, meaning no files will be available for pulling.
+    :type output_files_path: str | None
     """
 
     __table_args__ = (
@@ -473,6 +336,20 @@ class Task(TaskBase, BaseSQLModel, table=True):
         default=None,
         index=True,
     )
+    output_files_path: str | None = None
+
+    @property
+    def anonymized_entities(self) -> set[PIIEntity]:
+        """Return the set of PII entities to be anonymized.
+
+        :return: A set of PIIEntity to be anonymized.
+        :rtype: set[PIIEntity]
+        """
+        return (
+            PIIEntity.decode_selection(self.anonymize_mask)
+            if self.anonymize_mask is not None
+            else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
+        )
 
 
 class TaskResponse(TaskBase, BaseSQLModel):
@@ -497,7 +374,7 @@ class TaskResponse(TaskBase, BaseSQLModel):
     :type deleted_at: UTCDatetime | None
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to 0 (no anonymization).
-    :type anonymize_mask: int
+    :type anonymize_mask: int | None
     """
 
     deleted_at: UTCDatetime | None
@@ -523,7 +400,7 @@ class TaskWrite(TaskBase):
     :type alert_on_fail: bool
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to 0 (no anonymization).
-    :type anonymize_mask: int
+    :type anonymize_mask: int | None
     """
 
 
@@ -544,6 +421,7 @@ class TaskExecuteRequest(BaseModel):
     meta: dict[str, Any] = {}
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
+    anonymize_mask: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -578,6 +456,10 @@ class TaskHistoryBase(SQLModel):
     :type started_at: UTCDatetime | None
     :param finished_at: The datetime when the task execution finished.
     :type finished_at: UTCDatetime | None
+    :param anonymize_mask: The bitmask representing PII entities to be anonymized in
+        logs and files generated by the execution. Defaults to None, meaning it uses
+        the value defined in the associated task's :attr:`Task.anonymize_mask`.
+    :type anonymize_mask: int | None
     """
 
     execution_request: TaskExecutionRequest = SQLField(
@@ -597,6 +479,7 @@ class TaskHistoryBase(SQLModel):
     finished_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
     )
+    anonymize_mask: AnonymizeMask | None = None
 
     @computed_field
     @property
@@ -622,6 +505,10 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     :type started_at: UTCDatetime | None
     :param finished_at: The datetime when the task execution finished.
     :type finished_at: UTCDatetime | None
+    :param anonymize_mask: The bitmask representing PII entities to be anonymized in
+        logs and files generated by the execution. Defaults to None, meaning it uses
+        the value defined in the associated task's :attr:`Task.anonymize_mask`.
+    :type anonymize_mask: int | None
     :param task_id: The ID of the task associated with the execution.
     :type task_id: int
     :param task: The task associated with this execution history.
@@ -653,6 +540,15 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         :rtype: bool
         """
         return self.status == TaskHistoryStatusEnum.RUNNING
+
+    @property
+    def anonymized_entities(self) -> set[PIIEntity]:
+        """Return the set of anonymized PII entities.
+
+        :return: A set of anonymized PIIEntity.
+        :rtype: set[PIIEntity]
+        """
+        return PIIEntity.decode_selection(self.anonymize_mask)
 
     async def alert_for_status(self) -> None:
         """Trigger an alert for failing statuses."""
@@ -733,6 +629,10 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     :type started_at: UTCDatetime | None
     :param finished_at: The datetime when the task execution finished.
     :type finished_at: UTCDatetime | None
+    :param anonymize_mask: The bitmask representing PII entities to be anonymized in
+        logs and files generated by the execution. Defaults to None, meaning it uses
+        the value defined in the associated task's :attr:`Task.anonymize_mask`.
+    :type anonymize_mask: int | None
     :param task: The task associated with this execution history.
     :type task: TaskResponse
     """

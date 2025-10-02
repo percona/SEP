@@ -7,15 +7,7 @@ from app.core.utils.imports import (
     validate_attribute_is_importable,
     validate_module_is_importable,
 )
-from app.core.utils.list import remove_duplicates
 from app.core.utils.path import resolve_relative_path
-
-
-def test_remove_duplicates_no_duplicates():
-    """Test that a list without duplicates remains unchanged."""
-    input_list = [1, 2, 3, 4, 5]
-    expected = [1, 2, 3, 4, 5]
-    assert remove_duplicates(input_list) == expected
 
 
 def test_validate_attribute_is_importable_invalid_format():

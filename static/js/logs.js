@@ -1,4 +1,140 @@
 $(document).ready(function() {
+    function formatBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes < 0) return String(bytes || 0);
+        const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+        let i = 0,
+            val = bytes;
+        while (val >= 1024 && i < units.length - 1) {
+            val /= 1024;
+            i++;
+        }
+        return `${val.toFixed(val < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+    }
+
+    function filesApiUrl(taskId) {
+        return `/files/${encodeURIComponent(taskId)}`;
+    }
+
+    function fileDownloadUrl(taskId, relPath) {
+        return `/files/${encodeURIComponent(taskId)}/download?path=${encodeURIComponent(relPath)}`;
+    }
+
+    function ensureFilesModal(taskId, filesMap, taskName) {
+        let $modal = $(`#modal-files-${taskId}`);
+        if ($modal.length === 0) {
+            const rows = Object.entries(filesMap).map(([filename, size]) => `
+          <tr data-task-id="${taskId}"
+              data-file-name="${$('<div>').text(filename).html()}"
+              data-file-size="${Number(size)}">
+            <td class="file-name code">${$('<div>').text(filename).html()}</td>
+            <td class="file-size number code">${Number(size)}</td>
+            <td class="options">
+              <button type="button" class="icon medium download-file-button"
+                      aria-label="Download ${$('<div>').text(filename).html()}">
+                <span class="material-symbols-outlined">file_download</span>
+              </button>
+            </td>
+          </tr>
+        `).join('');
+
+            const html = `
+          <section>
+            <dialog id="modal-files-${taskId}" aria-modal="true"
+                    aria-labelledby="modal-files-title-${taskId}"
+                    class="fullwidth modal-files">
+              <div class="window">
+                <header>
+                  <h3 id="modal-files-title-${taskId}" class="h5 title">
+                    Files for ${$('<div>').text(taskName || '').html()}
+                  </h3>
+                </header>
+                <section class="files-list">
+                  <table class="files-table">
+                    <thead>
+                      <tr><th>File</th><th class="number">Size</th><th class="options">Download</th></tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                  </table>
+                </section>
+                <footer>
+                  <button type="button" class="text large" data-modal-close>
+                    Close<sup>ESC</sup>
+                  </button>
+                </footer>
+              </div>
+            </dialog>
+          </section>
+        `;
+            const $anchor = $(`dialog#modal-${taskId}`).parent().length ?
+                $(`dialog#modal-${taskId}`).parent() :
+                $('body');
+            $anchor.append(html);
+            $modal = $(`#modal-files-${taskId}`);
+        }
+
+        $modal.find('tbody tr').each(function() {
+            const $row = $(this);
+            const size = Number($row.data('file-size'));
+            $row.find('.file-size').text(formatBytes(size));
+        });
+
+        return $modal;
+    }
+
+    function openDialog(id) {
+        const el = document.getElementById(id);
+        if (el && typeof el.showModal === 'function') el.showModal();
+    }
+
+    function closeDialog(el) {
+        if (el && typeof el.close === 'function') el.close();
+    }
+
+    $('.modal-files').each(function() {
+        $(this).find('tbody tr').each(function() {
+            const $row = $(this);
+            const size = Number($row.data('file-size'));
+            if (size) $row.find('.file-size').text(formatBytes(size));
+        });
+    });
+
+    $(document).on('click', '.download-file-button', function() {
+        const $btn = $(this);
+
+        if ($btn.data('loading') === true) return;
+
+        const $row = $btn.closest('tr');
+        const taskId = $row.data('task-id');
+        const filename = String($row.data('file-name') || '');
+        if (!taskId || !filename) return;
+
+        $btn.data('loading', true)
+            .attr('aria-disabled', 'true')
+            .prop('disabled', true)
+            .addClass('loading')
+            .html(`
+            <span class="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
+            <span class="label">Anonymizing PII in file</span>
+          `);
+
+        $row.attr('aria-busy', 'true');
+
+        const url = `/files/${encodeURIComponent(taskId)}/download?path=${encodeURIComponent(filename)}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename.split('/').pop();
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    });
+
+    $(document).on('click', '.view-files-button', function() {
+        const target = $(this).attr('data-modal-target');
+        if (target) openDialog(target);
+    });
+
+
+
     const lastOffsets = {};
     const loadedCompletedTasks = new Set();
 
@@ -137,6 +273,42 @@ $(document).ready(function() {
                         </div>
                     </div>
                 `);
+
+                (async () => {
+                    try {
+                        const res = await fetch(`/files/${encodeURIComponent(taskId)}`, {
+                            credentials: 'include'
+                        });
+                        if (!res.ok) return;
+                        const filesMap = await res.json();
+                        if (!filesMap || Object.keys(filesMap).length === 0) return;
+
+                        const taskName = $logConsole.find('h3.title').text().replace(/^Logs for\s+/, '');
+                        ensureFilesModal(taskId, filesMap, taskName);
+
+                        const existingBtn = $logConsole.find('.log-header .view-files-from-log-button');
+                        if (existingBtn.length === 0) {
+                            const btn = $(`
+                          <button type="button"
+                                  class="icon medium view-files-from-log-button"
+                                  title="View & download files"
+                                  aria-label="View & download files"
+                                  data-modal-target="modal-files-${taskId}">
+                            <span class="material-symbols-outlined">download</span>
+                          </button>
+                        `);
+                            $logConsole.find('.log-header .tabs').append(btn);
+                        }
+
+                        $logConsole.on('click', '.view-files-from-log-button', function() {
+                            const filesModalId = $(this).attr('data-modal-target');
+                            closeDialog($logConsole.closest('dialog')[0]);
+                            openDialog(filesModalId);
+                        });
+                    } catch (err) {
+                        console.warn('Could not load files list after finish:', err);
+                    }
+                })();
 
                 $logConsole.find('.log-footer .log-tabs').append(statusEl);
                 $logConsole.addClass(finishData.status);

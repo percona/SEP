@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title -%}
+    Support Snippets
+{%- endblock title %}
+{% block style %}
+    {% if snippets %}
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/snippets.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/saved.css') }}">
+    {% endif %}
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/snippets.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock behaviours_optimized_extra %}
+{% block main %}
+    <section id="savedSnippets">
+        <div class="flex">
+            <h2>Saved</h2>
+            {% if enable_snippets_refresh and user.is_admin %}
+                <form action="{{ url_for('snippets_refresh') }}"
+                      method="post"
+                      style="align-self: center"
+                      class="confirmable-form"
+                      data-confirm-message="Are you sure you want to refresh the saved snippets now?"
+                      title="Refresh snippets">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                    <button class="submitButton">
+                        <span class="material-symbols-outlined">autorenew</span>
+                    </button>
+                </form>
+            {% endif %}
+        </div>
+        {% include "snippets/partials/saved-snippets.html" %}
+    </section>
+{% endblock main %}

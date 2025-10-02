@@ -12,7 +12,7 @@ from app.api.deps import get_current_user
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
-from app.tasks.db import json_deserialize
+from app.tasks.db.utils import json_deserialize
 from app.tasks.deps import get_session
 from app.tasks.main import tasks_app
 
