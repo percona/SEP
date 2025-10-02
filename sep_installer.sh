@@ -1,4 +1,81 @@
 #!/bin/sh
+#######################################################################################################################
+#
+#                                   SEP Installer for Docker or Podman
+#
+#######################################################################################################################
+# Supported Operating Systems
+#######################################################################################################################
+#
+#######################################################################################################################
+# Required software
+#######################################################################################################################
+#
+#   - docker plus the compose plugin/podman and podman-compose
+#   - openssl
+#   - sed
+#   - yq
+#
+#   See CHECK_LIST and check_prereqs for more details
+#
+#######################################################################################################################
+# Configuration options
+#######################################################################################################################
+#
+# AUTOSTART         start the stack automatically following a successful installation, default 0
+# CONTAINER_ENGINE  specify the container runtime, default docker
+# ENABLE_PMM        run PMM as part of the stack, default 1
+# INSTALL_DIR       the location for generated files, default ~/sep
+# SEP_IMAGE_NAME    the registry address, default docker.io/percona/percona-sep (login required)
+# SEP_IMAGE_TAG     the image tag for SEP, default v0.9.0
+#
+# Additional options that have an effect if set are as follows:
+#
+# HOST_IP           the IP address that maps to the PMM server, used in containers
+#
+#######################################################################################################################
+# Credentials
+#######################################################################################################################
+#
+# Secrets are for the most part generated and stored in: "${INSTALL_DIR}"/.secrets
+#
+# This file can be removed after a successfull installation, as it is used whilst generating certain configuration
+# and bootstrap files before the stack is created. However, the content of the file should be stored somewhere
+# safe, even if it is also left in place.
+#
+# In addition to the screts used by SEP, you will to login to Docker Hub with a token if using the Percona registry.
+# The token will be provided to you by Percona and to use it, simply authenticate before pulling the SEP images, e.g.
+#
+# $ docker login --username percona docker.io
+# Password:
+# Login Succeeded!
+#
+#######################################################################################################################
+# Quick start
+#######################################################################################################################
+#
+# The examples will use docker with the compose plugin, simply use podman-compose instead if using podman.
+#
+# Execute the installer, e.g.
+#
+#    $ bash -x sep_installer.sh 2>&1 | tee install.log
+#
+# If AUTOSTART is enabled then simply execute the following to view the logs:
+#
+#    $ docker compose --file ./sep/compose.yaml --project-name sep logs --follow
+#
+# Otherwise, first of all execute the following:
+#
+#    $ docker compose --file ./sep/compose.yaml --project-name sep up --no-recreate --detach
+#
+#######################################################################################################################
+# Troubleshooting and additional information
+#######################################################################################################################
+#
+# Please see the section at the end of this script for more information.
+#
+#######################################################################################################################
+#######################################################################################################################
 
 set -o errexit
 set -o nounset
@@ -13,7 +90,6 @@ INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 
 CERTLIST=all-in-one
 PROGRESS=0
-
 
 # shellcheck disable=SC2016
 CASDOOR_INIT_JSON_DATA='H4sIAAAAAAACA+1YbW/bNhD+vl8hCPsYx066dG2+qX5J1SS2YdktuqEwaIm2OVOkQFJOnSL/fXcU
@@ -339,3 +415,22 @@ test "${AUTOSTART}" = "1" || {
 }
 
 start_stack
+
+#######################################################################################################################
+# Troubleshooting
+#######################################################################################################################
+#
+# There's surely nothing to go here ;) ... at least right now!
+#
+#######################################################################################################################
+# Additional information
+#######################################################################################################################
+#
+# Useful resources:
+# - https://docs.percona.com/pmm/
+# - https://docs.percona.com/percona-monitoring-and-management/3/
+# - https://docs.percona.com/percona-monitoring-and-management/3/reference/nomad.html
+# - https://developer.hashicorp.com/nomad/docs/deploy/production/requirements
+# - https://developer.hashicorp.com/nomad/docs/architecture/security
+#
+#######################################################################################################################
