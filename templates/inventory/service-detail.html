@@ -37,6 +37,24 @@
                 {{ service.environment }}
             </dd>
         {% endif %}
+        {% if service.cluster %}
+            <dt>Cluster</dt>
+            <dd>
+                {{ service.cluster }}
+            </dd>
+        {% endif %}
+        {% if service.replication_set %}
+            <dt>Replication Set</dt>
+            <dd>
+                {{ service.replication_set }}
+            </dd>
+        {% endif %}
+        {% if service.custom_labels %}
+            <dt>Custom Labels</dt>
+            <dd>
+                {% for key, value in service.custom_labels.items() %}<span class="label">{{ key }}: {{ value }}</span>{% endfor %}
+            </dd>
+        {% endif %}
     </dl>
     <hr>
 {% endblock inventory_entity_details %}

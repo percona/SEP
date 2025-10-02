@@ -46,6 +46,8 @@ class PMMService(Service):
     :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as

@@ -197,6 +197,8 @@ class ServiceBase(SQLModel):
     :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :type custom_labels: dict[str, Any] | None
     :param node_id: The foreign key referencing the node to which the service belongs.
@@ -216,6 +218,7 @@ class ServiceBase(SQLModel):
         None  # TODO: Enum with allowed values  # noqa: TD002, TD003
     )
     cluster: str | None = None
+    replication_set: str | None = None
     custom_labels: dict[str, Any] | None = SQLField(
         default=None,
         sa_column=Column(JSON, nullable=False),
@@ -240,6 +243,8 @@ class ServiceWrite(ServiceBase):
     :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :type custom_labels: dict[str, Any] | None
     :param node_id: The foreign key referencing the node to which the service belongs.
@@ -280,6 +285,8 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type environment: str | None
     :param cluster: The cluster in which the service is running, if set.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running, if set.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
     :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
@@ -328,6 +335,8 @@ class ServiceResponse(BaseSQLModel, ServiceBase):
     :type environment: str | None
     :param cluster: The cluster in which the service is running, if set.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running, if set.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
     :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
@@ -365,6 +374,8 @@ class ServiceDetailResponse(ServiceResponse):
     :type environment: str | None
     :param cluster: The cluster in which the service is running, if set.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running, if set.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
     :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.

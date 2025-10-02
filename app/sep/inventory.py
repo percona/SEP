@@ -186,6 +186,8 @@ class Service(BaseInventoryModel):
     :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
@@ -204,6 +206,7 @@ class Service(BaseInventoryModel):
 
     environment: str | None = None
     cluster: str | None = None
+    replication_set: str | None = None
     custom_labels: dict[str, Any] | None = None
     external_id: RequiredStr | EmptyStrToNone = Field(
         default=None,
@@ -237,6 +240,8 @@ class CreatedService(CreatedEntityBase, Service):
     :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
     :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
