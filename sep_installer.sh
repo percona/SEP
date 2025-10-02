@@ -82,13 +82,17 @@ set -o nounset
 
 test "${DEBUG:-0}" = 0 || set -o xtrace
 
-CHECK_LIST="openssl sed docker podman podman-compose"
-
 AUTOSTART="${AUTOSTART:-0}"
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
+ENABLE_PMM="${ENABLE_PMM:-1}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
+SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
+SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.0}"
+
+test "${ENABLE_PMM}" = "1" || test "${SEP_PMM_URL_AUTH:-undef}" != "undef"
 
 CERTLIST=all-in-one
+CHECK_LIST="openssl sed docker podman podman-compose yq"
 PROGRESS=0
 
 # shellcheck disable=SC2016
@@ -171,9 +175,6 @@ QT/cu37kmUXV0Sh4XjaXbsH6VsdoEauVapBqjTcR6Yjgao9UeyhMV3Jb4SUT3E58GrgtxufVgY0m
 4zHfb5Nyq1c9Px43XI/Xnm5qMzXATK8SoVv58AF+FjzKvP+wTmfxur9NN/Fcr/3LlqNPmJGbqYAS
 2+hLvFbyGZfxnn/0j9iQ24AyXO0y3iZ2jtRedZ4zmX9J800MDoQqW70Db/bNiDQny21pX/6Gar0Q
 OnzET0yz8k7qSaYnYiknpy2muBJL6eKXHtsBHTtew+lnLtkqv74kvZdu/v/34g91ULGmCwsAAA=='
-
-SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
-SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.0}"
 
 save_progress() {
 	test ! -d "${INSTALL_DIR}"/ || printf "%d" "${PROGRESS}" > "${INSTALL_DIR}"/.progress
