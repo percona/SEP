@@ -33,7 +33,7 @@ async def app_index(
     snippets = await SnippetManager.list(session)
     context["snippets"] = {
         snippet.filename: snippet.to_form(
-            list(executor_hosts.values()), f"/snippets/{snippet.filename}"
+            list(executor_hosts), f"/snippets/{snippet.filename}"
         )
         for snippet in snippets
     }
@@ -47,7 +47,7 @@ async def app_index(
         )
         for snippet in snippets
     }
-    context["executor_hosts"] = list(executor_hosts.values())
+    context["executor_hosts"] = list(executor_hosts)
     context["atw_categories"] = defaultdict(dict)
     for category in ATWCategory:
         context["atw_categories"][category.parent][category] = [

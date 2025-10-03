@@ -111,7 +111,7 @@ async def tasks_detail(
     context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
-    context["executor_hosts"] = list(executor_hosts.values())
+    context["executor_hosts"] = list(executor_hosts)
     context["AVAILABLE_TIMEZONES"] = list(available_timezones())
     context["user_id_to_username"] = user_id_to_username
     return templates.TemplateResponse(
