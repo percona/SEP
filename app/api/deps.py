@@ -80,7 +80,7 @@ async def get_current_admin(current_user: CurrentUser) -> User:
 IsAdminDep = Depends(get_current_admin)
 
 
-async def get_current_user_id(current_user: CurrentUser) -> str:
+def get_current_user_id(current_user: CurrentUser) -> str:
     """Get the current user's ID as a string.
 
     :param current_user: The current authenticated user.
