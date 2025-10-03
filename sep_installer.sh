@@ -28,8 +28,10 @@
 # INSTALL_DIR       the location for generated files, default ~/sep
 # SEP_IMAGE_NAME    the registry address, default docker.io/percona/percona-sep (login required)
 # SEP_IMAGE_TAG     the image tag for SEP, default v0.9.0
+# SEP_PMM_PORT      the port for PMM
 #
-# Additional options that have an effect if set are as follows, these should be set before installing:
+# Additional options that have an effect if set are as follows, these should be set before installing as they do not
+# use default values:
 #
 # HOST_IP                   the IP address that maps to the PMM server, used in containers
 # SEP_PMM_URL_AUTH_TOKEN    a service account token with admin privileges
@@ -94,6 +96,7 @@ ENABLE_PMM="${ENABLE_PMM:-1}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.0}"
+SEP_PMM_PORT="${SEP_PMM_PORT:-8443}"
 
 test "${ENABLE_PMM}" = "1" || \
 	test "${SEP_PMM_URL_AUTH_TOKEN:-undef}" != "undef" || \
@@ -102,7 +105,6 @@ test "${ENABLE_PMM}" = "1" || \
 CERTLIST=all-in-one
 CHECK_LIST="openssl sed docker podman podman-compose yq"
 PROGRESS=0
-SEP_PMM_PORT=443  # Forced for the time being
 
 # shellcheck disable=SC2016
 CASDOOR_INIT_JSON_DATA='H4sIAAAAAAACA+1YbW/bNhD+vl8hCPsYx066dG2+qX5J1SS2YdktuqEwaIm2OVOkQFJOnSL/fXcU
@@ -167,26 +169,26 @@ nHE2T+20ddqCEx38Nuvt7Nyw3W6nR792yfDCtDuj0WRj9BH+7rD63Q90PtOdHeruiSGdlQ7H2G/Y
 oNLLxoYa677RaqlLkExbHByeelNxH21L+qQotbcWlXA79xf/6AajHHTnLuNfZdkWGKUTXrEz01RH
 LWTFlQE8FweLhq7rjb8Be0O58FgUAAA='
 
-SEP_SETTINGS_YAML='H4sIAAAAAAACA81WW2+bSBR+z68YtStZqhrjtNltw1MxTJJRMLgz0Ca7Wo0wntqsMbAMSWRV/u97
-hoEAjqO9vdR+QJzvcK7fnDOvkRRVlWQrOd5F2/TkpCjz5X1cJXnGl3m8EaV5gpDluv5XbvueHVKK
-vYAzzBjxPWaiqrwXrQZ2+LXPAqY+QegUvXrzSkFhcM1Dhimf+Q52TRQVxXibL0Uqx3Ykl3lehlKU
-oDm17BvsOeCIMu5TckW8J1vrqiqkaRhn7z6MJ/A/Mz+en58DaFvM8X2q9dowCGMhphDe6M1IA/O5
-S2wrgKC5Z82wCXkXpxBJjdqYBuRS4ZjPreDaRAZAxh+P1bgQW63iEpU4cUz003eG5xwscvV8AvZ9
-PYZtioMXdDWo9SHfuU88UFUZQoKxLon5cTKZ1BqX1IdvOj3DMC/gV2M+vbI88utBXqoq2MX0Thdl
-iq2AO9OQEhMVuaxWpZB/puCqfTF1lG35nSkUgbGvPnX2n5YL8+fz9+86Q8y+xjOr9QNC6t9Ab0MK
-nS3FMlFN0s9f3n+4MHQOYEspsUBV2JmaKBapKHf8MS+BYlxWUaVY5FiBNbUYNpvSAAFwP+ZarChm
-ouWifunnjFAbdlv3YxlpRZ+CjafEFDs7PyAi3hdolN9WcBjXi5EdxHYY3b+I71mER2JEiDGXK+pe
-Ehc3lI1F2XFW4Tf4rgdvxK5Bwf0PndtTB/jwhCh6JdmDyKoc+BMViXkxmZzpw6AmTZsGxQ6h2A54
-TXsjj+6rNZytNF1E8UZXxyPzOW6nFZwz4gbAUXwbYE8PtwZQ42cs15o4blhPJfTb95GqwAhGDIvX
-Yhshex1lKzF6i0Yw50IX8xaP0kqUUgEQSz1flNToxDZjMBqgSD3t/VvUeSBtwkesJ31s4GCADHx0
-yMCNVcbr5OFoCho5kkQPGKbR2Bo4mELt7wt5xMGiRp6ZX3QfDKy38oF1ey3ijbzfHrMf97GBiwEy
-cNIhAzcsS4pCVGgWZdFKlEecSa3x3FcfGLh6AoYJ5Wkq4go5SbTK4HAkMXKiKjrWn+rxeWu0bNgV
-kO1/10ym/u0dv8aWUy/KZo//v6GixgpcEUjQGW7OENwdgmb1aXzuwz6Gw31ru6Gjt+7gwIHlpGOw
-AXcReYhWkdzIDmnuJJ1H/4bgZik2SzXINyJr8DoS3E/8zrN7EZ82AhPNZzO2y+L6itIMsNmsi/Vw
-h6sJpUcgqKm9yNVc2n+CO86DKMerNF9E6TjLt9HS7PTUTNz3bFpzosrcTtO+KR7AxvX6yl8wJZd3
-HFpjom9RKsWzHGY79tk9yIJceT7FzUJn/YROkdzJwXshym95uY3AAJf1vBvA2123J7QkyWr9+iLZ
-+yCw2A07MtLrXrbjXK2FmoZWn4RRQ7LaxA+9uzx/ZjldTH9PDm7Zth96wT8iiVFLX2LxS2T478f6
-L3ldUykjDAAA'
+SEP_SETTINGS_YAML='H4sIAAAAAAACA81WbW+bSBD+nl+x6p1kqWqM0+auDZ+KYZOsgsHdhTa502mF8dbmjIECSWRV/u+d
+ZcGATaR7+dLkg8U8szPPvOzM/oIKUZZRsirGu2Abn51lebp8DMsoTfgyDTci188QMmzb/cJN1zF9
+SrHjcYYZI67DdFTmj6LRwBa/dZnH5BGEztGr168k5Hu33GeY8plrYVtHQZaNt+lSxMXYDIplmuZ+
+IXLQnBrmHXYscEQZdym5Ic7B1ross0LXtIu378cT+L/QP1xeXgJoGsxyXar0GhqEMR9ToDd6PVLA
+fG4T0/CANHeMGdYh7uwcmFSoialHriWO+dzwbnWkAaT9/VyOM7FVKjaRgRNLR79+Z3jOwSKXvwdg
+39Vj2KTYe0FXgUof4p27xAFVGSEEGKqU6B8mk0mlcU1dONPqaZp+BX8V5tIbwyF/HMUls4JtTB9U
+UqbY8Lg19SnRUZYW5SoXxbcYXDUfumLZpN+aQhIY++JSa/9xudB/u3z3tjXEzFs8Mxo/IKTuHdTW
+p1DZXCwjWST1+/u791eaigFsSSXmyQxbUx2FIhb5jj+nObQYL8qglF1kGZ4xNRjW69RAA+Au50os
+W0xHy0X10Y0ZoYZ2k/ehiJSiS8HGITDZna0fEBHnMxTKbTLY5/UisyNux+z+Bb8ThgMcEWLM5rJ1
+r4mN65YNRd72rMTv8EMH3ohdjYL7nzq2QwV4/4bI9oqSJ5GUKfRPkEX61WRyoS6DnDRNGBRbhGLT
+41Xba2nwWK7hbsXxIgg3KjsOmc9xM63gnhHbgx7F9x521HCrATl+xsVaNY7tV1MJ/fl9JDMwghHD
+wrXYBshcB8lKjN6gEcw538a8wYO4FHkhAeBSzRcp1VqxyRiMBkhSR3v/BrUeSBPwgPWoi/Uc9JCe
+jxbpuTHycB09DYagkIEgOkA/jNpWz8EUcv+YFQMOFhVyYn7RHuhZb+Q96+ZahJvicTtkP+xiPRc9
+pOekRXpuWBJlmSjRLEiClcgHnBVK49RXF+i5OgD9gNI4FmGJrChYJXA5ohBZQRkM1ad8Pi2NkvWr
+ArL9X6qTqXv/wG+xYVWLst7j/2+oyLECTwTitYbrOwRvB69efQqfu7CP4XLfm7Zvqa3bu3BgOWo7
+WIO3SHGMlkGxKVqkfpO0Ht07guulWC9VL92IpMYrJrgb+INjdhif1wIdzWcztkvC6olSD7DZrOV6
+vMPlhIL3zJPIx6s4XQTxOEm3wbJesnCUy/m375w35kSmtJmcUgXWKa8eTh5sV6er/BlTcv3AoQw6
++hrEhTjhO9uxT/YRY3LjuBTXy5t1yZ+jYlf0vjORf03zbQAGeFHNth683bU7QUmipNKvHo2dA57B
+7tjA+K7q1oxuuQKqljO6DRfUDVWZ+Kn3lOPODKvldBzrQEUN03R9x9t//AdNolXSlzr2pWb471f4
+B1Jm6dAPDAAA'
 
 save_progress() {
 	test ! -d "${INSTALL_DIR}"/ || printf "%d" "${PROGRESS}" > "${INSTALL_DIR}"/.progress
