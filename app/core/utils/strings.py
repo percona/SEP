@@ -15,17 +15,62 @@
 
 """Define utilities for text and strings."""
 
+__all__ = [
+    "b64decode_str",
+    "b64encode_str",
+    "shorten_text",
+    "slugify",
+    "to_uppercase",
+]
+
 import re
 import unicodedata
 from base64 import b64decode, b64encode
 from typing import Any
 
-__all__ = [
-    "b64decode_str",
-    "b64encode_str",
-    "slugify",
-    "to_uppercase",
-]
+from pydantic import NonNegativeInt, PositiveInt, validate_call
+
+
+@validate_call
+def shorten_text(
+    text: str,
+    max_length: PositiveInt = 100,
+    keep_last_chars: NonNegativeInt = 0,
+    ellipsis: str = "...",
+) -> str:
+    """Shorten a string to a specified maximum length.
+
+    If the string exceeds the maximum length, it is truncated and an ellipsis is added.
+
+    :param text: The string to be shortened.
+    :type text: str
+    :param max_length: The maximum allowed length of the string, defaults to 100.
+    :type max_length: PositiveInt
+    :param keep_last_chars: The number of characters to keep at the end of the string,
+        defaults to 0.
+    :type keep_last_chars: NonNegativeInt
+    :param ellipsis: The string to indicate truncation, defaults to "...".
+    :type ellipsis: str
+    :return: The shortened string.
+    :rtype: str
+    :raises ValueError: If the combined length of `ellipsis` and `keep_last_chars` is
+        greater than or equal to `max_length`.
+    :raises ValidationError: If `max_length` is not a positive integer or
+        `keep_last_chars` is negative.
+    :raises ValidationError: If `text` or `ellipsis` are not strings.
+    """
+    if (text_length := len(text)) <= max_length:
+        return text
+    if (ellipsis_length := len(ellipsis)) + keep_last_chars >= max_length:
+        raise ValueError(
+            "The combined length of ellipsis and keep_last_chars must be less than max_length"
+            f" ({ellipsis_length} + {keep_last_chars} >= {max_length})"
+        )
+    return (
+        text[: max_length - ellipsis_length - keep_last_chars]
+        + ellipsis
+        + text[text_length - keep_last_chars :]
+    )
 
 
 def to_uppercase(name: str) -> str:

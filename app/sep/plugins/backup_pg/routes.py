@@ -25,7 +25,6 @@ from app.sep.plugins.backup_pg.deps import (
     parse_backup_task_data,
 )
 from app.sep.plugins.backup_pg.models import BackupType
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -78,7 +77,7 @@ async def pg_backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
 
@@ -110,9 +109,7 @@ async def pg_backups_detail(
 
     try:
         executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts.values()) | {
-            task_data["hostname"]
-        }
+        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     except HTTPException:
         executor_hosts = {}
         context["executor_hosts"] = {task_data["hostname"]}

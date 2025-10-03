@@ -45,7 +45,7 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
 @pytest.fixture
 def dummy_request() -> Request:
     """Create a dummy Request with a messages attribute in its state."""
-    scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80")}
+    scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80"), "path": "/"}
     req = Request(scope)
     req.state.messages = OrderedDict()
     return req

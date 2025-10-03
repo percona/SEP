@@ -25,9 +25,9 @@ from nomad.api.exceptions import BaseNomadException
 
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
+from app.tasks.db.seed import init_tasks_db
 from app.tasks.periodic.routes import router as periodic_router
 from app.tasks.routes import router as tasks_router
-from app.tasks.utils import init_periodic_tasks_db, init_tasks_db
 
 logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
@@ -47,7 +47,6 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :rtype: AsyncGenerator[None, None]
     """
     await init_tasks_db()
-    await init_periodic_tasks_db()
     async with default_lifespan(app), tasks_settings.NOMAD:
         yield
 

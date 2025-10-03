@@ -3,7 +3,8 @@
 # ---
 # title: "pt-stalk"
 # description: "Executes pt-stalk command"
-# strict: false
+# allow_extra_args: true
+# sudo: always
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -35,24 +36,34 @@
 #    description: Sleep time between iterations
 #    default: 30
 #  - name: daemon
-#    type: int
+#    type: bool
 #    label: Run pt-stalk in daemon mode
 #    description: Run pt-stalk in daemon mode
-#    default: 0
 #  - name: system-only
-#    type: int
+#    type: bool
 #    label: Only operating system related captures
 #    description: Trigger only operating system related captures, ignoring all others
 #  - name: action
 #    type: str
-#    label: start or stop.
+#    label: Action
 #    description: Start or stop pt-stalk. Compresses data when stopped.
 #    default: start
+#    choices:
+#      - start
+#      - stop
 #  - name: help
-#    type: int
+#    type: bool
 #    label: Show help message
 #    description: Show help message
-#    default: 0
+# atw:
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - WRITES_ARE_BLOCKED
+#  - PERFORMANCE_OTHER
+#  - TEMPORARY_STALLS
+#  - NATIVE_ASYNC_REPLICATION
+#  - GALERA
+#  - GROUP_REPLICATION
 # ---
 
 # Usage: ./pt-stalk.sh [--defaults-file=path]  start|stop [-- other args...]
@@ -167,14 +178,14 @@ case "$ACTION" in
    start)
       mkdir -p "${PTDEST}"
       if [ $IS_DAEMON -eq 1 ]; then
-         sudo pt-stalk "${DEFAULTS_FILE}" --daemonize --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
+         pt-stalk "${DEFAULTS_FILE}" --daemonize --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
       else
-         sudo pt-stalk "${DEFAULTS_FILE}" --no-stalk --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
+         pt-stalk "${DEFAULTS_FILE}" --no-stalk --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
          compress_data
       fi
       ;;
    stop)
-      sudo kill `cat ${PID}` && compress_data
+      kill `cat ${PID}` && compress_data
       ;;
    *)
       echo "Unrecognized action '$ACTION'"

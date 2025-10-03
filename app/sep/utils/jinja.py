@@ -15,12 +15,15 @@
 
 """Define Jinja2 filters and utilities."""
 
+from datetime import datetime
 from typing import Any
 
 from pygments import highlight
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name, guess_lexer, TextLexer
 from pygments.util import ClassNotFound
+
+from app.core.utils import make_datetime_utc
 
 
 def syntax_highlight_css(cssclass: str = "highlight", **fmt_options: Any) -> str:
@@ -72,3 +75,37 @@ def syntax_highlight(code: str, language: str | None = None, **fmt_options: Any)
         except ClassNotFound:
             lexer = TextLexer(stripall=True)
     return highlight(code, lexer, HtmlFormatter(**fmt_options))
+
+
+def utc_isoformat(dt: datetime) -> str:
+    """Convert a datetime to UTC and return a corresponding ISO 8601 formatted string.
+
+    :param dt: Datetime to convert timezone.
+    :type dt: datetime
+    :return: ISO 8601 formatted string for aware datetime with timezone set to UTC.
+    :rtype: str
+    """
+    return make_datetime_utc(dt).isoformat()
+
+
+def humanize_bytes(num_bytes: int) -> str:
+    """Return a humanized file size string from a number of bytes.
+
+    :param num_bytes: Total number of bytes to humanize.
+    :type num_bytes: int
+    :return: Humanized file size.
+    :rtype: str
+    """
+    bytes_treshold = 1024
+    for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
+        if abs(num_bytes) < bytes_treshold:
+            return f"{num_bytes:3.1f}{unit}B"
+        num_bytes /= bytes_treshold
+    return f"{num_bytes:.1f}YiB"
+
+
+DEFAULT_FILTERS = {
+    "syntax_highlight": syntax_highlight,
+    "utc_isoformat": utc_isoformat,
+    "humanize_bytes": humanize_bytes,
+}

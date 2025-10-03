@@ -746,7 +746,7 @@ select,
 
 input[type="search"]:hover,
 input[type="datetime-local"]:hover,
-select:not([disabled]):hover {
+select:not(:disabled):hover {
     border-color: var(--lineDividerStrong);
     cursor: pointer;
 }
@@ -784,7 +784,7 @@ select[multiple] option+option {
     margin-top: 0.25em;
 }
 
-select[disabled] {
+select:disabled {
     color: var(--textDisabled);
     background: var(--actionDisabled);
 }
@@ -1218,6 +1218,14 @@ button.list-item:focus-visible {
 
 .list-item.tasks .icon::before {
     content: "assignment_turned_in";
+}
+
+.list-item.snippets .icon::before {
+    content: "snippet_folder";
+}
+
+.list-item.atw .icon::before {
+    content: "support";
 }
 
 /*=============================================*/
@@ -1714,4 +1722,21 @@ td.errors ul {
     position: sticky;
     top: 0;
     z-index: 10;
+}
+
+.unselectable {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.iconTextLine>* {
+    vertical-align: middle;
+}
+
+.hidden {
+    display: none;
 }
