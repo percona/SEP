@@ -221,7 +221,7 @@ class ServiceBase(SQLModel):
     replication_set: str | None = None
     custom_labels: dict[str, Any] | None = SQLField(
         default=None,
-        sa_column=Column(JSON, nullable=False),
+        sa_column=Column(JSON),
     )
     node_id: int = SQLField(foreign_key="node.id", index=True, ondelete="CASCADE")
 
