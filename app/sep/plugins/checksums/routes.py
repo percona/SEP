@@ -86,7 +86,7 @@ async def checksums_detail(
         "hostname": meta["target"],
         "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
-        "entities": {entity.name: entity.value for entity in decoded_entities},
+        "entities": {entity: True for entity in decoded_entities},
         "delete_url": request.url_for("checksums_delete", task_name=task.name),
         "alert_on_fail": task.alert_on_fail,
         "is_edit_enabled": not task.protected,

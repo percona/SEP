@@ -92,7 +92,7 @@ async def pg_backups_detail(
         "host": server_config["HOST"],
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
-        "entities": {entity.name: entity.value for entity in decoded_entities},
+        "entities": {entity: True for entity in decoded_entities},
         "delete_url": request.url_for("backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
         "is_edit_enabled": not task.protected,

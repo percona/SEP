@@ -87,7 +87,7 @@ async def archives_detail(
         "updated_at": task.updated_at,
         "hostname": meta["target"],
         "meta": meta,
-        "entities": {entity.name: entity.value for entity in decoded_entities},
+        "entities": {entity: True for entity in decoded_entities},
         "delete_url": request.url_for("archives_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
     }
