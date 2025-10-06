@@ -164,7 +164,7 @@ async def alters_detail(
         "table": f"{meta['_schema_name']}.{meta['_table_name']}",
         "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
-        "entities": {entity: True for entity in decoded_entities},
+        "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("alters_delete", task_name=task.name),
         "dry_run_url": request.url_for(
             "alters_execute", task_name=task.name + "-dry-run"

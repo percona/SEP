@@ -58,9 +58,14 @@ class AnonymizerSettings(BaseYamlSettings):
         :rtype: Any
         """
         if v == "*":
-            v = [entity.name for entity in PIIEntity]
+            v = list(PIIEntity)
         if isinstance(v, list):
-            entities = set(v)
+            entities = set()
+            for item in v:
+                if isinstance(item, str):
+                    entities.add(PIIEntity[item])
+                else:
+                    entities.add(item)
             return defaultdict(lambda: entities)
         if isinstance(v, dict):
             return defaultdict(set, v)
