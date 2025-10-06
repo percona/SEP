@@ -195,6 +195,12 @@ class ServiceBase(SQLModel):
     :param environment: The environment in which the service is running (e.g.,
         production, staging). Defaults to None.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
     :param node_id: The foreign key referencing the node to which the service belongs.
     :type node_id: int
     """
@@ -210,6 +216,12 @@ class ServiceBase(SQLModel):
     port: int | None = None
     environment: str | None = (
         None  # TODO: Enum with allowed values  # noqa: TD002, TD003
+    )
+    cluster: str | None = None
+    replication_set: str | None = None
+    custom_labels: dict[str, Any] | None = SQLField(
+        default=None,
+        sa_column=Column(JSON),
     )
     node_id: int = SQLField(foreign_key="node.id", index=True, ondelete="CASCADE")
 
@@ -229,6 +241,12 @@ class ServiceWrite(ServiceBase):
     :param environment: The environment in which the service is running (e.g.,
         production, staging). Defaults to None.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
     :param node_id: The foreign key referencing the node to which the service belongs.
         Defaults to None.
     :type node_id: int | None
@@ -265,6 +283,12 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type port: int | None
     :param environment: The environment in which the service is running, if set.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running, if set.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running, if set.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service, if set.
+    :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
         ix_service_external_id_node_id, and for port, as defined by composite index
@@ -309,6 +333,12 @@ class ServiceResponse(BaseSQLModel, ServiceBase):
     :type port: int | None
     :param environment: The environment in which the service is running, if set.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running, if set.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running, if set.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service, if set.
+    :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
     :type node_id: int
     :param schemas: A list of schemas associated with the service.
@@ -342,6 +372,12 @@ class ServiceDetailResponse(ServiceResponse):
     :type port: int | None
     :param environment: The environment in which the service is running, if set.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running, if set.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running, if set.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service, if set.
+    :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
     :type node_id: int
     :param schemas: A list of schemas associated with the service.
