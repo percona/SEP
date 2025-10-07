@@ -27,7 +27,7 @@
 # ENABLE_PMM        run PMM as part of the stack, default 1
 # INSTALL_DIR       the location for generated files, default ~/sep
 # SEP_IMAGE_NAME    the registry address, default docker.io/percona/percona-sep (login required)
-# SEP_IMAGE_TAG     the image tag for SEP, default v0.9.0
+# SEP_IMAGE_TAG     the image tag for SEP, default v0.9.2
 # SEP_PMM_PORT      the port for PMM
 #
 # Additional options that have an effect if set are as follows, these should be set before installing as they do not
@@ -95,7 +95,7 @@ CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 ENABLE_PMM="${ENABLE_PMM:-1}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
-SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.0}"
+SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.2}"
 SEP_PMM_PORT="${SEP_PMM_PORT:-8443}"
 
 test "${ENABLE_PMM}" = "1" || \
