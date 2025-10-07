@@ -219,6 +219,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
         return task
 
+    async def parse_payload(
+        self, payload: str | bytes, payload_format: str
+    ) -> dict[str, Any]:
+        """Parse a job spec payload based on its format.
+
+        This function parses the payload according to the specified format
+        (HCL, JSON, or YAML).
+
+        :param payload: The job specification payload to be parsed.
+        :type payload: str | bytes
+        :param payload_format: The format of the payload, which can be "hcl", "json",
+            or "yaml".
+        :type payload_format: str
+        :return: The parsed job specification.
+        :rtype: dict[str, Any]
+        :raises ValueError: If the provided payload format is unsupported.
+        """
+        if payload_format == "hcl":
+            return await async_run(self.backend.jobs.parse, payload)
+        return await super().parse_payload(payload, payload_format)
+
     def register_job(self, task: Task) -> dict[str, Any]:
         """Register a new job with the Nomad backend.
 

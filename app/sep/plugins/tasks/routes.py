@@ -84,6 +84,7 @@ async def task_create(
         json=create_task_form.model_dump(include={"payload", "fmt"}),
         params={"backend": create_task_form.backend},
     )
+
     await tasks_api.post("/", json=task_data)
     task_path = request.url_for("tasks_detail", task_name=create_task_form.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
