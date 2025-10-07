@@ -117,7 +117,7 @@ def created_table(created_schema) -> CreatedTable:
     return created_table
 
 
-@pytest.mark.usefixtures("mock_sync_item_manager")
+@pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
 def test_node_list(test_client, mock_inventory_api_dep):
     """Test listing nodes."""
     response = test_client.get("/inventory/")
@@ -134,7 +134,9 @@ async def test_sync_inventory(async_test_client, mock_syncers, mock_background_t
     assert response.headers["location"] == "/inventory/"
 
 
-@pytest.mark.usefixtures("_mock_created_node_dep", "mock_sync_item_manager")
+@pytest.mark.usefixtures(
+    "_mock_created_node_dep", "mock_sync_item_manager", "mock_get_username_mapping"
+)
 def test_node_detail(
     test_client,
     created_node,
@@ -182,7 +184,9 @@ def test_node_delete(test_client, created_node, mock_inventory_api_dep):
     assert response.headers["location"] == "/inventory/"
 
 
-@pytest.mark.usefixtures("_mock_created_service_dep", "mock_sync_item_manager")
+@pytest.mark.usefixtures(
+    "_mock_created_service_dep", "mock_sync_item_manager", "mock_get_username_mapping"
+)
 def test_service_detail(
     test_client,
     created_service,
@@ -237,7 +241,9 @@ def test_service_delete(test_client, created_service, mock_inventory_api_dep):
     assert response.headers["location"] == f"/inventory/{created_service.node_id}"
 
 
-@pytest.mark.usefixtures("_mock_created_schema_dep", "mock_sync_item_manager")
+@pytest.mark.usefixtures(
+    "_mock_created_schema_dep", "mock_sync_item_manager", "mock_get_username_mapping"
+)
 def test_schema_detail(
     test_client,
     created_schema,

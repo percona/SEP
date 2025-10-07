@@ -86,7 +86,7 @@ def test_alters_create(
     )
 
 
-@pytest.mark.usefixtures("_mock_get_alters_task_dep")
+@pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")
 def test_alters_detail(
     test_client,
     created_task,

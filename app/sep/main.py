@@ -165,7 +165,7 @@ async def internal_error_handler(
         name="error.html",
         context={
             "exception": "".join(format_exception(exc, limit=-1, chain=False)),
-            **get_default_context(request, user, base_url),
+            **await get_default_context(request, user, base_url),
         },
     )
 
@@ -188,7 +188,10 @@ async def custom_404_handler(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
         name="404.html",
-        context={"exception": exc, **get_default_context(request, user, base_url)},
+        context={
+            "exception": exc,
+            **await get_default_context(request, user, base_url),
+        },
     )
 
 
