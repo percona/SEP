@@ -41,6 +41,7 @@ from app.tasks.celery import (
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
+    get_executor,
     get_logs_offsets,
     PreparedTaskHistory,
     SessionDep,
@@ -48,8 +49,10 @@ from app.tasks.deps import (
     TaskExecutor,
     TaskHistoryWithTaskDep,
 )
+from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
     Task,
+    TaskBackendEnum,
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -379,8 +382,11 @@ async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
 
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])
 async def transform_payload(
-    executor: TaskExecutor,
     data: TransformPayloadRequest,
+    backend: TaskBackendEnum = TaskBackendEnum.NOMAD,
 ) -> dict[str, Any]:
     """Transform a payload string into a dictionary."""
+    if backend == TaskBackendEnum.PROXY:
+        return parse_payload(data.payload, data.fmt)
+    executor = get_executor(backend)
     return await executor.transform_payload(data.payload, data.fmt)

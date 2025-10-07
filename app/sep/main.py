@@ -222,7 +222,7 @@ async def default_exception_handler(
 ) -> RedirectResponse:
     """Define default exception handler."""
     error_detail = exc.detail
-    messages.error(request, error_detail)
+    messages.error(request, str(error_detail))
     return RedirectResponse(
         request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
     )

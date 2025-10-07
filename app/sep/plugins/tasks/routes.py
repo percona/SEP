@@ -30,7 +30,7 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.plugins.tasks.deps import TaskDep, UsernameMappingDep
+from app.sep.plugins.tasks.deps import TaskDep
 from app.sep.plugins.tasks.models import TaskCreateRequest
 from app.tasks.models import (
     TaskBackendEnum,
@@ -51,7 +51,6 @@ async def tasks_list(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
-    user_id_to_username: UsernameMappingDep,
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
     context["tasks"] = await tasks_api.get("/")
@@ -61,7 +60,6 @@ async def tasks_list(
     context["available_backends"] = TaskBackendEnum
     context["available_owners"] = TaskOwner
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
-    context["user_id_to_username"] = user_id_to_username
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
@@ -98,7 +96,6 @@ async def tasks_detail(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
-    user_id_to_username: UsernameMappingDep,
 ) -> HTMLResponse:
     """Retrieve task."""
     context["task"] = task
@@ -113,7 +110,6 @@ async def tasks_detail(
     executor_hosts = await tasks_api.get("/hosts/")
     context["executor_hosts"] = list(executor_hosts)
     context["AVAILABLE_TIMEZONES"] = list(available_timezones())
-    context["user_id_to_username"] = user_id_to_username
     return templates.TemplateResponse(
         request=request,
         name="tasks/view.html",
