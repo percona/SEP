@@ -416,6 +416,8 @@ start_stack() {
 test ! -f "${INSTALL_DIR}"/.progress || PROGRESS="$(cat "${INSTALL_DIR}"/.progress)"
 
 registry_login
+"${CONTAINER_ENGINE}" pull "${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}"
+"${CONTAINER_ENGINE}" logout
 
 test "${PROGRESS}" -gt 0 || check_prereqs  # Errors here will require manual intervention
 test "${PROGRESS}" -gt 1 || generate_dirs
