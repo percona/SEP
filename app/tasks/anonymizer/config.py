@@ -21,6 +21,7 @@ from typing import Any, ClassVar
 from pydantic import Field, field_validator
 
 from app.core.config import BaseYamlSettings
+from app.core.utils import run_pydantic_type_validator
 from app.tasks.anonymizer.entities import PIIEntity
 
 
@@ -60,7 +61,7 @@ class AnonymizerSettings(BaseYamlSettings):
         if v == "*":
             v = list(PIIEntity)
         if isinstance(v, list):
-            entities = set(v)
+            entities = run_pydantic_type_validator(set[PIIEntity], v)
             return defaultdict(lambda: entities)
         if isinstance(v, dict):
             return defaultdict(set, v)
