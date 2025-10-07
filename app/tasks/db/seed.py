@@ -29,11 +29,9 @@ from app.core.celery.utils import (
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.models import Task
+from app.tasks.models import SYSTEM_USER, Task
 
 logger = logging.getLogger(__name__)
-
-SYSTEM_USER = "SYSTEM"
 
 NOMAD_RUN_COMMAND = {
     "ID": "run-command",
@@ -306,7 +304,7 @@ async def init_tasks_db() -> None:
                     created_task,
                     task,
                     flag_modified_fields=["data"],
-                    last_updated_by=None,
+                    last_updated_by=SYSTEM_USER,
                 )
                 logger.info(
                     "Updated system task %s with new data: %s",

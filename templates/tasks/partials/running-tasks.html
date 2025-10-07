@@ -17,9 +17,7 @@
                         <td>{{ task_name }}</td>
                         <td>{{ task['execution_request']['target'] }}</td>
                         <td class="relativeTime">{{ task['updated_at'] }}</td>
-                        <td>
-                            {{ user_id_to_username.get(task.executed_by, task.executed_by) if user_id_to_username is defined else task.executed_by }}
-                        </td>
+                        <td>{{ user_id_to_username.get(task.executed_by, task.executed_by) or '' }}</td>
                         <td class="options">
                             <button type="button"
                                     class="icon medium view-logs-button"
