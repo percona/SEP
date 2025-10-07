@@ -115,17 +115,17 @@ ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
 
 def prepare_task_history(
     task: ExecutableTaskDep,
-    executed_by: CurrentUserID,
+    executed_by: CurrentUserID | None = None,
     execution_data: TaskExecuteRequest | None = None,
 ) -> TaskHistory:
     """Prepare the history of a task execution request.
 
     :param task: The task to execute.
     :type task: Task
+    :param executed_by: The ID of the user executing the task. None for system/periodic tasks.
+    :type executed_by: CurrentUserID | None
     :param execution_data: Execution details and parameters, if any.
     :type execution_data: TaskExecuteRequest | None
-    :param executed_by: The ID of the user executing the task.
-    :type executed_by: CurrentUserID
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
     """
