@@ -3,6 +3,7 @@
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Target</th>
                 <th>Host</th>
                 <th>Type</th>
                 <th>Upload</th>
@@ -17,7 +18,8 @@
                     <td>
                         <a href="{{ url_for('backups_detail', task_name=task.name) }}">{{ task.name }}</a>
                     </td>
-                    <td>{{ task.host }} ({{ task.port }})</td>
+                    <td>{{ task.hostname }}</td>
+                    <td>{{ task.host }}</td>
                     <td>{{ task.backup_type }}</td>
                     <td>{{ task.upload }}</td>
                     <td>{{ task.get('created_by', 'None') }}</td>

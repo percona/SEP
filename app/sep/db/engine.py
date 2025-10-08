@@ -15,6 +15,8 @@
 
 """Define database initialization and utility functions for SEP."""
 
+__all__ = ["engine", "get_async_session_maker"]
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.db.utils import get_async_session_maker_from_engine

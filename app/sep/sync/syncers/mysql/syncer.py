@@ -93,7 +93,10 @@ class MySQLSyncer(BaseTaskSyncer):
         if self.force_executor_host:
             return self.force_executor_host
         available_hosts = await self.get_available_hosts()
-        return available_hosts.get(host, next(iter(available_hosts.values())))
+        for target, address in available_hosts.items():
+            if address == host:
+                return target
+        return next(iter(available_hosts))
 
     def build_script_config(
         self,

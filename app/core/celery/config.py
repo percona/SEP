@@ -70,3 +70,16 @@ class CeleryOptions(BaseLowercaseModel):
         if self.beat_dburi.startswith("sqlite://"):
             self.beat_schema = None
         return self
+
+    @model_validator(mode="after")
+    def set_include(self) -> Self:
+        """Ensure 'include' is set in the options.
+
+        :return: Validated options.
+        :rtype: CeleryOptions
+        """
+        self.include = [
+            "app.tasks.celery",
+            "app.sep.celery",
+        ]
+        return self

@@ -33,7 +33,7 @@ build: venv app/
 pack:
 ifndef BUNDLE
 	@echo Exporting bundle
-	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app static templates
+	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets static templates
 else
 	@echo Copying custom bundle "${BUNDLE}"
 	@cp -a "${BUNDLE}" bundle.tgz
@@ -68,7 +68,7 @@ run-pre-commit: venv
 
 pip-audit: venv
 	@"${POETRY}" install --all-extras --all-groups
-	@"${POETRY}" run pip-audit --verbose --progress-spinner=off --ignore-vuln PYSEC-2023-312
+	@"${POETRY}" run pip-audit --verbose --progress-spinner=off --ignore-vuln GHSA-4xh5-x5gv-qwph
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
