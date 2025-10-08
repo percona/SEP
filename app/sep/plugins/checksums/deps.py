@@ -233,7 +233,7 @@ def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "hostname": meta["target"],
         "service_name": f"{service_name}",
         "created_by": task.get("created_by"),
-        "last_edit_by": task.get("last_edit_by"),
+        "last_updated_by": task.get("last_updated_by"),
     }
 
 

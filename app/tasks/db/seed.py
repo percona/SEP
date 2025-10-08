@@ -293,8 +293,6 @@ async def init_tasks_db() -> None:
         system_tasks_names = []
         for task in SYSTEM_TASKS:
             system_tasks_names.append(task.name)
-            task.created_by = "System"
-            task.last_edit_by = "System"
             created_task, created = await TaskManager.get_or_create(
                 session, task, {"name"}
             )
