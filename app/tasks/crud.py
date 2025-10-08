@@ -17,7 +17,6 @@
 
 import logging
 from collections.abc import Sequence
-from typing import Any
 
 from sqlalchemy import CursorResult
 from sqlalchemy.orm import aliased
@@ -36,7 +35,6 @@ from app.tasks.models import (
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskOwner,
-    TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,52 +51,6 @@ class TaskManager(BaseSQLModelManager):
     """
 
     Model = Task
-
-    @classmethod
-    async def update(
-        cls,
-        session: AsyncSession,
-        existing_instance: Task,
-        updated_instance: TaskWrite,
-        *,
-        flag_modified_fields: Sequence[str] = (),
-        **extra_fields: Any,
-    ) -> Task:
-        """Update an existing task instance with new data and save it.
-
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
-        :param existing_instance: The existing task instance to be updated.
-        :type existing_instance: Task
-        :param updated_instance: The new data to update the task instance with.
-        :type updated_instance: TaskWrite
-        :param flag_modified_fields: Fields to be flagged as modified before saving.
-        :type flag_modified_fields: Sequence[str]
-        :param extra_fields: Additional fields to be set on the task instance.
-        :type extra_fields: Any
-        :return: The updated and saved task instance.
-        :rtype: Task
-        """
-        logger.debug(
-            "Updating existing task %s (%s): %s",
-            existing_instance.name,
-            existing_instance.id,
-            updated_instance,
-        )
-
-        updated_instance_data = updated_instance.model_dump(exclude_unset=True)
-        existing_instance.sqlmodel_update(updated_instance_data)
-
-        for key, value in extra_fields.items():
-            if hasattr(existing_instance, key):
-                setattr(existing_instance, key, value)
-
-        return await cls.save(
-            session,
-            existing_instance,
-            flag_modified_fields=flag_modified_fields,
-        )
 
     @classmethod
     async def list_active(
