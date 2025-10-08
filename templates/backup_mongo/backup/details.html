@@ -34,7 +34,6 @@
         <thead>
             <tr>
                 <th>Executor Host</th>
-                <th>Created By</th>
                 <th>Created at</th>
                 <th>Updated at</th>
             </tr>
@@ -42,14 +41,13 @@
         <tbody>
             <tr>
                 <td>{{ task.hostname }}</td>
-                <td>N/A</td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
             </tr>
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="4"></td>
+                <td colspan="3"></td>
             </tr>
         </tfoot>
     </table>
