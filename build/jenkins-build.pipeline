@@ -126,12 +126,19 @@ pipeline {
 
 			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
 			steps {
-				sh '''
-					set -o errexit
-					set -o pipefail
 
-					podman image push sep:${RELEASE_VER} labbox-mini.tp.int.percona.com:5555/sep:${RELEASE_VER}
-				'''
+				withCredentials([file(credentialsId: 'SEP_DOCKER_HUB_WRITE_TOKEN', variable: 'DOCKER_TOKEN')]) {
+					sh '''
+						set -o errexit
+						set -o pipefail
+
+						podman image push sep:${RELEASE_VER} labbox-mini.tp.int.percona.com:5555/sep:${RELEASE_VER}
+
+						cat "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
+						podman image push --authfile .dockerhub labbox-mini.tp.int.percona.com:5555/sep:${RELEASE_VER} docker.io/percona/percona-sep:${RELEASE_VER}
+						podman logout --authfile .dockerhub docker.io
+					'''
+				}
 			}
 		}
 
