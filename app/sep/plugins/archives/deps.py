@@ -183,7 +183,7 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     result = {
         "hostname": meta["target"],
         "created_by": task.get("created_by"),
-        "last_edit_by": task.get("last_edit_by"),
+        "last_updated_by": task.get("last_updated_by"),
     }
 
     if source_db and source_table:
