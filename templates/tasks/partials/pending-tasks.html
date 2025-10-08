@@ -6,6 +6,7 @@
                 <th>Host</th>
                 <th>Created at</th>
                 <th>ETA</th>
+                <th>Executed by</th>
                 <th>Options</th>
             </tr>
         </thead>
@@ -18,6 +19,7 @@
                     <td class="relativeTime">{{ task['created_at'] }}</td>
                     {% set eta = task['execution_request'].get('eta') %}
                     <td {% if eta %}class="relativeTime"{% endif %}>{{ eta }}</td>
+                    <td>{{ user_id_to_username.get(task.executed_by, task.executed_by) or '' }}</td>
                     <td>
                         <a href="{{ task_name }}">
                             <span class="material-symbols-outlined">visibility</span>

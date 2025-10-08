@@ -230,6 +230,8 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "port": backup_server.get("PORT"),
         "upload": ", ".join(backup_server.get("UPLOAD")),
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
+        "created_by": task.get("created_by"),
+        "last_updated_by": task.get("last_updated_by"),
     }
 
 

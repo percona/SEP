@@ -24,6 +24,7 @@ from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
+from app.api.deps import CurrentUserID
 from app.core.exceptions import HTTPBadRequestException
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
@@ -114,12 +115,15 @@ ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
 
 def prepare_task_history(
     task: ExecutableTaskDep,
+    executed_by: CurrentUserID,
     execution_data: TaskExecuteRequest | None = None,
 ) -> TaskHistory:
     """Prepare the history of a task execution request.
 
     :param task: The task to execute.
     :type task: Task
+    :param executed_by: The ID of the user executing the task.
+    :type executed_by: CurrentUserID
     :param execution_data: Execution details and parameters, if any.
     :type execution_data: TaskExecuteRequest | None
     :return: The logged TaskHistory entry.
@@ -155,6 +159,7 @@ def prepare_task_history(
             eta=execution_data.eta,
         ),
         status=TaskHistoryStatusEnum.PENDING,
+        executed_by=executed_by,
         anonymize_mask=anonymizer_settings.get_anonymize_mask(task.owner)
         if anonymize_mask is None
         else anonymize_mask,

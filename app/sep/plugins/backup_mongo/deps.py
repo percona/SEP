@@ -140,6 +140,8 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "parent": data.get("parent"),
         "target": meta["target"],
         "created_at": task["created_at"],
+        "created_by": task.get("created_by"),
+        "last_updated_by": task.get("last_updated_by"),
     }
 
 

@@ -1,13 +1,14 @@
 """Define test fixtures for the SEP app."""
 
 from collections import OrderedDict
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
 from fastapi import Request
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from pytest_mock import MockerFixture
 
 from app.core.requests import RemoteAPI
 from app.models import CasdoorUser
@@ -67,3 +68,12 @@ def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def mock_get_username_mapping(mocker: MockerFixture) -> Mock:
+    """Mock the TaskDep dependency."""
+    return mocker.patch(
+        "app.sep.deps.get_username_mapping",
+        return_value={"12345678-1234-5678-9abc-123456789012": "test-user"},
+    )

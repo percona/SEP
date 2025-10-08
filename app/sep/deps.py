@@ -198,8 +198,28 @@ async def validate_csrf(
 IsCsrfValidated = Depends(validate_csrf)
 
 
-def get_default_context(
-    request: Request, user: CurrentUser, base_uri: BaseURL
+async def get_username_mapping() -> dict[str, str]:
+    """Create a mapping from user ID to username using Casdoor.
+
+    This function fetches all users from Casdoor and creates a mapping from
+    user ID to username. Caching should be implemented in the Casdoor SDK
+    to avoid repeated API calls.
+
+    :return: A dictionary mapping user IDs to usernames.
+    :rtype: dict[str, str]
+    """
+    try:
+        users = await settings.CASDOOR.get_users()
+        return {str(user["id"]): user["name"] for user in users}
+    except (ValueError, KeyError, HTTPException):
+        logger.exception("Failed to get username mapping from Casdoor")
+        return {}
+
+
+async def get_default_context(
+    request: Request,
+    user: CurrentUser,
+    base_uri: BaseURL,
 ) -> dict[str, Any]:
     """Return the default context for templates.
 
@@ -222,6 +242,7 @@ def get_default_context(
         "messages": messages.get_messages(request),
         "pmm_url": sep_settings.PMM_FRONTEND,
         "footer_text": sep_settings.FOOTER_TEXT,
+        "user_id_to_username": await get_username_mapping(),
     }
 
 
@@ -544,6 +565,8 @@ async def get_tasks_context(
         task_info = {
             "name": task["name"],
             "id": task["id"],
+            "created_by": task.get("created_by"),
+            "last_updated_by": task.get("last_updated_by"),
         }
         task_info |= get_task_info_func(task)
         tasks.append(task_info)

@@ -38,6 +38,8 @@
                 <th>Table</th>
                 <th>Created at</th>
                 <th>Updated at</th>
+                <th>Created by</th>
+                <th>Last Updated by</th>
             </tr>
         </thead>
         <tbody>
@@ -46,11 +48,13 @@
                 <td>{{ task.table }}</td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
+                <td>{{ user_id_to_username.get(task["created_by"], task["created_by"]) or '' }}</td>
+                <td>{{ user_id_to_username.get(task["last_updated_by"], task["last_updated_by"]) or '' }}</td>
             </tr>
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="4"></td>
+                <td colspan="6"></td>
             </tr>
         </tfoot>
     </table>
