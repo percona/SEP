@@ -549,7 +549,6 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         default=None,
         sa_type=DateTimeWithTimezone,
     )
-    executed_by: str | None = SQLField(default=None, index=True)
 
     @property
     def is_running(self) -> bool:
@@ -659,7 +658,6 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """
 
     task: TaskResponse
-    executed_by: str | None
 
     @field_validator("execution_request", mode="after")
     @classmethod

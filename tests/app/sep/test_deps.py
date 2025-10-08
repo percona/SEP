@@ -13,8 +13,8 @@ async def test_get_tasks_context(created_service, created_schema, mock_remote_ap
     task_data = {
         "name": "fakeTask",
         "id": 1,
-        "created_by": "valid-username",
-        "last_edit_by": "valid-username",
+        "created_by": None,
+        "last_updated_by": None,
     }
     extra_data = {"success": True, "extra": "extra_data"}
     mock_remote_api.get = AsyncMock(
