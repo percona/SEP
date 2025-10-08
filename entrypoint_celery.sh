@@ -14,4 +14,4 @@ while ! nc -z sep-db 5432; do
 done
 echo "PostgreSQL started"
 
-celery -A app.tasks.celery "$@"
+celery -A app.celery "$@"

@@ -110,7 +110,7 @@ def test_archives_create(
     )
 
 
-@pytest.mark.usefixtures("_mock_get_archives_task_dep")
+@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
 def test_archives_detail(
     test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
 ):

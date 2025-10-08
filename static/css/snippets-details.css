@@ -1,0 +1,136 @@
+.highlight {
+    color: #F8F8F2;
+    background: #272822;
+    width: 90%;
+}
+
+.highlight pre {
+    max-height: 400px;
+}
+
+td.code {
+    width: calc(70vw + 40px);
+    max-width: calc(70vw + 40px);
+}
+
+.linenos {
+    width: max-content;
+    padding-right: 15px;
+}
+
+.linenos pre {
+    overflow: hidden;
+    color: #90918B;
+}
+
+.code pre {
+    overflow: auto;
+}
+
+#actions form {
+    padding: 0;
+}
+
+#actions {
+    display: inline-flex;
+    gap: 1em;
+}
+
+label {
+    display: flex;
+    align-items: center;
+    width: max-content;
+}
+
+label>span:first-child {
+    width: 200px;
+    display: inline-block;
+}
+
+label:has(> select)>.material-symbols-outlined {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+label:has(> select) {
+    position: relative;
+    display: inline-block;
+}
+
+select {
+    padding-right: 2.625em;
+}
+
+fieldset {
+    display: grid;
+    gap: 0.625em;
+}
+
+fieldset:disabled,
+fieldset:disabled * {
+    color: var(--textDisabled);
+    cursor: not-allowed;
+}
+
+label:has(> input[type="checkbox"]:not(:disabled)) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    user-select: none;
+    cursor: pointer;
+}
+
+label:has(> input[type="checkbox"]:disabled)>.checkmark {
+    opacity: 0.5;
+}
+
+.checkmark {
+    margin-left: -10px;
+    justify-content: left;
+}
+
+#snippetExecuteForm input:disabled {
+    display: initial;
+}
+
+.snippetDisabledWarning {
+    color: #d22929;
+    font-weight: 600;
+}
+
+.sudoAlways {
+    color: #d22929;
+    font-weight: 600;
+}
+
+.sudoOptional {
+    color: #fd720c;
+    font-weight: 500;
+}
+
+.download-file-button.loading {
+    opacity: 0.75;
+    cursor: not-allowed;
+}
+
+.download-file-button.loading .material-symbols-outlined {
+    animation: pulse 1s infinite ease-in-out;
+    display: initial;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: .5
+    }
+
+    50% {
+        opacity: 1
+    }
+
+    100% {
+        opacity: .5
+    }
+}

@@ -17,10 +17,11 @@
 
 import logging
 from collections import defaultdict
-from typing import ClassVar, Self
+from types import TracebackType
+from typing import Any, ClassVar, Self
 
 from async_lru import _LRUCacheWrapper, alru_cache
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
@@ -43,6 +44,12 @@ class PMMService(Service):
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: RequiredStr | EmptyStrToNone
@@ -81,9 +88,6 @@ class PMMRemoteAPI(RemoteAPI):
     :type logger_name: str
     :param api_key: The API key for authentication. Defaults to None.
     :type api_key: str | None
-    :param auth_scheme: The authentication scheme to use (e.g., "Bearer", "Basic").
-        Defaults to "Bearer".
-    :type auth_scheme: RequiredStr
     :param error_detail_key: The key to expect errors details to be. Defaults to
         "message".
     :type error_detail_key: RequiredStr
@@ -96,9 +100,24 @@ class PMMRemoteAPI(RemoteAPI):
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
+    api_key: str
     error_detail_key: RequiredStr = "message"
     error_code_key: RequiredStr | None = "code"
     default_to_v3: bool = True
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the headers to be used in PMM requests.
+
+        Includes content type, accept headers, and authorization with the API key.
+
+        :return: A dictionary containing the headers for PMM API requests.
+        :rtype: dict[str, str]
+        """
+        return {
+            **super().headers,
+            "Authorization": f"Bearer {self.api_key}",
+        }
 
     @alru_cache(ttl=600)
     async def is_older_than_v3(self) -> bool:
@@ -294,28 +313,81 @@ class PMMSyncer(BaseSyncer):
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized.
         Set to `SyncInventoryEntityTypeEnum.SERVICE`.
     :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
-    :param pmm_api: The PMM remote API interface for interacting with the PMM inventory
+    :param inventory_api: The remote API interface for interacting with the inventory
         system.
-    :type pmm_api: PMMRemoteAPI
+    :type inventory_api: RemoteAPI
+    :param access_token: The access token used for authenticating with the inventory
+        API.
+    :type access_token: str
+    :param sync_instance: The synchronization instance used to track sync processes.
+    :type sync_instance: SyncInstance | None
+    :param sync_items: A dictionary mapping tuples of entity type and ID to SyncItem
+        objects.
+    :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
+    :param sync_id: The unique identifier for this synchronization.
+    :type sync_id: UUID4
+    :param pmm: The PMM remote API data for interacting with the PMM inventory
+        system.
+    :type pmm: dict[str, Any]
+    :param keepalive_api: Whether to keep the PMMRemoteAPI instance alive after
+        synchronization. Defaults to True.
+    :type keepalive_api: bool
     """
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm_api: PMMRemoteAPI = Field(validation_alias=AliasChoices("pmm", "PMM"))
+    pmm: dict[str, Any]
+    keepalive_api: bool = True
+    _pmm_api: PMMRemoteAPI | None = None
 
     async def __aenter__(self) -> Self:
         """Enter the asynchronous context manager.
 
-        Overrides from BaseSyncer to also initialize the pmm_api's ClientSession.
+        Overrides from BaseSyncer to also get the PMMRemoteAPI instance from the global
+        client registry.
 
         :return: The `BaseRemoteAPI` instance.
         :rtype: BaseRemoteAPI
         """
-        self.pmm_api.session = await settings.get_extra_client_session(
-            self.pmm_api.endpoint, self.pmm_api.api_key
-        )
+        if getattr(self, "_pmm_api", None) is None:
+            self._pmm_api = await settings.get_remote_api(PMMRemoteAPI, **self.pmm)
         return await super().__aenter__()
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException],
+        exc_val: BaseException,
+        exc_tb: TracebackType,
+    ) -> None:
+        """Exit the asynchronous context manager.
+
+        Overrides from BaseSyncer to also close the PMMRemoteAPI instance if it was not
+        set to be kept alive.
+
+        :param exc_type: The type of exception raised, if any.
+        :type exc_type: type[BaseException]
+        :param exc_val: The exception instance raised, if any.
+        :type exc_val: BaseException
+        :param exc_tb: The traceback of the exception raised, if any.
+        :type exc_tb: TracebackType
+        """
+        await super().__aexit__(exc_type, exc_val, exc_tb)
+        if not self.keepalive_api and self._pmm_api is not None:
+            await self._pmm_api.close()
+            self._pmm_api = None
+
+    @property
+    def pmm_api(self) -> PMMRemoteAPI:
+        """Get the PMMRemoteAPI instance, initializing it if necessary.
+
+        :return: The PMMRemoteAPI instance.
+        :rtype: PMMRemoteAPI
+        :raises ValueError: If the PMM API client has not been initialized.
+        """
+        if getattr(self, "_pmm_api", None) is None:
+            raise ValueError("PMM API client has not been initialized.")
+        return self._pmm_api
 
     @alru_cache
     async def get_inventory_nodes(

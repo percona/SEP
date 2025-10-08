@@ -45,7 +45,9 @@ function humanizeRelativeTime(date) {
 $(document).ready(function() {
     $('.relativeTime').hover(function() {
         const $dateElem = $(this);
-        const relativeDate = new Date($(this).text());
-        $dateElem.attr('title', humanizeRelativeTime(relativeDate));
+        const relativeDateText = $dateElem.data("relative-date-value") || $dateElem.text();
+        const relativeDate = new Date(relativeDateText.trim());
+        const titlePrefix = $dateElem.data("relative-date-title-prefix") || ""
+        $dateElem.attr('title', titlePrefix + humanizeRelativeTime(relativeDate));
     });
 });
