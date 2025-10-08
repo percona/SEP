@@ -1,0 +1,1 @@
+from app.sep.plugins.backup_pg.routes import router

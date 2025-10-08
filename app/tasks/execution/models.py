@@ -15,21 +15,21 @@
 
 """Define base executor models for the Tasks API."""
 
-import json
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import yaml
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils import async_run, utc_now
+from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
+from app.tasks.execution.utils import parse_payload
 from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
 
 logger = logging.getLogger(__name__)
+_ONE_MEBIBYTE = 1024 * 1024
 
 
 class BaseExecutor(BaseCaseInsensitiveModel, ABC):
@@ -62,19 +62,27 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :raises ValueError: If the provided payload format is unsupported.
         :raises HTTPException: If validation of the job specification fails.
         """
-        match payload_format:
-            case "hcl":
-                result = await async_run(self.backend.jobs.parse, payload)
-                parsed = result[0]
-            case "json":
-                parsed = json.loads(str(payload))
-            case "yaml":
-                parsed = yaml.safe_load(payload)
-            case _:
-                raise ValueError(f"unsupported format: {payload_format}")
-
+        parsed = await self.parse_payload(payload, payload_format)
         logger.debug("Parsed payload: %s", parsed)
         return await self.validate_job(parsed)
+
+    async def parse_payload(
+        self, payload: str | bytes, payload_format: str
+    ) -> dict[str, Any]:
+        """Parse a job spec payload based on its format.
+
+        This function parses the payload according to the specified format
+        (JSON, or YAML).
+
+        :param payload: The job specification payload to be parsed.
+        :type payload: str | bytes
+        :param payload_format: The format of the payload, which can be "json" or "yaml".
+        :type payload_format: str
+        :return: The parsed job specification.
+        :rtype: dict[str, Any]
+        :raises ValueError: If the provided payload format is unsupported.
+        """
+        return parse_payload(payload, payload_format)
 
     @abstractmethod
     async def dispatch_task(
@@ -141,7 +149,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     def get_hosts(self) -> dict[str, str]:
         """Get the list of valid executor hosts.
 
-        :return: A dictionary with host addresses as key and the respective hostnames
+        :return: A dictionary with node names as key and the respective addresses
             as values.
         :rtype: list[str]
         """
@@ -164,6 +172,35 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :type start_offsets: dict[str, dict[str, int]] | None
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog
+        """
+
+    @abstractmethod
+    async def stream_file(
+        self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
+    ) -> AsyncGenerator[bytes, None]:
+        """Stream a file from a task history record.
+
+        :param queue_item: The task history record for tracking the file.
+        :type queue_item: TaskHistory
+        :param path: The path to the file to be streamed.
+        :type path: str
+        :param chunk_size: The size of each chunk to be read from the file, in bytes.
+            Defaults to 1 MiB.
+        :type chunk_size: int
+        :yield: Chunks of the file as bytes.
+        :rtype: AsyncGenerator[bytes, None]
+        """
+
+    @abstractmethod
+    async def list_files(self, queue_item: TaskHistory, path: str) -> dict[str, int]:
+        """List files in a directory from a task history record.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :param path: The path to the directory to list files from.
+        :type path: str
+        :return: A dictionary with filenames as keys and their sizes as values.
+        :rtype: dict[str, int]
         """
 
     async def sync_task_history(

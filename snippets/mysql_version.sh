@@ -3,7 +3,7 @@
 # ---
 # title: "mysql_version"
 # description: "Returns the MySQL version"
-# strict: false
+# allow_extra_args: true
 # parameters:
 #  - name: basedir
 #    type: str
@@ -75,6 +75,11 @@ while [[ -n "$*" ]]; do
          ;;
       --)
          break
+         ;;
+      # Need this to catch options mess up that getopt does not recognize
+      *)
+         echo "Unrecognized option '$1'"
+         usage 1
          ;;
    esac
 done

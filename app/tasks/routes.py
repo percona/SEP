@@ -17,6 +17,7 @@
 
 import json
 import logging
+import os
 from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any
@@ -25,12 +26,12 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
-from app.api.deps import CurrentUser, IsAuthenticatedDep
+from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
-from app.tasks.anonymizer.config import anonymizer_settings
+from app.core.utils.fields import RequiredStr
 from app.tasks.celery import (
     celery,
     dispatch_queue_item,
@@ -40,6 +41,7 @@ from app.tasks.celery import (
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
+    get_executor,
     get_logs_offsets,
     PreparedTaskHistory,
     SessionDep,
@@ -47,8 +49,10 @@ from app.tasks.deps import (
     TaskExecutor,
     TaskHistoryWithTaskDep,
 )
+from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
     Task,
+    TaskBackendEnum,
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -108,16 +112,14 @@ async def get_task(task: TaskDep) -> Task:
     response_model=TaskResponse,
 )
 async def create_task(
-    session: SessionDep, task: TaskWrite, current_user: CurrentUser
+    session: SessionDep, task: TaskWrite, current_user_id: CurrentUserID
 ) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
     return await TaskManager.create(
         session,
         task,
-        created_by=current_user.username,
-        last_edit_by=current_user.username,
-        anonymize_mask=anonymizer_settings.DEFAULT_ENTITIES[task.owner],
+        created_by=current_user_id,
     )
 
 
@@ -131,12 +133,12 @@ async def update_task(
     session: SessionDep,
     existing_task: TaskDep,
     updated_task: TaskWrite,
-    current_user: CurrentUser,
+    current_user_id: CurrentUserID,
 ) -> Task:
     """Update an existing task."""
     logger.debug("Updating task %s", existing_task.name)
     return await TaskManager.update(
-        session, existing_task, updated_task, last_edit_by=current_user.username
+        session, existing_task, updated_task, last_updated_by=current_user_id
     )
 
 
@@ -186,7 +188,6 @@ async def execute_task_name(
     session: SessionDep,
     queue_item: PreparedTaskHistory,
     task_name: str,
-    current_user: CurrentUser,
 ) -> TaskHistory:
     """Send a task for execution."""
     logger.debug(
@@ -194,11 +195,10 @@ async def execute_task_name(
         task_name,
         queue_item.execution_request.eta or utc_now(),
     )
-    queue_item.executed_by = current_user.username
 
     root_task = await TaskManager.get_root_task(session, queue_item.task)
     executor = get_executor_for_task(root_task)
-    if queue_item.execution_request.target not in executor.get_hosts().values():
+    if queue_item.execution_request.target not in executor.get_hosts():
         raise HTTPBadRequestException(
             f"Failed to dispatch task: Target {queue_item.execution_request.target!r}"
             f"is not available in {executor.__class__.__name__} for task {task_name!r}"
@@ -239,6 +239,7 @@ async def get_task_history(
     session: SessionDep,
     task: str,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
+    snippet_filename: RequiredStr | None = None,
 ) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
@@ -247,6 +248,7 @@ async def get_task_history(
         task_name=task,
         status=task_status,
         select_related_task=True,
+        snippet_filename=snippet_filename,
     )
 
 
@@ -283,6 +285,45 @@ async def stream_task_history_logs(
     return StreamingResponse(
         stream_logs_generator,
         media_type="application/json",
+    )
+
+
+@router.get("/history/{task_history_id}/files/", dependencies=[IsAuthenticatedDep])
+async def list_task_history_files(
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+) -> dict[str, int]:
+    """List files from a task history."""
+    logger.debug("Requesting files for task history %s", task_history.id)
+    if not task_history.status.is_finished():
+        raise HTTPConflictException(f"Task history is {task_history.status}.")
+    if task_history.task.output_files_path is None:
+        raise HTTPBadRequestException(
+            f"Task {task_history.task.name} does not have output_files_path set."
+        )
+    return await executor.list_files(task_history, task_history.task.output_files_path)
+
+
+@router.get("/history/{task_history_id}/file/", dependencies=[IsAuthenticatedDep])
+async def stream_task_history_file(
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+    path: str,
+) -> StreamingResponse:
+    """Stream a file from a task history."""
+    logger.debug("Requesting file %s for task history %s", path, task_history.id)
+    if not task_history.status.is_finished():
+        raise HTTPConflictException(f"Task history is {task_history.status}.")
+    if task_history.task.output_files_path is None:
+        raise HTTPBadRequestException(
+            f"Task {task_history.task.name} does not have output_files_path set."
+        )
+    return StreamingResponse(
+        executor.stream_file(
+            task_history,
+            os.path.join(task_history.task.output_files_path, path.lstrip("/")),  # noqa: PTH118
+        ),
+        media_type="application/octet-stream",
     )
 
 
@@ -341,8 +382,11 @@ async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
 
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])
 async def transform_payload(
-    executor: TaskExecutor,
     data: TransformPayloadRequest,
+    backend: TaskBackendEnum = TaskBackendEnum.NOMAD,
 ) -> dict[str, Any]:
     """Transform a payload string into a dictionary."""
+    if backend == TaskBackendEnum.PROXY:
+        return parse_payload(data.payload, data.fmt)
+    executor = get_executor(backend)
     return await executor.transform_payload(data.payload, data.fmt)

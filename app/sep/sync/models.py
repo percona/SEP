@@ -173,6 +173,27 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.TABLE: self.can_sync_table,
         }
 
+    @asynccontextmanager
+    async def api_auth(
+        self, api_key: str, auth_scheme: str = "Bearer"
+    ) -> AsyncGenerator[Self]:
+        """Use a specific API key for inventory API requests within the context.
+
+        This asynchronous context manager temporarily sets the Authorization header
+        for the inventory API to use the provided API key. It ensures that all requests
+        made within the context use this API key for authentication.
+
+        :param api_key: The API key to be used for authentication.
+        :type api_key: str
+        :param auth_scheme: The authentication scheme to be used (default is "Bearer").
+        :type auth_scheme: str
+        :yield: The syncer instance with the updated API key context.
+        :rtype: AsyncGenerator[BaseSyncer]
+        """
+        with self.inventory_api.auth(api_key, auth_scheme):
+            async with self as syncer:
+                yield syncer
+
     @validate_call
     async def prepare_sync(
         self,
@@ -1117,6 +1138,27 @@ class BaseTaskSyncer(BaseSyncer):
     tasks_execution_wait_interval: int = 5
     force_executor_host: str | None = None
 
+    @asynccontextmanager
+    async def api_auth(
+        self, api_key: str, auth_scheme: str = "Bearer"
+    ) -> AsyncGenerator[Self]:
+        """Use a specific API key for the tasks API requests within the context.
+
+        This asynchronous context manager temporarily sets the Authorization header
+        for the inventory and tasks API to use the provided API key. It ensures that all
+        requests made within the context use this API key for authentication.
+
+        :param api_key: The API key to be used for authentication.
+        :type api_key: str
+        :param auth_scheme: The authentication scheme to be used (default is "Bearer").
+        :type auth_scheme: str
+        :yield: The syncer instance with the updated API key context.
+        :rtype: AsyncGenerator[BaseSyncer]
+        """
+        with self.tasks_api.auth(api_key, auth_scheme):
+            async with super().api_auth(api_key, auth_scheme) as syncer:
+                yield syncer
+
     @alru_cache
     async def get_available_hosts(self) -> dict[str, str]:
         """Return the available hosts from the Tasks API.
@@ -1155,7 +1197,7 @@ class BaseTaskSyncer(BaseSyncer):
         """
         task_history = await self.tasks_api.post(
             f"/execute/{task_name}",
-            json={"meta": meta, "payload": payload},
+            json={"meta": meta, "payload": payload, "anonymize_mask": 0},
         )
         task_history_id = task_history["id"]
         status = task_history["status"]

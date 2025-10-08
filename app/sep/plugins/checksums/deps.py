@@ -4,11 +4,12 @@ import logging
 import shlex
 from typing import Annotated, Any
 
-from fastapi import Depends, Form, Request
+from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHosts,
     get_created_entity,
     get_task_by_name,
     get_tasks_context,
@@ -330,10 +331,10 @@ def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
 
 
 async def get_checksums_index_context(
-    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
+    executor_hosts: ExecutorHosts,
 ) -> dict[str, Any]:
     """Assemble the context for the Checksums plugin index view.
 
@@ -341,22 +342,22 @@ async def get_checksums_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
-    :param request: The HTTP request object.
-    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Checksums-specific information.
     :type context: DefaultContext
+    :param executor_hosts: The executor hosts for the Checksums tasks.
+    :type executor_hosts: ExecutorHosts
     :return: An updated context dictionary containing Checksums-related data.
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        request,
         inventory_api,
         tasks_api,
         get_checksums_task_info,
+        executor_hosts,
         context,
         TaskOwner.CHECKSUMS,
         alert_on_fail_default=True,

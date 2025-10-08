@@ -19,7 +19,6 @@ This module defines functions for executing tasks asynchronously via Celery,
 along with utility functions to process queue items.
 """
 
-import asyncio
 import json
 import logging
 from datetime import timedelta
@@ -28,7 +27,7 @@ from typing import Any
 
 from celery import Task
 from celery.app.task import Context
-from celery.signals import task_revoked, worker_process_init
+from celery.signals import task_revoked
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import func
@@ -36,9 +35,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.celery import celery
 from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
-from app.core.celery.utils import create_celery
 from app.core.db.utils import (
     func_json_extract,
     prepare_unsafe_value_for_json_comparison,
@@ -59,25 +58,13 @@ from app.tasks.deps import (
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     DispatchLock,
+    SYSTEM_USER,
     TaskHistory,
     TaskHistoryStatusEnum,
 )
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
-celery = create_celery("tasks")
-
-celery.loop = asyncio.new_event_loop()
-asyncio.set_event_loop(celery.loop)
-
 logger = logging.getLogger(__name__)
-
-
-@worker_process_init.connect
-def init_child_event_loop(**kwargs: Any) -> None:
-    """Initialize a new event loop for each worker process."""
-    logger.debug("Initializing new event loop for worker process")
-    celery.loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(celery.loop)
 
 
 @task_revoked.connect
@@ -226,7 +213,9 @@ async def prepare_periodic_task_history(
     async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_executable_task_by_name(session, task_name)
-        return prepare_task_history(task, execution_data, executed_by="system")
+        return prepare_task_history(
+            task, executed_by=SYSTEM_USER, execution_data=execution_data
+        )
 
 
 async def dispatch_queue_item(
