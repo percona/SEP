@@ -10,7 +10,12 @@ from app.sep.deps import get_tasks_context
 @pytest.mark.asyncio
 async def test_get_tasks_context(created_service, created_schema, mock_remote_api):
     """Test for assembling the template context for task-dependent plugins."""
-    task_data = {"name": "fakeTask", "id": 1}
+    task_data = {
+        "name": "fakeTask",
+        "id": 1,
+        "created_by": None,
+        "last_updated_by": None,
+    }
     extra_data = {"success": True, "extra": "extra_data"}
     mock_remote_api.get = AsyncMock(
         side_effect=[

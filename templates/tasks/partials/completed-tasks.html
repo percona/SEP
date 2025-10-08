@@ -9,6 +9,7 @@
                 <th class="number"
                     aria-label="Click to sort alphanumerically"
                     data-tooltip="1000">Duration (s)</th>
+                <th>Executed by</th>
                 <th class="options" data-sortable="false" data-searchable="false">View logs</th>
             </tr>
         </thead>
@@ -44,6 +45,7 @@
                         <td class="relativeTime code">{{ task_history.started_at }}</td>
                         <td class="relativeTime code">{{ task_history.finished_at }}</td>
                         <td class="number code">{{ task_history.duration }}</td>
+                        <td>{{ user_id_to_username.get(task_history.executed_by, task_history.executed_by) or '' }}</td>
                         <td class="options">
                             {%- if task_logs %}
                                 <button type="button"

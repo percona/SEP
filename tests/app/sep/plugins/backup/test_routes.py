@@ -112,7 +112,7 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     sep_app.dependency_overrides = {}
 
 
-@pytest.mark.usefixtures("_mock_get_backups_task_dep")
+@pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
 def test_backups_detail(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):

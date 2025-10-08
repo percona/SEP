@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
@@ -41,6 +41,7 @@ from app.tasks.celery import (
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
+    get_executor,
     get_logs_offsets,
     PreparedTaskHistory,
     SessionDep,
@@ -48,8 +49,10 @@ from app.tasks.deps import (
     TaskExecutor,
     TaskHistoryWithTaskDep,
 )
+from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
     Task,
+    TaskBackendEnum,
     TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -108,10 +111,16 @@ async def get_task(task: TaskDep) -> Task:
     status_code=status.HTTP_201_CREATED,
     response_model=TaskResponse,
 )
-async def create_task(session: SessionDep, task: TaskWrite) -> Task:
+async def create_task(
+    session: SessionDep, task: TaskWrite, current_user_id: CurrentUserID
+) -> Task:
     """Create a new task."""
     logger.debug("Creating task %s", task.name)
-    return await TaskManager.create(session, task)
+    return await TaskManager.create(
+        session,
+        task,
+        created_by=current_user_id,
+    )
 
 
 @router.put(
@@ -121,11 +130,16 @@ async def create_task(session: SessionDep, task: TaskWrite) -> Task:
     response_model=TaskResponse,
 )
 async def update_task(
-    session: SessionDep, existing_task: TaskDep, updated_task: TaskWrite
+    session: SessionDep,
+    existing_task: TaskDep,
+    updated_task: TaskWrite,
+    current_user_id: CurrentUserID,
 ) -> Task:
     """Update an existing task."""
     logger.debug("Updating task %s", existing_task.name)
-    return await TaskManager.update(session, existing_task, updated_task)
+    return await TaskManager.update(
+        session, existing_task, updated_task, last_updated_by=current_user_id
+    )
 
 
 @router.get(
@@ -181,6 +195,7 @@ async def execute_task_name(
         task_name,
         queue_item.execution_request.eta or utc_now(),
     )
+
     root_task = await TaskManager.get_root_task(session, queue_item.task)
     executor = get_executor_for_task(root_task)
     if queue_item.execution_request.target not in executor.get_hosts():
@@ -367,8 +382,11 @@ async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
 
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])
 async def transform_payload(
-    executor: TaskExecutor,
     data: TransformPayloadRequest,
+    backend: TaskBackendEnum = TaskBackendEnum.NOMAD,
 ) -> dict[str, Any]:
     """Transform a payload string into a dictionary."""
+    if backend == TaskBackendEnum.PROXY:
+        return parse_payload(data.payload, data.fmt)
+    executor = get_executor(backend)
     return await executor.transform_payload(data.payload, data.fmt)

@@ -58,6 +58,7 @@ from app.tasks.deps import (
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     DispatchLock,
+    SYSTEM_USER,
     TaskHistory,
     TaskHistoryStatusEnum,
 )
@@ -212,7 +213,9 @@ async def prepare_periodic_task_history(
     async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_executable_task_by_name(session, task_name)
-        return prepare_task_history(task, execution_data)
+        return prepare_task_history(
+            task, executed_by=SYSTEM_USER, execution_data=execution_data
+        )
 
 
 async def dispatch_queue_item(

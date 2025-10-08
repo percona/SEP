@@ -83,6 +83,8 @@ async def checksums_detail(
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
