@@ -8,7 +8,7 @@
                 <th>Type</th>
                 <th>Upload</th>
                 <th>Created by</th>
-                <th>Last edit by</th>
+                <th>Last Updated by</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -22,8 +22,8 @@
                     <td>{{ task.host }}</td>
                     <td>{{ task.backup_type }}</td>
                     <td>{{ task.upload }}</td>
-                    <td>{{ task.get('created_by', 'None') }}</td>
-                    <td>{{ task.get('last_edit_by', 'None') }}</td>
+                    <td>{{ user_id_to_username.get(task["created_by"], task["created_by"]) or '' }}</td>
+                    <td>{{ user_id_to_username.get(task["last_updated_by"], task["last_updated_by"]) or '' }}</td>
                     <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html" %}</td>
                 </tr>
             {% endfor %}
