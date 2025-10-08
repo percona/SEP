@@ -67,6 +67,7 @@ async def build_backup_task_payload(
             "service_id",
             "backup_type",
             "encryption_recipient",
+            "alias",
         },
         by_alias=True,
     )
@@ -78,7 +79,7 @@ async def build_backup_task_payload(
         upload_providers.append(UploadProvider.RSYNC)
 
     server_config = {
-        "alias": service.node.address,
+        "alias": form.alias or service.node.address,
         "backup_type": form.backup_type,
         # for now only localhost allowed for X
         "host": (
@@ -156,6 +157,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "service_id": None,
         "host": server_config["HOST"],
         "port": server_config.get("PORT"),
+        "alias": server_config.get("ALIAS"),
     }
 
     if "dir_encrypt_config" in server_config:

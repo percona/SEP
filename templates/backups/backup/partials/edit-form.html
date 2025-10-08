@@ -176,6 +176,17 @@
                         </div>
                         <br>
                         <br>
+                        {% set alias_title = "Optional alias for the server in the SERVERS_LIST section. Defaults to the service IP if not provided." %}
+                        <label for="alias" title="{{ alias_title }}">
+                            Server Alias (optional):
+                            <input type="text"
+                                   id="alias"
+                                   name="alias"
+                                   value="{{ task.alias or '' }}"
+                                   placeholder="Enter server alias" />
+                        </label>
+                        <br>
+                        <br>
                         {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
                         <label for="encryption_recipient" title="{{ encryption_recipient_title }}">
                             Encryption Recipient (optional):
