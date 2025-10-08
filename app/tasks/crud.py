@@ -266,6 +266,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         session: AsyncSession,
         task_name: str,
         status: TaskHistoryStatusEnum | None = None,
+        snippet_filename: str | None = None,
         select_related_task: bool = False,
     ) -> list[TaskHistory]:
         """List task histories by the task's name.
@@ -280,14 +281,28 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param select_related_task: Whether to include the related task data in the
             result. Defaults to False.
         :type select_related_task: bool
+        :param snippet_filename: If provided, filter task histories by the specified
+            snippet filename in the task's metadata.
+        :type snippet_filename: str | None
         :return: A list of task histories for the specified task.
         :rtype: list[TaskHistory]
         """
         query = select(TaskHistory).join(Task)
+        clauses = [col(Task.name) == task_name]
+        if snippet_filename:
+            clauses.append(
+                func_json_extract(
+                    session.get_bind().name,
+                    col(TaskHistory.execution_request),
+                    "meta",
+                    "_snippet_filename",
+                )
+                == snippet_filename
+            )
         select_related = (TaskHistory.task,) if select_related_task else ()
         query = cls._filter_query(
             query,
-            col(Task.name) == task_name,
+            *clauses,
             select_related=select_related,
             status=status,
         )

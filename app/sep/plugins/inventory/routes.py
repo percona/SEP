@@ -28,6 +28,7 @@ from app.sep.deps import (
     CreatedSchemaDep,
     CreatedServiceDep,
     CreatedTableDep,
+    CurrentUser,
     DefaultContext,
     InventoryAPI,
     IsAuthenticated,
@@ -74,11 +75,12 @@ async def node_list(
 
 @router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_inventory(
+    user: CurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
 ) -> RedirectResponse:
     """Start inventory sync as a background task."""
-    background_tasks.add_task(run_inventory_sync, *syncers)
+    background_tasks.add_task(run_inventory_sync, user.access_token, *syncers)
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -106,12 +108,13 @@ async def node_detail(
 
 @router.post("/{node_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_node(
+    user: CurrentUser,
     node: CreatedNodeDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
 ) -> RedirectResponse:
     """Start node sync as a background task."""
-    background_tasks.add_task(run_node_sync, node, *syncers)
+    background_tasks.add_task(run_node_sync, node, user.access_token, *syncers)
     return RedirectResponse(
         f"/inventory/{node.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -168,12 +171,13 @@ async def service_detail(
     "/services/{service_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_service(
+    user: CurrentUser,
     service: CreatedServiceDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
 ) -> RedirectResponse:
     """Start service sync as a background task."""
-    background_tasks.add_task(run_service_sync, service, *syncers)
+    background_tasks.add_task(run_service_sync, service, user.access_token, *syncers)
     return RedirectResponse(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -242,12 +246,13 @@ async def schema_detail(
     "/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_schema(
+    user: CurrentUser,
     schema: CreatedSchemaDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
 ) -> RedirectResponse:
     """Start schema sync as a background task."""
-    background_tasks.add_task(run_schema_sync, schema, *syncers)
+    background_tasks.add_task(run_schema_sync, schema, user.access_token, *syncers)
     return RedirectResponse(
         f"/inventory/schemas/{schema.id}",
         status_code=status.HTTP_303_SEE_OTHER,

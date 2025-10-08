@@ -24,7 +24,6 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_index_context,
     parse_checksums_task_args,
 )
-from app.tasks.anonymizer import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -79,7 +78,7 @@ async def checksums_detail(
     """Retrieve checksums task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -114,7 +113,7 @@ async def checksums_detail(
         services = []
         logger.warning("Failed to get services: %s", exc)
 
-    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     context["services"] = services
 
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003

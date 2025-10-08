@@ -8,11 +8,14 @@ from app.sep.deps import get_tasks_context
 
 
 @pytest.mark.asyncio
-async def test_get_tasks_context(
-    dummy_request, created_service, created_schema, mock_remote_api
-):
+async def test_get_tasks_context(created_service, created_schema, mock_remote_api):
     """Test for assembling the template context for task-dependent plugins."""
-    task_data = {"name": "fakeTask", "id": 1}
+    task_data = {
+        "name": "fakeTask",
+        "id": 1,
+        "created_by": None,
+        "last_updated_by": None,
+    }
     extra_data = {"success": True, "extra": "extra_data"}
     mock_remote_api.get = AsyncMock(
         side_effect=[
@@ -21,7 +24,6 @@ async def test_get_tasks_context(
             [task_data],  # for /
             [],  # for /{task_name}/history/
             [],  # for /{task_name}/periodic/
-            {"address1": "host1", "address2": "host2"},  # for /hosts/
         ]
     )
 
@@ -29,7 +31,10 @@ async def test_get_tasks_context(
         return extra_data
 
     context = await get_tasks_context(
-        dummy_request, mock_remote_api, mock_remote_api, get_task_info
+        mock_remote_api,
+        mock_remote_api,
+        get_task_info,
+        {"host1": "address1", "host2": "address2"},
     )
     assert context["services"][0]["id"] == created_service.id
     assert context["executor_hosts"] == ["host1", "host2"]

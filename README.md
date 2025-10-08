@@ -120,12 +120,14 @@ These are some, but not all, the possible settings you can have, per app:
 | Name                       | App       | Required | Default                                             | settings.yaml (development)                      |
 |----------------------------|-----------|----------|-----------------------------------------------------|--------------------------------------------------|
 | BASE_URL                   | all       | no       | Built from the user's request                       | N/A                                              |
-| ALLOWED_HOSTS              | all       | yes      | N/A                                                 | `["*.localhost", "127.0.0.1", "[::1]"]`          |
+| ALLOWED_HOSTS              | all       | yes      | N/A                                                 | `["localhost", "127.0.0.1"]`                     |
+| ALLOW_CONCURRENT_SESSIONS  | all       | no       | False                                               | False                                            |
+| SSL_CAFILE                 | all       | no       | null                                                | null                                             |
 | CASDOOR__ENDPOINT          | all       | yes      | N/A                                                 | `http://localhost:9999`                          |
-| CASDOOR__FRONT_ENDPOINT    | all       | no       | The same as `CASDOOR__ENDPOINT`                     | N/A                                              |
-| CASDOOR__CERTIFICATE_PATH  | all       | no       | N/A                                                 | N/A                                              |
+| CASDOOR__FRONT_ENDPOINT    | all       | no       | The same as `CASDOOR__ENDPOINT`                     | `//:9999`                                        |
+| CASDOOR__CERTIFICATE_PATH  | all       | no       | null                                                | null                                             |
 | CASDOOR__ORGANIZATION_NAME | all       | no       | built-in                                            | N/A                                              |
-| CASDOOR__APPLICATION_NAME  | all       | no       | app-built-in                                        | N/A                                              |
+| CASDOOR__APPLICATION_NAME  | all       | no       | app-built-in                                        | sep-app                                          |
 | CASDOOR__ALLOWED_ISSUERS   | all       | no       | `[CASDOOR__ENDPOINT]`                               | `[http://localhost:9999, http://127.0.0.1:9999]` |
 | CELERY__BROKER_URL         | all       | no       | N/A                                                 | filesystem://                                    |
 | CELERY__BEAT_DBURI         | all       | no       | N/A                                                 | sqlite:///schedule.db                            |
@@ -134,27 +136,99 @@ These are some, but not all, the possible settings you can have, per app:
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |
 | TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                              |
-| TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | N/A                                              |
-| TASKS__NOMAD__VERIFY       | tasks     | no       | False                                               | N/A                                              |
+| TASKS__NOMAD__VERIFY_SSL   | tasks     | no       | False                                               | True                                             |
+| TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | 10                                               |
+| TASKS__NOMAD__MINIFY_PAYLOAD | tasks   | no       | True                                                | True                                             |
+| TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT | tasks | no | 10                                        | 10                                               |
+| TASKS__SYNC_LOCK_TTL       | tasks     | no       | 300                                                 | 300                                              |
+| TASKS__ANONYMIZER__DEFAULT_ENTITIES | tasks | no | "*"                                         | "*"                                              |
 | TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                              |
 | TASKS__DATABASE__ENGINE    | tasks     | no       | sqlite                                              | N/A                                              |
 | TASKS__DATABASE__NAME      | tasks     | no       | tasks.db                                            | N/A                                              |
 | TASKS__DATABASE__USER      | tasks     | no       | N/A                                                 | N/A                                              |
 | TASKS__DATABASE__PASSWORD  | tasks     | no       | N/A                                                 | N/A                                              |
-| TASKS__DATABASE__HOST      | tasks     | no       | N/A                                                 | N/A                                              |
+| TASKS__DATABASE__HOST      | tasks     | no       | ""                                                  | ""                                               |
 | TASKS__DATABASE__PORT      | tasks     | no       | N/A                                                 | N/A                                              |
 | SEP__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
 | SEP__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
-| SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | http://localhost:8000/oauth/callback             |
+| SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | /oauth/callback                                  |
 | SEP__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                              |
 | SEP__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
+| SEP__PROXY_HEADERS         | sep       | no       | False                                               | False                                            |
+| SEP__SYNC_REFRESH_TIME     | sep       | no       | 5                                                   | 5                                                |
 | SEP__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                     |
+| SEP__SESSION__SECURE       | sep       | no       | False                                               | False                                            |
+| SEP__SESSION__HTTP_ONLY    | sep       | no       | True                                                | True                                             |
+| SEP__SESSION__SAME_SITE    | sep       | no       | lax                                                 | lax                                              |
+| SEP__SESSION__MAX_AGE      | sep       | no       | 3600                                                | 3600                                             |
 | SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
 | SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
+| SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/inventory/docs, /api/tasks/docs] |
+| ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
 
 
 Path settings (`CASDOOR__CERTIFICATE_PATH`, `TEMPLATES_DIR`, `STATIC_DIR`, etc.) may have
 relative or absolute values. Relative paths will be resolved from the project root folder.
+
+### Session Management
+
+SEP provides configurable session management through the `SEP__SESSION` section:
+
+```yaml
+SEP:
+  SESSION:
+    COOKIE_NAME: casdoorToken
+    SECURE: False
+    HTTP_ONLY: True
+    SAME_SITE: lax
+    MAX_AGE: 3600
+```
+
+- `COOKIE_NAME`: Name of the session cookie
+- `SECURE`: Whether the cookie should only be sent over HTTPS
+- `HTTP_ONLY`: Whether the cookie should be accessible only via HTTP(S)
+- `SAME_SITE`: SameSite attribute for the cookie (lax, strict, none)
+- `MAX_AGE`: Maximum age of the session in seconds
+
+### Security Headers
+
+SEP supports configurable security headers through the `SEP__SECURITY_HEADERS` section:
+
+```yaml
+SEP:
+  SECURITY_HEADERS:
+    CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+      - /api/inventory/docs
+      - /api/tasks/docs
+```
+
+This allows you to exclude specific paths from Content Security Policy restrictions.
+
+### Anonymizer Configuration
+
+The anonymizer plugin can be configured through the `TASKS__ANONYMIZER` section:
+
+```yaml
+TASKS:
+  ANONYMIZER:
+    DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
+```
+
+The `DEFAULT_ENTITIES` setting specifies which Personally Identifiable Information (PII) entities should be anonymized by default.
+
+### Sync Configuration
+
+SEP provides several sync-related configuration options:
+
+- `SEP__SYNC_REFRESH_TIME`: Browser refresh interval during sync operations (in seconds)
+- `TASKS__SYNC_LOCK_TTL`: TaskHistory sync lock timeout (in seconds)
+
+### Nomad Advanced Configuration
+
+Additional Nomad configuration options are available:
+
+- `TASKS__NOMAD__MINIFY_PAYLOAD`: Whether to minify payloads before dispatch
+- `TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT`: Socket read timeout for logs (in seconds)
 
 > [!CAUTION]
 > *Do not store secrets in settings.yaml, as the file is shared in the git repository.
@@ -164,7 +238,7 @@ relative or absolute values. Relative paths will be resolved from the project ro
 
 SEP works with modular plugins. Plugins are FastAPI routers that will be added to the application
 according to defined settings. Each plugin must have their own module in `app.sep.plugins`
-with a `router` inside. An example of a plugin can be found in the base settings.yaml:
+with a `router` inside. The following plugins are configured by default:
 
 ```yaml
 PLUGINS:
@@ -172,7 +246,33 @@ PLUGINS:
     MODULE_NAME: alters
     URI_PATH: /alters
     CSS_CLASS: alters
+  - NAME: Inventory
+    MODULE_NAME: inventory
+    URI_PATH: /inventory
+    CSS_CLASS: inventory
+  - NAME: Archive
+    MODULE_NAME: archives
+    URI_PATH: /archives
+    CSS_CLASS: archive
+  - NAME: MySQL Backups
+    MODULE_NAME: backup
+    URI_PATH: /backups
+    CSS_CLASS: backups
+  - NAME: Checksums
+    MODULE_NAME: checksums
+    URI_PATH: /checksums
+    CSS_CLASS: checksums
+  - NAME: MongoDB Backups
+    MODULE_NAME: backup_mongo
+    URI_PATH: /backup_mongo
+    CSS_CLASS: backup_mongo
 ```
+
+Each plugin configuration includes:
+- `NAME`: Display name for the plugin
+- `MODULE_NAME`: Python module name in `app.sep.plugins`
+- `URI_PATH`: URL path where the plugin will be accessible
+- `CSS_CLASS`: CSS class for styling the plugin in the UI
 
 ### Secrets
 
@@ -208,12 +308,78 @@ default:
   # defaults settings shared by all environments
 development:
   # development settings
-production:
-  # production settings
+production_docker:
+  # production settings for Docker deployment
 ```
 
 To switch environment, use the environment variable `FASTAPI_ENV` or add `FASTAPI_ENV`
 to your .env file.
+
+### Database Configuration
+
+SEP supports multiple database engines for different components. Each component (SEP, Inventory, Tasks) can have its own database configuration:
+
+#### SQLite Configuration (Development)
+```yaml
+SEP:
+  DATABASE:
+    ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
+    USER: null
+    PASSWORD: null
+    HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
+    PORT: null
+    NAME: sep.db
+
+INVENTORY:
+  DATABASE:
+    ENGINE: sqlite
+    USER: null
+    PASSWORD: null
+    HOST: ""
+    PORT: null
+    NAME: inventory.db
+
+TASKS:
+  DATABASE:
+    ENGINE: sqlite
+    USER: null
+    PASSWORD: null
+    HOST: ""
+    PORT: null
+    NAME: tasks.db
+```
+
+#### MySQL/MariaDB Configuration
+```yaml
+SEP:
+  DATABASE:
+    ENGINE: mysql
+    USER: sep_user
+    PASSWORD: your_secure_password
+    HOST: localhost
+    PORT: 3306
+    NAME: sep_database
+```
+
+#### PostgreSQL Configuration
+```yaml
+SEP:
+  DATABASE:
+    ENGINE: postgresql
+    USER: sep_user
+    PASSWORD: your_secure_password
+    HOST: localhost
+    PORT: 5432
+    NAME: sep_database
+```
+
+Supported database engines:
+- `sqlite`: SQLite database (default for development)
+- `mysql`: MySQL/MariaDB database
+- `postgresql`: PostgreSQL database
+
+> [!NOTE]
+> For SQLite databases, set `HOST` to an empty string to avoid URL construction issues.
 
 ### Syncers
 
@@ -242,6 +408,41 @@ SEP__SYNCER_EXTRA_KWARGS__PMM__API_KEY=<Your PMM API key)
 
 Sync Nodes and Services with PMM. Requires the `PMM` setting with `ENDPOINT`, `API_KEY`,
 and optionally `VERIFY_SSL`, `SSL_CAFILE`, `SSL_KEYFILE`, and `SSL_CERTFILE`.
+
+### SSL Configuration
+
+SEP supports SSL/TLS configuration for secure communications. SSL settings can be configured at different levels:
+
+#### Global SSL Settings
+```yaml
+SSL_CAFILE: /path/to/ca-certificate.pem  # Global CA certificate file
+```
+
+#### Component-specific SSL Settings
+```yaml
+SEP:
+  SSL_KEYFILE: /path/to/sep-key.pem
+  SSL_CERTFILE: /path/to/sep-cert.pem
+
+INVENTORY:
+  SSL_KEYFILE: /path/to/inventory-key.pem
+  SSL_CERTFILE: /path/to/inventory-cert.pem
+
+TASKS:
+  SSL_KEYFILE: /path/to/tasks-key.pem
+  SSL_CERTFILE: /path/to/tasks-cert.pem
+```
+
+#### Nomad SSL Configuration
+```yaml
+TASKS:
+  NOMAD:
+    SSL_CAFILE: /path/to/nomad-ca.pem
+    SSL_CERTFILE: /path/to/nomad-cert.pem
+    SSL_KEYFILE: /path/to/nomad-key.pem
+```
+
+SSL certificate files should be in PEM format. Relative paths will be resolved from the project root folder.
 
 ##### Getting your PMM API Key
 

@@ -78,3 +78,17 @@ async def get_current_admin(current_user: CurrentUser) -> User:
 
 
 IsAdminDep = Depends(get_current_admin)
+
+
+def get_current_user_id(current_user: CurrentUser) -> str:
+    """Get the current user's ID as a string.
+
+    :param current_user: The current authenticated user.
+    :type current_user: CurrentUser
+    :return: The user's ID as a string.
+    :rtype: str
+    """
+    return str(current_user.id)
+
+
+CurrentUserID = Annotated[str, Depends(get_current_user_id)]

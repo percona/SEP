@@ -21,20 +21,22 @@ from fastapi import Depends
 
 from app.core.utils import import_var
 from app.sep.config import sep_settings
-from app.sep.deps import InventoryAPI, TaskAPI
+from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
 
 
-def get_syncers(inventory_api: InventoryAPI, tasks_api: TaskAPI) -> list[BaseSyncer]:
+def get_syncers(
+    inventory_api: InventoryClient, tasks_api: TasksClient
+) -> list[BaseSyncer]:
     """Initialize and return a list of BaseSyncer instances based on configuration.
 
     Imports and initializes syncer classes as specified in the SEP settings, providing
     the necessary API clients and configuration parameters.
 
     :param inventory_api: The API client used to interact with the inventory service.
-    :type inventory_api: InventoryAPI
+    :type inventory_api: InventoryClient
     :param tasks_api: The API client used to interact with the task service.
-    :type tasks_api: TaskAPI
+    :type tasks_api: TasksClient
     :return: A list of initialized `BaseSyncer` instances.
     :rtype: list[BaseSyncer]
     """

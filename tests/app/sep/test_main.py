@@ -336,6 +336,7 @@ class TestExceptionHandlers:
             context={"exception": formatted_exception, **dummy_context},
         )
 
+    @pytest.mark.usefixtures("mock_get_username_mapping")
     def test_404_error(self, mocker, regular_user, test_client):
         """Test 404 errors renders the 404 template for authenticated users."""
         mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
