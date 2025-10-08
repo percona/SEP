@@ -230,7 +230,7 @@
                 </div>
                 <span class="label">Encrypt using tmpdir</span>
             </label>
-            {% set only_if_running_replica_title = "Enable this option to apply the backup only if the server is running as a replication slave." %}
+            {% set only_if_running_replica_title = "Enable this option to apply the backup only if the server is running as a replica." %}
             <label class="checkbox"
                    for="only_if_running_replica"
                    title="{{ only_if_running_replica_title }}">
@@ -349,21 +349,6 @@
                     <span class="material-symbols-outlined checked">check_box</span>
                 </div>
                 <span class="label">Desync PXCs</span>
-            </label>
-            {% set mydumper_less_locking_title = "Minimize table locking during backup to reduce impact on database performance." %}
-            <label class="checkbox"
-                   for="mydumper_less_locking"
-                   title="{{ mydumper_less_locking_title }}">
-                <input type="checkbox"
-                       id="mydumper_less_locking"
-                       name="mydumper_less_locking"
-                       value="1"
-                       checked>
-                <div class="checkmark">
-                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                    <span class="material-symbols-outlined checked">check_box</span>
-                </div>
-                <span class="label">Less Locking</span>
             </label>
             {% set mydumper_use_numa_title = "Enable NUMA (Non-Uniform Memory Access) awareness to optimize memory allocation for backup processes." %}
             <label class="checkbox"

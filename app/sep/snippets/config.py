@@ -1,0 +1,376 @@
+# Copyright (C) 2025 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define settings for support snippets in the SEP app."""
+
+__all__ = ["SnippetFilter", "SnippetFilterType", "snippets_settings"]
+
+import re
+from collections import OrderedDict
+from contextlib import suppress
+from enum import Enum, StrEnum
+from functools import lru_cache
+from pathlib import Path
+from string import Template
+from typing import Any, ClassVar, NamedTuple, Self
+
+from pydantic import (
+    BaseModel,
+    field_validator,
+    GetCoreSchemaHandler,
+    model_validator,
+    PositiveInt,
+    ValidationError,
+)
+from pydantic_core import core_schema
+from sqlalchemy_celery_beat.models import Period
+
+from app.core.celery.models import IntervalSchedule
+from app.core.config import BaseYamlSettings
+from app.core.utils import run_pydantic_type_validator, validate_module_is_importable
+from app.core.utils.dict import merge_dict_at_start, transform_dict_keys
+from app.core.utils.fields import (
+    EnumFieldMixin,
+    FilenameExtension,
+    MimeType,
+    RelativeDirectoryPath,
+    RequiredStr,
+    URL,
+)
+
+
+class SnippetSudoOption(EnumFieldMixin, Enum):
+    """Enumerate options for executing a snippet with sudo."""
+
+    NEVER = 0
+    ALWAYS = 1
+    OPTIONAL = 2
+
+
+class SnippetFilterType(EnumFieldMixin, StrEnum):
+    """Define enumeration of snippet filter validation types.
+
+    :cvar EXTENSION: Represents filtering by file extension.
+    :vartype EXTENSION: type[FilenameExtension]
+    :cvar MIME_TYPE: Represents filtering by MIME type.
+    :vartype MIME_TYPE: type[MimeType]
+    """
+
+    EXTENSION = "ext"
+    MIME_TYPE = "mime"
+
+    @classmethod
+    @lru_cache(maxsize=2)
+    def get_validation_type(
+        cls, filter_type: str
+    ) -> type[FilenameExtension] | type[MimeType]:
+        """Get the validation type associated with the specified filter type.
+
+        :param filter_type: The filter type value.
+        :type filter_type: str
+        :return: The corresponding validation type.
+        :rtype: type[FilenameExtension] | type[MimeType]
+        :raises ValueError: If the filter type is unknown.
+        """
+        if filter_type == cls.EXTENSION:
+            return FilenameExtension
+        if filter_type == cls.MIME_TYPE:
+            return MimeType
+        raise ValueError(f"Unknown filter type: {filter_type!r}")
+
+    @classmethod
+    def validate_value(cls, filter_type: str, value: Any) -> Any:
+        """Validate the value based on the filter type.
+
+        :param filter_type: The filter type value.
+        :type filter_type: str
+        :param value: The value to validate.
+        :type value: Any
+        :return: The validated value.
+        :rtype: Any
+        :raises ValueError: If the filter type is unknown.
+        :raises ValidationError: If the value is invalid for the specified filter type.
+        """
+        return run_pydantic_type_validator(cls.get_validation_type(filter_type), value)
+
+
+class SnippetFilter(NamedTuple):
+    """Define a filter entity for snippets.
+
+    :param value: The value of the filter, such as a specific file extension or MIME
+        type.
+    :type value: str
+    :param type: The type of filter, either by file extension or MIME type. Defaults to
+        :attr:`SnippetFilterType.EXTENSION`.
+    :type type: SnippetFilterType
+    """
+
+    value: str
+    type: SnippetFilterType = SnippetFilterType.EXTENSION
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source_type: Any,
+        handler: GetCoreSchemaHandler,
+    ) -> core_schema.CoreSchema:
+        """Get the Pydantic core schema for SnippetFilter.
+
+        This method defines a two-step validation process:
+        1. Convert from string to SnippetFilter using the internal `_create_from_str`.
+        2. Normalize the value based on its type using `normalize_value`.
+
+        :param source_type: The source type for validation.
+        :type source_type: Any
+        :param handler: The handler for core schema retrieval.
+        :type handler: GetCoreSchemaHandler
+        :return: The core schema incorporating the two-step validation.
+        :rtype: core_schema.CoreSchema
+        """
+        with_before = core_schema.no_info_before_validator_function(
+            cls._create_from_str, handler(source_type)
+        )
+        return core_schema.no_info_after_validator_function(
+            cls.normalize_value, with_before
+        )
+
+    @classmethod
+    def _create_from_str(cls, data: Any) -> Any:
+        """Create a SnippetFilter instance from a string.
+
+        If the input is a string, it should be in the format "type:value", where "type"
+        is optional and defaults to "extension". If not, it's returned as is.
+
+        :param data: The input data, which can be a string or anything else.
+        :type data: Any
+        :return: A SnippetFilter instance or the original data if it's not a
+            string.
+        :rtype: Any
+        """
+        if isinstance(data, str):
+            filter_type_value_delimiter = ":"
+            if filter_type_value_delimiter in data:
+                type_str, value = data.split(filter_type_value_delimiter, 1)
+                data: dict[str, Any] = {"value": value}
+                with suppress(ValidationError):
+                    data["type"] = run_pydantic_type_validator(
+                        SnippetFilterType, type_str.lower()
+                    )
+                return cls(**data)
+            return cls(value=data)
+        return data
+
+    @classmethod
+    def create_from_str(cls, data: str) -> Self:
+        """Create a SnippetFilter instance from a string.
+
+        :param data: The input string in the format "type:value" or just "value".
+        :type data: str
+        :return: A SnippetFilter instance.
+        :rtype: SnippetFilter
+        """
+        return run_pydantic_type_validator(cls, data)
+
+    @classmethod
+    def normalize_value(cls, entity: "SnippetFilter") -> Self:
+        """Normalize the value of the filter entity based on its type.
+
+        :param entity: The SnippetFilter instance to normalize.
+        :type entity: SnippetFilter
+        :return: A new SnippetFilter instance with the normalized value.
+        :rtype: SnippetFilter
+        """
+        return cls(
+            value=SnippetFilterType.validate_value(entity.type, entity.value),
+            type=entity.type,
+        )
+
+
+DEFAULT_INTERPRETERS = OrderedDict(
+    {
+        SnippetFilter(".sh", SnippetFilterType.EXTENSION): "bash",
+        SnippetFilter("text/x-shellscript", SnippetFilterType.MIME_TYPE): "bash",
+        SnippetFilter("text/x-sh", SnippetFilterType.MIME_TYPE): "bash",
+        SnippetFilter("application/x-shellscript", SnippetFilterType.MIME_TYPE): "bash",
+        SnippetFilter("application/x-sh", SnippetFilterType.MIME_TYPE): "bash",
+    }
+)
+
+
+class SnippetsMetaOptions(BaseModel):
+    """Define metadata options for snippets.
+
+    :param LINE_PATTERN: Regular expression to match metadata lines in the snippet file.
+        Use a group named "line" to capture only a part of the line. Defaults to
+        `r"^# (?P<line>.+)$"`.
+    :type LINE_PATTERN: re.Pattern[str]
+    :param DELIMITER: The delimiter indicating the start/end of metadata in a snippet.
+        Defaults to `"---"`.
+    :type DELIMITER: RequiredStr
+    :param STOP_SEARCH_PATTERN: Regular expression to stop searching for metadata lines.
+        Defaults to `r"r"^[^#].+$"`.
+    :type STOP_SEARCH_PATTERN: re.Pattern[str]
+    :param DEFAULT_ALLOW_EXTRA_ARGS: Whether to allow extra arguments by default.
+        Defaults to `False`.
+    :type DEFAULT_ALLOW_EXTRA_ARGS: bool
+    :param DEFAULT_SUDO_OPTION: The default option for executing snippets with sudo.
+        Defaults to `SnippetSudoOption.NEVER`.
+    :type DEFAULT_SUDO_OPTION: SnippetSudoOption
+    :param DEFAULT_ARG_FORMAT: The default format for arguments. Use `${name}` and
+        `${value}` as placeholders. Defaults to `"--$name $value"`.
+    :type DEFAULT_ARG_FORMAT: RequiredStr
+    :param IGNORE_INVALID_PARAMETERS: Whether to ignore parameters with errors. If
+        `True`, such parameters are skipped in execution validation and a warning is
+        logged. If `False`, an error is logged and the snippet execution is blocked.
+        Defaults to `False`.
+    :type IGNORE_INVALID_PARAMETERS: bool
+    """
+
+    LINE_PATTERN: re.Pattern[str] = re.compile(r"^# (?P<line>.+)$")
+    DELIMITER: RequiredStr = "---"
+    STOP_SEARCH_PATTERN: re.Pattern[str] = re.compile(r"^[^#].+$")
+    DEFAULT_ALLOW_EXTRA_ARGS: bool = False
+    DEFAULT_SUDO_OPTION: SnippetSudoOption = SnippetSudoOption.NEVER
+    DEFAULT_ARG_FORMAT: RequiredStr = "--$name $value"
+    IGNORE_INVALID_PARAMETERS: bool = False
+
+    @field_validator("DEFAULT_ARG_FORMAT")
+    @classmethod
+    def _validate_value_identifier_is_in_template(cls, v: str) -> str:
+        """Ensure the 'value' placeholder is present in the argument format string.
+
+        :param v: The argument format string to validate.
+        :type v: str
+        :return: The validated argument format string.
+        :rtype: str
+        :raises ValueError: If the 'value' placeholder is missing.
+        """
+        if "value" not in Template(v).get_identifiers():
+            raise ValueError(
+                f"Invalid argument format string '{v}': the 'value' placeholder is required."
+                f" Use '${{value}}' to include it."
+            )
+        return v
+
+
+class SnippetsSettings(BaseYamlSettings):
+    """Define configuration options for support snippets.
+
+    :cvar SETTINGS_PREFIXES: The prefixes for snippets related settings in the
+        configuration file. Set to `["SEP", "SNIPPETS"]`.
+    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
+    :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
+        `Path("snippets")`.
+    :type SNIPPETS_DIR: RelativeDirectoryPath
+    :param SNIPPETS_BASE_URL: The base URL for accessing snippets. If `None`, the URL
+        is dynamically built on execution. Defaults to `None`.
+    :type SNIPPETS_BASE_URL: URL | None
+    :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
+    :type META: SnippetsMetaOptions
+    :param SYNC_FILTER: A set of filters to apply when loading snippets from
+        `SNIPPETS_DIR`. Each filter can specify a file extension or MIME type. If
+        `None`, no filtering is applied. Defaults to `None`.
+    :type SYNC_FILTER: set[SnippetFilter] | None
+    :param INTERPRETERS: A mapping of `SnippetFilter` to interpreter command names.
+        This defines which interpreter to use for snippets matching the specified
+        filter. Defaults to a predefined set of common script types.
+    :type INTERPRETERS: dict[SnippetFilter, str]
+    :param USE_MAGIC: Whether to use the `python-magic` package to determine file types.
+        Defaults to `False`. If `True`, the `python-magic` package must be installed.
+    :type USE_MAGIC: bool
+    :param SYNC_INTERVAL: The interval schedule for synchronizing snippets. Defaults to
+        every 1 hour.
+    :type SYNC_INTERVAL: IntervalSchedule
+    :param PREVIEW_MAX_CHARS: The maximum number of characters to include in the snippet
+        preview. Defaults to 10,000.
+    :type PREVIEW_MAX_CHARS: PositiveInt
+    :param PREVIEW_MAX_LINES: The maximum number of lines to include in the snippet
+        preview. Defaults to 500.
+    :type PREVIEW_MAX_LINES: PositiveInt
+    :param ENABLE_MANUAL_SYNC: Whether to enable manual synchronization of snippets.
+        Defaults to `False`.
+    :type ENABLE_MANUAL_SYNC: bool
+    """
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "SNIPPETS"]
+    SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
+    SNIPPETS_BASE_URL: URL | None = None
+    META: SnippetsMetaOptions = SnippetsMetaOptions()
+    SYNC_FILTER: set[SnippetFilter] | None = None
+    INTERPRETERS: OrderedDict[SnippetFilter, str] = DEFAULT_INTERPRETERS
+    USE_MAGIC: bool = False
+    SYNC_INTERVAL: IntervalSchedule = IntervalSchedule(every=1, period=Period.HOURS)
+    PREVIEW_MAX_CHARS: PositiveInt = 10000
+    PREVIEW_MAX_LINES: PositiveInt = 500
+    ENABLE_MANUAL_SYNC: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def merge_interpreters(cls, data: Any) -> Any:
+        """Merge default interpreters with any user-defined interpreters.
+
+        User-defined interpreters can be added via `INTERPRETERS`, or by using
+        `INTERPRETERS_PREPEND` and/or `INTERPRETERS_APPEND` to add entries after the
+        defaults.
+
+        :param data: The input data to validate.
+        :type data: Any
+        :return: The validated data with merged interpreters.
+        :rtype: Any
+        """
+        if isinstance(data, dict) and "INTERPRETERS" not in data:
+            data["INTERPRETERS"] = DEFAULT_INTERPRETERS
+            if (
+                (prepend_interpreters := data.pop("INTERPRETERS_PREPEND", None))
+                and prepend_interpreters
+                and isinstance(prepend_interpreters, dict)
+            ):
+                data["INTERPRETERS"] = merge_dict_at_start(
+                    data["INTERPRETERS"],
+                    transform_dict_keys(
+                        prepend_interpreters, SnippetFilter.create_from_str
+                    ),
+                )
+            if (
+                (append_interpreters := data.pop("INTERPRETERS_APPEND", None))
+                and append_interpreters
+                and isinstance(append_interpreters, dict)
+            ):
+                data["INTERPRETERS"] |= append_interpreters
+        return data
+
+    @field_validator("USE_MAGIC")
+    @classmethod
+    def _validate_python_magic_is_installed(cls, v: bool) -> bool:  # noqa: FBT001
+        """Ensure the 'python-magic' package is installed if USE_MAGIC is `True`.
+
+        :param v: The value of the USE_MAGIC setting.
+        :type v: bool
+        :return: The validated value of USE_MAGIC.
+        :rtype: bool
+        :raises ValueError: If USE_MAGIC is `True` but the 'python-magic' package
+            is not installed.
+        """
+        if v:
+            try:
+                validate_module_is_importable("magic")
+            except ImportError:
+                raise ValueError(
+                    "The 'python-magic' package is required for this feature."
+                ) from None
+        return v
+
+
+snippets_settings = SnippetsSettings()

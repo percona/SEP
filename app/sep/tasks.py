@@ -19,10 +19,9 @@ from typing import Any
 
 from pydantic import BaseModel, model_validator
 
+from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.periodic.models import (
-    CrontabSchedule,
-    IntervalSchedule,
     PeriodicTaskExecuteRequest,
 )
 

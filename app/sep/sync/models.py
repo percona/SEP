@@ -16,7 +16,9 @@
 """Define base sync models for SEP."""
 
 import asyncio
+import json
 import logging
+from collections import defaultdict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
@@ -53,7 +55,7 @@ from app.sep.models import (
     SyncItemWrite,
 )
 from app.sep.sync.exceptions import SyncFailError, SyncItemAlreadyInProgressError
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +172,27 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.SCHEMA: self.can_sync_schema,
             SyncInventoryEntityTypeEnum.TABLE: self.can_sync_table,
         }
+
+    @asynccontextmanager
+    async def api_auth(
+        self, api_key: str, auth_scheme: str = "Bearer"
+    ) -> AsyncGenerator[Self]:
+        """Use a specific API key for inventory API requests within the context.
+
+        This asynchronous context manager temporarily sets the Authorization header
+        for the inventory API to use the provided API key. It ensures that all requests
+        made within the context use this API key for authentication.
+
+        :param api_key: The API key to be used for authentication.
+        :type api_key: str
+        :param auth_scheme: The authentication scheme to be used (default is "Bearer").
+        :type auth_scheme: str
+        :yield: The syncer instance with the updated API key context.
+        :rtype: AsyncGenerator[BaseSyncer]
+        """
+        with self.inventory_api.auth(api_key, auth_scheme):
+            async with self as syncer:
+                yield syncer
 
     @validate_call
     async def prepare_sync(
@@ -1115,6 +1138,27 @@ class BaseTaskSyncer(BaseSyncer):
     tasks_execution_wait_interval: int = 5
     force_executor_host: str | None = None
 
+    @asynccontextmanager
+    async def api_auth(
+        self, api_key: str, auth_scheme: str = "Bearer"
+    ) -> AsyncGenerator[Self]:
+        """Use a specific API key for the tasks API requests within the context.
+
+        This asynchronous context manager temporarily sets the Authorization header
+        for the inventory and tasks API to use the provided API key. It ensures that all
+        requests made within the context use this API key for authentication.
+
+        :param api_key: The API key to be used for authentication.
+        :type api_key: str
+        :param auth_scheme: The authentication scheme to be used (default is "Bearer").
+        :type auth_scheme: str
+        :yield: The syncer instance with the updated API key context.
+        :rtype: AsyncGenerator[BaseSyncer]
+        """
+        with self.tasks_api.auth(api_key, auth_scheme):
+            async with super().api_auth(api_key, auth_scheme) as syncer:
+                yield syncer
+
     @alru_cache
     async def get_available_hosts(self) -> dict[str, str]:
         """Return the available hosts from the Tasks API.
@@ -1153,7 +1197,7 @@ class BaseTaskSyncer(BaseSyncer):
         """
         task_history = await self.tasks_api.post(
             f"/execute/{task_name}",
-            json={"meta": meta, "payload": payload},
+            json={"meta": meta, "payload": payload, "anonymize_mask": 0},
         )
         task_history_id = task_history["id"]
         status = task_history["status"]
@@ -1173,14 +1217,16 @@ class BaseTaskSyncer(BaseSyncer):
         if status in [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]:
             raise TimeoutError(f"Task {task_name} timed out")
 
-        # TODO: Avoid keeping duplicate logs  # noqa: TD002, TD003
-        task_logs = task_history["execution_request"]["tracking"]["task_logs"][
-            stdout_step
-        ]
-        output = task_logs.get("stdout", "")
-        error_output = task_logs.get("stderr", "")
-        exc_detail = f"Task {task_name} failed"
+        output = defaultdict(str)
+        async for log_entry in self.tasks_api.stream(
+            f"/history/{task_history_id}/logs/", params={"step": stdout_step}
+        ):
+            if log_entry:
+                log_data = json.loads(log_entry)
+                output[log_data["type"]] += log_data["msg"]
 
+        exc_detail = f"Task {task_name} failed"
+        error_output = output[TaskLogType.STDERR]
         if error_output:
             logger.warning(
                 "Task %s (%s) returned an error message: %s",
@@ -1194,4 +1240,4 @@ class BaseTaskSyncer(BaseSyncer):
             # TODO: Create custom exceptions  # noqa: TD002, TD003
             raise ValueError(exc_detail)
 
-        return output
+        return output[TaskLogType.STDOUT]

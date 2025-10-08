@@ -42,6 +42,9 @@
                 <th>Name</th>
                 <th>Type</th>
                 <th>Port</th>
+                <th>Environment</th>
+                <th>Cluster</th>
+                <th>Replication Set</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -53,6 +56,9 @@
                     </td>
                     <td>{{ service.type }}</td>
                     <td>{{ service.port }}</td>
+                    <td>{{ service.environment or '-' }}</td>
+                    <td>{{ service.cluster or '-' }}</td>
+                    <td>{{ service.replication_set or '-' }}</td>
                     <td>
                         <form action="{{ url_for('service_delete', service_id=service.id) }}"
                               method="post"

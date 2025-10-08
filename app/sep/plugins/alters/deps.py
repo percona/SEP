@@ -4,11 +4,12 @@ import logging
 import shlex
 from typing import Annotated, Any
 
-from fastapi import Depends, Form, Request
+from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHosts,
     get_created_entity,
     get_task_by_name,
     get_tasks_context,
@@ -17,7 +18,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 async def build_alters_task_payload(
     form: Annotated[AltersCreate, Form()],
     inventory_api: InventoryAPI,
-) -> GeneratedTask:
+) -> TaskWrite:
     """Build the alter task payload from form.
 
     Build the payload for an Alters task to be executed, including the
@@ -35,9 +36,9 @@ async def build_alters_task_payload(
     :type form: AltersCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `GeneratedTask` object containing all the necessary
+    :return: A fully constructed `TaskWrite` object containing all the necessary
         commands and parameters for the Alters task execution.
-    :rtype: GeneratedTask
+    :rtype: TaskWrite
     """
     service = await get_created_entity(
         inventory_api,
@@ -303,10 +304,10 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
 
 
 async def get_alters_index_context(
-    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
+    executor_hosts: ExecutorHosts,
 ) -> dict[str, Any]:
     """Assemble the context for the Alters plugin index view.
 
@@ -314,22 +315,22 @@ async def get_alters_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
-    :param request: The HTTP request object.
-    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Alters-specific information.
     :type context: DefaultContext
+    :param executor_hosts: The executor hosts for the Alters tasks.
+    :type executor_hosts: ExecutorHosts
     :return: An updated context dictionary containing Alters-related data.
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        request,
         inventory_api,
         tasks_api,
         get_alters_task_info,
+        executor_hosts,
         context,
         TaskOwner.ALTERS,
         alert_on_fail_default=True,

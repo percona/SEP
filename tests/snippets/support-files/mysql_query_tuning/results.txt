@@ -1,0 +1,17 @@
+\*+ 1. row \*+
+           id: 1
+  select_type: SIMPLE
+        table: user
+   partitions: NULL
+         type: \w+
+possible_keys: \w+
+          key: \w+
+      key_len: \d+
+          ref: \w+
+         rows: \d+
+     filtered: 100.00
+        Extra: \w+
+\*+ 1. row \*+
+  Level: Note
+   Code: 1003
+Message: /\* select#1 \*/ select `mysql`.`user`.`User` AS `user`,`mysql`.`user`.`Host` AS `host` from `mysql`.`user`
