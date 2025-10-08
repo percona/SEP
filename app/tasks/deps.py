@@ -126,8 +126,6 @@ def prepare_task_history(
     :type executed_by: CurrentUserID
     :param execution_data: Execution details and parameters, if any.
     :type execution_data: TaskExecuteRequest | None
-    :param executed_by: The username of the user executing the task.
-    :type executed_by: str | None
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
     """
