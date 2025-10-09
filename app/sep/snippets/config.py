@@ -293,15 +293,18 @@ class SnippetsSettings(BaseYamlSettings):
     :param SYNC_INTERVAL: The interval schedule for synchronizing snippets. Defaults to
         every 1 hour.
     :type SYNC_INTERVAL: IntervalSchedule
+    :param ENABLE_MANUAL_SYNC: Whether to enable manual synchronization of snippets.
+        Defaults to `False`.
+    :type ENABLE_MANUAL_SYNC: bool
+    :param SYNC_ON_STARTUP: Whether to synchronize snippets on application startup.
+        Defaults to `True`.
+    :type SYNC_ON_STARTUP: bool
     :param PREVIEW_MAX_CHARS: The maximum number of characters to include in the snippet
         preview. Defaults to 10,000.
     :type PREVIEW_MAX_CHARS: PositiveInt
     :param PREVIEW_MAX_LINES: The maximum number of lines to include in the snippet
         preview. Defaults to 500.
     :type PREVIEW_MAX_LINES: PositiveInt
-    :param ENABLE_MANUAL_SYNC: Whether to enable manual synchronization of snippets.
-        Defaults to `False`.
-    :type ENABLE_MANUAL_SYNC: bool
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "SNIPPETS"]
@@ -312,9 +315,10 @@ class SnippetsSettings(BaseYamlSettings):
     INTERPRETERS: OrderedDict[SnippetFilter, str] = DEFAULT_INTERPRETERS
     USE_MAGIC: bool = False
     SYNC_INTERVAL: IntervalSchedule = IntervalSchedule(every=1, period=Period.HOURS)
+    ENABLE_MANUAL_SYNC: bool = False
+    SYNC_ON_STARTUP: bool = True
     PREVIEW_MAX_CHARS: PositiveInt = 10000
     PREVIEW_MAX_LINES: PositiveInt = 500
-    ENABLE_MANUAL_SYNC: bool = False
 
     @model_validator(mode="before")
     @classmethod
