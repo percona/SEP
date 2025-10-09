@@ -23,7 +23,6 @@ default:
     SNIPPETS:
       FILTER_EXTENSIONS:
         - .sh
-      SYNC_INTERVAL: 60 seconds
     UVICORN_HOST: "127.0.0.1"
     UVICORN_PORT: 8000
     SSL_KEYFILE: null
@@ -128,6 +127,9 @@ default:
 
 development:
   SEP:
+    SNIPPETS:
+      SYNC_INTERVAL: 60 seconds
+      ENABLE_MANUAL_SYNC: true
     INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
     SECURITY_HEADERS:
