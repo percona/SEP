@@ -269,6 +269,12 @@ $(document).ready(function() {
         $currentRow.hide();
         $editRow.show();
 
+        $editRow.find('input, select').each(function() {
+            if ($(this).attr('type') !== 'hidden') {
+                $(this).data('original-value', $(this).val());
+            }
+        });
+
         const $timezoneSelect = $editRow.find('select[name="cron_timezone"]');
         if (!$timezoneSelect.hasClass('select2-hidden-accessible')) {
             initializeSelect2($timezoneSelect);
@@ -288,10 +294,15 @@ $(document).ready(function() {
         $editRow.hide();
         $currentRow.show();
 
-        const $form = $(`#edit-periodic-task-form-${taskId}`);
-        if ($form.length > 0 && $form[0]) {
-            $form[0].reset();
-        }
+        $editRow.find('input, select').each(function() {
+            if ($(this).attr('type') === 'checkbox') {
+                const originalChecked = $currentRow.find('.enable-checkbox').is(':checked');
+                $(this).prop('checked', originalChecked);
+            } else if ($(this).attr('type') !== 'hidden') {
+                // Reset other inputs to their original values
+                $(this).val($(this).data('original-value') || '');
+            }
+        });
     });
 
     $('.save-edit-button').click(function(e) {
@@ -308,7 +319,58 @@ $(document).ready(function() {
 
         updateDateTimeInput($editRow);
 
-        $(`#edit-periodic-task-form-${taskId}`).submit();
+        const taskName = $editRow.find('td:first span').text().trim();
+        const periodCell = $editRow.find('.period-cell');
+        const periodDescription = periodCell.attr('title') || periodCell.text().trim();
+
+        const confirmMessage = `Are you sure you want to update the periodic task for "${taskName}" (${periodDescription})?`;
+        if (!confirm(confirmMessage)) {
+            return false;
+        }
+
+        const $form = $(`#edit-periodic-task-form-${taskId}`);
+        const formData = new FormData();
+
+        formData.append('csrf-token', $form.find('input[name="csrf-token"]').val());
+
+        const enabled = $editRow.find('.edit-periodic-task-enable-checkbox').is(':checked');
+        formData.append('enabled', enabled ? 'true' : 'false');
+
+        const startTimeValue = $editRow.find('input[name="start_time"]').val();
+        if (startTimeValue) {
+            formData.append('start_time', startTimeValue);
+        }
+
+        if (isCronMode) {
+            const cronExpression = $editRow.find('input[name="cron_expression"]').val();
+            const cronTimezone = $editRow.find('select[name="cron_timezone"]').val();
+            if (cronExpression) {
+                formData.append('cron_expression', cronExpression);
+                formData.append('cron_timezone', cronTimezone);
+            }
+        } else {
+            const intervalEvery = $editRow.find('input[name="interval_every"]').val();
+            const intervalPeriod = $editRow.find('select[name="interval_period"]').val();
+            if (intervalEvery) {
+                formData.append('interval_every', intervalEvery);
+                formData.append('interval_period', intervalPeriod);
+            }
+        }
+
+        fetch($form.attr('action'), {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert('Failed to update periodic task. Please try again.');
+            }
+        }).catch(error => {
+            console.error('Error updating periodic task:', error);
+            alert('Failed to update periodic task. Please try again.');
+        });
+
         return true;
     });
 });

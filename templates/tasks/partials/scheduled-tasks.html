@@ -3,6 +3,14 @@
       action="{{ url_for('periodic_task_create') }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
+{% for periodic_task in periodic_tasks %}
+    <form id="edit-periodic-task-form-{{ periodic_task.id }}"
+          method="post"
+          action="{{ url_for('periodic_task_update', periodic_task_id=periodic_task.id) }}"
+          style="display: none">
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    </form>
+{% endfor %}
 <table id="scheduled-tasks-table" data-table>
     <thead>
         <tr>
@@ -77,11 +85,6 @@
                 <tr class="edit-periodic-task-row"
                     data-task-id="{{ periodic_task.id }}"
                     style="display: none">
-                    <form id="edit-periodic-task-form-{{ periodic_task.id }}"
-                          method="post"
-                          action="{{ url_for('periodic_task_update', periodic_task_id=periodic_task.id) }}">
-                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-                    </form>
                     <td>
                         <span>{{ periodic_task.task }}</span>
                     </td>
@@ -91,12 +94,10 @@
                                    name="interval_every"
                                    min="1"
                                    placeholder="every n"
-                                   form="edit-periodic-task-form-{{ periodic_task.id }}"
                                    value="{{ periodic_task.interval.every if periodic_task.interval else '' }}"
                                    {%- if not periodic_task.interval %}disabled{%- endif %}
                                    {%- if periodic_task.interval %}required{%- endif %}>
                             <select name="interval_period"
-                                    form="edit-periodic-task-form-{{ periodic_task.id }}"
                                     style="padding: 0.2em"
                                     {%- if not periodic_task.interval %}disabled{%- endif %}>
                                 <option value="days"
@@ -112,12 +113,10 @@
                                 <input type="text"
                                        name="cron_expression"
                                        placeholder="*/5 * * * *"
-                                       form="edit-periodic-task-form-{{ periodic_task.id }}"
                                        value="{%- if periodic_task.crontab -%}{{ periodic_task.crontab.minute }} {{ periodic_task.crontab.hour }} {{ periodic_task.crontab.day_of_month }} {{ periodic_task.crontab.month_of_year }} {{ periodic_task.crontab.day_of_week }}{%- endif -%}"
                                        {%- if not periodic_task.crontab %}disabled{%- endif %}
                                        {%- if periodic_task.crontab %}required{%- endif %}>
                                 <select name="cron_timezone"
-                                        form="edit-periodic-task-form-{{ periodic_task.id }}"
                                         {%- if not periodic_task.crontab %}disabled{%- endif %}>
                                     {% for timezone in AVAILABLE_TIMEZONES %}
                                         <option value="{{ timezone }}"
@@ -140,7 +139,6 @@
                     </td>
                     <td>
                         <input type="hidden"
-                               form="edit-periodic-task-form-{{ periodic_task.id }}"
                                name="start_time"
                                class="date-value"
                                value="{{ periodic_task.start_time or '' }}">
@@ -153,7 +151,6 @@
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td style="padding-left: 0.5em">
                         <input type="hidden"
-                               form="edit-periodic-task-form-{{ periodic_task.id }}"
                                name="enabled"
                                value="{{ 'true' if periodic_task.enabled else 'false' }}">
                         <label class="switch">
@@ -164,11 +161,10 @@
                         </label>
                     </td>
                     <td class="actions-cell flex">
-                        <button type="submit"
+                        <button type="button"
                                 class="save-edit-button text medium"
                                 title="Save"
-                                data-task-id="{{ periodic_task.id }}"
-                                form="edit-periodic-task-form-{{ periodic_task.id }}">
+                                data-task-id="{{ periodic_task.id }}">
                             <span class="material-symbols-outlined">save</span>
                             <span class="label">Save</span>
                         </button>
