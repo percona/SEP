@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form, Request
+from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHosts,
     get_created_entity,
     get_task_by_name,
     get_tasks_context,
@@ -66,6 +67,7 @@ async def build_backup_task_payload(
             "service_id",
             "backup_type",
             "encryption_recipient",
+            "alias",
         },
         by_alias=True,
     )
@@ -77,7 +79,7 @@ async def build_backup_task_payload(
         upload_providers.append(UploadProvider.RSYNC)
 
     server_config = {
-        "alias": service.node.address,
+        "alias": form.alias or service.node.address,
         "backup_type": form.backup_type,
         # for now only localhost allowed for X
         "host": (
@@ -154,7 +156,8 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "backup_type": server_config["BACKUP_TYPE"],
         "service_id": None,
         "host": server_config["HOST"],
-        "port": server_config.get("PORT") or 3306,
+        "port": server_config.get("PORT"),
+        "alias": server_config.get("ALIAS"),
     }
 
     if "dir_encrypt_config" in server_config:
@@ -224,17 +227,19 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "hostname": meta["target"],
         "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT") or 3306,
+        "port": backup_server.get("PORT"),
         "upload": ", ".join(backup_server.get("UPLOAD")),
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
+        "created_by": task.get("created_by"),
+        "last_updated_by": task.get("last_updated_by"),
     }
 
 
 async def get_backups_index_context(
-    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
+    executor_hosts: ExecutorHosts,
 ) -> dict[str, Any]:
     """Assemble the context for the Backups plugin index view.
 
@@ -242,22 +247,22 @@ async def get_backups_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
-    :param request: The HTTP request object.
-    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Backups-specific information.
     :type context: DefaultContext
+    :param executor_hosts: The executor hosts for the Backups tasks.
+    :type executor_hosts: ExecutorHosts
     :return: An updated context dictionary containing Backups-related data.
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        request,
         inventory_api,
         tasks_api,
         get_backups_task_info,
+        executor_hosts,
         context,
         TaskOwner.BACKUPS,
         alert_on_fail_default=True,

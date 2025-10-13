@@ -85,6 +85,8 @@ async def restores_detail(
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
         "host": server_config.get("dest_host"),
@@ -106,9 +108,7 @@ async def restores_detail(
 
     try:
         executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts.values()) | {
-            task_data["hostname"]
-        }
+        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     except HTTPException:
         executor_hosts = {}
         context["executor_hosts"] = {task_data["hostname"]}

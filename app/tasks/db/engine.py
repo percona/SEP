@@ -13,38 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define database initialization and utility functions for the Tasks API."""
+"""Define database engine initialization for the Tasks API."""
 
-import json
-from typing import Any
+__all__ = ["engine", "get_async_session_maker"]
 
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.tasks.config import tasks_settings
-from app.tasks.models import TaskExecutionRequest
-
-
-def json_deserialize(raw_data: str) -> Any:
-    """Deserialize a JSON string into a Python object.
-
-    Attempts to deserialize the input string into a `TaskExecutionRequest` model.
-    If validation fails, the raw JSON data is returned as a dictionary.
-
-    :param raw_data: The JSON string to deserialize.
-    :type raw_data: str
-    :return: A `TaskExecutionRequest` object if deserialization is successful,
-        otherwise the raw data.
-    :rtype: Any
-    """
-    data = json.loads(raw_data)
-    try:
-        return TaskExecutionRequest(**data)
-    except ValidationError:
-        return data
-
+from app.tasks.db.utils import json_deserialize
 
 engine = create_async_engine(
     tasks_settings.DATABASE.URL,

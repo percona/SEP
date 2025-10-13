@@ -4,8 +4,7 @@ from unittest.mock import Mock, PropertyMock
 
 import pytest
 
-from app.tasks.anonymizer import anonymize_text
-from app.tasks.anonymizer.anonymize import PresidioEngineManager
+from app.tasks.anonymizer.anonymize import anonymize_text, PresidioEngineManager
 from app.tasks.anonymizer.entities import PIIEntity
 
 

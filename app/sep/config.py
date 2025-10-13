@@ -18,6 +18,7 @@
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
+from string import Template
 from typing import Any, ClassVar, Literal, Self
 
 from fastapi.templating import Jinja2Templates
@@ -34,22 +35,98 @@ from pydantic import (
     ValidationError,
 )
 
+from app import __summary__, __version__
 from app.core.config import (
     BaseYamlAppSettings,
     settings,
 )
 from app.core.db.config import DatabaseOptions
-from app.core.models import BaseLowercaseModel
-from app.core.utils import deep_dict_update, run_pydantic_type_validator
+from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
+from app.core.utils import (
+    deep_dict_update,
+    run_pydantic_type_validator,
+    slugify,
+)
 from app.core.utils.fields import (
     RelativeDirectoryPath,
     StrHttpUrl,
     StrImportableAttribute,
+    StrImportableModule,
     TimedeltaSeconds,
     UniqueList,
+    URIPath,
 )
-from app.sep.models import Plugin
-from app.sep.utils.jinja import syntax_highlight, syntax_highlight_css
+from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
+
+
+class Plugin(BaseCaseInsensitiveModel):
+    """Represent a SEP plugin.
+
+    This model defines the structure for a plugin, including its name, module,
+    URI path, and CSS class. It includes custom validators to resolve the module
+    path and set default values based on the plugin's name.
+
+    :param name: The name of the plugin.
+    :type name: str
+    :param module_name: The name of the module associated with the plugin. This field is
+        automatically prefixed with "app.sep.plugins." during validation.
+    :type module_name: StrImportableModule
+    :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
+        string, but is automatically set to a slugified version of the plugin name if
+        not provided.
+    :type uri_path: HttpUrl | URIPath
+    :param css_class: The CSS class associated with the plugin. Defaults to an empty
+        string, but is automatically set to a slugified version of the plugin name if
+        not provided.
+    :type css_class: str
+    :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
+    :type sidebar: bool
+    """
+
+    name: str
+    module_name: StrImportableModule
+    uri_path: HttpUrl | URIPath = ""
+    css_class: str = ""
+    sidebar: bool = True
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, Plugin):
+            return self.module_name == other.module_name
+        raise NotImplementedError
+
+    @field_validator("module_name", mode="before")
+    @classmethod
+    def resolve_module_path(cls, v: str) -> str:
+        """Resolve the full module path for the plugin.
+
+        This method takes the module name provided and prefixes it with
+        "app.sep.plugins." to resolve the full import path.
+
+        :param v: The module name to resolve.
+        :type v: str
+        :return: The full module path with the "app.sep.plugins." prefix.
+        :rtype: str
+        """
+        return f"app.sep.plugins.{v}"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _set_default_from_name(cls, data: Any) -> Any:
+        if isinstance(data, dict) and (name := data.get("name")):
+            slug = slugify(name)
+            data["uri_path"] = data.get("uri_path") or f"/{slug}"
+            data["css_class"] = data.get("css_class") or slug
+        return data
+
+    @computed_field
+    @property
+    def router_path(self) -> str:
+        """Return the plugin's router path.
+
+        :return: The router path derived from the module name.
+        :rtype: str
+        """
+        return f"{self.module_name}.router"
 
 
 class SessionOptions(BaseModel):
@@ -80,17 +157,17 @@ class SessionOptions(BaseModel):
 class CsrfSettings(BaseModel):
     """Configuration for CSRF protection settings.
 
-    :param secret_key: Secret key used for CSRF token generation.
-    :type secret_key: str
-    :param cookie_secure: Whether the CSRF cookie should be accessible
+    :param SECRET_KEY: Secret key used for CSRF token generation.
+    :type SECRET_KEY: str
+    :param COOKIE_SECURE: Whether the CSRF cookie should be accessible
         only via HTTPS (except on localhost).
-    :type cookie_secure: bool
-    :param cookie_samesite: SameSite policy for the CSRF cookie.
-    :type cookie_samesite: str
-    :param token_key: Key name for the CSRF token.
-    :type token_key: str
-    :param token_location: Location where the CSRF token is expected.
-    :type token_location: str
+    :type COOKIE_SECURE: bool
+    :param COOKIE_SAMESITE: SameSite policy for the CSRF cookie.
+    :type COOKIE_SAMESITE: str
+    :param TOKEN_KEY: Key name for the CSRF token.
+    :type TOKEN_KEY: str
+    :param TOKEN_LOCATION: Location where the CSRF token is expected.
+    :type TOKEN_LOCATION: str
     """
 
     SECRET_KEY: str = settings.SECRET_KEY
@@ -197,6 +274,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
     PMM_FRONTEND: StrHttpUrl | None = None
+    FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field
     @cached_property
@@ -216,7 +294,7 @@ class SEPSettings(BaseYamlAppSettings):
             autoescape=True,
             extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
         )
-        env.filters["syntax_highlight"] = syntax_highlight
+        env.filters |= DEFAULT_FILTERS
         env.globals["syntax_highlight_css"] = syntax_highlight_css
         return env
 
@@ -234,6 +312,37 @@ class SEPSettings(BaseYamlAppSettings):
         return Jinja2Templates(
             env=self.JINJA_ENVIRONMENT,
         )
+
+    @property
+    def FOOTER_TEXT(self) -> str:
+        """Return the rendered footer template.
+
+        This property renders the `FOOTER_TEMPLATE` with the current application
+        version and summary, returning the resulting string.
+
+        :return: The rendered footer string.
+        :rtype: str
+        """
+        return self.FOOTER_TEMPLATE.safe_substitute(
+            version=__version__, summary=__summary__
+        )
+
+    @field_validator("FOOTER_TEMPLATE", mode="before")
+    @classmethod
+    def coerce_footer_template(cls, v: Any) -> Any:
+        """Coerce the footer template to a Template object.
+
+        If the provided value is a string, convert it to a `Template` object. Else,
+        return it as is.
+
+        :param v: The footer template value to coerce.
+        :type v: Any
+        :return: The coerced `Template` object or the original input value.
+        :rtype: Any
+        """
+        if isinstance(v, str):
+            return Template(v)
+        return v
 
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:

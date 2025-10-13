@@ -179,11 +179,17 @@ class Service(BaseInventoryModel):
     """Represents an inventory service.
 
     This model represents a service within the Inventory API, including its environment,
-    external identifier, name, port, and type.
+    cluster, custom labels, external identifier, name, port, and type.
 
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: RequiredStr | EmptyStrToNone
@@ -199,6 +205,9 @@ class Service(BaseInventoryModel):
     """
 
     environment: str | None = None
+    cluster: str | None = None
+    replication_set: str | None = None
+    custom_labels: dict[str, Any] | None = None
     external_id: RequiredStr | EmptyStrToNone = Field(
         default=None,
         validation_alias="service_id",
@@ -229,6 +238,12 @@ class CreatedService(CreatedEntityBase, Service):
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: RequiredStr | EmptyStrToNone

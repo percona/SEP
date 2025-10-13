@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import alert_settings
+from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -143,6 +144,24 @@ IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
 
 
+async def get_current_admin(current_user: CurrentUser) -> User:
+    """Return the authenticated admin.
+
+    :param current_user: The current logged-in user.
+    :type current_user: CurrentUser
+    :return: The authenticated admin user.
+    :rtype: User
+    :raises HTTPForbiddenException: If the user is not an admin.
+    """
+    if not current_user.is_admin:
+        raise HTTPForbiddenException
+    return current_user
+
+
+IsAdminDep = Depends(get_current_admin)
+AdminUser = Annotated[User, IsAdminDep]
+
+
 async def redirect_if_user_is_authenticated(request: Request) -> None:
     """Redirect authenticated users to homepage.
 
@@ -179,8 +198,28 @@ async def validate_csrf(
 IsCsrfValidated = Depends(validate_csrf)
 
 
-def get_default_context(
-    request: Request, user: CurrentUser, base_uri: BaseURL
+async def get_username_mapping() -> dict[str, str]:
+    """Create a mapping from user ID to username using Casdoor.
+
+    This function fetches all users from Casdoor and creates a mapping from
+    user ID to username. Caching should be implemented in the Casdoor SDK
+    to avoid repeated API calls.
+
+    :return: A dictionary mapping user IDs to usernames.
+    :rtype: dict[str, str]
+    """
+    try:
+        users = await settings.CASDOOR.get_users()
+        return {str(user["id"]): user["name"] for user in users}
+    except (ValueError, KeyError, HTTPException):
+        logger.exception("Failed to get username mapping from Casdoor")
+        return {}
+
+
+async def get_default_context(
+    request: Request,
+    user: CurrentUser,
+    base_uri: BaseURL,
 ) -> dict[str, Any]:
     """Return the default context for templates.
 
@@ -202,6 +241,8 @@ def get_default_context(
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "messages": messages.get_messages(request),
         "pmm_url": sep_settings.PMM_FRONTEND,
+        "footer_text": sep_settings.FOOTER_TEXT,
+        "user_id_to_username": await get_username_mapping(),
     }
 
 
@@ -446,11 +487,31 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
 CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
+async def get_executor_hosts(request: Request, tasks_api: TaskAPI) -> dict[str, str]:
+    """Retrieve executor hosts from the Tasks API.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param tasks_api: The API client used to interact with the tasks service.
+    :type tasks_api: TaskAPI
+    :return: A dictionary of executor hosts.
+    :rtype: dict[str, str]
+    """
+    try:
+        return await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        messages.error(request, exc.detail)
+    return {}
+
+
+ExecutorHosts = Annotated[dict[str, str], Depends(get_executor_hosts)]
+
+
 async def get_tasks_context(
-    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
+    executor_hosts: ExecutorHosts,
     default_context: DefaultContext | None = None,
     owner: TaskOwner | None = None,
     *,
@@ -462,8 +523,6 @@ async def get_tasks_context(
     Inventory and Tasks APIs. It organizes tasks based on their status and integrates
     them into the provided context.
 
-    :param request: The HTTP request object.
-    :type request: Request
     :param inventory_api: The API client used to interact with the inventory service.
     :type inventory_api: RemoteAPI
     :param tasks_api: The API client used to interact with the tasks service.
@@ -471,6 +530,8 @@ async def get_tasks_context(
     :param get_task_info_func: A callable that receives a task and returns
         the processed task information.
     :type get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]]
+    :param executor_hosts: The executor hosts retrieved from the Tasks API.
+    :type executor_hosts: ExecutorHosts
     :param default_context: The base context dictionary to update. If None (default),
         initializes an empty dictionary.
     :type default_context: dict[str, Any] | None
@@ -504,6 +565,8 @@ async def get_tasks_context(
         task_info = {
             "name": task["name"],
             "id": task["id"],
+            "created_by": task.get("created_by"),
+            "last_updated_by": task.get("last_updated_by"),
         }
         task_info |= get_task_info_func(task)
         tasks.append(task_info)
@@ -518,17 +581,11 @@ async def get_tasks_context(
                     history_tasks.append(hist)
     periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
 
-    try:
-        executor_hosts = await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        executor_hosts = {}
-        messages.error(request, exc.detail)
-
     alert_on_fail_available = bool(alert_settings.PROVIDERS)
     context = default_context or {}
     context.update(
         {
-            "executor_hosts": list(executor_hosts.values()),
+            "executor_hosts": list(executor_hosts),
             "services": services,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
@@ -544,10 +601,10 @@ async def get_tasks_context(
 
 
 async def get_tasks_index_context(
-    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     default_context: DefaultContext,
+    executor_hosts: ExecutorHosts,
 ) -> dict[str, Any]:
     """Assemble the context for the Homepage.
 
@@ -555,14 +612,14 @@ async def get_tasks_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
-    :param request: The HTTP request object.
-    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
     :param default_context: The default context to be updated with Alters-specific information.
     :type default_context: DefaultContext
+    :param executor_hosts: The executor hosts retrieved from the Tasks API.
+    :type executor_hosts: ExecutorHosts
     :return: An updated context dictionary containing tasks' data.
     :rtype: dict[str, Any]
     """
@@ -578,11 +635,6 @@ async def get_tasks_index_context(
     for periodic_task in periodic_tasks:
         task_name = periodic_task.get("task")
         periodic_task["owner"] = task_owner_mapping.get(task_name)
-    try:
-        executor_hosts = await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        executor_hosts = {}
-        messages.error(request, exc.detail)
     inventories = await inventory_api.get("/summary/")
     plugins = sep_settings.PLUGINS
     is_task_manager_enabled = any(

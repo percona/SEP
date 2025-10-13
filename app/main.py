@@ -17,19 +17,42 @@
 
 import logging.config
 from argparse import ArgumentParser
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from multiprocessing import Process
 
+from fastapi import FastAPI
+
 from app.api.main import api_router
+from app.celery import celery as celery_app
 from app.core.config import create_app, settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
-from app.sep.main import sep_app
-from app.tasks.celery import celery as celery_app
+from app.sep.main import sep_app, sep_startup
 from app.tasks.main import tasks_app, tasks_lifespan
+
+
+@asynccontextmanager
+async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage the app's lifespan.
+
+    Initializes the Tasks database data, the periodic tasks data, and ensures that the
+    CasdoorSDK, the NomadExecutor, and any extra client sessions are properly managed
+    during the application's startup and shutdown phases.
+
+    :param app: The FastAPI application instance.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    await sep_startup()
+    async with tasks_lifespan(app):
+        yield
+
 
 app = create_app(
     api_router,
-    lifespan=tasks_lifespan,
+    lifespan=main_lifespan,
     backend_cors_origins=sep_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
@@ -42,7 +65,7 @@ app.mount("/", sep_app)
 def start_celery_worker() -> None:
     """Start the Celery worker process."""
     worker = celery_app.Worker(
-        include=["app.tasks.celery"],
+        include=["app.tasks.celery", "app.sep.celery"],
     )
     worker.start()
 

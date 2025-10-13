@@ -3,17 +3,19 @@
 # ---
 # title: MySQL Log Extractor
 # description: This script extracts a portion of the MySQL error log
-# strict: false
+# allow_extra_args: false
 # parameters:
 #  - name: time
 #    type: str
 #    label: Issue Time
 #    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    required: true
 #  - name: minutes
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
-#    default: true
+#    ge: 1
+#    required: true
 #  - name: log-file
 #    type: str
 #    label: Log file path
@@ -23,11 +25,16 @@
 #    type: str
 #    description: Where to send the output
 #    label: Output destination
+#    default: stdout
 #    choices:
 #      - value: stdout
 #        label: Print to the terminal (default)
 #      - value: file
 #        label: Write the output to a file named by the timestamp
+# atw:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - GROUP_REPLICATION
 # ---
 
 # mysql_log_extractor.sh
