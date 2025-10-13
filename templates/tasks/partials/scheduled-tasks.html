@@ -7,6 +7,8 @@
     <form id="edit-periodic-task-form-{{ periodic_task.id }}"
           method="post"
           action="{{ url_for('periodic_task_update', periodic_task_id=periodic_task.id) }}"
+          class="confirmable-form"
+          data-confirm-message="Are you sure you want to update the periodic task for &quot;{{ periodic_task.task }}&quot;?"
           style="display: none">
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     </form>
@@ -161,10 +163,11 @@
                         </label>
                     </td>
                     <td class="actions-cell flex">
-                        <button type="button"
-                                class="save-edit-button text medium"
+                        <button type="submit"
+                                class="save-edit-button text medium submitButton"
                                 title="Save"
-                                data-task-id="{{ periodic_task.id }}">
+                                data-task-id="{{ periodic_task.id }}"
+                                form="edit-periodic-task-form-{{ periodic_task.id }}">
                             <span class="material-symbols-outlined">save</span>
                             <span class="label">Save</span>
                         </button>

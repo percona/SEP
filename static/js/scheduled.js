@@ -306,71 +306,68 @@ $(document).ready(function() {
     });
 
     $('.save-edit-button').click(function(e) {
-        e.preventDefault();
-
         const taskId = $(this).data('task-id');
         const $editRow = $(`.edit-periodic-task-row[data-task-id="${taskId}"]`);
         const $cronDiv = $editRow.find('.cron-inputs');
         const isCronMode = !$cronDiv.hasClass('hidden');
 
         if (!validateScheduleInputs($editRow, isCronMode)) {
+            e.preventDefault();
             return false;
         }
 
         updateDateTimeInput($editRow);
 
-        const taskName = $editRow.find('td:first span').text().trim();
-        const periodCell = $editRow.find('.period-cell');
-        const periodDescription = periodCell.attr('title') || periodCell.text().trim();
-
-        const confirmMessage = `Are you sure you want to update the periodic task for "${taskName}" (${periodDescription})?`;
-        if (!confirm(confirmMessage)) {
-            return false;
-        }
-
         const $form = $(`#edit-periodic-task-form-${taskId}`);
-        const formData = new FormData();
 
-        formData.append('csrf-token', $form.find('input[name="csrf-token"]').val());
+        $form.find('input:not([name="csrf-token"])').remove();
 
         const enabled = $editRow.find('.edit-periodic-task-enable-checkbox').is(':checked');
-        formData.append('enabled', enabled ? 'true' : 'false');
+        $('<input>', {
+            type: 'hidden',
+            name: 'enabled',
+            value: enabled ? 'true' : 'false'
+        }).appendTo($form);
 
         const startTimeValue = $editRow.find('input[name="start_time"]').val();
         if (startTimeValue) {
-            formData.append('start_time', startTimeValue);
+            $('<input>', {
+                type: 'hidden',
+                name: 'start_time',
+                value: startTimeValue
+            }).appendTo($form);
         }
 
         if (isCronMode) {
             const cronExpression = $editRow.find('input[name="cron_expression"]').val();
             const cronTimezone = $editRow.find('select[name="cron_timezone"]').val();
             if (cronExpression) {
-                formData.append('cron_expression', cronExpression);
-                formData.append('cron_timezone', cronTimezone);
+                $('<input>', {
+                    type: 'hidden',
+                    name: 'cron_expression',
+                    value: cronExpression
+                }).appendTo($form);
+                $('<input>', {
+                    type: 'hidden',
+                    name: 'cron_timezone',
+                    value: cronTimezone
+                }).appendTo($form);
             }
         } else {
             const intervalEvery = $editRow.find('input[name="interval_every"]').val();
             const intervalPeriod = $editRow.find('select[name="interval_period"]').val();
             if (intervalEvery) {
-                formData.append('interval_every', intervalEvery);
-                formData.append('interval_period', intervalPeriod);
+                $('<input>', {
+                    type: 'hidden',
+                    name: 'interval_every',
+                    value: intervalEvery
+                }).appendTo($form);
+                $('<input>', {
+                    type: 'hidden',
+                    name: 'interval_period',
+                    value: intervalPeriod
+                }).appendTo($form);
             }
         }
-
-        fetch($form.attr('action'), {
-            method: 'POST',
-            body: formData
-        }).then(response => {
-            if (response.ok) {
-                window.location.reload();
-            } else {
-                alert('Failed to update periodic task. Please try again.');
-            }
-        }).catch(error => {
-            console.error('Error updating periodic task:', error);
-            alert('Failed to update periodic task. Please try again.');
-        });
-
-        return true;
     });
 });
