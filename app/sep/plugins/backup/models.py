@@ -234,6 +234,8 @@ class BackupCreate(BackupConfigAll):
     :type encryption_recipient: RequiredStr | EmptyStrToNone
     :param binlog_alternative_host: Optional alternative host for binlog operations.
     :type binlog_alternative_host: RequiredStr | EmptyStrToNone
+    :param alias: Optional alias for the server in the SERVERS_LIST section.
+    :type alias: RequiredStr | EmptyStrToNone
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
     :type alert_on_fail: bool
     """
@@ -244,6 +246,7 @@ class BackupCreate(BackupConfigAll):
     backup_type: BackupType
     encryption_recipient: RequiredStr | EmptyStrToNone = None
     binlog_alternative_host: RequiredStr | EmptyStrToNone = None
+    alias: RequiredStr | EmptyStrToNone = None
     alert_on_fail: bool = False
 
     @model_validator(mode="after")

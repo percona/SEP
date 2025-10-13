@@ -185,6 +185,8 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "host": restore_server.get("HOST"),
         "port": restore_server.get("PORT") or 3306,
         "backup_type": BackupType(restore_server.get("BACKUP_TYPE")).name,
+        "created_by": task.get("created_by"),
+        "last_updated_by": task.get("last_updated_by"),
     }
 
 

@@ -38,6 +38,7 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
+from app.sep.celery import sync_snippets
 from app.sep.config import CsrfSettings, sep_settings
 from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
@@ -59,6 +60,17 @@ from app.tasks.config import tasks_settings
 logger = logging.getLogger(__name__)
 
 
+async def sep_startup() -> None:
+    """Define actions to perform on SEP startup.
+
+    Initializes the SEP periodic task database and triggers the initial synchronization
+    of snippets if configured to do so.
+    """
+    await init_sep_db()
+    if snippets_settings.SYNC_ON_STARTUP:
+        sync_snippets.delay()
+
+
 @asynccontextmanager
 async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage SEP's lifespan.
@@ -72,7 +84,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
-    await init_sep_db()
+    await sep_startup()
     app.state.inventory_api = RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
         ssl_cafile=settings.SSL_CAFILE,
