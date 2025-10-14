@@ -231,6 +231,86 @@ class MySQLPreChecks:
         )
         return False
 
+    def check_foreign_key_references(self) -> bool:
+        """Check if the table has foreign keys referencing it.
+
+        Returns:
+            bool: True if check passes (no foreign keys referencing the table), False otherwise
+
+        """
+        self.logger.info("=== Checking for foreign key references ===")
+
+        if not self.connection:
+            self.logger.error("No MySQL connection available")
+            return False
+
+        query = """
+        SELECT
+            TABLE_SCHEMA,
+            TABLE_NAME,
+            CONSTRAINT_NAME,
+            COLUMN_NAME,
+            REFERENCED_TABLE_SCHEMA,
+            REFERENCED_TABLE_NAME,
+            REFERENCED_COLUMN_NAME
+        FROM
+            INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE
+            REFERENCED_TABLE_SCHEMA = %s
+            AND REFERENCED_TABLE_NAME = %s
+        """
+
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(query, (self.schema, self.table))
+                results = cursor.fetchall()
+
+                if not results:
+                    self.logger.info(
+                        "[PASS] No foreign keys found referencing table %s.%s",
+                        self.schema,
+                        self.table,
+                    )
+                    return True
+
+                # Log all foreign key references found
+                self.logger.error(
+                    "[FAIL] Found %d foreign key(s) referencing table %s.%s:",
+                    len(results),
+                    self.schema,
+                    self.table,
+                )
+
+                for row in results:
+                    (
+                        table_schema,
+                        table_name,
+                        constraint_name,
+                        column_name,
+                        referenced_table_schema,
+                        referenced_table_name,
+                        referenced_column_name,
+                    ) = row
+                    self.logger.error(
+                        "  - %s.%s.%s -> %s.%s.%s (constraint: %s)",
+                        table_schema,
+                        table_name,
+                        column_name,
+                        referenced_table_schema,
+                        referenced_table_name,
+                        referenced_column_name,
+                        constraint_name,
+                    )
+
+                self.logger.error(
+                    "pt-online-schema-change cannot proceed when foreign keys reference the target table"
+                )
+                return False
+
+        except PyMySQLError:
+            self.logger.exception("Failed to check for foreign key references")
+            return False
+
     def run_all_checks(self) -> bool:
         """Run all pre-checks.
 
@@ -245,6 +325,10 @@ class MySQLPreChecks:
 
         # Check disk space
         if not self.check_disk_space():
+            all_passed = False
+
+        # Check for foreign key references
+        if not self.check_foreign_key_references():
             all_passed = False
 
         self.logger.info("=" * 50)
