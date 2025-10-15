@@ -22,14 +22,9 @@ from app.sep.plugins.backup_mongo.deps import (
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
-from .restore.routes import router as restore_router
-
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
-
-
-router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -131,6 +126,8 @@ async def pbm_backups_detail(
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
         "backup_type": data["backup_type"],

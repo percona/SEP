@@ -9,12 +9,13 @@
                 <th class="number"
                     aria-label="Click to sort alphanumerically"
                     data-tooltip="1000">Duration (s)</th>
+                <th>Executed by</th>
                 <th class="options" data-sortable="false" data-searchable="false">View logs</th>
             </tr>
         </thead>
         <tbody>
             {% for task_history in history_tasks %}
-                {%- set task_logs = task_history.execution_request.tracking.task_logs or {} -%}
+                {%- set task_logs = task_history.execution_request.tracking.task_logs or False -%}
                 {% if task_history.status in ['success', 'failed', 'stopped', 'lost'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>
@@ -44,6 +45,7 @@
                         <td class="relativeTime code">{{ task_history.started_at }}</td>
                         <td class="relativeTime code">{{ task_history.finished_at }}</td>
                         <td class="number code">{{ task_history.duration }}</td>
+                        <td>{{ user_id_to_username.get(task_history.executed_by, task_history.executed_by) or '' }}</td>
                         <td class="options">
                             {%- if task_logs %}
                                 <button type="button"
@@ -98,6 +100,62 @@
                                             </section>
                                             <footer class="log-footer">
                                                 <div class="log-tabs"></div>
+                                                <button type="button" class="text large" data-modal-close>
+                                                    Close<sup>ESC</sup>
+                                                </button>
+                                            </footer>
+                                        </div>
+                                    </dialog>
+                                </section>
+                            {%- endif -%}
+                            {%- if task_history.available_files -%}
+                                <button type="button"
+                                        class="icon medium view-files-button"
+                                        aria-label="View & download files"
+                                        data-tooltip
+                                        data-modal="trigger"
+                                        data-modal-target="modal-files-{{ task_history.id }}"
+                                        data-task-id="{{ task_history.id }}">
+                                    <span class="material-symbols-outlined">download</span>
+                                </button>
+                                <section>
+                                    <dialog id="modal-files-{{ task_history.id }}"
+                                            aria-modal="true"
+                                            aria-labelledby="modal-files-title-{{ task_history.id }}"
+                                            class="fullwidth modal-files">
+                                        <div class="window">
+                                            <header>
+                                                <h3 id="modal-files-title-{{ task_history.id }}" class="h5 title">Files for {{ task_history.task.name }}</h3>
+                                            </header>
+                                            <section class="files-list">
+                                                <table class="files-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>File</th>
+                                                            <th class="number">Size</th>
+                                                            <th class="options">Download</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for filename, size in task_history.available_files.items() %}
+                                                            <tr data-task-id="{{ task_history.id }}"
+                                                                data-file-name="{{ filename }}"
+                                                                data-file-size="{{ size }}">
+                                                                <td class="file-name code">{{ filename }}</td>
+                                                                <td class="file-size number code">{{ size }}</td>
+                                                                <td class="options">
+                                                                    <button type="button"
+                                                                            class="icon medium download-file-button"
+                                                                            aria-label="Download {{ filename }}">
+                                                                        <span class="material-symbols-outlined">file_download</span>
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
+                                            </section>
+                                            <footer>
                                                 <button type="button" class="text large" data-modal-close>
                                                     Close<sup>ESC</sup>
                                                 </button>

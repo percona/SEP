@@ -136,8 +136,20 @@
                                 <span class="material-symbols-outlined">arrow_drop_down</span>
                                 <span class="label">Select a Database Host:</span>
                                 {% if services|length > 0 %}
+                                    {% set matched_service_list = [] %}
+                                    {% for service in services %}
+                                        {% if task["host"] == service.node.address and task["port"] == service.port %}
+                                            {% do matched_service_list.append(1) %}
+                                        {% endif %}
+                                    {% endfor %}
                                     <select id="service_id" name="service_id" required>
-                                        <option value="" selected>Select a database host</option>
+                                        <option value=""
+                                                {% if matched_service_list|length > 0 %}{% else %}selected{% endif %}>
+                                            Select a database host
+                                        </option>
+                                        {% if matched_service_list|length == 0 %}
+                                            <option value="-1" selected>Unknown({{ task["host"] }}:{{ task["port"] }})</option>
+                                        {% endif %}
                                         {% for service in services %}
                                             {% set is_selected = task["host"] == service.node.address and task["port"] == service.port %}
                                             <option value="{{ service.id }}" {% if is_selected %}selected{% endif %}>
@@ -162,6 +174,17 @@
                                 </select>
                             </label>
                         </div>
+                        <br>
+                        <br>
+                        {% set alias_title = "Optional alias for the server in the SERVERS_LIST section. Defaults to the service IP if not provided." %}
+                        <label for="alias" title="{{ alias_title }}">
+                            Server Alias (optional):
+                            <input type="text"
+                                   id="alias"
+                                   name="alias"
+                                   value="{{ task.alias or '' }}"
+                                   placeholder="Enter server alias" />
+                        </label>
                         <br>
                         <br>
                         {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
@@ -250,7 +273,7 @@
                             </div>
                             <span class="label">Encrypt using tmpdir</span>
                         </label>
-                        {% set only_if_running_replica_title = "Enable this option to apply the backup only if the server is running as a replication slave." %}
+                        {% set only_if_running_replica_title = "Enable this option to apply the backup only if the server is running as a replica." %}
                         <label class="checkbox"
                                for="only_if_running_replica"
                                title="{{ only_if_running_replica_title }}">
@@ -377,21 +400,6 @@
                                 <span class="material-symbols-outlined checked">check_box</span>
                             </div>
                             <span class="label">Desync PXCs</span>
-                        </label>
-                        {% set mydumper_less_locking_title = "Minimize table locking during backup to reduce impact on database performance." %}
-                        <label class="checkbox"
-                               for="mydumper_less_locking"
-                               title="{{ mydumper_less_locking_title }}">
-                            <input type="checkbox"
-                                   id="mydumper_less_locking"
-                                   name="mydumper_less_locking"
-                                   value="1"
-                                   {% if task.mydumper_less_locking %}checked{% endif %}>
-                            <div class="checkmark">
-                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                                <span class="material-symbols-outlined checked">check_box</span>
-                            </div>
-                            <span class="label">Less Locking</span>
                         </label>
                         {% set mydumper_use_numa_title = "Enable NUMA (Non-Uniform Memory Access) awareness to optimize memory allocation for backup processes." %}
                         <label class="checkbox"
@@ -880,9 +888,15 @@
     const rsyncPathInput = document.getElementById('rsync_path');
     const form = document.getElementById('edit-task-form');
     const editButton = form.querySelector('button[type="submit"]');
+    const serviceSelect = document.getElementById('service_id');
 
     let s3Visible = false;
     let rsyncVisible = false;
+
+    const source_data = { "host": "{{ task.host }}", "port": "{{ task.port }}" };
+    const matched = {
+        serviceId: null
+    };
 
     const compressionWrapper = document.getElementById('compression_algorithm_wrapper');
     const compressCheckbox = document.getElementById('compress');
@@ -1026,7 +1040,21 @@
     }
 
     function updateEditButtonState() {
-        editButton.disabled = !form.checkValidity();
+        const selectElementValues = [
+            serviceSelect.value
+        ];
+
+        const hasInvalidValue = selectElementValues.includes("-1");
+        editButton.disabled = !form.checkValidity() || hasInvalidValue;
+    }
+
+    function initSource() {
+        const selectedServiceId = serviceSelect.value;
+        if (selectedServiceId === "-1") {
+            matched.serviceId = "-1";
+        } else {
+            matched.serviceId = selectedServiceId;
+        }
     }
 
     function updateCompressionOptions() {
@@ -1059,6 +1087,7 @@
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
     window.addEventListener('DOMContentLoaded', function() {
+        initSource();
         updateBackupTypeUI();
         updateCompressionOptions();
         showContainer(s3Container, false);

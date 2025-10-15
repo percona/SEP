@@ -16,8 +16,10 @@
 """Provide task execution management for Nomad jobs."""
 
 import asyncio
+import gzip
 import json
 import logging
+from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -46,7 +48,8 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.tasks.anonymizer import anonymize_text, PIIEntity
+from app.tasks.anonymizer import anonymize_text
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundException,
@@ -64,7 +67,7 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
-
+_ONE_MEBIBYTE = 1024 * 1024
 NOMAD_DEAD_JOB_STATUS = "dead"
 
 
@@ -216,6 +219,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
         return task
 
+    async def parse_payload(
+        self, payload: str | bytes, payload_format: str
+    ) -> dict[str, Any]:
+        """Parse a job spec payload based on its format.
+
+        This function parses the payload according to the specified format
+        (HCL, JSON, or YAML).
+
+        :param payload: The job specification payload to be parsed.
+        :type payload: str | bytes
+        :param payload_format: The format of the payload, which can be "hcl", "json",
+            or "yaml".
+        :type payload_format: str
+        :return: The parsed job specification.
+        :rtype: dict[str, Any]
+        :raises ValueError: If the provided payload format is unsupported.
+        """
+        if payload_format == "hcl":
+            return await async_run(self.backend.jobs.parse, payload)
+        return await super().parse_payload(payload, payload_format)
+
     def register_job(self, task: Task) -> dict[str, Any]:
         """Register a new job with the Nomad backend.
 
@@ -268,11 +292,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             else {}
         )
 
+        custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
+        if custom_prefix:
+            custom_prefix = f"-{slugify(custom_prefix)}"
+
         job_status = self.backend.job.dispatch_job(
             task.data["ID"],
             payload=payload,
             meta=filtered_meta,
-            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}",
+            id_prefix_template=f"{slugify(queue_item.task.name)}-{queue_item.task.id}{custom_prefix}",
         )
         if not job_status:
             logger.error("Unable to dispatch task %s", task.id)
@@ -319,13 +347,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     def get_hosts(self) -> dict[str, str]:
         """Get healthy node names from Nomad backend.
 
-        :return: A dictionary with node addresses as key and the respective node names
+        :return: A dictionary with node names as key and the respective addresses
             as values.
         :rtype: dict[str, str]
         """
         filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
         return {
-            node["Address"]: node["Name"]
+            node["Name"]: node["Address"]
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
 
@@ -507,6 +535,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         alloc_id = alloc["ID"]
         task_logs = defaultdict(dict, initial_logs or {})
+        # TODO(yan): Refactor logs
+        # SEP-564
+        max_lines = 100000
         if task_states := alloc["TaskStates"]:
             for step, log_type in product(task_states, TaskLogType):
                 task_logs[step][log_type] = task_logs[step].get(log_type) or ""
@@ -533,18 +564,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         "{" + item for item in raw_log_data.split("{") if item
                     ):
                         log_data = json.loads(raw_log_data_item)
-                        task_logs[step][last_offset_key] = log_data["Offset"]
-                        decoded_data = b64decode_str(log_data["Data"])
-                        if step in ("run-script", "step1"):
-                            decoded_data = anonymize_text(
-                                decoded_data, anonymize_entities or set()
+                        if raw_msg := log_data.get("Data"):
+                            task_logs[step][last_offset_key] = log_data.get(
+                                "Offset", task_logs[step][last_offset_key]
                             )
-                        task_logs[step][log_type] += decoded_data
+                            msg = b64decode_str(raw_msg)
+                            if step in ("run-script", "step1") and anonymize_entities:
+                                msg = anonymize_text(msg, anonymize_entities)
+                            task_logs[step][log_type] += msg
+                            task_logs[step][log_type] = "\n".join(
+                                task_logs[step][log_type].splitlines()[-max_lines:]
+                            )
         return task_logs
 
     async def _sync_task_history(
         self,
-        session: AsyncSession,
         queue_item: TaskHistory,
     ) -> TaskHistory:
         """Synchronize the task history with the current state of the task in Nomad.
@@ -553,9 +587,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         with the current status, task states, and logs. If the task is no longer
         running, it updates the status accordingly.
 
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
         :return: The updated task history with execution details.
@@ -587,43 +618,41 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
                     queue_item.status = TaskHistoryStatusEnum.FAILED
                     queue_item.started_at = None
-                    return await TaskHistoryManager.save(
-                        session,
-                        queue_item,
-                        flag_modified_fields=["execution_request"],
-                    )
-
             except JobNotFoundException:
                 logger.warning(
                     "Lost job and allocation from task history %s", queue_item.id
                 )
                 queue_item.status = TaskHistoryStatusEnum.LOST
-                return await TaskHistoryManager.save(
-                    session,
-                    queue_item,
-                    flag_modified_fields=["execution_request"],
-                )
             return queue_item
 
         task_states = alloc["TaskStates"]
         task_logs = self.get_logs_for_allocation(
             alloc,
-            queue_item.execution_request.tracking.get("task_logs", {}),
-            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
+            queue_item.task_logs,
+            queue_item.anonymized_entities,
         )
         logger.debug(
             "sync_task_history(queue_item_id=%s): tasks_logs = %r",
             queue_item.id,
             task_logs,
         )
+        # TODO(yan): Refactor logs
+        # SEP-564
         queue_item.execution_request.tracking.update(
             allocation_id=alloc["ID"],
             job_id=job_id,
             evaluation_id=alloc["EvalID"],
             task_states=task_states,
-            task_logs=sort_dict(
-                task_logs, lambda item: list(task_states.keys()).index(item[0])
-            ),
+            task_logs=b64encode(
+                gzip.compress(
+                    json.dumps(
+                        sort_dict(
+                            task_logs,
+                            lambda item: list(task_states.keys()).index(item[0]),
+                        )
+                    ).encode()
+                )
+            ).decode(),
         )
 
         try:
@@ -645,12 +674,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.status,
                     stopped=job.get("Stop", False),
                 )
-
-        return await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=["execution_request"],
-        )
+        return queue_item
 
     def task_needs_new_job(self, task: Task) -> bool:
         """Determine whether a new job needs to be created for the task.
@@ -846,7 +870,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             log_type,
                             queue,
                             start_offsets[step].get(log_type, 0),
-                            PIIEntity.decode_selection(queue_item.task.anonymize_mask),
+                            queue_item.anonymized_entities,
                         )
                     )
                 )
@@ -871,3 +895,76 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 await asyncio.gather(*push_logs_tasks, return_exceptions=True)
         else:
             yield None
+
+    async def stream_file(
+        self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
+    ) -> AsyncGenerator[bytes, None]:
+        """Stream a file from the allocation's filesystem in chunks.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :param path: The path to the file to be streamed.
+        :type path: str
+        :param chunk_size: The size of each chunk to read from the file. Defaults to
+            1 MiB.
+        :type chunk_size: int
+        :yield: Chunks of the file as bytes.
+        :rtype: AsyncGenerator[bytes, None]
+        """
+        alloc = self.get_allocation_for_task_history(queue_item)
+        alloc_id = alloc["ID"]
+        params = {"path": path}
+        async with self._request(
+            "GET", f"/v1/client/fs/stat/{alloc_id}", params=params
+        ) as response:
+            response.raise_for_status()
+            stat = await response.json()
+        logger.debug("File stat: %r", stat)
+        file_size = stat.get("Size", 0)
+        if file_size == 0:
+            logger.warning("File %s is empty or does not exist", path)
+            yield b""
+            return
+        logger.info("Starting to stream file %s of size %s", path, file_size)
+        endpoint = f"/v1/client/fs/readat/{alloc_id}"
+        params["limit"] = chunk_size
+        for offset in range(0, file_size, chunk_size):
+            params["offset"] = offset
+            async with self._request("GET", endpoint, params=params) as response:
+                response.raise_for_status()
+                content = await response.read()
+                if queue_item.anonymized_entities:
+                    try:
+                        text = content.decode()
+                        yield anonymize_text(
+                            text, queue_item.anonymized_entities
+                        ).encode()
+                    except UnicodeDecodeError:
+                        logger.debug(
+                            "Could not decode file content, sending raw bytes",
+                            exc_info=True,
+                        )
+                yield content
+
+    async def list_files(self, queue_item: TaskHistory, path: str) -> dict[str, int]:
+        """List files in a directory on the allocation's filesystem.
+
+        :param queue_item: The task history record for tracking the logs.
+        :type queue_item: TaskHistory
+        :param path: The path to the directory to list files from.
+        :type path: str
+        :return: A dictionary with filenames as keys and their sizes as values.
+        :rtype: dict[str, int]
+        """
+        alloc = self.get_allocation_for_task_history(queue_item)
+        alloc_id = alloc["ID"]
+        async with self._request(
+            "GET", f"/v1/client/fs/ls/{alloc_id}", params={"path": path}
+        ) as response:
+            response.raise_for_status()
+            files = await response.json()
+        return {
+            filename: file["Size"]
+            for file in files
+            if not (filename := file["Name"]).startswith(".")
+        }

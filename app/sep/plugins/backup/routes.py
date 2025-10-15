@@ -25,7 +25,6 @@ from app.sep.plugins.backup.deps import (
     parse_backup_task_data,
 )
 from app.sep.plugins.backup.models import BackupType
-from app.tasks.anonymizer import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
@@ -82,7 +81,7 @@ async def backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
 
@@ -92,6 +91,8 @@ async def backups_detail(
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
         "host": server_config["HOST"],
@@ -114,9 +115,7 @@ async def backups_detail(
 
     try:
         executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts.values()) | {
-            task_data["hostname"]
-        }
+        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     except HTTPException:
         executor_hosts = {}
         context["executor_hosts"] = {task_data["hostname"]}

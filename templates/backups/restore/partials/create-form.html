@@ -427,7 +427,7 @@
                                placeholder="" />
                     </label>
                     <div class="checkbox-group">
-                        {% set slave_from_master_title = "Configure the restored instance as a replica (slave) of the specified master server." %}
+                        {% set slave_from_master_title = "Configure the restored instance as a replica of the specified source server." %}
                         <label class="checkbox"
                                for="slave_from_master"
                                title="{{ slave_from_master_title }}">
@@ -439,9 +439,9 @@
                                 <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                                 <span class="material-symbols-outlined checked">check_box</span>
                             </div>
-                            <span class="label">Slave from Master</span>
+                            <span class="label">Replica from Source</span>
                         </label>
-                        {% set wait_for_catchup_title = "Wait for the replica to catch up with the master after restore is complete." %}
+                        {% set wait_for_catchup_title = "Wait for the replica to catch up with the source after restore is complete." %}
                         <label class="checkbox"
                                for="wait_for_catchup"
                                title="{{ wait_for_catchup_title }}">
@@ -456,24 +456,24 @@
                             <span class="label">Wait for Catchup</span>
                         </label>
                     </div>
-                    {% set master_ip_title = "IP address of the master server to replicate from." %}
+                    {% set master_ip_title = "IP address of the source server to replicate from." %}
                     <label for="master_ip" title="{{ master_ip_title }}">
-                        Master IP:
+                        Source IP:
                         <input type="text" id="master_ip" name="master_ip" placeholder="" />
                     </label>
-                    {% set master_port_title = "Port number of the master server (default is 3306)." %}
+                    {% set master_port_title = "Port number of the source server (default is 3306)." %}
                     <label for="master_port" title="{{ master_port_title }}">
-                        Master Port:
+                        Source Port:
                         <input type="number" id="master_port" name="master_port" />
                     </label>
-                    {% set master_user_title = "Username for connecting to the master server." %}
+                    {% set master_user_title = "Username for connecting to the source server." %}
                     <label for="master_user" title="{{ master_user_title }}">
-                        Master User:
+                        Source User:
                         <input type="text" id="master_user" name="master_user" placeholder="" />
                     </label>
-                    {% set master_password_title = "Password for the master user account." %}
+                    {% set master_password_title = "Password for the source user account." %}
                     <label for="master_password" title="{{ master_password_title }}">
-                        Master Password:
+                        Source Password:
                         <input type="text"
                                id="master_password"
                                name="master_password"

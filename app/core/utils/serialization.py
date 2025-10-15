@@ -15,15 +15,17 @@
 
 """Utilities for serializing data."""
 
+__all__ = ["json_serializer"]
+
 import json
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-__all__ = ["json_serializer"]
 
-
-def json_serializer(data: Any, **kwargs: Any) -> str:
+def json_serializer(
+    data: Any, encoders_kwargs: dict[str, Any] | None = None, **kwargs: Any
+) -> str:
     """Serialize a Python object into a JSON-formatted string.
 
     This function encodes a given Python object using `jsonable_encoder`
@@ -33,9 +35,12 @@ def json_serializer(data: Any, **kwargs: Any) -> str:
         data type, such as dictionaries, lists, or primitive data types like
         integers, strings, and booleans.
     :type data: Any
+    :param encoders_kwargs: Optional keyword arguments to pass to `jsonable_encoder`.
+    :type encoders_kwargs: dict[str, Any] | None
     :param kwargs: Additional keyword arguments to pass to :func:`json.dumps`.
     :type kwargs: Any
     :return: A JSON-formatted string representing the serialized form of the input data.
     :rtype: str
     """
-    return json.dumps(jsonable_encoder(data), **kwargs)
+    encoders_kwargs = encoders_kwargs or {}
+    return json.dumps(jsonable_encoder(data, **encoders_kwargs), **kwargs)

@@ -294,6 +294,13 @@
                 </label>
                 <br>
                 <br>
+                {% set alias_title = "Optional alias for the server in the SERVERS_LIST section. Defaults to the service IP if not provided." %}
+                <label for="alias" title="{{ alias_title }}">
+                    Server Alias (optional):
+                    <input type="text" id="alias" name="alias" placeholder="Enter server alias" />
+                </label>
+                <br>
+                <br>
                 {% set defaults_file_title = "the path to the defaults file containing preset configuration values for the backup process." %}
                 <label for="defaults_file" title="{{ defaults_file_title }}">
                     Defaults File (optional):
@@ -982,6 +989,24 @@
         showContainer(s3Container, false);
         showContainer(rsyncContainer, false);
         updateCreateButtonState();
+
+        // Set default alias value when service is selected
+        const serviceSelect = document.getElementById('service_id');
+        const aliasInput = document.getElementById('alias');
+
+        if (serviceSelect && aliasInput) {
+            serviceSelect.addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                if (selectedOption.value && selectedOption.dataset.nodeAddress) {
+                    // Set the default value to the node address
+                    aliasInput.placeholder = `Default: ${selectedOption.dataset.nodeAddress}`;
+                    // If the alias field is empty, set it to the node address
+                    if (!aliasInput.value) {
+                        aliasInput.value = selectedOption.dataset.nodeAddress;
+                    }
+                }
+            });
+        }
     });
 
 </script>

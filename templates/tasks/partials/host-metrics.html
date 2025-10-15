@@ -15,7 +15,7 @@
                     <th>Hostname</th>
                 </tr>
                 {% if executor_hosts %}
-                    {% for ip, targetname in executor_hosts %}
+                    {% for targetname, ip in executor_hosts %}
                         <tr>
                             <td>{{ ip }}</td>
                             <td>{{ targetname }}</td>
