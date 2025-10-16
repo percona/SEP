@@ -22,13 +22,14 @@
 # Configuration options
 #######################################################################################################################
 #
-# AUTOSTART         start the stack automatically following a successful installation, default 0
-# CONTAINER_ENGINE  specify the container runtime, default docker
-# ENABLE_PMM        run PMM as part of the stack, default 1
-# INSTALL_DIR       the location for generated files, default ~/sep
-# SEP_IMAGE_NAME    the registry address, default docker.io/percona/percona-sep (login required)
-# SEP_IMAGE_TAG     the image tag for SEP, default v0.9.2
-# SEP_PMM_PORT      the port for PMM
+# AUTOSTART            start the stack automatically following a successful installation, default 0
+# CONTAINER_ENGINE     specify the container runtime, default docker
+# ENABLE_PMM           run PMM as part of the stack, default 1
+# INSTALL_DIR          the location for generated files, default ~/sep
+# SEP_IMAGE_NAME       the registry address, default docker.io/percona/percona-sep (login required)
+# SEP_IMAGE_TAG        the image tag for SEP, default v0.9.2
+# SEP_PMM_PUBLIC_HOST  the hostname or IP address that maps to the PMM server, default 127.0.0.1
+# SEP_PMM_PORT         the port for PMM. Currently ignored and forced to 443 due to PMM-14382
 #
 # Additional options that have an effect if set are as follows, these should be set before installing as they do not
 # use default values:
@@ -96,7 +97,16 @@ ENABLE_PMM="${ENABLE_PMM:-1}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.2}"
-SEP_PMM_PORT="${SEP_PMM_PORT:-8443}"
+SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
+
+# At the moment we have to force 443 due to PMM-14382
+#SEP_PMM_PORT="${SEP_PMM_PORT:-443}"
+SEP_PMM_PORT="443"
+
+# Only add the port if not 443
+if [ "$SEP_PMM_PORT" != "443" ]; then
+  SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_ADDRESS}:${SEP_PMM_PORT}"
+fi
 
 test "${ENABLE_PMM}" = "1" || \
 	test "${SEP_PMM_URL_AUTH_TOKEN:-undef}" != "undef" || \
@@ -144,51 +154,51 @@ o8wf01vUfvr9BrKxDeVbaGv5rOAb8bNmi7abQdEzskptVL2Dutk7N7lhSgSFmDU2eEZztwvpn5E9
 w/+6z/KxXB8KGa3jTBkDOGL3bV0ju7AawZdTyVvk8Q8mD5mJc4xWCLPFl7e/alkM54rEB1/s3dnM
 exktloiX8//x/PB4/gbqdx6+3wUAAA=='
 
-SEP_COMPOSE_YAML='H4sIAAAAAAACA91YW3ObOBR+96/QeDN96BRwEjdNtc0DianjWd/G4O72iZFBtWlAokJ24mby3/cI
-DDEYJ+nOJtnZZMaDzo2j8306SNI0rfEbWgURRoyTADNOZaNxo5E40ChbBYKziDKJGwhtD9GbigHo
-Efps2o457rnW8AtGseD+0pMBZ67PvSsqUhNQuZ97fQsjw6crgy3DMJXbluP0hl07V8ooNhIqZcDm
-ib4mUZgn5c8ez6tsk8b/9Amjt3U5d0zHPDdty4Wsu70hvDvmiZwLmvxI3+mzRKM3UhBtAfIkfaEa
-utkQvakYpEE11EyoWFGhz0M+I6HOeER8fHB7ObIdtzfGqa02J5Jek/VdM3dSUj2rlh4wSQUj4QNe
-kF5CY23Fw2VE09TyR/RGKRLqCVqkdHDbGwI+/b7b6U2wpt8ZHhUygTLHruRXlLnfr6V7Rdd6TCNs
-kDg2QJAOBH/38/EomkfuXTfPT/AkYagFTOOMakqwFSIf/XoQrTSNfPBgnBLb8C4BM+8Go/Kai6u0
-2nEU4TQeZWQWUjeIVycYfSNhQiviNkZSLGkDxJDQLzopKZGSeAulyW0bimGBR8uZBBGZg0nOIW7E
-VHicEQMstIyT+Di13GJNVhJl4RNJsJGIVSqNuZBbBge3tjV2x4OBOx5NnDt82m4fF8r2SfsDVj+b
-SZSWqPpTfh3rfNrFqLUlsobmed9yzb41UQ0Ao8Nd5bl58cd07A7Modm1BtbQqQ0xHA3MTq2/Y/XB
-zZl8rfWbjqEHWHZZN56e93sXrtnpTCwbdPsWIa4UZROi+9m1rYvppOd8hRiD3tAdm7b952jSUaEe
-0GrEjwKWhSn1mbd1fQa6lCQC2h4JIZlMtk3QAlhFPI8kPudiD09AOwuYsTHS7tdTPVlyu4wwKyKM
-MJgZ0Rq6Jv75TlxvkWZnwWaubsACqX9POMOGenRVqGxcrFN6A82Y3r/1tNVqPbE0u2WAhVdbNBD6
-sz1VgUkJItZG/k3Ahyd7+Q386AJZ3M45RtANq+KpbU3uPy5V7TY9FKEU5a1hB4IVqruqT8pIc+pc
-ukDuyxH4Jp4gsMwXRDt6f1IPnOrTZdDuv3dGqijgq1b/ffv46DmqL6gfJI8AkNl8AF7GwYaT1fRO
-jj98fI70PBpSsXaVAy2vngyq3gC6kjs0B1beDTKJY3YzyJbQdzFqHrZah1j9NDcUkmId80DtWrJX
-pGKPRxFhPkaaqZLSJUmuEj0zQFkOSNNCPg/pioZnAfvGUz+fxpT5iQvLp5iUPyse0/pVV+8OlbMt
-Us32qdhXvK3uK56n2DNK5OuWWmVQLTSME29B/SVYnMF6ISGMovX/qf4BW8E7OUAAmTwPAob6ziSL
-CgQeapKQRrPAgyozEtGzIhW0jOeC+BQtKPF/R/FaLjhDWpSCVljpEQlYcy8WpVVclSqw9/X14uRQ
-AwtC0y+9i9FkmPZi2EHo6X9FpzYGGH2EYtT2rULxYiCnRH99gNM0HgQ3W5H/fWCP9gF79LLAFmeL
-14IU5vcgoKB/DM6t1qjGpYZUSAsGvwC4rX3gtl4WXDYP2M0j26TM5lA/Ku2UKue45sGtuur4y710
-nHE2T+20ddqCEx38Nuvt7Nyw3W6nR792yfDCtDuj0WRj9BH+7rD63Q90PtOdHeruiSGdlQ7H2G/Y
-oNLLxoYa677RaqlLkExbHByeelNxH21L+qQotbcWlXA79xf/6AajHHTnLuNfZdkWGKUTXrEz01RH
-LWTFlQE8FweLhq7rjb8Be0O58FgUAAA='
+SEP_COMPOSE_YAML='H4sICN3o52gAA25ldy55YW1sAN1Y3XPaOBB/56/QcJk8dCqbJDQfmvbBCS5hjq/Bpnd90ghbBTe2
+7JMNCc3wv9/KBsc2ENKbS3pzMOOx9kur/e2uJWGMa7+hhRcQJELmERHypFZ7wCzyMBcLT4Yi4CIh
+NYSKQ3RcEQA+Qp8NyzaGHWr2vxAUydCdO4kXCuqGzh2XqQiw6OdO1yRId/lCF3PfT+mWadudftva
+MJMg0mOeJJ6YxtqSBf7GKXdy2K+yTGr/40eC3u3yuWXYxrVhmRS8bnf6MHcUxslU8vivdE5XxJg/
+JJLhGdDjdEI1pNkQHVcEUqMY1WMuF1xqUz+cMF8TYcBccvR4O7Bs2hmSVBZPWcLv2XJV3ygpqpZF
+S/NEwqVg/jNa4F7MI7wI/XnAU9c2r+hYMWLuSJ67dPTY6QM+3S5tdUYEayvd4TKJIcwRTcI7Luj3
++4Te8aUW8YDoLIp0IKQDGb7/cdgKdtiT6vr9BZrM97EncCg4VoSCic3o543g0jI2g2ftlLKNbCdg
+pl0TPLkP5V0a7SgISGqPCzbxOfWixTlB35gf8wq5SVAi57wGZHDoJ5UUlSUJc2aKs5GtqQzzHF72
+xAvYFEQ2ORTqEZdOKJgOEjjLSXKWShayJguJknBZwogey0VKjUKZFASOHi1zSIe9Hh0ORvaKXDab
+Zzmzed68IOqxXkSpRNVP6bXM63GboEaBZPaN665Jja45Ug2AoJNt5rVx8/t4SHtG32ibPbNv7zTR
+H/SM1k592+yCmj36ulNvPIQeYFpl3nB83e3cUKPVGpkW8AprL3FWa532Z2qZN+NRx/4KrF6nT4eG
+Zf0xGLWU7jNczNzAE5mZUmN5t6uxQFtKmIQ+x3xoARmtmJE5kirTHBa7YSj3JAZwJ57Q10L4qYB2
+Z8dGLsuQBZO67030YAltkvx4L+8LWbJVoZkq9YSXaN/jUBBdvVJlKhvnhckfoPvyp1kvG43GC0Oz
+HQaotJ1BA6I72RMVWJRkcqlvPgLk5HxvQkNXbkMO0NY1QdD+quSxZY6eviZVbjE9VGqpHDf7LTCW
+s1ZVnfQ7YIztWwrZfDsA3diRDOp6xvDph/PdwKnGXAbt6QOnp4wcvmr0PzTPTl8j+pK7XnwAgEzm
+AvIy8tY5WXXv/Ozi6jXcc7jP5ZIqBV6ungyqTg/aEO0bPXNFihTbaGeQzaHRElQ/aTROiHrU1ymU
+yGUUemqbkk2Rkp0wCJhwCcKGckpLWHwXa5kAynxAGPvh1OcL7n/yxLcw1XN5xIUbUyiffFHuJH9N
+41et3q1UzvZEO/ZL+UbiXXUj8TrBnnCW/NpQKw+qgYZx7My4OweJT1AvzIdRsPw/xd8TC5gzBAjA
+k9dBQFffmXhWgcBBdebzYOI5EGXBAv4pdwXNo6lkLkczzlx0fIyiZTILBcJBClsupwXME/W9aJTq
+uEpVcO/r7PlhYQcwCI2/dG4Go37ajWHToKX/Ck9tkAi6gnDs7Fw5481gTlP910OcunEA3qwq//vQ
+nu6D9vRtoc0PFL8KVFjfAUhB4hCghQapxqW2lFPzLH4DeBv74G28Lbxi6omHA5ulTOZEOy3tlyrH
+t/rRo7rh+JPe2vYwWye+bFw24CAHz/puOWsj2Gw20xNfsyR4Y1itwWC0FrqC34qo536gNyvd2qdu
+nxvSVWlwev1GdJ442VhXY83VGw1195Fx8+PDSy8onqwVqC+ysvOyomJu69riH11clI1uXWH8q1lW
+AKN0zsv3Z1j11JyW3xTAe368qGmaVvsbzEgJwk8UAAA='
 
-SEP_SETTINGS_YAML='H4sIAAAAAAACA81WbW+bSBD+nl+x6p1kqWqM0+auDZ+KYZOsgsHdhTa502mF8dbmjIECSWRV/u+d
-ZcGATaR7+dLkg8U8szPPvOzM/oIKUZZRsirGu2Abn51lebp8DMsoTfgyDTci188QMmzb/cJN1zF9
-SrHjcYYZI67DdFTmj6LRwBa/dZnH5BGEztGr168k5Hu33GeY8plrYVtHQZaNt+lSxMXYDIplmuZ+
-IXLQnBrmHXYscEQZdym5Ic7B1ross0LXtIu378cT+L/QP1xeXgJoGsxyXar0GhqEMR9ToDd6PVLA
-fG4T0/CANHeMGdYh7uwcmFSoialHriWO+dzwbnWkAaT9/VyOM7FVKjaRgRNLR79+Z3jOwSKXvwdg
-39Vj2KTYe0FXgUof4p27xAFVGSEEGKqU6B8mk0mlcU1dONPqaZp+BX8V5tIbwyF/HMUls4JtTB9U
-UqbY8Lg19SnRUZYW5SoXxbcYXDUfumLZpN+aQhIY++JSa/9xudB/u3z3tjXEzFs8Mxo/IKTuHdTW
-p1DZXCwjWST1+/u791eaigFsSSXmyQxbUx2FIhb5jj+nObQYL8qglF1kGZ4xNRjW69RAA+Au50os
-W0xHy0X10Y0ZoYZ2k/ehiJSiS8HGITDZna0fEBHnMxTKbTLY5/UisyNux+z+Bb8ThgMcEWLM5rJ1
-r4mN65YNRd72rMTv8EMH3ohdjYL7nzq2QwV4/4bI9oqSJ5GUKfRPkEX61WRyoS6DnDRNGBRbhGLT
-41Xba2nwWK7hbsXxIgg3KjsOmc9xM63gnhHbgx7F9x521HCrATl+xsVaNY7tV1MJ/fl9JDMwghHD
-wrXYBshcB8lKjN6gEcw538a8wYO4FHkhAeBSzRcp1VqxyRiMBkhSR3v/BrUeSBPwgPWoi/Uc9JCe
-jxbpuTHycB09DYagkIEgOkA/jNpWz8EUcv+YFQMOFhVyYn7RHuhZb+Q96+ZahJvicTtkP+xiPRc9
-pOekRXpuWBJlmSjRLEiClcgHnBVK49RXF+i5OgD9gNI4FmGJrChYJXA5ohBZQRkM1ad8Pi2NkvWr
-ArL9X6qTqXv/wG+xYVWLst7j/2+oyLECTwTitYbrOwRvB69efQqfu7CP4XLfm7Zvqa3bu3BgOWo7
-WIO3SHGMlkGxKVqkfpO0Ht07guulWC9VL92IpMYrJrgb+INjdhif1wIdzWcztkvC6olSD7DZrOV6
-vMPlhIL3zJPIx6s4XQTxOEm3wbJesnCUy/m375w35kSmtJmcUgXWKa8eTh5sV6er/BlTcv3AoQw6
-+hrEhTjhO9uxT/YRY3LjuBTXy5t1yZ+jYlf0vjORf03zbQAGeFHNth683bU7QUmipNKvHo2dA57B
-7tjA+K7q1oxuuQKqljO6DRfUDVWZ+Kn3lOPODKvldBzrQEUN03R9x9t//AdNolXSlzr2pWb471f4
-B1Jm6dAPDAAA'
+SEP_SETTINGS_YAML='H4sICD7s52gAA25ldy55YW1sAM1WW2+bSBR+z68YdVeyVDXGabNtw1MxTJJRMLAzkCa7Wo0wntqs
+MbBAElmV//ueYSCAQ6S9vDR5sJjvzDnfuc9PqBRVFafrcroPd8nJSV5kq4eoirOUr7JoKwr9BCHD
+tt2v3HQdM6AUOz5nmDHiOkxHVfEgWgls8WuX+UxeQegUvXn7RkKBf80DhilfuBa2dRTm+XSXrURS
+Ts2wXGVZEZSiAMm5Yd5gxwJDlHGXkiviPOvaVFVe6pp29v7TdAb/Z/rn8/NzAE2DWa5LlVxLgzAW
+YAr0Jm8nCvA8m5iGD6S5YyywDn7np8CkRk1MfXIpccw9w7/WkQaQ9udTNc3FTonYRDpOLB39/J1h
+j4NGLn+fgUNfjmGTYv8VWQUqefDXc4kDotJDcDBSIdE/z2azWuKSunCnk9M0/QL+asylV4ZDfjvy
+S0YF25jeq6DMseFzax5QoqM8K6t1Icq/EjDVfuiKZRt+aw5BYOyrS63Dl9VS/+X8w/tOETOv8cJo
+7cAhdW8gtwGFzBZiFcskqd+PHz5daMoH0CWFmC8jbM11FIlEFHv+lBVQYryswkpWkWX4xtxgWG9C
+AwWA+5zrY1liOlot64++zwi1tNu4j3mkBF0KOp4dk9XZ2YEj4txCotw2gkNerzI74nbM7l/we8Fw
+hCNCjNlclu4lsXFTspEoupqV+A2+78FbsW9QMP9D+/acAT7sEFlecfoo0iqD+gnzWL+Yzc5UM8hJ
+07pBsUUoNn1el72WhQ/VBnorSZZhtFXRcYjn4XZaQZ8R24caxXc+dtRwawA5fqblpvli947JgQ6m
+twaU/McZxCDK0pWi7dlBPbXQ798nMkITGEEs2ohdiMxNmK7F5B2awBwMbMxbPEwqUZQSAK71/JGn
+WndsMgajA4LYkz68Q50F0gZkRHvcxwYGBsjARocMzBhFtIkfR11QyIgTPWDoRqNrYGAOuXnIyxED
+yxp5oX7ZXRhob88H2s2NiLblw25Mf9THBiYGyMBIhwzMsDTOc1GhRZiGa1GMGCuVxEtbfWBg6hkY
+OpQliYgqZMXhOoXmiSNkhVU4lp/q6WVq1NkwK3B2+ENVMnXv7vk1Nqx6kTZ7/v8NHTl24AlB/E5x
+01XwtvCb1ahwz4V9Dc1/Z9qBpbbyoCFBc9xVsAZvlfIYrcJyW3ZI82bpLLo3BDdLs1m6frYVadvn
+kgnuOw6N32N82hzoyFss2D6N6idMM+AWi47r8Y6XEwzeO4+imK6TbBkm0zTbhatmCcNVLufjoXff
+8IgMaTtZpQisW14/rHzYvk5f+BZTcnnPIQ06+hYmpXjBd7Fnv9pHjMmV41LcLHfWJ3+Kyn05+M5F
+8S0rdiEo4GU92wbwbt/tDHUSp7V8/ajsXfANdsNGxnudt3a0yxVRl5zRL7iwKahaxQ+9xxx3YVgd
+p2NfRzJqmKYbOP7hyz8oEq0+fa1iXyuG/97CfwPnsr1RLwwAAA=='
 
 save_progress() {
 	test ! -d "${INSTALL_DIR}"/ || printf "%d" "${PROGRESS}" > "${INSTALL_DIR}"/.progress
@@ -237,15 +247,17 @@ get_engine_command() {
 	esac
 }
 
-registry_login() {
+pull_sep_image_if_registry_login_required() {
 	echo Checking registry login requirements
 	if [ "${SEP_IMAGE_NAME}" = "docker.io/percona/percona-sep" ]; then
 		echo Login required, attempting login for "${SEP_IMAGE_NAME}"
-		case "${CONTAINER_ENGINE}" in
-			docker) "${CONTAINER_ENGINE}" login --username=percona;;
-			podman) "${CONTAINER_ENGINE}" login --username=percona --authfile=.docker-io-percona-sep;;
-			*) return 1
-		esac
+		EXTRA_ARGS=
+    if [ "${CONTAINER_ENGINE}" = "podman" ]; then
+        EXTRA_ARGS="--authfile=.docker-io-percona-sep"
+    fi
+    "${CONTAINER_ENGINE}" login --username=percona ${EXTRA_ARGS:+$EXTRA_ARGS}
+    "${CONTAINER_ENGINE}" pull "${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}"
+    "${CONTAINER_ENGINE}" logout ${EXTRA_ARGS:+$EXTRA_ARGS}
 	fi
 }
 
@@ -374,7 +386,7 @@ generate_configs() {
 	# shellcheck disable=SC1091
 	. "${INSTALL_DIR}"/.secrets
 
-	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g" >"${INSTALL_DIR}"/compose.yaml
+	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g; s#\${SEP_PMM_PUBLIC_ADDRESS}#${SEP_PMM_PUBLIC_ADDRESS}#g" >"${INSTALL_DIR}"/compose.yaml
 	${SEP_COMPOSE_YAML}
 	EOS
 
@@ -415,9 +427,7 @@ start_stack() {
 
 test ! -f "${INSTALL_DIR}"/.progress || PROGRESS="$(cat "${INSTALL_DIR}"/.progress)"
 
-registry_login
-"${CONTAINER_ENGINE}" pull "${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}"
-"${CONTAINER_ENGINE}" logout
+pull_sep_image_if_registry_login_required
 
 test "${PROGRESS}" -gt 0 || check_prereqs  # Errors here will require manual intervention
 test "${PROGRESS}" -gt 1 || generate_dirs
