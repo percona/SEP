@@ -482,6 +482,22 @@
                        size="5" />
             </div>
         </fieldset>
+        <br>
+        <fieldset>
+            <legend>Extra Arguments</legend>
+            <br>
+            <div class="field">
+                {% set extra_args_title = "Additional command-line arguments to append to the pt-online-schema-change command. For example: --where='id > 1000' or --null-to-not-null" %}
+                <label for="extra_args" title="{{ extra_args_title }}">Extra Args</label>
+                <input type="text"
+                       id="extra_args"
+                       name="extra_args"
+                       class="validate"
+                       title="{{ extra_args_title }}"
+                       placeholder="--where='id > 1000'"
+                       size="70" />
+            </div>
+        </fieldset>
     </fieldset>
     {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
     <div style="display: flex;

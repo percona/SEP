@@ -104,6 +104,11 @@ async def build_alters_task_payload(
     # Adding '--progress' argument if 'print_arg' is set
     if form.print_arg:
         args.append(f"--progress={form.progress}")
+
+    if form.extra_args:
+        extra_args_list = shlex.split(form.extra_args)
+        args.extend(extra_args_list)
+
     args.append("--execute")
     return TaskWrite(
         owner=TaskOwner.ALTERS,
@@ -292,13 +297,53 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
         "chunk_time": "",
         "max_lag": "",
         "max_flow_ctl": "",
+        "extra_args": "",
     }
 
     args_string = meta.get("args", "")
     args = shlex.split(args_string)
 
+    known_args_patterns = [
+        "--alter=",
+        "--recursion-method=",
+        "--progress=",
+        "--pause-file=",
+        "--new-table-name=",
+        "--tries=",
+        "--set-vars=",
+        "--critical-load=",
+        "--max-load=",
+        "--chunk-time=",
+        "--max-lag=",
+        "--max-flow-ctl=",
+        "--print",
+        "--no-swap-tables",
+        "--no-drop-old-table",
+        "--no-drop-new-table",
+        "--no-drop-triggers",
+        "--execute",
+        "--dry-run",
+    ]
+
+    extra_args_list = []
+
     for arg in args:
-        parse_single_arg(arg, form_values)
+        if not arg.startswith("--") and "=" in arg:
+            continue
+
+        is_known = False
+        for pattern in known_args_patterns:
+            if arg == pattern or arg.startswith(pattern):
+                is_known = True
+                break
+
+        if is_known:
+            parse_single_arg(arg, form_values)
+        elif arg not in ["--execute", "--dry-run"]:
+            extra_args_list.append(arg)
+
+    if extra_args_list:
+        form_values["extra_args"] = shlex.join(extra_args_list)
 
     return form_values
 
