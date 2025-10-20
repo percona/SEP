@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
@@ -137,6 +138,7 @@ async def pbm_backups_detail(
         "physical_backup_url": request.url_for(
             "pbm_backups_execute", task_name=task.name + "-physical"
         ),
+        "alert_on_fail": task.alert_on_fail,
     }
 
     context["task"] = task_data
@@ -163,6 +165,9 @@ async def pbm_backups_detail(
         context["latest_status"] = tracking["task_logs"]["run-script"]["stdout"]
     except (IndexError, KeyError):
         context["latest_status"] = None
+
+    context["alert_on_fail_default"] = task.alert_on_fail
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
     return templates.TemplateResponse(
         request=request,

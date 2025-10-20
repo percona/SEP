@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -124,6 +125,8 @@ async def checksums_detail(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+    context["alert_on_fail_default"] = task_data["alert_on_fail"]
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
     return templates.TemplateResponse(
         request=request,
         name="checksums/details.html",
