@@ -326,6 +326,49 @@ cleanup() {
 	echo Done
 }
 
+usage() {
+	cat <<'EOF'
+SEP Installer for Docker or Podman
+
+USAGE
+  ./sep_installer.sh [COMMAND]
+  ./sep_installer.sh --help | -h | help
+
+COMMANDS
+  (no command)   Run the default install flow (checks, generate certs/configs, compose up).
+  nomad          Generate a Nomad *client* config pointing to the PMM-hosted Nomad server.
+
+ENVIRONMENT (common)
+  AUTOSTART                Start the stack after install (default: 0)
+  CONTAINER_ENGINE         Container runtime: docker|podman (default: docker)
+  ENABLE_PMM               Run PMM as part of the stack (default: 1)
+  INSTALL_DIR              Output directory (default: ~/sep)
+  SEP_IMAGE_NAME           Image registry (default: docker.io/percona/percona-sep)
+  SEP_IMAGE_TAG            SEP image tag (default: v0.9.2)
+  SEP_PMM_PUBLIC_HOST      PMM public host/IP (default: 127.0.0.1)
+  SEP_PMM_PORT             PMM port (currently forced to 443 due to PMM-14382)
+  SEP_PMM_FRONTEND         PMM URL (default: https://${SEP_PMM_PUBLIC_HOST})
+
+ENVIRONMENT (nomad command)
+  SEP_PMM_CONTAINER_NAME   PMM container name to inspect/copy from (default: sep-pmm-1)
+  SEP_PMM_NOMAD_DATA_DIR   Nomad client data dir in generated config (default: /tmp/sep-pmm-nomad)
+
+EXAMPLES
+  # Default install flow
+  ./sep_installer.sh
+
+  # Show logs after install
+  docker compose --file ./sep/compose.yaml --project-name sep logs --follow
+
+  # Generate Nomad client config, copying certs from the running PMM container
+  ./sep_installer.sh nomad
+
+  # Start a local Nomad client (after 'nomad' command above)
+  nomad agent -config "${HOME}/sep/nomad_client_config.hcl"
+EOF
+}
+
+
 generate_secrets() {
 	# Create empty file with correct permissions first
 	install -m 640 /dev/null "${INSTALL_DIR}"/.secrets
@@ -540,12 +583,26 @@ start_stack() {
 	$(get_engine_command) logs --follow
 }
 
+# ---- command-line dispatcher (global) ----------------------------------------
 CMD="${1:-}"
-if [ "${CMD}" = "nomad" ]; then
-    cmd_nomad
-    exit $?
-fi
+case "${CMD}" in
+	-h|--help|help)
+		usage
+		exit 0
+		;;
+	nomad)
+		cmd_nomad
+		exit $?
+		;;
+	"") ;;
+	*)
+		printf "Unknown command: %s\n" "${CMD}" >&2
+		printf "Use --help to see usage.\n" >&2
+		exit 2
+		;;
+esac
 
+# ---- main flow ----------------------------------------------------------------
 trap 'save_progress' HUP INT QUIT ABRT ALRM TERM
 trap 'cleanup' EXIT
 
