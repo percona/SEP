@@ -25,8 +25,8 @@ package_update: true
 package_upgrade: true
 package_reboot_if_required: true
 packages:
-- ansible
 - git
+- pipx
 - podman
 - rsync
 - vim
@@ -37,4 +37,6 @@ runcmd:
 - curl --silent https://www.percona.com/get/engineer/KEY/ceri.williams.pub >> /home/percona/.ssh/authorized_keys
 - curl --silent https://www.percona.com/get/engineer/KEY/max.bubenick.pub >> /home/percona/.ssh/authorized_keys
 - curl --silent https://www.percona.com/get/engineer/KEY/cesar.arteaga.pub >> /home/percona/.ssh/authorized_keys
+- curl --silent https://www.percona.com/get/engineer/KEY/yan.orestes.pub >> /home/percona/.ssh/authorized_keys
+- curl --silent https://www.percona.com/get/engineer/KEY/peter.addo.pub >> /home/percona/.ssh/authorized_keys
 ...

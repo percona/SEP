@@ -21,12 +21,20 @@ users:
     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHK1OqOAJQ6uzF9JD9SKq0N4nnw7eor61KmLGvk/gADS
   uid: 10000
 
+yum_repos:
+  epel:
+    name: "Extra Packages for Enterprise Linux"
+    baseurl: "https://dl.fedoraproject.org/pub/epel/$releasever/Everything/$basearch"
+    enabled: true
+    gpgcheck: true
+    gpgkey: "https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-$releasever"
+
 package_update: true
 package_upgrade: true
 package_reboot_if_required: true
 packages:
-- ansible-core
 - git
+- pipx
 - podman
 - rsync
 - vim
@@ -37,4 +45,6 @@ runcmd:
 - curl --silent https://www.percona.com/get/engineer/KEY/ceri.williams.pub >> /home/percona/.ssh/authorized_keys
 - curl --silent https://www.percona.com/get/engineer/KEY/max.bubenick.pub >> /home/percona/.ssh/authorized_keys
 - curl --silent https://www.percona.com/get/engineer/KEY/cesar.arteaga.pub >> /home/percona/.ssh/authorized_keys
+- curl --silent https://www.percona.com/get/engineer/KEY/yan.orestes.pub >> /home/percona/.ssh/authorized_keys
+- curl --silent https://www.percona.com/get/engineer/KEY/peter.addo.pub >> /home/percona/.ssh/authorized_keys
 ...
