@@ -6,3 +6,7 @@
 .snippets-tbl td {
     padding: 10px;
 }
+
+.snippet-description-col {
+    max-width: 450px;
+}
