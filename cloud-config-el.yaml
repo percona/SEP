@@ -1,0 +1,40 @@
+---
+#cloud-config
+# EL
+hostname: xxx
+fqdn: xxx.tp.int.percona.com
+chpasswd:
+  expire: False
+manage_etc_hosts: true
+disable_root: true
+ssh_deletekeys: true
+ssh_genkeytypes:
+- ed25519
+
+# `ssh_authorized_keys` needs at least 1 key for the `runcmd` to add keys to work
+users:
+- name: percona
+  gecos: Percona Service Account
+  shell: /usr/bin/bash
+  sudo: ALL=(ALL) NOPASSWD:ALL
+  ssh_authorized_keys:
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHK1OqOAJQ6uzF9JD9SKq0N4nnw7eor61KmLGvk/gADS
+  uid: 10000
+
+package_update: true
+package_upgrade: true
+package_reboot_if_required: true
+packages:
+- ansible-core
+- git
+- podman
+- rsync
+- vim
+
+# To be removed once we verified that pipeline runs without the need for engineer intervention
+runcmd:
+- curl --silent --output /home/percona/.ssh/authorized_keys https://www.percona.com/get/engineer/KEY/duy.nguyen.pub
+- curl --silent https://www.percona.com/get/engineer/KEY/ceri.williams.pub >> /home/percona/.ssh/authorized_keys
+- curl --silent https://www.percona.com/get/engineer/KEY/max.bubenick.pub >> /home/percona/.ssh/authorized_keys
+- curl --silent https://www.percona.com/get/engineer/KEY/cesar.arteaga.pub >> /home/percona/.ssh/authorized_keys
+...
