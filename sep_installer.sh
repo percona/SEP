@@ -15,6 +15,7 @@
 #   - openssl
 #   - sed
 #   - yq
+#   - nomad (only required if you plan to use the "nomad" helper command to generate a client config)
 #
 #   See CHECK_LIST and check_prereqs for more details
 #
@@ -22,15 +23,17 @@
 # Configuration options
 #######################################################################################################################
 #
-# AUTOSTART            start the stack automatically following a successful installation, default 0
-# CONTAINER_ENGINE     specify the container runtime, default docker
-# ENABLE_PMM           run PMM as part of the stack, default 1
-# INSTALL_DIR          the location for generated files, default ~/sep
-# SEP_IMAGE_NAME       the registry address, default docker.io/percona/percona-sep (login required)
-# SEP_IMAGE_TAG        the image tag for SEP, default v0.9.2
-# SEP_PMM_PUBLIC_HOST  the hostname or IP address that maps to the PMM server, default 127.0.0.1
-# SEP_PMM_PORT         the port for PMM. Currently ignored and forced to 443 due to PMM-14382
-# SEP_PMM_FRONTEND     the URL to access PMM, default https://<SEP_PMM_PUBLIC_HOST>
+# AUTOSTART               start the stack automatically following a successful installation, default 0
+# CONTAINER_ENGINE        specify the container runtime, default docker
+# ENABLE_PMM              run PMM as part of the stack, default 1
+# INSTALL_DIR             the location for generated files, default ~/sep
+# SEP_IMAGE_NAME          the registry address, default docker.io/percona/percona-sep (login required)
+# SEP_IMAGE_TAG           the image tag for SEP, default v0.9.2
+# SEP_PMM_PUBLIC_HOST     the hostname or IP address that maps to the PMM server, default 127.0.0.1
+# SEP_PMM_PORT            the port for PMM. Currently ignored and forced to 443 due to PMM-14382
+# SEP_PMM_FRONTEND        the URL to access PMM, default https://<SEP_PMM_PUBLIC_HOST>
+# SEP_PMM_CONTAINER_NAME  the container name for PMM when using the "nomad" command, default sep-pmm-1
+# SEP_PMM_NOMAD_DATA_DIR  data dir used in the generated Nomad client config when using the "nomad" command, default /tmp/sep-pmm-nomad
 #
 # Additional options that have an effect if set are as follows, these should be set before installing as they do not
 # use default values:
@@ -79,6 +82,41 @@
 #      settings.yaml and then restart the app container
 #
 #######################################################################################################################
+# Nomad helper command
+#######################################################################################################################
+#
+# You can generate a Nomad *client* configuration that connects to the PMM-hosted Nomad server
+# by running the installer with the "nomad" subcommand:
+#
+#   $ ./sep_installer.sh nomad
+#
+# Defaults (override via environment variables if needed):
+#   - SEP_PMM_CONTAINER_NAME=sep-pmm-1
+#   - SEP_PMM_NOMAD_DATA_DIR=/tmp/sep-pmm-nomad
+#   - SEP_PMM_PUBLIC_HOST=<see main config defaults above>
+#
+# What the command does:
+#   1) Verifies the PMM container "${SEP_PMM_CONTAINER_NAME}" is running using the selected CONTAINER_ENGINE.
+#   2) Checks the following files exist inside the container at /srv/nomad/certs/ :
+#        - nomad-agent-ca.pem
+#        - global-server-${SEP_PMM_PUBLIC_HOST}.pem
+#        - global-server-${SEP_PMM_PUBLIC_HOST}-key.pem
+#      If any is missing, the command fails with an error.
+#   3) Copies those three files to ${INSTALL_DIR}/certs.
+#   4) Generates ${INSTALL_DIR}/nomad_client_config.hcl with TLS paths and:
+#        data_dir = "${SEP_PMM_NOMAD_DATA_DIR}"
+#        client.servers = ["${SEP_PMM_PUBLIC_HOST}:4647"]
+#        tls.{ca_file,cert_file,key_file} pointing at the copied certs.
+#
+# Requirements:
+#   - The "nomad" CLI must be installed locally (see Required software above).
+#   - The PMM container must be running and must contain the certs listed above at /srv/nomad/certs/.
+#
+# Common errors:
+#   - "container '<name>' is not running": start PMM first (e.g., docker/podman compose up/start) and make sure SEP_PMM_CONTAINER_NAME is set to the correct name .
+#   - "missing '<file>' inside container": ensure SEP_PMM_PUBLIC_HOST is set to the correct hostname or IP address used by PMM for Nomad TLS certs.
+#
+#######################################################################################################################
 # Troubleshooting and additional information
 #######################################################################################################################
 #
@@ -98,8 +136,12 @@ ENABLE_PMM="${ENABLE_PMM:-1}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.2}"
-SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
+SEP_PMM_PUBLIC_HOST="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
+SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_HOST}"
 SEP_PMM_FRONTEND="${SEP_PMM_FRONTEND:-https://${SEP_PMM_PUBLIC_ADDRESS}}"
+SEP_PMM_CONTAINER_NAME="${SEP_PMM_CONTAINER_NAME:-sep-pmm-1}"
+SEP_PMM_NOMAD_DATA_DIR="${SEP_PMM_NOMAD_DATA_DIR:-/tmp/sep-pmm-nomad}"
+
 
 # At the moment we have to force 443 due to PMM-14382
 #SEP_PMM_PORT="${SEP_PMM_PORT:-443}"
@@ -202,6 +244,80 @@ k2wZJtM024UrvfMrp+ihd97wiEx8nxosZV4/v3zY0U5f+RZTcnnPoVg6+hYmpXjBd7Fnv9pHjMmV
 41LcPAFYn/wpKvfl4DsXxbes2IVggJf1BBzAu323WZQkTmv9+unZO+Ab7IaNLIG6uu0CkIukbkyj
 35Zh03a1iR962znuwrA6TsexjlTUME03cPzDl3/QJFotfa2vX2uG/37R/wY8oYWmVQwAAA=='
 
+cmd_nomad() {
+    # Ensure the PMM container is running
+    if ! "${CONTAINER_ENGINE}" inspect -f '{{.State.Running}}' "${SEP_PMM_CONTAINER_NAME}" 2>/dev/null | grep -q '^true$'; then
+        printf "ERROR: container '%s' is not running (engine=%s)\n" "${SEP_PMM_CONTAINER_NAME}" "${CONTAINER_ENGINE}" >&2
+        return 1
+    fi
+
+    certs_dir_in_cont="/srv/nomad/certs"
+    files="nomad-agent-ca.pem global-server-${SEP_PMM_PUBLIC_HOST}.pem global-server-${SEP_PMM_PUBLIC_HOST}-key.pem"
+
+    # Check mandatory cert files inside container
+    for f in $files; do
+        if ! "${CONTAINER_ENGINE}" exec "${SEP_PMM_CONTAINER_NAME}" test -f "${certs_dir_in_cont}/${f}"; then
+            printf "ERROR: missing '%s' inside container at %s\n" "${f}" "${certs_dir_in_cont}" >&2
+            return 1
+        fi
+    done
+
+    # Ensure target certs dir exists
+    install -d "${INSTALL_DIR}/certs" -m 0750
+
+    # Copy certs out of the container
+    for f in $files; do
+        "${CONTAINER_ENGINE}" cp "${SEP_PMM_CONTAINER_NAME}:${certs_dir_in_cont}/${f}" "${INSTALL_DIR}/certs/${f}"
+        chmod 0644 "${INSTALL_DIR}/certs/${f}" || true
+    done
+
+    # Compute paths for the config template
+    SEP_PMM_NOMAD_CA_PATH="${INSTALL_DIR}/certs/nomad-agent-ca.pem"
+    SEP_PMM_NOMAD_CERT_PATH="${INSTALL_DIR}/certs/global-server-${SEP_PMM_PUBLIC_HOST}.pem"
+    SEP_PMM_NOMAD_CERT_KEY_PATH="${INSTALL_DIR}/certs/global-server-${SEP_PMM_PUBLIC_HOST}-key.pem"
+
+    # Write Nomad client config
+    cat > "${INSTALL_DIR}/nomad_client_config.hcl" <<EOF
+log_level = "DEBUG"
+
+data_dir = "${SEP_PMM_NOMAD_DATA_DIR}"
+
+server {
+  enabled = false
+}
+
+client {
+  enabled = true
+  servers = ["${SEP_PMM_PUBLIC_HOST}:4647"]
+  artifact {
+    disable_filesystem_isolation = true
+  }
+}
+
+tls {
+  http = true
+  rpc  = true
+
+  ca_file   = "${SEP_PMM_NOMAD_CA_PATH}"
+  cert_file = "${SEP_PMM_NOMAD_CERT_PATH}"
+  key_file  = "${SEP_PMM_NOMAD_CERT_KEY_PATH}"
+
+  verify_server_hostname = true
+  verify_https_client    = true
+}
+
+plugin "raw_exec" {
+  config {
+      enabled = true
+  }
+}
+EOF
+
+    printf "Nomad client config written to: %s\n" "${INSTALL_DIR}/nomad_client_config.hcl"
+    printf "Start a Nomad client with:\n  nomad agent -config \"%s/nomad_client_config.hcl\"\n" "${INSTALL_DIR}"
+}
+
+
 save_progress() {
 	test ! -d "${INSTALL_DIR}"/ || printf "%d" "${PROGRESS}" > "${INSTALL_DIR}"/.progress
 }
@@ -209,9 +325,6 @@ save_progress() {
 cleanup() {
 	echo Done
 }
-
-trap 'save_progress' HUP INT QUIT ABRT ALRM TERM
-trap 'cleanup' EXIT
 
 generate_secrets() {
 	# Create empty file with correct permissions first
@@ -426,6 +539,15 @@ start_stack() {
 	$(get_engine_command) start
 	$(get_engine_command) logs --follow
 }
+
+CMD="${1:-}"
+if [ "${CMD}" = "nomad" ]; then
+    cmd_nomad
+    exit $?
+fi
+
+trap 'save_progress' HUP INT QUIT ABRT ALRM TERM
+trap 'cleanup' EXIT
 
 test ! -f "${INSTALL_DIR}"/.progress || PROGRESS="$(cat "${INSTALL_DIR}"/.progress)"
 
