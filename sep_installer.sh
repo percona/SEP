@@ -28,7 +28,7 @@
 # ENABLE_PMM              run PMM as part of the stack, default 1
 # INSTALL_DIR             the location for generated files, default ~/sep
 # SEP_IMAGE_NAME          the registry address, default docker.io/percona/percona-sep (login required)
-# SEP_IMAGE_TAG           the image tag for SEP, default v0.9.2
+# SEP_IMAGE_TAG           the image tag for SEP, default v0.9.3
 # SEP_PMM_PUBLIC_HOST     the hostname or IP address that maps to the PMM server, default 127.0.0.1
 # SEP_PMM_PORT            the port for PMM. Currently ignored and forced to 443 due to PMM-14382
 # SEP_PMM_FRONTEND        the URL to access PMM, default https://<SEP_PMM_PUBLIC_HOST>
@@ -135,7 +135,7 @@ CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 ENABLE_PMM="${ENABLE_PMM:-1}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
-SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.2}"
+SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.3}"
 SEP_PMM_PUBLIC_HOST="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
 SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_HOST}"
 SEP_PMM_FRONTEND="${SEP_PMM_FRONTEND:-https://${SEP_PMM_PUBLIC_ADDRESS}}"
