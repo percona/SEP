@@ -30,7 +30,7 @@
 # SEP_IMAGE_NAME          the registry address, default docker.io/percona/percona-sep (login required)
 # SEP_IMAGE_TAG           the image tag for SEP, default v0.9.3
 # SEP_PMM_PUBLIC_HOST     the hostname or IP address that maps to the PMM server, default 127.0.0.1
-# SEP_PMM_PORT            the port for PMM. Currently ignored and forced to 443 due to PMM-14382
+# SEP_PMM_PORT            the port for PMM, default 8443
 # SEP_PMM_FRONTEND        the URL to access PMM, default https://<SEP_PMM_PUBLIC_HOST>
 # SEP_PMM_CONTAINER_NAME  the container name for PMM when using the "nomad" command, default sep-pmm-1
 # SEP_PMM_NOMAD_DATA_DIR  data dir used in the generated Nomad client config when using the "nomad" command, default /tmp/sep-pmm-nomad
@@ -137,20 +137,10 @@ INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.3}"
 SEP_PMM_PUBLIC_HOST="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
-SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_HOST}"
-SEP_PMM_FRONTEND="${SEP_PMM_FRONTEND:-https://${SEP_PMM_PUBLIC_ADDRESS}}"
+SEP_PMM_PORT="${SEP_PMM_PORT:-8443}"
+SEP_PMM_FRONTEND="${SEP_PMM_FRONTEND:-https://${SEP_PMM_PUBLIC_HOST}}"
 SEP_PMM_CONTAINER_NAME="${SEP_PMM_CONTAINER_NAME:-sep-pmm-1}"
 SEP_PMM_NOMAD_DATA_DIR="${SEP_PMM_NOMAD_DATA_DIR:-/tmp/sep-pmm-nomad}"
-
-
-# At the moment we have to force 443 due to PMM-14382
-#SEP_PMM_PORT="${SEP_PMM_PORT:-443}"
-SEP_PMM_PORT="443"
-
-# Only add the port if not 443
-if [ "$SEP_PMM_PORT" != "443" ]; then
-  SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_ADDRESS}:${SEP_PMM_PORT}"
-fi
 
 test "${ENABLE_PMM}" = "1" || \
 	test "${SEP_PMM_URL_AUTH_TOKEN:-undef}" != "undef" || \
@@ -346,7 +336,7 @@ ENVIRONMENT (common)
   SEP_IMAGE_NAME           Image registry (default: docker.io/percona/percona-sep)
   SEP_IMAGE_TAG            SEP image tag (default: v0.9.2)
   SEP_PMM_PUBLIC_HOST      PMM public host/IP (default: 127.0.0.1)
-  SEP_PMM_PORT             PMM port (currently forced to 443 due to PMM-14382)
+  SEP_PMM_PORT             PMM port (default: 8443)
   SEP_PMM_FRONTEND         PMM URL (default: https://${SEP_PMM_PUBLIC_HOST})
 
 ENVIRONMENT (nomad command)
@@ -544,7 +534,7 @@ generate_configs() {
 	# shellcheck disable=SC1091
 	. "${INSTALL_DIR}"/.secrets
 
-	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g; s#\${SEP_PMM_PUBLIC_ADDRESS}#${SEP_PMM_PUBLIC_ADDRESS}#g" >"${INSTALL_DIR}"/compose.yaml
+	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g; s#\${SEP_PMM_PUBLIC_ADDRESS}#${SEP_PMM_PUBLIC_HOST}#g" >"${INSTALL_DIR}"/compose.yaml
 	${SEP_COMPOSE_YAML}
 	EOS
 
