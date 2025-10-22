@@ -1,0 +1,31 @@
+---
+- name: Add Percona GPG RPM key
+  ansible.builtin.rpm_key:
+    key: 'https://repo.percona.com/yum/PERCONA-PACKAGING-KEY'
+    state: present
+  become: true
+  tags:
+    - sudo
+
+- name: Install `percona-release`
+  ansible.builtin.package:
+    name: 'https://repo.percona.com/yum/percona-release-latest.noarch.rpm'
+    state: present
+  become: true
+  tags:
+    - sudo
+
+- name: Enable Percona Distribution for PostgreSQL repo
+  ansible.builtin.command: "percona-release setup -y ppg-17"
+  become: true
+  tags:
+    - sudo
+
+- name: Install Percona Distribution for PostgreSQL server
+  ansible.builtin.package:
+    name: percona-postgresql17-server
+    state: present
+  become: true
+  tags:
+    - sudo
+...
