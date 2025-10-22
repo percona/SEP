@@ -301,9 +301,12 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
     }
 
     args_string = meta.get("args", "")
+    if not args_string:
+        return form_values
+
     args = shlex.split(args_string)
 
-    known_args_patterns = [
+    known_args_patterns = {
         "--alter=",
         "--recursion-method=",
         "--progress=",
@@ -323,7 +326,7 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
         "--no-drop-triggers",
         "--execute",
         "--dry-run",
-    ]
+    }
 
     extra_args_list = []
 
@@ -332,10 +335,13 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
             continue
 
         is_known = False
-        for pattern in known_args_patterns:
-            if arg == pattern or arg.startswith(pattern):
-                is_known = True
-                break
+        if arg in known_args_patterns:
+            is_known = True
+        else:
+            for pattern in known_args_patterns:
+                if pattern.endswith("=") and arg.startswith(pattern):
+                    is_known = True
+                    break
 
         if is_known:
             parse_single_arg(arg, form_values)
