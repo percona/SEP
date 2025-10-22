@@ -47,6 +47,13 @@
     become: true
     notify: Restart PostgreSQL
 
+  - name: Create a test database
+    community.postgresql.postgresql_db:
+      name: 'db1'
+      encoding: 'UTF-8'
+    become: true
+    become_user: postgres
+
   handlers:
     - name: Restart PostgreSQL
       ansible.builtin.service:
