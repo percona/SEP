@@ -29,6 +29,7 @@ packages:
 - gnupg2
 - pipx
 - podman
+- python3-pip
 - rsync
 - vim
 
