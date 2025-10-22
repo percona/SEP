@@ -1,2 +1,9 @@
 ---
+# Bundled `podman-compose` with Debian/Ubuntu is outdated
+# Install using `pip` as system-wide package to avoid PATH complications with SEP installer script
+- name: Install latest `podman-compose` from PyPI
+  ansible.builtin.pip:
+    name: podman-compose
+    state: present
+    break_system_packages: true
 ...
