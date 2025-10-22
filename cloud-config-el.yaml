@@ -35,8 +35,8 @@ package_reboot_if_required: true
 packages:
 - git
 - gnupg2
-- pipx
 - podman
+- podman-compose
 - policycoreutils-python-utils
 - rsync
 - vim
