@@ -4,6 +4,7 @@
             <tr>
                 <th style="width: 30px;"></th>
                 <th>Filename</th>
+                <th class="snippet-description-col">Description</th>
                 <th>Size</th>
                 <th>Added at</th>
                 <th>Reason</th>
@@ -23,6 +24,7 @@
                         {% endif %}
                     </td>
                     <td>{{ snippet.filename }}</td>
+                    <td class="snippet-description-col" title="{{ snippet.description }}">{{ snippet.description|truncate(120) }}</td>
                     <td>{{ snippet.size|humanize_bytes }}</td>
                     <td class="relativeTime">{{ snippet.created_at|utc_isoformat }}</td>
                     <td>{{ snippet.reason }}</td>

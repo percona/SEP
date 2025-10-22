@@ -142,13 +142,16 @@ input:checked+.slider:before {
 }
 
 .new-periodic-task-row input,
-.new-periodic-task-row select {
+.new-periodic-task-row select,
+.edit-periodic-task-row input,
+.edit-periodic-task-row select {
     max-width: 100%;
     box-sizing: border-box;
     margin-top: 0;
 }
 
 .new-periodic-task-row .actions-cell,
+.edit-periodic-task-row .actions-cell,
 #add-periodic-task-row .actions-cell {
     display: flex;
     align-items: center;
@@ -157,8 +160,23 @@ input:checked+.slider:before {
 }
 
 .new-periodic-task-row .save-button,
-.new-periodic-task-row .discard-button {
+.new-periodic-task-row .discard-button,
+.edit-periodic-task-row .save-edit-button,
+.edit-periodic-task-row .cancel-edit-button {
     margin-right: 0.5em;
+}
+
+.edit-button {
+    margin-right: 0.5em;
+    padding-top: 0.5em;
+}
+
+.edit-periodic-task-row {
+    background-color: var(--primarySelected);
+}
+
+.edit-periodic-task-row td {
+    padding: 1em 0.5em;
 }
 
 .start-time-input {
