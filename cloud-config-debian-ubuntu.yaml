@@ -25,11 +25,13 @@ package_update: true
 package_upgrade: true
 package_reboot_if_required: true
 packages:
+- acl
 - git
 - gnupg2
 - pipx
 - podman
 - python3-pip
+- python3-psycopg2
 - python3-venv
 - rsync
 - vim
