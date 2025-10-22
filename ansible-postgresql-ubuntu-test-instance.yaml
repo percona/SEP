@@ -22,6 +22,7 @@
     ansible.builtin.apt:
       name: percona-postgresql-17
       state: present
+      update_cache: true
     become: true
 
   - name: Ensure PostgreSQL server service is enabled and started
