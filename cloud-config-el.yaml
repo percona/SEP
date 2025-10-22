@@ -34,6 +34,7 @@ package_upgrade: true
 package_reboot_if_required: true
 packages:
 - git
+- gnupg2
 - pipx
 - podman
 - policycoreutils-python-utils

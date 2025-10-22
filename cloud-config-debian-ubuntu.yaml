@@ -1,6 +1,6 @@
 ---
 #cloud-config
-# Ubuntu
+# Debian/Ubuntu
 hostname: xxx
 fqdn: xxx.tp.int.percona.com
 chpasswd:
@@ -26,6 +26,7 @@ package_upgrade: true
 package_reboot_if_required: true
 packages:
 - git
+- gnupg2
 - pipx
 - podman
 - rsync
