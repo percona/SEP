@@ -139,8 +139,7 @@ SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.3}"
 SEP_PMM_PUBLIC_HOST="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
 SEP_PMM_PORT="${SEP_PMM_PORT:-8443}"
 SEP_PMM_FRONTEND="${SEP_PMM_FRONTEND:-https://${SEP_PMM_PUBLIC_HOST}}"
-SEP_PMM_CONTAINER_NAME="${SEP_PMM_CONTAINER_NAME:-sep-pmm-1}"
-SEP_PMM_NOMAD_DATA_DIR="${SEP_PMM_NOMAD_DATA_DIR:-/tmp/sep-pmm-nomad}"
+SEP_PMM_NOMAD_DATA_DIR="${SEP_PMM_NOMAD_DATA_DIR:-${INSTALL_DIR}/nomad_data}"
 
 test "${ENABLE_PMM}" = "1" || \
 	test "${SEP_PMM_URL_AUTH_TOKEN:-undef}" != "undef" || \
@@ -235,21 +234,12 @@ k2wZJtM024UrvfMrp+ihd97wiEx8nxosZV4/v3zY0U5f+RZTcnnPoVg6+hYmpXjBd7Fnv9pHjMmV
 35Zh03a1iR962znuwrA6TsexjlTUME03cPzDl3/QJFotfa2vX2uG/37R/wY8oYWmVQwAAA=='
 
 cmd_nomad() {
-    # Ensure the PMM container is running
-    if ! "${CONTAINER_ENGINE}" inspect -f '{{.State.Running}}' "${SEP_PMM_CONTAINER_NAME}" 2>/dev/null | grep -q '^true$'; then
-        printf "ERROR: container '%s' is not running (engine=%s)\n" "${SEP_PMM_CONTAINER_NAME}" "${CONTAINER_ENGINE}" >&2
-        return 1
-    fi
-
     certs_dir_in_cont="/srv/nomad/certs"
     files="nomad-agent-ca.pem global-server-${SEP_PMM_PUBLIC_HOST}.pem global-server-${SEP_PMM_PUBLIC_HOST}-key.pem"
 
     # Check mandatory cert files inside container
     for f in $files; do
-        if ! "${CONTAINER_ENGINE}" exec "${SEP_PMM_CONTAINER_NAME}" test -f "${certs_dir_in_cont}/${f}"; then
-            printf "ERROR: missing '%s' inside container at %s\n" "${f}" "${certs_dir_in_cont}" >&2
-            return 1
-        fi
+        $(get_engine_command) exec pmm sh -c "test -f '${certs_dir_in_cont}/${f}' || { echo 'ERROR: missing ${f} inside container at ${certs_dir_in_cont}'; exit 1; }" || return 1
     done
 
     # Ensure target certs dir exists
@@ -257,7 +247,7 @@ cmd_nomad() {
 
     # Copy certs out of the container
     for f in $files; do
-        "${CONTAINER_ENGINE}" cp "${SEP_PMM_CONTAINER_NAME}:${certs_dir_in_cont}/${f}" "${INSTALL_DIR}/certs/${f}"
+        $(get_engine_command) cp "pmm:${certs_dir_in_cont}/${f}" "${INSTALL_DIR}/certs/${f}"
         chmod 0644 "${INSTALL_DIR}/certs/${f}" || true
     done
 
@@ -610,10 +600,10 @@ echo Setup complete
 
 test "${AUTOSTART}" = "1" || {
         echo "To start the stack, please execute the following command:"
-        echo "$(get_engine_command) --file ${INSTALL_DIR}/compose.yaml --project-name sep start"
+        echo "$(get_engine_command) start"
         echo
         echo "You can follow the progress by executing:"
-        echo "$(get_engine_command) --file ${INSTALL_DIR}/compose.yaml --project-name sep logs --follow"
+        echo "$(get_engine_command) logs --follow"
         exit 0
 }
 
