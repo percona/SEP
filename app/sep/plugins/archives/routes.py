@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -92,6 +93,7 @@ async def archives_detail(
         "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("archives_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
+        "alert_on_fail": task.alert_on_fail,
     }
 
     source_db = purge_item.get("SOURCE_DB")
@@ -136,6 +138,8 @@ async def archives_detail(
     context["services"] = services
 
     context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
+    context["alert_on_fail_default"] = task.alert_on_fail
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
     return templates.TemplateResponse(
         request=request,
