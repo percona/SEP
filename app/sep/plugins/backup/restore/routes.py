@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -95,6 +96,7 @@ async def restores_detail(
         "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "delete_url": request.url_for("restores_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
+        "alert_on_fail": task.alert_on_fail,
     }
 
     task_data.update(parsed_task_data)
@@ -130,6 +132,9 @@ async def restores_detail(
         context["schemas"] = schemas
     except HTTPException:
         context["schemas"] = []
+
+    context["alert_on_fail_default"] = task.alert_on_fail
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
     return templates.TemplateResponse(
         request=request,
