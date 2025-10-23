@@ -60,7 +60,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 "GET": lambda: self.csrf_protect.set_csrf_cookie(
                     signed_token, response
                 ),
-                "POST": lambda: self.csrf_protect.unset_csrf_cookie(response),
+                "POST": lambda: None,
             }
             csrf_cookie_handler.get(method, lambda: None)()
 
