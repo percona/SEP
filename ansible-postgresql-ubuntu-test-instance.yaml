@@ -47,10 +47,19 @@
     become: true
     notify: Restart PostgreSQL
 
+  - name: Create a user
+    community.postgresql.postgresql_user:
+      name: nicetrythiswillbeinavault
+      password: nic3trythiswillbeinavault2
+      role_attr_flags: CREATEDB,CREATEROLE,SUPERUSER
+    become: true
+    become_user: postgres
+
   - name: Create a test database
     community.postgresql.postgresql_db:
       name: 'db1'
       encoding: 'UTF-8'
+      owner: nicetrythiswillbeinavault
     become: true
     become_user: postgres
 
