@@ -10,7 +10,7 @@
 
   - name: Install `percona-release`
     ansible.builtin.apt:
-      deb: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
+      deb: 'https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb'
     become: true
 
   - name: Enable Percona Distribution for PostgreSQL repo
@@ -33,17 +33,17 @@
 
   - name: Configure `postgresql.conf` for `listen_addresses`
     ansible.builtin.lineinfile:
-      path: "/etc/postgresql/17/main/postgresql.conf"
-      regexp: "^#?listen_addresses ="
+      path: '/etc/postgresql/17/main/postgresql.conf'
+      regexp: '^#?listen_addresses ='
       line: "listen_addresses = '*'"
     become: true
     notify: Restart PostgreSQL
 
   - name: Configure `pg_hba.conf` to allow remote connections
     ansible.builtin.lineinfile:
-      path: "/etc/postgresql/17/main/pg_hba.conf"
-      line: "host    all             all             0.0.0.0/0               scram-sha-256"
-      insertafter: "# IPv4 local connections:"
+      path: '/etc/postgresql/17/main/pg_hba.conf'
+      line: 'host    all             all             0.0.0.0/0               scram-sha-256'
+      insertafter: '# IPv4 local connections:'
     become: true
     notify: Restart PostgreSQL
 
@@ -54,6 +54,7 @@
       role_attr_flags: CREATEDB,CREATEROLE,SUPERUSER
     become: true
     become_user: postgres
+    no_log: true
 
   - name: Create a test database
     community.postgresql.postgresql_db:
@@ -62,6 +63,7 @@
       owner: nicetrythiswillbeinavault
     become: true
     become_user: postgres
+    no_log: true
 
   handlers:
     - name: Restart PostgreSQL
