@@ -20,7 +20,7 @@ from typing import Annotated
 from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
@@ -67,6 +67,23 @@ async def tasks_list(
         context=context,
     )
 
+
+@router.get("/ui/history", dependencies=[IsAuthenticated], response_class=JSONResponse)
+async def tasks_json(
+    tasks_api: TaskAPI,
+) -> JSONResponse:
+    """Returns task data as JSON."""
+    tasks = await tasks_api.get("/")
+    running_tasks = await tasks_api.get(
+        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+
+    return JSONResponse(
+        content={
+            "tasks": tasks,
+            "running_tasks": running_tasks,
+        }
+    )
 
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
