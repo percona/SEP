@@ -155,7 +155,7 @@ def prepare_task_history(
             target=target,
             meta=execution_data.meta,
             payload=execution_data.payload,
-            tracking={"evaluation_id": ""},
+            tracking={"allocation_id": "", "evaluation_id": ""},
             eta=execution_data.eta,
         ),
         status=TaskHistoryStatusEnum.PENDING,
