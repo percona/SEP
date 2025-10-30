@@ -1,11 +1,35 @@
 ---
 - hosts: all
   tasks:
-  - name: Disable `ufw` firewall
+  - name: Ensure that `ufw` firewall service is enabled and started
     ansible.builtin.service:
       name: ufw
-      enabled: false
-      state: stopped
+      enabled: true
+      state: started
+    become: true
+
+  - name: Ensure that `ufw` firewall allows SSH inbound connections
+    community.general.ufw:
+      rule: allow
+      name: OpenSSH
+    become: true
+
+  - name: Ensure that `ufw` firewall allows PostgreSQL inbound connections
+    community.general.ufw:
+      rule: allow
+      port: 5432
+      proto: tcp
+    become: true
+
+  - name: Ensure that `ufw` firewall is enabled and deny unknown inbound connections by default
+    community.general.ufw:
+      state: enabled
+      default: deny
+    become: true
+
+  - name: Reload `ufw` firewall
+    community.general.ufw:
+      state: reloaded
     become: true
 
   - name: Install `percona-release`
