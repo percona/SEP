@@ -1,6 +1,14 @@
 ---
-- hosts: all
+- hosts: mysql
   tasks:
+  - name: Ensure that `firewalld` allows inbound MySQL connections
+    ansible.posix.firewalld:
+      service: mysql
+      state: enabled
+      permanent: true
+      immediate: true
+    become: true
+
   - name: Install `percona-release`
     ansible.builtin.dnf:
       name: 'https://repo.percona.com/yum/percona-release-latest.noarch.rpm'
@@ -111,16 +119,140 @@
   - name: Create `percona` MySQL user
     community.mysql.mysql_user:
       name: percona
+      state: present
       plugin: caching_sha2_password
       plugin_auth_string: N!cetrythiswillbeinavault2
       host: '%'
       priv: '*.*:ALL,GRANT'
     no_log: true
 
+  - name: Create `pmm` MySQL user
+    community.mysql.mysql_user:
+      name: pmm
+      state: present
+      plugin: caching_sha2_password
+      plugin_auth_string: N!cetrythiswillbeinavault2
+      host: 127.0.0.1
+      resource_limits:
+        MAX_USER_CONNECTIONS: 10
+      priv: '*.*:SELECT,RELOAD,PROCESS,REPLICATION CLIENT'
+    no_log: true
+
+  - name: Create MySQL replication user
+    community.mysql.mysql_user:
+      name: replication_user
+      state: present
+      plugin: caching_sha2_password
+      plugin_auth_string: N!cetrythiswillbeinavault2
+      host: 10.0.0.0/8
+      tls_requires:
+        ssl:
+      priv: '*.*:REPLICATION SLAVE'
+    no_log: true
+
+  - name: Flush MySQL privileges
+    community.mysql.mysql_query:
+      query: FLUSH PRIVILEGES
+
+  - name: Set up `server-id` and GTID mode for MySQL replication
+    ansible.builtin.blockinfile:
+      path: /etc/my.cnf
+      block: |
+        gtid_mode=ON
+        enforce-gtid-consistency=ON
+        {% if mysql_replication_role is defined and mysql_replication_role == 'source' %}
+        server-id=1
+        {% elif mysql_replication_role is defined and mysql_replication_role == 'replica' %}
+        server-id=2
+        log-replica-updates=ON
+        skip-replica-start=ON
+        {% endif %}
+      state: present
+    become: true
+    notify: Restart MySQL service
+
+  - name: Set global read-only mode for MySQL source and replica
+    community.mysql.mysql_variables:
+      variable: read_only
+      value: 'ON'
+      mode: global
+
+  # `community.mysql.mysql_replication` does not support `GET_SOURCE_PUBLIC_KEY`
+  # and `CHANGE REPLICATION SOURCE TO` in older versions so we use a query
+  - name: Set replication source for MySQL replica
+    community.mysql.mysql_query:
+      query: >
+        CHANGE REPLICATION SOURCE TO
+        SOURCE_HOST='{{ hostvars['duy-test-mysql-el']['ansible_default_ipv4']['address'] }}',
+        SOURCE_TLS_VERSION="TLSv1.2,TLSv1.3",
+        SOURCE_SSL=1,
+        SOURCE_SSL_VERIFY_SERVER_CERT=0,
+        SOURCE_TLS_CIPHERSUITES="TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256",
+        SOURCE_USER='replication_user',
+        SOURCE_PASSWORD='N!cetrythiswillbeinavault2',
+        SOURCE_AUTO_POSITION=1,
+        GET_SOURCE_PUBLIC_KEY=1
+    failed_when: false
+    when: mysql_replication_role is defined and mysql_replication_role == 'replica'
+
+  - name: Start MySQL replica
+    community.mysql.mysql_replication:
+      mode: startreplica
+      fail_on_error: true
+    when: mysql_replication_role is defined and mysql_replication_role == 'replica'
+
+  - name: Turn off global read-only mode for MySQL source and replica
+    community.mysql.mysql_variables:
+      variable: read_only
+      value: 'OFF'
+      mode: global
+
+  - name: Set persist `super_read_only` and `read_only` on replica
+    community.mysql.mysql_variables:
+      variable: "{{ item }}"
+      value: 1
+      mode: persist
+    loop:
+      - super_read_only
+      - read_only
+    when: mysql_replication_role is defined and mysql_replication_role == 'replica'
+
+  - name: Set persist only `report_host` on replica
+    community.mysql.mysql_variables:
+      variable: report_host
+      value: "{{ hostvars['duy-test-mysql-el']['ansible_default_ipv4']['address'] }}"
+      mode: persist_only
+    notify: Restart MySQL command
+    when: mysql_replication_role is defined and mysql_replication_role == 'replica'
+
+  - name: Remove `skip-replica-start=ON` from replica `my.cnf`
+    ansible.builtin.lineinfile:
+      path: /etc/my.cnf
+      regexp: '^skip-replica-start=ON'
+      state: absent
+    become: true
+    when: mysql_replication_role is defined and mysql_replication_role == 'replica'
+
+  - name: Set persist only `super_read_only`, `read_only`, `report_host` on source
+    community.mysql.mysql_variables:
+      variable: "{{ item.var }}"
+      value: "{{ item.value }}"
+      mode: persist_only
+    loop:
+      - { var: 'super_read_only', value: 1 }
+      - { var: 'read_only', value: 1 }
+      - { var: 'report_host', value: "{{ hostvars['duy-test-mysql-el2']['ansible_default_ipv4']['address'] }}" }
+    notify: Restart MySQL command
+    when: mysql_replication_role is defined and mysql_replication_role == 'source'
+
   handlers:
-    - name: Restart MySQL
+    - name: Restart MySQL service
       ansible.builtin.service:
         name: mysqld
         state: restarted
       become: true
+
+    - name: Restart MySQL command
+      community.mysql.mysql_query:
+        query: RESTART
 ...
