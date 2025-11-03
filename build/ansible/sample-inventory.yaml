@@ -1,0 +1,23 @@
+---
+sep-controller:
+  hosts:
+    sep-controller:
+      ansible_host: x.x.x.x
+      ansible_connection: local
+mysql:
+  hosts:
+    mysql1-el:
+      ansible_host: x.x.x.x
+      mysql_replication_role: source
+    mysql2-el:
+      ansible_host: x.x.x.x
+      mysql_replication_role: replica
+mongodb:
+  hosts:
+    mongodb-debian:
+      ansible_host: x.x.x.x
+postgresql:
+  hosts:
+    postgresql-ubuntu:
+      ansible_host: x.x.x.x
+...
