@@ -80,6 +80,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
     :param sync_id: The unique identifier for this synchronization.
     :type sync_id: UUID4
+    :param break_on_error: Flag indicating whether to stop synchronization on error.
+        Defaults to False.
+    :type break_on_error: bool
     :param _session: The asynchronous database session.
     :type _session: AsyncSession
     """
@@ -90,6 +93,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     sync_instance: SyncInstance | None = None
     sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem] = {}
     sync_id: UUID4 = Field(default_factory=uuid4)
+    break_on_error: bool = False
     _session: AsyncSession
 
     def __hash__(self) -> int:
@@ -355,14 +359,17 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         except Exception as exc:
             logger.exception(
                 "Failed to sync %s (%s)",
-                entity_type,
+                entity_type.name,
                 sync_item,
             )
             self.sync_items[sync_item_entity] = await SyncItemManager.fail_sync(
                 self._session,
                 sync_item,
             )
-            raise SyncFailError(entity_type, self.sync_items[sync_item_entity]) from exc
+            if self.break_on_error:
+                raise SyncFailError(
+                    entity_type, self.sync_items[sync_item_entity]
+                ) from exc
         else:
             await self.finish_sync(entity_type, created_entity)
 
