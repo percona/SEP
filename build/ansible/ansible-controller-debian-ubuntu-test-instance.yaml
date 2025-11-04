@@ -1,9 +1,116 @@
 ---
-# Bundled `podman-compose` with Debian/Ubuntu is outdated
-# Install using `pip` as system-wide package to avoid PATH complications with SEP installer script
-- name: Install latest `podman-compose` from PyPI
-  ansible.builtin.pip:
-    name: podman-compose
-    state: present
-    break_system_packages: true
+#- hosts: sep-controller
+- hosts: localhost
+  tasks:
+  - block:
+    - name: Ensure that `ufw` firewall service is enabled and started
+      ansible.builtin.service:
+        name: ufw
+        enabled: true
+        state: started
+
+    - name: Ensure that `ufw` firewall allows SSH inbound connections
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Ensure that `ufw` firewall is enabled and denies unknown inbound connections by default
+      community.general.ufw:
+        state: enabled
+        default: deny
+
+    - name: Reload `ufw` firewall
+      community.general.ufw:
+        state: reloaded
+    become: true
+    when: ansible_distribution == 'Ubuntu'
+
+  - name: Create `~/bin`
+    ansible.builtin.file:
+      path: '{{ ansible_env.HOME }}/bin'
+      mode: u=rwX,g=,o=
+      state: directory
+
+  - name: Add `~/bin` to service account's $PATH
+    ansible.builtin.lineinfile:
+      path: '{{ ansible_env.HOME }}/.bashrc'
+      line: 'export PATH="$PATH:$HOME/bin"'
+      regexp: '^export PATH=.*\$HOME/bin.*'
+      insertafter: EOF
+      state: present
+
+  - name: Download latest `gascan` PEX to `~/bin`
+    ansible.builtin.get_url:
+      url: 'https://xxx/{{ ansible_distribution | lower }}-{{ ansible_distribution_release }}/gascan-py{{ ansible_python.version.major }}.{{ ansible_python.version.minor }}'
+      dest: '{{ ansible_env.HOME }}/bin/gascan'
+      mode: u=rwx,g=rx,o=
+      timeout: 30
+
+  - name: Create `gascan` bundle extraction directory
+    ansible.builtin.file:
+      path: '{{ ansible_env.HOME }}/gascan-bundle'
+      mode: u=rwX,g=,o=
+      state: directory
+
+  - name: Extract `gascan` helpers
+    ansible.builtin.command:
+      cmd: '{{ ansible_env.HOME }}/bin/gascan --extract-bundle --extract-path={{ ansible_env.HOME }}/gascan-bundle'
+      creates: '{{ ansible_env.HOME }}/gascan-bundle/onboarding*'
+
+  - block:
+    - name: Ensure `uidmap` is installed
+      ansible.builtin.apt:
+        name: uidmap
+        state: present
+        update_cache: true
+
+    - name: Set `user.max_user_namespaces`
+      ansible.posix.sysctl:
+        name: user.max_user_namespaces
+        value: 100000
+
+    - name: Gather environment settings
+      ansible.builtin.setup:
+        filter: ansible_env
+        gather_subset: min
+      when: ansible_env.SUDO_USER is undefined
+
+    - name: Check linger status
+      ansible.builtin.stat:
+        path: '/var/lib/systemd/linger/{{ ansible_env.SUDO_USER }}'
+      register: container_linger_check
+
+    - name: Enable linger
+      ansible.builtin.command:
+        cmd: loginctl enable-linger '{{ ansible_env.SUDO_USER }}'
+      when: not container_linger_check.stat.exists | bool
+
+    - name: Check user mappings
+      ansible.builtin.command: podman image ls -q
+      changed_when: false
+      ignore_errors: true
+      register: container_rootless_mapping_check
+
+    - name: Configure user mappings
+      ansible.builtin.copy:
+        content: '{{ item.user }}:100000:65536'
+        dest: '/etc/{{ item.path }}'
+        owner: root
+        group: root
+        mode: u=rw,a=r
+      loop:
+      - user: '{{ ansible_env.SUDO_USER | mandatory }}'
+        path: subuid
+      - user: '{{ ansible_env.SUDO_USER | mandatory }}'
+        path: subgid
+      when: container_rootless_mapping_check.stderr is defined and 'cannot find mappings for user' in container_rootless_mapping_check.stderr
+    become: true
+
+  # Bundled `podman-compose` with Debian/Ubuntu is outdated, install updated version using `pip`
+#  - name: Install latest `podman-compose` from PyPI
+#    ansible.builtin.pip:
+#      name: podman-compose
+#      state: present
+#      virtualenv: '{{ ansible_env.HOME }}/venv'
+#      virtualenv_command: '{{ ansible_python.executable }} -m venv'
 ...

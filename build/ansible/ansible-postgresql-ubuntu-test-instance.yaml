@@ -1,5 +1,5 @@
 ---
-- hosts: all
+- hosts: postgresql
   tasks:
   - name: Ensure that `ufw` firewall service is enabled and started
     ansible.builtin.service:
@@ -21,7 +21,7 @@
       proto: tcp
     become: true
 
-  - name: Ensure that `ufw` firewall is enabled and deny unknown inbound connections by default
+  - name: Ensure that `ufw` firewall is enabled and denies unknown inbound connections by default
     community.general.ufw:
       state: enabled
       default: deny
