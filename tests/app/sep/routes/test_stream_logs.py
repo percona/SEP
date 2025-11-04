@@ -8,7 +8,11 @@ import pytest
 from starlette.status import HTTP_200_OK
 
 from app.core.requests import RemoteAPI
-from app.sep.deps import CurrentUser, get_task_history, get_tasks_client
+from app.sep.deps import (
+    get_current_user,
+    get_task_history,
+    get_tasks_client,
+)
 from app.sep.main import sep_app
 from app.tasks.models import (
     Task,
@@ -80,7 +84,7 @@ def mock_tasks_client(task_history_response):
 
     sep_app.dependency_overrides[get_tasks_client] = lambda: client
     sep_app.dependency_overrides[get_task_history] = lambda: task_history_response
-    sep_app.dependency_overrides[CurrentUser] = lambda: SimpleNamespace(
+    sep_app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
         access_token="test-token"
     )
 
