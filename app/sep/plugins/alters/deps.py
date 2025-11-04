@@ -65,7 +65,19 @@ async def build_alters_task_payload(
         dsn = f"h={service.node.address},{dsn}"
 
     if form.recursion_method == "dsn":
-        form.recursion_method = f"dsn={form.dsn_table}"
+        dsn_table = form.dsn_table
+        if not dsn_table.startswith(("h=", "P=")):
+            service_dsn = ""
+            if service.node.address != "localhost":
+                service_dsn = f"h={service.node.address}"
+            if service.port is not None:
+                if service_dsn:
+                    service_dsn = f"{service_dsn},P={service.port}"
+                else:
+                    service_dsn = f"P={service.port}"
+            if service_dsn:
+                dsn_table = f"{service_dsn},{dsn_table}"
+        form.recursion_method = f"dsn={dsn_table}"
 
     args = [
         f"--alter={form.alter}",
@@ -222,13 +234,15 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
         recursion_method = arg.split("=", 1)[1]
         if recursion_method.startswith("dsn="):
             form_values["recursion_method"] = "dsn"
-            form_values["dsn_table"] = recursion_method.split("=", 1)[1]
+            dsn_value = recursion_method.split("=", 1)[1]
+            dsn_parts = [
+                part
+                for part in dsn_value.split(",")
+                if not part.startswith(("h=", "P="))
+            ]
+            form_values["dsn_table"] = ",".join(dsn_parts) if dsn_parts else dsn_value
         else:
             form_values["recursion_method"] = recursion_method
-        return
-
-    if arg.startswith("--progress="):
-        form_values["progress"] = arg.split("=", 1)[1]
         return
 
     arg_mappings = {
@@ -242,6 +256,7 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
         "--chunk-time=": "chunk_time",
         "--max-lag=": "max_lag",
         "--max-flow-ctl=": "max_flow_ctl",
+        "--progress=": "progress",
     }
 
     for arg_pattern, field_name in arg_mappings.items():

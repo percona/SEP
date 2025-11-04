@@ -286,14 +286,14 @@
                     </div>
                     <br>
                     <div class="field">
-                        {% set dsn_table_title = "Type the DSN table to use for the recursion method when set to 'dsn'." %}
-                        <label for="dsn_table" title="{{ dsn_table_title }}">DSN Table</label>
+                        {% set dsn_table_title = "Type the DSN to use for the recursion method when set to 'dsn'. Format: D=database,t=table (e.g., D=percona,t=dsns) or full DSN with host: h=HOST,D=database,t=table" %}
+                        <label for="dsn_table" title="{{ dsn_table_title }}">DSN</label>
                         <input type="text"
                                id="dsn_table"
                                name="dsn_table"
                                class="validate"
                                value="{{ task.dsn_table }}"
-                               placeholder="schema.dsns"
+                               placeholder="D=percona,t=dsns"
                                title="{{ dsn_table_title }}" />
                     </div>
                     <br>
