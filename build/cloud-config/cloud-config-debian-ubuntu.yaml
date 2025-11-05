@@ -33,7 +33,6 @@ packages:
 - python3-venv
 - rsync
 - vim
-- yq
 
 # To be removed once we verified that pipeline runs without the need for engineer intervention
 runcmd:
