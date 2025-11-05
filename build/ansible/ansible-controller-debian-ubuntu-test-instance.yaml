@@ -25,6 +25,24 @@
     become: true
     when: ansible_distribution == 'Ubuntu'
 
+  - block:
+    - name: Create custom CA directory
+      ansible.builtin.file:
+        path: /usr/local/share/ca-certificates/infra
+        state: directory
+
+    - name: Add custom CA certificate
+      ansible.builtin.copy:
+        dest: /usr/local/share/ca-certificates/infra/ca.crt
+        content: |
+          -----BEGIN CERTIFICATE-----
+          -----END CERTIFICATE-----
+
+    - name: Update CA certificates
+      ansible.builtin.command:
+        cmd: update-ca-certificates
+    become: true
+
   - name: Create `~/bin`
     ansible.builtin.file:
       path: '{{ ansible_env.HOME }}/bin'
@@ -39,12 +57,20 @@
       insertafter: EOF
       state: present
 
-  - name: Download latest `gascan` PEX to `~/bin`
+  - name: Download latest `yq` to `~/bin`
     ansible.builtin.get_url:
-      url: 'https://xxx/{{ ansible_distribution | lower }}-{{ ansible_distribution_release }}/gascan-py{{ ansible_python.version.major }}.{{ ansible_python.version.minor }}'
-      dest: '{{ ansible_env.HOME }}/bin/gascan'
+      url: https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+      dest: '{{ ansible_env.HOME }}/bin/yq'
       mode: u=rwx,g=rx,o=
       timeout: 30
+
+  # Need to find a way to store public download URL as secret
+  #- name: Download latest `gascan` PEX to `~/bin`
+    #ansible.builtin.get_url:
+      #url: 'https://xxxxxx/{{ ansible_distribution | lower }}-{{ ansible_distribution_release }}/gascan-py{{ ansible_python.version.major }}.{{ ansible_python.version.minor }}'
+      #dest: '{{ ansible_env.HOME }}/bin/gascan'
+      #mode: u=rwx,g=rx,o=
+      #timeout: 30
 
   - name: Create `gascan` bundle extraction directory
     ansible.builtin.file:
@@ -56,6 +82,14 @@
     ansible.builtin.command:
       cmd: '{{ ansible_env.HOME }}/bin/gascan --extract-bundle --extract-path={{ ansible_env.HOME }}/gascan-bundle'
       creates: '{{ ansible_env.HOME }}/gascan-bundle/onboarding*'
+
+  - name: Create alias for `podman-compose`
+    ansible.builtin.lineinfile:
+      path: '{{ ansible_env.HOME }}/.bashrc'
+      line: 'alias podman-compose="PEX_SCRIPT=podman-compose ansible.pex"'
+      regexp: '^alias podman-compose=*'
+      insertafter: EOF
+      state: present
 
   - block:
     - name: Ensure `uidmap` is installed
@@ -105,6 +139,31 @@
         path: subgid
       when: container_rootless_mapping_check.stderr is defined and 'cannot find mappings for user' in container_rootless_mapping_check.stderr
     become: true
+
+  # In this playbook, this is temporarily not implemented; Jenkins will do this
+  #- name: Download SEP installer
+    #ansible.builtin.get_url:
+      #url: 'https://xxxxxx'
+      #dest: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
+      #mode: u=rwx,g=rx,o=
+      #timeout: 30
+
+  # Without regathering environment settings `ansible_env` stays that of `root`
+  # from the previous block despite we already chose not to escalate anymore
+  # See GAS-928 for a nasty example of this behavior
+  - block:
+    - name: Re-gather environment settings
+      ansible.builtin.setup:
+        filter: ansible_env
+        gather_subset: min
+
+    - name: Install PMM & SEP
+      ansible.builtin.shell:
+        cmd: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
+      environment:
+        CONTAINER_ENGINE: podman
+        SEP_IMAGE_NAME: labbox-mini.tp.int.percona.com:5555
+        SEP_IMAGE_TAG: v0.9.3
 
   # Bundled `podman-compose` with Debian/Ubuntu is outdated, install updated version using `pip`
 #  - name: Install latest `podman-compose` from PyPI
