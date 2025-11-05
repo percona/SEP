@@ -31,6 +31,7 @@ yum_repos:
 
 package_update: true
 package_upgrade: true
+package_reboot_if_required: false
 packages:
 - acl
 - git
