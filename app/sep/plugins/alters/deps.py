@@ -23,6 +23,38 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 logger = logging.getLogger(__name__)
 
 
+def _build_dsn_with_service(
+    dsn_base: str, service_address: str, service_port: int | None
+) -> str:
+    """Build a DSN string with service information (host and port) if needed.
+
+    :param dsn_base: The base DSN string (e.g., "D=schema,t=table" or "D=percona,t=dsns").
+    :type dsn_base: str
+    :param service_address: The service node address.
+    :type service_address: str
+    :param service_port: The service port, if available.
+    :type service_port: int | None
+    :return: The constructed DSN string with service information if not already present.
+    :rtype: str
+    """
+    if dsn_base.startswith(("h=", "P=")):
+        return dsn_base
+
+    service_dsn = ""
+    if service_address != "localhost":
+        service_dsn = f"h={service_address}"
+    if service_port is not None:
+        if service_dsn:
+            service_dsn = f"{service_dsn},P={service_port}"
+        else:
+            service_dsn = f"P={service_port}"
+
+    if service_dsn:
+        return f"{service_dsn},{dsn_base}"
+
+    return dsn_base
+
+
 async def build_alters_task_payload(
     form: Annotated[AltersCreate, Form()],
     inventory_api: InventoryAPI,
@@ -58,25 +90,14 @@ async def build_alters_task_payload(
         form.table_id,
         schema_id=schema.id,
     )
-    dsn = f"D={schema.name},t={table.name}"
-    if service.port is not None:
-        dsn = f"P={service.port},{dsn}"
-    if service.node.address != "localhost":
-        dsn = f"h={service.node.address},{dsn}"
+    dsn = _build_dsn_with_service(
+        f"D={schema.name},t={table.name}", service.node.address, service.port
+    )
 
     if form.recursion_method == "dsn":
-        dsn_table = form.dsn_table
-        if not dsn_table.startswith(("h=", "P=")):
-            service_dsn = ""
-            if service.node.address != "localhost":
-                service_dsn = f"h={service.node.address}"
-            if service.port is not None:
-                if service_dsn:
-                    service_dsn = f"{service_dsn},P={service.port}"
-                else:
-                    service_dsn = f"P={service.port}"
-            if service_dsn:
-                dsn_table = f"{service_dsn},{dsn_table}"
+        dsn_table = _build_dsn_with_service(
+            form.dsn_table, service.node.address, service.port
+        )
         form.recursion_method = f"dsn={dsn_table}"
 
     args = [
