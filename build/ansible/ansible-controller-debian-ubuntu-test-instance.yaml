@@ -206,6 +206,5 @@
         cmd: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
       environment:
         CONTAINER_ENGINE: podman
-        SEP_IMAGE_NAME: labbox-mini.tp.int.percona.com:5555
         SEP_IMAGE_TAG: v0.9.3
 ...
