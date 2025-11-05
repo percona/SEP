@@ -52,6 +52,7 @@
     # Need to find a way to store public download URL as secret
     #- name: Download latest `gascan` PEX to `~/bin`
       #ansible.builtin.get_url:
+        #url: 'https://xxxxxx/el{{ ansible_distribution_major_version }}/gascan-py{{ ansible_python.version.major }}.{{ ansible_python.version.minor }}'
         #dest: '{{ ansible_env.HOME }}/bin/gascan'
         #mode: u=rwx,g=rx,o=
         #timeout: 30
