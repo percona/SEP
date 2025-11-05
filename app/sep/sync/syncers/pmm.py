@@ -421,9 +421,10 @@ class PMMSyncer(BaseSyncer):
         syncable_nodes = {}
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.external_id] = node
+        logger.debug("Syncable nodes: %s", syncable_nodes)
         for node in await self.pmm_api.get_nodes():
             if (created_node := syncable_nodes.pop(node.external_id, None)) is None:
-                logger.debug("Creating new node: %s", node)
+                logger.debug("Creating new node: %r", node)
                 created_node = CreatedNode.model_validate(
                     await self.inventory_api.post(
                         "/",
@@ -431,6 +432,7 @@ class PMMSyncer(BaseSyncer):
                     ),
                 )
             await self.sync_node(created_node, node)
+        logger.debug("Nodes to delete: %s", syncable_nodes)
         for node in syncable_nodes.values():
             await self.delete_node(node)
 
@@ -467,19 +469,24 @@ class PMMSyncer(BaseSyncer):
         """
         await self.update_node(created_node, updated_node)
         external_id_to_id = {}
+        port_to_id = {}
         syncable_services = {}
         for service in created_node.services:
             syncable_services[service.id] = service
             if service.external_id is not None:
                 external_id_to_id[service.external_id] = service.id
+            if service.port is not None:
+                port_to_id[service.port] = service.id
         for service in updated_node.services:
             if (
                 created_service := syncable_services.pop(
-                    external_id_to_id.get(service.external_id),
+                    external_id_to_id.get(
+                        service.external_id, port_to_id.get(service.port)
+                    ),
                     None,
                 )
             ) is None:
-                logger.info("Creating new service: %s", service)
+                logger.info("Creating new service: %r", service)
                 created_service = CreatedService.model_validate(
                     await self.inventory_api.post(
                         f"/{created_node.id}/services/",

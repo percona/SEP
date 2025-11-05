@@ -259,7 +259,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         if created_entity is not None:
             return created_entity.children
         logger.warning(
-            "Unknown entity type %s or missing created_entity: %s",
+            "Unknown entity type %s or missing created_entity: %r",
             entity_type,
             created_entity,
         )
@@ -358,9 +358,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             yield sync_item
         except Exception as exc:
             logger.exception(
-                "Failed to sync %s (%s)",
+                "Failed to sync %s: %r",
                 entity_type.name,
-                sync_item,
+                created_entity,
             )
             self.sync_items[sync_item_entity] = await SyncItemManager.fail_sync(
                 self._session,
@@ -651,7 +651,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedNode` instance.
         :rtype: CreatedNode
         """
-        logger.info("Updating node %s: %s", created_node.id, updated_node)
+        logger.info("Updating node %s: %r", created_node.id, updated_node)
         return CreatedNode.model_validate(
             await self.inventory_api.put(
                 f"/{created_node.id}",
@@ -755,7 +755,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedService` instance.
         :rtype: CreatedService
         """
-        logger.info("Updating service %s: %s", created_service.id, updated_service)
+        logger.info("Updating service %s: %r", created_service.id, updated_service)
         updated_service_data = updated_service.model_dump(exclude={"schemas"})
         updated_service_data["node_id"] = created_service.node_id
         return CreatedService.model_validate(
@@ -861,7 +861,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedSchema` instance.
         :rtype: CreatedSchema
         """
-        logger.info("Updating schema %s: %s", created_schema.id, updated_schema)
+        logger.info("Updating schema %s: %r", created_schema.id, updated_schema)
         updated_schema_data = updated_schema.model_dump(exclude={"tables"})
         updated_schema_data["service_id"] = created_schema.service_id
         return CreatedSchema.model_validate(
@@ -967,7 +967,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedTable` instance.
         :rtype: CreatedTable
         """
-        logger.info("Updating table %s: %s", created_table.id, updated_table)
+        logger.info("Updating table %s: %r", created_table.id, updated_table)
         updated_table_data = updated_table.model_dump()
         updated_table_data["schema_id"] = created_table.schema_id
         return CreatedTable.model_validate(
