@@ -2,7 +2,8 @@
 #- hosts: sep-controller
 - hosts: localhost
   tasks:
-  - block:
+  - name: Ubuntu `ufw` firewall configuration
+    block:
     - name: Ensure that `ufw` firewall service is enabled and started
       ansible.builtin.service:
         name: ufw
@@ -25,7 +26,8 @@
     become: true
     when: ansible_distribution == 'Ubuntu'
 
-  - block:
+  - name: Custom CA cert configuration
+    block:
     - name: Create custom CA directory
       ansible.builtin.file:
         path: /usr/local/share/ca-certificates/infra
@@ -44,55 +46,91 @@
         cmd: update-ca-certificates
     become: true
 
-  - name: Create `~/bin`
-    ansible.builtin.file:
-      path: '{{ ansible_env.HOME }}/bin'
-      mode: u=rwX,g=,o=
-      state: directory
-
-  - name: Add `~/bin` to service account's $PATH
-    ansible.builtin.lineinfile:
-      path: '{{ ansible_env.HOME }}/.bashrc'
-      line: 'export PATH="$PATH:$HOME/bin"'
-      regexp: '^export PATH=.*\$HOME/bin.*'
-      insertafter: EOF
+  # Prerequisite for `podman-compose` ahead
+  # If we figure out a way to do `pip` or PEX `podman-compose` this will be removed
+  - name: Install `dotenv`
+    ansible.builtin.apt:
+      name: python3-dotenv
       state: present
+      update_cache: yes
+    become: true
 
-  - name: Download latest `yq` to `~/bin`
-    ansible.builtin.get_url:
-      url: https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-      dest: '{{ ansible_env.HOME }}/bin/yq'
-      mode: u=rwx,g=rx,o=
-      timeout: 30
+  - name: Prepare necessary binaries
+    block:
+    - name: Create `~/bin`
+      ansible.builtin.file:
+        path: '{{ ansible_env.HOME }}/bin'
+        mode: u=rwX,g=,o=
+        state: directory
 
-  # Need to find a way to store public download URL as secret
-  #- name: Download latest `gascan` PEX to `~/bin`
-    #ansible.builtin.get_url:
-      #url: 'https://xxxxxx/{{ ansible_distribution | lower }}-{{ ansible_distribution_release }}/gascan-py{{ ansible_python.version.major }}.{{ ansible_python.version.minor }}'
-      #dest: '{{ ansible_env.HOME }}/bin/gascan'
-      #mode: u=rwx,g=rx,o=
-      #timeout: 30
+    - name: Add `~/bin` to service account's $PATH
+      ansible.builtin.lineinfile:
+        path: '{{ ansible_env.HOME }}/.bashrc'
+        line: 'export PATH="$PATH:$HOME/bin"'
+        regexp: '^export PATH=.*\$HOME/bin.*'
+        insertafter: EOF
+        state: present
 
-  - name: Create `gascan` bundle extraction directory
-    ansible.builtin.file:
-      path: '{{ ansible_env.HOME }}/gascan-bundle'
-      mode: u=rwX,g=,o=
-      state: directory
+    - name: Download latest `yq` to `~/bin`
+      ansible.builtin.get_url:
+        url: https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        dest: '{{ ansible_env.HOME }}/bin/yq'
+        mode: u=rwx,g=rx,o=
+        timeout: 30
 
-  - name: Extract `gascan` helpers
-    ansible.builtin.command:
-      cmd: '{{ ansible_env.HOME }}/bin/gascan --extract-bundle --extract-path={{ ansible_env.HOME }}/gascan-bundle'
-      creates: '{{ ansible_env.HOME }}/gascan-bundle/onboarding*'
+    # Bundled `podman-compose` with Debian/Ubuntu is outdated, install updated version using `pip`
+    #
+    # Even with `--user` we still need `--break-system-packages` to install
+    # From Ansible `pip` module doc: Python installations marked externally-managed (as defined by PEP668)
+    # cannot be updated by pip versions >= 23.0.1 without the use of a virtual environment
+    # or setting the `break_system_packages` option
+    #
+    # But damn it, `break_system_packages` is not available for `ansible-core<=2.17.0`
+    #- name: Install latest `podman-compose` from PyPI
+      #ansible.builtin.pip:
+        #name: podman-compose
+        #state: present
+        #extra_args: --user
+        #break_system_packages: true
 
-  - name: Create alias for `podman-compose`
-    ansible.builtin.lineinfile:
-      path: '{{ ansible_env.HOME }}/.bashrc'
-      line: 'alias podman-compose="PEX_SCRIPT=podman-compose ansible.pex"'
-      regexp: '^alias podman-compose=*'
-      insertafter: EOF
-      state: present
+    - name: Download latest `podman-compose` to `~/bin`
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/containers/podman-compose/main/podman_compose.py
+        dest: '{{ ansible_env.HOME }}/bin/podman-compose'
+        mode: u=rwx,g=rx,o=
+        timeout: 30
 
-  - block:
+    # Need to find a way to store public download URL as secret
+    #- name: Download latest `gascan` PEX to `~/bin`
+      #ansible.builtin.get_url:
+        #url: 'https://xxxxxx/{{ ansible_distribution | lower }}-{{ ansible_distribution_release }}/gascan-py{{ ansible_python.version.major }}.{{ ansible_python.version.minor }}'
+        #dest: '{{ ansible_env.HOME }}/bin/gascan'
+        #mode: u=rwx,g=rx,o=
+        #timeout: 30
+
+  - name: Extract `gascan` helper scripts
+    block:
+    - name: Create `gascan` bundle extraction directory
+      ansible.builtin.file:
+        path: '{{ ansible_env.HOME }}/gascan-bundle'
+        mode: u=rwX,g=,o=
+        state: directory
+
+    - name: Extract `gascan` helpers
+      ansible.builtin.command:
+        cmd: '{{ ansible_env.HOME }}/bin/gascan --extract-bundle --extract-path={{ ansible_env.HOME }}/gascan-bundle'
+        creates: '{{ ansible_env.HOME }}/gascan-bundle/onboarding*'
+
+    #- name: Create alias for `podman-compose`
+      #ansible.builtin.lineinfile:
+        #path: '{{ ansible_env.HOME }}/.bashrc'
+        #line: 'alias podman-compose="PEX_SCRIPT=podman-compose ansible.pex"'
+        #regexp: '^alias podman-compose=*'
+        #insertafter: EOF
+        #state: present
+
+  - name: Configure `podman` engine to run rootlessly
+    block:
     - name: Ensure `uidmap` is installed
       ansible.builtin.apt:
         name: uidmap
@@ -141,15 +179,9 @@
       when: container_rootless_mapping_check.stderr is defined and 'cannot find mappings for user' in container_rootless_mapping_check.stderr
     become: true
 
-  # In this playbook, this is temporarily not implemented; Jenkins will do this
-  #- name: Download SEP installer
-    #ansible.builtin.get_url:
-      #url: 'https://xxxxxx'
-      #dest: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
-      #mode: u=rwx,g=rx,o=
-      #timeout: 30
 
-  - block:
+  - name: Install PMM & SEP
+    block:
     # Without regathering environment settings `ansible_env` stays that of `root`
     # from the previous block despite we already chose not to escalate anymore
     # See GAS-928 for a nasty example of this behavior
@@ -158,8 +190,16 @@
         filter: ansible_env
         gather_subset: min
 
-    # Long shot but setting an alias above for `podman-compose` didn't work
-    # The installer script can't find it
+    # In this playbook, this is temporarily not implemented; Jenkins will do this
+    #- name: Download SEP installer
+      #ansible.builtin.get_url:
+        #url: 'https://xxxxxx'
+        #dest: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
+        #mode: u=rwx,g=rx,o=
+        #timeout: 30
+
+    # Long shot but setting an alias above for `podman-compose` within Ansible PEX didn't work
+    # The installer script can't find it, so I fell back to installing `podman-compose` with `pip`
     # `ERROR: the following commands are unavailable -  podman-compose`
     - name: Install PMM & SEP
       ansible.builtin.shell:
@@ -168,12 +208,4 @@
         CONTAINER_ENGINE: podman
         SEP_IMAGE_NAME: labbox-mini.tp.int.percona.com:5555
         SEP_IMAGE_TAG: v0.9.3
-
-  # Bundled `podman-compose` with Debian/Ubuntu is outdated, install updated version using `pip`
-#  - name: Install latest `podman-compose` from PyPI
-#    ansible.builtin.pip:
-#      name: podman-compose
-#      state: present
-#      virtualenv: '{{ ansible_env.HOME }}/venv'
-#      virtualenv_command: '{{ ansible_python.executable }} -m venv'
 ...
