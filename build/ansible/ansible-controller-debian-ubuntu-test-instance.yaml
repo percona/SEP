@@ -179,7 +179,6 @@
       when: container_rootless_mapping_check.stderr is defined and 'cannot find mappings for user' in container_rootless_mapping_check.stderr
     become: true
 
-
   - name: Install PMM & SEP
     block:
     # Without regathering environment settings `ansible_env` stays that of `root`
