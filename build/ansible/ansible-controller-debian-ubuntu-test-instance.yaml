@@ -31,6 +31,7 @@
         path: /usr/local/share/ca-certificates/infra
         state: directory
 
+    # Need to find a way to inject CA cert secret here
     - name: Add custom CA certificate
       ansible.builtin.copy:
         dest: /usr/local/share/ca-certificates/infra/ca.crt
