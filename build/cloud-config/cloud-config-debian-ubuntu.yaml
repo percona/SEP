@@ -28,10 +28,8 @@ packages:
 - acl
 - git
 - gnupg2
-- pipx
 - podman
 - python3-pip
-- python3-venv
 - rsync
 - vim
 
