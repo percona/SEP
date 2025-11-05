@@ -1,2 +1,199 @@
 ---
+#- hosts: sep-controller
+- hosts: localhost
+  tasks:
+  - name: EL `firewalld` firewall configuration
+    block:
+    - name: Ensure that `firewalld` firewall service is enabled and started
+      ansible.builtin.service:
+        name: firewalld
+        enabled: true
+        state: started
+
+    - name: Ensure that `firewalld` allows inbound SSH connections
+      ansible.posix.firewalld:
+        service: ssh
+        state: enabled
+        permanent: true
+        immediate: true
+    become: true
+
+  - name: Custom CA cert configuration
+    block:
+    # Need to find a way to inject CA cert secret here
+    - name: Add custom CA certificate
+      ansible.builtin.copy:
+        dest: /etc/pki/ca-trust/source/anchors/custom-ca.pem
+        content: |
+          -----BEGIN CERTIFICATE-----
+          -----END CERTIFICATE-----
+
+    - name: Update CA certificates
+      ansible.builtin.command:
+        cmd: update-ca-trust
+    become: true
+
+  - name: Prepare necessary binaries
+    block:
+    - name: Create `~/bin`
+      ansible.builtin.file:
+        path: '{{ ansible_env.HOME }}/bin'
+        mode: u=rwX,g=,o=
+        state: directory
+
+    - name: Add `~/bin` to service account's $PATH
+      ansible.builtin.lineinfile:
+        path: '{{ ansible_env.HOME }}/.bashrc'
+        line: 'export PATH="$PATH:$HOME/bin"'
+        regexp: '^export PATH=.*\$HOME/bin.*'
+        insertafter: EOF
+        state: present
+
+    # Need to find a way to store public download URL as secret
+    #- name: Download latest `gascan` PEX to `~/bin`
+      #ansible.builtin.get_url:
+        #dest: '{{ ansible_env.HOME }}/bin/gascan'
+        #mode: u=rwx,g=rx,o=
+        #timeout: 30
+
+  - name: Extract `gascan` helper scripts
+    block:
+    - name: Create `gascan` bundle extraction directory
+      ansible.builtin.file:
+        path: '{{ ansible_env.HOME }}/gascan-bundle'
+        mode: u=rwX,g=,o=
+        state: directory
+
+    - name: Extract `gascan` helpers
+      ansible.builtin.command:
+        cmd: '{{ ansible_env.HOME }}/bin/gascan --extract-bundle --extract-path={{ ansible_env.HOME }}/gascan-bundle'
+        creates: '{{ ansible_env.HOME }}/gascan-bundle/onboarding*'
+
+  - name: Configure `podman` engine to run rootlessly
+    block:
+    - name: Set `user.max_user_namespaces`
+      ansible.posix.sysctl:
+        name: user.max_user_namespaces
+        value: 100000
+
+    - name: Gather environment settings
+      ansible.builtin.setup:
+        filter: ansible_env
+        gather_subset: min
+      when: ansible_env.SUDO_USER is undefined
+
+    - name: Check linger status
+      ansible.builtin.stat:
+        path: '/var/lib/systemd/linger/{{ ansible_env.SUDO_USER }}'
+      register: container_linger_check
+
+    - name: Enable linger
+      ansible.builtin.command:
+        cmd: loginctl enable-linger '{{ ansible_env.SUDO_USER }}'
+      when: not container_linger_check.stat.exists | bool
+
+    - block:
+      - name: Check for existing module
+        ansible.builtin.shell:
+          cmd: semodule -l | grep -Eq '^fusefs_sock_file'
+        changed_when: false
+        ignore_errors: true
+        register: container_semodule_check
+
+      - block:
+        - name: Create `fusefs_sock_file.te`
+          ansible.builtin.copy:
+            content: |
+              module fusefs_sock_file 1.0;
+
+              require {
+                type fusefs_t;
+                type container_t;
+                class sock_file { create link setattr unlink write };
+              }
+
+              #============= container_t ==============
+              allow container_t fusefs_t:sock_file { create link setattr unlink write };
+            dest: /tmp/fusefs_sock_file.te
+            owner: root
+            group: root
+            mode: u=rw,a=r
+
+        - name: Generate `fusefs_sock_file.mod`
+          ansible.builtin.command:
+            cmd: checkmodule -M -m -o fusefs_sock_file.mod fusefs_sock_file.te
+          changed_when: false
+          args:
+            chdir: /tmp
+
+        - name: Generate `fusefs_sock_file.pp`
+          ansible.builtin.command:
+            cmd: semodule_package -m fusefs_sock_file.mod -o fusefs_sock_file.pp
+          changed_when: false
+          args:
+            chdir: /tmp
+
+        - name: Install `fusefs_sock_file.pp`
+          ansible.builtin.command:
+            cmd: semodule -i fusefs_sock_file.pp
+          changed_when: false
+          args:
+            chdir: /tmp
+        when: container_semodule_check.rc is defined and container_semodule_check.rc|int != 0
+
+      - name: Cleanup files
+        ansible.builtin.file:
+          path: '{{ item }}'
+          state: absent
+        loop:
+        - /tmp/fusefs_sock_file.te
+        - /tmp/fusefs_sock_file.mod
+        - /tmp/fusefs_sock_file.pp
+    when: ansible_selinux.status is defined and ansible_selinux.status == 'enabled'
+
+    - name: Check user mappings
+      ansible.builtin.command: podman image ls -q
+      changed_when: false
+      ignore_errors: true
+      register: container_rootless_mapping_check
+
+    - name: Configure user mappings
+      ansible.builtin.copy:
+        content: '{{ item.user }}:100000:65536'
+        dest: '/etc/{{ item.path }}'
+        owner: root
+        group: root
+        mode: u=rw,a=r
+      loop:
+      - user: '{{ ansible_env.SUDO_USER | mandatory }}'
+        path: subuid
+      - user: '{{ ansible_env.SUDO_USER | mandatory }}'
+        path: subgid
+      when: container_rootless_mapping_check.stderr is defined and 'cannot find mappings for user' in container_rootless_mapping_check.stderr
+    become: true
+
+  - name: Install PMM & SEP
+    block:
+    # Without regathering environment settings `ansible_env` stays that of `root`
+    # from the previous block despite we already chose not to escalate anymore
+    # See GAS-928 for a nasty example of this behavior
+    - name: Re-gather environment settings
+      ansible.builtin.setup:
+        filter: ansible_env
+        gather_subset: min
+
+    # In this playbook, this is temporarily not implemented; Jenkins will do this
+    #- name: Download SEP installer
+      #ansible.builtin.get_url:
+        #url: 'https://xxxxxx'
+        #dest: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
+        #mode: u=rwx,g=rx,o=
+        #timeout: 30
+
+    - name: Install PMM & SEP
+      ansible.builtin.shell:
+        cmd: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
+      environment:
+        CONTAINER_ENGINE: podman
+        SEP_IMAGE_TAG: v0.9.3
 ...
