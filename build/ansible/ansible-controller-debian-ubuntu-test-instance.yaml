@@ -149,15 +149,18 @@
       #mode: u=rwx,g=rx,o=
       #timeout: 30
 
-  # Without regathering environment settings `ansible_env` stays that of `root`
-  # from the previous block despite we already chose not to escalate anymore
-  # See GAS-928 for a nasty example of this behavior
   - block:
+    # Without regathering environment settings `ansible_env` stays that of `root`
+    # from the previous block despite we already chose not to escalate anymore
+    # See GAS-928 for a nasty example of this behavior
     - name: Re-gather environment settings
       ansible.builtin.setup:
         filter: ansible_env
         gather_subset: min
 
+    # Long shot but setting an alias above for `podman-compose` didn't work
+    # The installer script can't find it
+    # `ERROR: the following commands are unavailable -  podman-compose`
     - name: Install PMM & SEP
       ansible.builtin.shell:
         cmd: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
