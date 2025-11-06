@@ -1,5 +1,5 @@
 ---
-sep-controller:
+sep_controller:
   hosts:
     deb-controller:
       ansible_host: 10.30.50.234
