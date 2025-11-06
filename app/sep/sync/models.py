@@ -80,6 +80,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
     :param sync_id: The unique identifier for this synchronization.
     :type sync_id: UUID4
+    :param break_on_error: Flag indicating whether to stop synchronization on error.
+        Defaults to False.
+    :type break_on_error: bool
     :param _session: The asynchronous database session.
     :type _session: AsyncSession
     """
@@ -90,6 +93,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     sync_instance: SyncInstance | None = None
     sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem] = {}
     sync_id: UUID4 = Field(default_factory=uuid4)
+    break_on_error: bool = False
     _session: AsyncSession
 
     def __hash__(self) -> int:
@@ -255,7 +259,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         if created_entity is not None:
             return created_entity.children
         logger.warning(
-            "Unknown entity type %s or missing created_entity: %s",
+            "Unknown entity type %s or missing created_entity: %r",
             entity_type,
             created_entity,
         )
@@ -354,15 +358,18 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             yield sync_item
         except Exception as exc:
             logger.exception(
-                "Failed to sync %s (%s)",
-                entity_type,
-                sync_item,
+                "Failed to sync %s: %r",
+                entity_type.name,
+                created_entity,
             )
             self.sync_items[sync_item_entity] = await SyncItemManager.fail_sync(
                 self._session,
                 sync_item,
             )
-            raise SyncFailError(entity_type, self.sync_items[sync_item_entity]) from exc
+            if self.break_on_error:
+                raise SyncFailError(
+                    entity_type, self.sync_items[sync_item_entity]
+                ) from exc
         else:
             await self.finish_sync(entity_type, created_entity)
 
@@ -644,7 +651,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedNode` instance.
         :rtype: CreatedNode
         """
-        logger.info("Updating node %s: %s", created_node.id, updated_node)
+        logger.info("Updating node %s: %r", created_node.id, updated_node)
         return CreatedNode.model_validate(
             await self.inventory_api.put(
                 f"/{created_node.id}",
@@ -748,7 +755,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedService` instance.
         :rtype: CreatedService
         """
-        logger.info("Updating service %s: %s", created_service.id, updated_service)
+        logger.info("Updating service %s: %r", created_service.id, updated_service)
         updated_service_data = updated_service.model_dump(exclude={"schemas"})
         updated_service_data["node_id"] = created_service.node_id
         return CreatedService.model_validate(
@@ -854,7 +861,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedSchema` instance.
         :rtype: CreatedSchema
         """
-        logger.info("Updating schema %s: %s", created_schema.id, updated_schema)
+        logger.info("Updating schema %s: %r", created_schema.id, updated_schema)
         updated_schema_data = updated_schema.model_dump(exclude={"tables"})
         updated_schema_data["service_id"] = created_schema.service_id
         return CreatedSchema.model_validate(
@@ -960,7 +967,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedTable` instance.
         :rtype: CreatedTable
         """
-        logger.info("Updating table %s: %s", created_table.id, updated_table)
+        logger.info("Updating table %s: %r", created_table.id, updated_table)
         updated_table_data = updated_table.model_dump()
         updated_table_data["schema_id"] = created_table.schema_id
         return CreatedTable.model_validate(
