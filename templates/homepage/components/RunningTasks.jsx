@@ -4,8 +4,8 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import apiClient from "../../../ui/apiClient";
 import { format } from "date-fns";
+import axios from "axios";
 
 // Create a client
 const queryClient = new QueryClient();
@@ -13,7 +13,7 @@ const queryClient = new QueryClient();
 // This function is now a pure JS function. It accepts cookies as an argument.
 const fetchTasksHistory = async () => {
   await new Promise((resolve) => setTimeout(resolve, 1000));
-  const { data } = await apiClient.get("/tasks/ui/history");
+  const { data } = await axios.get("/tasks/ui/history");
   return data;
 };
 
