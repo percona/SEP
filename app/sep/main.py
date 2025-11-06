@@ -38,7 +38,9 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
+from app.sep.celery import sync_snippets
 from app.sep.config import CsrfSettings, sep_settings
+from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -51,23 +53,38 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.sep.snippets.config import snippets_settings
+from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
+
+
+async def sep_startup() -> None:
+    """Define actions to perform on SEP startup.
+
+    Initializes the SEP periodic task database and triggers the initial synchronization
+    of snippets if configured to do so.
+    """
+    await init_sep_db()
+    if snippets_settings.SYNC_ON_STARTUP:
+        sync_snippets.delay()
 
 
 @asynccontextmanager
 async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage SEP's lifespan.
 
-    Initializes the RemoteAPI clients for inventory and tasks services, ensuring they
-    are properly managed during the application's startup and shutdown phases.
+    Initializes the SEP periodic task database and the RemoteAPI clients for inventory
+    and tasks services, ensuring they are properly managed during the application's
+    startup and shutdown phases.
 
     :param app: The FastAPI application instance.
     :type app: FastAPI
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
+    await sep_startup()
     app.state.inventory_api = RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
         ssl_cafile=settings.SSL_CAFILE,
@@ -92,7 +109,6 @@ sep_app = create_app(
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
-sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 
 @CsrfProtect.load_config
@@ -119,13 +135,23 @@ if {
     "backup_mongo",
     "checksums",
 } & imported_plugins:
+    from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
+    sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
+
+if "snippets" in imported_plugins:
+    sep_app.mount(
+        "/static/snippets",
+        AuthenticatedStaticFiles(directory=snippets_settings.SNIPPETS_DIR),
+        name="snippets_files",
+    )
+sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 User = get_user_model()
 templates = sep_settings.TEMPLATES
@@ -151,7 +177,7 @@ async def internal_error_handler(
         name="error.html",
         context={
             "exception": "".join(format_exception(exc, limit=-1, chain=False)),
-            **get_default_context(request, user, base_url),
+            **await get_default_context(request, user, base_url),
         },
     )
 
@@ -174,7 +200,10 @@ async def custom_404_handler(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
         name="404.html",
-        context={"exception": exc, **get_default_context(request, user, base_url)},
+        context={
+            "exception": exc,
+            **await get_default_context(request, user, base_url),
+        },
     )
 
 
@@ -208,7 +237,7 @@ async def default_exception_handler(
 ) -> RedirectResponse:
     """Define default exception handler."""
     error_detail = exc.detail
-    messages.error(request, error_detail)
+    messages.error(request, str(error_detail))
     return RedirectResponse(
         request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
     )

@@ -13,8 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from pathlib import Path
+__all__ = ["BASE_DIR", "__summary__", "__version__"]
+__version__ = "v0.9.4"
+__summary__ = "Percona Services Enablement Platform"
 
-__all__ = ["BASE_DIR"]
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent

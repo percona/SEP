@@ -21,8 +21,8 @@ from typing import Any, ClassVar
 from pydantic import Field, field_validator
 
 from app.core.config import BaseYamlSettings
+from app.core.utils import run_pydantic_type_validator
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import TaskOwner
 
 
 class AnonymizerSettings(BaseYamlSettings):
@@ -35,14 +35,14 @@ class AnonymizerSettings(BaseYamlSettings):
         If set to `"*"`, defaults to all available anonymizer entities for all owners.
         If a list of anonymizer entities is provided, it will be used as default for all
         owners. Defaults to an empty set.
-    :type DEFAULT_ENTITIES: defaultdict[TaskOwner, set[PIIEntity]]
+    :type DEFAULT_ENTITIES: defaultdict[str, set[PIIEntity]]
     :param NLP_MODELS: A mapping of language codes to spaCy model names for NLP
         processing. Defaults to `{"en": "en_core_web_sm"}`.
     :type NLP_MODELS: dict[str, str]
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS", "ANONYMIZER"]
-    DEFAULT_ENTITIES: defaultdict[TaskOwner, set[PIIEntity]] = Field(
+    DEFAULT_ENTITIES: defaultdict[str, set[PIIEntity]] = Field(
         default_factory=dict, validate_default=True
     )
     NLP_MODELS: dict[str, str] = Field({"en": "en_core_web_sm"}, min_length=1)
@@ -61,13 +61,10 @@ class AnonymizerSettings(BaseYamlSettings):
         if v == "*":
             v = list(PIIEntity)
         if isinstance(v, list):
-            entities = set(v)
-            return defaultdict(
-                lambda: entities, {owner: entities for owner in TaskOwner}
-            )
+            entities = run_pydantic_type_validator(set[PIIEntity], v)
+            return defaultdict(lambda: entities)
         if isinstance(v, dict):
             return defaultdict(set, v)
-
         return v
 
     @property
@@ -78,6 +75,17 @@ class AnonymizerSettings(BaseYamlSettings):
         :rtype: str
         """
         return next(iter(self.NLP_MODELS))
+
+    def get_anonymize_mask(self, owner: str) -> int:
+        """Get the anonymization mask for a given task owner.
+
+        :param owner: The task owner identifier.
+        :type owner: str
+        :return: The integer bitmask representing the anonymization entities for the
+            specified owner.
+        :rtype: int
+        """
+        return PIIEntity.encode_selection(self.DEFAULT_ENTITIES[owner])
 
 
 anonymizer_settings = AnonymizerSettings()

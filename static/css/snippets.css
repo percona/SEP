@@ -1,0 +1,12 @@
+.snippets-tbl tr>td:first-child>i {
+    font-size: 1.5em;
+    vertical-align: middle;
+}
+
+.snippets-tbl td {
+    padding: 10px;
+}
+
+.snippet-description-col {
+    max-width: 450px;
+}

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -25,7 +26,6 @@ from app.sep.plugins.backup_pg.deps import (
     parse_backup_task_data,
 )
 from app.sep.plugins.backup_pg.models import BackupType
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ async def pg_backups_detail(
     """Retrieve backups task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
 
@@ -97,6 +97,7 @@ async def pg_backups_detail(
         "delete_url": request.url_for("backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
         "is_edit_enabled": not task.protected,
+        "alert_on_fail": task.alert_on_fail,
     }
 
     task_data.update(parsed_task_data)
@@ -110,9 +111,7 @@ async def pg_backups_detail(
 
     try:
         executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts.values()) | {
-            task_data["hostname"]
-        }
+        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     except HTTPException:
         executor_hosts = {}
         context["executor_hosts"] = {task_data["hostname"]}
@@ -124,6 +123,9 @@ async def pg_backups_detail(
         context["services"] = services
     except HTTPException:
         context["services"] = []
+
+    context["alert_on_fail_default"] = task.alert_on_fail
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
     return templates.TemplateResponse(
         request=request,

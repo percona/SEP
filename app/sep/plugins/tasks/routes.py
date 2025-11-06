@@ -100,6 +100,7 @@ async def task_create(
         json=create_task_form.model_dump(include={"payload", "fmt"}),
         params={"backend": create_task_form.backend},
     )
+
     await tasks_api.post("/", json=task_data)
     task_path = request.url_for("tasks_detail", task_name=create_task_form.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
@@ -123,7 +124,7 @@ async def tasks_detail(
     context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     executor_hosts = await tasks_api.get("/hosts/")
-    context["executor_hosts"] = list(executor_hosts.values())
+    context["executor_hosts"] = list(executor_hosts)
     context["AVAILABLE_TIMEZONES"] = list(available_timezones())
     return templates.TemplateResponse(
         request=request,

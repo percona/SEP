@@ -14,3 +14,4 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from app.sep.middleware.csrf import CSRFMiddleware
+from app.sep.middleware.messages import MessagesMiddleware

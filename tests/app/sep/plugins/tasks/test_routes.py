@@ -5,9 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import status
 
-from app.sep.deps import (
-    get_task_by_name,
-)
+from app.sep.deps import get_task_by_name
 from app.sep.main import sep_app
 from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import TaskFactory
@@ -20,13 +18,14 @@ def created_task() -> Task:
 
 
 @pytest.fixture
-def _mock_task_dep(created_task):
+def _mock_task_dep(created_task, mock_get_username_mapping):
     """Mock the TaskDep dependency."""
     sep_app.dependency_overrides[get_task_by_name] = lambda: created_task
     yield
     sep_app.dependency_overrides = {}
 
 
+@pytest.mark.usefixtures("_mock_task_dep")
 def test_tasks_list(
     test_client,
     mock_task_api_dep,
@@ -47,6 +46,7 @@ def test_tasks_list(
     )
 
 
+@pytest.mark.usefixtures("_mock_task_dep")
 def test_task_create(
     test_client,
     mock_task_api_dep,
@@ -126,6 +126,7 @@ def test_task_execute(
         "meta": {},
         "payload": None,
         "eta": None,
+        "anonymize_mask": None,
     }
 
     response = test_client.post(f"/tasks/{created_task.name}", follow_redirects=False)

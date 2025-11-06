@@ -4,11 +4,12 @@ import logging
 import shlex
 from typing import Annotated, Any
 
-from fastapi import Depends, Form, Request
+from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHosts,
     get_created_entity,
     get_task_by_name,
     get_tasks_context,
@@ -17,15 +18,47 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import GeneratedTask, Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
+
+
+def _build_dsn_with_service(
+    dsn_base: str, service_address: str, service_port: int | None
+) -> str:
+    """Build a DSN string with service information (host and port) if needed.
+
+    :param dsn_base: The base DSN string (e.g., "D=schema,t=table" or "D=percona,t=dsns").
+    :type dsn_base: str
+    :param service_address: The service node address.
+    :type service_address: str
+    :param service_port: The service port, if available.
+    :type service_port: int | None
+    :return: The constructed DSN string with service information if not already present.
+    :rtype: str
+    """
+    if dsn_base.startswith(("h=", "P=")):
+        return dsn_base
+
+    service_dsn = ""
+    if service_address != "localhost":
+        service_dsn = f"h={service_address}"
+    if service_port is not None:
+        if service_dsn:
+            service_dsn = f"{service_dsn},P={service_port}"
+        else:
+            service_dsn = f"P={service_port}"
+
+    if service_dsn:
+        return f"{service_dsn},{dsn_base}"
+
+    return dsn_base
 
 
 async def build_alters_task_payload(
     form: Annotated[AltersCreate, Form()],
     inventory_api: InventoryAPI,
-) -> GeneratedTask:
+) -> TaskWrite:
     """Build the alter task payload from form.
 
     Build the payload for an Alters task to be executed, including the
@@ -35,9 +68,9 @@ async def build_alters_task_payload(
     :type form: AltersCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `GeneratedTask` object containing all the necessary
+    :return: A fully constructed `TaskWrite` object containing all the necessary
         commands and parameters for the Alters task execution.
-    :rtype: GeneratedTask
+    :rtype: TaskWrite
     """
     service = await get_created_entity(
         inventory_api,
@@ -57,14 +90,15 @@ async def build_alters_task_payload(
         form.table_id,
         schema_id=schema.id,
     )
-    dsn = f"D={schema.name},t={table.name}"
-    if service.port is not None:
-        dsn = f"P={service.port},{dsn}"
-    if service.node.address != "localhost":
-        dsn = f"h={service.node.address},{dsn}"
+    dsn = _build_dsn_with_service(
+        f"D={schema.name},t={table.name}", service.node.address, service.port
+    )
 
     if form.recursion_method == "dsn":
-        form.recursion_method = f"dsn={form.dsn_table}"
+        dsn_table = _build_dsn_with_service(
+            form.dsn_table, service.node.address, service.port
+        )
+        form.recursion_method = f"dsn={dsn_table}"
 
     args = [
         f"--alter={form.alter}",
@@ -103,6 +137,11 @@ async def build_alters_task_payload(
     # Adding '--progress' argument if 'print_arg' is set
     if form.print_arg:
         args.append(f"--progress={form.progress}")
+
+    if form.extra_args:
+        extra_args_list = shlex.split(form.extra_args)
+        args.extend(extra_args_list)
+
     args.append("--execute")
     return TaskWrite(
         owner=TaskOwner.ALTERS,
@@ -221,13 +260,15 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
         recursion_method = arg.split("=", 1)[1]
         if recursion_method.startswith("dsn="):
             form_values["recursion_method"] = "dsn"
-            form_values["dsn_table"] = recursion_method.split("=", 1)[1]
+            dsn_value = recursion_method.split("=", 1)[1]
+            dsn_parts = [
+                part
+                for part in dsn_value.split(",")
+                if not part.startswith(("h=", "P="))
+            ]
+            form_values["dsn_table"] = ",".join(dsn_parts) if dsn_parts else dsn_value
         else:
             form_values["recursion_method"] = recursion_method
-        return
-
-    if arg.startswith("--progress="):
-        form_values["progress"] = arg.split("=", 1)[1]
         return
 
     arg_mappings = {
@@ -241,6 +282,7 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
         "--chunk-time=": "chunk_time",
         "--max-lag=": "max_lag",
         "--max-flow-ctl=": "max_flow_ctl",
+        "--progress=": "progress",
     }
 
     for arg_pattern, field_name in arg_mappings.items():
@@ -291,22 +333,68 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
         "chunk_time": "",
         "max_lag": "",
         "max_flow_ctl": "",
+        "extra_args": "",
     }
 
     args_string = meta.get("args", "")
+    if not args_string:
+        return form_values
+
     args = shlex.split(args_string)
 
+    known_args_patterns = {
+        "--alter=",
+        "--recursion-method=",
+        "--progress=",
+        "--pause-file=",
+        "--new-table-name=",
+        "--tries=",
+        "--set-vars=",
+        "--critical-load=",
+        "--max-load=",
+        "--chunk-time=",
+        "--max-lag=",
+        "--max-flow-ctl=",
+        "--print",
+        "--no-swap-tables",
+        "--no-drop-old-table",
+        "--no-drop-new-table",
+        "--no-drop-triggers",
+        "--execute",
+        "--dry-run",
+    }
+
+    extra_args_list = []
+
     for arg in args:
-        parse_single_arg(arg, form_values)
+        if not arg.startswith("--") and "=" in arg:
+            continue
+
+        is_known = False
+        if arg in known_args_patterns:
+            is_known = True
+        else:
+            for pattern in known_args_patterns:
+                if pattern.endswith("=") and arg.startswith(pattern):
+                    is_known = True
+                    break
+
+        if is_known:
+            parse_single_arg(arg, form_values)
+        elif arg not in ["--execute", "--dry-run"]:
+            extra_args_list.append(arg)
+
+    if extra_args_list:
+        form_values["extra_args"] = shlex.join(extra_args_list)
 
     return form_values
 
 
 async def get_alters_index_context(
-    request: Request,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
+    executor_hosts: ExecutorHosts,
 ) -> dict[str, Any]:
     """Assemble the context for the Alters plugin index view.
 
@@ -314,22 +402,22 @@ async def get_alters_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
-    :param request: The HTTP request object.
-    :type request: Request
     :param inventory_api: The Inventory API client for fetching service and schema data.
     :type inventory_api: InventoryAPI
     :param tasks_api: The TaskAPI client for fetching task data.
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Alters-specific information.
     :type context: DefaultContext
+    :param executor_hosts: The executor hosts for the Alters tasks.
+    :type executor_hosts: ExecutorHosts
     :return: An updated context dictionary containing Alters-related data.
     :rtype: dict[str, Any]
     """
     return await get_tasks_context(
-        request,
         inventory_api,
         tasks_api,
         get_alters_task_info,
+        executor_hosts,
         context,
         TaskOwner.ALTERS,
         alert_on_fail_default=True,

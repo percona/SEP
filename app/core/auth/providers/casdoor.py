@@ -22,8 +22,9 @@ from math import ceil
 from typing import Any, Literal, Self
 
 from aiohttp import ClientConnectionError
+from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import HTTPException, status
-from pydantic import computed_field, model_validator
+from pydantic import computed_field, ConfigDict, model_validator
 
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
@@ -100,6 +101,7 @@ class CasdoorSDK(RemoteAPI):
     :type error_code_key: RequiredStr | None
     """
 
+    model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     logger_name: str = __name__
     client_id: str
     client_secret: str
@@ -422,6 +424,7 @@ class CasdoorSDK(RemoteAPI):
         response = await self.post("/api/delete-token", json=token)
         return response["data"].lower() == "affected"
 
+    @alru_cache(ttl=300)
     async def get_users(self) -> list[dict[str, Any]]:
         """Retrieve a list of users from Casdoor.
 

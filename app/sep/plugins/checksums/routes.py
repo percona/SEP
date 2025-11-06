@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -24,7 +25,6 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_index_context,
     parse_checksums_task_args,
 )
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -79,11 +79,13 @@ async def checksums_detail(
     """Retrieve checksums task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "cmd": f"{meta['command']} {meta['args']}",
         "meta": meta,
@@ -114,7 +116,7 @@ async def checksums_detail(
         services = []
         logger.warning("Failed to get services: %s", exc)
 
-    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     context["services"] = services
 
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
@@ -123,6 +125,8 @@ async def checksums_detail(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+    context["alert_on_fail_default"] = task_data["alert_on_fail"]
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
     return templates.TemplateResponse(
         request=request,
         name="checksums/details.html",

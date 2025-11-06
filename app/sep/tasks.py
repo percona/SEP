@@ -19,10 +19,9 @@ from typing import Any
 
 from pydantic import BaseModel, model_validator
 
+from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.periodic.models import (
-    CrontabSchedule,
-    IntervalSchedule,
     PeriodicTaskExecuteRequest,
 )
 
@@ -57,6 +56,7 @@ class PeriodicTaskRequest(BaseModel):
         """Populate period (interval or crontab) data.
 
         Transforms the input form data into the interval/crontab format.
+        When setting one schedule type, clears the other to avoid conflicts.
 
         :param data: The form input.
         :type data: Any
@@ -69,6 +69,7 @@ class PeriodicTaskRequest(BaseModel):
                     "every": data["interval_every"],
                     "period": data["interval_period"],
                 }
+                data["crontab"] = None
             elif "cron_expression" in data and "cron_timezone" in data:
                 minute, hour, day_of_month, month_of_year, day_of_week = data[
                     "cron_expression"
@@ -81,6 +82,7 @@ class PeriodicTaskRequest(BaseModel):
                     "month_of_year": month_of_year,
                     "day_of_week": day_of_week,
                 }
+                data["interval"] = None
         return data
 
 

@@ -151,4 +151,5 @@ def test_parse_alters_task_args():
         "chunk_time": "0.5",
         "max_lag": "150",
         "max_flow_ctl": "",
+        "extra_args": "",
     }

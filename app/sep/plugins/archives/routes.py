@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -25,7 +26,6 @@ from app.sep.plugins.archives.deps import (
     get_archives_index_context,
 )
 from app.sep.plugins.archives.models import PurgeConfigItem
-from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ async def archives_detail(
     """Retrieve archives task."""
     data = task.data
     meta = data["meta"]
-    decoded_entities = PIIEntity.decode_selection(task.anonymize_mask)
+    decoded_entities = task.anonymized_entities
     task_config = yaml.safe_load(meta["config"])
     all_server = task_config["ALL"]
     purge_item = task_config["PURGE_LIST"][0]
@@ -86,11 +86,14 @@ async def archives_detail(
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
         "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("archives_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
+        "alert_on_fail": task.alert_on_fail,
     }
 
     source_db = purge_item.get("SOURCE_DB")
@@ -134,7 +137,9 @@ async def archives_detail(
         )
     context["services"] = services
 
-    context["executor_hosts"] = set(executor_hosts.values()) | {task_data["hostname"]}
+    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
+    context["alert_on_fail_default"] = task.alert_on_fail
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
     return templates.TemplateResponse(
         request=request,

@@ -54,6 +54,8 @@ class AltersCreate(BaseModel):
     :type chunk_time: str
     :param max_lag: Pause the data copy until all replicas lag is less than this value.
     :type max_lag: str
+    :param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.
+    :type extra_args: str
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
     :type alert_on_fail: bool
     """
@@ -81,4 +83,5 @@ class AltersCreate(BaseModel):
     chunk_time: str = ""
     max_lag: str = ""
     max_flow_ctl: str = ""
+    extra_args: str = ""
     alert_on_fail: bool = False

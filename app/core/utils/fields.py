@@ -34,6 +34,7 @@ from pydantic import (
     GetCoreSchemaHandler,
     HttpUrl,
     PlainSerializer,
+    StringConstraints,
     TypeAdapter,
     UrlConstraints,
 )
@@ -46,7 +47,7 @@ from app.core.utils.imports import (
     validate_attribute_is_importable,
     validate_module_is_importable,
 )
-from app.core.utils.list import remove_duplicates
+from app.core.utils.iterators import unique_everseen
 from app.core.utils.path import resolve_relative_path
 
 E = TypeVar("E", bound=Enum)
@@ -81,7 +82,9 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
                 raise ValueError(
                     f"Value not found and is not a valid name for {enum_class_name}: {value_or_name!r}"
                 ) from None
-            enum_dict = {enum_obj.name.upper(): enum_obj for enum_obj in enum_class}
+            enum_dict = {
+                name.upper(): value for name, value in enum_class.__members__.items()
+            }
             try:
                 return enum_dict[value_or_name.upper()]
             except KeyError:
@@ -383,7 +386,12 @@ def database_url_normalized_scheme_field_factory(
     ]
 
 
+# TODO(yan): Replace RequiredStr with NonEmptyStr accross the codebase
+# SEP-579
 RequiredStr = Annotated[str, Field(min_length=1)]
+"""Define a string field that must not be empty."""
+
+NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
@@ -429,6 +437,9 @@ StrRelativePath = Annotated[str, AsTypeValidator(RelativePath, str)]
 This annotated type validates the string as a relative path and ensures it is returned
 as a string.
 """
+
+FilePathLike = Annotated[FilePath, BeforeValidator(lambda v: Path(v))]
+"""Define a :class:`FilePath` that accepts any :class:`os.PathLike` object as input."""
 
 DatabaseUrl = database_url_normalized_scheme_field_factory(DatabaseEngine)
 """Define a normalized synchronous database URL.
@@ -511,9 +522,36 @@ UTCDatetime = Annotated[datetime, AfterValidator(make_datetime_utc)]
 This annotated type ensures that the `datetime` object is converted to UTC timezone.
 """
 
-UniqueList = Annotated[list[T], AfterValidator(remove_duplicates)]
+UniqueList = Annotated[list[T], AfterValidator(unique_everseen), AfterValidator(list)]
 """A list subclass that ensures all elements are unique.
 
 This class can be used with type parameters (e.g., `UniqueList[int]`) to create
 a list type where duplicates are automatically removed.
+"""
+
+UniqueTuple = Annotated[
+    tuple[T, ...], AfterValidator(unique_everseen), AfterValidator(tuple)
+]
+"""A tuple subclass that ensures all elements are unique.
+
+This class can be used with type parameters (e.g., `UniqueTuple[int]`) to create
+a tuple type where duplicates are automatically removed.
+"""
+
+LowercaseStr = Annotated[str, StringConstraints(to_lower=True)]
+"""A string field that is automatically converted to lowercase."""
+
+FilenameExtension = Annotated[
+    LowercaseStr, AfterValidator(lambda v: "." + v.lstrip("."))
+]
+"""A string field representing a filename extension.
+
+This annotated type ensures that the string is lowercase and starts with a single dot.
+"""
+
+MimeType = Annotated[LowercaseStr, StringConstraints(pattern=r"^\w+\/[-+.\w]+$")]
+"""A string type representing a MIME type.
+
+This annotated type ensures that the string is lowercase and matches the MIME type
+format.
 """

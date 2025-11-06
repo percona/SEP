@@ -139,6 +139,14 @@ class Node(BaseInventoryModel):
     type: RequiredStr = Field(default="generic", validation_alias="node_type")
     services: list[Service] = []
 
+    def __repr__(self) -> str:
+        return (
+            f"Node("
+            f"name={self.name!r}, address={self.address!r}"
+            f", external_id={self.external_id!r}, type={self.type!r},"
+            f" source='{self.source}')"
+        )
+
 
 class CreatedNode(CreatedEntityBase, Node):
     """Represents an existing node from the inventory database.
@@ -179,11 +187,17 @@ class Service(BaseInventoryModel):
     """Represents an inventory service.
 
     This model represents a service within the Inventory API, including its environment,
-    external identifier, name, port, and type.
+    cluster, custom labels, external identifier, name, port, and type.
 
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: RequiredStr | EmptyStrToNone
@@ -199,6 +213,9 @@ class Service(BaseInventoryModel):
     """
 
     environment: str | None = None
+    cluster: str | None = None
+    replication_set: str | None = None
+    custom_labels: dict[str, Any] | None = None
     external_id: RequiredStr | EmptyStrToNone = Field(
         default=None,
         validation_alias="service_id",
@@ -207,6 +224,12 @@ class Service(BaseInventoryModel):
     port: int | EmptyStrToNone = None
     type: ServiceTypeEnum = Field(validation_alias="service_type")
     schemas: list[Schema] = []
+
+    def __repr__(self) -> str:
+        return (
+            f"Service(name={self.name!r}, type={self.type!r},"
+            f" external_id={self.external_id!r}, port={self.port!r})"
+        )
 
 
 class CreatedService(CreatedEntityBase, Service):
@@ -229,6 +252,12 @@ class CreatedService(CreatedEntityBase, Service):
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
     :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: RequiredStr | EmptyStrToNone
@@ -252,6 +281,13 @@ class CreatedService(CreatedEntityBase, Service):
     node_id: int
     node: CreatedNode | None = None
     schemas: list[CreatedSchema] = []
+
+    def __repr__(self) -> str:
+        return (
+            f"Service(name={self.name!r}, type={self.type!r},"
+            f" external_id={self.external_id!r}, port={self.port!r},"
+            f" node_id={self.node_id})"
+        )
 
     @property
     def address(self) -> str | None:
@@ -285,6 +321,9 @@ class Schema(BaseInventoryModel):
 
     name: RequiredStr
     tables: list[Table] = []
+
+    def __repr__(self) -> str:
+        return f"Schema(name={self.name!r})"
 
 
 class CreatedSchema(CreatedEntityBase, Schema):
@@ -320,6 +359,9 @@ class CreatedSchema(CreatedEntityBase, Schema):
     service: CreatedService | None = None
     tables: list[CreatedTable] = []
 
+    def __repr__(self) -> str:
+        return f"Schema(name={self.name!r}, service_id={self.service_id})"
+
 
 class Table(BaseInventoryModel):
     """Represents an inventory table.
@@ -338,6 +380,9 @@ class Table(BaseInventoryModel):
     name: RequiredStr
     create: RequiredStr
     keys: dict[str, Any] = Field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        return f"Table(name={self.name!r})"
 
 
 class CreatedTable(CreatedEntityBase, Table):
@@ -369,6 +414,9 @@ class CreatedTable(CreatedEntityBase, Table):
     PARENT_FIELD: ClassVar[str] = "database"
     schema_id: int
     database: CreatedSchema | None = Field(default=None, validation_alias="schema")
+
+    def __repr__(self) -> str:
+        return f"Table(name={self.name!r}, schema_id={self.schema_id})"
 
 
 CreatedEntity = CreatedNode | CreatedService | CreatedSchema | CreatedTable

@@ -231,6 +231,158 @@ class MySQLPreChecks:
         )
         return False
 
+    def check_foreign_key_references(self) -> bool:
+        """Check if the table has foreign keys referencing it.
+
+        Returns:
+            bool: True if check passes (no foreign keys referencing the table), False otherwise
+
+        """
+        self.logger.info("=== Checking for foreign key references ===")
+
+        if not self.connection:
+            self.logger.error("No MySQL connection available")
+            return False
+
+        query = """
+        SELECT
+            TABLE_SCHEMA,
+            TABLE_NAME,
+            CONSTRAINT_NAME,
+            COLUMN_NAME,
+            REFERENCED_TABLE_SCHEMA,
+            REFERENCED_TABLE_NAME,
+            REFERENCED_COLUMN_NAME
+        FROM
+            INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE
+            REFERENCED_TABLE_SCHEMA = %s
+            AND REFERENCED_TABLE_NAME = %s
+        """
+
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(query, (self.schema, self.table))
+                results = cursor.fetchall()
+
+                if not results:
+                    self.logger.info(
+                        "[PASS] No foreign keys found referencing table %s.%s",
+                        self.schema,
+                        self.table,
+                    )
+                    return True
+
+                # Log all foreign key references found
+                self.logger.error(
+                    "[FAIL] Found %d foreign key(s) referencing table %s.%s:",
+                    len(results),
+                    self.schema,
+                    self.table,
+                )
+
+                for row in results:
+                    (
+                        table_schema,
+                        table_name,
+                        constraint_name,
+                        column_name,
+                        referenced_table_schema,
+                        referenced_table_name,
+                        referenced_column_name,
+                    ) = row
+                    self.logger.error(
+                        "  - %s.%s.%s -> %s.%s.%s (constraint: %s)",
+                        table_schema,
+                        table_name,
+                        column_name,
+                        referenced_table_schema,
+                        referenced_table_name,
+                        referenced_column_name,
+                        constraint_name,
+                    )
+
+                self.logger.error(
+                    "pt-online-schema-change cannot proceed when foreign keys reference the target table"
+                )
+                return False
+
+        except PyMySQLError:
+            self.logger.exception("Failed to check for foreign key references")
+            return False
+
+    def check_table_triggers(self) -> bool:
+        """Check if the table has triggers.
+
+        Returns:
+            bool: True if check passes (no triggers on the table), False otherwise
+
+        """
+        self.logger.info("=== Checking for table triggers ===")
+
+        if not self.connection:
+            self.logger.error("No MySQL connection available")
+            return False
+
+        query = """
+        SELECT
+            EVENT_OBJECT_SCHEMA,
+            EVENT_OBJECT_TABLE,
+            TRIGGER_SCHEMA,
+            TRIGGER_NAME,
+            EVENT_MANIPULATION
+        FROM
+            INFORMATION_SCHEMA.TRIGGERS
+        WHERE
+            EVENT_OBJECT_SCHEMA = %s
+            AND EVENT_OBJECT_TABLE = %s
+        """
+
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(query, (self.schema, self.table))
+                results = cursor.fetchall()
+
+                if not results:
+                    self.logger.info(
+                        "[PASS] No triggers found on table %s.%s",
+                        self.schema,
+                        self.table,
+                    )
+                    return True
+
+                # Log all triggers found
+                self.logger.error(
+                    "[FAIL] Found %d trigger(s) on table %s.%s:",
+                    len(results),
+                    self.schema,
+                    self.table,
+                )
+
+                for row in results:
+                    (
+                        _,
+                        _,
+                        trigger_schema,
+                        trigger_name,
+                        event_manipulation,
+                    ) = row
+                    self.logger.error(
+                        "  - Trigger: %s.%s (Event: %s)",
+                        trigger_schema,
+                        trigger_name,
+                        event_manipulation,
+                    )
+
+                self.logger.error(
+                    "pt-online-schema-change cannot proceed when triggers exist on the target table"
+                )
+                return False
+
+        except PyMySQLError:
+            self.logger.exception("Failed to check for table triggers")
+            return False
+
     def run_all_checks(self) -> bool:
         """Run all pre-checks.
 
@@ -245,6 +397,14 @@ class MySQLPreChecks:
 
         # Check disk space
         if not self.check_disk_space():
+            all_passed = False
+
+        # Check for foreign key references
+        if not self.check_foreign_key_references():
+            all_passed = False
+
+        # Check for table triggers
+        if not self.check_table_triggers():
             all_passed = False
 
         self.logger.info("=" * 50)

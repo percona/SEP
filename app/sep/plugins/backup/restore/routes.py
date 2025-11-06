@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
+from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -85,6 +86,8 @@ async def restores_detail(
         "name": task.name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
         "host": server_config.get("dest_host"),
@@ -93,6 +96,7 @@ async def restores_detail(
         "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "delete_url": request.url_for("restores_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
+        "alert_on_fail": task.alert_on_fail,
     }
 
     task_data.update(parsed_task_data)
@@ -106,9 +110,7 @@ async def restores_detail(
 
     try:
         executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts.values()) | {
-            task_data["hostname"]
-        }
+        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     except HTTPException:
         executor_hosts = {}
         context["executor_hosts"] = {task_data["hostname"]}
@@ -130,6 +132,9 @@ async def restores_detail(
         context["schemas"] = schemas
     except HTTPException:
         context["schemas"] = []
+
+    context["alert_on_fail_default"] = task.alert_on_fail
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
     return templates.TemplateResponse(
         request=request,
