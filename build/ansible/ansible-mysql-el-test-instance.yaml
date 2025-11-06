@@ -183,6 +183,9 @@
       become: true
       notify: Restart MySQL service
 
+    - name: Flush handlers to restart MySQL service immediately
+      ansible.builtin.meta: flush_handlers
+
     - name: Set global read-only mode for MySQL source and replica
       community.mysql.mysql_variables:
         variable: read_only
@@ -237,6 +240,9 @@
       notify: Restart MySQL command
       when: mysql_replication_role is defined and mysql_replication_role == 'replica'
 
+    - name: Flush handlers to restart MySQL immediately
+      ansible.builtin.meta: flush_handlers
+
     - name: Remove `skip-replica-start=ON` from replica `my.cnf`
       ansible.builtin.lineinfile:
         path: /etc/my.cnf
@@ -256,6 +262,9 @@
       - { var: 'report_host', value: "{{ hostvars['mysql2-el']['ansible_default_ipv4']['address'] }}" }
       notify: Restart MySQL command
       when: mysql_replication_role is defined and mysql_replication_role == 'source'
+
+    - name: Flush handlers to restart MySQL immediately
+      ansible.builtin.meta: flush_handlers
 
   handlers:
   - name: Restart MySQL service
