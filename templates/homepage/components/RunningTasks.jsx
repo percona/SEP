@@ -27,9 +27,28 @@ const RunningTasks = () => {
 
   if (isLoading) {
     return (
-      <div>
-        <span>Loading...</span>
-      </div>
+      <>
+        <h2>Running Tasks</h2>
+        <div className="tasks-table-container">
+          <table className="responsive-table tasks-table">
+            <thead>
+              <tr className="previous-log-row">
+                <th>ID</th>
+                <th>Name</th>
+                <th>Backend</th>
+                <th>Owner</th>
+                <th>Started At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tr>
+              <td colspan="4" class="no-tasks">
+                Loading
+              </td>
+            </tr>
+          </table>
+        </div>
+      </>
     );
   }
 
@@ -37,14 +56,6 @@ const RunningTasks = () => {
     return (
       <div>
         <p>Error fetching data: {error.message}</p>
-      </div>
-    );
-  }
-
-  if (!data || !data.running_tasks || data.running_tasks.length === 0) {
-    return (
-      <div>
-        <h3>No running tasks found.</h3>
       </div>
     );
   }
@@ -71,12 +82,23 @@ const RunningTasks = () => {
                 <td>{r.task.name}</td>
                 <td>{r.task.backend}</td>
                 <td>{r.task.owner}</td>
-                <td className="relativeTime">{format(new Date(r.created_at), "yyyy-MM-dd HH:mm:ss")}</td>
+                <td className="relativeTime">
+                  {format(new Date(r.created_at), "yyyy-MM-dd HH:mm:ss")}
+                </td>
                 <td>
-                   <a href={`/tasks/${r.task.name}`}><span class="material-symbols-outlined">visibility</span></a>
-                </td> 
+                  <a href={`/tasks/${r.task.name}`}>
+                    <span class="material-symbols-outlined">visibility</span>
+                  </a>
+                </td>
               </tr>
             ))}
+            {data.running_tasks.length < 1 && (
+              <tr className="previous-log-row">
+                <td colspan="4" class="no-tasks">
+                  No tasks running
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
