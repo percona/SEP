@@ -21,6 +21,14 @@ mysql:
     mysql2-el:
       ansible_host: x.x.x.x
       mysql_replication_role: replica
+  vars:
+    mysql_root_password: changeme
+    mysql_service_username: changeme
+    mysql_service_password: changeme
+    mysql_pmm_username: changeme
+    mysql_pmm_password: changeme
+    mysql_replication_username: changeme
+    mysql_replication_password: changeme
 
 mongodb:
   hosts:
