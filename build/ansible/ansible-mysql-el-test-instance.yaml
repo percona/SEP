@@ -48,7 +48,7 @@
         state: started
 
     - name: Get temporary MySQL root password from log
-      ansible.builtin.command: "grep 'temporary password' /var/log/mysqld.log | awk -F ' ' '{print $(NF)}'"
+      ansible.builtin.shell: "grep 'temporary password' /var/log/mysqld.log | awk -F ' ' '{print $(NF)}'"
       register: mysql_temp_root_password
       changed_when: false
       no_log: true
