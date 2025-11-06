@@ -5,6 +5,14 @@ sep_controller:
       ansible_host: x.x.x.x
     el-controller:
       ansible_host: x.x.x.x
+  vars:
+    custom_ca_certificate: |
+      -----BEGIN CERTIFICATE-----
+      changemechangemechangeme
+      -----END CERTIFICATE-----
+    sep_image_name: changeme.url/sep
+    sep_image_tag: changeme-latest
+
 mysql:
   hosts:
     mysql1-el:
@@ -13,12 +21,19 @@ mysql:
     mysql2-el:
       ansible_host: x.x.x.x
       mysql_replication_role: replica
+
 mongodb:
   hosts:
     mongodb-debian:
       ansible_host: x.x.x.x
+      mongodb_admin_username: changeme
+      mongodb_admin_password: changeme
+
 postgresql:
   hosts:
     postgresql-ubuntu:
       ansible_host: x.x.x.x
+      postgresql_super_username: changeme
+      postgresql_super_password: changeme
+      postgresql_test_db: changeme-db
 ...

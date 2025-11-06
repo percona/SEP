@@ -29,8 +29,8 @@
   - name: Create a MongoDB admin user
     community.mongodb.mongodb_user:
       database: admin
-      name: nicetrythiswillbeinavault
-      password: nic3trythiswillbeinavault2
+      name: '{{ mongodb_admin_username }}'
+      password: '{{ mongodb_admin_password }}'
       state: present
       roles: ['userAdminAnyDatabase', 'readWriteAnyDatabase']
     no_log: true

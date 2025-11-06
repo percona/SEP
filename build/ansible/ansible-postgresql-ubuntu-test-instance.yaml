@@ -72,20 +72,20 @@
       notify: Restart PostgreSQL
     become: true
 
-  - name: Create PostgreSQL user & test database
+  - name: Create PostgreSQL superuser & test database
     block:
-    - name: Create a PostgreSQL user
+    - name: Create a PostgreSQL superuser
       community.postgresql.postgresql_user:
-        name: nicetrythiswillbeinavault
-        password: nic3trythiswillbeinavault2
+        name: '{{ postgresql_super_username }}'
+        password: '{{ postgresql_super_password }}'
         role_attr_flags: CREATEDB,CREATEROLE,SUPERUSER
       no_log: true
 
     - name: Create a test database
       community.postgresql.postgresql_db:
-        name: 'db1'
+        name: '{{ postgresql_test_db }}'
         encoding: 'UTF-8'
-        owner: nicetrythiswillbeinavault
+        owner: '{{ postgresql_super_username }}'
       no_log: true
     become: true
     become_user: postgres

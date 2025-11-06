@@ -47,13 +47,10 @@
 
   - name: Custom CA cert configuration
     block:
-    # Need to find a way to inject CA cert secret here
     - name: Add custom CA certificate
       ansible.builtin.copy:
         dest: /etc/pki/ca-trust/source/anchors/custom-ca.pem
-        content: |
-          -----BEGIN CERTIFICATE-----
-          -----END CERTIFICATE-----
+        content: '{{ custom_ca_certificate }}'
 
     - name: Update CA certificates
       ansible.builtin.command: update-ca-trust
@@ -195,8 +192,8 @@
       ansible.builtin.shell: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
       environment:
         CONTAINER_ENGINE: podman
-        SEP_IMAGE_NAME: internal.repo.url/sep
-        SEP_IMAGE_TAG: v0.9.4
+        SEP_IMAGE_NAME: '{{ sep_image_name }}'
+        SEP_IMAGE_TAG: '{{ sep_image_tag }}'
       register: sep_installer_output
 
     - name: Display SEP installer script output
