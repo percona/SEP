@@ -49,6 +49,7 @@
         path: '/etc/mongod.conf'
         regexp: '^#?security:'
         line: 'security:'
+      notify: Restart MongoDB
 
     - name: Configure `mongod.conf` to enable authorization
       ansible.builtin.lineinfile:
