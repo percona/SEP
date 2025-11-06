@@ -1,7 +1,7 @@
 ---
 sep-controller:
   hosts:
-    sep-controller:
+    controller-vm:
       ansible_host: x.x.x.x
       ansible_connection: local
 mysql:
