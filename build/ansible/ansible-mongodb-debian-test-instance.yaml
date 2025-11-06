@@ -1,73 +1,67 @@
 ---
 - hosts: mongodb
   tasks:
-  - name: Install `percona-release`
-    ansible.builtin.apt:
-      deb: 'https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb'
+  - name: Set up necessary packages for MongoDB
+    block:
+    - name: Install `percona-release`
+      ansible.builtin.apt:
+        deb: 'https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb'
+
+    - name: Enable Percona Distribution for MongoDB repo
+      ansible.builtin.command: 'percona-release setup -y pdmdb-7.0'
+      changed_when: false
+
+    - name: Install Percona Distribution for MongoDB server & `pymongo`
+      ansible.builtin.apt:
+        name:
+          - percona-server-mongodb
+          - python3-pymongo
+        state: present
+        update_cache: true
+
+    - name: Ensure MongoDB server service is enabled and started
+      ansible.builtin.service:
+        name: mongod
+        enabled: true
+        state: started
     become: true
 
-  - name: Install `pymongo`
-    ansible.builtin.apt:
-      name: python3-pymongo
-      state: present
-      update_cache: yes
-    become: true
-
-  - name: Enable Percona Distribution for MongoDB repo
-    ansible.builtin.command: 'percona-release setup -y pdmdb-7.0'
-    become: true
-    changed_when: false
-
-  - name: Install Percona Distribution for MongoDB server
-    ansible.builtin.apt:
-      name: percona-server-mongodb
-      state: present
-      update_cache: true
-    become: true
-
-  - name: Ensure MongoDB server service is enabled and started
-    ansible.builtin.service:
-      name: mongod
-      enabled: true
-      state: started
-    become: true
-
-  - name: Create an admin user
+  - name: Create a MongoDB admin user
     community.mongodb.mongodb_user:
       database: admin
       name: nicetrythiswillbeinavault
       password: nic3trythiswillbeinavault2
       state: present
       roles: ['userAdminAnyDatabase', 'readWriteAnyDatabase']
-      no_log: true
+    no_log: true
 
-  - name: Configure `mongod.conf` to bind to all interfaces
-    ansible.builtin.lineinfile:
-      path: '/etc/mongod.conf'
-      regexp: '^\s*bindIp: 127.0.0.1'
-      line: '  bindIp: 0.0.0.0'
-    become: true
-    notify: Restart MongoDB
+  - name: Configure MongoDB
+    block:
+    - name: Configure `mongod.conf` to bind to all interfaces
+      ansible.builtin.lineinfile:
+        path: '/etc/mongod.conf'
+        regexp: '^\s*bindIp: 127.0.0.1'
+        line: '  bindIp: 0.0.0.0'
+      notify: Restart MongoDB
 
-  - name: Configure `mongod.conf` to enable security section
-    ansible.builtin.lineinfile:
-      path: '/etc/mongod.conf'
-      regexp: '^#?security:'
-      line: 'security:'
-    become: true
+    - name: Configure `mongod.conf` to enable security section
+      ansible.builtin.lineinfile:
+        path: '/etc/mongod.conf'
+        regexp: '^#?security:'
+        line: 'security:'
 
-  - name: Configure `mongod.conf` to enable authorization
-    ansible.builtin.lineinfile:
-      path: '/etc/mongod.conf'
-      line: '  authorization: enabled'
-      insertafter: 'security:'
+    - name: Configure `mongod.conf` to enable authorization
+      ansible.builtin.lineinfile:
+        path: '/etc/mongod.conf'
+        line: '  authorization: enabled'
+        insertafter: 'security:'
+      notify: Restart MongoDB
     become: true
-    notify: Restart MongoDB
 
   handlers:
-    - name: Restart MongoDB
-      ansible.builtin.service:
-        name: mongod
-        state: restarted
-      become: true
+  - name: Restart MongoDB
+    ansible.builtin.service:
+      name: mongod
+      state: restarted
+    become: true
 ...
