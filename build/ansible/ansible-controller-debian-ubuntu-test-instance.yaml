@@ -181,5 +181,4 @@
 #        CONTAINER_ENGINE: podman
 #        SEP_IMAGE_NAME: labbox-mini.tp.int.percona.com:5555/sep
 #        SEP_IMAGE_TAG: v0.9.4
-#        AUTOSTART: 0
 ...
