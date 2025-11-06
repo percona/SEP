@@ -34,14 +34,16 @@ mongodb:
   hosts:
     mongodb-debian:
       ansible_host: x.x.x.x
-      mongodb_admin_username: changeme
-      mongodb_admin_password: changeme
+  vars:
+    mongodb_admin_username: changeme
+    mongodb_admin_password: changeme
 
 postgresql:
   hosts:
     postgresql-ubuntu:
       ansible_host: x.x.x.x
-      postgresql_super_username: changeme
-      postgresql_super_password: changeme
-      postgresql_test_db: changeme-db
+  vars:
+    postgresql_super_username: changeme
+    postgresql_super_password: changeme
+    postgresql_test_db: changeme-db
 ...
