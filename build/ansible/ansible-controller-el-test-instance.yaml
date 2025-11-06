@@ -140,7 +140,7 @@
           changed_when: false
           args:
             chdir: /tmp
-        when: container_semodule_check.rc is defined and container_semodule_check.rc|int != 0
+        when: container_semodule_check.rc is defined and container_semodule_check.rc | int != 0
 
       - name: Cleanup files
         ansible.builtin.file:
