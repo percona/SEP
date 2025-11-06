@@ -30,6 +30,9 @@ venv: pyproject.toml poetry.lock
 build: venv app/
 	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
 
+ui-install:
+	pnpm install
+
 ui-build:
 	pnpm run build
 
