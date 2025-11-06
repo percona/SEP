@@ -195,6 +195,7 @@
       ansible.builtin.shell: '{{ ansible_env.HOME }}/bin/sep_installer.sh'
       environment:
         CONTAINER_ENGINE: podman
+        SEP_IMAGE_NAME: internal.repo.url/sep
         SEP_IMAGE_TAG: v0.9.4
       register: sep_installer_output
 
