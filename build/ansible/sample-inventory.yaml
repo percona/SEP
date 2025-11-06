@@ -1,9 +1,10 @@
 ---
 sep-controller:
   hosts:
-    controller-vm:
-      ansible_host: x.x.x.x
-      ansible_connection: local
+    deb-controller:
+      ansible_host: 10.30.50.234
+    el-controller:
+      ansible_host: 10.30.51.23
 mysql:
   hosts:
     mysql1-el:
