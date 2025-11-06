@@ -14,8 +14,8 @@
     - name: Install Percona Distribution for MongoDB server & `pymongo`
       ansible.builtin.apt:
         name:
-          - percona-server-mongodb
-          - python3-pymongo
+        - percona-server-mongodb
+        - python3-pymongo
         state: present
         update_cache: true
 
