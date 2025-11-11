@@ -21,7 +21,6 @@
     #xtrabackup_container,
     #s3_container,
     #rsync_container {
-        overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 0;
         max-height: 0;
@@ -62,9 +61,71 @@
     .checkbox-group input {
         margin-top: 0 !important;
     }
+
+    .create-backup-form {
+        --backup-tooltip-bg: var(--surfaceElevation1);
+        --backup-tooltip-fg: var(--textPrimary);
+        --backup-tooltip-border: var(--lineDivider);
+        --backup-tooltip-shadow: var(--elevation8);
+    }
+
+    label.custom-tooltip {
+        position: relative;
+    }
+
+    label.custom-tooltip::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        left: 0;
+        top: calc(100% + 0.5em);
+        z-index: 20;
+        max-width: 320px;
+        padding: 0.75em 1em;
+        border-radius: 6px;
+        background: var(--backup-tooltip-bg);
+        color: var(--backup-tooltip-fg);
+        font-size: 0.95rem;
+        line-height: 1.4;
+        border: 1px solid var(--backup-tooltip-border);
+        box-shadow: var(--backup-tooltip-shadow);
+        opacity: 0;
+        transform: translateY(-6px);
+        transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+        pointer-events: none;
+        white-space: normal;
+    }
+
+    label.custom-tooltip::before {
+        content: "";
+        position: absolute;
+        left: 1.5em;
+        top: calc(100% + 0.25em);
+        width: 10px;
+        height: 10px;
+        background: var(--backup-tooltip-bg);
+        border: 1px solid var(--backup-tooltip-border);
+        border-top-color: transparent;
+        border-left-color: transparent;
+        transform: rotate(45deg);
+        opacity: 0;
+        transition: opacity 0.12s ease-out;
+        pointer-events: none;
+    }
+
+    label.custom-tooltip:hover::after,
+    label.custom-tooltip:focus-within::after {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    label.custom-tooltip:hover::before,
+    label.custom-tooltip:focus-within::before {
+        opacity: 1;
+    }
     fieldset + fieldset {
         margin: 1em 0;
     }
+
 </style>
 <form id="create-backup-form"
       class="create-backup-form window"
@@ -81,6 +142,44 @@
         </header>
         <section>
             <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+            <details class="doc-panel">
+                <summary>
+                    <span class="summary-icon material-symbols-outlined">chevron_right</span>
+                    MySQL Backup Guide
+                </summary>
+                <div class="doc-panel-content">
+                    <div>
+                        <h4>Prerequisites</h4>
+                        <ul>
+                            <li>
+                                Executor hosts provide Mydumper ≥ 0.17.1.1, XtraBackup or mariadb-backup binaries, plus required CLIs (rsync, aws, gpg) in PATH.
+                            </li>
+                            <li>
+                                Python packages available to the payload: <code>packaging</code>, <code>PyYAML</code>, <code>PyMySQL[rsa,ed25519]</code>, <code>boto3</code>, and <code>filelock</code> when using XtraBackup.
+                            </li>
+                            <li>
+                                Database user grants include <code>SELECT</code>, <code>RELOAD</code>, <code>PROCESS</code>, <code>LOCK TABLES</code>, <code>REPLICATION CLIENT</code>, and access to replica status queries.
+                            </li>
+                            <li>Executor can reach the database host and any remote S3/rsync destinations; firewall rules allow the traffic.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4>Workflow</h4>
+                        <ul>
+                            <li>Select the executor host and the inventory service for your MySQL or MariaDB node.</li>
+                            <li>
+                                Pick a backup type:
+                                <strong>M</strong> (Mydumper) for logical dumps,
+                                <strong>X</strong> (XtraBackup) for physical copies,
+                                <strong>B</strong> (Binlog) for continuous binary logs.
+                            </li>
+                            <li>Complete general configuration (directories, compression, encryption, safety checks).</li>
+                            <li>Fill in the backup-type options that appear below and add optional uploads or alerts.</li>
+                        </ul>
+                    </div>
+                    ...
+                </div>
+            </details>
             <fieldset>
                 <legend>Main Options</legend>
                 <br>
@@ -837,6 +936,24 @@
 
 
 
+    function enhanceTitleTooltips() {
+        document.querySelectorAll('[title]').forEach(el => {
+            const tooltipText = el.getAttribute('title');
+            if (!tooltipText || el.dataset.tooltipEnhanced === 'true') {
+                return;
+            }
+            el.dataset.tooltip = tooltipText;
+            el.dataset.tooltipEnhanced = 'true';
+            if (!el.hasAttribute('aria-label')) {
+                el.setAttribute('aria-label', tooltipText);
+            }
+            if (el.tagName.toLowerCase() === 'label') {
+                el.classList.add('custom-tooltip');
+            }
+            el.removeAttribute('title');
+        });
+    }
+
     function disableAllMydumperFields(disabled) {
         mydumperContainer.querySelectorAll('input, select').forEach(el => el.disabled = disabled);
     }
@@ -985,6 +1102,7 @@
 
     // Initialize
     window.addEventListener('DOMContentLoaded', function() {
+        enhanceTitleTooltips();
         updateBackupTypeUI();
         showContainer(s3Container, false);
         showContainer(rsyncContainer, false);
