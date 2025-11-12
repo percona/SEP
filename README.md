@@ -19,7 +19,7 @@
 
 ## Prerequisites
 
-- **Python Version Requirements**  
+- **Python Version Requirements**
 ```text
   >=3.11.9, !=3.12.0, !=3.12.1, !=3.12.2, <3.14
 ```
