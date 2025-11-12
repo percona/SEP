@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title -%}
+    MySQL Backup Guide
+{%- endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/backups-docs.css') }}">
+{% endblock style %}
+{% block main %}
+    <article class="backup-docs">
+        <header class="backup-docs__header">
+            <div>
+                <h1>MySQL Backup Guide</h1>
+                <p>
+                    Use this reference to plan and configure reliable backup jobs for MySQL and MariaDB.
+                    Each section mirrors the options in the creation form so you can review prerequisites,
+                    field meanings, and recommended practices without opening the modal.
+                </p>
+            </div>
+            <div class="backup-docs__header-actions">
+                <a href="{{ url_for('backups_index') }}">
+                    <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+                    Back to backups
+                </a>
+            </div>
+        </header>
+        <section id="prerequisites" class="backup-docs__section">
+            <h2>Prerequisites</h2>
+        </section>
+    </article>
+{% endblock main %}

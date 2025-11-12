@@ -142,44 +142,12 @@
         </header>
         <section>
             <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-            <details class="doc-panel">
-                <summary>
-                    <span class="summary-icon material-symbols-outlined">chevron_right</span>
-                    MySQL Backup Guide
-                </summary>
-                <div class="doc-panel-content">
-                    <div>
-                        <h4>Prerequisites</h4>
-                        <ul>
-                            <li>
-                                Executor hosts provide Mydumper ≥ 0.17.1.1, XtraBackup or mariadb-backup binaries, plus required CLIs (rsync, aws, gpg) in PATH.
-                            </li>
-                            <li>
-                                Python packages available to the payload: <code>packaging</code>, <code>PyYAML</code>, <code>PyMySQL[rsa,ed25519]</code>, <code>boto3</code>, and <code>filelock</code> when using XtraBackup.
-                            </li>
-                            <li>
-                                Database user grants include <code>SELECT</code>, <code>RELOAD</code>, <code>PROCESS</code>, <code>LOCK TABLES</code>, <code>REPLICATION CLIENT</code>, and access to replica status queries.
-                            </li>
-                            <li>Executor can reach the database host and any remote S3/rsync destinations; firewall rules allow the traffic.</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h4>Workflow</h4>
-                        <ul>
-                            <li>Select the executor host and the inventory service for your MySQL or MariaDB node.</li>
-                            <li>
-                                Pick a backup type:
-                                <strong>M</strong> (Mydumper) for logical dumps,
-                                <strong>X</strong> (XtraBackup) for physical copies,
-                                <strong>B</strong> (Binlog) for continuous binary logs.
-                            </li>
-                            <li>Complete general configuration (directories, compression, encryption, safety checks).</li>
-                            <li>Fill in the backup-type options that appear below and add optional uploads or alerts.</li>
-                        </ul>
-                    </div>
-                    ...
+            <div class="doc-inline-callout" role="note">
+                <span class="material-symbols-outlined" aria-hidden="true">info</span>
+                <div>
+                    Need a step-by-step checklist? <a href="{{ url_for('backups_docs') }}" target="_blank" rel="noopener">Open the backup documentation</a> in a new tab for detailed guidance.
                 </div>
-            </details>
+            </div>
             <fieldset>
                 <legend>Main Options</legend>
                 <br>
