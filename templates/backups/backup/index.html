@@ -51,6 +51,12 @@
         (physical) and
         <a href="https://github.com/mydumper/mydumper">MyDumper</a> (logical).
     </p>
+    <div class="doc-inline-callout" role="note">
+        <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+        <div>
+            New to the workflow? <a href="{{ url_for('backups_docs') }}" target="_blank" rel="noopener">Read the MySQL backup guide</a> for prerequisites, configuration tips, and restore planning.
+        </div>
+    </div>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
         {% if services|length < 1 %}
