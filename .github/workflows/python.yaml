@@ -62,6 +62,7 @@ jobs:
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
+          cache: ${{ matrix.python == '3.11.9' && 'poetry' || "" }}
       - name: Install test dependencies
         run: poetry install --with syncmysql
       - name: Run tests
