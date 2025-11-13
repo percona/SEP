@@ -383,7 +383,7 @@ class MySQLSyncer(BaseTaskSyncer):
                 )
                 host = created_service.address
         else:
-            created_schema = await self.get_inventory_schema(created_table.database_id)
+            created_schema = await self.get_inventory_schema(created_table.schema_id)
             created_service = await self.get_inventory_service(
                 created_schema.service_id,
             )
