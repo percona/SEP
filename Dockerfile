@@ -14,7 +14,7 @@ ENV FASTAPI_ENV production_docker
 #########
 
 # Use an official Python runtime as a parent image
-FROM docker.io/library/python:3.11-alpine
+FROM docker.io/library/python:3.11.14-alpine
 
 # Install dependencies
 RUN apk update && apk add --no-cache g++
