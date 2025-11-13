@@ -6,7 +6,9 @@ article.backup-docs {
 }
 
 .backup-docs__header {
-    display: grid;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
     gap: 1rem;
     padding: 2.5rem 2rem 2rem;
     border-radius: 12px;
