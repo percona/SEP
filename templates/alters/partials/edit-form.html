@@ -269,12 +269,6 @@
                     <div id="result-panel" class="fade" style="width: 98%">
                         <pre id="createTableOutput" class="hidden"></pre>
                         <div id="statusMessage"></div>
-                        <div id="infoTypedMessage"
-                             class="info"
-                             style="margin-top:10px;
-                                    display:none">
-                            Using typed schema/table. Table structure and PK details are not available.
-                        </div>
                     </div>
                 </fieldset>
                 <br>
@@ -636,12 +630,11 @@
         createTableOutput.classList.add('hidden');
         resultPanel.classList.add('fade');
         statusMessage.textContent = '';
-        document.getElementById('infoTypedMessage').style.display = 'none';
 
         if (selectedService && serviceSchemas[selectedService]) {
             const schemas = Object.entries(serviceSchemas[selectedService]);
             if (schemas.length > 0) {
-                setManualInput(false, false);
+                setManualInput(false, true);
                 for (const [schemaId, schema] of schemas) {
                     const option = document.createElement('option');
                     option.value = schemaId;
@@ -663,7 +656,11 @@
                     selectedSchema = singleSchemaId;
                     await populateTables(selectedService, singleSchemaId);
                 }
+            } else {
+                setManualInput(true, true);
             }
+        } else {
+            setManualInput(true, true);
         }
     }
 
@@ -674,7 +671,6 @@
         createTableOutput.classList.add('hidden');
         resultPanel.classList.add('fade');
         statusMessage.textContent = '';
-        document.getElementById('infoTypedMessage').style.display = 'none';
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
             const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
@@ -726,15 +722,65 @@
         editButton.disabled = !form.checkValidity() || (!useManualInput && hasInvalidValue);
     }
 
-    async function fetchCreateTableStatement(tableId) {
-        if (useManualInput) {
-            createTableOutput.classList.add('hidden');
-            statusMessage.textContent = '';
-            resultPanel.classList.remove('fade');
-            document.getElementById('infoTypedMessage').style.display = 'block';
+    function checkTypedSchemaTable() {
+        const typedSchema = (schemaNameInput.value || '').trim();
+        const typedTable = (tableNameInput.value || '').trim();
+
+        createTableOutput.classList.add('hidden');
+        statusMessage.classList.remove('success', 'error');
+        statusMessage.textContent = '';
+
+        if (!typedSchema || !typedTable) {
+            resultPanel.classList.add('fade');
             return;
         }
-        if (selectedService && selectedSchema && tableId) {
+
+        if (!selectedService || !serviceSchemas[selectedService]) {
+            resultPanel.classList.remove('fade');
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.textContent = 'ℹ️ Using typed schema/table. Table structure and PK details are not available.';
+            return;
+        }
+
+        const schemas = serviceSchemas[selectedService];
+        let schemaFound = false;
+        let tableFound = false;
+        let foundTableId = null;
+
+        for (const [schemaId, schema] of Object.entries(schemas)) {
+            if (schema.name === typedSchema) {
+                schemaFound = true;
+                const tables = schema.tables || {};
+                for (const [tableId, table] of Object.entries(tables)) {
+                    if (table.name === typedTable) {
+                        tableFound = true;
+                        foundTableId = tableId;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        resultPanel.classList.remove('fade');
+
+        if (!schemaFound) {
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.textContent = `Schema "${typedSchema}" not found in database. Table structure and PK details are not available.`;
+        } else if (!tableFound) {
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.textContent = `Table "${typedTable}" not found in database for schema "${typedSchema}". Table structure and PK details are not available.`;
+        } else {
+            fetchCreateTableStatement(foundTableId);
+        }
+    }
+
+    async function fetchCreateTableStatement(tableId) {
+        if (useManualInput && !tableId) {
+            checkTypedSchemaTable();
+            return;
+        }
+        if (selectedService && tableId) {
             if (tableDetailsCache[tableId]) {
                 const tableData = tableDetailsCache[tableId];
                 displayCreateTable(tableData.create);
@@ -747,7 +793,6 @@
             createTableOutput.classList.remove('hidden');
             resultPanel.classList.remove("fade");
             statusMessage.textContent = '';
-            document.getElementById('infoTypedMessage').style.display = 'none';
 
             try {
                 const response = await fetch(`/alters/table/${tableId}/details?syntax_highlight_style=monokai`);
@@ -931,20 +976,31 @@
             tableSelect.disabled = true;
             document.getElementById("schema_id_hidden")?.remove();
             document.getElementById("table_id_hidden")?.remove();
-            if (schemaNameInput.value || tableNameInput.value) {
-                resultPanel.classList.remove('fade');
-                document.getElementById('infoTypedMessage').style.display = 'block';
-            }
+            checkTypedSchemaTable();
         } else {
             schemaSelect.disabled = false;
             tableSelect.disabled = true;
-            document.getElementById('infoTypedMessage').style.display = 'none';
+            createTableOutput.classList.add('hidden');
+            statusMessage.textContent = '';
+            resultPanel.classList.add('fade');
         }
         updateEditButtonState();
     }
 
     manualInputToggle.addEventListener('change', function() {
         setManualInput(this.checked, false);
+    });
+
+    schemaNameInput.addEventListener('input', function() {
+        if (useManualInput) {
+            checkTypedSchemaTable();
+        }
+    });
+
+    tableNameInput.addEventListener('input', function() {
+        if (useManualInput) {
+            checkTypedSchemaTable();
+        }
     });
 
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
