@@ -205,6 +205,21 @@
                 <fieldset style="margin-bottom: 0;">
                     <legend>Data</legend>
                     <br>
+                    <div class="field">
+                        <label for="use_manual_input"
+                               title="Toggle to manually type schema and table even if inventory exists.">
+                            Manual input
+                        </label>
+                        <label class="checkbox" style="width: auto;">
+                            <input type="checkbox" id="use_manual_input" name="use_manual_input" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Type schema/table</span>
+                        </label>
+                    </div>
+                    <br>
                     <div class="select">
                         {% set schema_id_title = "Select the database schema on which the task will operate." %}
                         <label for="schema_id" title="{{ schema_id_title }}">
@@ -213,26 +228,39 @@
                             <select id="schema_id"
                                     name="schema_id"
                                     title="{{ schema_id_title }}"
-                                    disabled
-                                    required>
+                                    disabled>
                                 <option value="">Select a schema</option>
                             </select>
                         </label>
                     </div>
+                    <div class="field" id="schema_name_field" style="display:none;">
+                        <label for="schema_name" title="Type the database schema name.">Schema</label>
+                        <input type="text"
+                               id="schema_name"
+                               name="schema_name"
+                               class="validate"
+                               value="{{ task.schema_name }}"
+                               placeholder="database_name" />
+                    </div>
                     <br>
                     <div class="select">
-                        {% set schema_id_title = "Select the table within the schema to be altered." %}
-                        <label for="table_id" title="{{ schema_id_title }}">
+                        {% set table_id_title = "Select the table within the schema to be altered." %}
+                        <label for="table_id" title="{{ table_id_title }}">
                             <span class="material-symbols-outlined">arrow_drop_down</span>
                             <span class="label">Table</span>
-                            <select id="table_id"
-                                    name="table_id"
-                                    title="{{ schema_id_title }}"
-                                    disabled
-                                    required>
+                            <select id="table_id" name="table_id" title="{{ table_id_title }}" disabled>
                                 <option value="">Select a table</option>
                             </select>
                         </label>
+                    </div>
+                    <div class="field" id="table_name_field" style="display:none;">
+                        <label for="table_name" title="Type the table name.">Table</label>
+                        <input type="text"
+                               id="table_name"
+                               name="table_name"
+                               class="validate"
+                               value="{{ task.table_name }}"
+                               placeholder="table_name" />
                     </div>
                     <br>
                 </fieldset>
@@ -241,6 +269,12 @@
                     <div id="result-panel" class="fade" style="width: 98%">
                         <pre id="createTableOutput" class="hidden"></pre>
                         <div id="statusMessage"></div>
+                        <div id="infoTypedMessage"
+                             class="info"
+                             style="margin-top:10px;
+                                    display:none">
+                            Using typed schema/table. Table structure and PK details are not available.
+                        </div>
                     </div>
                 </fieldset>
                 <br>
@@ -576,6 +610,11 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
+    const schemaNameInput = document.getElementById('schema_name');
+    const tableNameInput = document.getElementById('table_name');
+    const schemaNameField = document.getElementById('schema_name_field');
+    const tableNameField = document.getElementById('table_name_field');
+    const manualInputToggle = document.getElementById('use_manual_input');
     const createTableOutput = document.getElementById('createTableOutput');
     const statusMessage = document.getElementById('statusMessage');
     const resultPanel = document.getElementById('result-panel');
@@ -585,6 +624,7 @@
     let selectedService = null;
     let selectedSchema = null;
     let selectedTable = null;
+    let useManualInput = false;
 
     async function populateSchemas(selectedService) {
         schemaSelect.disabled = true;
@@ -596,10 +636,12 @@
         createTableOutput.classList.add('hidden');
         resultPanel.classList.add('fade');
         statusMessage.textContent = '';
+        document.getElementById('infoTypedMessage').style.display = 'none';
 
         if (selectedService && serviceSchemas[selectedService]) {
             const schemas = Object.entries(serviceSchemas[selectedService]);
             if (schemas.length > 0) {
+                setManualInput(false, false);
                 for (const [schemaId, schema] of schemas) {
                     const option = document.createElement('option');
                     option.value = schemaId;
@@ -632,6 +674,7 @@
         createTableOutput.classList.add('hidden');
         resultPanel.classList.add('fade');
         statusMessage.textContent = '';
+        document.getElementById('infoTypedMessage').style.display = 'none';
 
         if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
             const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
@@ -662,6 +705,17 @@
     }
 
     function updateEditButtonState() {
+        if (useManualInput) {
+            schemaNameInput.required = true;
+            tableNameInput.required = true;
+            schemaSelect.required = false;
+            tableSelect.required = false;
+        } else {
+            schemaNameInput.required = false;
+            tableNameInput.required = false;
+            schemaSelect.required = true;
+            tableSelect.required = true;
+        }
         const selectElementValues = [
             connectToSelect.value,
             schemaSelect.value,
@@ -669,10 +723,17 @@
         ];
 
         const hasInvalidValue = selectElementValues.includes("-1");
-        editButton.disabled = !form.checkValidity() || hasInvalidValue;
+        editButton.disabled = !form.checkValidity() || (!useManualInput && hasInvalidValue);
     }
 
     async function fetchCreateTableStatement(tableId) {
+        if (useManualInput) {
+            createTableOutput.classList.add('hidden');
+            statusMessage.textContent = '';
+            resultPanel.classList.remove('fade');
+            document.getElementById('infoTypedMessage').style.display = 'block';
+            return;
+        }
         if (selectedService && selectedSchema && tableId) {
             if (tableDetailsCache[tableId]) {
                 const tableData = tableDetailsCache[tableId];
@@ -686,6 +747,7 @@
             createTableOutput.classList.remove('hidden');
             resultPanel.classList.remove("fade");
             statusMessage.textContent = '';
+            document.getElementById('infoTypedMessage').style.display = 'none';
 
             try {
                 const response = await fetch(`/alters/table/${tableId}/details?syntax_highlight_style=monokai`);
@@ -855,6 +917,36 @@
         }
     });
 
+    function setManualInput(enabled, forceToggleChecked) {
+        useManualInput = enabled;
+        if (forceToggleChecked) {
+            manualInputToggle.checked = enabled;
+        }
+        schemaNameField.style.display = enabled ? 'flex' : 'none';
+        tableNameField.style.display = enabled ? 'flex' : 'none';
+        if (enabled) {
+            schemaSelect.value = "";
+            tableSelect.value = "";
+            schemaSelect.disabled = true;
+            tableSelect.disabled = true;
+            document.getElementById("schema_id_hidden")?.remove();
+            document.getElementById("table_id_hidden")?.remove();
+            if (schemaNameInput.value || tableNameInput.value) {
+                resultPanel.classList.remove('fade');
+                document.getElementById('infoTypedMessage').style.display = 'block';
+            }
+        } else {
+            schemaSelect.disabled = false;
+            tableSelect.disabled = true;
+            document.getElementById('infoTypedMessage').style.display = 'none';
+        }
+        updateEditButtonState();
+    }
+
+    manualInputToggle.addEventListener('change', function() {
+        setManualInput(this.checked, false);
+    });
+
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
     window.addEventListener('DOMContentLoaded', async function() {
@@ -863,6 +955,10 @@
             const singleHost = connectToSelect.value;
             selectedService = singleHost;
             await populateSchemas(singleHost);
+        }
+        // Prefer manual when unknowns were present
+        if (matched.schemaId === "-1" || matched.tableId === "-1") {
+            setManualInput(true, true);
         }
         updateEditButtonState();
     });
