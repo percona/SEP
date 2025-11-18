@@ -44,18 +44,21 @@
     {% endif %}
 {% endblock behaviours_optimized_extra %}
 {% block main %}
+    <h1>Table Checksum</h1>
     <p>
         Perform a checksum, currently only supporting MySQL with <a href="https://docs.percona.com/percona-toolkit/pt-table-checksum.html">pt-table-checksum</a>.
     </p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
-        <h2>Configure a table checksum</h2>
         {% if services|length < 1 %}
             <p>Unable to find suitable database instances.</p>
         {% elif executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
-            {% include "checksums/partials/create-form.html" %}
+            <button type="button"
+                    class="contained large"
+                    data-modal="trigger"
+                    data-modal-target="modalCreateTask">Create New Task</button>
         {% endif %}
     {% else %}
         {% set modal_required = True %}
@@ -86,5 +89,9 @@
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}
         </section>
+    {% endif %}
+    <!-- Create Form Modal -->
+    {% if executor_hosts|length >= 1 %}
+        {% include "checksums/partials/create-form.html" %}
     {% endif %}
 {% endblock main %}

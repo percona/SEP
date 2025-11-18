@@ -37,13 +37,16 @@
             {% set modal_required = False %}
             <!-- Remember to add a more meaningful and helpful empty state message here, to help users recover and get back on track -->
             <section>
-                <h2>Configure a schema change</h2>
                 {% if services|length < 1 %}
                     <p>Unable to find suitable database instances.</p>
                 {% elif executor_hosts|length < 1 %}
                     <p>Unable to find suitable executor hosts.</p>
                 {% else %}
-                    {% include "alters/partials/create-form.html" %}
+                    <button type="button"
+                            style="margin-left: 1em"
+                            class="contained large"
+                            data-modal="trigger"
+                            data-modal-target="modalCreateTask">Create New Task</button>
                 {% endif %}
             </section>
         {% else %}
@@ -106,12 +109,13 @@
                     {% include "alters/partials/saved-tasks.html" %}
                     <!-- Create New Tasks -->
                     <br>
-                    <h3>Configure a schema change</h3>
-                    <br>
                     {% if executor_hosts|length < 1 %}
                         <p>Unable to find suitable executor hosts.</p>
                     {% else %}
-                        {% include "alters/partials/create-form.html" %}
+                        <button type="button"
+                                class="contained large"
+                                data-modal="trigger"
+                                data-modal-target="modalCreateTask">Create New Task</button>
                     {% endif %}
                 </section>
                 <!-- Scheduled Tasks -->
@@ -131,4 +135,8 @@
             </div>
         {% endif %}
     </section>
+    <!-- Create Form Modal -->
+    {% if executor_hosts|length >= 1 %}
+        {% include "alters/partials/create-form.html" %}
+    {% endif %}
 {% endblock main %}

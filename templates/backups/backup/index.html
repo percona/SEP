@@ -51,15 +51,23 @@
         (physical) and
         <a href="https://github.com/mydumper/mydumper">MyDumper</a> (logical).
     </p>
+    <div class="doc-inline-callout" role="note">
+        <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+        <div>
+            New to the workflow? <a href="{{ url_for('backups_docs') }}" target="_blank" rel="noopener">Read the MySQL backup guide</a> for prerequisites, configuration tips, and restore planning.
+        </div>
+    </div>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
-        <h2>Configure a backup task</h2>
         {% if services|length < 1 %}
             <p>Unable to find suitable database instances.</p>
         {% elif executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
-            {% include "backups/backup/partials/create-form.html" %}
+            <button type="button"
+                    class="contained large"
+                    data-modal="trigger"
+                    data-modal-target="modalCreateTask">Create New Task</button>
         {% endif %}
     {% else %}
         {% set modal_required = True %}
@@ -72,15 +80,17 @@
         <section id="saved-tasks">
             <h2>Saved</h2>
             {% include "backups/backup/partials/saved-tasks.html" %}
-            <h2>Periodic Tasks</h2>
-            {%- set detail_route = "backups_detail" %}
-            {% include "tasks/partials/scheduled-tasks.html" %}
-            <h3>Create a backup process</h3>
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "backups/backup/partials/create-form.html" %}
+                <button type="button"
+                        class="contained large"
+                        data-modal="trigger"
+                        data-modal-target="modalCreateTask">Create New Task</button>
             {% endif %}
+            <h2>Periodic Tasks</h2>
+            {%- set detail_route = "backups_detail" %}
+            {% include "tasks/partials/scheduled-tasks.html" %}
         </section>
         <br>
         <br>
@@ -94,5 +104,9 @@
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}
         </section>
+    {% endif %}
+    <!-- Create Form Modal -->
+    {% if executor_hosts|length >= 1 %}
+        {% include "backups/backup/partials/create-form.html" %}
     {% endif %}
 {% endblock main %}

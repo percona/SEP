@@ -84,6 +84,7 @@
         const submitButtons = document.querySelectorAll('.submitButton');
         const scheduleDialog = document.getElementById('modalScheduleExec');
         const editDialog = document.getElementById('modalEditTask');
+        const createDialog = document.getElementById('modalCreateTask');
 
         let currentForm = null;
 
@@ -126,6 +127,9 @@
                     }
                     if (editDialog && editDialog.open) {
                         editDialog.close();
+                    }
+                    if (createDialog && createDialog.open) {
+                        createDialog.close();
                     }
                     showModal();
                 }

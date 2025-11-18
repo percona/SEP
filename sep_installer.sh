@@ -397,9 +397,9 @@ pull_sep_image_if_registry_login_required() {
     if [ "${CONTAINER_ENGINE}" = "podman" ]; then
         EXTRA_ARGS="--authfile=.docker-io-percona-sep"
     fi
-    "${CONTAINER_ENGINE}" login --username=percona ${EXTRA_ARGS:+$EXTRA_ARGS}
+    "${CONTAINER_ENGINE}" login --username=percona ${EXTRA_ARGS:+$EXTRA_ARGS} "${SEP_IMAGE_NAME%%/*}"
     "${CONTAINER_ENGINE}" pull "${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}"
-    "${CONTAINER_ENGINE}" logout ${EXTRA_ARGS:+$EXTRA_ARGS}
+    "${CONTAINER_ENGINE}" logout ${EXTRA_ARGS:+$EXTRA_ARGS} "${SEP_IMAGE_NAME%%/*}"
 	fi
 }
 
