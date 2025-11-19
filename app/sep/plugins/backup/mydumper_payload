@@ -613,7 +613,7 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
 
         if b"[GNUPG:] NODATA" in stdout_bytes:
             if logger:
-                logger.debug(
+                logger.error(
                     'File "%s" has .gpg extension but is not encrypted (NODATA). Status: %s, Error: %s',
                     file_path.name,
                     stdout_str,
@@ -623,7 +623,7 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
 
         if any(pattern in err_bytes for pattern in GPG_NOT_ENCRYPTED_PATTERNS):
             if logger:
-                logger.debug(
+                logger.error(
                     'File "%s" has .gpg extension but is not encrypted. Status: %s, Error: %s',
                     file_path.name,
                     stdout_str,
