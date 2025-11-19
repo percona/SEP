@@ -1212,6 +1212,10 @@ button.list-item:focus-visible {
     content: "backup";
 }
 
+.list-item.mum .icon::before {
+    content: "lock_open";
+}
+
 .list-item.inventory .icon::before {
     content: "graph_4";
 }
@@ -1740,3 +1744,4 @@ td.errors ul {
 .hidden {
     display: none;
 }
+

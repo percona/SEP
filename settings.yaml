@@ -71,6 +71,10 @@ default:
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo
         CSS_CLASS: backup_mongo
+      - NAME: MongoDB User Management
+        MODULE_NAME: mum
+        URI_PATH: /mum
+        CSS_CLASS: mum
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null

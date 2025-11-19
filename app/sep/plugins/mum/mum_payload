@@ -1,0 +1,197 @@
+"""MUM Python payload to interact with MongoDB via PyMongo.
+
+Supported actions (via --config file containing JSON):
+- {"action":"list_users"}
+- {"action":"create_user", "username":"...", "password":"...",
+   "roles":["readWrite","dbAdmin"] or [{"role":"readWrite","db":"admin"}, ...],
+   "db":"admin"}
+- {"action":"update_user", "username":"...", "password":"optional",
+   "roles":[...], "db":"admin"}
+- {"action":"delete_user", "username":"...", "db":"admin"}
+
+When no config is provided, defaults to list_users.
+The script connects using a MongoDB connection string stored at
+"~/.mongodb_uri" and prints JSON to stdout for consumption by the runner.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from typing import Any, Dict, List, Optional
+
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
+from bson import json_util
+
+
+def mum_creds() -> str:
+    """Load MongoDB URI from ~/.mongodb_uri.
+
+    Exits with code 1 if the file cannot be read.
+    """
+
+    creds_path = "/home/percona/.mongodb_uri"
+    try:
+        with open(creds_path, "r", encoding="utf-8") as fpt:
+            creds = fpt.read().strip()
+            if not creds:
+                raise ValueError("Empty MongoDB URI")
+            return creds
+    except Exception as exc:  # noqa: BLE001 - we want to exit on any error
+        print(f"Failed to read MongoDB URI from {creds_path}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="MUM MongoDB operations")
+    parser.add_argument(
+        "--config",
+        help="Path to config file containing JSON (provided by task runner)",
+        default=None,
+    )
+    return parser.parse_args()
+
+
+def load_config(config_path: Optional[str]) -> Dict[str, Any]:
+    if not config_path:
+        return {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as cfg:
+            content = cfg.read()
+            # Expect JSON (the runner writes exactly what UI sends)
+            return json.loads(content) if content.strip() else {}
+    except Exception as exc:  # noqa: BLE001
+        print(f"Failed to read config file {config_path}: {exc}", file=sys.stderr)
+        return {}
+
+
+def list_users(db) -> None:  # type: ignore[no-untyped-def]
+    # Mimic `db.getUsers()` using the usersInfo command within the selected DB
+    cmd: Dict[str, Any] = {"usersInfo": {"forAllDBs": True}, "showPrivileges": False}
+    result: Dict[str, Any] = db.command(cmd)
+    users = result.get("users", [])
+    print(json_util.dumps(users, indent=2))
+
+
+def normalize_roles(raw_roles: Any, default_db: str) -> List[Dict[str, str]]:
+    roles_out: List[Dict[str, str]] = []
+    if isinstance(raw_roles, list):
+        for item in raw_roles:
+            if isinstance(item, str):
+                roles_out.append({"role": item, "db": default_db})
+            elif isinstance(item, dict) and "role" in item:
+                role_db = item.get("db") or default_db
+                roles_out.append({"role": str(item["role"]), "db": str(role_db)})
+    return roles_out
+
+
+def create_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
+    username = config.get("username")
+    password = config.get("password")
+    db_name = config.get("db", "admin")
+    roles = normalize_roles(config.get("roles", []), db_name)
+    if not username or not password:
+        print(json_util.dumps({"ok": False, "error": "username and password are required"}))
+        sys.exit(1)
+
+    # Switch to the database where the user should be created
+    target_db = db.client.get_database(db_name)
+    result = target_db.command({
+        "createUser": username,
+        "pwd": password,
+        "roles": roles,
+    })
+    # Print minimal JSON confirmation (do not echo password)
+    print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
+
+
+def update_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
+    """Update a user's password and/or roles within a specific database.
+
+    Expected config keys:
+    - username (required)
+    - password (optional)
+    - roles (optional; list of strings or list of role dicts)
+    - db (optional; defaults to 'admin')
+    """
+    username = config.get("username")
+    if not username:
+        print(json_util.dumps({"ok": False, "error": "username is required"}))
+        sys.exit(1)
+
+    db_name = config.get("db", "admin")
+    pwd = config.get("password")
+    roles_cfg = config.get("roles")
+
+    cmd: Dict[str, Any] = {"updateUser": username}
+    if isinstance(pwd, str) and pwd:
+        cmd["pwd"] = pwd
+    if roles_cfg is not None:
+        # Normalize roles only when provided; omit otherwise to leave unchanged
+        cmd["roles"] = normalize_roles(roles_cfg, db_name)
+
+    target_db = db.client.get_database(db_name)
+    result = target_db.command(cmd)
+    print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
+
+
+def delete_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
+    """Delete a MongoDB user from a specific database.
+
+    Expected config keys:
+    - username (required)
+    - db (optional; defaults to 'admin')
+    """
+    username = config.get("username")
+    if not username:
+        print(json_util.dumps({"ok": False, "error": "username is required"}))
+        sys.exit(1)
+
+    db_name = config.get("db", "admin")
+    target_db = db.client.get_database(db_name)
+    result = target_db.command({"dropUser": username})
+    print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
+
+
+def mum() -> None:
+    """Connect to MongoDB and perform an action based on config."""
+    uri = mum_creds()
+    os.environ["MONGODB_URI"] = uri
+
+    args = parse_args()
+    config = load_config(args.config)
+    action = (config.get("action") if isinstance(config, dict) else None) or "list_users"
+
+    client = None
+    try:
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        # Default DB for commands; may switch based on action
+        db = client.get_database("admin")
+
+        if action == "create_user":
+            create_user(db, config)
+        elif action == "update_user":
+            update_user(db, config)
+        elif action == "delete_user":
+            delete_user(db, config)
+        else:
+            list_users(db)
+    except PyMongoError as exc:
+        print(f"MongoDB error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Unexpected error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
+# Execute immediately when the script is run by the task engine
+mum()
