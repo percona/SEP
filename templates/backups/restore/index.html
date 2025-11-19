@@ -49,13 +49,15 @@
     <p>Perform a restore, currently only supporting MySQL and MariaDB.</p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
-        <h2>Configure a restore task</h2>
         {% if services|length < 1 %}
             <p>Unable to find suitable database instances.</p>
         {% elif executor_hosts|length < 1 %}
             <p>Unable to find suitable executor hosts.</p>
         {% else %}
-            {% include "/backups/restore/partials/create-form.html" %}
+            <button type="button"
+                    class="contained large"
+                    data-modal="trigger"
+                    data-modal-target="modalCreateTask">Create New Task</button>
         {% endif %}
     {% else %}
         {% set modal_required = True %}
@@ -68,14 +70,16 @@
         <section id="saved-tasks">
             <h2>Saved</h2>
             {% include "/backups/restore/partials/saved-tasks.html" %}
-            <h2>Periodic Tasks</h2>
-            {% include "tasks/partials/scheduled-tasks.html" %}
-            <h3>Create a restore process</h3>
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
-                {% include "/backups/restore/partials/create-form.html" %}
+                <button type="button"
+                        class="contained large"
+                        data-modal="trigger"
+                        data-modal-target="modalCreateTask">Create New Task</button>
             {% endif %}
+            <h2>Periodic Tasks</h2>
+            {% include "tasks/partials/scheduled-tasks.html" %}
         </section>
         <br>
         <br>
@@ -89,5 +93,9 @@
             <h2>History</h2>
             {% include "tasks/partials/completed-tasks.html" %}
         </section>
+    {% endif %}
+    <!-- Create Form Modal -->
+    {% if executor_hosts|length >= 1 %}
+        {% include "backups/restore/partials/create-form.html" %}
     {% endif %}
 {% endblock main %}
