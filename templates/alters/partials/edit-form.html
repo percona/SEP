@@ -738,7 +738,8 @@
         if (!selectedService || !serviceSchemas[selectedService]) {
             resultPanel.classList.remove('fade');
             statusMessage.classList.remove('success', 'error');
-            statusMessage.textContent = 'ℹ️ Using typed schema/table. Table structure and PK details are not available.';
+            statusMessage.classList.add('error');
+            statusMessage.textContent = 'Using typed schema/table. Table structure and PK details are not available.';
             return;
         }
 
@@ -766,18 +767,27 @@
 
         if (!schemaFound) {
             statusMessage.classList.remove('success', 'error');
+            statusMessage.classList.add('error');
             statusMessage.textContent = `Schema "${typedSchema}" not found in database. Table structure and PK details are not available.`;
         } else if (!tableFound) {
             statusMessage.classList.remove('success', 'error');
+            statusMessage.classList.add('error');
             statusMessage.textContent = `Table "${typedTable}" not found in database for schema "${typedSchema}". Table structure and PK details are not available.`;
-        } else {
+        } else if (foundTableId && foundTableId !== "-1") {
             fetchCreateTableStatement(foundTableId);
+        } else {
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.classList.add('error');
+            statusMessage.textContent = `Table "${typedTable}" not found in database for schema "${typedSchema}". Table structure and PK details are not available.`;
         }
     }
 
     async function fetchCreateTableStatement(tableId) {
         if (useManualInput && !tableId) {
             checkTypedSchemaTable();
+            return;
+        }
+        if (!tableId || tableId === "-1") {
             return;
         }
         if (selectedService && tableId) {
