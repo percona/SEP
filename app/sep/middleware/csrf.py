@@ -15,6 +15,8 @@
 
 """Define middleware to handle CSRF protection."""
 
+from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
+
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -32,6 +34,30 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.csrf_protect = CsrfProtect()
 
+    def _serializer(self) -> URLSafeTimedSerializer:
+        secret_key = self.csrf_protect._secret_key  # noqa: SLF001
+        if secret_key is None:  # pragma: no cover - validated during app startup
+            msg = "CSRF secret key is not configured. Did you call CsrfProtect.load_config?"
+            raise RuntimeError(msg)
+        return URLSafeTimedSerializer(secret_key, salt="fastapi-csrf-token")
+
+    def _ensure_csrf_tokens(self, request: Request) -> tuple[str, str]:
+        """Reuse an existing CSRF cookie when possible to keep tokens stable."""
+        cookie_key = self.csrf_protect._cookie_key  # noqa: SLF001
+        signed_token = request.cookies.get(cookie_key)
+        serializer = self._serializer()
+        if signed_token is not None:
+            try:
+                csrf_token = serializer.loads(
+                    signed_token,
+                    max_age=self.csrf_protect._max_age,  # noqa: SLF001
+                )
+                return csrf_token, signed_token
+            except (BadData, SignatureExpired):
+                # Invalid or expired cookie, fall through to mint a new token
+                ...
+        return self.csrf_protect.generate_csrf_tokens()
+
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
@@ -45,23 +71,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         :rtype: Response
         """
         method = request.method.upper()
+        signed_token: str | None = None
 
         if method == "GET":
-            csrf_token, signed_token = self.csrf_protect.generate_csrf_tokens()
+            csrf_token, signed_token = self._ensure_csrf_tokens(request)
             request.state.csrf_token = csrf_token
 
         response = await call_next(request)
 
         endpoint = request.scope.get("endpoint")
-        if not isinstance(endpoint, StaticFiles) and not getattr(
-            request.state, "is_csrf_exempt", False
+        if (
+            method == "GET"
+            and signed_token is not None
+            and not isinstance(endpoint, StaticFiles)
+            and not getattr(request.state, "is_csrf_exempt", False)
         ):
-            csrf_cookie_handler = {
-                "GET": lambda: self.csrf_protect.set_csrf_cookie(
-                    signed_token, response
-                ),
-                "POST": lambda: None,
-            }
-            csrf_cookie_handler.get(method, lambda: None)()
+            self.csrf_protect.set_csrf_cookie(signed_token, response)
 
         return response
