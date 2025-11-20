@@ -8,11 +8,6 @@ import EditUserButton from "./EditUserButton";
 import DeleteUserButton from "./DeleteUserButton";
 import MumUserList from "./MumUserList";
 
-let cachedCsrfToken = null;
-function getCsrfToken() {
-  return cachedCsrfToken;
-}
-
 // Build a MUI theme that mirrors CSS variables from base.css
 function buildMuiThemeFromCssVars() {
   const css = getComputedStyle(document.body);
@@ -138,14 +133,13 @@ const Mum = () => {
   const stdoutBufferRef = useRef("");
   const esRef = useRef(null);
 
-  // Build a valid JSON body and include CSRF token where backend expects it
+  // Build a valid JSON body describing the task to generate
   const buildPayload = () => ({
     name: "mum-get-users",
     // This becomes meta.config in the PROXY run-python mapping
     payload: JSON.stringify({ action: "list_users" }),
     fmt: "json",
     alert_on_fail: false,
-    ["csrf-token"]: getCsrfToken(),
   });
 
   useEffect(() => {
@@ -154,7 +148,6 @@ const Mum = () => {
         const resp = await apiClient.get('/mum/ui/options');
         setExecutorHosts(resp.data.executor_hosts || []);
         setServices(resp.data.services || []);
-        cachedCsrfToken = resp.data.csrf_token || null;
       } catch (e) {
         // swallow for now
       }
@@ -186,10 +179,10 @@ const Mum = () => {
     setError(null);
     setExecution(null);
     try {
-      const response = await apiClient.post(
-        `/mum/ui/execute/${createdTask.name}`,
-        { target: selectedTarget, ["csrf-token"]: getCsrfToken() }
-      );
+        const response = await apiClient.post(
+          `/mum/ui/execute/${createdTask.name}`,
+          { target: selectedTarget }
+        );
       setExecution(response.data);
     } catch (err) {
       setError(err.message);
@@ -277,7 +270,6 @@ const Mum = () => {
                 row={row}
                 selectedTarget={selectedTarget}
                 builtinRoles={builtinRoles}
-                getCsrfToken={getCsrfToken}
                 onSuccess={handleUserMutation}
               />
             )}
@@ -285,7 +277,6 @@ const Mum = () => {
               <DeleteUserButton
                 row={row}
                 selectedTarget={selectedTarget}
-                getCsrfToken={getCsrfToken}
                 onSuccess={handleUserMutation}
               />
             )}
@@ -297,7 +288,6 @@ const Mum = () => {
       <AddDatabaseUserButton
         selectedTarget={selectedTarget}
         builtinRoles={builtinRoles}
-        getCsrfToken={getCsrfToken}
         onSuccess={handleUserMutation}
       />
     ) : null;

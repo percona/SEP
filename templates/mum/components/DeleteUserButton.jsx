@@ -15,7 +15,6 @@ const DEFAULT_DB = "admin";
 const DeleteUserButton = ({
   row,
   selectedTarget,
-  getCsrfToken,
   onSuccess,
   buttonProps = {},
 }) => {
@@ -53,7 +52,6 @@ const DeleteUserButton = ({
         target: selectedTarget,
         username,
         db: dbName || DEFAULT_DB,
-        ["csrf-token"]: getCsrfToken?.(),
       });
       setOpen(false);
       onSuccess?.({ username, db: dbName || DEFAULT_DB });

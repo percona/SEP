@@ -29,10 +29,10 @@ from app.sep.deps import (
     DefaultContext,
     TaskAPI,
     IsAuthenticated,
-    IsCsrfValidated,
     InventoryAPI,
 )
 from app.sep.plugins.mum.models import MUMTaskCreateRequest
+from app.sep.utils.decorators import csrf_exempt
 
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from app.inventory.models import ServiceTypeEnum
@@ -89,10 +89,12 @@ async def mum_options(
 
 @router.post(
     "/ui/execute/{task_name}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
     response_class=JSONResponse,
 )
+@csrf_exempt
 async def mum_execute_task(
+    request: Request,  # noqa: ARG001
     task_name: str,
     body: dict[str, Any],
     tasks_api: TaskAPI,
@@ -116,10 +118,12 @@ async def mum_execute_task(
 
 @router.post(
     "/ui/create-user",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
     response_class=JSONResponse,
 )
+@csrf_exempt
 async def mum_create_user(
+    request: Request,  # noqa: ARG001
     body: dict[str, Any],
     tasks_api: TaskAPI,
 ) -> JSONResponse:
@@ -185,10 +189,12 @@ async def mum_create_user(
 
 @router.post(
     "/ui/update-user",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
     response_class=JSONResponse,
 )
+@csrf_exempt
 async def mum_update_user(
+    request: Request,  # noqa: ARG001
     body: dict[str, Any],
     tasks_api: TaskAPI,
 ) -> JSONResponse:
@@ -257,10 +263,12 @@ async def mum_update_user(
 
 @router.post(
     "/ui/delete-user",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
     response_class=JSONResponse,
 )
+@csrf_exempt
 async def mum_delete_user(
+    request: Request,  # noqa: ARG001
     body: dict[str, Any],
     tasks_api: TaskAPI,
 ) -> JSONResponse:
@@ -319,10 +327,12 @@ async def mum_delete_user(
 
 @router.post(
     "/ui/usertask",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
     response_class=JSONResponse,
 )
+@csrf_exempt
 async def create_mum_task(
+    request: Request,  # noqa: ARG001
     create_task_json: MUMTaskCreateRequest,
     tasks_api: TaskAPI,
 ) -> JSONResponse:

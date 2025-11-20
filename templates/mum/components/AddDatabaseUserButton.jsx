@@ -22,7 +22,6 @@ const DEFAULT_DB = "admin";
 const AddDatabaseUserButton = ({
   selectedTarget,
   builtinRoles,
-  getCsrfToken,
   onSuccess,
   buttonProps = {},
 }) => {
@@ -73,7 +72,6 @@ const AddDatabaseUserButton = ({
         password,
         roles,
         db: rolesDb || DEFAULT_DB,
-        ["csrf-token"]: getCsrfToken?.(),
       });
       setOpen(false);
       onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB });

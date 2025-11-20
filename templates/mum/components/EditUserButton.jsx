@@ -34,7 +34,6 @@ const EditUserButton = ({
   row,
   selectedTarget,
   builtinRoles,
-  getCsrfToken,
   onSuccess,
   buttonProps = {},
 }) => {
@@ -88,7 +87,6 @@ const EditUserButton = ({
         username,
         db: rolesDb || DEFAULT_DB,
         roles,
-        ["csrf-token"]: getCsrfToken?.(),
       };
       if (password) body.password = password;
       await apiClient.post("/mum/ui/update-user", body);
