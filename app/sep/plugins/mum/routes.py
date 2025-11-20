@@ -81,7 +81,10 @@ async def mum_options(
         executor_hosts = {}
     return JSONResponse(
         content={
-            "executor_hosts": list(executor_hosts.values()),
+            "executor_hosts": [
+                {"name": name, "address": address}
+                for name, address in executor_hosts.items()
+            ],
             "services": services,
         }
     )

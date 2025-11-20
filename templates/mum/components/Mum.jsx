@@ -68,6 +68,38 @@ const resolveFeatureToggles = () => {
   return { ...DEFAULT_FEATURE_TOGGLES, ...window.MUM_FEATURE_TOGGLES };
 };
 
+const normalizeExecutorHosts = (rawHosts) => {
+  if (!Array.isArray(rawHosts)) {
+    return [];
+  }
+  return rawHosts
+    .map((host) => {
+      if (typeof host === "string") {
+        return { name: host, address: "" };
+      }
+      if (host && typeof host === "object") {
+        const name =
+          host.name ||
+          host.Name ||
+          host.hostname ||
+          host.Hostname ||
+          host.id ||
+          host.address ||
+          host.Address ||
+          "";
+        if (!name) {
+          return null;
+        }
+        return {
+          name,
+          address: host.address || host.Address || host.ip || host.IP || "",
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+};
+
 const Mum = () => {
   const [featureToggles, setFeatureToggles] = useState(() => resolveFeatureToggles());
   const [createdTask, setCreatedTask] = useState(null);
@@ -146,8 +178,8 @@ const Mum = () => {
     const loadOptions = async () => {
       try {
         const resp = await apiClient.get('/mum/ui/options');
-        setExecutorHosts(resp.data.executor_hosts || []);
-        setServices(resp.data.services || []);
+        setExecutorHosts(normalizeExecutorHosts(resp.data?.executor_hosts));
+        setServices(resp.data?.services || []);
       } catch (e) {
         // swallow for now
       }
@@ -295,31 +327,35 @@ const Mum = () => {
   return (
     <ThemeProvider theme={theme}>
       <Box sx={{ display: 'grid', gap: 2 }}>
-        <Paper elevation={1} sx={{ p: 2 }}>
-          <Toolbar sx={{ px: 0 }}>
-            <Typography variant="h6" sx={{ flex: 1 }}>MongoDB Users (MUM)</Typography>
-          </Toolbar>
+          <Paper elevation={1} sx={{ p: 2 }}>
+            <Toolbar sx={{ px: 0 }}>
+              <Typography variant="h6" sx={{ flex: 1 }}>MongoDB Users (MUM)</Typography>
+            </Toolbar>
 
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-            <label>
-              Executor host:&nbsp;
-              <select value={selectedTarget} onChange={(e) => setSelectedTarget(e.target.value)}>
-                <option value="">Select a host</option>
-                {executorHosts.map((h) => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Service:&nbsp;
-              <select value={selectedService} onChange={(e) => setSelectedService(e.target.value)}>
-                <option value="">Select a service</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name || s.id}</option>
-                ))}
-              </select>
-            </label>
-          </Box>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+              <label>
+                Executor host:&nbsp;
+                <select value={selectedTarget} onChange={(e) => setSelectedTarget(e.target.value)}>
+                  <option value="">Select a host</option>
+                  {executorHosts.map((host) => (
+                    <option key={host.name} value={host.name}>
+                      {host.address && host.address !== host.name
+                        ? `${host.name} (${host.address})`
+                        : host.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Service:&nbsp;
+                <select value={selectedService} onChange={(e) => setSelectedService(e.target.value)}>
+                  <option value="">Select a service</option>
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name || s.id}</option>
+                  ))}
+                </select>
+              </label>
+            </Box>
 
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button variant="contained" color="primary" onClick={createTask} disabled={loading}>
