@@ -2,31 +2,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import apiClient from "../../../ui/apiClient";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Select,
-  MenuItem,
-  InputLabel,
-  FormControl,
-  OutlinedInput,
-  Chip,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Toolbar,
-  Typography,
-} from "@mui/material";
+import { Box, Button, CircularProgress, Paper, Toolbar, Typography } from "@mui/material";
+import AddDatabaseUserButton from "./AddDatabaseUserButton";
+import EditUserButton from "./EditUserButton";
+import DeleteUserButton from "./DeleteUserButton";
+import MumUserList from "./MumUserList";
 
 let cachedCsrfToken = null;
 function getCsrfToken() {
@@ -79,7 +59,22 @@ function buildMuiThemeFromCssVars() {
   });
 }
 
+const DEFAULT_FEATURE_TOGGLES = Object.freeze({
+  addUser: true,
+  editUser: true,
+  deleteUser: true,
+  listUsers: true,
+});
+
+const resolveFeatureToggles = () => {
+  if (typeof window === "undefined" || typeof window.MUM_FEATURE_TOGGLES !== "object") {
+    return DEFAULT_FEATURE_TOGGLES;
+  }
+  return { ...DEFAULT_FEATURE_TOGGLES, ...window.MUM_FEATURE_TOGGLES };
+};
+
 const Mum = () => {
+  const [featureToggles, setFeatureToggles] = useState(() => resolveFeatureToggles());
   const [createdTask, setCreatedTask] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -93,23 +88,6 @@ const Mum = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
   const [usersData, setUsersData] = useState([]);
-
-  // User dialog (create/edit) state
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
-  const [createError, setCreateError] = useState(null);
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newRoles, setNewRoles] = useState([]);
-  const [rolesDb, setRolesDb] = useState("admin");
-  const [isEditing, setIsEditing] = useState(false);
-
-  // Delete dialog state
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deleteError, setDeleteError] = useState(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [deleteUserInfo, setDeleteUserInfo] = useState({ username: "", db: "admin" });
   const builtinRoles = useMemo(() => ([
     "read",
     "readWrite",
@@ -139,6 +117,22 @@ const Mum = () => {
     return () => obs.disconnect();
   }, []);
   const theme = useMemo(() => buildMuiThemeFromCssVars(), [themeKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handler = (event) => {
+      const overrides = event?.detail;
+      if (overrides && typeof overrides === "object") {
+        setFeatureToggles((prev) => ({ ...prev, ...overrides }));
+      } else {
+        setFeatureToggles(resolveFeatureToggles());
+      }
+    };
+    window.addEventListener("mum:feature-toggles", handler);
+    return () => window.removeEventListener("mum:feature-toggles", handler);
+  }, []);
 
   // stdout buffer assembled from SSE messages
   const stdoutBufferRef = useRef("");
@@ -204,186 +198,109 @@ const Mum = () => {
     }
   };
 
-  function extractJsonArray(text) {
-    // Attempt to extract a JSON array even if extra text is present
-    const start = text.indexOf("[");
-    const end = text.lastIndexOf("]");
-    if (start !== -1 && end !== -1 && end > start) {
-      const candidate = text.slice(start, end + 1);
-      try {
-        return JSON.parse(candidate);
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  const stopStreaming = () => {
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-    setIsStreaming(false);
-  };
-
-  const checkScriptOutput = async () => {
-    if (!execution?.id) {
-      setStreamError("Execute the task first to obtain an execution ID.");
-      return;
-    }
-    setStreamError(null);
-    setIsStreaming(true);
-    setUsersData([]);
-    stdoutBufferRef.current = "";
-
-    // Subscribe to SSE stream for this history id
-    try {
-      const es = new EventSource(`/stream-logs/${encodeURIComponent(execution.id)}`);
-      esRef.current = es;
-      es.onmessage = (event) => {
+    function extractJsonArray(text) {
+      // Attempt to extract a JSON array even if extra text is present
+      const start = text.indexOf("[");
+      const end = text.lastIndexOf("]");
+      if (start !== -1 && end !== -1 && end > start) {
+        const candidate = text.slice(start, end + 1);
         try {
-          const data = JSON.parse(event.data);
-          const { msg, type } = data || {};
-          if (type === 'stdout' && typeof msg === 'string') {
-            stdoutBufferRef.current += msg;
-          }
+          return JSON.parse(candidate);
         } catch (_) {
-          // ignore non-JSON chunks
+          return null;
         }
-      };
-      es.addEventListener('finish', () => {
-        stopStreaming();
-        const arr = extractJsonArray(stdoutBufferRef.current);
-        if (Array.isArray(arr)) setUsersData(arr);
-        else setStreamError('Could not parse output JSON.');
-      });
-      es.onerror = () => {
-        setStreamError('Stream failed.');
-        stopStreaming();
-      };
-    } catch (e) {
-      setStreamError(String(e?.message || e));
+      }
+      return null;
+    }
+
+    const stopStreaming = () => {
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
       setIsStreaming(false);
-    }
-  };
+    };
 
-  const allColumns = useMemo(() => {
-    const cols = new Set();
-    usersData.forEach((row) => Object.keys(row || {}).forEach((k) => cols.add(k)));
-    return Array.from(cols);
-  }, [usersData]);
-
-  const openCreateDialog = () => {
-    setIsEditing(false);
-    setCreateError(null);
-    setNewUsername("");
-    setNewPassword("");
-    setNewRoles([]);
-    setRolesDb("admin");
-    setCreateOpen(true);
-  };
-
-  const openEditDialog = (row) => {
-    const username = row?.user || row?.username || "";
-    const dbName = row?.db || "admin";
-    const rolesFromRow = Array.isArray(row?.roles) ? row.roles : [];
-    const roleNames = rolesFromRow.map((r) => (typeof r === 'string' ? r : r?.role)).filter(Boolean);
-    setIsEditing(true);
-    setCreateError(null);
-    setNewUsername(username);
-    setNewPassword("");
-    setNewRoles(roleNames);
-    setRolesDb(dbName);
-    setCreateOpen(true);
-  };
-
-  const submitUserDialog = async () => {
-    if (!selectedTarget) {
-      setCreateError('Select an executor host first.');
-      return;
-    }
-    if (!newUsername) {
-      setCreateError('Username is required.');
-      return;
-    }
-    if (!isEditing) {
-      if (!newPassword || newRoles.length === 0) {
-        setCreateError('Password and at least one role are required.');
+    const checkScriptOutput = async () => {
+      if (!execution?.id) {
+        setStreamError("Execute the task first to obtain an execution ID.");
         return;
       }
-    }
-    setCreateLoading(true);
-    setCreateError(null);
-    try {
-      if (isEditing) {
-        const body = {
-          target: selectedTarget,
-          username: newUsername,
-          db: rolesDb || 'admin',
-          roles: newRoles,
-          ["csrf-token"]: getCsrfToken(),
+      setStreamError(null);
+      setIsStreaming(true);
+      setUsersData([]);
+      stdoutBufferRef.current = "";
+
+      // Subscribe to SSE stream for this history id
+      try {
+        const es = new EventSource(`/stream-logs/${encodeURIComponent(execution.id)}`);
+        esRef.current = es;
+        es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            const { msg, type } = data || {};
+            if (type === 'stdout' && typeof msg === 'string') {
+              stdoutBufferRef.current += msg;
+            }
+          } catch (_) {
+            // ignore non-JSON chunks
+          }
         };
-        if (newPassword) body.password = newPassword;
-        await apiClient.post('/mum/ui/update-user', body);
-      } else {
-        await apiClient.post('/mum/ui/create-user', {
-          target: selectedTarget,
-          username: newUsername,
-          password: newPassword,
-          roles: newRoles,
-          db: rolesDb,
-          ["csrf-token"]: getCsrfToken(),
+        es.addEventListener('finish', () => {
+          stopStreaming();
+          const arr = extractJsonArray(stdoutBufferRef.current);
+          if (Array.isArray(arr)) setUsersData(arr);
+          else setStreamError('Could not parse output JSON.');
         });
+        es.onerror = () => {
+          setStreamError('Stream failed.');
+          stopStreaming();
+        };
+      } catch (e) {
+        setStreamError(String(e?.message || e));
+        setIsStreaming(false);
       }
-      setCreateOpen(false);
-      setNewUsername("");
-      setNewPassword("");
-      setNewRoles([]);
-      setRolesDb("admin");
-    } catch (e) {
-      const actionText = isEditing ? 'update' : 'create';
-      setCreateError(e?.response?.data?.detail || e?.message || `Failed to ${actionText} user`);
-    } finally {
-      setCreateLoading(false);
-    }
-  };
+    };
 
-  const openDeleteDialog = (row) => {
-    const username = row?.user || row?.username || "";
-    const dbName = row?.db || "admin";
-    setDeleteUserInfo({ username, db: dbName });
-    setDeleteConfirmText("");
-    setDeleteError(null);
-    setDeleteOpen(true);
-  };
+    const handleUserMutation = () => {
+      if (execution?.id) {
+        checkScriptOutput();
+      }
+    };
 
-  const submitDeleteUser = async () => {
-    if (!selectedTarget) {
-      setDeleteError('Select an executor host first.');
-      return;
-    }
-    if (deleteConfirmText !== 'confirm') {
-      setDeleteError("Type 'confirm' to proceed.");
-      return;
-    }
-    setDeleteLoading(true);
-    setDeleteError(null);
-    try {
-      await apiClient.post('/mum/ui/delete-user', {
-        target: selectedTarget,
-        username: deleteUserInfo.username,
-        db: deleteUserInfo.db || 'admin',
-        ["csrf-token"]: getCsrfToken(),
-      });
-      setDeleteOpen(false);
-      setDeleteConfirmText("");
-    } catch (e) {
-      setDeleteError(e?.response?.data?.detail || e?.message || 'Failed to delete user');
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
+    const rowActionsEnabled = featureToggles.editUser || featureToggles.deleteUser;
+    const renderRowActions = rowActionsEnabled
+      ? (row) => (
+          <>
+            {featureToggles.editUser && (
+              <EditUserButton
+                row={row}
+                selectedTarget={selectedTarget}
+                builtinRoles={builtinRoles}
+                getCsrfToken={getCsrfToken}
+                onSuccess={handleUserMutation}
+              />
+            )}
+            {featureToggles.deleteUser && (
+              <DeleteUserButton
+                row={row}
+                selectedTarget={selectedTarget}
+                getCsrfToken={getCsrfToken}
+                onSuccess={handleUserMutation}
+              />
+            )}
+          </>
+        )
+      : null;
+
+    const toolbarActions = featureToggles.addUser ? (
+      <AddDatabaseUserButton
+        selectedTarget={selectedTarget}
+        builtinRoles={builtinRoles}
+        getCsrfToken={getCsrfToken}
+        onSuccess={handleUserMutation}
+      />
+    ) : null;
 
   return (
     <ThemeProvider theme={theme}>
@@ -457,155 +374,14 @@ const Mum = () => {
           )}
         </Paper>
 
-        <Paper elevation={1}>
-          <Toolbar>
-            <Typography variant="subtitle1" sx={{ flex: 1 }}>Users Table</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {usersData.length ? `${usersData.length} users` : 'No data yet'}
-            </Typography>
-            <Box sx={{ ml: 2 }}>
-              <Button
-                variant="contained"
-                color="success"
-                onClick={openCreateDialog}
-              >
-                + add database user
-              </Button>
-            </Box>
-          </Toolbar>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  {allColumns.length === 0 ? (
-                    <TableCell>No columns</TableCell>
-                  ) : (
-                    <>
-                      {allColumns.map((col) => (
-                        <TableCell key={col}>{col}</TableCell>
-                      ))}
-                      <TableCell key="__actions">actions</TableCell>
-                    </>
-                  )}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {usersData.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={Math.max(allColumns.length + 1, 1)}>
-                      <Typography variant="body2" color="text.secondary">No rows to display.</Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  usersData.map((row, idx) => (
-                    <TableRow key={idx} hover>
-                      {allColumns.map((col) => {
-                        const val = row?.[col];
-                        const display = (val === null || val === undefined)
-                          ? ''
-                          : (typeof val === 'object' ? JSON.stringify(val) : String(val));
-                        return <TableCell key={col}>{display}</TableCell>;
-                      })}
-                      <TableCell>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Button size="small" variant="outlined" onClick={() => openEditDialog(row)}>EDIT</Button>
-                          <Button size="small" color="error" variant="outlined" onClick={() => openDeleteDialog(row)}>DELETE</Button>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
+        {featureToggles.listUsers && (
+          <MumUserList
+            usersData={usersData}
+            toolbarActions={toolbarActions}
+            renderRowActions={renderRowActions}
+          />
+        )}
       </Box>
-      <Dialog open={createOpen} onClose={() => !createLoading && setCreateOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{isEditing ? 'Edit MongoDB user' : 'Create MongoDB user'}</DialogTitle>
-        <DialogContent sx={{ display: 'grid', gap: 2, pt: 2 }}>
-          <TextField
-            label="Username"
-            value={newUsername}
-            onChange={(e) => setNewUsername(e.target.value)}
-            disabled={createLoading || isEditing}
-            required
-            fullWidth
-          />
-          <TextField
-            label="Password"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            disabled={createLoading}
-            required={!isEditing}
-            fullWidth
-          />
-          <FormControl fullWidth>
-            <InputLabel id="roles-label">Built-in roles</InputLabel>
-            <Select
-              labelId="roles-label"
-              multiple
-              value={newRoles}
-              onChange={(e) => setNewRoles(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
-              input={<OutlinedInput id="select-multiple-chip" label="Built-in roles" />}
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {selected.map((value) => (
-                    <Chip key={value} label={value} />
-                  ))}
-                </Box>
-              )}
-              disabled={createLoading}
-            >
-              {builtinRoles.map((role) => (
-                <MenuItem key={role} value={role}>{role}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <TextField
-            label="Role database"
-            value={rolesDb}
-            onChange={(e) => setRolesDb(e.target.value)}
-            disabled={createLoading}
-            helperText="Database where roles apply (default admin)"
-            fullWidth
-          />
-          {createError && (
-            <Typography color="error" variant="body2">{createError}</Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateOpen(false)} disabled={createLoading}>Cancel</Button>
-          <Button onClick={submitUserDialog} variant="contained" color="success" disabled={createLoading}>
-            {createLoading ? (isEditing ? 'Saving…' : 'Creating…') : (isEditing ? 'Save' : 'Create')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={deleteOpen} onClose={() => !deleteLoading && setDeleteOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>Delete MongoDB user</DialogTitle>
-        <DialogContent sx={{ display: 'grid', gap: 2, pt: 2 }}>
-          <Typography variant="body2">
-            You are about to delete user <strong>{deleteUserInfo.username}</strong> from DB <code>{deleteUserInfo.db}</code>.
-          </Typography>
-          <TextField
-            label="Type 'confirm' to proceed"
-            value={deleteConfirmText}
-            onChange={(e) => setDeleteConfirmText(e.target.value)}
-            disabled={deleteLoading}
-            fullWidth
-          />
-          {deleteError && (
-            <Typography color="error" variant="body2">{deleteError}</Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteOpen(false)} disabled={deleteLoading}>Cancel</Button>
-          <Button onClick={submitDeleteUser} variant="contained" color="error" disabled={deleteLoading}>
-            {deleteLoading ? 'Deleting…' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </ThemeProvider>
   );
 };
