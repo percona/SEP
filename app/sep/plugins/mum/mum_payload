@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from bson import json_util
+from pathlib import Path
 
 
 def mum_creds() -> str:
@@ -33,14 +34,18 @@ def mum_creds() -> str:
     Exits with code 1 if the file cannot be read.
     """
 
-    creds_path = "/home/percona/.mongodb_uri"
+    # Use Path.home() to get the current user's home directory
+    # Then use the / operator to join with the filename, which works cross-platform
+    creds_path_obj = Path.home() / ".mongodb_uri" 
+    creds_path = str(creds_path_obj) # Convert the Path object back to a string for open()
+
     try:
-        with open(creds_path, "r", encoding="utf-8") as fpt:
+        with open(creds_path_obj, "r", encoding="utf-8") as fpt: # You can use the Path object directly in open() in modern Python
             creds = fpt.read().strip()
             if not creds:
                 raise ValueError("Empty MongoDB URI")
             return creds
-    except Exception as exc:  # noqa: BLE001 - we want to exit on any error
+    except Exception as exc: # noqa: BLE001 - we want to exit on any error
         print(f"Failed to read MongoDB URI from {creds_path}: {exc}", file=sys.stderr)
         sys.exit(1)
 

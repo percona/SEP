@@ -198,11 +198,9 @@ async def execute_task_name(
 
     root_task = await TaskManager.get_root_task(session, queue_item.task)
     executor = get_executor_for_task(root_task)
-    hosts = executor.get_hosts()
-    target = queue_item.execution_request.target
-    if target not in hosts and target not in hosts.values():
+    if queue_item.execution_request.target not in executor.get_hosts():
         raise HTTPBadRequestException(
-            f"Failed to dispatch task: Target {target!r} "
+            f"Failed to dispatch task: Target {queue_item.execution_request.target!r}"
             f"is not available in {executor.__class__.__name__} for task {task_name!r}"
         )
     if queue_item.execution_request.eta:
