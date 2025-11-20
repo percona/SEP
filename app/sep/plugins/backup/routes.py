@@ -50,6 +50,16 @@ async def backups_index(
     )
 
 
+@router.get("/docs", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def backups_docs(request: Request, context: DefaultContext) -> HTMLResponse:
+    """Standalone documentation page for backup configuration."""
+    return templates.TemplateResponse(
+        request=request,
+        name="backups/backup/docs.html",
+        context=context,
+    )
+
+
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
