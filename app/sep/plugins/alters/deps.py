@@ -78,20 +78,32 @@ async def build_alters_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    schema = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SCHEMA,
-        form.schema_id,
-        service_id=service.id,
-    )
-    table = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.TABLE,
-        form.table_id,
-        schema_id=schema.id,
-    )
+    schema_name: str
+    table_name: str
+    if form.schema_id and form.table_id:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            form.schema_id,
+            service_id=service.id,
+        )
+        table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.table_id,
+            schema_id=schema.id,
+        )
+        schema_name = schema.name
+        table_name = table.name
+    else:
+        schema_name = (form.schema_name or "").strip()
+        table_name = (form.table_name or "").strip()
+        if not schema_name or not table_name:
+            raise ValueError(
+                "Either schema/table IDs or schema_name/table_name must be provided."
+            )
     dsn = _build_dsn_with_service(
-        f"D={schema.name},t={table.name}", service.node.address, service.port
+        f"D={schema_name},t={table_name}", service.node.address, service.port
     )
 
     if form.recursion_method == "dsn":
@@ -152,8 +164,8 @@ async def build_alters_task_payload(
                 "command": "pt-online-schema-change",
                 "args": shlex.join(args),
                 "target": form.hostname,
-                "_schema_name": schema.name,
-                "_table_name": table.name,
+                "_schema_name": schema_name,
+                "_table_name": table_name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
             },
