@@ -105,6 +105,7 @@ __pypackages__/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid
+.celery*
 
 # Environments
 .env*
@@ -393,6 +394,7 @@ MigrationBackup/
 *.srl
 *.p12
 static/sep-db.sql.txt
+static/plugins/*
 data/nomad.hcl
 data/casdoor_init_data.json
 .celery
