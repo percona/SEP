@@ -137,9 +137,12 @@ const Mum = () => {
   // Track theme changes by observing data-theme attribute on <body>
   const [themeKey, setThemeKey] = useState(document.body.getAttribute("data-theme") || "dark");
   useEffect(() => {
-    const obs = new MutationObserver(() => {
+    const updateThemeKey = () => {
       setThemeKey(document.body.getAttribute("data-theme") || "dark");
-    });
+    };
+    // Ensure we pick up changes that might have happened before the observer was ready
+    updateThemeKey();
+    const obs = new MutationObserver(updateThemeKey);
     obs.observe(document.body, { attributes: true, attributeFilter: ["data-theme"] });
     return () => obs.disconnect();
   }, []);
