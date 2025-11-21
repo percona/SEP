@@ -1859,11 +1859,7 @@ class S3UploadProvider:
         if self.backup_type not in ["B", "O"] and not (
             self.backup_type == "X" and "_incrementals" in dest_dir
         ):
-            latest_key = str(
-                Path(self.bucket_prefix)
-                / "/".join(full_prefix.split("/")[:-2])
-                / "latest"
-            )
+            latest_key = str(Path(full_prefix).parent / "latest")
             try:
                 tmp_dir = Path("/tmp/percona_backup_latest")
                 tmp_dir.mkdir(parents=True, exist_ok=True)

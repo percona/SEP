@@ -44,58 +44,71 @@
         margin: 1em 0;
     }
 </style>
-<form action="" method="post" class="{{ form_class }}">
-    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-    <h5>Main Options</h5>
-    <fieldset>
-        <legend>Executor Host</legend>
-        {% set hostname_title = "Select the hostname of the target system for task execution." %}
-        <label for="hostname" title="{{ hostname_title }}">Select Executor Host:</label>
-        {% if executor_hosts|length == 1 %}
-            {% set single_service = executor_hosts[0] %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                <option value="{{ single_service }}" selected>{{ single_service }}</option>
-            </select>
-            <input type="hidden" name="hostname" value="{{ single_service }}">
-        {% else %}
-            <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
-                <option value="" selected>Select a host</option>
-                {% for executor_host in executor_hosts %}
-                    <option value="{{ executor_host }}">{{ executor_host }}</option>
-                    {%
-                    endfor %}
-                </select>
-            {% endif %}
-        </fieldset>
-        <fieldset>
-            <legend>Basic Task Information</legend>
-            <br>
-            {% set task_name_title = "Type the name of task to be created." %}
-            <label for="task_name" title="{{ task_name_title }}">
-                Task Name:
-                <input type="text"
-                       id="task_name"
-                       name="task_name"
-                       class="validate"
-                       required
-                       placeholder="Enter a unique task name" />
-            </label>
-            <br>
-            <br>
-            {% set service_id_title = "Select the database host from the inventory to connect to." %}
-            <label for="service_id" title="{{ service_id_title }}">
-                Select a Database Service:
-                <select id="service_id" name="service_id" required>
-                    <option value="" selected>Select a database host</option>
-                    {% for service in services %}
-                        <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <br>
-            <br>
-            <input type="hidden" name="backup_type" value="pbm_config">
-            <!--
+<form id="create-mongo-backup-form"
+      class="create-mongo-backup-form window"
+      method="post"
+      action=""
+      data-confirm-message="Are you sure you want to create this MongoDB backup task?">
+    <dialog id="modalCreateTask"
+            aria-modal="true"
+            aria-labelledby="modalCreateTaskTitle"
+            data-modal="target"
+            class="large">
+        <header>
+            <h3 id="modalCreateTaskTitle" class="h5 title">Configure a MongoDB backup task</h3>
+        </header>
+        <section>
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+            <h5>Main Options</h5>
+            <fieldset>
+                <legend>Executor Host</legend>
+                {% set hostname_title = "Select the hostname of the target system for task execution." %}
+                <label for="hostname" title="{{ hostname_title }}">Select Executor Host:</label>
+                {% if executor_hosts|length == 1 %}
+                    {% set single_service = executor_hosts[0] %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                    </select>
+                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                {% else %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+                        <option value="" selected>Select a host</option>
+                        {% for executor_host in executor_hosts %}
+                            <option value="{{ executor_host }}">{{ executor_host }}</option>
+                            {%
+                            endfor %}
+                        </select>
+                    {% endif %}
+                </fieldset>
+                <fieldset>
+                    <legend>Basic Task Information</legend>
+                    <br>
+                    {% set task_name_title = "Type the name of task to be created." %}
+                    <label for="task_name" title="{{ task_name_title }}">
+                        Task Name:
+                        <input type="text"
+                               id="task_name"
+                               name="task_name"
+                               class="validate"
+                               required
+                               placeholder="Enter a unique task name" />
+                    </label>
+                    <br>
+                    <br>
+                    {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                    <label for="service_id" title="{{ service_id_title }}">
+                        Select a Database Service:
+                        <select id="service_id" name="service_id" required>
+                            <option value="" selected>Select a database host</option>
+                            {% for service in services %}
+                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <br>
+                    <br>
+                    <input type="hidden" name="backup_type" value="pbm_config">
+                    <!--
             {% set backup_type_title = "Select the type of backup type: Logical/Physical/Config" %}
             <label for="backup_type" title="{{ backup_type_title }}">
                 Backup Type:
@@ -107,16 +120,17 @@
                 </select>
             </label>
             -->
-        </fieldset>
-        {% include "backup_mongo/backup/partials/pbm-config.html" %}
-        {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
-        <div style="display: flex;
-                    align-items: center;
-                    flex-wrap: wrap;
-                    gap: 0.25em">
-            <button class="contained large" type="submit">Create</button>
-            <button class="text large" type="reset">Reset</button>
-        </div>
+                </fieldset>
+                {% include "backup_mongo/backup/partials/pbm-config.html" %}
+                {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
+            </section>
+            <footer>
+                <button type="button" class="text large" data-modal-close>
+                    Cancel<sup>ESC</sup>
+                </button>
+                <button type="submit" class="contained large submitButton">Create</button>
+            </footer>
+        </dialog>
     </form>
     <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
