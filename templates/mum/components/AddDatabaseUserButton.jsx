@@ -3,19 +3,14 @@ import apiClient from "../../../ui/apiClient";
 import {
   Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
-  InputLabel,
-  OutlinedInput,
-  Select,
-  MenuItem,
   TextField,
   Typography,
 } from "@mui/material";
+import BuiltinRolesSelector from "./BuiltinRolesSelector";
 
 const DEFAULT_DB = "admin";
 
@@ -83,86 +78,62 @@ const AddDatabaseUserButton = ({
     }
   };
 
-  return (
-    <>
-      <Button variant="contained" color="success" onClick={handleOpen} {...buttonProps}>
-        + add database user
-      </Button>
-      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
-        <DialogTitle>Create MongoDB user</DialogTitle>
-        <DialogContent sx={{ display: "grid", gap: 2, pt: 2 }}>
-          <TextField
-            label="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={loading}
-            required
-            fullWidth
-          />
-          <TextField
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-            required
-            fullWidth
-          />
-          <FormControl fullWidth>
-            <InputLabel id="add-roles-label">Built-in roles</InputLabel>
-            <Select
-              labelId="add-roles-label"
-              multiple
-              value={roles}
-              onChange={(e) =>
-                setRoles(
-                  typeof e.target.value === "string"
-                    ? e.target.value.split(",")
-                    : e.target.value
-                )
-              }
-              input={<OutlinedInput id="select-add-roles" label="Built-in roles" />}
-              renderValue={(selected) => (
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                  {selected.map((value) => (
-                    <Chip key={value} label={value} />
-                  ))}
-                </Box>
-              )}
+    return (
+      <>
+        <Button variant="contained" color="success" onClick={handleOpen} {...buttonProps}>
+          + add database user
+        </Button>
+        <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+          <DialogTitle>Create MongoDB user</DialogTitle>
+          <DialogContent sx={{ display: "grid", gap: 2, pt: 2 }}>
+            <TextField
+              label="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               disabled={loading}
-            >
-              {builtinRoles.map((role) => (
-                <MenuItem key={role} value={role}>
-                  {role}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <TextField
-            label="Role database"
-            value={rolesDb}
-            onChange={(e) => setRolesDb(e.target.value)}
-            disabled={loading}
-            helperText="Database where roles apply (default admin)"
-            fullWidth
-          />
-          {error && (
-            <Typography color="error" variant="body2">
-              {error}
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose} disabled={loading}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} variant="contained" color="success" disabled={loading}>
-            {loading ? "Creating…" : "Create"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </>
-  );
+              required
+              fullWidth
+            />
+            <TextField
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              required
+              fullWidth
+            />
+            <BuiltinRolesSelector
+              builtinRoles={builtinRoles}
+              value={roles}
+              onChange={setRoles}
+              disabled={loading}
+            />
+            <TextField
+              label="Role database"
+              value={rolesDb}
+              onChange={(e) => setRolesDb(e.target.value)}
+              disabled={loading}
+              helperText="Database where roles apply (default admin)"
+              fullWidth
+            />
+            {error && (
+              <Typography color="error" variant="body2">
+                {error}
+              </Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleClose} disabled={loading}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} variant="contained" color="success" disabled={loading}>
+              {loading ? "Creating…" : "Create"}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </>
+    );
 };
 
 export default AddDatabaseUserButton;

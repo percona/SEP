@@ -1,21 +1,15 @@
 import React, { useMemo, useState } from "react";
 import apiClient from "../../../ui/apiClient";
 import {
-  Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  OutlinedInput,
-  Select,
   TextField,
   Typography,
 } from "@mui/material";
+import BuiltinRolesSelector from "./BuiltinRolesSelector";
 
 const DEFAULT_DB = "admin";
 
@@ -117,36 +111,12 @@ const EditUserButton = ({
             helperText="Leave blank to keep existing password"
             fullWidth
           />
-          <FormControl fullWidth>
-            <InputLabel id="edit-roles-label">Built-in roles</InputLabel>
-            <Select
-              labelId="edit-roles-label"
-              multiple
-              value={roles}
-              onChange={(e) =>
-                setRoles(
-                  typeof e.target.value === "string"
-                    ? e.target.value.split(",")
-                    : e.target.value
-                )
-              }
-              input={<OutlinedInput id="select-edit-roles" label="Built-in roles" />}
-              renderValue={(selected) => (
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                  {selected.map((value) => (
-                    <Chip key={value} label={value} />
-                  ))}
-                </Box>
-              )}
-              disabled={loading}
-            >
-              {builtinRoles.map((role) => (
-                <MenuItem key={role} value={role}>
-                  {role}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <BuiltinRolesSelector
+            builtinRoles={builtinRoles}
+            value={roles}
+            onChange={setRoles}
+            disabled={loading}
+          />
           <TextField
             label="Role database"
             value={rolesDb}
