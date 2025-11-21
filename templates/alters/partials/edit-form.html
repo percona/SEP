@@ -205,6 +205,21 @@
                 <fieldset style="margin-bottom: 0;">
                     <legend>Data</legend>
                     <br>
+                    <div class="field">
+                        <label for="use_manual_input"
+                               title="Toggle to manually type schema and table even if inventory exists.">
+                            Manual input
+                        </label>
+                        <label class="checkbox" style="width: auto;">
+                            <input type="checkbox" id="use_manual_input" name="use_manual_input" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Type schema/table</span>
+                        </label>
+                    </div>
+                    <br>
                     <div class="select">
                         {% set schema_id_title = "Select the database schema on which the task will operate." %}
                         <label for="schema_id" title="{{ schema_id_title }}">
@@ -213,26 +228,39 @@
                             <select id="schema_id"
                                     name="schema_id"
                                     title="{{ schema_id_title }}"
-                                    disabled
-                                    required>
+                                    disabled>
                                 <option value="">Select a schema</option>
                             </select>
                         </label>
                     </div>
+                    <div class="field" id="schema_name_field" style="display:none;">
+                        <label for="schema_name" title="Type the database schema name.">Schema</label>
+                        <input type="text"
+                               id="schema_name"
+                               name="schema_name"
+                               class="validate"
+                               value="{{ task.schema_name }}"
+                               placeholder="database_name" />
+                    </div>
                     <br>
                     <div class="select">
-                        {% set schema_id_title = "Select the table within the schema to be altered." %}
-                        <label for="table_id" title="{{ schema_id_title }}">
+                        {% set table_id_title = "Select the table within the schema to be altered." %}
+                        <label for="table_id" title="{{ table_id_title }}">
                             <span class="material-symbols-outlined">arrow_drop_down</span>
                             <span class="label">Table</span>
-                            <select id="table_id"
-                                    name="table_id"
-                                    title="{{ schema_id_title }}"
-                                    disabled
-                                    required>
+                            <select id="table_id" name="table_id" title="{{ table_id_title }}" disabled>
                                 <option value="">Select a table</option>
                             </select>
                         </label>
+                    </div>
+                    <div class="field" id="table_name_field" style="display:none;">
+                        <label for="table_name" title="Type the table name.">Table</label>
+                        <input type="text"
+                               id="table_name"
+                               name="table_name"
+                               class="validate"
+                               value="{{ task.table_name }}"
+                               placeholder="table_name" />
                     </div>
                     <br>
                 </fieldset>
@@ -576,6 +604,11 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
     const tableSelect = document.getElementById('table_id');
+    const schemaNameInput = document.getElementById('schema_name');
+    const tableNameInput = document.getElementById('table_name');
+    const schemaNameField = document.getElementById('schema_name_field');
+    const tableNameField = document.getElementById('table_name_field');
+    const manualInputToggle = document.getElementById('use_manual_input');
     const createTableOutput = document.getElementById('createTableOutput');
     const statusMessage = document.getElementById('statusMessage');
     const resultPanel = document.getElementById('result-panel');
@@ -585,6 +618,7 @@
     let selectedService = null;
     let selectedSchema = null;
     let selectedTable = null;
+    let useManualInput = false;
 
     async function populateSchemas(selectedService) {
         schemaSelect.disabled = true;
@@ -600,6 +634,7 @@
         if (selectedService && serviceSchemas[selectedService]) {
             const schemas = Object.entries(serviceSchemas[selectedService]);
             if (schemas.length > 0) {
+                setManualInput(false, true);
                 for (const [schemaId, schema] of schemas) {
                     const option = document.createElement('option');
                     option.value = schemaId;
@@ -621,7 +656,11 @@
                     selectedSchema = singleSchemaId;
                     await populateTables(selectedService, singleSchemaId);
                 }
+            } else {
+                setManualInput(true, true);
             }
+        } else {
+            setManualInput(true, true);
         }
     }
 
@@ -662,6 +701,17 @@
     }
 
     function updateEditButtonState() {
+        if (useManualInput) {
+            schemaNameInput.required = true;
+            tableNameInput.required = true;
+            schemaSelect.required = false;
+            tableSelect.required = false;
+        } else {
+            schemaNameInput.required = false;
+            tableNameInput.required = false;
+            schemaSelect.required = true;
+            tableSelect.required = true;
+        }
         const selectElementValues = [
             connectToSelect.value,
             schemaSelect.value,
@@ -669,11 +719,78 @@
         ];
 
         const hasInvalidValue = selectElementValues.includes("-1");
-        editButton.disabled = !form.checkValidity() || hasInvalidValue;
+        editButton.disabled = !form.checkValidity() || (!useManualInput && hasInvalidValue);
+    }
+
+    function checkTypedSchemaTable() {
+        const typedSchema = (schemaNameInput.value || '').trim();
+        const typedTable = (tableNameInput.value || '').trim();
+
+        createTableOutput.classList.add('hidden');
+        statusMessage.classList.remove('success', 'error');
+        statusMessage.textContent = '';
+
+        if (!typedSchema || !typedTable) {
+            resultPanel.classList.add('fade');
+            return;
+        }
+
+        if (!selectedService || !serviceSchemas[selectedService]) {
+            resultPanel.classList.remove('fade');
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.classList.add('error');
+            statusMessage.textContent = 'Using typed schema/table. Table structure and PK details are not available.';
+            return;
+        }
+
+        const schemas = serviceSchemas[selectedService];
+        let schemaFound = false;
+        let tableFound = false;
+        let foundTableId = null;
+
+        for (const [schemaId, schema] of Object.entries(schemas)) {
+            if (schema.name === typedSchema) {
+                schemaFound = true;
+                const tables = schema.tables || {};
+                for (const [tableId, table] of Object.entries(tables)) {
+                    if (table.name === typedTable) {
+                        tableFound = true;
+                        foundTableId = tableId;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        resultPanel.classList.remove('fade');
+
+        if (!schemaFound) {
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.classList.add('error');
+            statusMessage.textContent = `Schema "${typedSchema}" not found in database. Table structure and PK details are not available.`;
+        } else if (!tableFound) {
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.classList.add('error');
+            statusMessage.textContent = `Table "${typedTable}" not found in database for schema "${typedSchema}". Table structure and PK details are not available.`;
+        } else if (foundTableId && foundTableId !== "-1") {
+            fetchCreateTableStatement(foundTableId);
+        } else {
+            statusMessage.classList.remove('success', 'error');
+            statusMessage.classList.add('error');
+            statusMessage.textContent = `Table "${typedTable}" not found in database for schema "${typedSchema}". Table structure and PK details are not available.`;
+        }
     }
 
     async function fetchCreateTableStatement(tableId) {
-        if (selectedService && selectedSchema && tableId) {
+        if (useManualInput && !tableId) {
+            checkTypedSchemaTable();
+            return;
+        }
+        if (!tableId || tableId === "-1") {
+            return;
+        }
+        if (selectedService && tableId) {
             if (tableDetailsCache[tableId]) {
                 const tableData = tableDetailsCache[tableId];
                 displayCreateTable(tableData.create);
@@ -855,6 +972,47 @@
         }
     });
 
+    function setManualInput(enabled, forceToggleChecked) {
+        useManualInput = enabled;
+        if (forceToggleChecked) {
+            manualInputToggle.checked = enabled;
+        }
+        schemaNameField.style.display = enabled ? 'flex' : 'none';
+        tableNameField.style.display = enabled ? 'flex' : 'none';
+        if (enabled) {
+            schemaSelect.value = "";
+            tableSelect.value = "";
+            schemaSelect.disabled = true;
+            tableSelect.disabled = true;
+            document.getElementById("schema_id_hidden")?.remove();
+            document.getElementById("table_id_hidden")?.remove();
+            checkTypedSchemaTable();
+        } else {
+            schemaSelect.disabled = false;
+            tableSelect.disabled = true;
+            createTableOutput.classList.add('hidden');
+            statusMessage.textContent = '';
+            resultPanel.classList.add('fade');
+        }
+        updateEditButtonState();
+    }
+
+    manualInputToggle.addEventListener('change', function() {
+        setManualInput(this.checked, false);
+    });
+
+    schemaNameInput.addEventListener('input', function() {
+        if (useManualInput) {
+            checkTypedSchemaTable();
+        }
+    });
+
+    tableNameInput.addEventListener('input', function() {
+        if (useManualInput) {
+            checkTypedSchemaTable();
+        }
+    });
+
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
     window.addEventListener('DOMContentLoaded', async function() {
@@ -863,6 +1021,10 @@
             const singleHost = connectToSelect.value;
             selectedService = singleHost;
             await populateSchemas(singleHost);
+        }
+        // Prefer manual when unknowns were present
+        if (matched.schemaId === "-1" || matched.tableId === "-1") {
+            setManualInput(true, true);
         }
         updateEditButtonState();
     });
