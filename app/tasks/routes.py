@@ -23,7 +23,7 @@ from datetime import timedelta
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
 from pydantic import BaseModel
@@ -413,11 +413,17 @@ async def create_nomad_variable(
         if payload.path
         else f"{payload.prefix.rstrip('/')}/{uuid4().hex}"
     )
-    await executor.create_nomad_variable(
-        path=path,
-        data=payload.data,
-        namespace=payload.namespace,
-    )
+    try:
+        await executor.create_nomad_variable(
+            path=path,
+            data=payload.data,
+            namespace=payload.namespace,
+        )
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": exc.detail},
+        ) from exc
     return NomadVariableCreateResponse(path=path)
 
 
@@ -432,7 +438,13 @@ async def delete_nomad_variable_endpoint(
     namespace: str | None = None,
 ) -> None:
     """Delete a Nomad variable."""
-    await executor.delete_nomad_variable(path=path, namespace=namespace)
+    try:
+        await executor.delete_nomad_variable(path=path, namespace=namespace)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": exc.detail},
+        ) from exc
 
 
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])
