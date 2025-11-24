@@ -243,11 +243,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             "Data": encoded_data,
         }
         endpoint = f"/v1/var/{quote(sanitized_path)}"
-        async with self._request("POST", endpoint, json=payload) as response:
-            response.raise_for_status()
+        async with self._request("PUT", endpoint, json=payload) as response:
+            body = await response.text()
+            if response.status >= status.HTTP_400_BAD_REQUEST:
+                raise HTTPException(
+                    status_code=response.status,
+                    detail=body or "Failed to create Nomad variable",
+                )
             try:
-                return await response.json()
-            except Exception:
+                return json.loads(body) if body else {"Path": sanitized_path}
+            except json.JSONDecodeError:
                 return {"Path": sanitized_path}
 
     async def delete_nomad_variable(
@@ -261,12 +266,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params = {"namespace": namespace} if namespace else None
         endpoint = f"/v1/var/{quote(sanitized_path)}"
         async with self._request("DELETE", endpoint, params=params) as response:
-            if response.status not in (
+            body = await response.text()
+            if response.status in (
                 status.HTTP_200_OK,
                 status.HTTP_204_NO_CONTENT,
                 status.HTTP_404_NOT_FOUND,
             ):
-                response.raise_for_status()
+                return
+            raise HTTPException(
+                status_code=response.status,
+                detail=body or "Failed to delete Nomad variable",
+            )
 
     async def _cleanup_nomad_variable(self, queue_item: TaskHistory) -> None:
         """Remove temporary Nomad variables referenced by this execution."""
