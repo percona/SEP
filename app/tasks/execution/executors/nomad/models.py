@@ -232,7 +232,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         payload: dict[str, Any] = {
             "Path": sanitized_path,
             "Namespace": namespace or "default",
-            "Items": [],
+            "Items": {},
         }
         for key, value in data.items():
             if isinstance(value, (dict, list)):
@@ -240,9 +240,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             else:
                 raw_value = str(value)
             encoded = b64encode(raw_value.encode("utf-8")).decode("utf-8")
-            payload["Items"].append(
-                {"Key": key, "Value": encoded, "Flags": 0, "Session": "", "Namespace": ""}
-            )
+            payload["Items"][key] = encoded
         endpoint = f"/v1/var/{quote(sanitized_path)}"
         async with self._request("PUT", endpoint, json=payload) as response:
             body = await response.text()
