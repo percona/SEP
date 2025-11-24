@@ -48,8 +48,8 @@ NOMAD_VARIABLE_PREFIX = "sep/mum"
 
 async def _create_config_variable(
     tasks_api: TaskAPI, config: dict[str, Any], *, action: str
-) -> str:
-    """Persist config data in a Nomad variable and return its path."""
+) -> dict[str, str]:
+    """Persist config data in a Nomad variable and return path metadata."""
     response = await tasks_api.post(
         "/nomad/variables/",
         json={
@@ -57,7 +57,10 @@ async def _create_config_variable(
             "data": {"config": json.dumps(config)},
         },
     )
-    return response["path"]
+    return {
+        "config_nomad_variable": response["path"],
+        "config_nomad_variable_namespace": response.get("namespace", "default"),
+    }
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -179,7 +182,7 @@ async def mum_create_user(
             "roles": roles,
             "db": db_name,
         }
-        config_var_path = await _create_config_variable(
+        config_meta = await _create_config_variable(
             tasks_api, config_obj, action="create-user"
         )
         task_data: dict[str, Any] = {
@@ -190,7 +193,7 @@ async def mum_create_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config_nomad_variable": config_var_path,
+                    **config_meta,
                     "requirements": PYTHON_REQUIREMENTS,
                 },
                 "payload": f"file://{PAYLOAD_PATH}",
@@ -255,7 +258,7 @@ async def mum_update_user(
         if roles is not None:
             config_obj["roles"] = roles
 
-        config_var_path = await _create_config_variable(
+        config_meta = await _create_config_variable(
             tasks_api, config_obj, action="update-user"
         )
 
@@ -267,7 +270,7 @@ async def mum_update_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config_nomad_variable": config_var_path,
+                    **config_meta,
                     "requirements": PYTHON_REQUIREMENTS,
                 },
                 "payload": f"file://{PAYLOAD_PATH}",
@@ -323,7 +326,7 @@ async def mum_delete_user(
             "username": username,
             "db": db_name,
         }
-        config_var_path = await _create_config_variable(
+        config_meta = await _create_config_variable(
             tasks_api, config_obj, action="delete-user"
         )
 
@@ -335,7 +338,7 @@ async def mum_delete_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config_nomad_variable": config_var_path,
+                    **config_meta,
                     "requirements": PYTHON_REQUIREMENTS,
                 },
                 "payload": f"file://{PAYLOAD_PATH}",

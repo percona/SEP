@@ -229,23 +229,18 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> dict[str, Any]:
         """Create or update a Nomad variable with the provided data."""
         sanitized_path = path.strip("/")
-        encoded_data: dict[str, str] = {}
-        items: list[dict[str, Any]] = []
+        payload: dict[str, Any] = {
+            "Path": sanitized_path,
+            "Namespace": namespace or "default",
+            "Items": [],
+        }
         for key, value in data.items():
             if isinstance(value, (dict, list)):
                 raw_value = json.dumps(value)
             else:
                 raw_value = str(value)
             encoded = b64encode(raw_value.encode("utf-8")).decode("utf-8")
-            encoded_data[key] = encoded
-            items.append({"Key": key, "Value": encoded})
-
-        payload: dict[str, Any] = {
-            "Path": sanitized_path,
-            "Namespace": namespace or "default",
-            "Data": encoded_data,
-            "Items": items,
-        }
+            payload["Items"].append({"Key": key, "Value": encoded})
         endpoint = f"/v1/var/{quote(sanitized_path)}"
         async with self._request("PUT", endpoint, json=payload) as response:
             body = await response.text()
