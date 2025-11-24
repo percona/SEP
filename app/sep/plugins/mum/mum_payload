@@ -12,6 +12,8 @@ Supported actions (via --config file containing JSON):
 When no config is provided, defaults to list_users.
 The script connects using a MongoDB connection string stored at
 "~/.mongodb_uri" and prints JSON to stdout for consumption by the runner.
+If the provided config is encrypted, set the MUM_SECRET_KEY environment
+variable to the shared Fernet key so the script can decrypt it at runtime.
 """
 
 from __future__ import annotations
@@ -20,12 +22,17 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from bson import json_util
+from cryptography.fernet import Fernet, InvalidToken
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
-from bson import json_util
-from pathlib import Path
+
+SECRET_ENV_VAR = "MUM_SECRET_KEY"
+SECURE_FLAG = "__secure__"
+PAYLOAD_FIELD = "payload"
 
 
 def mum_creds() -> str:
@@ -71,6 +78,37 @@ def load_config(config_path: Optional[str]) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         print(f"Failed to read config file {config_path}: {exc}", file=sys.stderr)
         return {}
+
+
+def decrypt_config_if_needed(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Decrypt secure configs using the shared MUM secret key."""
+    if not isinstance(config, dict) or not config.get(SECURE_FLAG):
+        return config
+
+    ciphertext = config.get(PAYLOAD_FIELD)
+    if not isinstance(ciphertext, str):
+        print("Secure config payload is malformed: missing ciphertext", file=sys.stderr)
+        sys.exit(1)
+
+    key = os.environ.get(SECRET_ENV_VAR)
+    if not key:
+        print(
+            f"Environment variable {SECRET_ENV_VAR} is required to decrypt the task config",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        plaintext = Fernet(key.encode("utf-8")).decrypt(ciphertext.encode("utf-8"))
+    except (InvalidToken, ValueError) as exc:
+        print(f"Failed to decrypt secure config: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        return json.loads(plaintext.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"Secure config is not valid JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def list_users(db) -> None:  # type: ignore[no-untyped-def]
@@ -167,7 +205,7 @@ def mum() -> None:
     os.environ["MONGODB_URI"] = uri
 
     args = parse_args()
-    config = load_config(args.config)
+    config = decrypt_config_if_needed(load_config(args.config))
     action = (config.get("action") if isinstance(config, dict) else None) or "list_users"
 
     client = None

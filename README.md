@@ -281,9 +281,10 @@ Each plugin configuration includes:
 
 ### Secrets
 
-SEP needs some keys and secrets to interact with Casdoor. They are:
+SEP needs some keys and secrets to interact with Casdoor and to keep plugin payloads safe. They are:
 - `CASDOOR__CLIENT_ID`
 - `CASDOOR__CLIENT_SECRET`
+- `SEP__MUM_SECRET_KEY` (or the `MUM_SECRET_KEY` environment variable on executor hosts)
 
 You can create a basic .env file template by running the following command in the project root folder:
 ```shell
@@ -304,6 +305,22 @@ it should be in http://localhost:9999/applications/built-in/app-built-in
 
 3. Copy the app's Client ID and Client Secret and replace the respective `YOUR_CASDOOR_CLIENT_ID`
 and `YOUR_CASDOOR_CLIENT_SECRET` in the .env file you created.
+
+#### MongoDB User Management Secrets
+
+The MUM plugin encrypts temporary MongoDB user configs before they are persisted. Provide
+a Fernet key via `SEP__MUM_SECRET_KEY` (backend) and `MUM_SECRET_KEY` (executor host) so the UI and the
+Python payload share the same secret. You can generate a compatible key with:
+
+```shell
+python - <<'PY'
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+PY
+```
+
+Store the generated key in `settings.yaml`, environment variables, or a secrets manager and
+set `MUM_SECRET_KEY` on every MUM executor host so the payload can decrypt configs at runtime.
 
 ### Environment
 

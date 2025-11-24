@@ -16,32 +16,36 @@
 """Define routes for the MUM Plugin."""
 
 import logging
-import json
-from typing import Any
+import time
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Request, status, HTTPException
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
-
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
-    TaskAPI,
-    IsAuthenticated,
     InventoryAPI,
+    IsAuthenticated,
+    TaskAPI,
 )
 from app.sep.plugins.mum.models import MUMTaskCreateRequest
+from app.sep.plugins.mum.security import (
+    MUMSecurityError,
+    serialize_sensitive_config,
+)
 from app.sep.utils.decorators import csrf_exempt
-
 from app.tasks.models import TaskBackendEnum, TaskOwner
-from app.inventory.models import ServiceTypeEnum
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 templates = sep_settings.TEMPLATES
+PAYLOAD_PATH = Path(__file__).parent / "mum_payload"
+PYTHON_REQUIREMENTS = "PyMongo\ncryptography"
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -155,8 +159,7 @@ async def mum_create_user(
         )
 
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
-        dynamic_name = f"mum-create-user-{int(__import__('time').time())}"
+        dynamic_name = f"mum-create-user-{int(time.time())}"
         config_obj: dict[str, Any] = {
             "action": "create_user",
             "username": username,
@@ -164,6 +167,7 @@ async def mum_create_user(
             "roles": roles,
             "db": db_name,
         }
+        config_json = serialize_sensitive_config(config_obj)
         task_data: dict[str, Any] = {
             "name": dynamic_name,
             "backend": TaskBackendEnum.PROXY,
@@ -172,10 +176,10 @@ async def mum_create_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config": json.dumps(config_obj),
-                    "requirements": "PyMongo",
+                    "config": config_json,
+                    "requirements": PYTHON_REQUIREMENTS,
                 },
-                "payload": f"file://{payload_path}",
+                "payload": f"file://{PAYLOAD_PATH}",
             },
         }
         created_task = await tasks_api.post("/", json=task_data)
@@ -185,6 +189,12 @@ async def mum_create_user(
         return JSONResponse(
             content={"task": created_task, "history": history},
             status_code=status.HTTP_201_CREATED,
+        )
+    except MUMSecurityError as exc:
+        logger.exception("Failed to secure create-user payload: %s", exc)
+        return JSONResponse(
+            content={"detail": "Sensitive data could not be protected. Contact an administrator."},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
@@ -226,8 +236,7 @@ async def mum_update_user(
     roles = body.get("roles")
 
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
-        dynamic_name = f"mum-update-user-{int(__import__('time').time())}"
+        dynamic_name = f"mum-update-user-{int(time.time())}"
         config_obj: dict[str, Any] = {
             "action": "update_user",
             "username": username,
@@ -238,6 +247,8 @@ async def mum_update_user(
         if roles is not None:
             config_obj["roles"] = roles
 
+        config_json = serialize_sensitive_config(config_obj)
+
         task_data: dict[str, Any] = {
             "name": dynamic_name,
             "backend": TaskBackendEnum.PROXY,
@@ -246,10 +257,10 @@ async def mum_update_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config": json.dumps(config_obj),
-                    "requirements": "PyMongo",
+                    "config": config_json,
+                    "requirements": PYTHON_REQUIREMENTS,
                 },
-                "payload": f"file://{payload_path}",
+                "payload": f"file://{PAYLOAD_PATH}",
             },
         }
         created_task = await tasks_api.post("/", json=task_data)
@@ -259,6 +270,12 @@ async def mum_update_user(
         return JSONResponse(
             content={"task": created_task, "history": history},
             status_code=status.HTTP_201_CREATED,
+        )
+    except MUMSecurityError as exc:
+        logger.exception("Failed to secure update-user payload: %s", exc)
+        return JSONResponse(
+            content={"detail": "Sensitive data could not be protected. Contact an administrator."},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
@@ -296,13 +313,14 @@ async def mum_delete_user(
     db_name = body.get("db") or "admin"
 
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
-        dynamic_name = f"mum-delete-user-{int(__import__('time').time())}"
+        dynamic_name = f"mum-delete-user-{int(time.time())}"
         config_obj: dict[str, Any] = {
             "action": "delete_user",
             "username": username,
             "db": db_name,
         }
+        config_json = serialize_sensitive_config(config_obj)
+
         task_data: dict[str, Any] = {
             "name": dynamic_name,
             "backend": TaskBackendEnum.PROXY,
@@ -311,10 +329,10 @@ async def mum_delete_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config": json.dumps(config_obj),
-                    "requirements": "PyMongo",
+                    "config": config_json,
+                    "requirements": PYTHON_REQUIREMENTS,
                 },
-                "payload": f"file://{payload_path}",
+                "payload": f"file://{PAYLOAD_PATH}",
             },
         }
         created_task = await tasks_api.post("/", json=task_data)
@@ -324,6 +342,12 @@ async def mum_delete_user(
         return JSONResponse(
             content={"task": created_task, "history": history},
             status_code=status.HTTP_201_CREATED,
+        )
+    except MUMSecurityError as exc:
+        logger.exception("Failed to secure delete-user payload: %s", exc)
+        return JSONResponse(
+            content={"detail": "Sensitive data could not be protected. Contact an administrator."},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
@@ -345,9 +369,9 @@ async def create_mum_task(
     Returns the created task (including its ID) as JSON.
     """
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
+        payload_path = PAYLOAD_PATH
         # Make task name dynamic to act like a short-lived session name
-        dynamic_name = f"{create_task_json.name}-{int(__import__('time').time())}"
+        dynamic_name = f"{create_task_json.name}-{int(time.time())}"
         task_data: dict[str, Any] = {
             "name": dynamic_name,
             "backend": TaskBackendEnum.PROXY,
@@ -359,7 +383,7 @@ async def create_mum_task(
                     # Forward the user payload as script config (opaque to backend)
                     "config": create_task_json.payload,
                     # Default requirements for MUM scripts
-                    "requirements": "PyMongo",
+                    "requirements": PYTHON_REQUIREMENTS,
                     # `target` will be provided when executing the task from UI
                 },
                 # Use the bundled Python payload for MUM as the script body

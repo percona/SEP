@@ -95,6 +95,7 @@ default:
           - information_schema
     SYNC_REFRESH_TIME: 5  # Browser refresh interval during sync (seconds)
     PMM_FRONTEND: null
+    MUM_SECRET_KEY: null  # Fernet key used to encrypt MongoDB user configs
   INVENTORY:
     SSL_KEYFILE: null
     SSL_CERTFILE: null

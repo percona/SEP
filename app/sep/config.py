@@ -21,6 +21,7 @@ from pathlib import Path
 from string import Template
 from typing import Any, ClassVar, Literal, Self
 
+from cryptography.fernet import Fernet
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from pydantic import (
@@ -275,6 +276,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNC_REFRESH_TIME: int = 5
     PMM_FRONTEND: StrHttpUrl | None = None
     FOOTER_TEMPLATE: Template = Template("$summary $version")
+    MUM_SECRET_KEY: str | None = None
 
     @computed_field
     @cached_property
@@ -375,6 +377,18 @@ class SEPSettings(BaseYamlAppSettings):
                 raise ValueError("PMM endpoint should be a valid HTTP URL") from None
         self.SYNCERS = syncers
         return self
+
+    @field_validator("MUM_SECRET_KEY", mode="before")
+    @classmethod
+    def validate_mum_secret_key(cls, value: Any) -> Any:
+        """Ensure the configured MUM secret key, if provided, is a valid Fernet key."""
+        if value in (None, ""):
+            return None
+        try:
+            Fernet(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("MUM_SECRET_KEY must be a valid Fernet key") from exc
+        return value
 
 
 sep_settings = SEPSettings()
