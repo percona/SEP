@@ -248,6 +248,36 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             json=payload,
         )
 
+    def delete_nomad_variable(
+        self,
+        *,
+        path: str,
+        namespace: str | None = None,
+    ) -> None:
+        """Delete a Nomad variable."""
+        sanitized_path = path.strip("/")
+        params = {"namespace": namespace} if namespace else None
+        self.backend.request(
+            "delete",
+            f"/v1/var/{quote(sanitized_path)}",
+            params=params,
+        )
+
+    def _cleanup_nomad_variable(self, queue_item: TaskHistory) -> None:
+        """Remove temporary Nomad variables referenced by this execution."""
+        meta = queue_item.execution_request.meta or {}
+        path = meta.pop("config_nomad_variable", None)
+        namespace = meta.pop("config_nomad_variable_namespace", None)
+        if not path:
+            queue_item.execution_request.meta = meta
+            return
+        try:
+            self.delete_nomad_variable(path=path, namespace=namespace)
+        except BaseNomadException:
+            logger.warning("Failed to delete Nomad variable %s", path, exc_info=True)
+        finally:
+            queue_item.execution_request.meta = meta
+
     async def parse_payload(
         self, payload: str | bytes, payload_format: str
     ) -> dict[str, Any]:
@@ -652,6 +682,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     "Lost job and allocation from task history %s", queue_item.id
                 )
                 queue_item.status = TaskHistoryStatusEnum.LOST
+            if queue_item.status != TaskHistoryStatusEnum.RUNNING:
+                self._cleanup_nomad_variable(queue_item)
             return queue_item
 
         task_states = alloc["TaskStates"]
@@ -703,6 +735,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.status,
                     stopped=job.get("Stop", False),
                 )
+        if queue_item.status != TaskHistoryStatusEnum.RUNNING:
+            self._cleanup_nomad_variable(queue_item)
         return queue_item
 
     def task_needs_new_job(self, task: Task) -> bool:

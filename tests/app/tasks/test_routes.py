@@ -124,3 +124,20 @@ async def test_create_nomad_variable_respects_custom_path(mocker, test_client):
         data={"key": "value"},
         namespace="foo",
     )
+
+
+@pytest.mark.asyncio
+async def test_delete_nomad_variable_endpoint(mocker, test_client):
+    """Deleting a Nomad variable should call the executor helper."""
+    mock_executor = mocker.Mock()
+    tasks_app.dependency_overrides[get_executor] = lambda *_, **__: mock_executor
+    try:
+        response = test_client.delete("/nomad/variables/foo/bar?namespace=ns")
+    finally:
+        tasks_app.dependency_overrides.pop(get_executor, None)
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    mock_executor.delete_nomad_variable.assert_called_once_with(
+        path="foo/bar",
+        namespace="ns",
+    )

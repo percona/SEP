@@ -421,6 +421,20 @@ async def create_nomad_variable(
     return NomadVariableCreateResponse(path=path)
 
 
+@router.delete(
+    "/nomad/variables/{path:path}",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_nomad_variable_endpoint(
+    path: str,
+    executor: TaskExecutor,
+    namespace: str | None = None,
+) -> None:
+    """Delete a Nomad variable."""
+    executor.delete_nomad_variable(path=path, namespace=namespace)
+
+
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])
 async def transform_payload(
     data: TransformPayloadRequest,
