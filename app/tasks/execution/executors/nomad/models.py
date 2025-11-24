@@ -284,17 +284,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     async def _cleanup_nomad_variable(self, queue_item: TaskHistory) -> None:
         """Remove temporary Nomad variables referenced by this execution."""
         meta = queue_item.execution_request.meta or {}
-        path = meta.pop("config_nomad_variable", None)
-        namespace = meta.pop("config_nomad_variable_namespace", None)
+        path = meta.get("config_nomad_variable")
+        namespace = meta.get("config_nomad_variable_namespace")
         if not path:
-            queue_item.execution_request.meta = meta
             return
         try:
             await self.delete_nomad_variable(path=path, namespace=namespace)
         except BaseNomadException:
             logger.warning("Failed to delete Nomad variable %s", path, exc_info=True)
         finally:
-            queue_item.execution_request.meta = meta
+            meta.pop("config_nomad_variable", None)
+            meta.pop("config_nomad_variable_namespace", None)
 
     async def parse_payload(
         self, payload: str | bytes, payload_format: str
@@ -359,15 +359,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 payload = minify_file_content(payload)
             payload = b2a_base64(gzip_compress(payload)).decode("utf-8")
 
-        filtered_meta = (
-            {
-                key: value
-                for key, value in queue_item.execution_request.meta.items()
-                if not key.startswith("_")
-            }
-            if queue_item.execution_request.meta
-            else {}
-        )
+        filtered_meta = {}
+        if queue_item.execution_request.meta:
+            for key, value in queue_item.execution_request.meta.items():
+                if key.startswith("_"):
+                    continue
+                if key in {"config_nomad_variable", "config_nomad_variable_namespace"}:
+                    continue
+                filtered_meta[key] = value
 
         custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
         if custom_prefix:
