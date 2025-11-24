@@ -84,8 +84,8 @@ async def test_delete_task_forbidden_when_protected(test_client, session):
 async def test_create_nomad_variable_generates_path(mocker, test_client):
     """Ensure Nomad variable endpoint creates a path and forwards data."""
     mock_executor = mocker.Mock()
+    mock_executor.create_nomad_variable = mocker.AsyncMock(return_value={})
     tasks_app.dependency_overrides[get_executor] = lambda *_, **__: mock_executor
-    mock_executor.create_nomad_variable.return_value = {}
     try:
         response = test_client.post(
             "/nomad/variables/",
@@ -107,8 +107,8 @@ async def test_create_nomad_variable_generates_path(mocker, test_client):
 async def test_create_nomad_variable_respects_custom_path(mocker, test_client):
     """Verify that providing an explicit path bypasses prefix logic."""
     mock_executor = mocker.Mock()
+    mock_executor.create_nomad_variable = mocker.AsyncMock(return_value={})
     tasks_app.dependency_overrides[get_executor] = lambda *_, **__: mock_executor
-    mock_executor.create_nomad_variable.return_value = {}
     try:
         response = test_client.post(
             "/nomad/variables/",
@@ -130,6 +130,7 @@ async def test_create_nomad_variable_respects_custom_path(mocker, test_client):
 async def test_delete_nomad_variable_endpoint(mocker, test_client):
     """Deleting a Nomad variable should call the executor helper."""
     mock_executor = mocker.Mock()
+    mock_executor.delete_nomad_variable = mocker.AsyncMock(return_value=None)
     tasks_app.dependency_overrides[get_executor] = lambda *_, **__: mock_executor
     try:
         response = test_client.delete("/nomad/variables/foo/bar?namespace=ns")

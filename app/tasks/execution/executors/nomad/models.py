@@ -220,7 +220,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
         return task
 
-    def create_nomad_variable(
+    async def create_nomad_variable(
         self,
         *,
         path: str,
@@ -237,18 +237,20 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 raw_value = str(value)
             encoded_data[key] = b64encode(raw_value.encode("utf-8")).decode("utf-8")
 
-        payload = {
+        payload: dict[str, Any] = {
             "Path": sanitized_path,
             "Namespace": namespace or "default",
             "Data": encoded_data,
         }
-        return self.backend.request(
-            "post",
-            f"/v1/var/{quote(sanitized_path)}",
-            json=payload,
-        )
+        endpoint = f"/v1/var/{quote(sanitized_path)}"
+        async with self._request("POST", endpoint, json=payload) as response:
+            response.raise_for_status()
+            try:
+                return await response.json()
+            except Exception:
+                return {"Path": sanitized_path}
 
-    def delete_nomad_variable(
+    async def delete_nomad_variable(
         self,
         *,
         path: str,
@@ -257,13 +259,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """Delete a Nomad variable."""
         sanitized_path = path.strip("/")
         params = {"namespace": namespace} if namespace else None
-        self.backend.request(
-            "delete",
-            f"/v1/var/{quote(sanitized_path)}",
-            params=params,
-        )
+        endpoint = f"/v1/var/{quote(sanitized_path)}"
+        async with self._request("DELETE", endpoint, params=params) as response:
+            if response.status not in (
+                status.HTTP_200_OK,
+                status.HTTP_204_NO_CONTENT,
+                status.HTTP_404_NOT_FOUND,
+            ):
+                response.raise_for_status()
 
-    def _cleanup_nomad_variable(self, queue_item: TaskHistory) -> None:
+    async def _cleanup_nomad_variable(self, queue_item: TaskHistory) -> None:
         """Remove temporary Nomad variables referenced by this execution."""
         meta = queue_item.execution_request.meta or {}
         path = meta.pop("config_nomad_variable", None)
@@ -272,7 +277,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             queue_item.execution_request.meta = meta
             return
         try:
-            self.delete_nomad_variable(path=path, namespace=namespace)
+            await self.delete_nomad_variable(path=path, namespace=namespace)
         except BaseNomadException:
             logger.warning("Failed to delete Nomad variable %s", path, exc_info=True)
         finally:
@@ -683,7 +688,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
                 queue_item.status = TaskHistoryStatusEnum.LOST
             if queue_item.status != TaskHistoryStatusEnum.RUNNING:
-                self._cleanup_nomad_variable(queue_item)
+                await self._cleanup_nomad_variable(queue_item)
             return queue_item
 
         task_states = alloc["TaskStates"]
@@ -736,7 +741,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     stopped=job.get("Stop", False),
                 )
         if queue_item.status != TaskHistoryStatusEnum.RUNNING:
-            self._cleanup_nomad_variable(queue_item)
+            await self._cleanup_nomad_variable(queue_item)
         return queue_item
 
     def task_needs_new_job(self, task: Task) -> bool:

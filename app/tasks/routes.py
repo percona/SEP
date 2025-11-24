@@ -413,7 +413,7 @@ async def create_nomad_variable(
         if payload.path
         else f"{payload.prefix.rstrip('/')}/{uuid4().hex}"
     )
-    executor.create_nomad_variable(
+    await executor.create_nomad_variable(
         path=path,
         data=payload.data,
         namespace=payload.namespace,
@@ -432,7 +432,7 @@ async def delete_nomad_variable_endpoint(
     namespace: str | None = None,
 ) -> None:
     """Delete a Nomad variable."""
-    executor.delete_nomad_variable(path=path, namespace=namespace)
+    await executor.delete_nomad_variable(path=path, namespace=namespace)
 
 
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])
