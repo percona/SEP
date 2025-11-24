@@ -21,10 +21,12 @@ import os
 from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy_celery_beat import PeriodicTask
+from pydantic import BaseModel
 
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
@@ -67,6 +69,21 @@ from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["tasks"])
+
+
+class NomadVariableCreateRequest(BaseModel):
+    """Payload for creating a temporary Nomad variable."""
+
+    data: dict[str, Any]
+    prefix: str = "sep/runtime"
+    path: str | None = None
+    namespace: str | None = None
+
+
+class NomadVariableCreateResponse(BaseModel):
+    """Response containing the created Nomad variable path."""
+
+    path: str
 
 
 # TODO: Pagination  # noqa: TD002, TD003
@@ -378,6 +395,30 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
 async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
     """Return the executor hosts from the executor."""
     return executor.get_hosts()
+
+
+@router.post(
+    "/nomad/variables/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=NomadVariableCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_nomad_variable(
+    executor: TaskExecutor,
+    payload: NomadVariableCreateRequest,
+) -> NomadVariableCreateResponse:
+    """Create a Nomad variable for temporary task data."""
+    path = (
+        payload.path.strip("/")
+        if payload.path
+        else f"{payload.prefix.rstrip('/')}/{uuid4().hex}"
+    )
+    executor.create_nomad_variable(
+        path=path,
+        data=payload.data,
+        namespace=payload.namespace,
+    )
+    return NomadVariableCreateResponse(path=path)
 
 
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])

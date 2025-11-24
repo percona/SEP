@@ -21,7 +21,7 @@ async def get_users(
     request: Request,
 ) -> TaskWrite:
 
-    requirements = "PyMongo\ncryptography"
+    requirements = "PyMongo"
 
     payload_path = Path(__file__).parent / f"mum_payload"
 

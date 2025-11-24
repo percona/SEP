@@ -28,6 +28,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from typing import Any
+from urllib.parse import quote
 from uuid import uuid1
 
 from aiohttp import (
@@ -218,6 +219,34 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         json.dumps(constraint).replace(meta, str(meta_val)),
                     )
         return task
+
+    def create_nomad_variable(
+        self,
+        *,
+        path: str,
+        data: dict[str, Any],
+        namespace: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a Nomad variable with the provided data."""
+        sanitized_path = path.strip("/")
+        encoded_data: dict[str, str] = {}
+        for key, value in data.items():
+            if isinstance(value, (dict, list)):
+                raw_value = json.dumps(value)
+            else:
+                raw_value = str(value)
+            encoded_data[key] = b64encode(raw_value.encode("utf-8")).decode("utf-8")
+
+        payload = {
+            "Path": sanitized_path,
+            "Namespace": namespace or "default",
+            "Data": encoded_data,
+        }
+        return self.backend.request(
+            "post",
+            f"/v1/var/{quote(sanitized_path)}",
+            json=payload,
+        )
 
     async def parse_payload(
         self, payload: str | bytes, payload_format: str

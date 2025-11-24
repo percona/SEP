@@ -15,6 +15,7 @@
 
 """Define routes for the MUM Plugin."""
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -32,10 +33,6 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.mum.models import MUMTaskCreateRequest
-from app.sep.plugins.mum.security import (
-    MUMSecurityError,
-    serialize_sensitive_config,
-)
 from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import TaskBackendEnum, TaskOwner
 
@@ -45,7 +42,22 @@ router = APIRouter()
 
 templates = sep_settings.TEMPLATES
 PAYLOAD_PATH = Path(__file__).parent / "mum_payload"
-PYTHON_REQUIREMENTS = "PyMongo\ncryptography"
+PYTHON_REQUIREMENTS = "PyMongo"
+NOMAD_VARIABLE_PREFIX = "sep/mum"
+
+
+async def _create_config_variable(
+    tasks_api: TaskAPI, config: dict[str, Any], *, action: str
+) -> str:
+    """Persist config data in a Nomad variable and return its path."""
+    response = await tasks_api.post(
+        "/nomad/variables/",
+        json={
+            "prefix": f"{NOMAD_VARIABLE_PREFIX}/{action}",
+            "data": {"config": json.dumps(config)},
+        },
+    )
+    return response["path"]
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -167,7 +179,9 @@ async def mum_create_user(
             "roles": roles,
             "db": db_name,
         }
-        config_json = serialize_sensitive_config(config_obj)
+        config_var_path = await _create_config_variable(
+            tasks_api, config_obj, action="create-user"
+        )
         task_data: dict[str, Any] = {
             "name": dynamic_name,
             "backend": TaskBackendEnum.PROXY,
@@ -176,7 +190,7 @@ async def mum_create_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config": config_json,
+                    "config_nomad_variable": config_var_path,
                     "requirements": PYTHON_REQUIREMENTS,
                 },
                 "payload": f"file://{PAYLOAD_PATH}",
@@ -189,12 +203,6 @@ async def mum_create_user(
         return JSONResponse(
             content={"task": created_task, "history": history},
             status_code=status.HTTP_201_CREATED,
-        )
-    except MUMSecurityError as exc:
-        logger.exception("Failed to secure create-user payload: %s", exc)
-        return JSONResponse(
-            content={"detail": "Sensitive data could not be protected. Contact an administrator."},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
@@ -247,7 +255,9 @@ async def mum_update_user(
         if roles is not None:
             config_obj["roles"] = roles
 
-        config_json = serialize_sensitive_config(config_obj)
+        config_var_path = await _create_config_variable(
+            tasks_api, config_obj, action="update-user"
+        )
 
         task_data: dict[str, Any] = {
             "name": dynamic_name,
@@ -257,7 +267,7 @@ async def mum_update_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config": config_json,
+                    "config_nomad_variable": config_var_path,
                     "requirements": PYTHON_REQUIREMENTS,
                 },
                 "payload": f"file://{PAYLOAD_PATH}",
@@ -270,12 +280,6 @@ async def mum_update_user(
         return JSONResponse(
             content={"task": created_task, "history": history},
             status_code=status.HTTP_201_CREATED,
-        )
-    except MUMSecurityError as exc:
-        logger.exception("Failed to secure update-user payload: %s", exc)
-        return JSONResponse(
-            content={"detail": "Sensitive data could not be protected. Contact an administrator."},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
@@ -319,7 +323,9 @@ async def mum_delete_user(
             "username": username,
             "db": db_name,
         }
-        config_json = serialize_sensitive_config(config_obj)
+        config_var_path = await _create_config_variable(
+            tasks_api, config_obj, action="delete-user"
+        )
 
         task_data: dict[str, Any] = {
             "name": dynamic_name,
@@ -329,7 +335,7 @@ async def mum_delete_user(
             "data": {
                 "task": "run-python",
                 "meta": {
-                    "config": config_json,
+                    "config_nomad_variable": config_var_path,
                     "requirements": PYTHON_REQUIREMENTS,
                 },
                 "payload": f"file://{PAYLOAD_PATH}",
@@ -342,12 +348,6 @@ async def mum_delete_user(
         return JSONResponse(
             content={"task": created_task, "history": history},
             status_code=status.HTTP_201_CREATED,
-        )
-    except MUMSecurityError as exc:
-        logger.exception("Failed to secure delete-user payload: %s", exc)
-        return JSONResponse(
-            content={"detail": "Sensitive data could not be protected. Contact an administrator."},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)

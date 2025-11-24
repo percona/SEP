@@ -97,7 +97,7 @@ NOMAD_RUN_PYTHON = {
     "ParameterizedJob": {
         "Payload": "required",
         "MetaRequired": ["target"],
-        "MetaOptional": ["config", "requirements"],
+        "MetaOptional": ["config", "config_nomad_variable", "requirements"],
     },
     "TaskGroups": [
         {
@@ -144,7 +144,7 @@ NOMAD_RUN_PYTHON = {
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                     "Templates": [
                         {
-                            "EmbeddedTmpl": '{{ env "NOMAD_META_config" }}',
+                            "EmbeddedTmpl": '{{- $var := env "NOMAD_META_config_nomad_variable" -}}{{- if $var -}}{{ with nomadVar $var }}{{ .Data.config }}{{ end }}{{- else -}}{{ env "NOMAD_META_config" }}{{- end -}}',
                             "DestPath": "script_config",
                         },
                     ],
