@@ -420,9 +420,10 @@ async def create_nomad_variable(
             namespace=payload.namespace,
         )
     except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": exc.detail}
         raise HTTPException(
             status_code=exc.status_code,
-            detail={"message": exc.detail},
+            detail=detail,
         ) from exc
     return NomadVariableCreateResponse(path=path)
 
@@ -441,9 +442,10 @@ async def delete_nomad_variable_endpoint(
     try:
         await executor.delete_nomad_variable(path=path, namespace=namespace)
     except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": exc.detail}
         raise HTTPException(
             status_code=exc.status_code,
-            detail={"message": exc.detail},
+            detail=detail,
         ) from exc
 
 
