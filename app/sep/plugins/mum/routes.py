@@ -17,6 +17,7 @@
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +142,29 @@ async def _execute_default_task(
     return default_task, history
 
 
+async def _create_legacy_task(
+    tasks_api: TaskAPI, create_task_json: MUMTaskCreateRequest
+) -> dict[str, Any]:
+    """Fallback to the legacy dynamic PROXY task creation."""
+    payload_path = PAYLOAD_PATH
+    dynamic_name = f"{create_task_json.name}-{int(time.time())}"
+    task_data: dict[str, Any] = {
+        "name": dynamic_name,
+        "backend": TaskBackendEnum.PROXY,
+        "owner": TaskOwner.MUM,
+        "alert_on_fail": create_task_json.alert_on_fail,
+        "data": {
+            "task": "run-python",
+            "meta": {
+                "config": create_task_json.payload,
+                "requirements": PYTHON_REQUIREMENTS,
+            },
+            "payload": f"file://{payload_path}",
+        },
+    }
+    return await tasks_api.post("/", json=task_data)
+
+
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def mum_index(
     request: Request,
@@ -179,7 +203,7 @@ async def mum_options(
     try:
         default_task = await _ensure_default_task(tasks_api)
     except HTTPException as exc:  # type: ignore[name-defined]
-        logger.exception("Failed to ensure default MUM task: %s", exc)
+        logger.warning("Failed to ensure default MUM task: %s", exc)
         default_task = None
     return JSONResponse(
         content={
@@ -432,4 +456,8 @@ async def create_mum_task(
         default_task = await _ensure_default_task(tasks_api)
         return JSONResponse(content=default_task, status_code=status.HTTP_201_CREATED)
     except HTTPException as exc:  # type: ignore[name-defined]
-        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+        logger.warning(
+            "Default MUM task unavailable, falling back to legacy creation: %s", exc
+        )
+        legacy_task = await _create_legacy_task(tasks_api, create_task_json)
+        return JSONResponse(content=legacy_task, status_code=status.HTTP_201_CREATED)
