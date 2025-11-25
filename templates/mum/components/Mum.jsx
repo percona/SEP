@@ -172,13 +172,6 @@ const Mum = () => {
 
   const listBusy = listBusyCount > 0;
 
-  const buildPayload = useCallback(() => ({
-    name: "mum-users",
-    payload: JSON.stringify({ action: "list_users" }),
-    fmt: "json",
-    alert_on_fail: false,
-  }), []);
-
   useEffect(() => {
     defaultTaskRef.current = defaultTask;
   }, [defaultTask]);
@@ -188,7 +181,7 @@ const Mum = () => {
       return defaultTaskRef.current;
     }
     try {
-      const response = await apiClient.post("/mum/ui/usertask", buildPayload());
+      const response = await apiClient.post("/mum/ui/usertask", {});
       setDefaultTask(response.data);
       defaultTaskRef.current = response.data;
       return response.data;
@@ -198,7 +191,7 @@ const Mum = () => {
       setError(detail);
       throw err;
     }
-  }, [buildPayload]);
+  }, []);
 
   useEffect(() => {
     const loadOptions = async () => {
@@ -304,19 +297,15 @@ const Mum = () => {
       setExecution(null);
       setUsersData([]);
       try {
-        const task = defaultTask?.name ? defaultTask : await ensureDefaultTask();
         const response = await apiClient.post(
-          `/mum/ui/execute/${task.name}`,
+          `/mum/ui/list-users`,
           {
             target,
-            meta: {
-              config: JSON.stringify({ action: "list_users" }),
-            },
           }
         );
         setLastListTarget(target);
-        setExecution(response.data);
-        streamListUsers(response.data?.id);
+        setExecution(response.data?.history);
+        streamListUsers(response.data?.history?.id);
       } catch (err) {
         const detail = err?.response?.data?.detail || err?.message || "Failed to list users";
         setError(detail);
@@ -324,7 +313,7 @@ const Mum = () => {
         setListBusyCount((count) => Math.max(count - 1, 0));
       }
     },
-    [defaultTask, ensureDefaultTask, selectedTarget, streamListUsers],
+    [selectedTarget, streamListUsers],
   );
 
   const handleUserMutation = useCallback((meta) => {

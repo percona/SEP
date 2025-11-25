@@ -17,7 +17,6 @@
 
 import json
 import logging
-import time
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +31,6 @@ from app.sep.deps import (
     IsAuthenticated,
     TaskAPI,
 )
-from app.sep.plugins.mum.models import MUMTaskCreateRequest
 from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import TaskBackendEnum, TaskOwner
 
@@ -43,25 +41,7 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 PAYLOAD_PATH = Path(__file__).parent / "mum_payload"
 PYTHON_REQUIREMENTS = "PyMongo"
-NOMAD_VARIABLE_PREFIX = "sep/mum"
 DEFAULT_TASK_NAME = "mum-users"
-
-
-async def _create_config_variable(
-    tasks_api: TaskAPI, config: dict[str, Any], *, action: str
-) -> dict[str, str]:
-    """Persist config data in a Nomad variable and return path metadata."""
-    response = await tasks_api.post(
-        "/nomad/variables/",
-        json={
-            "prefix": f"{NOMAD_VARIABLE_PREFIX}/{action}",
-            "data": {"config": json.dumps(config)},
-        },
-    )
-    return {
-        "config_nomad_variable": response["path"],
-        "config_nomad_variable_namespace": response.get("namespace", "default"),
-    }
 
 
 def _build_default_task_spec() -> dict[str, Any]:
@@ -130,43 +110,27 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
 
 
 async def _execute_default_task(
-    tasks_api: TaskAPI, *, target: str, meta: dict[str, Any] | None = None
+    tasks_api: TaskAPI, *, target: str, config: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Dispatch the default MUM task with optional meta overrides."""
+    """Dispatch the default MUM task with the provided config.
+    
+    Args:
+        tasks_api: The TaskAPI instance
+        target: Executor host name
+        config: Configuration dict that will be JSON-stringified and passed as meta.config
+        
+    Returns:
+        Tuple of (task, history) dicts
+    """
     default_task = await _ensure_default_task(tasks_api)
-    meta_overrides = meta or {}
-    execution_meta = {"target": target}
-    for key, value in meta_overrides.items():
-        if key == "target":
-            continue
-        execution_meta[key] = value
+    execution_meta = {
+        "target": target,
+        "config": json.dumps(config),
+    }
     history = await tasks_api.post(
         f"/execute/{default_task['name']}", json={"meta": execution_meta}
     )
     return default_task, history
-
-
-async def _create_legacy_task(
-    tasks_api: TaskAPI, create_task_json: MUMTaskCreateRequest
-) -> dict[str, Any]:
-    """Fallback to the legacy dynamic PROXY task creation."""
-    payload_path = PAYLOAD_PATH
-    dynamic_name = f"{create_task_json.name}-{int(time.time())}"
-    task_data: dict[str, Any] = {
-        "name": dynamic_name,
-        "backend": TaskBackendEnum.PROXY,
-        "owner": TaskOwner.MUM,
-        "alert_on_fail": create_task_json.alert_on_fail,
-        "data": {
-            "task": "run-python",
-            "meta": {
-                "config": create_task_json.payload,
-                "requirements": PYTHON_REQUIREMENTS,
-            },
-            "payload": f"file://{payload_path}",
-        },
-    }
-    return await tasks_api.post("/", json=task_data)
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -222,19 +186,19 @@ async def mum_options(
 
 
 @router.post(
-    "/ui/execute/{task_name}",
+    "/ui/list-users",
     dependencies=[IsAuthenticated],
     response_class=JSONResponse,
 )
 @csrf_exempt
-async def mum_execute_task(
+async def mum_list_users(
     request: Request,  # noqa: ARG001
-    task_name: str,
     body: dict[str, Any],
     tasks_api: TaskAPI,
 ) -> JSONResponse:
-    """Dispatch an existing MUM task by name to a selected executor host.
-    Body must contain: {"target": "<executor-host-name>"}
+    """List MongoDB users by executing the default MUM task.
+    Expects JSON body with:
+    - target: executor host name (required)
     """
     target = body.get("target")
     if not target:
@@ -242,26 +206,20 @@ async def mum_execute_task(
             content={"detail": "'target' is required"},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
-    meta_overrides = body.get("meta")
-    if meta_overrides is not None and not isinstance(meta_overrides, dict):
-        return JSONResponse(
-            content={"detail": "'meta' must be an object when provided"},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-    payload_override = body.get("payload")
-    request_body: dict[str, Any] = {"meta": {"target": target}}
-    if meta_overrides:
-        request_body["meta"].update(
-            {key: value for key, value in meta_overrides.items() if key != "target"}
-        )
-    if payload_override is not None:
-        request_body["payload"] = payload_override
+
     try:
-        history = await tasks_api.post(
-            f"/execute/{task_name}",
-            json=request_body,
+        config_obj: dict[str, Any] = {
+            "action": "list_users",
+        }
+        default_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            config=config_obj,
         )
-        return JSONResponse(content=history, status_code=status.HTTP_201_CREATED)
+        return JSONResponse(
+            content={"task": default_task, "history": history},
+            status_code=status.HTTP_201_CREATED,
+        )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
 
@@ -308,16 +266,13 @@ async def mum_create_user(
             "roles": roles,
             "db": db_name,
         }
-        config_meta = await _create_config_variable(
-            tasks_api, config_obj, action="create-user"
-        )
-        created_task, history = await _execute_default_task(
+        default_task, history = await _execute_default_task(
             tasks_api,
             target=target,
-            meta=config_meta,
+            config=config_obj,
         )
         return JSONResponse(
-            content={"task": created_task, "history": history},
+            content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
@@ -370,17 +325,13 @@ async def mum_update_user(
         if roles is not None:
             config_obj["roles"] = roles
 
-        config_meta = await _create_config_variable(
-            tasks_api, config_obj, action="update-user"
-        )
-
-        created_task, history = await _execute_default_task(
+        default_task, history = await _execute_default_task(
             tasks_api,
             target=target,
-            meta=config_meta,
+            config=config_obj,
         )
         return JSONResponse(
-            content={"task": created_task, "history": history},
+            content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
@@ -424,17 +375,13 @@ async def mum_delete_user(
             "username": username,
             "db": db_name,
         }
-        config_meta = await _create_config_variable(
-            tasks_api, config_obj, action="delete-user"
-        )
-
-        created_task, history = await _execute_default_task(
+        default_task, history = await _execute_default_task(
             tasks_api,
             target=target,
-            meta=config_meta,
+            config=config_obj,
         )
         return JSONResponse(
-            content={"task": created_task, "history": history},
+            content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
@@ -446,22 +393,16 @@ async def mum_delete_user(
     response_class=JSONResponse,
 )
 @csrf_exempt
-async def create_mum_task(
+async def get_mum_task(
     request: Request,  # noqa: ARG001
-    create_task_json: MUMTaskCreateRequest,  # noqa: ARG001
     tasks_api: TaskAPI,
 ) -> JSONResponse:
-    """Create a general MUM task using the run-python template.
-    Creates a PROXY task that references the protected `run-python` task. The created
-    task can later be executed (dispatched) with a target selected in the UI.
-    Returns the created task (including its ID) as JSON.
+    """Get or create the default MUM task.
+    Returns the default MUM task (including its ID) as JSON.
+    All MUM operations use this single task with different config arguments.
     """
     try:
         default_task = await _ensure_default_task(tasks_api)
-        return JSONResponse(content=default_task, status_code=status.HTTP_201_CREATED)
+        return JSONResponse(content=default_task, status_code=status.HTTP_200_OK)
     except HTTPException as exc:  # type: ignore[name-defined]
-        logger.warning(
-            "Default MUM task unavailable, falling back to legacy creation: %s", exc
-        )
-        legacy_task = await _create_legacy_task(tasks_api, create_task_json)
-        return JSONResponse(content=legacy_task, status_code=status.HTTP_201_CREATED)
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
