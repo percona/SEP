@@ -28,7 +28,6 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from typing import Any
-from uuid import uuid1
 
 from aiohttp import (
     ClientError,
@@ -44,6 +43,7 @@ from app.core.requests import BaseRemoteAPI
 from app.core.utils import (
     async_run,
     b64decode_str,
+    make_datetime_utc,
     slugify,
     sort_dict,
     utc_now,
@@ -154,6 +154,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             or self.verify_ssl,
             cert=cert,
         )
+
+    @staticmethod
+    def timestamp_to_datetime(timestamp: int) -> datetime:
+        """Convert a Nomad timestamp to a datetime object.
+
+        :param timestamp: The Nomad timestamp in nanoseconds.
+        :type timestamp: int
+        :return: The corresponding datetime object in UTC.
+        :rtype: datetime
+        """
+        return datetime.fromtimestamp(timestamp / 10**9, UTC)
 
     @staticmethod
     def get_task_history_status_from_alloc_status(
@@ -464,15 +475,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         job_status = {}
         job = None
-        if self.task_needs_new_job(task):
-            if not task.data.get("ParameterizedJob"):
-                match task.data.get("Type"):
-                    case "batch" | "system" | "sysbatch":
-                        task.data["ID"] += f"-{uuid1()}"
-                    case _:
-                        raise NotImplementedError(
-                            f"{task.data.get('Type')} job support is TBD",
-                        )
+        if self.task_needs_job_register(task):
             job_status = self.register_job(task)
             logger.debug("Job status: %r", job_status)
             job = self.get_job(task.data["ID"])
@@ -485,9 +488,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         submit_timestamp = job.get("SubmitTime")
         if submit_timestamp:
-            queue_item.started_at = datetime.fromtimestamp(
-                submit_timestamp / 10**9, UTC
-            )
+            queue_item.started_at = self.timestamp_to_datetime(submit_timestamp)
         else:
             queue_item.started_at = utc_now()
         queue_item.execution_request.tracking.update(
@@ -663,8 +664,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             if job["Status"] == NOMAD_DEAD_JOB_STATUS:
                 last_modified_timestamp = alloc.get("ModifyTime")
                 if last_modified_timestamp:
-                    queue_item.finished_at = datetime.fromtimestamp(
-                        last_modified_timestamp / 10**9, UTC
+                    queue_item.finished_at = self.timestamp_to_datetime(
+                        last_modified_timestamp
                     )
                 else:
                     queue_item.finished_at = utc_now()
@@ -676,33 +677,30 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
         return queue_item
 
-    def task_needs_new_job(self, task: Task) -> bool:
-        """Determine whether a new job needs to be created for the task.
+    def task_needs_job_register(self, task: Task) -> bool:
+        """Determine whether a job needs to be registered for the task.
 
-        Checks the task's configuration to decide if a new job should be registered.
+        Checks the task's configuration to decide if a job should be registered. If the
+        task is a parameterized job, it checks if the job exists and if it has been
+        updated since the last submission. For other job types, it currently assumes
+        that a new job needs to be created.
 
         :param task: The task to evaluate.
         :type task: Task
         :return: `True` if a new job needs to be created, otherwise `False`.
         :rtype: bool
-        :raises NotImplementedError: If the task's parameterized job feature or job type
-            is not supported.
         :raises BaseNomadException: If there is an issue communicating with the Nomad
             backend.
         """
         if task.data.get("ParameterizedJob"):
             try:
-                self.get_job(task.data["ID"])
+                job = self.get_job(task.data["ID"])
             except JobNotFoundException:
                 return True
-            return False
-        match task.data.get("Type"):
-            case "batch" | "system" | "sysbatch":
-                return True
-            case _:
-                raise NotImplementedError(
-                    f"{task.data.get('Type')} job support is TBD",
-                )
+            return (submit_time := job.get("SubmitTime")) is None or make_datetime_utc(
+                task.updated_at or task.created_at
+            ) > self.timestamp_to_datetime(submit_time)
+        return True
 
     # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:

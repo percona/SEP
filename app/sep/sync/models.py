@@ -23,7 +23,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
 from types import TracebackType
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, NamedTuple, Self
 from uuid import uuid4
 
 from aiohttp import ClientResponseError
@@ -651,6 +651,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedNode` instance.
         :rtype: CreatedNode
         """
+        updated_node_data = updated_node.model_dump(exclude={"services"})
+        if updated_node_data.items() <= created_node.model_dump().items():
+            logger.info("No changes detected for node %s", created_node.id)
+            return created_node
         logger.info("Updating node %s: %r", created_node.id, updated_node)
         return CreatedNode.model_validate(
             await self.inventory_api.put(
@@ -755,8 +759,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedService` instance.
         :rtype: CreatedService
         """
-        logger.info("Updating service %s: %r", created_service.id, updated_service)
         updated_service_data = updated_service.model_dump(exclude={"schemas"})
+        if updated_service_data.items() <= created_service.model_dump().items():
+            logger.info("No changes detected for service %s", created_service.id)
+            return created_service
+        logger.info("Updating service %s: %r", created_service.id, updated_service)
         updated_service_data["node_id"] = created_service.node_id
         return CreatedService.model_validate(
             await self.inventory_api.put(
@@ -861,8 +868,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedSchema` instance.
         :rtype: CreatedSchema
         """
-        logger.info("Updating schema %s: %r", created_schema.id, updated_schema)
         updated_schema_data = updated_schema.model_dump(exclude={"tables"})
+        if updated_schema_data.items() <= created_schema.model_dump().items():
+            logger.info("No changes detected for schema %s", created_schema.id)
+            return created_schema
+        logger.info("Updating schema %s: %r", created_schema.id, updated_schema)
         updated_schema_data["service_id"] = created_schema.service_id
         return CreatedSchema.model_validate(
             await self.inventory_api.put(
@@ -967,8 +977,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedTable` instance.
         :rtype: CreatedTable
         """
-        logger.info("Updating table %s: %r", created_table.id, updated_table)
         updated_table_data = updated_table.model_dump()
+        if updated_table_data.items() <= created_table.model_dump().items():
+            logger.info("No changes detected for table %s", created_table.id)
+            return created_table
+        logger.info("Updating table %s: %r", created_table.id, updated_table)
         updated_table_data["schema_id"] = created_table.schema_id
         return CreatedTable.model_validate(
             await self.inventory_api.put(
@@ -1121,6 +1134,19 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.TABLE)
 
 
+class TaskRunResult(NamedTuple):
+    """Represent the result of a task execution.
+
+    :param task_history_id: The unique identifier of the task history.
+    :type task_history_id: int
+    :param stdout: The standard output produced by the task.
+    :type stdout: str
+    """
+
+    task_history_id: int
+    stdout: str
+
+
 class BaseTaskSyncer(BaseSyncer):
     """Provide a base class for task-based synchronizers in the SEP application.
 
@@ -1181,7 +1207,7 @@ class BaseTaskSyncer(BaseSyncer):
         stdout_step: str,
         payload: str | None = None,
         **meta: Any,
-    ) -> str:
+    ) -> TaskRunResult:
         """Wait for a task to complete and retrieve its output.
 
         This method initiates a task execution via the tasks API and waits for it to
@@ -1197,8 +1223,8 @@ class BaseTaskSyncer(BaseSyncer):
         :type payload: str | None
         :param meta: Additional metadata to send with the task execution request.
         :type meta: Any
-        :return: The output from the task's stdout.
-        :rtype: str
+        :return: The result of the task execution.
+        :rtype: TaskRunResult
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
         """
@@ -1247,4 +1273,4 @@ class BaseTaskSyncer(BaseSyncer):
             # TODO: Create custom exceptions  # noqa: TD002, TD003
             raise ValueError(exc_detail)
 
-        return output[TaskLogType.STDOUT]
+        return TaskRunResult(task_history_id, output[TaskLogType.STDOUT])
