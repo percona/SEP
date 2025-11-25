@@ -198,7 +198,7 @@
       community.mysql.mysql_query:
         query: >
           CHANGE REPLICATION SOURCE TO
-          SOURCE_HOST='{{ hostvars['mysql1-el']['ansible_default_ipv4']['address'] }}',
+          SOURCE_HOST="{{ hostvars['mysql1-el']['ansible_fqdn'] }}",
           SOURCE_TLS_VERSION="TLSv1.2,TLSv1.3",
           SOURCE_SSL=1,
           SOURCE_SSL_VERIFY_SERVER_CERT=0,
