@@ -69,7 +69,7 @@ const AddDatabaseUserButton = ({
         db: rolesDb || DEFAULT_DB,
       });
       setOpen(false);
-      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB });
+      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
       resetForm();
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || "Failed to create user");
