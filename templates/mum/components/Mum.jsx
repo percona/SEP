@@ -259,9 +259,14 @@ const Mum = () => {
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          const { msg, type } = data || {};
-          if (type === 'stdout' && typeof msg === 'string') {
+          const { msg, type, step } = data || {};
+          if (type === 'stdout' && step === 'run-script' && typeof msg === 'string') {
             stdoutBufferRef.current += msg;
+            const arr = extractJsonArray(stdoutBufferRef.current);
+            if (Array.isArray(arr)) {
+              setUsersData(arr);
+              setStreamError(null);
+            }
           }
         } catch (_) {
           // ignore non-JSON chunks
