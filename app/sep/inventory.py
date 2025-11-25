@@ -149,7 +149,7 @@ class Node(BaseInventoryModel):
 
 
 class CreatedNode(CreatedEntityBase, Node):
-    """Represents an existing node from the inventory database.
+    """Represent an existing node from the inventory database.
 
     This model extends `Node` and `BaseSQLModel` to integrate attributes from an
     existing database node.
@@ -184,7 +184,7 @@ class CreatedNode(CreatedEntityBase, Node):
 
 
 class Service(BaseInventoryModel):
-    """Represents an inventory service.
+    """Represent an inventory service.
 
     This model represents a service within the Inventory API, including its environment,
     cluster, custom labels, external identifier, name, port, and type.
@@ -309,7 +309,7 @@ class CreatedService(CreatedEntityBase, Service):
 
 
 class Schema(BaseInventoryModel):
-    """Represents an inventory schema.
+    """Represent an inventory schema.
 
     This model represents a schema within the Inventory API, including its name.
 
@@ -364,7 +364,7 @@ class CreatedSchema(CreatedEntityBase, Schema):
 
 
 class Table(BaseInventoryModel):
-    """Represents an inventory table.
+    """Represent an inventory table.
 
     This model represents a table within a schema in the Inventory API, including its
     name and the SQL statement used to create the table, and details about its keys.
