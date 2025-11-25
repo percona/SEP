@@ -107,6 +107,8 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
     except HTTPException as exc:  # type: ignore[name-defined]
         if exc.status_code != status.HTTP_404_NOT_FOUND:
             raise
+        # Task doesn't exist yet - this is expected, we'll create it below
+        logger.debug("Default MUM task '%s' not found, will create it", DEFAULT_TASK_NAME)
     else:
         if _task_matches_spec(existing, spec):
             return existing
@@ -114,11 +116,13 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
         return updated
     try:
         created = await tasks_api.post("/", json=spec)
+        logger.info("Created default MUM task '%s'", DEFAULT_TASK_NAME)
         return created
     except HTTPException as exc:  # type: ignore[name-defined]
         if exc.status_code != status.HTTP_409_CONFLICT:
             raise
         # Task was created concurrently; fetch and reconcile instead of failing.
+        logger.debug("Default MUM task '%s' was created concurrently, fetching it", DEFAULT_TASK_NAME)
         existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
         if _task_matches_spec(existing, spec):
             return existing
