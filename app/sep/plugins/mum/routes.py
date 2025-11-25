@@ -15,6 +15,7 @@
 
 """Define routes for the MUM Plugin."""
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -102,13 +103,30 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
         # Task doesn't exist yet - this is expected, we'll create it below
         logger.info("Default MUM task '%s' not found, creating it", DEFAULT_TASK_NAME)
     try:
-        logger.debug("Creating default MUM task '%s' with spec: %s", DEFAULT_TASK_NAME, spec)
+        logger.debug("Creating default MUM task '%s' with spec: %s", DEFAULT_TASK_NAME, json.dumps(spec, indent=2))
         created = await tasks_api.post("/", json=spec)
         logger.info("Successfully created default MUM task '%s' (ID: %s)", DEFAULT_TASK_NAME, created.get("id"))
+        # Verify the task was actually created and is accessible
+        # Retry a few times in case of eventual consistency
+        for attempt in range(3):
+            try:
+                verify_task = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
+                logger.debug("Verified task creation - task exists: %s (attempt %d)", verify_task.get("name"), attempt + 1)
+                # Ensure the task is not marked as a template
+                if verify_task.get("is_template"):
+                    logger.warning("Task '%s' was created as a template, this should not happen", DEFAULT_TASK_NAME)
+                return created
+            except HTTPException as verify_exc:  # type: ignore[name-defined]
+                if verify_exc.status_code == status.HTTP_404_NOT_FOUND and attempt < 2:
+                    logger.debug("Task not yet available, retrying in 0.1s (attempt %d)", attempt + 1)
+                    await asyncio.sleep(0.1)
+                    continue
+                raise
         return created
     except HTTPException as exc:  # type: ignore[name-defined]
         if exc.status_code != status.HTTP_409_CONFLICT:
-            logger.error("Failed to create default MUM task '%s': %s (status: %s)", DEFAULT_TASK_NAME, exc.detail, exc.status_code)
+            logger.error("Failed to create default MUM task '%s': %s (status: %s). Spec was: %s", 
+                        DEFAULT_TASK_NAME, exc.detail, exc.status_code, json.dumps(spec, indent=2))
             raise
         # Task was created concurrently; fetch and reconcile instead of failing.
         logger.debug("Default MUM task '%s' was created concurrently, fetching it", DEFAULT_TASK_NAME)
@@ -133,14 +151,26 @@ async def _execute_default_task(
         Tuple of (task, history) dicts
     """
     default_task = await _ensure_default_task(tasks_api)
+    if not default_task or not default_task.get("name"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to ensure default MUM task exists",
+        )
+    task_name = default_task["name"]
     execution_meta = {
         "target": target,
         "config": json.dumps(config),
     }
-    history = await tasks_api.post(
-        f"/execute/{default_task['name']}", json={"meta": execution_meta}
-    )
-    return default_task, history
+    logger.debug("Executing task '%s' on target '%s' with config: %s", task_name, target, config)
+    try:
+        history = await tasks_api.post(
+            f"/execute/{task_name}", json={"meta": execution_meta}
+        )
+        logger.info("Successfully executed task '%s' (history ID: %s)", task_name, history.get("id"))
+        return default_task, history
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error("Failed to execute task '%s': %s (status: %s)", task_name, exc.detail, exc.status_code)
+        raise
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
