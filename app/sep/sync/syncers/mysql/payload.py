@@ -96,7 +96,7 @@ def atomic_write_gzip_json(
     total = 0
     with (
         NamedTemporaryFile(dir=out_path.parent, delete=False) as tmp,
-        GzipFile(fileobj=tmp, mode="wb", compresslevel=compresslevel, mtime=0) as gz,
+        GzipFile(filename="", fileobj=tmp, mode="wb", compresslevel=compresslevel, mtime=0) as gz,
     ):
         for obj in obj_iter:
             gz.write(json.dumps(obj, separators=(",", ":")).encode("utf8") + b"\n")
