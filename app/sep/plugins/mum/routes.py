@@ -48,8 +48,8 @@ def _build_default_task_spec() -> dict[str, Any]:
     """Return the canonical specification for the default MUM task."""
     return {
         "name": DEFAULT_TASK_NAME,
-        "backend": TaskBackendEnum.PROXY,
-        "owner": TaskOwner.MUM,
+        "backend": TaskBackendEnum.PROXY.value,  # Convert enum to string
+        "owner": TaskOwner.MUM.value,  # Convert enum to string
         "protected": True,
         "alert_on_fail": False,
         "data": {
@@ -68,9 +68,14 @@ def _task_matches_spec(task: dict[str, Any], spec: dict[str, Any]) -> bool:
     spec_data = spec["data"]
     meta = data.get("meta") or {}
     spec_meta = spec_data.get("meta") or {}
+    # Compare backend and owner as strings (they may come as enums or strings from API)
+    task_backend = str(task.get("backend", ""))
+    spec_backend = str(spec["backend"])
+    task_owner = str(task.get("owner", ""))
+    spec_owner = str(spec["owner"])
     return (
-        task.get("backend") == spec["backend"]
-        and task.get("owner") == spec["owner"]
+        task_backend == spec_backend
+        and task_owner == spec_owner
         and task.get("alert_on_fail") == spec["alert_on_fail"]
         and task.get("protected") == spec.get("protected", False)
         and data.get("task") == spec_data["task"]
@@ -84,28 +89,33 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
     spec = _build_default_task_spec()
     try:
         existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
-    except HTTPException as exc:  # type: ignore[name-defined]
-        if exc.status_code != status.HTTP_404_NOT_FOUND:
-            raise
-        # Task doesn't exist yet - this is expected, we'll create it below
-        logger.debug("Default MUM task '%s' not found, will create it", DEFAULT_TASK_NAME)
-    else:
         if _task_matches_spec(existing, spec):
+            logger.debug("Default MUM task '%s' exists and matches spec", DEFAULT_TASK_NAME)
             return existing
+        logger.info("Default MUM task '%s' exists but doesn't match spec, updating it", DEFAULT_TASK_NAME)
         updated = await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
         return updated
+    except HTTPException as exc:  # type: ignore[name-defined]
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            logger.error("Failed to get default MUM task '%s': %s", DEFAULT_TASK_NAME, exc.detail)
+            raise
+        # Task doesn't exist yet - this is expected, we'll create it below
+        logger.info("Default MUM task '%s' not found, creating it", DEFAULT_TASK_NAME)
     try:
+        logger.debug("Creating default MUM task '%s' with spec: %s", DEFAULT_TASK_NAME, spec)
         created = await tasks_api.post("/", json=spec)
-        logger.info("Created default MUM task '%s'", DEFAULT_TASK_NAME)
+        logger.info("Successfully created default MUM task '%s' (ID: %s)", DEFAULT_TASK_NAME, created.get("id"))
         return created
     except HTTPException as exc:  # type: ignore[name-defined]
         if exc.status_code != status.HTTP_409_CONFLICT:
+            logger.error("Failed to create default MUM task '%s': %s (status: %s)", DEFAULT_TASK_NAME, exc.detail, exc.status_code)
             raise
         # Task was created concurrently; fetch and reconcile instead of failing.
         logger.debug("Default MUM task '%s' was created concurrently, fetching it", DEFAULT_TASK_NAME)
         existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
         if _task_matches_spec(existing, spec):
             return existing
+        logger.info("Reconciling default MUM task '%s' to match spec", DEFAULT_TASK_NAME)
         return await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
 
 
@@ -200,6 +210,7 @@ async def mum_list_users(
     Expects JSON body with:
     - target: executor host name (required)
     """
+    logger.debug("Received list-users request with body: %s", body)
     target = body.get("target")
     if not target:
         return JSONResponse(
@@ -211,17 +222,26 @@ async def mum_list_users(
         config_obj: dict[str, Any] = {
             "action": "list_users",
         }
+        logger.debug("Listing users for target '%s'", target)
         default_task, history = await _execute_default_task(
             tasks_api,
             target=target,
             config=config_obj,
         )
+        logger.info("Successfully executed list_users for target '%s' (history ID: %s)", target, history.get("id"))
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error("Failed to list users for target '%s': %s (status: %s)", target, exc.detail, exc.status_code)
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    except Exception as exc:
+        logger.exception("Unexpected error while listing users for target '%s'", target)
+        return JSONResponse(
+            content={"detail": f"Internal error: {str(exc)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 @router.post(
     "/ui/create-user",
