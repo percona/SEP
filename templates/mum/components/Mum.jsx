@@ -102,7 +102,7 @@ const normalizeExecutorHosts = (rawHosts) => {
 
 const Mum = () => {
   const [featureToggles, setFeatureToggles] = useState(() => resolveFeatureToggles());
-  const [createdTask, setCreatedTask] = useState(null);
+  const [defaultTask, setDefaultTask] = useState(null);
   const [error, setError] = useState(null);
   const [executorHosts, setExecutorHosts] = useState([]);
   const [services, setServices] = useState([]);
@@ -171,43 +171,19 @@ const Mum = () => {
 
   const listBusy = listBusyCount > 0;
 
-  // Build a valid JSON body describing the task to generate
-  const buildPayload = useCallback(() => ({
-    name: "mum-get-users",
-    // This becomes meta.config in the PROXY run-python mapping
-    payload: JSON.stringify({ action: "list_users" }),
-    fmt: "json",
-    alert_on_fail: false,
-  }), []);
-
   useEffect(() => {
     const loadOptions = async () => {
       try {
         const resp = await apiClient.get('/mum/ui/options');
         setExecutorHosts(normalizeExecutorHosts(resp.data?.executor_hosts));
         setServices(resp.data?.services || []);
+        setDefaultTask(resp.data?.default_task || null);
       } catch (e) {
         // swallow for now
       }
     };
     loadOptions();
   }, []);
-
-  const ensureListTask = useCallback(async () => {
-    if (createdTask?.name) {
-      return createdTask;
-    }
-    try {
-      const response = await apiClient.post("/mum/ui/usertask", buildPayload());
-      setCreatedTask(response.data);
-      return response.data;
-    } catch (err) {
-      const detail =
-        err?.response?.data?.detail || err?.message || "Failed to create list task";
-      setError(detail);
-      throw err;
-    }
-  }, [buildPayload, createdTask]);
 
     function extractJsonArray(text) {
       // Attempt to extract a JSON array even if extra text is present
@@ -284,15 +260,24 @@ const Mum = () => {
         setError("Select an executor host first.");
         return;
       }
+      if (!defaultTask?.name) {
+        setError("Default MUM task is unavailable. Refresh the page and try again.");
+        return;
+      }
       setListBusyCount((count) => count + 1);
       setError(null);
+      setStreamError(null);
       setExecution(null);
       setUsersData([]);
       try {
-        const task = await ensureListTask();
         const response = await apiClient.post(
-          `/mum/ui/execute/${task.name}`,
-          { target }
+          `/mum/ui/execute/${defaultTask.name}`,
+          {
+            target,
+            meta: {
+              config: JSON.stringify({ action: "list_users" }),
+            },
+          }
         );
         setLastListTarget(target);
         setExecution(response.data);
@@ -304,7 +289,7 @@ const Mum = () => {
         setListBusyCount((count) => Math.max(count - 1, 0));
       }
     },
-    [ensureListTask, selectedTarget, streamListUsers],
+    [defaultTask, selectedTarget, streamListUsers],
   );
 
   const handleUserMutation = useCallback((meta) => {
@@ -395,14 +380,16 @@ const Mum = () => {
             <Typography color="error" sx={{ mt: 1 }}>Output error: {streamError}</Typography>
           )}
 
-          {createdTask && (
+          {defaultTask && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="body2">
-                <strong>Task Name:</strong> <code>{createdTask.name}</code>
+                <strong>Task Name:</strong> <code>{defaultTask.name}</code>
               </Typography>
-              <Typography variant="body2">
-                <strong>Task ID:</strong> <code>{createdTask.id}</code>
-              </Typography>
+              {defaultTask.id && (
+                <Typography variant="body2">
+                  <strong>Task ID:</strong> <code>{defaultTask.id}</code>
+                </Typography>
+              )}
             </Box>
           )}
 

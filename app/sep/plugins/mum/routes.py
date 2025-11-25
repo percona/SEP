@@ -17,7 +17,6 @@
 
 import json
 import logging
-import time
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +43,7 @@ templates = sep_settings.TEMPLATES
 PAYLOAD_PATH = Path(__file__).parent / "mum_payload"
 PYTHON_REQUIREMENTS = "PyMongo"
 NOMAD_VARIABLE_PREFIX = "sep/mum"
+DEFAULT_TASK_NAME = "mum-users"
 
 
 async def _create_config_variable(
@@ -61,6 +61,75 @@ async def _create_config_variable(
         "config_nomad_variable": response["path"],
         "config_nomad_variable_namespace": response.get("namespace", "default"),
     }
+
+
+def _build_default_task_spec() -> dict[str, Any]:
+    """Return the canonical specification for the default MUM task."""
+    return {
+        "name": DEFAULT_TASK_NAME,
+        "backend": TaskBackendEnum.PROXY,
+        "owner": TaskOwner.MUM,
+        "protected": True,
+        "alert_on_fail": False,
+        "data": {
+            "task": "run-python",
+            "meta": {
+                "requirements": PYTHON_REQUIREMENTS,
+            },
+            "payload": f"file://{PAYLOAD_PATH}",
+        },
+    }
+
+
+def _task_matches_spec(task: dict[str, Any], spec: dict[str, Any]) -> bool:
+    """Check whether the stored task matches our expected definition."""
+    data = task.get("data") or {}
+    spec_data = spec["data"]
+    meta = data.get("meta") or {}
+    spec_meta = spec_data.get("meta") or {}
+    return (
+        task.get("backend") == spec["backend"]
+        and task.get("owner") == spec["owner"]
+        and task.get("alert_on_fail") == spec["alert_on_fail"]
+        and task.get("protected") == spec.get("protected", False)
+        and data.get("task") == spec_data["task"]
+        and data.get("payload") == spec_data["payload"]
+        and meta.get("requirements") == spec_meta.get("requirements")
+    )
+
+
+async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
+    """Retrieve or create the default MUM task."""
+    spec = _build_default_task_spec()
+    try:
+        existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
+    except HTTPException as exc:  # type: ignore[name-defined]
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+    else:
+        if _task_matches_spec(existing, spec):
+            return existing
+        updated = await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
+        return updated
+    created = await tasks_api.post("/", json=spec)
+    return created
+
+
+async def _execute_default_task(
+    tasks_api: TaskAPI, *, target: str, meta: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Dispatch the default MUM task with optional meta overrides."""
+    default_task = await _ensure_default_task(tasks_api)
+    meta_overrides = meta or {}
+    execution_meta = {"target": target}
+    for key, value in meta_overrides.items():
+        if key == "target":
+            continue
+        execution_meta[key] = value
+    history = await tasks_api.post(
+        f"/execute/{default_task['name']}", json={"meta": execution_meta}
+    )
+    return default_task, history
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -98,6 +167,11 @@ async def mum_options(
         executor_hosts = await tasks_api.get("/hosts/")
     except HTTPException:
         executor_hosts = {}
+    try:
+        default_task = await _ensure_default_task(tasks_api)
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.exception("Failed to ensure default MUM task: %s", exc)
+        default_task = None
     return JSONResponse(
         content={
             "executor_hosts": [
@@ -105,6 +179,7 @@ async def mum_options(
                 for name, address in executor_hosts.items()
             ],
             "services": services,
+            "default_task": default_task,
         }
     )
 
@@ -130,9 +205,24 @@ async def mum_execute_task(
             content={"detail": "'target' is required"},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+    meta_overrides = body.get("meta")
+    if meta_overrides is not None and not isinstance(meta_overrides, dict):
+        return JSONResponse(
+            content={"detail": "'meta' must be an object when provided"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    payload_override = body.get("payload")
+    request_body: dict[str, Any] = {"meta": {"target": target}}
+    if meta_overrides:
+        request_body["meta"].update(
+            {key: value for key, value in meta_overrides.items() if key != "target"}
+        )
+    if payload_override is not None:
+        request_body["payload"] = payload_override
     try:
         history = await tasks_api.post(
-            f"/execute/{task_name}", json={"meta": {"target": target}}
+            f"/execute/{task_name}",
+            json=request_body,
         )
         return JSONResponse(content=history, status_code=status.HTTP_201_CREATED)
     except HTTPException as exc:  # type: ignore[name-defined]
@@ -174,7 +264,6 @@ async def mum_create_user(
         )
 
     try:
-        dynamic_name = f"mum-create-user-{int(time.time())}"
         config_obj: dict[str, Any] = {
             "action": "create_user",
             "username": username,
@@ -185,23 +274,10 @@ async def mum_create_user(
         config_meta = await _create_config_variable(
             tasks_api, config_obj, action="create-user"
         )
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": False,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    **config_meta,
-                    "requirements": PYTHON_REQUIREMENTS,
-                },
-                "payload": f"file://{PAYLOAD_PATH}",
-            },
-        }
-        created_task = await tasks_api.post("/", json=task_data)
-        history = await tasks_api.post(
-            f"/execute/{dynamic_name}", json={"meta": {"target": target}}
+        created_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            meta=config_meta,
         )
         return JSONResponse(
             content={"task": created_task, "history": history},
@@ -247,7 +323,6 @@ async def mum_update_user(
     roles = body.get("roles")
 
     try:
-        dynamic_name = f"mum-update-user-{int(time.time())}"
         config_obj: dict[str, Any] = {
             "action": "update_user",
             "username": username,
@@ -262,23 +337,10 @@ async def mum_update_user(
             tasks_api, config_obj, action="update-user"
         )
 
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": False,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    **config_meta,
-                    "requirements": PYTHON_REQUIREMENTS,
-                },
-                "payload": f"file://{PAYLOAD_PATH}",
-            },
-        }
-        created_task = await tasks_api.post("/", json=task_data)
-        history = await tasks_api.post(
-            f"/execute/{dynamic_name}", json={"meta": {"target": target}}
+        created_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            meta=config_meta,
         )
         return JSONResponse(
             content={"task": created_task, "history": history},
@@ -320,7 +382,6 @@ async def mum_delete_user(
     db_name = body.get("db") or "admin"
 
     try:
-        dynamic_name = f"mum-delete-user-{int(time.time())}"
         config_obj: dict[str, Any] = {
             "action": "delete_user",
             "username": username,
@@ -330,23 +391,10 @@ async def mum_delete_user(
             tasks_api, config_obj, action="delete-user"
         )
 
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": False,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    **config_meta,
-                    "requirements": PYTHON_REQUIREMENTS,
-                },
-                "payload": f"file://{PAYLOAD_PATH}",
-            },
-        }
-        created_task = await tasks_api.post("/", json=task_data)
-        history = await tasks_api.post(
-            f"/execute/{dynamic_name}", json={"meta": {"target": target}}
+        created_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            meta=config_meta,
         )
         return JSONResponse(
             content={"task": created_task, "history": history},
@@ -363,7 +411,7 @@ async def mum_delete_user(
 @csrf_exempt
 async def create_mum_task(
     request: Request,  # noqa: ARG001
-    create_task_json: MUMTaskCreateRequest,
+    create_task_json: MUMTaskCreateRequest,  # noqa: ARG001
     tasks_api: TaskAPI,
 ) -> JSONResponse:
     """Create a general MUM task using the run-python template.
@@ -372,30 +420,7 @@ async def create_mum_task(
     Returns the created task (including its ID) as JSON.
     """
     try:
-        payload_path = PAYLOAD_PATH
-        # Make task name dynamic to act like a short-lived session name
-        dynamic_name = f"{create_task_json.name}-{int(time.time())}"
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": create_task_json.alert_on_fail,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    # Forward the user payload as script config (opaque to backend)
-                    "config": create_task_json.payload,
-                    # Default requirements for MUM scripts
-                    "requirements": PYTHON_REQUIREMENTS,
-                    # `target` will be provided when executing the task from UI
-                },
-                # Use the bundled Python payload for MUM as the script body
-                "payload": f"file://{payload_path}",
-            },
-        }
-
-        created_task = await tasks_api.post("/", json=task_data)
-        # Return the created Task so the frontend can store id/name for later execution
-        return JSONResponse(content=created_task, status_code=status.HTTP_201_CREATED)
+        default_task = await _ensure_default_task(tasks_api)
+        return JSONResponse(content=default_task, status_code=status.HTTP_201_CREATED)
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
