@@ -109,10 +109,23 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
         logger.info("Creating default MUM task '%s' with spec: %s", DEFAULT_TASK_NAME, json.dumps(spec, indent=2))
         try:
             created = await tasks_api.post("/", json=spec)
-            logger.info("POST request to create task succeeded. Response: %s", json.dumps(created, indent=2))
-        except Exception as create_exc:
-            logger.exception("Exception during task creation POST request: %s", create_exc)
+            logger.info("POST request to create task succeeded. Response keys: %s", list(created.keys()) if isinstance(created, dict) else type(created))
+            if isinstance(created, dict):
+                logger.debug("Created task details: name=%s, id=%s, backend=%s, owner=%s", 
+                           created.get("name"), created.get("id"), created.get("backend"), created.get("owner"))
+        except HTTPException as create_exc:  # type: ignore[name-defined]
+            logger.error("HTTPException during task creation POST: status=%s, detail=%s", 
+                        create_exc.status_code, create_exc.detail)
             raise
+        except Exception as create_exc:
+            logger.exception("Unexpected exception during task creation POST request: %s", create_exc)
+            raise
+        if not created or not isinstance(created, dict):
+            logger.error("Task creation returned invalid response: %s", created)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Task creation returned invalid response: {type(created)}"
+            )
         logger.info("Successfully created default MUM task '%s' (ID: %s)", DEFAULT_TASK_NAME, created.get("id"))
         # Verify the task was actually created and is accessible
         # Retry a few times in case of eventual consistency
@@ -132,17 +145,45 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
                 raise
         return created
     except HTTPException as exc:  # type: ignore[name-defined]
-        if exc.status_code != status.HTTP_409_CONFLICT:
-            logger.error("Failed to create default MUM task '%s': %s (status: %s). Spec was: %s", 
-                        DEFAULT_TASK_NAME, exc.detail, exc.status_code, json.dumps(spec, indent=2))
-            raise
-        # Task was created concurrently; fetch and reconcile instead of failing.
-        logger.debug("Default MUM task '%s' was created concurrently, fetching it", DEFAULT_TASK_NAME)
-        existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
-        if _task_matches_spec(existing, spec):
-            return existing
-        logger.info("Reconciling default MUM task '%s' to match spec", DEFAULT_TASK_NAME)
-        return await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
+        if exc.status_code == status.HTTP_409_CONFLICT:
+            # Task was created concurrently; fetch and reconcile instead of failing.
+            logger.info("Got 409 conflict when creating task '%s', attempting to fetch existing task", DEFAULT_TASK_NAME)
+            # Retry fetching a few times in case of eventual consistency
+            for fetch_attempt in range(3):
+                try:
+                    existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
+                    logger.info("Successfully fetched task '%s' after 409 conflict (attempt %d)", DEFAULT_TASK_NAME, fetch_attempt + 1)
+                    if _task_matches_spec(existing, spec):
+                        logger.debug("Concurrently created task matches spec")
+                        return existing
+                    logger.info("Task '%s' exists but doesn't match spec, updating it", DEFAULT_TASK_NAME)
+                    return await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
+                except HTTPException as fetch_exc:  # type: ignore[name-defined]
+                    if fetch_exc.status_code == status.HTTP_404_NOT_FOUND and fetch_attempt < 2:
+                        logger.warning("Got 409 conflict but task '%s' doesn't exist yet (404), retrying in 0.2s (attempt %d)", 
+                                      DEFAULT_TASK_NAME, fetch_attempt + 1)
+                        await asyncio.sleep(0.2)
+                        continue
+                    logger.error("Got 409 conflict but task '%s' still doesn't exist after retries (status: %s). "
+                               "This suggests the creation failed or there's a race condition. Original 409 error: %s",
+                               DEFAULT_TASK_NAME, fetch_exc.status_code, exc.detail)
+                    # If we still can't find it after retries, try creating again
+                    logger.info("Attempting to create task '%s' again after 409->404 issue", DEFAULT_TASK_NAME)
+                    try:
+                        created_retry = await tasks_api.post("/", json=spec)
+                        logger.info("Successfully created task '%s' on retry", DEFAULT_TASK_NAME)
+                        return created_retry
+                    except HTTPException as retry_exc:  # type: ignore[name-defined]
+                        logger.error("Retry creation also failed: status=%s, detail=%s", retry_exc.status_code, retry_exc.detail)
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Task creation conflict occurred but task '{DEFAULT_TASK_NAME}' was not found and retry creation failed. "
+                                   f"Original 409 error: {exc.detail}, Retry error: {retry_exc.detail}"
+                        ) from retry_exc
+        # For any other error status, log and raise
+        logger.error("Failed to create default MUM task '%s': %s (status: %s). Spec was: %s", 
+                    DEFAULT_TASK_NAME, exc.detail, exc.status_code, json.dumps(spec, indent=2))
+        raise
 
 
 async def _execute_default_task(
