@@ -54,7 +54,7 @@ class _MySQLSyncResultEntityTypeEnum(StrEnum):
     TABLES = "tables"
 
 
-class MySQLFetchResult(NamedTuple):
+class _MySQLFetchResult(NamedTuple):
     """Represent the result of a MySQL fetch task.
 
     :param task_history_id: The ID of the task history record.
@@ -199,7 +199,7 @@ class MySQLSyncer(BaseTaskSyncer):
     ignore_schemas: list[str] = []
     resolve_localhost: bool = True
     _inventory_index_cache: dict[
-        _MySQLSyncResultEntityTypeEnum, dict[str, MySQLFetchResult]
+        _MySQLSyncResultEntityTypeEnum, dict[str, _MySQLFetchResult]
     ] = defaultdict(dict)
 
     @property
@@ -447,7 +447,7 @@ class MySQLSyncer(BaseTaskSyncer):
         entity_type: _MySQLSyncResultEntityTypeEnum,
         *,
         save_to_cache: bool = True,
-    ) -> dict[str, MySQLFetchResult]:
+    ) -> dict[str, _MySQLFetchResult]:
         """Fetch inventory index for a specific entity type.
 
         Executes a synchronization task to retrieve the inventory index for the
@@ -464,13 +464,13 @@ class MySQLSyncer(BaseTaskSyncer):
             to `True`.
         :type save_to_cache: bool
         :return: A dictionary mapping entity addresses to their fetch results.
-        :rtype: dict[str, MySQLFetchResult]
+        :rtype: dict[str, _MySQLFetchResult]
         """
         meta = await self.build_meta(config, target)
         task_result = await self.wait_for_task_output(**meta)
         entity_data = json.loads(task_result.stdout).get(entity_type, {})
         entity_indexes = {
-            item_address: MySQLFetchResult(task_result.task_history_id, item_data)
+            item_address: _MySQLFetchResult(task_result.task_history_id, item_data)
             for item_address, item_data in entity_data.items()
         }
         if save_to_cache:
@@ -613,7 +613,7 @@ class MySQLSyncer(BaseTaskSyncer):
             if task_history_id is not None:
                 self._inventory_index_cache[_MySQLSyncResultEntityTypeEnum.SCHEMAS][
                     self._build_entity_address(created_service.address, schema.name)
-                ] = MySQLFetchResult(task_history_id, schema_index)
+                ] = _MySQLFetchResult(task_history_id, schema_index)
             await self.sync_schema(created_schema)
         for schema in syncable_schemas.values():
             await self.delete_schema(schema)
