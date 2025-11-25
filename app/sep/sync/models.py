@@ -23,7 +23,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from functools import cached_property
 from types import TracebackType
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, NamedTuple, Self
 from uuid import uuid4
 
 from aiohttp import ClientResponseError
@@ -1134,6 +1134,19 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         return cls.can_sync_entity_type(SyncInventoryEntityTypeEnum.TABLE)
 
 
+class TaskRunResult(NamedTuple):
+    """Represent the result of a task execution.
+
+    :param task_history_id: The unique identifier of the task history.
+    :type task_history_id: int
+    :param stdout: The standard output produced by the task.
+    :type stdout: str
+    """
+
+    task_history_id: int
+    stdout: str
+
+
 class BaseTaskSyncer(BaseSyncer):
     """Provide a base class for task-based synchronizers in the SEP application.
 
@@ -1194,7 +1207,7 @@ class BaseTaskSyncer(BaseSyncer):
         stdout_step: str,
         payload: str | None = None,
         **meta: Any,
-    ) -> str:
+    ) -> TaskRunResult:
         """Wait for a task to complete and retrieve its output.
 
         This method initiates a task execution via the tasks API and waits for it to
@@ -1210,8 +1223,8 @@ class BaseTaskSyncer(BaseSyncer):
         :type payload: str | None
         :param meta: Additional metadata to send with the task execution request.
         :type meta: Any
-        :return: The output from the task's stdout.
-        :rtype: str
+        :return: The result of the task execution.
+        :rtype: TaskRunResult
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
         """
@@ -1260,4 +1273,4 @@ class BaseTaskSyncer(BaseSyncer):
             # TODO: Create custom exceptions  # noqa: TD002, TD003
             raise ValueError(exc_detail)
 
-        return output[TaskLogType.STDOUT]
+        return TaskRunResult(task_history_id, output[TaskLogType.STDOUT])

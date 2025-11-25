@@ -17,11 +17,15 @@
 
 import json
 import logging
+import zlib
 from collections import defaultdict
+from collections.abc import AsyncGenerator, AsyncIterator, Generator
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from async_lru import alru_cache
+from pydantic import Field
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import (
@@ -35,9 +39,140 @@ from app.sep.inventory import (
     Table,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.sync.models import BaseTaskSyncer
+from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
+
+GZIP_WBITS = 16 + zlib.MAX_WBITS
 
 logger = logging.getLogger(__name__)
+
+
+class _MySQLSyncResultEntityTypeEnum(StrEnum):
+    """Define enumeration of MySQL sync result types."""
+
+    SERVICES = "services"
+    SCHEMAS = "schemas"
+    TABLES = "tables"
+
+
+class MySQLFetchResult(NamedTuple):
+    """Represent the result of a MySQL fetch task.
+
+    :param task_history_id: The ID of the task history record.
+    :type task_history_id: int
+    :param index: The index data returned from the sync task.
+    :type index: dict[str, Any]
+    """
+
+    task_history_id: int
+    index: dict[str, Any]
+
+
+class MySQLService(Service):
+    """Represent a MySQL service with an async schema index iterator.
+
+    Overrides the base Service model to include an asynchronous iterator
+    for fetching schema index data.
+
+    param environment: The environment in which the service is running (e.g.,
+        "production", "staging"). Defaults to None.
+    :type environment: str | None
+    :param cluster: The cluster in which the service is running. Defaults to None.
+    :type cluster: str | None
+    :param replication_set: The replication set in which the service is running. Defaults to None.
+    :type replication_set: str | None
+    :param custom_labels: Custom labels associated with the service. Defaults to None.
+    :type custom_labels: dict[str, Any] | None
+    :param external_id: The external identifier for the service, aliased as
+        "service_id". Defaults to None.
+    :type external_id: RequiredStr | EmptyStrToNone
+    :param name: The name of the service, aliased as "service_name".
+    :type name: RequiredStr
+    :param port: The port number on which the service is running. Defaults to None.
+    :type port: int | EmptyStrToNone
+    :param type: The type of the service (e.g., "service_type"), aliased as
+        "service_type".
+    :type type: ServiceTypeEnum
+    :param schemas: The schemas associated with the service.
+    :type schemas: list[Schema]
+    """
+
+    _schemas_index: AsyncIterator[dict[str, Any]] | None = None
+
+    @property
+    def schemas_index(self) -> AsyncIterator[dict[str, Any]] | None:
+        """Return the asynchronous iterator for schema index data.
+
+        :return: An asynchronous iterator yielding schema index data, or an empty
+            iterator if no schema index is set.
+        :rtype: AsyncIterator[dict[str, Any]] | None
+        """
+        if self._schemas_index is None:
+
+            async def empty_iterator() -> AsyncGenerator[dict[str, Any]]:
+                for _ in ():
+                    yield _
+
+            return empty_iterator()
+        return self._schemas_index
+
+    @schemas_index.setter
+    def schemas_index(self, value: AsyncIterator[dict[str, Any]] | None) -> None:
+        """Set the asynchronous iterator for schema index data.
+
+        :param value: An asynchronous iterator yielding schema index data, or None.
+        :type value: AsyncIterator[dict[str, Any]] | None
+        """
+        self._schemas_index = value
+
+
+class MySQLSchema(Schema):
+    """Represent a MySQL schema with an async table iterator.
+
+    Overrides the base Schema model to include an asynchronous iterator
+    for fetching table data and an `address` field.
+
+    :param name: The name of the schema.
+    :type name: RequiredStr
+    :param tables: The tables associated with the schema.
+    :type tables: list[Table]
+    :param address: The unique address of the schema within the inventory system.
+    :type address: str
+    """
+
+    address: str = Field(..., exclude=True)
+    _tables_aiter: AsyncIterator[dict[str, Any]] | None = None
+
+    @property
+    def tables_aiter(self) -> AsyncIterator[dict[str, Any]] | None:
+        """Return the asynchronous iterator for table data.
+
+        :return: An asynchronous iterator yielding table data, or None if no table
+            iterator is set.
+        :rtype: AsyncIterator[dict[str, Any]] | None
+        """
+        return self._tables_aiter
+
+    @tables_aiter.setter
+    def tables_aiter(self, value: AsyncIterator[dict[str, Any]] | None) -> None:
+        """Set the asynchronous iterator for table data.
+
+        :param value: An asynchronous iterator yielding table data, or None.
+        :type value: AsyncIterator[dict[str, Any]] | None
+        """
+        self._tables_aiter = value
+
+    async def iter_tables(self) -> AsyncGenerator[Table]:
+        """Iterate over the tables in the schema asynchronously.
+
+        :yield: Each table in the schema as a `Table` instance.
+        :rtype: AsyncGenerator[Table]
+        """
+        if self._tables_aiter is None:
+            for table in self.tables:
+                yield table
+        else:
+            async for table_data in self._tables_aiter:
+                yield Table.model_validate(table_data)
 
 
 class MySQLSyncer(BaseTaskSyncer):
@@ -63,6 +198,9 @@ class MySQLSyncer(BaseTaskSyncer):
     )
     ignore_schemas: list[str] = []
     resolve_localhost: bool = True
+    _inventory_index_cache: dict[
+        _MySQLSyncResultEntityTypeEnum, dict[str, MySQLFetchResult]
+    ] = defaultdict(dict)
 
     @property
     def payload_path(self) -> Path:
@@ -76,6 +214,125 @@ class MySQLSyncer(BaseTaskSyncer):
         """
         # TODO: Create PAYLOADS_DIR setting and keep payloads/scripts there  # noqa: TD002, TD003
         return Path(__file__).parent / "payload.py"
+
+    @staticmethod
+    def _build_entity_address(
+        service_address: str,
+        schema_name: str | None = None,
+        table_name: str | None = None,
+    ) -> str:
+        """Build the address for an inventory entity.
+
+        Constructs a unique address string for a service, schema, or table based on
+        the provided parameters.
+
+        :param service_address: The address of the service.
+        :type service_address: str
+        :param schema_name: The name of the schema. Defaults to `None`.
+        :type schema_name: str | None
+        :param table_name: The name of the table. Defaults to `None`.
+        :type table_name: str | None
+        :return: The constructed entity address.
+        :rtype: str
+        """
+        if schema_name is None:
+            return service_address
+        if table_name is None:
+            return f"{service_address}/{schema_name}"
+        return f"{service_address}/{schema_name}.{table_name}"
+
+    @staticmethod
+    def _split_lines_from_buffer(
+        buffer: bytearray, data: bytes, encoding: str = "utf-8"
+    ) -> Generator[str]:
+        """Append data to buffer and yield complete lines.
+
+        Appends incoming byte data to the provided buffer and yields complete lines
+        decoded using the specified encoding.
+
+        :param buffer: A bytearray buffer to hold incomplete line data.
+        :type buffer: bytearray
+        :param data: Incoming byte data to append to the buffer.
+        :type data: bytes
+        :param encoding: The character encoding to use for decoding lines. Defaults to
+            `"utf-8"`.
+        :type encoding: str
+        :yield: Each complete line decoded from the buffer.
+        :rtype: Generator[str]
+        """
+        if data:
+            buffer.extend(data)
+            offset = 0
+            while True:
+                newline_pos = buffer.find(b"\n", offset)
+                if newline_pos == -1:
+                    if offset:
+                        del buffer[:offset]
+                    break
+                line_bytes = buffer[offset:newline_pos]
+                if line_bytes:
+                    yield line_bytes.decode(encoding)
+                offset = newline_pos + 1
+
+    async def _iter_lines_gzip_stream(
+        self, chunks: AsyncIterator[bytes], encoding: str = "utf-8"
+    ) -> AsyncGenerator[str]:
+        """Iterate over lines from a GZIP-compressed byte stream.
+
+        Decompresses GZIP-compressed byte chunks from an asynchronous iterator and
+        yields each line decoded using the specified encoding. Handles cases where lines
+        may be split across multiple chunks by maintaining a buffer.
+
+        :param chunks: An asynchronous iterator yielding GZIP-compressed byte chunks.
+        :type chunks: AsyncIterator[bytes]
+        :param encoding: The character encoding to use for decoding lines.
+            Defaults to `"utf-8"`.
+        :type encoding: str
+        :yield: Each line decoded from the GZIP-compressed stream.
+        :rtype: AsyncGenerator[str]
+        """
+        decompressor = zlib.decompressobj(wbits=GZIP_WBITS)
+        buffer = bytearray()
+
+        async for chunk in chunks:
+            decompressed = decompressor.decompress(chunk)
+            for line in self._split_lines_from_buffer(buffer, decompressed, encoding):
+                yield line
+
+        remaining = decompressor.flush()
+        if remaining:
+            for line in self._split_lines_from_buffer(buffer, remaining, encoding):
+                yield line
+
+        if buffer:
+            yield bytes(buffer).decode(encoding)
+
+    async def stream_ndjson_file(
+        self, task_history_id: int, path: str, encoding: str = "utf-8"
+    ) -> AsyncGenerator[dict[str, Any]]:
+        """Stream NDJSON file from a task history.
+
+        Streams a newline-delimited JSON (NDJSON) file from the specified task
+        history and yields each JSON object as a dictionary.
+
+        :param task_history_id: The ID of the task history record.
+        :type task_history_id: int
+        :param path: The path to the NDJSON file within the task history.
+        :type path: str
+        :param encoding: The character encoding to use for decoding lines.
+            Defaults to `"utf-8"`.
+        :type encoding: str
+        :yield: Each JSON object from the NDJSON file as a dictionary.
+        :rtype: AsyncGenerator[dict[str, Any]]
+        """
+        file_iter = self.tasks_api.stream(
+            f"/history/{task_history_id}/file/", params={"path": path}
+        )
+        async for line in self._iter_lines_gzip_stream(file_iter, encoding=encoding):
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                logger.exception("Failed to decode JSON line: %s", line[:200])
 
     @alru_cache
     async def get_task_target(self, host: str) -> str:
@@ -147,6 +404,7 @@ class MySQLSyncer(BaseTaskSyncer):
             "config": config,
             "target": target,
             "requirements": "PyMySQL[rsa,ed25519]\nmyloginpath",
+            "_job_id_prefix": "mysql-sync",
         }
 
     async def wait_for_task_output(
@@ -155,7 +413,7 @@ class MySQLSyncer(BaseTaskSyncer):
         stdout_step: str = "run-script",
         payload: str | None = None,
         **meta: Any,
-    ) -> str:
+    ) -> TaskRunResult:
         """Wait for a task to complete and retrieve its output.
 
         Override `BaseTaskSyncer.wait_for_task_output` to provide default arguments.
@@ -170,8 +428,8 @@ class MySQLSyncer(BaseTaskSyncer):
         :type payload: str | None
         :param meta: Additional meta variables to send with the task execution request.
         :type meta: Any
-        :return: The output from the task's stdout.
-        :rtype: str
+        :return: The result of the task execution.
+        :rtype: TaskRunResult
         :raises ValueError: If the task fails or times out.
         """
         payload = f"file://{self.payload_path}" if payload is None else payload
@@ -182,6 +440,43 @@ class MySQLSyncer(BaseTaskSyncer):
             **meta,
         )
 
+    async def _fetch_inventory_index(
+        self,
+        config: str,
+        target: str,
+        entity_type: _MySQLSyncResultEntityTypeEnum,
+        *,
+        save_to_cache: bool = True,
+    ) -> dict[str, MySQLFetchResult]:
+        """Fetch inventory index for a specific entity type.
+
+        Executes a synchronization task to retrieve the inventory index for the
+        specified entity type (services, schemas, or tables) and processes the
+        returned data.
+
+        :param config: The configuration for the task script.
+        :type config: str
+        :param target: The target host for the task.
+        :type target: str
+        :param entity_type: The type of entity to fetch (services, schemas, or tables).
+        :type entity_type: _MySQLSyncResultEntityTypeEnum
+        :param save_to_cache: Whether to save the fetched index to the cache. Defaults
+            to `True`.
+        :type save_to_cache: bool
+        :return: A dictionary mapping entity addresses to their fetch results.
+        :rtype: dict[str, MySQLFetchResult]
+        """
+        meta = await self.build_meta(config, target)
+        task_result = await self.wait_for_task_output(**meta)
+        entity_data = json.loads(task_result.stdout).get(entity_type, {})
+        entity_indexes = {
+            item_address: MySQLFetchResult(task_result.task_history_id, item_data)
+            for item_address, item_data in entity_data.items()
+        }
+        if save_to_cache:
+            self._inventory_index_cache[entity_type] |= entity_indexes
+        return entity_indexes
+
     async def perform_inventory_sync(self) -> None:
         """Execute the inventory synchronization process.
 
@@ -191,7 +486,6 @@ class MySQLSyncer(BaseTaskSyncer):
         for node in await self.get_inventory_nodes():
             await self.sync_node(node)
 
-    # TODO: Fail sync in case of MySQL connection error  # noqa: TD002, TD003
     async def fetch_node(self, created_node: CreatedNode) -> Node:
         """Fetch updated data for a specific node.
 
@@ -203,26 +497,24 @@ class MySQLSyncer(BaseTaskSyncer):
         :return: The updated node data.
         :rtype: Node
         """
-        hosts = [
+        hosts = {
             service.address
             for service in created_node.services
             if self.can_sync_service(service)
-        ]
+        }
         script_config = self.build_script_config(*hosts)
-        meta = await self.build_meta(
-            script_config,
-            await self.get_task_target(created_node.address),
+        task_target = await self.get_task_target(created_node.address)
+        services_index = await self._fetch_inventory_index(
+            script_config, task_target, _MySQLSyncResultEntityTypeEnum.SERVICES
         )
-        schemas_data = json.loads(await self.wait_for_task_output(**meta))
-        services = []
-        for created_service in created_node.services:
-            if self.can_sync_service(created_service):
-                service_data = created_service.model_dump(exclude={"schemas"})
-                service_data["schemas"] = schemas_data.get(created_service.address, [])
-                services.append(Service.model_validate(service_data))
-        node = Node.model_validate(created_node.model_dump())
-        node.services = services
-        return node
+
+        updated_node_data = created_node.model_dump(exclude={"services"})
+        updated_node_data["services"] = [
+            service.model_dump(exclude={"schemas"})
+            for service in created_node.services
+            if service.address in services_index
+        ]
+        return Node.model_validate(updated_node_data)
 
     async def perform_node_sync(
         self,
@@ -244,33 +536,51 @@ class MySQLSyncer(BaseTaskSyncer):
             syncable_services[service.port].append(service)
         for service in updated_node.services:
             for created_service in syncable_services[service.port]:
-                await self.sync_service(created_service, service)
+                await self.sync_service(created_service)
 
-    async def fetch_service(self, created_service: CreatedService) -> Service:
+    async def fetch_service(self, created_service: CreatedService) -> MySQLService:
         """Fetch updated data for a specific service.
 
         Retrieves the latest information for the specified service by executing a
-        synchronization task and processing the returned schema data.
+        synchronization task and processing the returned schema data. If the service
+        data is already cached, it uses the cached data instead of executing a new task.
 
         :param created_service: The service instance to fetch updated data for.
         :type created_service: CreatedService
-        :return: The updated service data.
-        :rtype: Service
+        :return: The updated service.
+        :rtype: MySQLService
         """
-        script_config = self.build_script_config(created_service.address)
-        meta = await self.build_meta(
-            script_config,
-            await self.get_task_target(created_service.node.address),
+        if (
+            fetch_result := self._inventory_index_cache[
+                _MySQLSyncResultEntityTypeEnum.SERVICES
+            ].get(created_service.address)
+        ) is None:
+            script_config = self.build_script_config(created_service.address)
+            task_target = await self.get_task_target(created_service.node.address)
+            services_index = await self._fetch_inventory_index(
+                script_config, task_target, _MySQLSyncResultEntityTypeEnum.SERVICES
+            )
+            task_history_id, service_index = services_index.get(
+                created_service.address, (None, {})
+            )
+        else:
+            task_history_id, service_index = fetch_result
+
+        service = MySQLService.model_validate(
+            created_service.model_dump(exclude={"schemas"})
         )
-        schemas_data = json.loads(await self.wait_for_task_output(**meta))
-        service_data = created_service.model_dump(exclude={"schemas"})
-        service_data["schemas"] = schemas_data.get(created_service.address, [])
-        return Service.model_validate(service_data)
+        if (schemas_path := service_index.get("schemas_path")) and service_index.get(
+            "schemas_count"
+        ):
+            service.schemas_index = self.stream_ndjson_file(
+                task_history_id, schemas_path
+            )
+        return service
 
     async def perform_service_sync(
         self,
         created_service: CreatedService,
-        updated_service: Service,
+        updated_service: MySQLService,
     ) -> None:
         """Synchronize data for a specific service.
 
@@ -280,12 +590,17 @@ class MySQLSyncer(BaseTaskSyncer):
         :param created_service: The service instance to synchronize.
         :type created_service: CreatedService
         :param updated_service: The updated service data.
-        :type updated_service: Service
+        :type updated_service: MySQLService
         """
         syncable_schemas = {}
         for schema in await self.get_inventory_service_schemas(created_service.id):
             syncable_schemas[schema.name] = schema
-        for schema in updated_service.schemas:
+
+        task_history_id: int | None = self._inventory_index_cache[
+            _MySQLSyncResultEntityTypeEnum.SERVICES
+        ].pop(created_service.address, (None,))[0]
+        async for schema_index in updated_service.schemas_index:
+            schema = Schema.model_validate(schema_index)
             if (created_schema := syncable_schemas.pop(schema.name, None)) is None:
                 logger.info("Creating new schema: %s", schema)
                 created_schema = CreatedSchema.model_validate(
@@ -295,20 +610,25 @@ class MySQLSyncer(BaseTaskSyncer):
                     ),
                 )
             created_schema.service = created_service.model_copy(update={"schemas": []})
-            await self.sync_schema(created_schema, schema)
+            if task_history_id is not None:
+                self._inventory_index_cache[_MySQLSyncResultEntityTypeEnum.SCHEMAS][
+                    self._build_entity_address(created_service.address, schema.name)
+                ] = MySQLFetchResult(task_history_id, schema_index)
+            await self.sync_schema(created_schema)
         for schema in syncable_schemas.values():
             await self.delete_schema(schema)
 
-    async def fetch_schema(self, created_schema: CreatedSchema) -> Schema:
+    async def fetch_schema(self, created_schema: CreatedSchema) -> MySQLSchema:
         """Fetch updated data for a specific schema.
 
         Retrieves the latest information for the specified schema by executing a
-        synchronization task and processing the returned table data.
+        synchronization task and processing the returned table data. If the schema
+        data is already cached, it uses the cached data instead of executing a new task.
 
         :param created_schema: The schema instance to fetch updated data for.
         :type created_schema: CreatedSchema
         :return: The updated schema data.
-        :rtype: Schema
+        :rtype: MySQLSchema
         """
         if (
             not (created_service := created_schema.service)
@@ -318,18 +638,39 @@ class MySQLSyncer(BaseTaskSyncer):
                 created_schema.service_id,
             )
         host = created_service.address
-        script_config = self.build_script_config(host, schema=created_schema.name)
-        meta = await self.build_meta(
-            script_config,
-            await self.get_task_target(created_service.node.address),
-        )
-        schema_data = json.loads(await self.wait_for_task_output(**meta))
-        return Schema.model_validate(schema_data)
+        schema_address = self._build_entity_address(host, created_schema.name)
+        if (
+            fetch_result := self._inventory_index_cache[
+                _MySQLSyncResultEntityTypeEnum.SCHEMAS
+            ].pop(self._build_entity_address(host, created_schema.name), None)
+        ) is None:
+            script_config = self.build_script_config(host, schema=created_schema.name)
+            task_target = await self.get_task_target(created_service.node.address)
+            schemas_index = await self._fetch_inventory_index(
+                script_config,
+                task_target,
+                _MySQLSyncResultEntityTypeEnum.SCHEMAS,
+                save_to_cache=False,
+            )
+            task_history_id, schema_index = schemas_index.get(
+                schema_address, (None, {})
+            )
+        else:
+            task_history_id, schema_index = fetch_result
+
+        schema_data = created_schema.model_dump(exclude={"tables"})
+        schema_data["address"] = schema_address
+        schema = MySQLSchema.model_validate(schema_data)
+        if (tables_path := schema_index.get("tables_path")) and schema_index.get(
+            "tables_count"
+        ):
+            schema.tables_aiter = self.stream_ndjson_file(task_history_id, tables_path)
+        return schema
 
     async def perform_schema_sync(
         self,
         created_schema: CreatedSchema,
-        updated_schema: Schema,
+        updated_schema: MySQLSchema,
     ) -> None:
         """Synchronize data for a specific schema.
 
@@ -339,13 +680,14 @@ class MySQLSyncer(BaseTaskSyncer):
         :param created_schema: The schema instance to synchronize.
         :type created_schema: CreatedSchema
         :param updated_schema: The updated schema data.
-        :type updated_schema: Schema
+        :type updated_schema: MySQLSchema
         """
         await self.update_schema(created_schema, updated_schema)
         syncable_tables = {}
         for table in created_schema.tables:
             syncable_tables[table.name] = table
-        for table in updated_schema.tables:
+
+        async for table in updated_schema.iter_tables():
             if (created_table := syncable_tables.pop(table.name, None)) is None:
                 logger.info("Creating new table: %s", table)
                 created_table = CreatedTable.model_validate(
@@ -397,7 +739,10 @@ class MySQLSyncer(BaseTaskSyncer):
             script_config,
             await self.get_task_target(created_service.node.address),
         )
-        table_data = json.loads(await self.wait_for_task_output(**meta))
+        task_result = await self.wait_for_task_output(**meta)
+        table_data = json.loads(task_result.stdout)[
+            _MySQLSyncResultEntityTypeEnum.TABLES
+        ][self._build_entity_address(host, created_schema.name, created_table.name)]
         return Table.model_validate(table_data)
 
     async def perform_table_sync(
