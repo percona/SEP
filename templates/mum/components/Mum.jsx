@@ -103,6 +103,7 @@ const normalizeExecutorHosts = (rawHosts) => {
 const Mum = () => {
   const [featureToggles, setFeatureToggles] = useState(() => resolveFeatureToggles());
   const [defaultTask, setDefaultTask] = useState(null);
+  const defaultTaskRef = useRef(null);
   const [error, setError] = useState(null);
   const [executorHosts, setExecutorHosts] = useState([]);
   const [services, setServices] = useState([]);
@@ -171,19 +172,51 @@ const Mum = () => {
 
   const listBusy = listBusyCount > 0;
 
+  const buildPayload = useCallback(() => ({
+    name: "mum-users",
+    payload: JSON.stringify({ action: "list_users" }),
+    fmt: "json",
+    alert_on_fail: false,
+  }), []);
+
+  useEffect(() => {
+    defaultTaskRef.current = defaultTask;
+  }, [defaultTask]);
+
+  const ensureDefaultTask = useCallback(async () => {
+    if (defaultTaskRef.current?.name) {
+      return defaultTaskRef.current;
+    }
+    try {
+      const response = await apiClient.post("/mum/ui/usertask", buildPayload());
+      setDefaultTask(response.data);
+      defaultTaskRef.current = response.data;
+      return response.data;
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail || err?.message || "Failed to load default task";
+      setError(detail);
+      throw err;
+    }
+  }, [buildPayload]);
+
   useEffect(() => {
     const loadOptions = async () => {
       try {
         const resp = await apiClient.get('/mum/ui/options');
         setExecutorHosts(normalizeExecutorHosts(resp.data?.executor_hosts));
         setServices(resp.data?.services || []);
-        setDefaultTask(resp.data?.default_task || null);
+        if (resp.data?.default_task) {
+          setDefaultTask(resp.data.default_task);
+        } else {
+          await ensureDefaultTask();
+        }
       } catch (e) {
         // swallow for now
       }
     };
     loadOptions();
-  }, []);
+  }, [ensureDefaultTask]);
 
     function extractJsonArray(text) {
       // Attempt to extract a JSON array even if extra text is present
@@ -260,18 +293,15 @@ const Mum = () => {
         setError("Select an executor host first.");
         return;
       }
-      if (!defaultTask?.name) {
-        setError("Default MUM task is unavailable. Refresh the page and try again.");
-        return;
-      }
       setListBusyCount((count) => count + 1);
       setError(null);
       setStreamError(null);
       setExecution(null);
       setUsersData([]);
       try {
+        const task = defaultTask?.name ? defaultTask : await ensureDefaultTask();
         const response = await apiClient.post(
-          `/mum/ui/execute/${defaultTask.name}`,
+          `/mum/ui/execute/${task.name}`,
           {
             target,
             meta: {
@@ -289,7 +319,7 @@ const Mum = () => {
         setListBusyCount((count) => Math.max(count - 1, 0));
       }
     },
-    [defaultTask, selectedTarget, streamListUsers],
+    [defaultTask, ensureDefaultTask, selectedTarget, streamListUsers],
   );
 
   const handleUserMutation = useCallback((meta) => {
