@@ -435,7 +435,9 @@ async def test_sync_table(created_table, mock_remote_api, mock_sync_items, mocke
 @pytest.mark.asyncio
 async def test_update_table(created_table, mock_remote_api):
     """Test updating a table in the inventory system."""
-    updated_table = created_table
+    updated_table = created_table.model_copy(
+        update={"create": "UPDATED CREATE STATEMENT"}
+    )
     syncer = BaseSyncer(
         inventory_api=mock_remote_api, sync_instance=None, _session=AsyncMock()
     )
