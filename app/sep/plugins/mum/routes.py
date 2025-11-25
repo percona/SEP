@@ -111,8 +111,17 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
             return existing
         updated = await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
         return updated
-    created = await tasks_api.post("/", json=spec)
-    return created
+    try:
+        created = await tasks_api.post("/", json=spec)
+        return created
+    except HTTPException as exc:  # type: ignore[name-defined]
+        if exc.status_code != status.HTTP_409_CONFLICT:
+            raise
+        # Task was created concurrently; fetch and reconcile instead of failing.
+        existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
+        if _task_matches_spec(existing, spec):
+            return existing
+        return await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
 
 
 async def _execute_default_task(
