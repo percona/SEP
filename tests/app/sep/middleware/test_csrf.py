@@ -37,6 +37,16 @@ def test_client() -> TestClient:
         )
         return response
 
+    @app.post(
+        "/validation-error", dependencies=[IsCsrfValidated], response_class=JSONResponse
+    )
+    def validation_error(request: Request):
+        response: JSONResponse = JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": "Validation error"},
+        )
+        return response
+
     @app.get("/stream-logs/data", response_class=JSONResponse)
     @csrf_exempt
     async def stream_logs_data(request: Request):
@@ -137,3 +147,47 @@ def test_excluded_paths(mock_get_response, test_client: TestClient):
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"detail": "Stream OK"}
     assert test_client.cookies.get("fastapi-csrf-token") is None
+
+
+def test_token_issued_on_validation_error(test_client: TestClient):
+    """Test that new tokens are issued when POST fails with 422 (validation error)."""
+
+    @CsrfProtect.load_config
+    def get_configs():
+        return CsrfSettings()
+
+    response = test_client.get("/gen-token")
+    csrf_token = response.json().get("csrf_token")
+    csrf_cookie = test_client.cookies.get("fastapi-csrf-token")
+    test_client.cookies["fastapi-csrf-token"] = csrf_cookie
+
+    initial_cookie = (
+        response.headers.get("set-cookie", "").split(";")[0].split("=", 1)[1]
+    )
+
+    response = test_client.post("/validation-error", data={"csrf-token": csrf_token})
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    new_cookie = response.headers.get("set-cookie", "").split(";")[0].split("=", 1)[1]
+    assert new_cookie != initial_cookie
+
+
+def test_token_not_issued_on_csrf_error(test_client: TestClient):
+    """Test that new tokens are NOT issued when CSRF validation fails (400/401)."""
+
+    @CsrfProtect.load_config
+    def get_configs():
+        return CsrfSettings()
+
+    response = test_client.get("/gen-token")
+    csrf_token = response.json().get("csrf_token")
+
+    test_client.cookies["fastapi-csrf-token"] = "invalid cookie"
+
+    response = test_client.post("/protected", data={"csrf-token": csrf_token})
+    assert response.status_code in (
+        status.HTTP_400_BAD_REQUEST,
+        status.HTTP_401_UNAUTHORIZED,
+    )
+
+    assert "fastapi-csrf-token" not in response.headers.get("set-cookie", "")
