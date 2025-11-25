@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import apiClient from "../../../ui/apiClient";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { Box, Button, CircularProgress, Paper, Toolbar, Typography } from "@mui/material";
@@ -103,18 +103,19 @@ const normalizeExecutorHosts = (rawHosts) => {
 const Mum = () => {
   const [featureToggles, setFeatureToggles] = useState(() => resolveFeatureToggles());
   const [createdTask, setCreatedTask] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [executorHosts, setExecutorHosts] = useState([]);
   const [services, setServices] = useState([]);
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedService, setSelectedService] = useState("");
   const [execution, setExecution] = useState(null);
+  const [listBusyCount, setListBusyCount] = useState(0);
 
   // Output streaming state
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
   const [usersData, setUsersData] = useState([]);
+  const [lastListTarget, setLastListTarget] = useState("");
   const builtinRoles = useMemo(() => ([
     "read",
     "readWrite",
@@ -168,14 +169,16 @@ const Mum = () => {
   const stdoutBufferRef = useRef("");
   const esRef = useRef(null);
 
+  const listBusy = listBusyCount > 0;
+
   // Build a valid JSON body describing the task to generate
-  const buildPayload = () => ({
+  const buildPayload = useCallback(() => ({
     name: "mum-get-users",
     // This becomes meta.config in the PROXY run-python mapping
     payload: JSON.stringify({ action: "list_users" }),
     fmt: "json",
     alert_on_fail: false,
-  });
+  }), []);
 
   useEffect(() => {
     const loadOptions = async () => {
@@ -190,41 +193,21 @@ const Mum = () => {
     loadOptions();
   }, []);
 
-  const createTask = async () => {
-    setLoading(true);
-    setError(null);
-    setCreatedTask(null);
-
+  const ensureListTask = useCallback(async () => {
+    if (createdTask?.name) {
+      return createdTask;
+    }
     try {
-      const response = await apiClient.post('/mum/ui/usertask', buildPayload());
+      const response = await apiClient.post("/mum/ui/usertask", buildPayload());
       setCreatedTask(response.data);
+      return response.data;
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      const detail =
+        err?.response?.data?.detail || err?.message || "Failed to create list task";
+      setError(detail);
+      throw err;
     }
-  };
-
-  const executeTask = async () => {
-    if (!createdTask?.name || !selectedTarget) {
-      setError('Select a target and create the task first.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setExecution(null);
-    try {
-        const response = await apiClient.post(
-          `/mum/ui/execute/${createdTask.name}`,
-          { target: selectedTarget }
-        );
-      setExecution(response.data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [buildPayload, createdTask]);
 
     function extractJsonArray(text) {
       // Attempt to extract a JSON array even if extra text is present
@@ -241,60 +224,93 @@ const Mum = () => {
       return null;
     }
 
-    const stopStreaming = () => {
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
-      }
-      setIsStreaming(false);
-    };
+  const stopStreaming = useCallback(() => {
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+    setIsStreaming(false);
+  }, []);
 
-    const checkScriptOutput = async () => {
-      if (!execution?.id) {
-        setStreamError("Execute the task first to obtain an execution ID.");
+  useEffect(() => () => stopStreaming(), [stopStreaming]);
+
+  const streamListUsers = useCallback((historyId) => {
+    if (!historyId) {
+      setStreamError("Missing execution history ID.");
+      return;
+    }
+    stopStreaming();
+    setStreamError(null);
+    setIsStreaming(true);
+    stdoutBufferRef.current = "";
+
+    try {
+      const es = new EventSource(`/stream-logs/${encodeURIComponent(historyId)}`);
+      esRef.current = es;
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const { msg, type } = data || {};
+          if (type === 'stdout' && typeof msg === 'string') {
+            stdoutBufferRef.current += msg;
+          }
+        } catch (_) {
+          // ignore non-JSON chunks
+        }
+      };
+      es.addEventListener("finish", () => {
+        stopStreaming();
+        const arr = extractJsonArray(stdoutBufferRef.current);
+        if (Array.isArray(arr)) {
+          setUsersData(arr);
+        } else {
+          setStreamError("Could not parse output JSON.");
+        }
+      });
+      es.onerror = () => {
+        setStreamError("Stream failed.");
+        stopStreaming();
+      };
+    } catch (e) {
+      setStreamError(String(e?.message || e));
+      setIsStreaming(false);
+    }
+  }, [stopStreaming]);
+
+  const listUsers = useCallback(
+    async (targetOverride) => {
+      const target = targetOverride || selectedTarget;
+      if (!target) {
+        setError("Select an executor host first.");
         return;
       }
-      setStreamError(null);
-      setIsStreaming(true);
+      setListBusyCount((count) => count + 1);
+      setError(null);
+      setExecution(null);
       setUsersData([]);
-      stdoutBufferRef.current = "";
-
-      // Subscribe to SSE stream for this history id
       try {
-        const es = new EventSource(`/stream-logs/${encodeURIComponent(execution.id)}`);
-        esRef.current = es;
-        es.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            const { msg, type } = data || {};
-            if (type === 'stdout' && typeof msg === 'string') {
-              stdoutBufferRef.current += msg;
-            }
-          } catch (_) {
-            // ignore non-JSON chunks
-          }
-        };
-        es.addEventListener('finish', () => {
-          stopStreaming();
-          const arr = extractJsonArray(stdoutBufferRef.current);
-          if (Array.isArray(arr)) setUsersData(arr);
-          else setStreamError('Could not parse output JSON.');
-        });
-        es.onerror = () => {
-          setStreamError('Stream failed.');
-          stopStreaming();
-        };
-      } catch (e) {
-        setStreamError(String(e?.message || e));
-        setIsStreaming(false);
+        const task = await ensureListTask();
+        const response = await apiClient.post(
+          `/mum/ui/execute/${task.name}`,
+          { target }
+        );
+        setLastListTarget(target);
+        setExecution(response.data);
+        streamListUsers(response.data?.id);
+      } catch (err) {
+        const detail = err?.response?.data?.detail || err?.message || "Failed to list users";
+        setError(detail);
+      } finally {
+        setListBusyCount((count) => Math.max(count - 1, 0));
       }
-    };
+    },
+    [ensureListTask, selectedTarget, streamListUsers],
+  );
 
-    const handleUserMutation = () => {
-      if (execution?.id) {
-        checkScriptOutput();
-      }
-    };
+  const handleUserMutation = useCallback((meta) => {
+    // Refresh list in the background after add/edit/delete succeeds.
+    listUsers(meta?.target);
+  }, [listUsers]);
 
     const rowActionsEnabled = featureToggles.editUser || featureToggles.deleteUser;
     const renderRowActions = rowActionsEnabled
@@ -361,14 +377,13 @@ const Mum = () => {
             </Box>
 
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Button variant="contained" color="primary" onClick={createTask} disabled={loading}>
-              {loading ? 'Working…' : 'Create “get users” Task'}
-            </Button>
-            <Button variant="outlined" onClick={executeTask} disabled={loading || !createdTask || !selectedTarget}>
-              Execute Task
-            </Button>
-            <Button variant="text" onClick={checkScriptOutput} disabled={!execution?.id || isStreaming}>
-              {isStreaming ? 'Streaming…' : 'Check Run-Script Output'}
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => listUsers()}
+              disabled={listBusy || !selectedTarget}
+            >
+              {listBusy ? 'Listing users…' : 'List users'}
             </Button>
             {isStreaming && <CircularProgress size={20} />}
           </Box>
@@ -391,14 +406,23 @@ const Mum = () => {
             </Box>
           )}
 
-          {execution && (
+          {(execution || lastListTarget) && (
             <Box sx={{ mt: 1 }}>
-              <Typography variant="body2">
-                <strong>History ID:</strong> <code>{execution.id}</code>
-              </Typography>
-              <Typography variant="body2">
-                <strong>Status:</strong> <code>{execution.status}</code>
-              </Typography>
+              {execution && (
+                <>
+                  <Typography variant="body2">
+                    <strong>History ID:</strong> <code>{execution.id}</code>
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Status:</strong> <code>{execution.status}</code>
+                  </Typography>
+                </>
+              )}
+              {lastListTarget && (
+                <Typography variant="body2">
+                  <strong>Last refreshed host:</strong> <code>{lastListTarget}</code>
+                </Typography>
+              )}
             </Box>
           )}
         </Paper>

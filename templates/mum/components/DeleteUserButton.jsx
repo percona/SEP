@@ -54,7 +54,7 @@ const DeleteUserButton = ({
         db: dbName || DEFAULT_DB,
       });
       setOpen(false);
-      onSuccess?.({ username, db: dbName || DEFAULT_DB });
+      onSuccess?.({ username, db: dbName || DEFAULT_DB, target: selectedTarget });
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || "Failed to delete user");
     } finally {
