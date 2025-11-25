@@ -88,23 +88,31 @@ def _task_matches_spec(task: dict[str, Any], spec: dict[str, Any]) -> bool:
 async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
     """Retrieve or create the default MUM task."""
     spec = _build_default_task_spec()
+    logger.debug("Ensuring default MUM task '%s' exists", DEFAULT_TASK_NAME)
     try:
         existing = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
+        logger.debug("Task '%s' exists, checking if it matches spec", DEFAULT_TASK_NAME)
         if _task_matches_spec(existing, spec):
             logger.debug("Default MUM task '%s' exists and matches spec", DEFAULT_TASK_NAME)
             return existing
         logger.info("Default MUM task '%s' exists but doesn't match spec, updating it", DEFAULT_TASK_NAME)
         updated = await tasks_api.put(f"/{DEFAULT_TASK_NAME}", json=spec)
+        logger.info("Successfully updated default MUM task '%s'", DEFAULT_TASK_NAME)
         return updated
     except HTTPException as exc:  # type: ignore[name-defined]
         if exc.status_code != status.HTTP_404_NOT_FOUND:
-            logger.error("Failed to get default MUM task '%s': %s", DEFAULT_TASK_NAME, exc.detail)
+            logger.error("Failed to get default MUM task '%s': %s (status: %s)", DEFAULT_TASK_NAME, exc.detail, exc.status_code)
             raise
         # Task doesn't exist yet - this is expected, we'll create it below
-        logger.info("Default MUM task '%s' not found, creating it", DEFAULT_TASK_NAME)
+        logger.info("Default MUM task '%s' not found (404), will create it now", DEFAULT_TASK_NAME)
     try:
-        logger.debug("Creating default MUM task '%s' with spec: %s", DEFAULT_TASK_NAME, json.dumps(spec, indent=2))
-        created = await tasks_api.post("/", json=spec)
+        logger.info("Creating default MUM task '%s' with spec: %s", DEFAULT_TASK_NAME, json.dumps(spec, indent=2))
+        try:
+            created = await tasks_api.post("/", json=spec)
+            logger.info("POST request to create task succeeded. Response: %s", json.dumps(created, indent=2))
+        except Exception as create_exc:
+            logger.exception("Exception during task creation POST request: %s", create_exc)
+            raise
         logger.info("Successfully created default MUM task '%s' (ID: %s)", DEFAULT_TASK_NAME, created.get("id"))
         # Verify the task was actually created and is accessible
         # Retry a few times in case of eventual consistency
@@ -150,13 +158,35 @@ async def _execute_default_task(
     Returns:
         Tuple of (task, history) dicts
     """
-    default_task = await _ensure_default_task(tasks_api)
+    logger.debug("_execute_default_task called for target '%s'", target)
+    try:
+        default_task = await _ensure_default_task(tasks_api)
+        logger.debug("_ensure_default_task returned: %s", default_task.get("name") if default_task else "None")
+    except Exception as ensure_exc:
+        logger.exception("Exception in _ensure_default_task: %s", ensure_exc)
+        raise
+    
     if not default_task or not default_task.get("name"):
+        logger.error("_ensure_default_task returned invalid task: %s", default_task)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to ensure default MUM task exists",
         )
     task_name = default_task["name"]
+    logger.info("Preparing to execute task '%s' on target '%s'", task_name, target)
+    
+    # Verify the task exists before trying to execute it
+    try:
+        verify_task = await tasks_api.get(f"/{task_name}")
+        logger.debug("Verified task '%s' exists before execution", task_name)
+    except HTTPException as verify_exc:  # type: ignore[name-defined]
+        logger.error("Task '%s' does not exist when trying to execute! Status: %s, Detail: %s", 
+                    task_name, verify_exc.status_code, verify_exc.detail)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Task '{task_name}' was not found when attempting to execute. This should not happen.",
+        ) from verify_exc
+    
     execution_meta = {
         "target": target,
         "config": json.dumps(config),
