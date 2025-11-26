@@ -73,10 +73,13 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     hostname: RequiredStr
     service_id: int
     source_db_id: int | None = None
+    source_db_name: str = ""
     source_table_id: int | None = None
+    source_table_name: str = ""
     source_query: RequiredStr | None = None
     where: RequiredStr | None = None
     dest_table_id: int | None = None
+    dest_table_name: str = ""
     dest_file: RequiredStr | None = None
     swap_drop: int = Field(..., ge=0, le=2)
     swp_table_suffix: date | None = None
@@ -94,40 +97,60 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
 
     @model_validator(mode="after")
     def validate_tables_are_different(self) -> Self:
-        """Validate that the source_table_id and dest_table_id are not the same.
+        """Validate that the source and destination tables are not the same.
 
         :return: The validated instance
         :rtype: ArchivesCreate
-        :raises ValueError: If the source_table_id is the same as the dest_table_id.
+        :raises ValueError: If the source and destination tables are the same.
         """
-        if (
-            self.source_table_id == self.dest_table_id
-            and self.dest_table_id is not None
+        if self.source_table_id is not None and self.dest_table_id is not None:
+            if self.source_table_id == self.dest_table_id:
+                raise ValueError("Source and Destination tables cannot be the same.")
+        elif (
+            self.source_table_name
+            and self.source_table_name.strip()
+            and self.dest_table_name
+            and self.dest_table_name.strip()
+            and self.source_db_name
+            and self.source_db_name.strip()
+            and self.source_table_name.strip() == self.dest_table_name.strip()
         ):
             raise ValueError("Source and Destination tables cannot be the same.")
         return self
 
     @model_validator(mode="after")
     def validate_dest_file_or_dest_table_id(self) -> Self:
-        """Validate that exactly one of dest_file or dest_table_id is set.
+        """Validate that exactly one of dest_file or dest_table_id/dest_table_name is set.
 
         :return: The validated instance
         :rtype: ArchivesCreate
         :raises ValueError: If swap_drop is SWAP_DROP or delete_data is set, and either
-            dest_file or dest_table_id is provided.
+            dest_file or dest_table_id/dest_table_name is provided.
         :raises ValueError: If neither swap_drop nor delete_data is set, and
-            neither dest_file nor dest_table_id is provided.
+            neither dest_file nor dest_table_id/dest_table_name is provided.
         """
-        if dest_is_set := self.dest_table_id is not None or self.dest_file is not None:
+        has_dest_table = self.dest_table_id is not None or (
+            self.dest_table_name and self.dest_table_name.strip()
+        )
+        if dest_is_set := has_dest_table or self.dest_file is not None:
             if (
                 self.swap_drop == SwapDropEnum.SWAP_DROP or self.delete_data
             ) and dest_is_set:
                 raise ValueError(
-                    "When swap_drop is SWAP_DROP or delete_data is set, both dest_table_id and "
-                    "dest_file must be None."
+                    "When swap_drop is SWAP_DROP or delete_data is set, both dest_table_id/dest_table_name and "
+                    "dest_file must be None/empty."
                 )
         elif not self.delete_data and self.swap_drop != SwapDropEnum.SWAP_DROP:
-            raise ValueError("At least one of dest_file or dest_table_id must be set.")
+            raise ValueError(
+                "At least one of dest_file or dest_table_id/dest_table_name must be set."
+            )
+
+        if self.dest_table_id is not None and (
+            self.dest_table_name and self.dest_table_name.strip()
+        ):
+            raise ValueError(
+                "Cannot use both dest_table_id and dest_table_name at the same time."
+            )
 
         return self
 
@@ -148,22 +171,41 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
 
     @model_validator(mode="after")
     def validate_source_query_exclusivity(self) -> Self:
-        """Validate source_query exclusivity with source_db_id and source_table_id.
+        """Validate source_query exclusivity with source_db_id/source_table_id or source_db_name/source_table_name.
 
         :return: The validated instance.
         :rtype: ArchivesCreate
-        :raises ValueError: If source_query and source_db_id/source_table_id are both set,
-            or if neither source_query nor both source_db_id and source_table_id are set.
+        :raises ValueError: If source_query and source_db_id/source_table_id or source_db_name/source_table_name are both set,
+            or if neither source_query nor both source_db_id and source_table_id (or source_db_name and source_table_name) are set.
         """
         if self.source_query is not None:
-            if self.source_db_id is not None or self.source_table_id is not None:
+            if (
+                self.source_db_id is not None
+                or self.source_table_id is not None
+                or (self.source_db_name and self.source_db_name.strip())
+                or (self.source_table_name and self.source_table_name.strip())
+            ):
                 raise ValueError(
-                    "source_query is set, so source_db_id and source_table_id must be None."
+                    "source_query is set, so source_db_id/source_table_id and source_db_name/source_table_name must be None/empty."
                 )
-        elif self.source_db_id is None or self.source_table_id is None:
-            raise ValueError(
-                "When source_query is not set, both source_db_id and source_table_id must be provided."
+        else:
+            has_ids = self.source_db_id is not None and self.source_table_id is not None
+            has_typed_names = (
+                self.source_db_name
+                and self.source_db_name.strip()
+                and self.source_table_name
+                and self.source_table_name.strip()
             )
+
+            if not has_ids and not has_typed_names:
+                raise ValueError(
+                    "When source_query is not set, either both source_db_id and source_table_id, "
+                    "or both source_db_name and source_table_name must be provided."
+                )
+            if has_ids and has_typed_names:
+                raise ValueError(
+                    "Cannot use both source_db_id/source_table_id and source_db_name/source_table_name at the same time."
+                )
         return self
 
     @model_validator(mode="after")

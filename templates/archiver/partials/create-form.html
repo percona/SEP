@@ -51,6 +51,13 @@
         max-height: 0;
         pointer-events: none;
     }
+
+    #source_db_name_field,
+    #source_table_name_field,
+    #dest_table_name_field {
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+    }
 </style>
 <form id="create-form"
       class="create-form window"
@@ -156,16 +163,40 @@
                         </div>
                     </div>
                     <br>
-                    <div style=" display: flex; align-items: center; flex-wrap: wrap ">
+                    <div class="field">
+                        <label for="use_manual_input"
+                               title="Toggle to manually type schema and table even if inventory exists.">
+                            Manual input
+                        </label>
+                        <label class="checkbox" style="width: auto;">
+                            <input type="checkbox" id="use_manual_input" name="use_manual_input" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Type schema/table</span>
+                        </label>
+                    </div>
+                    <div>
                         <div class="select">
                             {% set source_db_id_title = "Select the source database schema from which data will be
                                                         purged." %}
                             <label for="source_db_id" title="{{ source_db_id_title }}">
                                 <span class="material-symbols-outlined">arrow_drop_down</span>
                                 <span class="label">Schema</span>
-                                <select id="source_db_id" name="source_db_id" class="validate" required>
+                                <select id="source_db_id" name="source_db_id" class="validate" disabled>
                                     <option value="">Select a schema</option>
                                 </select>
+                            </label>
+                        </div>
+                        <div class="select" id="source_db_name_field" style="display:none;">
+                            <label for="source_db_name" title="Type the source database schema name.">
+                                <span class="label">Schema</span>
+                                <input type="text"
+                                       id="source_db_name"
+                                       name="source_db_name"
+                                       class="validate"
+                                       placeholder="database_name" />
                             </label>
                         </div>
                         {% set source_table_id_title = "Select the source table from which data will be purged." %}
@@ -173,14 +204,23 @@
                             <label for="source_table_id" title="{{ source_table_id_title }}">
                                 <span class="material-symbols-outlined">arrow_drop_down</span>
                                 <span class="label">Table</span>
-                                <select id="source_table_id" name="source_table_id" class="validate" required>
+                                <select id="source_table_id" name="source_table_id" class="validate" disabled>
                                     <option value="">Select a table</option>
                                 </select>
                             </label>
                         </div>
+                        <div class="select" id="source_table_name_field" style="display:none;">
+                            <label for="source_table_name" title="Type the source table name.">
+                                <span class="label">Table</span>
+                                <input type="text"
+                                       id="source_table_name"
+                                       name="source_table_name"
+                                       class="validate"
+                                       placeholder="table_name" />
+                            </label>
+                        </div>
                         <div id="source_query_container"
                              style="width: fit-content;
-                                    margin-left: 1em;
                                     margin-top: 1em">
                             <label>OR</label>
                             {% set source_query_title = "Type an optional query to define the source data to be purged." %}
@@ -208,7 +248,6 @@
                                    required />
                         </label>
                     </div>
-                    <br>
                     <div id="purge_options_container">
                         {% set where_title = "Type a WHERE clause to limit rows for archiving (exclude the keyword
                                                 'WHERE')." %}
@@ -308,26 +347,28 @@
                 <br>
                 <fieldset id="destination_fieldset">
                     <legend>Destination details</legend>
-                    <div id="destination_container"
-                         style="display: flex;
-                                align-items: center;
-                                flex-wrap: wrap">
+                    <div id="destination_container">
                         {% set dest_table_id_title = "Select the destination table for the archived data." %}
                         <div class="select">
                             <label for="dest_table_id" title="{{ dest_table_id_title }}">
                                 <span class="material-symbols-outlined">arrow_drop_down</span>
                                 <span class="label">Destination Database</span>
-                                <select id="dest_table_id"
-                                        name="dest_table_id"
-                                        class="validate"
-                                        disabled
-                                        required>
+                                <select id="dest_table_id" name="dest_table_id" class="validate" disabled>
                                     <option value="">Select a table</option>
                                 </select>
                             </label>
                         </div>
+                        <div class="select" id="dest_table_name_field" style="display:none;">
+                            <label for="dest_table_name" title="Type the destination table name.">
+                                <span class="label">Destination Table</span>
+                                <input type="text"
+                                       id="dest_table_name"
+                                       name="dest_table_name"
+                                       class="validate"
+                                       placeholder="table_name" />
+                            </label>
+                        </div>
                         <div id="dest_file_container" style="width: fit-content; margin-top: 1em">
-                            &nbsp; &nbsp; &nbsp; &nbsp;
                             <label>OR</label>
                             {% set dest_file_title = "Type the file path where the archived data will be stored." %}
                             <label for="dest_file" title="{{ dest_file_title }}">
@@ -373,6 +414,14 @@
     const schemaSelect = document.getElementById('source_db_id');
     const sourceTableSelect = document.getElementById('source_table_id');
     const destTableSelect = document.getElementById('dest_table_id');
+    const destTableSelectContainer = destTableSelect ? destTableSelect.closest('.select') : null;
+    const sourceDbNameInput = document.getElementById('source_db_name');
+    const sourceTableNameInput = document.getElementById('source_table_name');
+    const sourceDbNameField = document.getElementById('source_db_name_field');
+    const sourceTableNameField = document.getElementById('source_table_name_field');
+    const destTableNameInput = document.getElementById('dest_table_name');
+    const destTableNameField = document.getElementById('dest_table_name_field');
+    const manualInputToggle = document.getElementById('use_manual_input');
     const dstFileInput = document.getElementById('dest_file');
     const swapDropSelect = document.getElementById('swap_drop');
     const destinationFieldset = document.getElementById('destination_fieldset');
@@ -393,6 +442,8 @@
     const form = document.getElementById('create-form');
     const createButton = form.querySelector('button[type="submit"]');
 
+    let useManualInput = false;
+
     function populateSchemas(selectedService) {
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
         sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
@@ -401,12 +452,13 @@
         if (selectedService && serviceSchemas[selectedService]) {
             const schemas = Object.entries(serviceSchemas[selectedService]);
             if (schemas.length > 0) {
+                setManualInput(false, true);
                 for (const [schemaId, schema] of schemas) {
                     const option = document.createElement('option');
                     option.value = schemaId;
                     option.textContent = schema.name;
                     schemaSelect.appendChild(option);
-                    if (srcQueryInput.value === '')
+                    if (srcQueryInput.value === '' && !useManualInput)
                         schemaSelect.disabled = false;
                 }
                 if (schemas.length === 1) {
@@ -415,7 +467,11 @@
                     addHiddenInput(schemaSelect);
                     populateSourceTables(selectedService, singleSchemaId);
                 }
+            } else {
+                setManualInput(true, true);
             }
+        } else {
+            setManualInput(true, true);
         }
     }
 
@@ -466,6 +522,54 @@
         }
     }
 
+    function setManualInput(enabled, forceToggleChecked) {
+        useManualInput = enabled;
+        if (forceToggleChecked) {
+            manualInputToggle.checked = enabled;
+        }
+        sourceDbNameField.style.display = enabled ? 'flex' : 'none';
+        sourceTableNameField.style.display = enabled ? 'flex' : 'none';
+        destTableNameField.style.display = enabled ? 'flex' : 'none';
+        if (enabled) {
+            schemaSelect.value = "";
+            sourceTableSelect.value = "";
+            destTableSelect.value = "";
+            schemaSelect.disabled = true;
+            sourceTableSelect.disabled = true;
+            destTableSelect.disabled = true;
+            document.getElementById("source_db_id_hidden")?.remove();
+            document.getElementById("source_table_id_hidden")?.remove();
+            document.getElementById("dest_table_id_hidden")?.remove();
+        } else {
+            if (srcQueryInput.value === '') {
+                schemaSelect.disabled = false;
+            }
+            sourceTableSelect.disabled = true;
+            if (!dstFileInput.value) {
+                destTableSelect.disabled = false;
+            }
+        }
+        toggleSchemaAndTable();
+        toggleSourceQueryInput();
+        updateDestinationFieldset();
+    }
+
+    manualInputToggle.addEventListener('change', function() {
+        setManualInput(this.checked, false);
+    });
+
+    sourceDbNameInput.addEventListener('input', function() {
+        if (useManualInput) {
+            toggleSourceQueryInput();
+        }
+    });
+
+    sourceTableNameInput.addEventListener('input', function() {
+        if (useManualInput) {
+            toggleSourceQueryInput();
+        }
+    });
+
     connectToSelect.addEventListener('change', function () {
         const selectedService = this.value;
         const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
@@ -506,18 +610,64 @@
         if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
             destinationContainer.classList.add('hidden');
             destTableSelect.disabled = true;
+            destTableNameInput.disabled = true;
             dstFileInput.disabled = true;
+            destTableSelect.removeAttribute('required');
+            destTableNameInput.removeAttribute('required');
             removeHiddenInput('dest_table_id');
             removeHiddenInput('dest_file');
+            destTableSelect.removeAttribute('name');
+            destTableNameInput.removeAttribute('name');
         } else {
             destinationContainer.classList.remove('hidden');
-            if (!dstFileInput.value)
-                destTableSelect.disabled = false;
-            if (!destTableSelect.value)
-                dstFileInput.disabled = false;
+            const hasDestFile = dstFileInput.value.trim() !== '';
+            const hasDestTable = useManualInput
+                ? (destTableNameInput.value.trim() !== '')
+                : (destTableSelect.value !== '');
 
-            destTableSelect.setAttribute('name', 'dest_table_id');
-            dstFileInput.setAttribute('name', 'dest_file');
+            if (useManualInput) {
+                destTableSelect.disabled = true;
+                destTableSelect.removeAttribute('required');
+                destTableSelect.removeAttribute('name');
+                destTableSelectContainer.style.display = 'none';
+
+                if (hasDestFile) {
+                    destTableNameInput.disabled = true;
+                    destTableNameInput.removeAttribute('required');
+                    destTableNameInput.removeAttribute('name');
+                    destTableNameField.style.display = 'none';
+                } else {
+                    destTableNameInput.disabled = false;
+                    destTableNameInput.setAttribute('required', 'required');
+                    destTableNameInput.name = 'dest_table_name';
+                    destTableNameField.style.display = 'flex';
+                }
+            } else {
+                destTableNameInput.disabled = true;
+                destTableNameInput.removeAttribute('required');
+                destTableNameInput.removeAttribute('name');
+                destTableNameField.style.display = 'none';
+
+                if (hasDestFile) {
+                    destTableSelect.disabled = true;
+                    destTableSelect.removeAttribute('required');
+                    destTableSelect.removeAttribute('name');
+                    destTableSelectContainer.style.display = 'none';
+                } else {
+                    destTableSelect.disabled = false;
+                    destTableSelect.setAttribute('required', 'required');
+                    destTableSelect.setAttribute('name', 'dest_table_id');
+                    destTableSelectContainer.style.display = 'flex';
+                }
+            }
+
+            if (hasDestTable) {
+                dstFileInput.disabled = true;
+                dstFileInput.removeAttribute('name');
+            } else {
+                dstFileInput.disabled = false;
+                dstFileInput.setAttribute('name', 'dest_file');
+            }
         }
     }
 
@@ -543,26 +693,55 @@
         if (srcQueryInput.value.trim() !== '') {
             schemaSelect.disabled = true;
             sourceTableSelect.disabled = true;
+            sourceDbNameInput.disabled = true;
+            sourceTableNameInput.disabled = true;
             schemaSelect.removeAttribute('required');
             sourceTableSelect.removeAttribute('required');
+            sourceDbNameInput.removeAttribute('required');
+            sourceTableNameInput.removeAttribute('required');
             schemaSelect.value = '';
             sourceTableSelect.value = '';
+            sourceDbNameInput.value = '';
+            sourceTableNameInput.value = '';
             schemaSelect.removeAttribute('name');
             sourceTableSelect.removeAttribute('name');
+            sourceDbNameInput.removeAttribute('name');
+            sourceTableNameInput.removeAttribute('name');
             removeHiddenInput('source_db_id')
             removeHiddenInput('source_table_id')
+        } else if (useManualInput) {
+            schemaSelect.disabled = true;
+            sourceTableSelect.disabled = true;
+            sourceDbNameInput.disabled = false;
+            sourceTableNameInput.disabled = false;
+            schemaSelect.removeAttribute('required');
+            sourceTableSelect.removeAttribute('required');
+            sourceDbNameInput.setAttribute('required', 'required');
+            sourceTableNameInput.setAttribute('required', 'required');
+            sourceDbNameInput.name = 'source_db_name';
+            sourceTableNameInput.name = 'source_table_name';
         } else {
             schemaSelect.disabled = false;
             sourceTableSelect.disabled = false;
+            sourceDbNameInput.disabled = true;
+            sourceTableNameInput.disabled = true;
             schemaSelect.setAttribute('required', 'required');
             sourceTableSelect.setAttribute('required', 'required');
+            sourceDbNameInput.removeAttribute('required');
+            sourceTableNameInput.removeAttribute('required');
             schemaSelect.name = 'source_db_id';
             sourceTableSelect.name = 'source_table_id';
+            sourceDbNameInput.removeAttribute('name');
+            sourceTableNameInput.removeAttribute('name');
         }
     }
 
     function toggleSourceQueryInput() {
-        if (schemaSelect.value !== '' && sourceTableSelect.value !== '') {
+        const hasSchemaTable = useManualInput
+            ? (sourceDbNameInput.value.trim() !== '' && sourceTableNameInput.value.trim() !== '')
+            : (schemaSelect.value !== '' && sourceTableSelect.value !== '');
+
+        if (hasSchemaTable) {
             srcQueryInput.disabled = true;
             srcQueryInput.removeAttribute('required');
             srcQueryInput.value = '';
@@ -598,7 +777,11 @@
         }
     }
     function toggleDstFileContainer() {
-        if (destTableSelect.value !== '') {
+        const hasDestTable = useManualInput
+            ? (destTableNameInput.value.trim() !== '')
+            : (destTableSelect.value !== '');
+
+        if (hasDestTable) {
             dstFileContainer.classList.add('hidden');
             dstFileInput.disabled = true;
             dstFileInput.value = '';
@@ -611,14 +794,31 @@
     }
 
     function toggleDestTableSelect() {
-        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+        const shouldDisable = dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked;
+
+        if (shouldDisable) {
             destTableSelect.disabled = true;
             destTableSelect.value = '';
             destTableSelect.removeAttribute('name');
-            removeHiddenInput('dest_table_id')
+            destTableSelectContainer.style.display = 'none';
+            removeHiddenInput('dest_table_id');
+
+            if (useManualInput) {
+                destTableNameInput.disabled = true;
+                destTableNameInput.value = '';
+                destTableNameInput.removeAttribute('name');
+                destTableNameInput.removeAttribute('required');
+                destTableNameField.style.display = 'none';
+            }
         } else {
-            destTableSelect.disabled = false;
-            destTableSelect.setAttribute('name', 'dest_table_id');
+            if (useManualInput) {
+                destTableNameInput.disabled = false;
+                destTableNameField.style.display = 'flex';
+            } else {
+                destTableSelect.disabled = false;
+                destTableSelect.setAttribute('name', 'dest_table_id');
+                destTableSelectContainer.style.display = 'flex';
+            }
         }
     }
 
@@ -692,10 +892,17 @@
 
     destTableSelect.addEventListener('change', function () {
         toggleDstFileContainer();
+        updateDestinationFieldset();
+    });
+
+    destTableNameInput.addEventListener('input', function () {
+        toggleDstFileContainer();
+        updateDestinationFieldset();
     });
 
     dstFileInput.addEventListener('input', function () {
         toggleDestTableSelect();
+        updateDestinationFieldset();
     });
 
     useIndexInput.addEventListener('input', function () {
@@ -722,6 +929,8 @@
         if (connectToSelect.options.length === 1) {
             const singleHost = connectToSelect.options[0].value;
             populateSchemas(singleHost);
+        } else if (!connectToSelect.value) {
+            setManualInput(true, true);
         }
         updateCreateButtonState();
         updateDestinationFieldset();
