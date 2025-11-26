@@ -97,7 +97,7 @@ NOMAD_RUN_PYTHON = {
     "ParameterizedJob": {
         "Payload": "required",
         "MetaRequired": ["target"],
-        "MetaOptional": ["config", "requirements"],
+        "MetaOptional": ["config", "config_nomad_variable", "requirements"],
     },
     "TaskGroups": [
         {
@@ -144,7 +144,7 @@ NOMAD_RUN_PYTHON = {
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                     "Templates": [
                         {
-                            "EmbeddedTmpl": '{{ env "NOMAD_META_config" }}',
+                            "EmbeddedTmpl": '{{- $var := env "NOMAD_META_config_nomad_variable" -}}{{- if $var -}}{{ with nomadVar $var }}{{ .Data.config }}{{ end }}{{- else -}}{{ env "NOMAD_META_config" }}{{- end -}}',
                             "DestPath": "script_config",
                         },
                     ],
@@ -271,6 +271,27 @@ SYSTEM_TASKS = [
         created_by=SYSTEM_USER,
     ),
 ]
+
+# Import plugin tasks
+try:
+    from app.sep.plugins.mum.task import get_default_mum_task
+
+    _mum_task = get_default_mum_task()
+    SYSTEM_TASKS.append(
+        Task(
+            name=_mum_task.name,
+            data=_mum_task.data,
+            backend=_mum_task.backend,
+            owner=_mum_task.owner,
+            protected=_mum_task.protected,
+            alert_on_fail=_mum_task.alert_on_fail,
+            anonymize_mask=None,
+            created_by=SYSTEM_USER,
+        )
+    )
+except ImportError:
+    # MUM plugin not available, skip
+    pass
 
 SYSTEM_PERIODIC_TASKS = [
     SystemPeriodicTaskSchedule(

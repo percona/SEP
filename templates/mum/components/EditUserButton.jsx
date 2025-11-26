@@ -85,7 +85,7 @@ const EditUserButton = ({
       if (password) body.password = password;
       await apiClient.post("/mum/ui/update-user", body);
       setOpen(false);
-      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB });
+      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || "Failed to update user");
     } finally {

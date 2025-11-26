@@ -15,33 +15,108 @@
 
 """Define routes for the MUM Plugin."""
 
-import logging
 import json
+import logging
 from typing import Any
-from pathlib import Path
 
-from fastapi import APIRouter, Request, status, HTTPException
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
-
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
-    TaskAPI,
-    IsAuthenticated,
     InventoryAPI,
+    IsAuthenticated,
+    TaskAPI,
 )
-from app.sep.plugins.mum.models import MUMTaskCreateRequest
 from app.sep.utils.decorators import csrf_exempt
-
-from app.tasks.models import TaskBackendEnum, TaskOwner
-from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.mum.task import get_default_mum_task, TASK_NAME as DEFAULT_TASK_NAME
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 templates = sep_settings.TEMPLATES
+
+
+async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
+    """Ensure the default MUM task exists, creating it if necessary.
+    
+    The task definition is provided by the MUM plugin and is based on the
+    run-python Nomad job. This function ensures the task exists in the database.
+    
+    Returns:
+        dict: The task data as returned by the Tasks API
+    """
+    # First try to get the task via API
+    try:
+        task = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
+        logger.debug("Default MUM task '%s' already exists", DEFAULT_TASK_NAME)
+        return task
+    except HTTPException as exc:  # type: ignore[name-defined]
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            logger.error("Failed to get default MUM task '%s': %s (status: %s)", 
+                        DEFAULT_TASK_NAME, exc.detail, exc.status_code)
+            raise
+    
+    # Task doesn't exist, create it using the plugin's task definition
+    logger.info("Default MUM task '%s' not found, creating it from plugin definition", DEFAULT_TASK_NAME)
+    task_spec = get_default_mum_task()
+    
+    # Convert Task model to dict for API
+    task_data = {
+        "name": task_spec.name,
+        "backend": task_spec.backend.value,
+        "owner": task_spec.owner.value,
+        "protected": task_spec.protected,
+        "alert_on_fail": task_spec.alert_on_fail,
+        "data": task_spec.data,
+    }
+    
+    try:
+        created = await tasks_api.post("/", json=task_data)
+        logger.info("Successfully created default MUM task '%s' (ID: %s)", DEFAULT_TASK_NAME, created.get("id"))
+        return created
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error("Failed to create default MUM task '%s': %s (status: %s)", 
+                    DEFAULT_TASK_NAME, exc.detail, exc.status_code)
+        raise
+
+
+async def _execute_default_task(
+    tasks_api: TaskAPI, *, target: str, config: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Dispatch the default MUM task with the provided config.
+    
+    The task will be created from the plugin definition if it doesn't exist.
+    
+    Args:
+        tasks_api: The TaskAPI instance
+        target: Executor host name
+        config: Configuration dict that will be JSON-stringified and passed as meta.config
+        
+    Returns:
+        Tuple of (task, history) dicts
+    """
+    logger.debug("Executing default MUM task for target '%s'", target)
+    default_task = await _ensure_default_task(tasks_api)
+    task_name = default_task["name"]
+    
+    execution_meta = {
+        "target": target,
+        "config": json.dumps(config),
+    }
+    logger.debug("Executing task '%s' on target '%s' with config: %s", task_name, target, config)
+    try:
+        history = await tasks_api.post(
+            f"/execute/{task_name}", json={"meta": execution_meta}
+        )
+        logger.info("Successfully executed task '%s' (history ID: %s)", task_name, history.get("id"))
+        return default_task, history
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error("Failed to execute task '%s': %s (status: %s)", task_name, exc.detail, exc.status_code)
+        raise
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -79,6 +154,11 @@ async def mum_options(
         executor_hosts = await tasks_api.get("/hosts/")
     except HTTPException:
         executor_hosts = {}
+    try:
+        default_task = await _ensure_default_task(tasks_api)
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.warning("Failed to ensure default MUM task: %s", exc)
+        default_task = None
     return JSONResponse(
         content={
             "executor_hosts": [
@@ -86,38 +166,58 @@ async def mum_options(
                 for name, address in executor_hosts.items()
             ],
             "services": services,
+            "default_task": default_task,
         }
     )
 
 
 @router.post(
-    "/ui/execute/{task_name}",
+    "/ui/list-users",
     dependencies=[IsAuthenticated],
     response_class=JSONResponse,
 )
 @csrf_exempt
-async def mum_execute_task(
+async def mum_list_users(
     request: Request,  # noqa: ARG001
-    task_name: str,
     body: dict[str, Any],
     tasks_api: TaskAPI,
 ) -> JSONResponse:
-    """Dispatch an existing MUM task by name to a selected executor host.
-    Body must contain: {"target": "<executor-host-name>"}
+    """List MongoDB users by executing the default MUM task.
+    Expects JSON body with:
+    - target: executor host name (required)
     """
+    logger.debug("Received list-users request with body: %s", body)
     target = body.get("target")
     if not target:
         return JSONResponse(
             content={"detail": "'target' is required"},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+
     try:
-        history = await tasks_api.post(
-            f"/execute/{task_name}", json={"meta": {"target": target}}
+        config_obj: dict[str, Any] = {
+            "action": "list_users",
+        }
+        logger.debug("Listing users for target '%s'", target)
+        default_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            config=config_obj,
         )
-        return JSONResponse(content=history, status_code=status.HTTP_201_CREATED)
+        logger.info("Successfully executed list_users for target '%s' (history ID: %s)", target, history.get("id"))
+        return JSONResponse(
+            content={"task": default_task, "history": history},
+            status_code=status.HTTP_201_CREATED,
+        )
     except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error("Failed to list users for target '%s': %s (status: %s)", target, exc.detail, exc.status_code)
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    except Exception as exc:
+        logger.exception("Unexpected error while listing users for target '%s'", target)
+        return JSONResponse(
+            content={"detail": f"Internal error: {str(exc)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 @router.post(
     "/ui/create-user",
@@ -155,8 +255,6 @@ async def mum_create_user(
         )
 
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
-        dynamic_name = f"mum-create-user-{int(__import__('time').time())}"
         config_obj: dict[str, Any] = {
             "action": "create_user",
             "username": username,
@@ -164,26 +262,13 @@ async def mum_create_user(
             "roles": roles,
             "db": db_name,
         }
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": False,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    "config": json.dumps(config_obj),
-                    "requirements": "PyMongo",
-                },
-                "payload": f"file://{payload_path}",
-            },
-        }
-        created_task = await tasks_api.post("/", json=task_data)
-        history = await tasks_api.post(
-            f"/execute/{dynamic_name}", json={"meta": {"target": target}}
+        default_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            config=config_obj,
         )
         return JSONResponse(
-            content={"task": created_task, "history": history},
+            content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
@@ -226,8 +311,6 @@ async def mum_update_user(
     roles = body.get("roles")
 
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
-        dynamic_name = f"mum-update-user-{int(__import__('time').time())}"
         config_obj: dict[str, Any] = {
             "action": "update_user",
             "username": username,
@@ -238,26 +321,13 @@ async def mum_update_user(
         if roles is not None:
             config_obj["roles"] = roles
 
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": False,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    "config": json.dumps(config_obj),
-                    "requirements": "PyMongo",
-                },
-                "payload": f"file://{payload_path}",
-            },
-        }
-        created_task = await tasks_api.post("/", json=task_data)
-        history = await tasks_api.post(
-            f"/execute/{dynamic_name}", json={"meta": {"target": target}}
+        default_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            config=config_obj,
         )
         return JSONResponse(
-            content={"task": created_task, "history": history},
+            content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
@@ -296,33 +366,18 @@ async def mum_delete_user(
     db_name = body.get("db") or "admin"
 
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
-        dynamic_name = f"mum-delete-user-{int(__import__('time').time())}"
         config_obj: dict[str, Any] = {
             "action": "delete_user",
             "username": username,
             "db": db_name,
         }
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": False,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    "config": json.dumps(config_obj),
-                    "requirements": "PyMongo",
-                },
-                "payload": f"file://{payload_path}",
-            },
-        }
-        created_task = await tasks_api.post("/", json=task_data)
-        history = await tasks_api.post(
-            f"/execute/{dynamic_name}", json={"meta": {"target": target}}
+        default_task, history = await _execute_default_task(
+            tasks_api,
+            target=target,
+            config=config_obj,
         )
         return JSONResponse(
-            content={"task": created_task, "history": history},
+            content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
         )
     except HTTPException as exc:  # type: ignore[name-defined]
@@ -334,41 +389,17 @@ async def mum_delete_user(
     response_class=JSONResponse,
 )
 @csrf_exempt
-async def create_mum_task(
+async def get_mum_task(
     request: Request,  # noqa: ARG001
-    create_task_json: MUMTaskCreateRequest,
     tasks_api: TaskAPI,
 ) -> JSONResponse:
-    """Create a general MUM task using the run-python template.
-    Creates a PROXY task that references the protected `run-python` task. The created
-    task can later be executed (dispatched) with a target selected in the UI.
-    Returns the created task (including its ID) as JSON.
+    """Get the default MUM task.
+    Returns the default MUM task (including its ID) as JSON.
+    The task must be pre-configured and available.
+    All MUM operations use this single task with different config arguments.
     """
     try:
-        payload_path = Path(__file__).parent / "mum_payload"
-        # Make task name dynamic to act like a short-lived session name
-        dynamic_name = f"{create_task_json.name}-{int(__import__('time').time())}"
-        task_data: dict[str, Any] = {
-            "name": dynamic_name,
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.MUM,
-            "alert_on_fail": create_task_json.alert_on_fail,
-            "data": {
-                "task": "run-python",
-                "meta": {
-                    # Forward the user payload as script config (opaque to backend)
-                    "config": create_task_json.payload,
-                    # Default requirements for MUM scripts
-                    "requirements": "PyMongo",
-                    # `target` will be provided when executing the task from UI
-                },
-                # Use the bundled Python payload for MUM as the script body
-                "payload": f"file://{payload_path}",
-            },
-        }
-
-        created_task = await tasks_api.post("/", json=task_data)
-        # Return the created Task so the frontend can store id/name for later execution
-        return JSONResponse(content=created_task, status_code=status.HTTP_201_CREATED)
+        default_task = await _ensure_default_task(tasks_api)
+        return JSONResponse(content=default_task, status_code=status.HTTP_200_OK)
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
