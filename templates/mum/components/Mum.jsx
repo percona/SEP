@@ -282,7 +282,10 @@ const Mum = () => {
         );
         setLastListTarget(target);
         setExecution(response.data?.history);
-        streamListUsers(response.data?.history?.id);
+        // Wait 5 seconds before streaming to allow task to start
+        setTimeout(() => {
+          streamListUsers(response.data?.history?.id);
+        }, 5000);
       } catch (err) {
         const detail = err?.response?.data?.detail || err?.message || "Failed to list users";
         setError(detail);
