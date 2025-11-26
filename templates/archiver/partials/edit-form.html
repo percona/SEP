@@ -171,12 +171,14 @@
                     </div>
                     <br>
                     <div class="field">
-                        <label for="use_manual_input"
-                               title="Toggle to manually type schema and table even if inventory exists.">
-                            Manual input
+                        <label for="use_manual_input_source"
+                               title="Toggle to manually type source schema and table even if inventory exists.">
+                            Manual input (Source)
                         </label>
                         <label class="checkbox" style="width: auto;">
-                            <input type="checkbox" id="use_manual_input" name="use_manual_input" />
+                            <input type="checkbox"
+                                   id="use_manual_input_source"
+                                   name="use_manual_input_source" />
                             <div class="checkmark">
                                 <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                                 <span class="material-symbols-outlined checked">check_box</span>
@@ -185,45 +187,49 @@
                         </label>
                     </div>
                     <div>
-                        <div class="select">
-                            {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
-                            <label for="source_db_id" title="{{ source_db_id_title }}">
-                                <span class="material-symbols-outlined">arrow_drop_down</span>
-                                <span class="label">Schema</span>
-                                <select id="source_db_id" name="source_db_id" class="validate" disabled>
-                                    <option value="">Select a schema</option>
-                                </select>
-                            </label>
-                        </div>
-                        <div class="select" id="source_db_name_field" style="display:none;">
-                            <label for="source_db_name" title="Type the source database schema name.">
-                                <span class="label">Schema</span>
-                                <input type="text"
-                                       id="source_db_name"
-                                       name="source_db_name"
-                                       class="validate"
-                                       placeholder="database_name" />
-                            </label>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 1em">
+                            <div class="select">
+                                {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
+                                <label for="source_db_id" title="{{ source_db_id_title }}">
+                                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                                    <span class="label">Schema</span>
+                                    <select id="source_db_id" name="source_db_id" class="validate" disabled>
+                                        <option value="">Select a schema</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="select" id="source_db_name_field" style="display:none;">
+                                <label for="source_db_name" title="Type the source database schema name.">
+                                    <span class="label">Schema</span>
+                                    <input type="text"
+                                           id="source_db_name"
+                                           name="source_db_name"
+                                           class="validate"
+                                           placeholder="database_name" />
+                                </label>
+                            </div>
                         </div>
                         {% set source_table_id_title = "Select the source table from which data will be purged." %}
-                        <div class="select">
-                            <label for="source_table_id" title="{{ source_table_id_title }}">
-                                <span class="material-symbols-outlined">arrow_drop_down</span>
-                                <span class="label">Table</span>
-                                <select id="source_table_id" name="source_table_id" class="validate" disabled>
-                                    <option value="">Select a table</option>
-                                </select>
-                            </label>
-                        </div>
-                        <div class="select" id="source_table_name_field" style="display:none;">
-                            <label for="source_table_name" title="Type the source table name.">
-                                <span class="label">Table</span>
-                                <input type="text"
-                                       id="source_table_name"
-                                       name="source_table_name"
-                                       class="validate"
-                                       placeholder="table_name" />
-                            </label>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 1em">
+                            <div class="select">
+                                <label for="source_table_id" title="{{ source_table_id_title }}">
+                                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                                    <span class="label">Table</span>
+                                    <select id="source_table_id" name="source_table_id" class="validate" disabled>
+                                        <option value="">Select a table</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="select" id="source_table_name_field" style="display:none;">
+                                <label for="source_table_name" title="Type the source table name.">
+                                    <span class="label">Table</span>
+                                    <input type="text"
+                                           id="source_table_name"
+                                           name="source_table_name"
+                                           class="validate"
+                                           placeholder="table_name" />
+                                </label>
+                            </div>
                         </div>
                         <div id="source_query_container"
                              style="width: fit-content;
@@ -360,26 +366,44 @@
                 <br>
                 <fieldset id="destination_fieldset">
                     <legend>Destination details</legend>
+                    <div class="field" id="dest_manual_input_container">
+                        <label for="use_manual_input_dest"
+                               title="Toggle to manually type destination table even if inventory exists.">
+                            Manual input (Destination)
+                        </label>
+                        <label class="checkbox" style="width: auto;">
+                            <input type="checkbox"
+                                   id="use_manual_input_dest"
+                                   name="use_manual_input_dest" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Type table</span>
+                        </label>
+                    </div>
                     <div id="destination_container">
                         {% set dest_table_id_title = "Select the destination table for the archived data." %}
-                        <div class="select">
-                            <label for="dest_table_id" title="{{ dest_table_id_title }}">
-                                <span class="material-symbols-outlined">arrow_drop_down</span>
-                                <span class="label">Destination Database</span>
-                                <select id="dest_table_id" name="dest_table_id" class="validate" disabled>
-                                    <option value="">Select a table</option>
-                                </select>
-                            </label>
-                        </div>
-                        <div class="select" id="dest_table_name_field" style="display:none;">
-                            <label for="dest_table_name" title="Type the destination table name.">
-                                <span class="label">Destination Table</span>
-                                <input type="text"
-                                       id="dest_table_name"
-                                       name="dest_table_name"
-                                       class="validate"
-                                       placeholder="table_name" />
-                            </label>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 1em">
+                            <div class="select">
+                                <label for="dest_table_id" title="{{ dest_table_id_title }}">
+                                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                                    <span class="label">Destination Database</span>
+                                    <select id="dest_table_id" name="dest_table_id" class="validate" disabled>
+                                        <option value="">Select a table</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="select" id="dest_table_name_field" style="display:none;">
+                                <label for="dest_table_name" title="Type the destination table name.">
+                                    <span class="label">Destination Table</span>
+                                    <input type="text"
+                                           id="dest_table_name"
+                                           name="dest_table_name"
+                                           class="validate"
+                                           placeholder="table_name" />
+                                </label>
+                            </div>
                         </div>
                         <div id="dest_file_container" style="width: fit-content; margin-top: 1em;">
                             <label>OR</label>
@@ -438,7 +462,9 @@
       };
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('source_db_id');
+    const schemaSelectContainer = schemaSelect ? schemaSelect.closest('.select') : null;
     const sourceTableSelect = document.getElementById('source_table_id');
+    const sourceTableSelectContainer = sourceTableSelect ? sourceTableSelect.closest('.select') : null;
     const sourceDbNameInput = document.getElementById('source_db_name');
     const sourceTableNameInput = document.getElementById('source_table_name');
     const sourceDbNameField = document.getElementById('source_db_name_field');
@@ -447,7 +473,8 @@
     const destTableSelectContainer = destTableSelect ? destTableSelect.closest('.select') : null;
     const destTableNameInput = document.getElementById('dest_table_name');
     const destTableNameField = document.getElementById('dest_table_name_field');
-    const manualInputToggle = document.getElementById('use_manual_input');
+    const manualInputToggleSource = document.getElementById('use_manual_input_source');
+    const manualInputToggleDest = document.getElementById('use_manual_input_dest');
     const dstFileInput = document.getElementById('dest_file');
     const swapDropSelect = document.getElementById('swap_drop');
     const destinationFieldset = document.getElementById('destination_fieldset');
@@ -455,6 +482,7 @@
     const srcQueryInput = document.getElementById('source_query');
     const srcQueryContainer = document.getElementById('source_query_container');
     const destinationContainer = document.getElementById('destination_container');
+    const destManualInputContainer = document.getElementById('dest_manual_input_container');
     const deleteDataContainer = document.getElementById('delete_data_container');
     const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
@@ -468,51 +496,75 @@
     const form = document.getElementById('edit-task-form');
     const editButton = form.querySelector('button[type="submit"]');
 
-    let useManualInput = false;
+    let useManualInputSource = false;
+    let useManualInputDest = false;
 
-    function setManualInput(enabled, forceToggleChecked) {
-        useManualInput = enabled;
+    function setManualInputSource(enabled, forceToggleChecked) {
+        useManualInputSource = enabled;
         if (forceToggleChecked) {
-            manualInputToggle.checked = enabled;
+            manualInputToggleSource.checked = enabled;
         }
-        sourceDbNameField.style.display = enabled ? 'flex' : 'none';
-        sourceTableNameField.style.display = enabled ? 'flex' : 'none';
-        destTableNameField.style.display = enabled ? 'flex' : 'none';
         if (enabled) {
+            sourceDbNameField.style.display = 'flex';
+            sourceTableNameField.style.display = 'flex';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'none';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'none';
             schemaSelect.value = "";
             sourceTableSelect.value = "";
-            destTableSelect.value = "";
             schemaSelect.disabled = true;
             sourceTableSelect.disabled = true;
-            destTableSelect.disabled = true;
             document.getElementById("source_db_id_hidden")?.remove();
             document.getElementById("source_table_id_hidden")?.remove();
-            document.getElementById("dest_table_id_hidden")?.remove();
             if (source_data.schema) {
                 sourceDbNameInput.value = source_data.schema;
             }
             if (source_data.table) {
                 sourceTableNameInput.value = source_data.table;
             }
-            if (source_data.dest_table) {
-                destTableNameInput.value = source_data.dest_table;
-            }
         } else {
+            sourceDbNameField.style.display = 'none';
+            sourceTableNameField.style.display = 'none';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'flex';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'flex';
             if (srcQueryInput.value === '') {
                 schemaSelect.disabled = false;
             }
             sourceTableSelect.disabled = true;
+        }
+        toggleSchemaAndTable();
+        toggleSourceQueryInput();
+    }
+
+    function setManualInputDest(enabled, forceToggleChecked) {
+        useManualInputDest = enabled;
+        if (forceToggleChecked) {
+            manualInputToggleDest.checked = enabled;
+        }
+        if (enabled) {
+            destTableNameField.style.display = 'flex';
+            if (destTableSelectContainer) destTableSelectContainer.style.display = 'none';
+            destTableSelect.value = "";
+            destTableSelect.disabled = true;
+            document.getElementById("dest_table_id_hidden")?.remove();
+            if (source_data.dest_table) {
+                destTableNameInput.value = source_data.dest_table;
+            }
+        } else {
+            destTableNameField.style.display = 'none';
+            if (destTableSelectContainer) destTableSelectContainer.style.display = 'flex';
             if (!dstFileInput.value) {
                 destTableSelect.disabled = false;
             }
         }
-        toggleSchemaAndTable();
-        toggleSourceQueryInput();
         updateDestinationFieldset();
     }
 
-    manualInputToggle.addEventListener('change', function() {
-        setManualInput(this.checked, false);
+    manualInputToggleSource.addEventListener('change', function() {
+        setManualInputSource(this.checked, false);
+    });
+
+    manualInputToggleDest.addEventListener('change', function() {
+        setManualInputDest(this.checked, false);
     });
 
     function populateSchemas(selectedService) {
@@ -645,6 +697,7 @@
     function updateDestinationFieldset() {
         if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
             destinationContainer.classList.add('hidden');
+            if (destManualInputContainer) destManualInputContainer.style.display = 'none';
             destTableSelect.disabled = true;
             destTableNameInput.disabled = true;
             dstFileInput.disabled = true;
@@ -659,11 +712,17 @@
         } else {
             destinationContainer.classList.remove('hidden');
             const hasDestFile = dstFileInput.value.trim() !== '';
-            const hasDestTable = useManualInput
+            const hasDestTable = useManualInputDest
                 ? (destTableNameInput.value.trim() !== '')
                 : (destTableSelect.value !== '');
 
-            if (useManualInput) {
+            if (hasDestFile) {
+                if (destManualInputContainer) destManualInputContainer.style.display = 'none';
+            } else {
+                if (destManualInputContainer) destManualInputContainer.style.display = 'block';
+            }
+
+            if (useManualInputDest) {
                 destTableSelect.disabled = true;
                 destTableSelect.removeAttribute('required');
                 destTableSelect.removeAttribute('name');
@@ -702,9 +761,11 @@
             if (hasDestTable) {
                 dstFileInput.disabled = true;
                 dstFileInput.removeAttribute('name');
+                dstFileContainer.classList.add('hidden');
             } else {
                 dstFileInput.disabled = false;
                 dstFileInput.setAttribute('name', 'dest_file');
+                dstFileContainer.classList.remove('hidden');
             }
         }
     }
@@ -744,7 +805,7 @@
             sourceTableSelect.removeAttribute('name');
             sourceDbNameInput.removeAttribute('name');
             sourceTableNameInput.removeAttribute('name');
-        } else if (useManualInput) {
+        } else if (useManualInputSource) {
             schemaSelect.disabled = true;
             sourceTableSelect.disabled = true;
             sourceDbNameInput.disabled = false;
@@ -772,7 +833,7 @@
     }
 
     function toggleSourceQueryInput() {
-        const hasSchemaTable = useManualInput
+        const hasSchemaTable = useManualInputSource
             ? (sourceDbNameInput.value.trim() !== '' && sourceTableNameInput.value.trim() !== '')
             : (schemaSelect.value !== '' && sourceTableSelect.value !== '');
 
@@ -812,7 +873,15 @@
         }
     }
     function toggleDstFileContainer() {
-        if (destTableSelect.value !== '') {
+        if (destinationContainer.classList.contains('hidden')) {
+            return;
+        }
+
+        const hasDestTable = useManualInputDest
+            ? (destTableNameInput.value.trim() !== '')
+            : (destTableSelect.value !== '');
+
+        if (hasDestTable) {
             dstFileContainer.classList.add('hidden');
             dstFileInput.disabled = true;
             dstFileInput.value = '';
@@ -825,13 +894,31 @@
     }
 
     function toggleDestTableSelect() {
-        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+        const shouldDisable = dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked;
+
+        if (shouldDisable) {
             destTableSelect.disabled = true;
             destTableSelect.value = '';
             destTableSelect.removeAttribute('name');
+            if (destTableSelectContainer) destTableSelectContainer.style.display = 'none';
+            removeHiddenInput('dest_table_id');
+
+            if (useManualInputDest) {
+                destTableNameInput.disabled = true;
+                destTableNameInput.value = '';
+                destTableNameInput.removeAttribute('name');
+                destTableNameInput.removeAttribute('required');
+                destTableNameField.style.display = 'none';
+            }
         } else {
-            destTableSelect.disabled = false;
-            destTableSelect.setAttribute('name', 'dest_table_id');
+            if (useManualInputDest) {
+                destTableNameInput.disabled = false;
+                destTableNameField.style.display = 'flex';
+            } else {
+                destTableSelect.disabled = false;
+                destTableSelect.setAttribute('name', 'dest_table_id');
+                if (destTableSelectContainer) destTableSelectContainer.style.display = 'flex';
+            }
         }
     }
 
@@ -922,13 +1009,13 @@
     });
 
     sourceDbNameInput.addEventListener('input', function() {
-        if (useManualInput) {
+        if (useManualInputSource) {
             toggleSourceQueryInput();
         }
     });
 
     sourceTableNameInput.addEventListener('input', function() {
-        if (useManualInput) {
+        if (useManualInputSource) {
             toggleSourceQueryInput();
         }
     });
@@ -1063,7 +1150,10 @@
         }
         // Enable manual input if schema or table is unknown
         if (matched.schemaId === "-1" || matched.tableId === "-1") {
-            setManualInput(true, true);
+            setManualInputSource(true, true);
+        }
+        if (matched.destTableId === "-2") {
+            setManualInputDest(true, true);
         }
         updateCreateButtonState();
         updateDestinationFieldset();
