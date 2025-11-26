@@ -155,7 +155,7 @@ pipeline {
 					set -o errexit
 					set -o pipefail
 
-					RELEASE_VER="${GIT_TAG}" podman image push sep:${RELEASE_VER} labbox-mini.tp.int.percona.com:5555/sep:${RELEASE_VER}
+					podman image push sep:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}
 				'''
 			}
 		}
