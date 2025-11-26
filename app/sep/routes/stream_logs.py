@@ -76,11 +76,36 @@ async def task_history_logs_event_stream(
     """
     try:
         with tasks_client.auth(access_token) as tasks_api:
+            # Wait for task to start if it's still PENDING
+            # This prevents a race condition where the stream endpoint is called
+            # before the task execution has actually started
+            wait_interval = 0.5  # Check every 500ms for faster response
+            max_wait_time = 30  # Maximum time to wait for task to start (30 seconds)
+            elapsed_time = 0
+            
+            task_history = await tasks_api.get(f"/history/{task_history_id}")
+            
+            # Wait for task to transition from PENDING to RUNNING (or terminal state)
+            while task_history["status"] == TaskHistoryStatusEnum.PENDING:
+                if elapsed_time >= max_wait_time:
+                    logger.warning(
+                        "Task %s remained PENDING for %s seconds, proceeding anyway",
+                        task_history_id,
+                        max_wait_time
+                    )
+                    break
+                await asyncio.sleep(wait_interval)
+                elapsed_time += wait_interval
+                task_history = await tasks_api.get(f"/history/{task_history_id}")
+            
+            # Now stream logs
             async for log_entry in tasks_api.stream(
                 f"/history/{task_history_id}/logs/", params=request.query_params
             ):
                 if log_entry:
                     yield f"data: {log_entry.decode()}\n\n"
+            
+            # Wait for task to finish if it's still RUNNING
             # TODO(yan): Don't wait for task to finish
             # SEP-379
             wait_interval = 5
