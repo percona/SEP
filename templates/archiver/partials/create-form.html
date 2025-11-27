@@ -447,7 +447,8 @@
     const sourceTableNameField = document.getElementById('source_table_name_field');
     const destTableNameInput = document.getElementById('dest_table_name');
     const destTableNameField = document.getElementById('dest_table_name_field');
-    const manualInputToggle = document.getElementById('use_manual_input');
+    const manualInputToggleSource = document.getElementById('use_manual_input_source');
+    const manualInputToggleDest = document.getElementById('use_manual_input_dest');
     const dstFileInput = document.getElementById('dest_file');
     const swapDropSelect = document.getElementById('swap_drop');
     const destinationFieldset = document.getElementById('destination_fieldset');
@@ -797,7 +798,7 @@
     }
 
     function toggleSourceQueryInput() {
-        const hasSchemaTable = useManualInput
+        const hasSchemaTable = useManualInputSource
             ? (sourceDbNameInput.value.trim() !== '' && sourceTableNameInput.value.trim() !== '')
             : (schemaSelect.value !== '' && sourceTableSelect.value !== '');
 
