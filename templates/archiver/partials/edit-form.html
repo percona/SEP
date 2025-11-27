@@ -463,8 +463,10 @@
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('source_db_id');
     const schemaSelectContainer = schemaSelect ? schemaSelect.closest('.select') : null;
+    const schemaSelectParent = schemaSelectContainer ? schemaSelectContainer.parentElement : null;
     const sourceTableSelect = document.getElementById('source_table_id');
     const sourceTableSelectContainer = sourceTableSelect ? sourceTableSelect.closest('.select') : null;
+    const sourceTableSelectParent = sourceTableSelectContainer ? sourceTableSelectContainer.parentElement : null;
     const sourceDbNameInput = document.getElementById('source_db_name');
     const sourceTableNameInput = document.getElementById('source_table_name');
     const sourceDbNameField = document.getElementById('source_db_name_field');
@@ -475,6 +477,7 @@
     const destTableNameField = document.getElementById('dest_table_name_field');
     const manualInputToggleSource = document.getElementById('use_manual_input_source');
     const manualInputToggleDest = document.getElementById('use_manual_input_dest');
+    const manualInputSourceContainer = manualInputToggleSource ? manualInputToggleSource.closest('.field') : null;
     const dstFileInput = document.getElementById('dest_file');
     const swapDropSelect = document.getElementById('swap_drop');
     const destinationFieldset = document.getElementById('destination_fieldset');
@@ -805,6 +808,9 @@
             sourceTableSelect.removeAttribute('name');
             sourceDbNameInput.removeAttribute('name');
             sourceTableNameInput.removeAttribute('name');
+            if (schemaSelectParent) schemaSelectParent.style.display = 'none';
+            if (sourceTableSelectParent) sourceTableSelectParent.style.display = 'none';
+            if (manualInputSourceContainer) manualInputSourceContainer.style.display = 'none';
         } else if (useManualInputSource) {
             schemaSelect.disabled = true;
             sourceTableSelect.disabled = true;
@@ -816,6 +822,13 @@
             sourceTableNameInput.setAttribute('required', 'required');
             sourceDbNameInput.name = 'source_db_name';
             sourceTableNameInput.name = 'source_table_name';
+            if (schemaSelectParent) schemaSelectParent.style.display = 'flex';
+            if (sourceTableSelectParent) sourceTableSelectParent.style.display = 'flex';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'none';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'none';
+            if (sourceDbNameField) sourceDbNameField.style.display = 'flex';
+            if (sourceTableNameField) sourceTableNameField.style.display = 'flex';
+            if (manualInputSourceContainer) manualInputSourceContainer.style.display = 'block';
         } else {
             schemaSelect.disabled = false;
             sourceTableSelect.disabled = false;
@@ -829,6 +842,13 @@
             sourceTableSelect.name = 'source_table_id';
             sourceDbNameInput.removeAttribute('name');
             sourceTableNameInput.removeAttribute('name');
+            if (schemaSelectParent) schemaSelectParent.style.display = 'flex';
+            if (sourceTableSelectParent) sourceTableSelectParent.style.display = 'flex';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'flex';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'flex';
+            if (sourceDbNameField) sourceDbNameField.style.display = 'none';
+            if (sourceTableNameField) sourceTableNameField.style.display = 'none';
+            if (manualInputSourceContainer) manualInputSourceContainer.style.display = 'block';
         }
     }
 
