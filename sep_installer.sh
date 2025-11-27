@@ -15,6 +15,7 @@
 #   - openssl
 #   - sed
 #   - yq
+#   - nomad (only required if you plan to use the "nomad" helper command to generate a client config)
 #
 #   See CHECK_LIST and check_prereqs for more details
 #
@@ -22,14 +23,17 @@
 # Configuration options
 #######################################################################################################################
 #
-# AUTOSTART            start the stack automatically following a successful installation, default 0
-# CONTAINER_ENGINE     specify the container runtime, default docker
-# ENABLE_PMM           run PMM as part of the stack, default 1
-# INSTALL_DIR          the location for generated files, default ~/sep
-# SEP_IMAGE_NAME       the registry address, default docker.io/percona/percona-sep (login required)
-# SEP_IMAGE_TAG        the image tag for SEP, default v0.9.2
-# SEP_PMM_PUBLIC_HOST  the hostname or IP address that maps to the PMM server, default 127.0.0.1
-# SEP_PMM_PORT         the port for PMM. Currently ignored and forced to 443 due to PMM-14382
+# AUTOSTART               start the stack automatically following a successful installation, default 0
+# CONTAINER_ENGINE        specify the container runtime, default docker
+# ENABLE_PMM              run PMM as part of the stack, default 1
+# INSTALL_DIR             the location for generated files, default ~/sep
+# SEP_IMAGE_NAME          the registry address, default docker.io/percona/percona-sep (login required)
+# SEP_IMAGE_TAG           the image tag for SEP, default v0.9
+# SEP_PMM_PUBLIC_HOST     the hostname or IP address that maps to the PMM server, default 127.0.0.1
+# SEP_PMM_PORT            the port for PMM, default 8443
+# SEP_PMM_FRONTEND        the URL to access PMM, default https://<SEP_PMM_PUBLIC_HOST>
+# SEP_PMM_CONTAINER_NAME  the container name for PMM when using the "nomad" command, default sep-pmm-1
+# SEP_PMM_NOMAD_DATA_DIR  data dir used in the generated Nomad client config when using the "nomad" command, default /tmp/sep-pmm-nomad
 #
 # Additional options that have an effect if set are as follows, these should be set before installing as they do not
 # use default values:
@@ -78,6 +82,41 @@
 #      settings.yaml and then restart the app container
 #
 #######################################################################################################################
+# Nomad helper command
+#######################################################################################################################
+#
+# You can generate a Nomad *client* configuration that connects to the PMM-hosted Nomad server
+# by running the installer with the "nomad" subcommand:
+#
+#   $ ./sep_installer.sh nomad
+#
+# Defaults (override via environment variables if needed):
+#   - SEP_PMM_CONTAINER_NAME=sep-pmm-1
+#   - SEP_PMM_NOMAD_DATA_DIR=${INSTALL_DIR}/nomad_data
+#   - SEP_PMM_PUBLIC_HOST=<see main config defaults above>
+#
+# What the command does:
+#   1) Verifies the PMM container "${SEP_PMM_CONTAINER_NAME}" is running using the selected CONTAINER_ENGINE.
+#   2) Checks the following files exist inside the container at /srv/nomad/certs/ :
+#        - nomad-agent-ca.pem
+#        - global-server-${SEP_PMM_PUBLIC_HOST}.pem
+#        - global-server-${SEP_PMM_PUBLIC_HOST}-key.pem
+#      If any is missing, the command fails with an error.
+#   3) Copies those three files to ${INSTALL_DIR}/certs.
+#   4) Generates ${INSTALL_DIR}/nomad_client_config.hcl with TLS paths and:
+#        data_dir = "${SEP_PMM_NOMAD_DATA_DIR}"
+#        client.servers = ["${SEP_PMM_PUBLIC_HOST}:4647"]
+#        tls.{ca_file,cert_file,key_file} pointing at the copied certs.
+#
+# Requirements:
+#   - The "nomad" CLI must be installed locally (see Required software above).
+#   - The PMM container must be running and must contain the certs listed above at /srv/nomad/certs/.
+#
+# Common errors:
+#   - "container '<name>' is not running": start PMM first (e.g., docker/podman compose up/start) and make sure SEP_PMM_CONTAINER_NAME is set to the correct name .
+#   - "missing '<file>' inside container": ensure SEP_PMM_PUBLIC_HOST is set to the correct hostname or IP address used by PMM for Nomad TLS certs.
+#
+#######################################################################################################################
 # Troubleshooting and additional information
 #######################################################################################################################
 #
@@ -96,17 +135,11 @@ CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 ENABLE_PMM="${ENABLE_PMM:-1}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
-SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9.2}"
-SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
-
-# At the moment we have to force 443 due to PMM-14382
-#SEP_PMM_PORT="${SEP_PMM_PORT:-443}"
-SEP_PMM_PORT="443"
-
-# Only add the port if not 443
-if [ "$SEP_PMM_PORT" != "443" ]; then
-  SEP_PMM_PUBLIC_ADDRESS="${SEP_PMM_PUBLIC_ADDRESS}:${SEP_PMM_PORT}"
-fi
+SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-v0.9}"
+SEP_PMM_PUBLIC_HOST="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
+SEP_PMM_PORT="${SEP_PMM_PORT:-8443}"
+SEP_PMM_FRONTEND="${SEP_PMM_FRONTEND:-https://${SEP_PMM_PUBLIC_HOST}}"
+SEP_PMM_NOMAD_DATA_DIR="${SEP_PMM_NOMAD_DATA_DIR:-${INSTALL_DIR}/nomad_data}"
 
 test "${ENABLE_PMM}" = "1" || \
 	test "${SEP_PMM_URL_AUTH_TOKEN:-undef}" != "undef" || \
@@ -154,51 +187,120 @@ o8wf01vUfvr9BrKxDeVbaGv5rOAb8bNmi7abQdEzskptVL2Dutk7N7lhSgSFmDU2eEZztwvpn5E9
 w/+6z/KxXB8KGa3jTBkDOGL3bV0ju7AawZdTyVvk8Q8mD5mJc4xWCLPFl7e/alkM54rEB1/s3dnM
 exktloiX8//x/PB4/gbqdx6+3wUAAA=='
 
-SEP_COMPOSE_YAML='H4sICN3o52gAA25ldy55YW1sAN1Y3XPaOBB/56/QcJk8dCqbJDQfmvbBCS5hjq/Bpnd90ghbBTe2
-7JMNCc3wv9/KBsc2ENKbS3pzMOOx9kur/e2uJWGMa7+hhRcQJELmERHypFZ7wCzyMBcLT4Yi4CIh
-NYSKQ3RcEQA+Qp8NyzaGHWr2vxAUydCdO4kXCuqGzh2XqQiw6OdO1yRId/lCF3PfT+mWadudftva
-MJMg0mOeJJ6YxtqSBf7GKXdy2K+yTGr/40eC3u3yuWXYxrVhmRS8bnf6MHcUxslU8vivdE5XxJg/
-JJLhGdDjdEI1pNkQHVcEUqMY1WMuF1xqUz+cMF8TYcBccvR4O7Bs2hmSVBZPWcLv2XJV3ygpqpZF
-S/NEwqVg/jNa4F7MI7wI/XnAU9c2r+hYMWLuSJ67dPTY6QM+3S5tdUYEayvd4TKJIcwRTcI7Luj3
-+4Te8aUW8YDoLIp0IKQDGb7/cdgKdtiT6vr9BZrM97EncCg4VoSCic3o543g0jI2g2ftlLKNbCdg
-pl0TPLkP5V0a7SgISGqPCzbxOfWixTlB35gf8wq5SVAi57wGZHDoJ5UUlSUJc2aKs5GtqQzzHF72
-xAvYFEQ2ORTqEZdOKJgOEjjLSXKWShayJguJknBZwogey0VKjUKZFASOHi1zSIe9Hh0ORvaKXDab
-Zzmzed68IOqxXkSpRNVP6bXM63GboEaBZPaN665Jja45Ug2AoJNt5rVx8/t4SHtG32ibPbNv7zTR
-H/SM1k592+yCmj36ulNvPIQeYFpl3nB83e3cUKPVGpkW8AprL3FWa532Z2qZN+NRx/4KrF6nT4eG
-Zf0xGLWU7jNczNzAE5mZUmN5t6uxQFtKmIQ+x3xoARmtmJE5kirTHBa7YSj3JAZwJ57Q10L4qYB2
-Z8dGLsuQBZO67030YAltkvx4L+8LWbJVoZkq9YSXaN/jUBBdvVJlKhvnhckfoPvyp1kvG43GC0Oz
-HQaotJ1BA6I72RMVWJRkcqlvPgLk5HxvQkNXbkMO0NY1QdD+quSxZY6eviZVbjE9VGqpHDf7LTCW
-s1ZVnfQ7YIztWwrZfDsA3diRDOp6xvDph/PdwKnGXAbt6QOnp4wcvmr0PzTPTl8j+pK7XnwAgEzm
-AvIy8tY5WXXv/Ozi6jXcc7jP5ZIqBV6ungyqTg/aEO0bPXNFihTbaGeQzaHRElQ/aTROiHrU1ymU
-yGUUemqbkk2Rkp0wCJhwCcKGckpLWHwXa5kAynxAGPvh1OcL7n/yxLcw1XN5xIUbUyiffFHuJH9N
-41et3q1UzvZEO/ZL+UbiXXUj8TrBnnCW/NpQKw+qgYZx7My4OweJT1AvzIdRsPw/xd8TC5gzBAjA
-k9dBQFffmXhWgcBBdebzYOI5EGXBAv4pdwXNo6lkLkczzlx0fIyiZTILBcJBClsupwXME/W9aJTq
-uEpVcO/r7PlhYQcwCI2/dG4Go37ajWHToKX/Ck9tkAi6gnDs7Fw5481gTlP910OcunEA3qwq//vQ
-nu6D9vRtoc0PFL8KVFjfAUhB4hCghQapxqW2lFPzLH4DeBv74G28Lbxi6omHA5ulTOZEOy3tlyrH
-t/rRo7rh+JPe2vYwWye+bFw24CAHz/puOWsj2Gw20xNfsyR4Y1itwWC0FrqC34qo536gNyvd2qdu
-nxvSVWlwev1GdJ442VhXY83VGw1195Fx8+PDSy8onqwVqC+ysvOyomJu69riH11clI1uXWH8q1lW
-AKN0zsv3Z1j11JyW3xTAe368qGmaVvsbzEgJwk8UAAA='
+SEP_COMPOSE_YAML='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'
 
-SEP_SETTINGS_YAML='H4sICD7s52gAA25ldy55YW1sAM1WW2+bSBR+z68YdVeyVDXGabNtw1MxTJJRMLAzkCa7Wo0wntqs
-MbBAElmV//ueYSCAQ6S9vDR5sJjvzDnfuc9PqBRVFafrcroPd8nJSV5kq4eoirOUr7JoKwr9BCHD
-tt2v3HQdM6AUOz5nmDHiOkxHVfEgWgls8WuX+UxeQegUvXn7RkKBf80DhilfuBa2dRTm+XSXrURS
-Ts2wXGVZEZSiAMm5Yd5gxwJDlHGXkiviPOvaVFVe6pp29v7TdAb/Z/rn8/NzAE2DWa5LlVxLgzAW
-YAr0Jm8nCvA8m5iGD6S5YyywDn7np8CkRk1MfXIpccw9w7/WkQaQ9udTNc3FTonYRDpOLB39/J1h
-j4NGLn+fgUNfjmGTYv8VWQUqefDXc4kDotJDcDBSIdE/z2azWuKSunCnk9M0/QL+asylV4ZDfjvy
-S0YF25jeq6DMseFzax5QoqM8K6t1Icq/EjDVfuiKZRt+aw5BYOyrS63Dl9VS/+X8w/tOETOv8cJo
-7cAhdW8gtwGFzBZiFcskqd+PHz5daMoH0CWFmC8jbM11FIlEFHv+lBVQYryswkpWkWX4xtxgWG9C
-AwWA+5zrY1liOlot64++zwi1tNu4j3mkBF0KOp4dk9XZ2YEj4txCotw2gkNerzI74nbM7l/we8Fw
-hCNCjNlclu4lsXFTspEoupqV+A2+78FbsW9QMP9D+/acAT7sEFlecfoo0iqD+gnzWL+Yzc5UM8hJ
-07pBsUUoNn1el72WhQ/VBnorSZZhtFXRcYjn4XZaQZ8R24caxXc+dtRwawA5fqblpvli947JgQ6m
-twaU/McZxCDK0pWi7dlBPbXQ798nMkITGEEs2ohdiMxNmK7F5B2awBwMbMxbPEwqUZQSAK71/JGn
-WndsMgajA4LYkz68Q50F0gZkRHvcxwYGBsjARocMzBhFtIkfR11QyIgTPWDoRqNrYGAOuXnIyxED
-yxp5oX7ZXRhob88H2s2NiLblw25Mf9THBiYGyMBIhwzMsDTOc1GhRZiGa1GMGCuVxEtbfWBg6hkY
-OpQliYgqZMXhOoXmiSNkhVU4lp/q6WVq1NkwK3B2+ENVMnXv7vk1Nqx6kTZ7/v8NHTl24AlB/E5x
-01XwtvCb1ahwz4V9Dc1/Z9qBpbbyoCFBc9xVsAZvlfIYrcJyW3ZI82bpLLo3BDdLs1m6frYVadvn
-kgnuOw6N32N82hzoyFss2D6N6idMM+AWi47r8Y6XEwzeO4+imK6TbBkm0zTbhatmCcNVLufjoXff
-8IgMaTtZpQisW14/rHzYvk5f+BZTcnnPIQ06+hYmpXjBd7Fnv9pHjMmV41LcLHfWJ3+Kyn05+M5F
-8S0rdiEo4GU92wbwbt/tDHUSp7V8/ajsXfANdsNGxnudt3a0yxVRl5zRL7iwKahaxQ+9xxx3YVgd
-p2NfRzJqmKYbOP7hyz8oEq0+fa1iXyuG/97CfwPnsr1RLwwAAA=='
+SEP_SETTINGS_YAML='H4sICJo99mgAA2N1cnJlbnQueWFtbADNVm1vm0gQ/p5fseqdZKlqjNPm2oZPxbBJVsHA7UKa3Om0
+wnhrc8bAAUlkVf7vN8tCAIdI9/KlyQeLeWZnnnnZmf0JlaKq4nRdTvfhLjk5yYts9RBVcZbyVRZt
+RaGfIGTYtvuVm65jBpRix+cMM0Zch+moKh5Eq4Etfu0yn8kjCJ2iN2/fSCjwr3nAMOUL18K2jsI8
+n+6ylUjKqRmWqywrglIUoDk3zBvsWOCIMu5SckWcZ1ubqspLXdPO3n+azuD/TP98fn4OoGkwy3Wp
+0mtpEMYCTIHe5O1EAZ5nE9PwgTR3jAXWIe78FJjUqImpTy4ljrln+Nc60gDS/nyqprnYKRWbyMCJ
+paOfvzPscbDI5e8zcOjrMWxS7L+iq0ClD/F6LnFAVUYIAUYqJfrn2WxWa1xSF850epqmX8Bfjbn0
+ynDIb0dxyaxgG9N7lZQ5NnxuzQNKdJRnZbUuRPlXAq7aD12xbNNvzSEJjH11qXX4slrqv5x/eN8Z
+YuY1XhitHxBS9wZqG1CobCFWsSyS+v344dOFpmIAW1KJ+TLD1lxHkUhEsedPWQEtxssqrGQXWYZv
+zA2G9SY10AC4z7kWyxbT0WpZf/RjRqil3eZ9LCKl6FKw8RyY7M7OD4iIcwuFctsMDnm9yuyI2zG7
+f8HvBcMRjggxZnPZupfExk3LRqLoelbiN/i+B2/FvkHB/Q8d23MF+PCGyPaK00eRVhn0T5jH+sVs
+dqYug5w0bRgUW4Ri0+d122tZ+FBt4G4lyTKMtio7DvE83E4ruGfE9qFH8Z2PHTXcGkCOn2m5ab7Y
+vWNyoIPprQEt/3EGOYiydKVoe3ZQTy30+/eJzNAERhCLNmIXInMTpmsxeYcmMAcDG/MWD5NKFKUE
+gGs9f6RU68QmYzA6IIk97cM71HkgbUJGrMd9bOBggAx8dMjAjVFEm/hxNASFjATRA4ZhNLYGDuZQ
+m4e8HHGwrJEX5pfdgYH1Vj6wbm5EtC0fdmP2oz42cDFABk46ZOCGpXGeiwotwjRci2LEWak0Xvrq
+AwNXz8AwoCxJRFQhKw7XKVyeOEJWWIVj9ameXpZGyYZVAdnhD9XJ1L2759fYsOpF2uz5/zd05NiB
+JwTxO8PNrYK3hd+sRoV7LuxruPx3ph1YaisPLiRYjrsO1uCtUh6jVVhuyw5p3iydR/eG4GZpNkvX
+z7Yibe+5ZIJ7gXuLBa93MQykdsj1ZWq6yfHQi+u0EejyONunUf3QacbgYtFFdPwSkHMOXkWPopiu
+k2wZJtM024UrvfMrp+ihd97wiEx8nxosZV4/v3zY0U5f+RZTcnnPoVg6+hYmpXjBd7Fnv9pHjMmV
+41LcPAFYn/wpKvfl4DsXxbes2IVggJf1BBzAu323WZQkTmv9+unZO+Ab7IaNLIG6uu0CkIukbkyj
+35Zh03a1iR962znuwrA6TsexjlTUME03cPzDl3/QJFotfa2vX2uG/37R/wY8oYWmVQwAAA=='
+
+cmd_nomad() {
+    certs_dir_in_cont="/srv/nomad/certs"
+    files="nomad-agent-ca.pem global-server-${SEP_PMM_PUBLIC_HOST}.pem global-server-${SEP_PMM_PUBLIC_HOST}-key.pem"
+
+    # Check mandatory cert files inside container
+    for f in $files; do
+        $(get_engine_command) exec pmm sh -c "test -f '${certs_dir_in_cont}/${f}' || { echo 'ERROR: missing ${f} inside container at ${certs_dir_in_cont}'; exit 1; }" || return 1
+    done
+
+    # Ensure target certs dir exists
+    install -d "${INSTALL_DIR}/certs" -m 0750
+
+    # Copy certs out of the container
+    for f in $files; do
+        $(get_engine_command) cp "pmm:${certs_dir_in_cont}/${f}" "${INSTALL_DIR}/certs/${f}"
+        chmod 0644 "${INSTALL_DIR}/certs/${f}" || true
+    done
+
+    # Compute paths for the config template
+    SEP_PMM_NOMAD_CA_PATH="${INSTALL_DIR}/certs/nomad-agent-ca.pem"
+    SEP_PMM_NOMAD_CERT_PATH="${INSTALL_DIR}/certs/global-server-${SEP_PMM_PUBLIC_HOST}.pem"
+    SEP_PMM_NOMAD_CERT_KEY_PATH="${INSTALL_DIR}/certs/global-server-${SEP_PMM_PUBLIC_HOST}-key.pem"
+
+    # Write Nomad client config
+    cat > "${INSTALL_DIR}/nomad_client_config.hcl" <<EOF
+log_level = "DEBUG"
+
+data_dir = "${SEP_PMM_NOMAD_DATA_DIR}"
+
+server {
+  enabled = false
+}
+
+client {
+  enabled = true
+  servers = ["${SEP_PMM_PUBLIC_HOST}:4647"]
+  artifact {
+    disable_filesystem_isolation = true
+  }
+}
+
+tls {
+  http = true
+  rpc  = true
+
+  ca_file   = "${SEP_PMM_NOMAD_CA_PATH}"
+  cert_file = "${SEP_PMM_NOMAD_CERT_PATH}"
+  key_file  = "${SEP_PMM_NOMAD_CERT_KEY_PATH}"
+
+  verify_server_hostname = true
+  verify_https_client    = true
+}
+
+plugin "raw_exec" {
+  config {
+      enabled = true
+  }
+}
+EOF
+
+    printf "Nomad client config written to: %s\n" "${INSTALL_DIR}/nomad_client_config.hcl"
+    printf "Start a Nomad client with:\n  nomad agent -config \"%s/nomad_client_config.hcl\"\n" "${INSTALL_DIR}"
+}
+
 
 save_progress() {
 	test ! -d "${INSTALL_DIR}"/ || printf "%d" "${PROGRESS}" > "${INSTALL_DIR}"/.progress
@@ -208,8 +310,48 @@ cleanup() {
 	echo Done
 }
 
-trap 'save_progress' HUP INT QUIT ABRT ALRM TERM
-trap 'cleanup' EXIT
+usage() {
+	cat <<'EOF'
+SEP Installer for Docker or Podman
+
+USAGE
+  ./sep_installer.sh [COMMAND]
+  ./sep_installer.sh --help | -h | help
+
+COMMANDS
+  (no command)   Run the default install flow (checks, generate certs/configs, compose up).
+  nomad          Generate a Nomad *client* config pointing to the PMM-hosted Nomad server.
+
+ENVIRONMENT (common)
+  AUTOSTART                Start the stack after install (default: 0)
+  CONTAINER_ENGINE         Container runtime: docker|podman (default: docker)
+  ENABLE_PMM               Run PMM as part of the stack (default: 1)
+  INSTALL_DIR              Output directory (default: ~/sep)
+  SEP_IMAGE_NAME           Image registry (default: docker.io/percona/percona-sep)
+  SEP_IMAGE_TAG            SEP image tag (default: v0.9)
+  SEP_PMM_PUBLIC_HOST      PMM public host/IP (default: 127.0.0.1)
+  SEP_PMM_PORT             PMM port (default: 8443)
+  SEP_PMM_FRONTEND         PMM URL (default: https://${SEP_PMM_PUBLIC_HOST})
+
+ENVIRONMENT (nomad command)
+  SEP_PMM_CONTAINER_NAME   PMM container name to inspect/copy from (default: sep-pmm-1)
+  SEP_PMM_NOMAD_DATA_DIR   Nomad client data dir in generated config (default: ${INSTALL_DIR}/nomad_data)
+
+EXAMPLES
+  # Default install flow
+  ./sep_installer.sh
+
+  # Show logs after install
+  docker compose --file ./sep/compose.yaml --project-name sep logs --follow
+
+  # Generate Nomad client config, copying certs from the running PMM container
+  ./sep_installer.sh nomad
+
+  # Start a local Nomad client (after 'nomad' command above)
+  nomad agent -config "${HOME}/sep/nomad_client_config.hcl"
+EOF
+}
+
 
 generate_secrets() {
 	# Create empty file with correct permissions first
@@ -255,9 +397,9 @@ pull_sep_image_if_registry_login_required() {
     if [ "${CONTAINER_ENGINE}" = "podman" ]; then
         EXTRA_ARGS="--authfile=.docker-io-percona-sep"
     fi
-    "${CONTAINER_ENGINE}" login --username=percona ${EXTRA_ARGS:+$EXTRA_ARGS}
+    "${CONTAINER_ENGINE}" login --username=percona ${EXTRA_ARGS:+$EXTRA_ARGS} "${SEP_IMAGE_NAME%%/*}"
     "${CONTAINER_ENGINE}" pull "${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}"
-    "${CONTAINER_ENGINE}" logout ${EXTRA_ARGS:+$EXTRA_ARGS}
+    "${CONTAINER_ENGINE}" logout ${EXTRA_ARGS:+$EXTRA_ARGS} "${SEP_IMAGE_NAME%%/*}"
 	fi
 }
 
@@ -386,13 +528,13 @@ generate_configs() {
 	# shellcheck disable=SC1091
 	. "${INSTALL_DIR}"/.secrets
 
-	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g; s#\${SEP_PMM_PUBLIC_ADDRESS}#${SEP_PMM_PUBLIC_ADDRESS}#g" >"${INSTALL_DIR}"/compose.yaml
+	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g; s#\${SEP_PMM_PUBLIC_ADDRESS}#${SEP_PMM_PUBLIC_HOST}#g" >"${INSTALL_DIR}"/compose.yaml
 	${SEP_COMPOSE_YAML}
 	EOS
 
 	test "${ENABLE_PMM}" = "1" || yq -i -y 'del(.services.pmm)' "${INSTALL_DIR}"/compose.yaml
 
-	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_URL_AUTH_ACCOUNT}#${SEP_PMM_URL_AUTH_ACCOUNT}#g; s#\${SEP_PMM_URL_AUTH_TOKEN}#${SEP_PMM_URL_AUTH_TOKEN}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g" >"${INSTALL_DIR}"/settings.yaml
+	cat <<-EOS | base64 -d | zcat | sed "s#\${SEP_ORG_CASDOOR_SALT}#${SEP_ORG_CASDOOR_SALT}#; s#\${SEP_ORG_SEP_SALT}#${SEP_ORG_SEP_SALT}#; s#\${SEP_APP_CASDOOR_CLIENT_ID}#${SEP_APP_CASDOOR_CLIENT_ID}#; s#\${SEP_APP_CASDOOR_CLIENT_SECRET}#${SEP_APP_CASDOOR_CLIENT_SECRET}#; s#\${SEP_APP_SEP_CLIENT_ID}#${SEP_APP_SEP_CLIENT_ID}#; s#\${SEP_APP_SEP_CLIENT_SECRET}#${SEP_APP_SEP_CLIENT_SECRET}#; s#\${SEP_USER_CASDOOR_ADMIN_PASSWD}#${SEP_USER_CASDOOR_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_ADMIN_PASSWD}#${SEP_USER_SEP_ADMIN_PASSWD}#; s#\${SEP_USER_SEP_USER_PASSWD}#${SEP_USER_SEP_USER_PASSWD}#; s#\${SEP_IMAGE_NAME}:\${SEP_IMAGE_TAG}#${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}#g; s#\${SEP_BACKEND_DB_PASSWORD}#${SEP_BACKEND_DB_PASSWORD}#g; s#\${SEP_PMM_URL_AUTH_ACCOUNT}#${SEP_PMM_URL_AUTH_ACCOUNT}#g; s#\${SEP_PMM_URL_AUTH_TOKEN}#${SEP_PMM_URL_AUTH_TOKEN}#g; s#\${SEP_PMM_PORT}#${SEP_PMM_PORT}#g; s#\${SEP_PMM_FRONTEND}#${SEP_PMM_FRONTEND}#g" >"${INSTALL_DIR}"/settings.yaml
 	${SEP_SETTINGS_YAML}
 	EOS
 
@@ -425,6 +567,29 @@ start_stack() {
 	$(get_engine_command) logs --follow
 }
 
+# ---- command-line dispatcher (global) ----------------------------------------
+CMD="${1:-}"
+case "${CMD}" in
+	-h|--help|help)
+		usage
+		exit 0
+		;;
+	nomad)
+		cmd_nomad
+		exit $?
+		;;
+	"") ;;
+	*)
+		printf "Unknown command: %s\n" "${CMD}" >&2
+		printf "Use --help to see usage.\n" >&2
+		exit 2
+		;;
+esac
+
+# ---- main flow ----------------------------------------------------------------
+trap 'save_progress' HUP INT QUIT ABRT ALRM TERM
+trap 'cleanup' EXIT
+
 test ! -f "${INSTALL_DIR}"/.progress || PROGRESS="$(cat "${INSTALL_DIR}"/.progress)"
 
 pull_sep_image_if_registry_login_required
@@ -439,10 +604,10 @@ echo Setup complete
 
 test "${AUTOSTART}" = "1" || {
         echo "To start the stack, please execute the following command:"
-        echo "$(get_engine_command) --file ${INSTALL_DIR}/compose.yaml --project-name sep start"
+        echo "$(get_engine_command) start"
         echo
         echo "You can follow the progress by executing:"
-        echo "$(get_engine_command) --file ${INSTALL_DIR}/compose.yaml --project-name sep logs --follow"
+        echo "$(get_engine_command) logs --follow"
         exit 0
 }
 

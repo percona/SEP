@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python: ["3.11"]
+        python: ["3.11.9"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
@@ -35,7 +35,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python: ["3.11"]
+        python: ["3.11.9"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
@@ -53,7 +53,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11.9", "3.12.3", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
@@ -62,6 +62,7 @@ jobs:
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
+          cache: ${{ matrix.python == '3.11.9' && 'poetry' || '' }}
       - name: Install test dependencies
         run: poetry install --with syncmysql
       - name: Run tests
@@ -72,7 +73,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python: ["3.11"]
+        python: ["3.11.9"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase

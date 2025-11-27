@@ -74,12 +74,17 @@ pipeline {
 						]
 					]
 				)
+				script {
+					env.GIT_COMMIT_SHA = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+					echo "Git commit SHA: ${env.GIT_COMMIT_SHA}"
+					echo "Original tag: ${params.releaseTag}"
+				}
 			}
 		}
 		stage('Execute CI') {
 			steps {
 				build job: 'SEP/CI', parameters: [
-					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
+					[$class: 'StringParameterValue', name: 'releaseTag', value: "${env.GIT_COMMIT_SHA}"],
 					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
 					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")],
 					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")]

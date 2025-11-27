@@ -137,15 +137,21 @@ NOMAD_RUN_PYTHON = {
                         "args": [
                             "-c",
                             "gzip -d ${NOMAD_TASK_DIR}/script.py.gz;"
-                            "${NOMAD_ALLOC_DIR}/venv/bin/python3 -u ${NOMAD_TASK_DIR}/script.py --config script_config",
+                            "${NOMAD_ALLOC_DIR}/venv/bin/python3"
+                            " -u ${NOMAD_TASK_DIR}/script.py --config ${NOMAD_TASK_DIR}/script_config",
                         ],
+                        "work_dir": "${NOMAD_TASK_DIR}/output_files",
                     },
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                     "Templates": [
                         {
                             "EmbeddedTmpl": '{{ env "NOMAD_META_config" }}',
-                            "DestPath": "script_config",
+                            "DestPath": "local/script_config",
+                        },
+                        {
+                            "EmbeddedTmpl": ".keep",
+                            "DestPath": "local/output_files/.keep",
                         },
                     ],
                     "DispatchPayload": {"file": "script.py.gz"},
@@ -260,6 +266,7 @@ SYSTEM_TASKS = [
         data=NOMAD_RUN_PYTHON,
         protected=True,
         anonymize_mask=None,
+        output_files_path="run-script/local/output_files",
         created_by=SYSTEM_USER,
     ),
     Task(

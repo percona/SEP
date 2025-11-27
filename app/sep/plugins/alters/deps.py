@@ -23,6 +23,38 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 logger = logging.getLogger(__name__)
 
 
+def _build_dsn_with_service(
+    dsn_base: str, service_address: str, service_port: int | None
+) -> str:
+    """Build a DSN string with service information (host and port) if needed.
+
+    :param dsn_base: The base DSN string (e.g., "D=schema,t=table" or "D=percona,t=dsns").
+    :type dsn_base: str
+    :param service_address: The service node address.
+    :type service_address: str
+    :param service_port: The service port, if available.
+    :type service_port: int | None
+    :return: The constructed DSN string with service information if not already present.
+    :rtype: str
+    """
+    if dsn_base.startswith(("h=", "P=")):
+        return dsn_base
+
+    service_dsn = ""
+    if service_address != "localhost":
+        service_dsn = f"h={service_address}"
+    if service_port is not None:
+        if service_dsn:
+            service_dsn = f"{service_dsn},P={service_port}"
+        else:
+            service_dsn = f"P={service_port}"
+
+    if service_dsn:
+        return f"{service_dsn},{dsn_base}"
+
+    return dsn_base
+
+
 async def build_alters_task_payload(
     form: Annotated[AltersCreate, Form()],
     inventory_api: InventoryAPI,
@@ -46,26 +78,39 @@ async def build_alters_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    schema = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SCHEMA,
-        form.schema_id,
-        service_id=service.id,
+    schema_name: str
+    table_name: str
+    if form.schema_id and form.table_id:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            form.schema_id,
+            service_id=service.id,
+        )
+        table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.table_id,
+            schema_id=schema.id,
+        )
+        schema_name = schema.name
+        table_name = table.name
+    else:
+        schema_name = (form.schema_name or "").strip()
+        table_name = (form.table_name or "").strip()
+        if not schema_name or not table_name:
+            raise ValueError(
+                "Either schema/table IDs or schema_name/table_name must be provided."
+            )
+    dsn = _build_dsn_with_service(
+        f"D={schema_name},t={table_name}", service.node.address, service.port
     )
-    table = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.TABLE,
-        form.table_id,
-        schema_id=schema.id,
-    )
-    dsn = f"D={schema.name},t={table.name}"
-    if service.port is not None:
-        dsn = f"P={service.port},{dsn}"
-    if service.node.address != "localhost":
-        dsn = f"h={service.node.address},{dsn}"
 
     if form.recursion_method == "dsn":
-        form.recursion_method = f"dsn={form.dsn_table}"
+        dsn_table = _build_dsn_with_service(
+            form.dsn_table, service.node.address, service.port
+        )
+        form.recursion_method = f"dsn={dsn_table}"
 
     args = [
         f"--alter={form.alter}",
@@ -104,6 +149,11 @@ async def build_alters_task_payload(
     # Adding '--progress' argument if 'print_arg' is set
     if form.print_arg:
         args.append(f"--progress={form.progress}")
+
+    if form.extra_args:
+        extra_args_list = shlex.split(form.extra_args)
+        args.extend(extra_args_list)
+
     args.append("--execute")
     return TaskWrite(
         owner=TaskOwner.ALTERS,
@@ -114,8 +164,8 @@ async def build_alters_task_payload(
                 "command": "pt-online-schema-change",
                 "args": shlex.join(args),
                 "target": form.hostname,
-                "_schema_name": schema.name,
-                "_table_name": table.name,
+                "_schema_name": schema_name,
+                "_table_name": table_name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
             },
@@ -222,13 +272,15 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
         recursion_method = arg.split("=", 1)[1]
         if recursion_method.startswith("dsn="):
             form_values["recursion_method"] = "dsn"
-            form_values["dsn_table"] = recursion_method.split("=", 1)[1]
+            dsn_value = recursion_method.split("=", 1)[1]
+            dsn_parts = [
+                part
+                for part in dsn_value.split(",")
+                if not part.startswith(("h=", "P="))
+            ]
+            form_values["dsn_table"] = ",".join(dsn_parts) if dsn_parts else dsn_value
         else:
             form_values["recursion_method"] = recursion_method
-        return
-
-    if arg.startswith("--progress="):
-        form_values["progress"] = arg.split("=", 1)[1]
         return
 
     arg_mappings = {
@@ -242,6 +294,7 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
         "--chunk-time=": "chunk_time",
         "--max-lag=": "max_lag",
         "--max-flow-ctl=": "max_flow_ctl",
+        "--progress=": "progress",
     }
 
     for arg_pattern, field_name in arg_mappings.items():
@@ -292,13 +345,59 @@ def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
         "chunk_time": "",
         "max_lag": "",
         "max_flow_ctl": "",
+        "extra_args": "",
     }
 
     args_string = meta.get("args", "")
+    if not args_string:
+        return form_values
+
     args = shlex.split(args_string)
 
+    known_args_patterns = {
+        "--alter=",
+        "--recursion-method=",
+        "--progress=",
+        "--pause-file=",
+        "--new-table-name=",
+        "--tries=",
+        "--set-vars=",
+        "--critical-load=",
+        "--max-load=",
+        "--chunk-time=",
+        "--max-lag=",
+        "--max-flow-ctl=",
+        "--print",
+        "--no-swap-tables",
+        "--no-drop-old-table",
+        "--no-drop-new-table",
+        "--no-drop-triggers",
+        "--execute",
+        "--dry-run",
+    }
+
+    extra_args_list = []
+
     for arg in args:
-        parse_single_arg(arg, form_values)
+        if not arg.startswith("--") and "=" in arg:
+            continue
+
+        is_known = False
+        if arg in known_args_patterns:
+            is_known = True
+        else:
+            for pattern in known_args_patterns:
+                if pattern.endswith("=") and arg.startswith(pattern):
+                    is_known = True
+                    break
+
+        if is_known:
+            parse_single_arg(arg, form_values)
+        elif arg not in ["--execute", "--dry-run"]:
+            extra_args_list.append(arg)
+
+    if extra_args_list:
+        form_values["extra_args"] = shlex.join(extra_args_list)
 
     return form_values
 
