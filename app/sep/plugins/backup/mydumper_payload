@@ -77,6 +77,25 @@ GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
 MYDUMPER_BIN = os.getenv("PERCONA_BACKUP_MYDUMPER_BIN", "/usr/bin/mydumper")
 RSYNC_BIN = "/usr/bin/rsync"
 
+# GPG status codes from --status-fd output (format: [GNUPG:] STATUS_CODE)
+# Note: GPGME error codes (https://www.gnupg.org/documentation/manuals/gpgme/Error-Codes.html)
+GPG_CRITICAL_STATUS_CODES = (
+    b"[GNUPG:] NO_SECKEY",
+    b"[GNUPG:] FAILURE decrypt",
+)
+
+GPG_CRITICAL_ERROR_PATTERNS = (
+    b"decryption failed: No secret key",
+    b"decryption failed: secret key not available",
+    b"no secret key",
+)
+
+GPG_NOT_ENCRYPTED_PATTERNS = (
+    b"[GNUPG:] NODATA",
+    b"no valid OpenPGP data found",
+    b"WARNING: no command supplied",
+)
+
 
 class BackupNotifyStatus(IntEnum):
     OK = 0
@@ -550,29 +569,100 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
     :param path: Directory path.
     :param logger: Logger instance.
     :return: True if all files are encrypted, False otherwise.
+    :raises BackupError: If GPG encounters a critical error (e.g., missing keys).
     """
-    for p in path.rglob("*"):
-        if p.is_file() and p.name not in EXCLUDE_FILES:
-            cmd = [
-                GPG_BIN,
-                "--batch",
-                "--list-only",
-                "--status-fd",
-                "1",
-                "--decrypt",
-                str(p),
-            ]
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                if logger:
-                    logger.error("Running: %s", " ".join(cmd))
-                    logger.error(
-                        'Problem verifying encryption of the file "%s". Error: %s',
-                        p.name,
-                        err,
-                    )
-                return False
+    for file_path in path.rglob("*"):
+        if not file_path.is_file() or file_path.name in EXCLUDE_FILES:
+            continue
+
+        if not file_path.name.endswith(".gpg"):
+            return False
+
+        cmd = [
+            GPG_BIN,
+            "--batch",
+            "--list-only",
+            "--status-fd",
+            "1",
+            "--decrypt",
+            str(file_path),
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            if logger:
+                logger.error("GPG command timed out for file: %s", file_path.name)
+            raise BackupError(
+                f"GPG encryption verification timed out for {file_path.name}"
+            )
+
+        if result.returncode == 0:
+            continue
+
+        stdout_bytes = result.stdout or b""
+        err_bytes = result.stderr or b""
+        err_str = err_bytes.decode("utf-8", errors="replace")
+        stdout_str = stdout_bytes.decode("utf-8", errors="replace")
+
+        if b"[GNUPG:] NODATA" in stdout_bytes:
+            if logger:
+                logger.error(
+                    'File "%s" has .gpg extension but is not encrypted (NODATA). Status: %s, Error: %s',
+                    file_path.name,
+                    stdout_str,
+                    err_str,
+                )
+            return False
+
+        if any(pattern in err_bytes for pattern in GPG_NOT_ENCRYPTED_PATTERNS):
+            if logger:
+                logger.error(
+                    'File "%s" has .gpg extension but is not encrypted. Status: %s, Error: %s',
+                    file_path.name,
+                    stdout_str,
+                    err_str,
+                )
+            return False
+
+        critical_status_found = any(
+            status_code in stdout_bytes for status_code in GPG_CRITICAL_STATUS_CODES
+        )
+
+        critical_stderr_found = any(
+            pattern in err_bytes for pattern in GPG_CRITICAL_ERROR_PATTERNS
+        )
+
+        if critical_status_found or critical_stderr_found:
+            if logger:
+                logger.error("Running: %s", " ".join(cmd))
+                logger.error(
+                    'Critical GPG error verifying encryption of file "%s". Status: %s, Error: %s',
+                    file_path.name,
+                    stdout_str,
+                    err_str,
+                )
+            raise BackupError(
+                f"GPG encryption verification failed for {file_path.name}. "
+                "This usually indicates missing GPG keys or GPG configuration issues. "
+                f"Status: {stdout_str}, Error: {err_str}"
+            )
+
+        if logger:
+            logger.warning(
+                'Unexpected GPG error for file "%s". Status: %s, Error: %s',
+                file_path.name,
+                stdout_str,
+                err_str,
+            )
+        return False
+
     return True
 
 
@@ -1543,11 +1633,7 @@ class S3UploadProvider:
         if self.backup_type not in ["B", "O"] and not (
             self.backup_type == "X" and "_incrementals" in dest_dir
         ):
-            latest_key = str(
-                Path(self.bucket_prefix)
-                / "/".join(full_prefix.split("/")[:-2])
-                / "latest"
-            )
+            latest_key = str(Path(full_prefix).parent / "latest")
             try:
                 tmp_dir = Path("/tmp/percona_backup_latest")
                 tmp_dir.mkdir(parents=True, exist_ok=True)
