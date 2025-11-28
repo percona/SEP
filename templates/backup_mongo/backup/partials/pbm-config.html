@@ -137,28 +137,25 @@
     <label for="restore_batch_size">Restore Batch Size:</label>
     <input type="number" id="restore_batch_size" name="backup_config.restore.batch_size">
 </fieldset>
+-->
 <fieldset>
-    <legend>5. Logging Options (for pbm-agent)</legend>
+    <legend>3. Logging Options</legend>
+    <label for="log_path">Log Path (Optional):</label>
+    <input type="text" id="log_path" name="log_path" placeholder="/var/log/pbm.json">
     <label for="log_level">Log Level:</label>
-    <select id="log_level" name="backup_config.pbm_agent_log.level">
+    <select id="log_level" name="log_level">
+        <option value="">-- Select Log Level --</option>
         <option value="debug">debug</option>
-        <option value="info">info</option>
+        <option value="info" selected>info</option>
         <option value="warn">warn</option>
         <option value="error">error</option>
     </select>
-    <label for="log_output">Log Output:</label>
-    <select id="log_output" name="backup_config.pbm_agent_log.output">
-        <option value="stdout">stdout</option>
-        <option value="file">file</option>
-        <option value="syslog">syslog</option>
-    </select>
-    <div id="log_file_options">
-        <label for="log_file_path">Log File Path (If Output is file):</label>
-        <input type="text" id="log_file_path" name="backup_config.pbm_agent_log.file.path">
-        <label for="log_file_rotate_size">Log File Rotate Size:</label>
-        <input type="text" id="log_file_rotate_size" name="backup_config.pbm_agent_log.file.rotate_size">
-        <label for="log_file_rotate_count">Log File Rotate Count:</label>
-        <input type="number" id="log_file_rotate_count" name="backup_config.pbm_agent_log.file.rotate_count">
-    </div>
+    <label class="checkbox" for="log_json">
+        <span class="label">JSON Format:</span>
+        <input type="checkbox" id="log_json" name="log_json">
+        <div class="checkmark">
+            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+            <span class="material-symbols-outlined checked">check_box</span>
+        </div>
+    </label>
 </fieldset>
--->

@@ -18,6 +18,7 @@ from app.sep.deps import (
 )
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
+    BackupConfigLog,
     BackupConfigPITR,
     BackupConfigStorage,
     BackupCreate,
@@ -64,9 +65,16 @@ async def build_backup_task_payload(
 
     storage = {"type": form.storage_type, form.storage_type: storage_config}
 
+    log_config = {
+        "path": form.log_path,
+        "level": form.log_level,
+        "json": form.log_json,
+    }
+
     backup_config = BackupConfig(
         storage=BackupConfigStorage.model_validate(storage),
         pitr=BackupConfigPITR.model_validate(pitr),
+        log=BackupConfigLog.model_validate(log_config),
     )
 
     if form.backup_type == "pbm_config":

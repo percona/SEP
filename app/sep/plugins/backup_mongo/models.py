@@ -76,6 +76,22 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
     compression: RequiredStr
 
 
+class BackupConfigLog(BaseCaseInsensitiveModel):
+    """Represent PBM Logging configuration.
+
+    :param path: Path to the log file.
+    :type path: str | None
+    :param level: Log verbosity level (debug, info, warn, error).
+    :type level: str | None
+    :param json: Enable JSON-formatted logs.
+    :type json: bool
+    """
+
+    path: RequiredStr | EmptyStrToNone = None
+    level: RequiredStr | EmptyStrToNone = None
+    json: bool = False
+
+
 class BackupConfigStorageFilesystem(BaseCaseInsensitiveModel):
     """Represents a filesystem storage configuration."""
 
@@ -108,6 +124,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     storage: BackupConfigStorage | EmptyStrToNone = None
     pitr: BackupConfigPITR | EmptyStrToNone = None
+    log: BackupConfigLog | EmptyStrToNone = None
     pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
         None, serialization_alias="pbm_config_yaml_payload"
     )
@@ -142,3 +159,6 @@ class BackupCreate(BaseCaseInsensitiveModel):
     storage_s3_prefix: RequiredStr | EmptyStrToNone = None
     storage_s3_endpoint_url: RequiredStr | EmptyStrToNone = None
     storage_filesystem_path: RequiredStr | EmptyStrToNone = None
+    log_path: RequiredStr | EmptyStrToNone = None
+    log_level: RequiredStr | EmptyStrToNone = None
+    log_json: bool = False
