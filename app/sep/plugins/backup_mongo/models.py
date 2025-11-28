@@ -76,6 +76,41 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
     compression: RequiredStr
 
 
+class BackupConfigBackupTimeouts(BaseCaseInsensitiveModel):
+    """Represent backup timeout configuration.
+
+    :param startingStatus: Wait time (in seconds) for PBM to start backups.
+    :type startingStatus: int
+    """
+
+    startingStatus: int | None = None  # noqa: N815
+
+
+class BackupConfigBackup(BaseCaseInsensitiveModel):
+    """Represent backup configuration options.
+
+    :param priority: Node priority mapping for backups (dict format).
+    :type priority: dict[str, float] | EmptyStrToNone
+    :param compression: Compression method for backup snapshots.
+    :type compression: CompressionAlgorithm | EmptyStrToNone
+    :param compressionLevel: Compression level (depends on compression method).
+    :type compressionLevel: int | EmptyStrToNone
+    :param timeouts: Backup timeout configuration.
+    :type timeouts: BackupConfigBackupTimeouts | EmptyStrToNone
+    :param oplogSpanMin: Duration (in minutes) of oplog slices saved with logical backup.
+    :type oplogSpanMin: float | EmptyStrToNone
+    :param numParallelCollections: Number of parallel collections to process during logical backup.
+    :type numParallelCollections: int | EmptyStrToNone
+    """
+
+    priority: dict[str, float] | EmptyStrToNone = None
+    compression: CompressionAlgorithm | EmptyStrToNone = None
+    compressionLevel: int | EmptyStrToNone = None  # noqa: N815
+    timeouts: BackupConfigBackupTimeouts | EmptyStrToNone = None
+    oplogSpanMin: float | EmptyStrToNone = None  # noqa: N815
+    numParallelCollections: int | EmptyStrToNone = None  # noqa: N815
+
+
 class BackupConfigStorageFilesystem(BaseCaseInsensitiveModel):
     """Represents a filesystem storage configuration."""
 
@@ -108,6 +143,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     storage: BackupConfigStorage | EmptyStrToNone = None
     pitr: BackupConfigPITR | EmptyStrToNone = None
+    backup: BackupConfigBackup | EmptyStrToNone = None
     pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
         None, serialization_alias="pbm_config_yaml_payload"
     )
@@ -142,3 +178,10 @@ class BackupCreate(BaseCaseInsensitiveModel):
     storage_s3_prefix: RequiredStr | EmptyStrToNone = None
     storage_s3_endpoint_url: RequiredStr | EmptyStrToNone = None
     storage_filesystem_path: RequiredStr | EmptyStrToNone = None
+    # Backup options
+    backup_priority: RequiredStr | EmptyStrToNone = None
+    backup_compression: CompressionAlgorithm | EmptyStrToNone = None
+    backup_compression_level: int | EmptyStrToNone = None
+    backup_timeouts_starting_status: int | EmptyStrToNone = None
+    backup_oplog_span_min: float | EmptyStrToNone = None
+    backup_num_parallel_collections: int | EmptyStrToNone = None
