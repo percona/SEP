@@ -94,10 +94,10 @@ async def build_archives_task_payload(
             schema_id=schema.id,
         )
         purge_item_data["source_table"] = source_table.name
-    elif form.source_db_name and form.source_db_name.strip():
-        purge_item_data["source_db"] = form.source_db_name.strip()
-        if form.source_table_name and form.source_table_name.strip():
-            purge_item_data["source_table"] = form.source_table_name.strip()
+    elif source_db := form.source_db_name.rstrip():
+        purge_item_data["source_db"] = source_db
+        if source_table := form.source_table_name.rstrip():
+            purge_item_data["source_table"] = source_table
 
     if form.dest_table_id is not None:
         dest_table = await get_created_entity(
@@ -106,8 +106,8 @@ async def build_archives_task_payload(
             form.dest_table_id,
         )
         purge_item_data["dest_table"] = dest_table.name
-    elif form.dest_table_name and form.dest_table_name.strip():
-        purge_item_data["dest_table"] = form.dest_table_name.strip()
+    elif dest_table := form.dest_table_name.rstrip():
+        purge_item_data["dest_table"] = dest_table
     elif form.dest_file is not None:
         purge_item_data["dest_file"] = form.dest_file
 

@@ -107,13 +107,10 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
             if self.source_table_id == self.dest_table_id:
                 raise ValueError("Source and Destination tables cannot be the same.")
         elif (
-            self.source_table_name
-            and self.source_table_name.strip()
-            and self.dest_table_name
-            and self.dest_table_name.strip()
-            and self.source_db_name
-            and self.source_db_name.strip()
-            and self.source_table_name.strip() == self.dest_table_name.strip()
+            (source_table := self.source_table_name.rstrip())
+            and (dest_table := self.dest_table_name.rstrip())
+            and bool(self.source_db_name.rstrip())
+            and source_table == dest_table
         ):
             raise ValueError("Source and Destination tables cannot be the same.")
         return self
@@ -129,8 +126,8 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         :raises ValueError: If neither swap_drop nor delete_data is set, and
             neither dest_file nor dest_table_id/dest_table_name is provided.
         """
-        has_dest_table = self.dest_table_id is not None or (
-            self.dest_table_name and self.dest_table_name.strip()
+        has_dest_table = self.dest_table_id is not None or bool(
+            self.dest_table_name.rstrip()
         )
         if dest_is_set := has_dest_table or self.dest_file is not None:
             if (
@@ -145,9 +142,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
                 "At least one of dest_file or dest_table_id/dest_table_name must be set."
             )
 
-        if self.dest_table_id is not None and (
-            self.dest_table_name and self.dest_table_name.strip()
-        ):
+        if self.dest_table_id is not None and bool(self.dest_table_name.rstrip()):
             raise ValueError(
                 "Cannot use both dest_table_id and dest_table_name at the same time."
             )
@@ -182,19 +177,16 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
             if (
                 self.source_db_id is not None
                 or self.source_table_id is not None
-                or (self.source_db_name and self.source_db_name.strip())
-                or (self.source_table_name and self.source_table_name.strip())
+                or bool(self.source_db_name.rstrip())
+                or bool(self.source_table_name.rstrip())
             ):
                 raise ValueError(
                     "source_query is set, so source_db_id/source_table_id and source_db_name/source_table_name must be None/empty."
                 )
         else:
             has_ids = self.source_db_id is not None and self.source_table_id is not None
-            has_typed_names = (
-                self.source_db_name
-                and self.source_db_name.strip()
-                and self.source_table_name
-                and self.source_table_name.strip()
+            has_typed_names = bool(self.source_db_name.rstrip()) and bool(
+                self.source_table_name.rstrip()
             )
 
             if not has_ids and not has_typed_names:
