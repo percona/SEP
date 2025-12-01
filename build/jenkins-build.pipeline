@@ -75,6 +75,31 @@ pipeline {
 						]
 					]
 				)
+
+				script {
+					env.GIT_COMMIT_SHA = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+					env.GIT_TAG_COUNT = sh(returnStdout: true, script: "git tag --contains ${env.GIT_COMMIT_SHA} | wc -l").trim()
+
+					if (env.GIT_TAG_COUNT.toInteger() > 1) {
+						currentBuild.result = "FAILURE"
+						throw new Exception("Multiple tags (${env.GIT_TAG_COUNT}) matched for ${env.GIT_COMMIT_SHA}")
+					}
+
+					if (env.GIT_COMMIT_SHA != params.releaseTag)  {
+						currentBuild.result = "FAILURE"
+						throw new Exception("Unexpected revision: expected ${params.releaseTag}, found ${env.GIT_COMMIT_SHA}")
+					}
+
+					if (env.GIT_TAG_COUNT.toInteger() == 0) {
+						echo "Setting GIT_TAG to match commit reference"
+						env.GIT_TAG = env.GIT_COMMIT_SHA
+					} else {
+						echo "Setting GIT_TAG to matching tag"
+						env.GIT_TAG = sh(returnStdout: true, script: "git tag --contains ${env.GIT_COMMIT_SHA}").trim()
+					}
+					echo "Git commit SHA: ${env.GIT_COMMIT_SHA}"
+					echo "Git tag: ${env.GIT_TAG}"
+				}
 			}
 		}
 
@@ -108,7 +133,7 @@ pipeline {
 					set -o errexit
 					set -o pipefail
 
-					make image
+					RELEASE_VER="${GIT_TAG}" make image
 				'''
 			}
 		}
@@ -126,12 +151,19 @@ pipeline {
 
 			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
 			steps {
-				sh '''
-					set -o errexit
-					set -o pipefail
 
-					podman image push sep:${RELEASE_VER} labbox-mini.tp.int.percona.com:5555/sep:${RELEASE_VER}
-				'''
+				withCredentials([file(credentialsId: 'SEP_DOCKER_HUB_WRITE_TOKEN', variable: 'DOCKER_TOKEN')]) {
+					sh '''
+						set -o errexit
+						set -o pipefail
+
+						podman image push sep:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}
+
+						cat "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
+						podman image push --authfile .dockerhub labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG} docker.io/percona/percona-sep:${GIT_TAG}
+						podman logout --authfile .dockerhub docker.io
+					'''
+				}
 			}
 		}
 
