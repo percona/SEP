@@ -213,7 +213,7 @@ const Mum = () => {
 
   useEffect(() => () => stopStreaming(), [stopStreaming]);
 
-  const streamListUsers = useCallback((historyId) => {
+const streamListUsers = useCallback((historyId) => {
     if (!historyId) {
       setStreamError("Missing execution history ID.");
       return;
@@ -226,22 +226,34 @@ const Mum = () => {
     try {
       const es = new EventSource(`/stream-logs/${encodeURIComponent(historyId)}`);
       esRef.current = es;
+
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           const { msg, type, step } = data || {};
+
           if (type === 'stdout' && step === 'run-script' && typeof msg === 'string') {
             stdoutBufferRef.current += msg;
+            
+            // Attempt to parse the buffer
             const arr = extractJsonArray(stdoutBufferRef.current);
+            
             if (Array.isArray(arr)) {
               setUsersData(arr);
               setStreamError(null);
+              
+              // Close immediately upon success ---
+              stopStreaming(); 
+              console.log('calango')
             }
           }
         } catch (_) {
           // ignore non-JSON chunks
         }
       };
+
+      // The 'finish' listener remains as a fallback, but won't be reached
+      // if we successfully parsed the data and called stopStreaming() above.
       es.addEventListener("finish", () => {
         stopStreaming();
         const arr = extractJsonArray(stdoutBufferRef.current);
@@ -251,6 +263,7 @@ const Mum = () => {
           setStreamError("Could not parse output JSON.");
         }
       });
+
       es.onerror = () => {
         setStreamError("Stream failed.");
         stopStreaming();
@@ -337,7 +350,7 @@ const Mum = () => {
       <Box sx={{ display: 'grid', gap: 2 }}>
           <Paper elevation={1} sx={{ p: 2 }}>
             <Toolbar sx={{ px: 0 }}>
-              <Typography variant="h6" sx={{ flex: 1 }}>MongoDB Users (MUM)</Typography>
+              <Typography variant="h6" sx={{ flex: 1 }}>MongoDB User Management (MUM)</Typography>
             </Toolbar>
 
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
