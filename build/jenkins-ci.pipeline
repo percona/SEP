@@ -45,13 +45,10 @@ pipeline {
 	}
 
 	parameters {
-		gitParameter branchFilter: 'origin/(main|SEP.*|v.*)',
+		string(
 			name: 'releaseTag',
-			selectedValue: 'NONE',
-			sortMode: 'DESCENDING_SMART',
-			type: 'PT_REVISION',
-			requiredParameter: true,
-			useRepository: 'https://github.com/percona/SEP.git'
+			description: 'Commit reference'
+		)
 		string(
 			name: 'defaultCmd',
 			defaultValue: '--log-level=DEBUG'

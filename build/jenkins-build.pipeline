@@ -8,13 +8,10 @@ pipeline {
 	}
 
 	parameters {
-		gitParameter branchFilter: 'origin/(main|SEP.*|v.*)',
+		string(
 			name: 'releaseTag',
-			selectedValue: 'NONE',
-			sortMode: 'DESCENDING_SMART',
-			type: 'PT_REVISION',
-			requiredParameter: true,
-			useRepository: 'https://github.com/percona/SEP.git'
+			description: 'Commit reference'
+		)
 		string(
 			name: 'defaultCmd',
 			defaultValue: '--log-level=DEBUG'
@@ -34,6 +31,11 @@ pipeline {
 			name: 'pushImage',
 			defaultValue: false,
 			description: 'Push the image to the registry'
+		)
+		booleanParam(
+			name: 'pushImageDocker',
+			defaultValue: false,
+			description: 'Push the image to the Docker registry'
 		)
 	}
 
@@ -96,9 +98,12 @@ pipeline {
 					} else {
 						echo "Setting GIT_TAG to matching tag"
 						env.GIT_TAG = sh(returnStdout: true, script: "git tag --contains ${env.GIT_COMMIT_SHA}").trim()
+						env.GIT_TAG = sh(returnStdout: true, script: "git tag --contains ${env.GIT_COMMIT_SHA}").trim()
 					}
 					echo "Git commit SHA: ${env.GIT_COMMIT_SHA}"
 					echo "Git tag: ${env.GIT_TAG}"
+
+					env.GIT_TAG_SHORT =  sh(returnStdout: true, script: "echo ${env.GIT_TAG} | cut -f1-2 -d.").trim()
 				}
 			}
 		}
@@ -152,17 +157,27 @@ pipeline {
 			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
 			steps {
 
-				withCredentials([file(credentialsId: 'SEP_DOCKER_HUB_WRITE_TOKEN', variable: 'DOCKER_TOKEN')]) {
+				withCredentials([string(credentialsId: 'SEP_DOCKER_HUB_WRITE_TOKEN', variable: 'DOCKER_TOKEN')]) {
 					sh '''
 						set -o errexit
 						set -o pipefail
 
+						podman image tag sep:${GIT_TAG} sep:${GIT_TAG_SHORT}
 						podman image push sep:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}
-
-						cat "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
-						podman image push --authfile .dockerhub labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG} docker.io/percona/percona-sep:${GIT_TAG}
-						podman logout --authfile .dockerhub docker.io
+						podman image push sep:${GIT_TAG_SHORT} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG_SHORT}
 					'''
+
+					if (params.pushImageDocker) {
+						sh '''
+							set -o errexit
+							set -o pipefail
+
+							echo -n "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
+							podman image push --authfile .dockerhub sep:${GIT_TAG} docker.io/percona/percona-sep:${GIT_TAG}
+							podman image push --authfile .dockerhub sep:${GIT_TAG_SHORT} docker.io/percona/percona-sep:${GIT_TAG_SHORT}
+							podman logout --authfile .dockerhub docker.io
+						'''
+					}
 				}
 			}
 		}
