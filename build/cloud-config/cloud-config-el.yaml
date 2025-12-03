@@ -31,7 +31,7 @@ yum_repos:
 
 package_update: true
 package_upgrade: true
-package_reboot_if_required: true
+package_reboot_if_required: false
 packages:
 - acl
 - git
@@ -40,7 +40,9 @@ packages:
 - podman-compose
 - policycoreutils-python-utils
 - rsync
+- shadow-utils
 - vim
+- yq
 
 # To be removed once we verified that pipeline runs without the need for engineer intervention
 runcmd:
