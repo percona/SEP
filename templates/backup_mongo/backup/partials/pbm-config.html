@@ -23,21 +23,29 @@
             -->
         </select>
     </div>
-    <div id="s3_options">
+    <div id="s3_options" style="display: none;">
         <label for="s3_provider">S3 Provider:</label>
         <select id="s3_provider" name="backup_config.storage.s3.provider">
             <option value="aws">AWS</option>
             <option value="minio">MinIO</option>
             <option value="gcp">GCP</option>
         </select>
-        <label for="s3_region">Region:</label>
-        <input type="text" id="s3_region" name="storage_s3_region">
-        <label for="s3_bucket">Bucket Name:</label>
-        <input type="text" id="s3_bucket" name="storage_s3_bucket">
-        <label for="s3_prefix">Prefix (Optional):</label>
-        <input type="text" id="s3_prefix" name="storage_s3_prefix">
-        <label for="s3_endpoint_url">Endpoint URL (Optional):</label>
-        <input type="text" id="s3_endpoint_url" name="storage_s3_endpoint_url">
+        <div id="s3_region_field">
+            <label id="s3_region_label" for="s3_region">Region:</label>
+            <input type="text" id="s3_region" name="storage_s3_region">
+        </div>
+        <div id="s3_bucket_field">
+            <label for="s3_bucket">Bucket Name:</label>
+            <input type="text" id="s3_bucket" name="storage_s3_bucket">
+        </div>
+        <div id="s3_endpoint_url_field">
+            <label id="s3_endpoint_url_label" for="s3_endpoint_url">Endpoint URL:</label>
+            <input type="text" id="s3_endpoint_url" name="storage_s3_endpoint_url">
+        </div>
+        <div id="s3_prefix_field">
+            <label id="s3_prefix_label" for="s3_prefix">Prefix (Optional):</label>
+            <input type="text" id="s3_prefix" name="storage_s3_prefix">
+        </div>
         <!-- Enabled this when requested, it requires dynamic entries
         <label for="s3_endpoint_url_map">Endpoint URL Map (Optional):</label>
         <input type="text" id="s3_endpoint_url_map" name="backup_config.storage.s3.endpoint_url_map">
