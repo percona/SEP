@@ -69,6 +69,11 @@ pipeline {
 			defaultValue: false,
 			description: 'Push the image to the registry'
 		)
+		booleanParam(
+			name: 'pushImageDocker',
+			defaultValue: false,
+			description: 'Push the image to the Docker registry'
+		)
 	}
 
 	options {
@@ -125,7 +130,8 @@ pipeline {
 					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
 					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
 					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")],
-					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")]
+					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")],
+					[$class: 'BooleanParameterValue', name: 'pushImageDocker', value: Boolean.valueOf("${params.pushImageDocker}")]
 				], propagate: true, wait: true
 			}
 		}

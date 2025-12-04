@@ -9,11 +9,11 @@ pipeline {
 
 	parameters {
 		gitParameter branchFilter: 'origin/main',
-	        defaultValue: 'main',
-	        name: 'releaseTag',
-	        selectedValue: 'TOP',
-	        sortMode: 'DESCENDING_SMART',
-		tagFilter: 'v*',
+			defaultValue: 'main',
+			name: 'releaseTag',
+			selectedValue: 'TOP',
+			sortMode: 'DESCENDING_SMART',
+			tagFilter: 'v*',
 	        type: 'PT_TAG',
 	        requiredParameter: true,
 			useRepository: 'https://github.com/percona/SEP.git'
@@ -40,7 +40,7 @@ pipeline {
 		booleanParam(
 			name: 'pushImageDocker',
 			defaultValue: false,
-				description: 'Push the image to the Docker registry'
+			description: 'Push the image to the Docker registry'
 		)
 	}
 
