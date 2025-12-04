@@ -98,7 +98,6 @@ pipeline {
 					} else {
 						echo "Setting GIT_TAG to matching tag"
 						env.GIT_TAG = sh(returnStdout: true, script: "git tag --contains ${env.GIT_COMMIT_SHA}").trim()
-						env.GIT_TAG = sh(returnStdout: true, script: "git tag --contains ${env.GIT_COMMIT_SHA}").trim()
 					}
 					echo "Git commit SHA: ${env.GIT_COMMIT_SHA}"
 					echo "Git tag: ${env.GIT_TAG}"
