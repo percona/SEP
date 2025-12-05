@@ -88,9 +88,6 @@ banner() {
 }
 
 cleanup() {
-    local exit_code=$?
-    [ "${exit_code}" -eq 0 ] && return
-
     echo ""
     log_err "Installation failed or cancelled. Cleaning up..."
 
@@ -108,9 +105,19 @@ cleanup() {
     if [ -n "${TEMP_DIR}" ] && [ -d "${TEMP_DIR}" ]; then
         rm -rf "${TEMP_DIR}"
     fi
+
+    trap - EXIT
+    exit 1
 }
 
-trap 'cleanup' INT TERM EXIT
+exit_cleanup() {
+    local exit_code=$?
+    [ "${exit_code}" -eq 0 ] && return
+    cleanup
+}
+
+trap 'cleanup' INT TERM
+trap 'exit_cleanup' EXIT
 
 ################################################################################
 # GUM BOOTSTRAP LOGIC
@@ -239,7 +246,7 @@ spin_or_die() {
             gum style --foreground "${COLOR_WARN}" --bold "Command Failed!"
             gum style --foreground "${COLOR_WARN}" "Step: ${title}"
             gum style --foreground "${COLOR_WARN}" "Command: ${cmd}"
-            _extra_args=
+            _extra_args=()
             _term_cols=$(tput cols)
             if [ "$(wc -m < "${logfile}")" -ge $((_term_cols - 4)) ]; then
                 _extra_args=(--width $((_term_cols - 2)))
@@ -837,7 +844,7 @@ generate_tls() {
     mkdir -p "${ABS_INSTALL_DIR}/certs"
     cd "${ABS_INSTALL_DIR}/certs"
 
-    chmod -R u+w . 2>/dev/null || true
+    chmod -R u+w . 2> /dev/null || true
 
     openssl genpkey -algorithm RSA -out sep_token_jwt_key.key -pkeyopt rsa_keygen_bits:4096 2> /dev/null
     openssl rsa -pubout -in sep_token_jwt_key.key -out sep_token_jwt_key.pem 2> /dev/null
@@ -1120,7 +1127,6 @@ pull_and_start() {
             echo "${CMD} logs -f"
         fi
     fi
-
 
     echo ""
     if [ "${NO_GUM}" -eq 0 ]; then
