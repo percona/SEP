@@ -58,11 +58,14 @@ def _build_storage_config(form: BackupCreate) -> dict[str, Any]:
     return {"type": form.storage_type, form.storage_type: storage_config}
 
 
-def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
-    """Parse backup priority YAML string.
+def _parse_backup_priority(priority_str: str) -> list[str] | None:
+    """Parse backup priority YAML string and convert to list of strings.
+
+    Parses YAML input (dict format) and converts it to a list of strings
+    in the format "node:priority" for PBM configuration.
 
     :param priority_str: YAML string containing priority configuration.
-    :return: Parsed priority dictionary or None if parsing fails.
+    :return: Parsed priority list of strings or None if parsing fails.
     """
     try:
         priority_parsed = yaml.safe_load(priority_str)
@@ -70,7 +73,13 @@ def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
         logger.warning("Failed to parse backup priority YAML: %s", priority_str)
         return None
     else:
-        return priority_parsed if priority_parsed is not None else None
+        if priority_parsed is None:
+            return None
+        if isinstance(priority_parsed, dict):
+            return [f"{k}:{v}" for k, v in priority_parsed.items()]
+        if isinstance(priority_parsed, list):
+            return [str(item) for item in priority_parsed]
+        return [str(priority_parsed)]
 
 
 def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
