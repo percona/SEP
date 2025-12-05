@@ -23,15 +23,13 @@ users:
 
 package_update: true
 package_upgrade: true
-package_reboot_if_required: true
+package_reboot_if_required: false
 packages:
 - acl
 - git
 - gnupg2
-- pipx
 - podman
 - python3-pip
-- python3-venv
 - rsync
 - vim
 

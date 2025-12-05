@@ -1,0 +1,99 @@
+---
+- hosts: postgresql
+  tasks:
+  - name: Ubuntu `ufw` firewall configuration
+    block:
+    - name: Ensure that `ufw` firewall service is enabled and started
+      ansible.builtin.service:
+        name: ufw
+        enabled: true
+        state: started
+
+    - name: Ensure that `ufw` firewall allows SSH inbound connections
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Ensure that `ufw` firewall allows PostgreSQL inbound connections
+      community.general.ufw:
+        rule: allow
+        port: 5432
+        proto: tcp
+
+    - name: Ensure that `ufw` firewall is enabled and denies unknown inbound connections by default
+      community.general.ufw:
+        state: enabled
+        default: deny
+
+    - name: Reload `ufw` firewall
+      community.general.ufw:
+        state: reloaded
+    become: true
+
+  - name: Set up necessary packages for PostgreSQL
+    block:
+    - name: Install `percona-release`
+      ansible.builtin.apt:
+        deb: 'https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb'
+
+    - name: Enable Percona Distribution for PostgreSQL repo
+      ansible.builtin.command: 'percona-release setup -y ppg17'
+      changed_when: false
+
+    - name: Install Percona Distribution for PostgreSQL server & `psycopg2`
+      ansible.builtin.apt:
+        name:
+        - percona-postgresql-17
+        - python3-psycopg2
+        state: present
+        update_cache: true
+
+    - name: Ensure PostgreSQL server service is enabled and started
+      ansible.builtin.service:
+        name: postgresql
+        enabled: true
+        state: started
+    become: true
+
+  - name: Configure PostgreSQL
+    block:
+    - name: Configure `postgresql.conf` for `listen_addresses`
+      ansible.builtin.lineinfile:
+        path: '/etc/postgresql/17/main/postgresql.conf'
+        regexp: '^#?listen_addresses ='
+        line: "listen_addresses = '*'"
+      notify: Restart PostgreSQL
+
+    - name: Configure `pg_hba.conf` to allow remote connections
+      ansible.builtin.lineinfile:
+        path: '/etc/postgresql/17/main/pg_hba.conf'
+        line: 'host    all             all             0.0.0.0/0               scram-sha-256'
+        insertafter: '# IPv4 local connections:'
+      notify: Restart PostgreSQL
+    become: true
+
+  - name: Create PostgreSQL superuser & test database
+    block:
+    - name: Create a PostgreSQL superuser
+      community.postgresql.postgresql_user:
+        name: '{{ postgresql_super_username }}'
+        password: '{{ postgresql_super_password }}'
+        role_attr_flags: CREATEDB,CREATEROLE,SUPERUSER
+      no_log: true
+
+    - name: Create a test database
+      community.postgresql.postgresql_db:
+        name: '{{ postgresql_test_db }}'
+        encoding: 'UTF-8'
+        owner: '{{ postgresql_super_username }}'
+      no_log: true
+    become: true
+    become_user: postgres
+
+  handlers:
+  - name: Restart PostgreSQL
+    ansible.builtin.service:
+      name: postgresql
+      state: restarted
+    become: true
+...
