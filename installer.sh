@@ -819,7 +819,6 @@ summary_screen_text() {
     read -r -p "Proceed with installation? [Y/n] " _yn
     case "$_yn" in
         [Nn]*)
-            log_err "Installation cancelled by user."
             exit 1
             ;;
         *) return 0 ;;
