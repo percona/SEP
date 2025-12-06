@@ -25,7 +25,7 @@ if [ -z "${NO_GUM:-}" ]; then
     is_tty && NO_GUM=0 || NO_GUM=1
 fi
 if [ -z "${NO_CLEAR:-}" ]; then
-    is_tty && NO_CLEAR=0 || NO_CLEAR=1
+    [ "${DEBUG:-0}" -eq 0 ] && is_tty && NO_CLEAR=0 || NO_CLEAR=1
 fi
 
 ################################################################################
@@ -751,23 +751,11 @@ summary_screen_gum() {
 |HTTPS Port|${SEP_HTTPS_PORT}
 Submit||" | gum table --border normal --columns ",Setting,Value" --widths 7,20,60 --separator="|" --no-show-help)
 
-        STATUS=$?
-        if [ $STATUS -ne 0 ]; then
-            if gum confirm "Do you want to cancel the installation?"; then
-                log_err "Installation cancelled by user."
-                exit 1
-            else
-                continue
-            fi
-        fi
-
         KEY=$(echo "$CHOICE" | cut -d"|" -f2)
         ACTION=$(echo "$CHOICE" | cut -d"|" -f1)
 
         if [ "$ACTION" = "Submit" ]; then
-            if gum confirm "Proceed with installation?"; then
-                break
-            fi
+            gum confirm "Proceed with installation?" && break || exit 1
         elif [ "$KEY" = "Install Dir" ]; then
             INSTALL_DIR=$(gum input --value "$INSTALL_DIR" --header "Enter new Install Directory")
         elif [ "$KEY" = "Create PMM" ]; then
@@ -811,6 +799,8 @@ Submit||" | gum table --border normal --columns ",Setting,Value" --widths 7,20,6
                 IFS="$OLD_IFS"
             fi
             SEP_ENABLED_PLUGINS="$NEW_PLUGIN_LIST"
+        else
+            gum confirm "Do you want to cancel the installation?" && exit 1
         fi
     done
 }
@@ -1181,12 +1171,8 @@ fi
 check_prereqs
 
 if [ "$NO_INTERACTION" -eq 0 ]; then
-    if [ "$CREATE_PMM_CONTAINER" -eq 0 ]; then
-        MISSING_PMM_CREDS=0
-        if [ -z "${SEP_PMM_URL_AUTH_ACCOUNT_USER}" ] || [ -z "${SEP_PMM_URL_AUTH_ACCOUNT_PASS}" ] || [ -z "${SEP_PMM_URL_AUTH_TOKEN:-}" ]; then
-            MISSING_PMM_CREDS=1
-        fi
-    fi
+    MISSING_PMM_CREDS=0
+    [ "$CREATE_PMM_CONTAINER" -eq 0 ] && { [ -z "${SEP_PMM_URL_AUTH_ACCOUNT_USER}" ] || [ -z "${SEP_PMM_URL_AUTH_ACCOUNT_PASS}" ] || [ -z "${SEP_PMM_URL_AUTH_TOKEN:-}" ]; } && MISSING_PMM_CREDS=1
 
     if [ "$SET_CLI_INSTALL_DIR" -eq 0 ] ||
         [ "$SET_CLI_PLUGINS" -eq 0 ] ||
