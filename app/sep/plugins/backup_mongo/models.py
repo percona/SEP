@@ -89,9 +89,9 @@ class BackupConfigBackupTimeouts(BaseCaseInsensitiveModel):
 class BackupConfigBackup(BaseCaseInsensitiveModel):
     """Represent backup configuration options.
 
-    :param priority: List of mongod nodes and their priority for making backups.
+    :param priority: Dictionary mapping mongod node addresses to their priority for making backups.
         The node with the highest priority is elected for making a backup.
-    :type priority: list[str] | EmptyStrToNone
+    :type priority: dict[str, float] | EmptyStrToNone
     :param compression: Compression method for backup snapshots.
     :type compression: CompressionAlgorithm | EmptyStrToNone
     :param compressionLevel: Compression level (depends on compression method).
@@ -104,7 +104,7 @@ class BackupConfigBackup(BaseCaseInsensitiveModel):
     :type numParallelCollections: int | EmptyStrToNone
     """
 
-    priority: list[str] | EmptyStrToNone = None
+    priority: dict[str, float] | EmptyStrToNone = None
     compression: CompressionAlgorithm | EmptyStrToNone = None
     compressionLevel: int | EmptyStrToNone = None  # noqa: N815
     timeouts: BackupConfigBackupTimeouts | EmptyStrToNone = None

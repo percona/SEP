@@ -6,7 +6,6 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form
-from fastapi.encoders import jsonable_encoder
 
 from app.sep.deps import (
     DefaultContext,
@@ -58,14 +57,14 @@ def _build_storage_config(form: BackupCreate) -> dict[str, Any]:
     return {"type": form.storage_type, form.storage_type: storage_config}
 
 
-def _parse_backup_priority(priority_str: str) -> list[str] | None:
-    """Parse backup priority YAML string and convert to list of strings.
+def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
+    """Parse backup priority YAML string and return as dictionary.
 
-    Parses YAML input (dict format) and converts it to a list of strings
-    in the format "node:priority" for PBM configuration.
+    Parses YAML input (dict format) and returns it as a dictionary
+    mapping node addresses to priority values for PBM configuration.
 
     :param priority_str: YAML string containing priority configuration.
-    :return: Parsed priority list of strings or None if parsing fails.
+    :return: Parsed priority dictionary mapping node to priority or None if parsing fails.
     """
     try:
         priority_parsed = yaml.safe_load(priority_str)
@@ -76,10 +75,11 @@ def _parse_backup_priority(priority_str: str) -> list[str] | None:
         if priority_parsed is None:
             return None
         if isinstance(priority_parsed, dict):
-            return [f"{k}:{v}" for k, v in priority_parsed.items()]
-        if isinstance(priority_parsed, list):
-            return [str(item) for item in priority_parsed]
-        return [str(priority_parsed)]
+            return {str(k): float(v) for k, v in priority_parsed.items()}
+        logger.warning(
+            "Priority must be a dictionary/mapping, got: %s", type(priority_parsed)
+        )
+        return None
 
 
 def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
@@ -167,7 +167,11 @@ async def build_backup_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    jsonable_encoder(backup_config, by_alias=False, exclude_none=True)
+                    backup_config.model_dump(
+                        by_alias=False, exclude_none=True, mode="json"
+                    ),
+                    default_flow_style=False,
+                    allow_unicode=True,
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
