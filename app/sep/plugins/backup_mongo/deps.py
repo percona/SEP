@@ -83,7 +83,15 @@ def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
 
 
 def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
-    """Build backup configuration dictionary from form data."""
+    """Build backup configuration dictionary from form data.
+
+    :param form: The form data containing backup configuration fields.
+    :type form: BackupCreate
+    :return: A dictionary containing backup configuration settings such as priority,
+        compression, compression level, timeouts, oplog span, and parallel collections.
+        Returns an empty dictionary if no backup configuration fields are provided.
+    :rtype: dict[str, Any]
+    """
     has_backup_config = any(
         [
             form.backup_priority,
@@ -168,7 +176,7 @@ async def build_backup_task_payload(
             "meta": {
                 "config": yaml.dump(
                     backup_config.model_dump(
-                        by_alias=False, exclude_none=True, mode="json"
+                        by_alias=True, exclude_none=True, mode="json"
                     ),
                     default_flow_style=False,
                     allow_unicode=True,

@@ -1,9 +1,12 @@
 """Define models for the Backups plugin."""
 
 from enum import StrEnum
+from typing import Annotated
+
+from pydantic import AliasChoices, ConfigDict, Field
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, Field, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -71,9 +74,19 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
     :type compression: RequiredStr
     """
 
-    enabled: bool = False
-    oplogSpanMin: int | None  # noqa: N815
-    compression: RequiredStr
+    model_config = ConfigDict(alias_generator=None)
+
+    enabled: bool = Field(
+        default=False, validation_alias=AliasChoices("enabled", "ENABLED")
+    )
+    oplog_span_min: int | None = Field(
+        None,
+        validation_alias=AliasChoices("oplogSpanMin", "OPLOGSPANMIN"),
+        serialization_alias="oplogSpanMin",
+    )
+    compression: Annotated[
+        RequiredStr, Field(validation_alias=AliasChoices("compression", "COMPRESSION"))
+    ]
 
 
 class BackupConfigBackupTimeouts(BaseCaseInsensitiveModel):
@@ -83,7 +96,13 @@ class BackupConfigBackupTimeouts(BaseCaseInsensitiveModel):
     :type startingStatus: int
     """
 
-    startingStatus: int | None = None  # noqa: N815
+    model_config = ConfigDict(alias_generator=None)
+
+    starting_status: int | None = Field(
+        None,
+        validation_alias=AliasChoices("startingStatus", "STARTINGSTATUS"),
+        serialization_alias="startingStatus",
+    )
 
 
 class BackupConfigBackup(BaseCaseInsensitiveModel):
@@ -104,35 +123,79 @@ class BackupConfigBackup(BaseCaseInsensitiveModel):
     :type numParallelCollections: int | EmptyStrToNone
     """
 
-    priority: dict[str, float] | EmptyStrToNone = None
-    compression: CompressionAlgorithm | EmptyStrToNone = None
-    compressionLevel: int | EmptyStrToNone = None  # noqa: N815
-    timeouts: BackupConfigBackupTimeouts | EmptyStrToNone = None
-    oplogSpanMin: float | EmptyStrToNone = None  # noqa: N815
-    numParallelCollections: int | EmptyStrToNone = None  # noqa: N815
+    model_config = ConfigDict(alias_generator=None)
+
+    priority: dict[str, float] | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("priority", "PRIORITY")
+    )
+    compression: CompressionAlgorithm | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("compression", "COMPRESSION")
+    )
+    compression_level: int | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("compressionLevel", "COMPRESSIONLEVEL"),
+        serialization_alias="compressionLevel",
+    )
+    timeouts: BackupConfigBackupTimeouts | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("timeouts", "TIMEOUTS")
+    )
+    oplog_span_min: float | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("oplogSpanMin", "OPLOGSPANMIN"),
+        serialization_alias="oplogSpanMin",
+    )
+    num_parallel_collections: int | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices(
+            "numParallelCollections", "NUMPARALLELCOLLECTIONS"
+        ),
+        serialization_alias="numParallelCollections",
+    )
 
 
 class BackupConfigStorageFilesystem(BaseCaseInsensitiveModel):
     """Represents a filesystem storage configuration."""
 
-    path: RequiredStr | EmptyStrToNone = None
+    model_config = ConfigDict(alias_generator=None)
+
+    path: RequiredStr | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("path", "PATH")
+    )
 
 
 class BackupConfigStorageS3(BaseCaseInsensitiveModel):
     """Represents an S3 storage configuration."""
 
-    region: RequiredStr | EmptyStrToNone = None
-    bucket: RequiredStr | EmptyStrToNone = None
-    prefix: RequiredStr | EmptyStrToNone = None
-    endpointUrl: RequiredStr | EmptyStrToNone = None  # noqa: N815
+    model_config = ConfigDict(alias_generator=None)
+
+    region: RequiredStr | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("region", "REGION")
+    )
+    bucket: RequiredStr | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("bucket", "BUCKET")
+    )
+    prefix: RequiredStr | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("prefix", "PREFIX")
+    )
+    endpoint_url: RequiredStr | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("endpointUrl", "ENDPOINTURL"),
+        serialization_alias="endpointUrl",
+    )
 
 
 class BackupConfigStorage(BaseCaseInsensitiveModel):
     """Represent Storage configuration."""
 
-    type: StorageType
-    s3: BackupConfigStorageS3 | EmptyStrToNone = None
-    filesystem: BackupConfigStorageFilesystem | EmptyStrToNone = None
+    model_config = ConfigDict(alias_generator=None)
+
+    type: StorageType = Field(..., validation_alias=AliasChoices("type", "TYPE"))
+    s3: BackupConfigStorageS3 | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("s3", "S3")
+    )
+    filesystem: BackupConfigStorageFilesystem | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("filesystem", "FILESYSTEM")
+    )
 
 
 class BackupConfig(BaseCaseInsensitiveModel):
@@ -142,11 +205,23 @@ class BackupConfig(BaseCaseInsensitiveModel):
     :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
     """
 
-    storage: BackupConfigStorage | EmptyStrToNone = None
-    pitr: BackupConfigPITR | EmptyStrToNone = None
-    backup: BackupConfigBackup | EmptyStrToNone = None
+    model_config = ConfigDict(alias_generator=None)
+
+    storage: BackupConfigStorage | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("storage", "STORAGE")
+    )
+    pitr: BackupConfigPITR | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("pitr", "PITR")
+    )
+    backup: BackupConfigBackup | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("backup", "BACKUP")
+    )
     pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
-        None, serialization_alias="pbm_config_yaml_payload"
+        None,
+        validation_alias=AliasChoices(
+            "pbm_config_yaml_payload", "PBM_CONFIG_YAML_PAYLOAD"
+        ),
+        serialization_alias="pbm_config_yaml_payload",
     )
 
 
