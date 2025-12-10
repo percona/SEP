@@ -93,7 +93,7 @@ class BackupConfigBackupTimeouts(BaseCaseInsensitiveModel):
     """Represent backup timeout configuration.
 
     :param startingStatus: Wait time (in seconds) for PBM to start backups.
-    :type startingStatus: int
+    :type startingStatus: int | None
     """
 
     model_config = ConfigDict(alias_generator=None)

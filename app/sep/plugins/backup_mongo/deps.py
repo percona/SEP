@@ -64,7 +64,9 @@ def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
     mapping node addresses to priority values for PBM configuration.
 
     :param priority_str: YAML string containing priority configuration.
+    :type priority_str: str
     :return: Parsed priority dictionary mapping node to priority or None if parsing fails.
+    :rtype: dict[str, float] | None
     """
     try:
         priority_parsed = yaml.safe_load(priority_str)
