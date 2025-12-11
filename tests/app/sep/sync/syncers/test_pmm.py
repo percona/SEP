@@ -337,6 +337,52 @@ class TestPMMRemoteAPI:
         pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
+    async def test_get_services_filters_sep_sync_disabled(
+        self, mock_request, mock_get_version, pmm_remote_api, mocker
+    ):
+        """Test get_services filters out services with sep_sync: disabled label."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {
+            "mysql": [
+                {
+                    "service_id": "service-1",
+                    "name": "Service 1",
+                    "node_id": "node-1",
+                    "custom_labels": {"sep_sync": "disabled"},
+                },
+                {
+                    "service_id": "service-2",
+                    "name": "Service 2",
+                    "node_id": "node-2",
+                    "custom_labels": {"sep_sync": "enabled"},
+                },
+                {
+                    "service_id": "service-3",
+                    "name": "Service 3",
+                    "node_id": "node-3",
+                },
+            ]
+        }
+
+        def _validate_side_effect(payload: dict):
+            return Mock(
+                external_id=payload.get("service_id"),
+                node_id=payload.get("node_id"),
+                type=payload.get("type"),
+                custom_labels=payload.get("custom_labels"),
+            )
+
+        mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMService.model_validate",
+            side_effect=_validate_side_effect,
+        )
+
+        services = await pmm_remote_api.get_services()
+
+        assert {s.external_id for s in services} == {"service-2", "service-3"}
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
     async def test_get_services_by_node_external_id(
         self, created_services, pmm_remote_api, mock_get_services
     ):

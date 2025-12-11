@@ -189,6 +189,13 @@ class PMMRemoteAPI(RemoteAPI):
                 f"/v1/inventory/nodes/{node_id}",
             )
         node_type, node = next(iter(node_data.items()))
+        labels = node.get("labels") or node.get("custom_labels") or {}
+        if labels.get("sep_sync") == "disabled":
+            self.logger.debug(
+                "Skipping node %s due to sep_sync: disabled label",
+                node_id,
+            )
+            return None
         node |= {
             "source": SourceEnum.PMM,
             "type": node_type,
@@ -218,6 +225,13 @@ class PMMRemoteAPI(RemoteAPI):
                 f"/v1/inventory/services/{service_id}",
             )
         service_type, service = next(iter(service_data.items()))
+        custom_labels = service.get("custom_labels") or {}
+        if custom_labels.get("sep_sync") == "disabled":
+            self.logger.debug(
+                "Skipping service %s due to sep_sync: disabled label",
+                service_id,
+            )
+            return None
         service["type"] = service_type
         return PMMService.model_validate(service)
 
@@ -265,6 +279,13 @@ class PMMRemoteAPI(RemoteAPI):
         services = []
         for services_type, service_list in services_data.items():
             for service in service_list:
+                custom_labels = service.get("custom_labels") or {}
+                if custom_labels.get("sep_sync") == "disabled":
+                    self.logger.debug(
+                        "Skipping service %s due to sep_sync: disabled label",
+                        service.get("service_id"),
+                    )
+                    continue
                 try:
                     services.append(
                         PMMService.model_validate({"type": services_type, **service})
@@ -332,6 +353,13 @@ class PMMRemoteAPI(RemoteAPI):
         nodes = []
         for nodes_type, node_list in nodes_data.items():
             for node in node_list:
+                labels = node.get("labels") or node.get("custom_labels") or {}
+                if labels.get("sep_sync") == "disabled":
+                    self.logger.debug(
+                        "Skipping node %s due to sep_sync: disabled label",
+                        node.get("node_id"),
+                    )
+                    continue
                 try:
                     nodes.append(
                         Node(
@@ -530,6 +558,20 @@ class PMMSyncer(BaseSyncer):
             if service.port is not None:
                 port_to_id[service.port] = service.id
         for service in updated_node.services:
+            if (
+                service.custom_labels
+                and service.custom_labels.get("sep_sync") == "disabled"
+            ):
+                logger.debug(
+                    "Skipping service %s due to sep_sync: disabled label",
+                    service.external_id,
+                )
+                service_id = external_id_to_id.get(
+                    service.external_id, port_to_id.get(service.port)
+                )
+                if service_id:
+                    syncable_services.pop(service_id, None)
+                continue
             if (
                 created_service := syncable_services.pop(
                     external_id_to_id.get(
