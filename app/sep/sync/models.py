@@ -759,7 +759,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedService` instance.
         :rtype: CreatedService
         """
-        updated_service_data = updated_service.model_dump(exclude={"schemas"})
+        updated_service_data = updated_service.model_dump(
+            exclude={"schemas", "node_id"}
+        )
         if updated_service_data.items() <= created_service.model_dump().items():
             logger.info("No changes detected for service %s", created_service.id)
             return created_service
@@ -868,7 +870,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedSchema` instance.
         :rtype: CreatedSchema
         """
-        updated_schema_data = updated_schema.model_dump(exclude={"tables"})
+        updated_schema_data = updated_schema.model_dump(
+            exclude={"tables", "service_id"}
+        )
         if updated_schema_data.items() <= created_schema.model_dump().items():
             logger.info("No changes detected for schema %s", created_schema.id)
             return created_schema
@@ -977,7 +981,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The updated `CreatedTable` instance.
         :rtype: CreatedTable
         """
-        updated_table_data = updated_table.model_dump()
+        updated_table_data = updated_table.model_dump(exclude={"schema_id"})
         if updated_table_data.items() <= created_table.model_dump().items():
             logger.info("No changes detected for table %s", created_table.id)
             return created_table
