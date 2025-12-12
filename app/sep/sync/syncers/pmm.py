@@ -21,7 +21,7 @@ from types import TracebackType
 from typing import Any, ClassVar, Self
 
 from async_lru import _LRUCacheWrapper, alru_cache
-from pydantic import ConfigDict
+from pydantic import ConfigDict, ValidationError
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
@@ -164,13 +164,18 @@ class PMMRemoteAPI(RemoteAPI):
         version_data = await self.get("/v1/version")
         return version_data["version"]
 
-    async def get_node(self, node_id: str) -> Node:
+    async def get_node(
+        self, node_id: str, *, skip_failed_services: bool = True
+    ) -> Node:
         """Retrieve a PMM node by its external ID.
 
         Send a request to the PMM API to fetch a node's details by its external ID.
 
         :param node_id: The external identifier of the node to retrieve.
         :type node_id: str
+        :param skip_failed_services: Whether to skip services that fail validation.
+            Defaults to True.
+        :type skip_failed_services: bool
         :return: The retrieved node instance.
         :rtype: Node
         """
@@ -187,7 +192,9 @@ class PMMRemoteAPI(RemoteAPI):
         node |= {
             "source": SourceEnum.PMM,
             "type": node_type,
-            "services": await self.get_services(node_id=node_id),
+            "services": await self.get_services(
+                node_id=node_id, skip_failed=skip_failed_services
+            ),
         }
         return Node.model_validate(node)
 
@@ -219,6 +226,8 @@ class PMMRemoteAPI(RemoteAPI):
         node_id: str = "",
         service_type: str = "",
         external_group: str = "",
+        *,
+        skip_failed: bool = True,
     ) -> list[PMMService]:
         """Fetch services from the PMM API.
 
@@ -234,8 +243,13 @@ class PMMRemoteAPI(RemoteAPI):
         :param external_group: The external group to filter services by. Defaults to an
             empty string, meaning the field won't be used as a filter.
         :type external_group: str
+        :param skip_failed: Whether to skip services that fail validation. Defaults to
+            True.
+        :type skip_failed: bool
         :return: A list of PMMService instances retrieved from the API.
         :rtype: list[PMMService]
+        :raises ValidationError: If a service fails validation and `skip_failed` is
+            False.
         """
         params = {
             "node_id": node_id,
@@ -247,29 +261,47 @@ class PMMRemoteAPI(RemoteAPI):
             services_data = await self.post("/v1/inventory/Services/List", json=params)
         else:
             services_data = await self.get("/v1/inventory/services", params=params)
-        return [
-            PMMService.model_validate({"type": service_type, **service})
-            for service_type, services in services_data.items()
-            for service in services
-        ]
+
+        services = []
+        for services_type, service_list in services_data.items():
+            for service in service_list:
+                try:
+                    services.append(
+                        PMMService.model_validate({"type": services_type, **service})
+                    )
+                except ValidationError:
+                    if skip_failed:
+                        self.logger.exception(
+                            "Validation Error: Skipping service of type %s with data %s",
+                            services_type,
+                            service,
+                        )
+                    else:
+                        raise
+        return services
 
     async def get_services_by_node_external_id(
-        self,
+        self, *, skip_failed: bool = True
     ) -> defaultdict[RequiredStr, list[PMMService]]:
         """Fetch and group services by node ID from the PMM API.
 
         Retrieve all services and organize them into a defaultdict where each key is a
         node ID and each value is a list of associated services.
 
+        :param skip_failed: Whether to skip services that fail validation. Defaults to
+            True.
+        :type skip_failed: bool
         :return: A defaultdict mapping node IDs to lists of PMMService instances.
         :rtype: defaultdict[RequiredStr, list[PMMService]]
         """
         services_by_node_id = defaultdict(list)
-        for service in await self.get_services():
+        for service in await self.get_services(skip_failed=skip_failed):
             services_by_node_id[service.node_id].append(service)
         return services_by_node_id
 
-    async def get_nodes(self, node_type: str = "") -> list[Node]:
+    async def get_nodes(
+        self, node_type: str = "", *, skip_failed: bool = True
+    ) -> list[Node]:
         """Fetch nodes from the PMM API.
 
         Retrieve a list of nodes filtered by node type and associate them with their
@@ -278,10 +310,16 @@ class PMMRemoteAPI(RemoteAPI):
         :param node_type: The type of nodes to retrieve (e.g., "generic"). Defaults to
             an empty string, meaning the field won't be used as a filter.
         :type node_type: str
+        :param skip_failed: Whether to skip nodes that fail validation. Defaults to
+            True.
+        :type skip_failed: bool
         :return: A list of Node instances retrieved from the API.
         :rtype: list[Node]
+        :raises ValidationError: If a node fails validation and `skip_failed` is False.
         """
-        services_by_node_id = await self.get_services_by_node_external_id()
+        services_by_node_id = await self.get_services_by_node_external_id(
+            skip_failed=skip_failed
+        )
         params = remove_falsy_values_from_dict({"node_type": node_type})
         if await self.is_older_than_v3():
             nodes_data = await self.post(
@@ -290,16 +328,28 @@ class PMMRemoteAPI(RemoteAPI):
             )
         else:
             nodes_data = await self.get("/v1/inventory/nodes", params=params)
-        return [
-            Node(
-                **node,
-                source=SourceEnum.PMM,
-                type=node_type,
-                services=services_by_node_id[node["node_id"]],
-            )
-            for node_type, nodes in nodes_data.items()
-            for node in nodes
-        ]
+
+        nodes = []
+        for nodes_type, node_list in nodes_data.items():
+            for node in node_list:
+                try:
+                    nodes.append(
+                        Node(
+                            **node,
+                            source=SourceEnum.PMM,
+                            type=nodes_type,
+                            services=services_by_node_id[node["node_id"]],
+                        )
+                    )
+                except ValidationError:
+                    if not skip_failed:
+                        raise
+                    self.logger.exception(
+                        "Failed to validate node of type %s with data: %s",
+                        nodes_type,
+                        node,
+                    )
+        return nodes
 
 
 class PMMSyncer(BaseSyncer):
@@ -422,7 +472,7 @@ class PMMSyncer(BaseSyncer):
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.external_id] = node
         logger.debug("Syncable nodes: %s", syncable_nodes)
-        for node in await self.pmm_api.get_nodes():
+        for node in await self.pmm_api.get_nodes(skip_failed=not self.break_on_error):
             if (created_node := syncable_nodes.pop(node.external_id, None)) is None:
                 logger.debug("Creating new node: %r", node)
                 created_node = CreatedNode.model_validate(
@@ -450,7 +500,9 @@ class PMMSyncer(BaseSyncer):
             "Fetching node from PMM with external id %s",
             created_node.external_id,
         )
-        return await self.pmm_api.get_node(created_node.external_id)
+        return await self.pmm_api.get_node(
+            created_node.external_id, skip_failed_services=not self.break_on_error
+        )
 
     async def perform_node_sync(
         self,
