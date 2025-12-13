@@ -32,6 +32,7 @@ import yaml
 from botocore.exceptions import ClientError
 from packaging.version import Version
 from pymysql import Error, InternalError, OperationalError, ProgrammingError
+from filelock import FileLock, Timeout
 
 BYTES_PER_MB = 1024**2
 ST_BLOCKS_SIZE = 512
@@ -1695,21 +1696,35 @@ class MyDumperRunner(multiprocessing.Process):
         self.logger.info("Total servers: %s", len(servers))
 
         for server_data in servers:
-            bkp = MyDumper(server_data, logger=self.logger)
+            alias = server_data.get("ALIAS", server_data.get("HOST", "localhost"))
+            # Get a lock per server with alias in the lockfile name
+            lockfile_name = os.path.join(logging_dir, f".lock_mydumper_{alias}")
+            lock = FileLock(lockfile_name, timeout=600)
             try:
-                bkp.run()
-            except BackupError as exc:
-                self.logger.exception(exc.message)
-                self.logger.exception("Backup failed for this host.")
-                bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
-                sys.exit(1)
-            except:
-                self.logger.exception("Unhandled exception occurred.")
-                bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                lock.acquire()
+            except Timeout:
+                self.logger.exception(
+                    f"Another instance of mydumper backup for {alias} currently holds the lock."
+                )
                 sys.exit(1)
 
-            logging_set_host(None, LOGGING_NAME)
+            try:
+                bkp = MyDumper(server_data, logger=self.logger)
+                try:
+                    bkp.run()
+                except BackupError as exc:
+                    self.logger.exception(exc.message)
+                    self.logger.exception("Backup failed for this host.")
+                    bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                    sys.exit(1)
+                except:
+                    self.logger.exception("Unhandled exception occurred.")
+                    bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                    sys.exit(1)
 
+                logging_set_host(None, LOGGING_NAME)
+            finally:
+                lock.release()
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         self.logger.info(
