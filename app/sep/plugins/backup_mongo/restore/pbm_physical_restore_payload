@@ -1,0 +1,53 @@
+""" PBM Physical Restore Payload """
+
+import subprocess
+import os
+import sys
+import yaml
+
+def pbm_creds():
+    """ PBM Credentials """
+    envhome = os.environ['HOME']
+    creds_path = f'{envhome}/.mongodb_uri'
+    try:
+        with open(creds_path, 'r', encoding='utf-8') as fpt:
+            creds = fpt.read().strip()
+    except Exception:
+        sys.exit(1)
+
+    return creds
+
+def pbm():
+    """ PBM Physical Restore Payload """
+
+    taskdir = os.environ['NOMAD_TASK_DIR']
+    config_file = f'{taskdir}/script_config'
+
+    os.environ['PBM_MONGODB_URI'] = pbm_creds()
+
+    # Load configuration
+    with open(config_file, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+
+    # Get backup name from config (backup timestamp/name to restore)
+    backup_name = config.get('BACKUP_SOURCE') or config.get('SERVER_LIST', [{}])[0].get('BACKUP_SOURCE')
+
+    if not backup_name:
+        print("Error: BACKUP_SOURCE (backup name) is required")
+        sys.exit(1)
+
+    # Build restore command
+    cmd = ['pbm', 'restore', backup_name, '--wait']
+
+    try:
+        proc = subprocess.Popen(cmd)
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            sys.exit(ret_code)
+
+    except subprocess.CalledProcessError as err:
+        print(f"Command failed with error: {err}")
+        sys.exit(1)
+
+pbm()
