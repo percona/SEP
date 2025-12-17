@@ -19,6 +19,7 @@ COLOR_WARN="208"    # Orange
 DIR_WAS_CREATED_BY_SCRIPT=0
 TEMP_DIR=""
 GUM_BIN_PATH=""
+PODMAN_COMPOSE_CMD="podman-compose"
 
 # Configuration
 if [ -z "${NO_GUM:-}" ]; then
@@ -580,6 +581,15 @@ check_prereqs() {
         CONTAINER_ENGINE="docker"
     elif command -v podman > /dev/null 2>&1; then
         CONTAINER_ENGINE="podman"
+
+        if command -v podman-compose > /dev/null 2>&1; then
+            PODMAN_COMPOSE_CMD="podman-compose"
+        elif command -v ansible.pex > /dev/null 2>&1; then
+            PODMAN_COMPOSE_CMD="PEX_SCRIPT=podman-compose ansible.pex"
+        else
+            log_err "podman-compose not found. Install podman-compose or ensure ansible.pex is available."
+            exit 1
+        fi
     else
         log_err "Neither Docker nor Podman found."
         exit 1
@@ -1028,7 +1038,7 @@ get_engine_command() {
             echo "docker compose --file ${INSTALL_DIR}/compose.yaml --project-name sep"
             ;;
         podman)
-            echo "podman-compose --file ${INSTALL_DIR}/compose.yaml --project-name sep"
+            echo "${PODMAN_COMPOSE_CMD}--file ${INSTALL_DIR}/compose.yaml --project-name sep"
             ;;
     esac
 }
