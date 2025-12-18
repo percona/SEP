@@ -1,8 +1,10 @@
 """Define tests for the app.sep.sync.syncers.pmm module."""
 
+from collections import defaultdict
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from pydantic import ValidationError
 
 from app.inventory.models import Service, ServiceTypeEnum, SourceEnum
 from app.sep.inventory import CreatedNode, CreatedService, Node
@@ -12,6 +14,20 @@ from tests.app.factories import (
     CreatedServiceFactory,
     MOCK_CREATED_NODE_ID,
 )
+
+
+def _make_validation_error(title: str = "ValidationError") -> ValidationError:
+    return ValidationError.from_exception_data(
+        title,
+        [
+            {
+                "type": "missing",
+                "loc": ("field",),
+                "msg": "Field required",
+                "input": {},
+            }
+        ],
+    )
 
 
 @pytest.fixture
@@ -136,7 +152,30 @@ class TestPMMRemoteAPI:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        mock_get_services.assert_awaited_once_with(node_id=node_id)
+        mock_get_services.assert_awaited_once_with(node_id=node_id, skip_failed=True)
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_node_skip_failed_services_false_passes_through(
+        self,
+        mock_request,
+        mock_get_version,
+        mock_get_services,
+        created_services,
+        pmm_remote_api,
+    ):
+        """Test get_node passes skip_failed_services=False down to get_services."""
+        mock_get_version.return_value = "3.0.0"
+        node_id = "node-123"
+        mock_request.return_value = {
+            "Generic": {"node_id": node_id, "name": "Test Node", "address": "localhost"}
+        }
+
+        node = await pmm_remote_api.get_node(node_id, skip_failed_services=False)
+
+        assert node.external_id == node_id
+        mock_get_services.assert_awaited_once_with(node_id=node_id, skip_failed=False)
 
         pmm_remote_api.is_older_than_v3.cache_clear()
 
@@ -229,6 +268,75 @@ class TestPMMRemoteAPI:
         pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
+    async def test_get_services_skip_failed_true_logs_and_filters(
+        self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
+    ):
+        """Test get_services skips invalid services when skip_failed=True."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {
+            "mysql": [
+                {"service_id": "service-ok", "name": "OK", "node_id": "node-1"},
+                {"service_id": "service-bad", "name": "BAD", "node_id": "node-2"},
+            ]
+        }
+        expected_service_count = 2
+
+        def _validate_side_effect(payload: dict):
+            if payload.get("service_id") == "service-bad":
+                raise _make_validation_error("PMMService")
+            return Mock(
+                external_id=payload.get("service_id"),
+                node_id=payload.get("node_id"),
+                type=payload.get("type"),
+            )
+
+        validate = mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMService.model_validate",
+            side_effect=_validate_side_effect,
+        )
+
+        services = await pmm_remote_api.get_services(skip_failed=True)
+
+        assert [s.external_id for s in services] == ["service-ok"]
+        assert validate.call_count == expected_service_count
+        mock_logger.exception.assert_called()
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_services_skip_failed_false_raises(
+        self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
+    ):
+        """Test get_services raises ValidationError when skip_failed=False."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {
+            "mysql": [
+                {"service_id": "service-ok", "name": "OK", "node_id": "node-1"},
+                {"service_id": "service-bad", "name": "BAD", "node_id": "node-2"},
+            ]
+        }
+
+        def _validate_side_effect(payload: dict):
+            if payload.get("service_id") == "service-bad":
+                raise _make_validation_error("PMMService")
+            return Mock(
+                external_id=payload.get("service_id"),
+                node_id=payload.get("node_id"),
+                type=payload.get("type"),
+            )
+
+        mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMService.model_validate",
+            side_effect=_validate_side_effect,
+        )
+
+        with pytest.raises(ValidationError):
+            await pmm_remote_api.get_services(skip_failed=False)
+
+        mock_logger.exception.assert_not_called()
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
     async def test_get_services_by_node_external_id(
         self, created_services, pmm_remote_api, mock_get_services
     ):
@@ -243,6 +351,8 @@ class TestPMMRemoteAPI:
             node_id: services[0].external_id
             for node_id, services in services_by_node.items()
         } == {service.node_id: service.external_id for service in created_services}
+
+        mock_get_services.assert_awaited_once_with(skip_failed=True)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -288,8 +398,79 @@ class TestPMMRemoteAPI:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        mock_get_services.assert_awaited_once()
+        mock_get_services.assert_awaited_once_with(skip_failed=True)
 
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_nodes_skip_failed_true_logs_and_filters(
+        self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
+    ):
+        """Test get_nodes skips invalid nodes when skip_failed=True."""
+        mock_get_version.return_value = "3.0.0"
+        mocker.patch.object(
+            PMMRemoteAPI,
+            "get_services_by_node_external_id",
+            new=AsyncMock(return_value=defaultdict(list)),
+        )
+        mock_request.return_value = {
+            "Generic": [
+                {"node_id": "good", "name": "Good", "address": "localhost"},
+                {"node_id": "bad", "name": "Bad", "address": "localhost"},
+            ]
+        }
+        expected_node_count = 2
+
+        def _node_side_effect(**kwargs):
+            if kwargs.get("node_id") == "bad":
+                raise _make_validation_error("Node")
+            return Mock(
+                external_id=kwargs.get("node_id"), services=kwargs.get("services", [])
+            )
+
+        node_ctor = mocker.patch(
+            "app.sep.sync.syncers.pmm.Node", side_effect=_node_side_effect
+        )
+
+        nodes = await pmm_remote_api.get_nodes(skip_failed=True)
+
+        assert [n.external_id for n in nodes] == ["good"]
+        assert node_ctor.call_count == expected_node_count
+        mock_logger.exception.assert_called()
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_nodes_skip_failed_false_raises(
+        self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
+    ):
+        """Test get_nodes raises ValidationError when skip_failed=False."""
+        mock_get_version.return_value = "3.0.0"
+        mocker.patch.object(
+            PMMRemoteAPI,
+            "get_services_by_node_external_id",
+            new=AsyncMock(return_value=defaultdict(list)),
+        )
+        mock_request.return_value = {
+            "Generic": [
+                {"node_id": "good", "name": "Good", "address": "localhost"},
+                {"node_id": "bad", "name": "Bad", "address": "localhost"},
+            ]
+        }
+
+        def _node_side_effect(**kwargs):
+            if kwargs.get("node_id") == "bad":
+                raise _make_validation_error("Node")
+            return Mock(
+                external_id=kwargs.get("node_id"), services=kwargs.get("services", [])
+            )
+
+        mocker.patch("app.sep.sync.syncers.pmm.Node", side_effect=_node_side_effect)
+
+        with pytest.raises(ValidationError):
+            await pmm_remote_api.get_nodes(skip_failed=False)
+
+        mock_logger.exception.assert_not_called()
         pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
@@ -362,6 +543,7 @@ class TestPMMRemoteAPI:
 @pytest.mark.asyncio
 async def test_fetch_node(created_node, pmmsyncer):
     """Test fetching updated data for a specific node."""
+    pmmsyncer.break_on_error = False
     pmmsyncer.pmm_api.get_node = AsyncMock(
         return_value=Node(
             external_id=created_node.external_id,
@@ -373,7 +555,30 @@ async def test_fetch_node(created_node, pmmsyncer):
     node = await pmmsyncer.fetch_node(created_node)
 
     assert node.name == "Remote Node"
-    pmmsyncer.pmm_api.get_node.assert_awaited_once_with(created_node.external_id)
+    pmmsyncer.pmm_api.get_node.assert_awaited_once_with(
+        created_node.external_id, skip_failed_services=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_node_break_on_error_true_does_not_skip_failed_services(
+    created_node, pmmsyncer
+):
+    """Test fetch_node passes skip_failed_services=False when break_on_error=True."""
+    pmmsyncer.break_on_error = True
+    pmmsyncer.pmm_api.get_node = AsyncMock(
+        return_value=Node(
+            external_id=created_node.external_id,
+            address="localhost",
+            name="Remote Node",
+        )
+    )
+
+    await pmmsyncer.fetch_node(created_node)
+
+    pmmsyncer.pmm_api.get_node.assert_awaited_once_with(
+        created_node.external_id, skip_failed_services=False
+    )
 
 
 @pytest.mark.asyncio
@@ -436,32 +641,37 @@ async def test_perform_node_sync(created_node, pmmsyncer, mocker):
 @pytest.mark.asyncio
 async def test_perform_inventory_sync(created_node, pmmsyncer, mocker):
     """Test performing the inventory synchronization process."""
+    pmmsyncer.break_on_error = False
     pmmsyncer.inventory_api.get.side_effect = [[created_node.model_dump()]]
-    mock_post = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMRemoteAPI.get", new_callable=AsyncMock
-    )
-    mock_post.side_effect = [
-        {
-            "Generic": {
-                "node_id": "node_id",
-                "name": "Test Node",
-                "address": "localhost",
-            }
-        },
-        {
-            "Generic": [
-                {
-                    "service_id": "service-1",
-                    "name": "Service 1",
-                    "node_id": "node_id",
-                    "type": "mysql",
-                }
-            ]
-        },
-    ]
+
+    # No nodes returned from PMM -> inventory nodes should be deleted
+    pmmsyncer.pmm_api.get_nodes = AsyncMock(return_value=[])
+
     mocker.patch(
         "app.sep.sync.syncers.pmm.PMMSyncer.delete_node", new_callable=AsyncMock
     )
+
     await pmmsyncer.perform_inventory_sync()
+
     pmmsyncer.inventory_api.get.assert_awaited_once()
+    pmmsyncer.pmm_api.get_nodes.assert_awaited_once_with(skip_failed=True)
+    pmmsyncer.delete_node.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_perform_inventory_sync_break_on_error_true_calls_get_nodes_with_skip_failed_false(
+    created_node, pmmsyncer, mocker
+):
+    """Test perform_inventory_sync passes skip_failed=False when break_on_error=True."""
+    pmmsyncer.break_on_error = True
+    pmmsyncer.inventory_api.get.side_effect = [[created_node.model_dump()]]
+    pmmsyncer.pmm_api.get_nodes = AsyncMock(return_value=[])
+
+    mocker.patch(
+        "app.sep.sync.syncers.pmm.PMMSyncer.delete_node", new_callable=AsyncMock
+    )
+
+    await pmmsyncer.perform_inventory_sync()
+
+    pmmsyncer.pmm_api.get_nodes.assert_awaited_once_with(skip_failed=False)
     pmmsyncer.delete_node.assert_awaited_once()
