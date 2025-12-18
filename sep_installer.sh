@@ -199,7 +199,7 @@ def cmd_success_msg(args):
     console.print(Markdown(content))
 
 def cmd_check_prereqs(args):
-    tools = args.tools.split(',')
+    tools = args.tools.split()
     missing = []
     with console.status("[bold green]Checking System Requirements..."):
         for tool in tools:
@@ -607,6 +607,7 @@ def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command")
 
+    # Args definitions
     p_log = subparsers.add_parser("log")
     p_log.add_argument("--level", default="info")
     p_log.add_argument("message")
