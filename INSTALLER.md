@@ -60,6 +60,10 @@ Optional (only when UI is enabled):
 
 If you choose to use an existing/external PMM instance (`--use-existent-pmm`), the running SEP stack must be able to reach it over the network.
 
+## Verifying checksums
+
+Before running the installer, you may wish to verify its integrity. The SHA256 checksum of the `sep_installer.sh` file can be found in `sep_installer.sha256` in this repository.
+
 ## How to run
 
 Make the script executable and run it:
