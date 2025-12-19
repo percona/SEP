@@ -398,3 +398,4 @@ static/plugins/*
 data/nomad.hcl
 data/casdoor_init_data.json
 .celery
+celery_worker_state
