@@ -134,6 +134,7 @@ if {
     "backup",
     "backup_mongo",
     "checksums",
+    "mum"
 } & imported_plugins:
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router

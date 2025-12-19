@@ -41,8 +41,8 @@ const DeleteUserButton = ({
       setError("Select an executor host first.");
       return;
     }
-    if (confirmText !== "confirm") {
-      setError("Type 'confirm' to proceed.");
+    if (confirmText !== username) {
+      setError(`Type to ${username} proceed.`);
       return;
     }
     setLoading(true);
@@ -81,7 +81,7 @@ const DeleteUserButton = ({
             <code>{dbName}</code>.
           </Typography>
           <TextField
-            label="Type 'confirm' to proceed"
+            label={`Type ${username} to proceed`}
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
             disabled={loading}
