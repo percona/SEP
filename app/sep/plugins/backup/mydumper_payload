@@ -1703,6 +1703,7 @@ class MyDumperRunner(multiprocessing.Process):
 
             try:
                 self.logger.info(f"Acquiring lock for {alias}")
+                should_exit = False
                 with lock:
                     bkp = MyDumper(server_data, logger=self.logger)
                     try:
@@ -1711,13 +1712,16 @@ class MyDumperRunner(multiprocessing.Process):
                         self.logger.exception(exc.message)
                         self.logger.exception("Backup failed for this host.")
                         bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
-                        sys.exit(1)
+                        should_exit = True
                     except:
                         self.logger.exception("Unhandled exception occurred.")
                         bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occurred.")
-                        sys.exit(1)
+                        should_exit = True
 
                     logging_set_host(None, LOGGING_NAME)
+
+                if should_exit:
+                    sys.exit(1)
             except Timeout:
                 self.logger.warning(
                     f"Another instance of mydumper backup for {alias} currently holds the lock."
