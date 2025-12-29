@@ -1714,12 +1714,12 @@ class MyDumperRunner(multiprocessing.Process):
                         sys.exit(1)
                     except:
                         self.logger.exception("Unhandled exception occurred.")
-                        bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                        bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occurred.")
                         sys.exit(1)
 
                     logging_set_host(None, LOGGING_NAME)
             except Timeout:
-                self.logger.exception(
+                self.logger.warning(
                     f"Another instance of mydumper backup for {alias} currently holds the lock."
                 )
                 sys.exit(1)
