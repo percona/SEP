@@ -1700,7 +1700,7 @@ class MyDumperRunner(multiprocessing.Process):
             # Get a lock per server with alias in the lockfile name
             lockfile_name = os.path.join(logging_dir, f".lock_mydumper_{alias}")
             lock = FileLock(lockfile_name, timeout=600)
-            
+
             try:
                 self.logger.info(f"Acquiring lock for {alias}")
                 with lock:
