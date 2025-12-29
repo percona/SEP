@@ -39,17 +39,17 @@ def _is_mydumper_or_xtrabackup(data: dict) -> bool:
     try:
         if data.get("task") != "run-python":
             return False
-        
+
         meta = data.get("meta", {})
         config_yaml = meta.get("config", "")
         if not config_yaml:
             return False
-        
+
         task_config = yaml.safe_load(config_yaml)
         server_list = task_config.get("SERVER_LIST", [])
         if not server_list:
             return False
-        
+
         backup_type = server_list[0].get("BACKUP_TYPE", "")
         # BackupType.MYDUMPER = "M", BackupType.XTRABACKUP = "X"
         return backup_type in ("M", "X")
@@ -62,11 +62,11 @@ def _add_filelock_requirement(requirements: str) -> str:
     """Add filelock to requirements if not already present."""
     if not requirements:
         return "filelock"
-    
+
     req_list = [req.strip() for req in requirements.split("\n") if req.strip()]
     if "filelock" not in req_list:
         req_list.append("filelock")
-    
+
     return "\n".join(req_list)
 
 
@@ -74,7 +74,7 @@ def upgrade() -> None:
     """Add filelock requirement to existing MYDUMPER and XTRABACKUP backup tasks."""
     task_table = _task_table()
     conn = op.get_bind()
-    
+
     rows = conn.execute(
         sa.select(
             task_table.c.id,
@@ -84,31 +84,31 @@ def upgrade() -> None:
             task_table.c.backend == "PROXY",
         )
     ).fetchall()
-    
+
     updated_count = 0
     for id_, data in rows:
         if not data or not isinstance(data, dict):
             continue
-        
+
         try:
             if not _is_mydumper_or_xtrabackup(data):
                 continue
-            
+
             meta = data.get("meta", {})
             current_requirements = meta.get("requirements", "")
-            
+
             if "filelock" in current_requirements:
                 # Already has filelock, skip
                 continue
-            
+
             # Add filelock to requirements
             updated_requirements = _add_filelock_requirement(current_requirements)
-            
+
             # Update the data
             new_data = data.copy()
             new_data["meta"] = meta.copy()
             new_data["meta"]["requirements"] = updated_requirements
-            
+
             conn.execute(
                 task_table.update()
                 .where(task_table.c.id == id_)
@@ -119,7 +119,7 @@ def upgrade() -> None:
         except Exception:
             logger.exception("Failed to update task id=%s", id_)
             continue
-    
+
     logger.info("Migration completed. Updated %d backup tasks with filelock requirement.", updated_count)
 
 
@@ -127,7 +127,7 @@ def downgrade() -> None:
     """Remove filelock requirement from backup tasks (optional rollback)."""
     task_table = _task_table()
     conn = op.get_bind()
-    
+
     rows = conn.execute(
         sa.select(
             task_table.c.id,
@@ -137,30 +137,30 @@ def downgrade() -> None:
             task_table.c.backend == "PROXY",
         )
     ).fetchall()
-    
+
     for id_, data in rows:
         if not data or not isinstance(data, dict):
             continue
-        
+
         try:
             if not _is_mydumper_or_xtrabackup(data):
                 continue
-            
+
             meta = data.get("meta", {})
             current_requirements = meta.get("requirements", "")
-            
+
             if "filelock" not in current_requirements:
                 continue
-            
+
             # Remove filelock from requirements
             req_list = [req.strip() for req in current_requirements.split("\n") if req.strip() and req.strip() != "filelock"]
             updated_requirements = "\n".join(req_list)
-            
+
             # Update the data
             new_data = data.copy()
             new_data["meta"] = meta.copy()
             new_data["meta"]["requirements"] = updated_requirements
-            
+
             conn.execute(
                 task_table.update()
                 .where(task_table.c.id == id_)
@@ -170,4 +170,3 @@ def downgrade() -> None:
         except Exception:
             logger.exception("Failed to downgrade task id=%s", id_)
             continue
-
