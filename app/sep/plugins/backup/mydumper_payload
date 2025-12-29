@@ -1700,32 +1700,29 @@ class MyDumperRunner(multiprocessing.Process):
             # Get a lock per server with alias in the lockfile name
             lockfile_name = os.path.join(logging_dir, f".lock_mydumper_{alias}")
             lock = FileLock(lockfile_name, timeout=600)
+            
             try:
                 self.logger.info(f"Acquiring lock for {alias}")
-                lock.acquire()
+                with lock:
+                    bkp = MyDumper(server_data, logger=self.logger)
+                    try:
+                        bkp.run()
+                    except BackupError as exc:
+                        self.logger.exception(exc.message)
+                        self.logger.exception("Backup failed for this host.")
+                        bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                        sys.exit(1)
+                    except:
+                        self.logger.exception("Unhandled exception occurred.")
+                        bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                        sys.exit(1)
+
+                    logging_set_host(None, LOGGING_NAME)
             except Timeout:
                 self.logger.exception(
                     f"Another instance of mydumper backup for {alias} currently holds the lock."
                 )
                 sys.exit(1)
-
-            try:
-                bkp = MyDumper(server_data, logger=self.logger)
-                try:
-                    bkp.run()
-                except BackupError as exc:
-                    self.logger.exception(exc.message)
-                    self.logger.exception("Backup failed for this host.")
-                    bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
-                    sys.exit(1)
-                except:
-                    self.logger.exception("Unhandled exception occurred.")
-                    bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
-                    sys.exit(1)
-
-                logging_set_host(None, LOGGING_NAME)
-            finally:
-                lock.release()
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         self.logger.info(
