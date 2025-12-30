@@ -192,15 +192,18 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         """
 
     @abstractmethod
-    async def list_files(self, queue_item: TaskHistory, path: str) -> dict[str, int]:
+    async def list_files(
+        self, queue_item: TaskHistory, path: str
+    ) -> dict[str, dict[str, int | bool]]:
         """List files in a directory from a task history record.
 
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
         :param path: The path to the directory to list files from.
         :type path: str
-        :return: A dictionary with filenames as keys and their sizes as values.
-        :rtype: dict[str, int]
+        :return: A dictionary with filenames as keys and their metadata as values.
+            The metadata includes the file size and whether it is a directory.
+        :rtype: dict[str, dict[str, int | bool]]
         """
 
     async def sync_task_history(
