@@ -1765,6 +1765,7 @@ class S3UploadProvider:
         self.fake_s3_upload = settings.get("FAKE_S3_UPLOAD")
         self.s3_limit_rate = settings.get("S3_LIMIT_RATE")
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
+        self.awscli_s3_upload_extra_args = settings.get('AWSCLI_S3_UPLOAD_EXTRA_ARGS')
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
         self.logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
@@ -1839,6 +1840,12 @@ class S3UploadProvider:
                     "StorageClass": self.s3_storage_class,
                     "ServerSideEncryption": "AES256",
                 }
+
+                if self.awscli_s3_upload_extra_args:
+                    for arg in self.awscli_s3_upload_extra_args.split():
+                        if "=" in arg:
+                            arg_key, arg_value = arg.split("=", 1)
+                            extra_args[arg_key] = arg_value
 
                 self.logger.info(
                     "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
