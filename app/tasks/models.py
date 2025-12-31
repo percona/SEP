@@ -79,6 +79,15 @@ def _encode_anonymize_mask(v: Any) -> Any:
 AnonymizeMask = Annotated[int, BeforeValidator(_encode_anonymize_mask)]
 
 
+class FileMetadataResponse(BaseModel):
+    """Represent file metadata for task artifacts."""
+
+    size: int = 0
+    is_dir: bool = False
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class TaskBackendEnum(StrEnum):
     """Control the choice of backends.
 
