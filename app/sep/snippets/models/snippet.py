@@ -245,9 +245,11 @@ class BaseSnippetArgs(BaseModel):
         if metadata.get("positional"):
             return [value]
         arg_template_mapping = {"value": shlex.quote(str(value))}
+        if (is_flag := metadata.get("is_flag")) and not value:
+            return []
         if not (arg_format := metadata.get("arg_format")):
-            if metadata.get("is_flag"):
-                return [f"--{field_name}"] if value else []
+            if is_flag:
+                return [f"--{field_name}"]
             arg_format = snippets_settings.META.DEFAULT_ARG_FORMAT
             arg_template_mapping["name"] = field_name
         return shlex.split(Template(arg_format).safe_substitute(arg_template_mapping))
