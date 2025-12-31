@@ -1857,6 +1857,7 @@ class Binlog(Restore):
         self.stop_file = server_data.get('STOP_FILE')
         self.stop_position = server_data.get('STOP_POSITION')
         self.use_sql_file = server_data.get('USE_SQL_FILE')
+        self.binlog_restore_extra_args = server_data.get('BINLOG_RESTORE_EXTRA_ARGS')
 
         self.local_path = os.path.join(self.local_path, 'restore_binlogs')
 
@@ -1945,6 +1946,9 @@ class Binlog(Restore):
         b_files_list = self._get_binlog_list()
 
         binlog_cmd = [MYSQLBINLOG_CMD]
+
+        if self.binlog_restore_extra_args:
+            binlog_cmd.extend(self.binlog_restore_extra_args.split(' '))
 
         if self.start_position:
             binlog_cmd.append('--start-position=%s' % self.start_position)
