@@ -1576,8 +1576,16 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         # rsync subprocess doesn't work with list so I had to use a string
         info_file = {'X': 'xtrabackup_info', 'M': 'metadata'}
         info_only = kwargs.get('info_only', False)
+        files_list = kwargs.get('files_list', [])
 
-        if info_only and self.backup_code in info_file:
+        if files_list:
+            include_args = ""
+            for f in files_list:
+                f = f.strip()
+                if f:
+                    include_args += '--include="%s" ' % f
+            exclude_args = '--exclude="*"'
+        elif info_only and self.backup_code in info_file:
             exclude_args = '--exclude="*"'
             include_args = '--include="%s*"' % info_file[self.backup_code]
         else:
@@ -1614,11 +1622,16 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         info_file = {'X': 'xtrabackup_info', 'M': 'metadata'}
         info_only = kwargs.get('info_only', False)
+        files_list = kwargs.get('files_list', [])
 
-        if info_only and self.backup_code in info_file:
+        if files_list:
+            escaped_files = [re.escape(f.strip()) for f in files_list if f.strip()]
+            files_pattern = '|'.join(escaped_files)
+            regex_args = '-x "^(?!.*(%s)$).*"' % files_pattern
+        elif info_only and self.backup_code in info_file:
             regex_args = '-x "^(?!.*%s$)"' % info_file[self.backup_code]
         else:
-            regex_args = ""
+            regex_args = '-x "^(?!((binlog\\.[0-9]{6})$)).*"'
 
         if os.path.isdir(destination):
             shutil.rmtree(destination)
@@ -1626,7 +1639,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         os.mkdir(destination)
         destination_dir = os.path.normpath(destination) + os.sep
 
-        download_cmd = '%s rsync -r %s %s %s' \
+        download_cmd = '%s -m rsync -r %s %s %s' \
                        % (GSUTIL_BIN, regex_args, source, destination_dir)
 
         self.logger.info('Running: %s', download_cmd)
@@ -1649,7 +1662,14 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             include_args = '--include="%s*"' % info_file[self.backup_code]
         elif files_list:
             exclude_args = '--exclude="*"'
-            include_args = '--include-from=%s' % files_list
+            include_args = ''
+            try:
+                for line in files_list:
+                    line = line.strip()
+                    if line:
+                        include_args += '--include="%s" ' % line
+            except Exception as e:
+                raise BackupError(f"Error reading files list: {e}")
         else:
             exclude_args = ""
             for path in kwargs.get('exclude', []):
@@ -1999,44 +2019,85 @@ class Binlog(Restore):
         return latest_file
 
     def copy_back(self):
-        """ Copy Back """
+        """
+        Copies backup files from a remote source (S3, GS, or rsync) or a local source
+        to the local path. For remote sources, it generates a list of files to copy.
+        """
 
         if ':' in self.backup_source:
+            files_to_copy = self._create_file_list()
+            source_path = os.path.join(self.backup_source, "")
             if self.backup_source.startswith('s3:'):
-                self.s3_copy(os.path.join(self.backup_source, ""),
-                             self.local_path,
-                             self.mb_log_file,
-                             files_list=self._create_file_list()
-                            )
-                self.fd_list.close()
+                self.s3_copy(source_path,
+                            self.local_path,
+                            self.mb_log_file,
+                            files_list=files_to_copy)
             elif self.backup_source.startswith('gs:'):
-                self.gs_copy(os.path.join(self.backup_source, ""),
-                             self.local_path,
-                             self.mb_log_file,
-                            )
+                self.gs_copy(source_path,
+                            self.local_path,
+                            self.mb_log_file,
+                            files_list=files_to_copy)
             else:
-                self.rsync_copy(os.path.join(self.backup_source, ""),
+                self.rsync_copy(source_path,
                                 self.local_path,
                                 self.mb_log_file,
-                               )
+                                files_list=files_to_copy)
         else:
             self.local_copy(os.path.join(self.backup_source, ""), self.local_path)
 
         self.logger.info('OK Copy Backup complete.')
 
     def _create_file_list(self):
-        """Creates a temp file with list of binlgos to download"""
+
+        """
+        Generates a list of filenames (not full paths) to be copied from the backup source.
+        Supports S3, GS, and rsync sources. Returns a list of file names.
+        """
+
         start_file_idx = self._get_binlog_index(self.start_file)
-        ls_cmd = [PYTHON_BIN, S3CMD_BIN, 'ls', os.path.join(self.backup_source, "")]
-        ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
-        self.fd_list = tempfile.NamedTemporaryFile(mode='w+t')
-        while line:
-            if self._get_binlog_index(line) >= start_file_idx:
-                self.fd_list.writelines('{0}\n'.format(line.split('/')[-1:][0]))
-            line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
-        self.fd_list.flush()
-        return self.fd_list.name
+        ls_cmd = []
+        source_path = os.path.join(self.backup_source, "")
+
+        if self.s3_tool == 'awscli':
+            ls_cmd = [AWS_BIN, 's3', 'ls', source_path]
+        elif self.backup_source.startswith('s3:'):
+            ls_cmd = [PYTHON_BIN, S3CMD_BIN, 'ls', source_path]
+        elif self.backup_source.startswith('gs:'):
+            ls_cmd = [GSUTIL_BIN, 'ls', source_path]
+        else:
+            try:
+                host, path = self.backup_source.split(':', 1)
+                ls_cmd = ['ssh', host, 'ls', '-1', path]
+            except ValueError:
+                self.logger.error("Invalid rsync source format: %s", self.backup_source)
+                return None
+        try:
+            ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = ls_proc.communicate()
+        except OSError as e:
+            self.logger.error("Error executing command %s: %s", ' '.join(ls_cmd), e)
+            return None
+        if stderr:
+            self.logger.warning("Error while listing files: %s", stderr.decode(sys.stdout.encoding, errors='ignore'))
+        files = []
+        for line in stdout.decode(sys.stdout.encoding, errors='ignore').splitlines():
+            line = line.strip()
+            filename = None
+            if line.startswith("gs://"):
+                filename = line.split('/')[-1]
+            else:
+                parts = line.split()
+                if len(parts) >= 4:
+                    filename = parts[3]
+                elif len(parts) == 1:
+                    filename = parts[0].split('/')[-1]
+                else:
+                    continue
+            if filename and self._get_binlog_index(filename) >= start_file_idx:
+                files.append(filename)
+        if not files:
+            self.logger.warning("No files found to copy from: %s", self.backup_source)
+        return files
 def main():
     """Main"""
     preflight_check()
