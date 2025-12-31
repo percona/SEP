@@ -612,6 +612,7 @@ def preflight_check() -> None:
 
 def main() -> None:
     """Run main program."""
+    os.umask(0o007)
     options = parse_args()
     preflight_check()
     mydumper_runner = XtraBackupRunner(options.config)
