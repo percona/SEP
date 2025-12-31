@@ -11,6 +11,19 @@ $(document).ready(function() {
         return `${val.toFixed(val < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
     }
 
+    function parseFileMeta(meta) {
+        if (meta && typeof meta === 'object') {
+            return {
+                size: Number(meta.size) || 0,
+                isDir: Boolean(meta.is_dir || meta.isDir),
+            };
+        }
+        return {
+            size: Number(meta) || 0,
+            isDir: false,
+        };
+    }
+
     function filesApiUrl(taskId) {
         return `/files/${encodeURIComponent(taskId)}`;
     }
@@ -19,15 +32,43 @@ $(document).ready(function() {
         return `/files/${encodeURIComponent(taskId)}/download?path=${encodeURIComponent(relPath)}`;
     }
 
+    function updateFileRowDisplay($row) {
+        const rawSize = $row.data('file-size');
+        const size = Number(rawSize);
+        const isDir = String($row.data('file-is-dir')).toLowerCase() === 'true';
+
+        const $nameCell = $row.find('.file-name');
+        const rawName = $nameCell.text().replace(/\/$/, '');
+        $nameCell.text(isDir ? `${rawName}/` : rawName);
+
+        if (isDir) {
+            $row.find('.file-size').text('Folder');
+            return;
+        }
+
+        const normalizedSize = Number.isFinite(size) ? size : Number(rawSize || 0);
+        $row.find('.file-size').text(formatBytes(normalizedSize));
+    }
+
     function ensureFilesModal(taskId, filesMap, taskName) {
         let $modal = $(`#modal-files-${taskId}`);
         if ($modal.length === 0) {
-            const rows = Object.entries(filesMap).map(([filename, size]) => `
+            const rows = Object.entries(filesMap).map(([filename, meta]) => {
+                const {
+                    size,
+                    isDir
+                } = parseFileMeta(meta);
+                const safeName = $('<div>').text(filename).html();
+                const displayName = isDir ? `${safeName}/` : safeName;
+                const humanSize = isDir ? 'Folder' : formatBytes(size);
+
+                return `
           <tr data-task-id="${taskId}"
-              data-file-name="${$('<div>').text(filename).html()}"
-              data-file-size="${Number(size)}">
-            <td class="file-name code">${$('<div>').text(filename).html()}</td>
-            <td class="file-size number code">${Number(size)}</td>
+              data-file-name="${safeName}"
+              data-file-size="${Number(size)}"
+              data-file-is-dir="${isDir}">
+            <td class="file-name code">${displayName}</td>
+            <td class="file-size number code">${humanSize}</td>
             <td class="options">
               <button type="button" class="icon medium download-file-button"
                       aria-label="Download ${$('<div>').text(filename).html()}">
@@ -35,7 +76,8 @@ $(document).ready(function() {
               </button>
             </td>
           </tr>
-        `).join('');
+        `;
+            }).join('');
 
             const html = `
           <section>
@@ -73,9 +115,7 @@ $(document).ready(function() {
         }
 
         $modal.find('tbody tr').each(function() {
-            const $row = $(this);
-            const size = Number($row.data('file-size'));
-            $row.find('.file-size').text(formatBytes(size));
+            updateFileRowDisplay($(this));
         });
 
         return $modal;
@@ -92,9 +132,7 @@ $(document).ready(function() {
 
     $('.modal-files').each(function() {
         $(this).find('tbody tr').each(function() {
-            const $row = $(this);
-            const size = Number($row.data('file-size'));
-            if (size) $row.find('.file-size').text(formatBytes(size));
+            updateFileRowDisplay($(this));
         });
     });
 
@@ -106,6 +144,7 @@ $(document).ready(function() {
         const $row = $btn.closest('tr');
         const taskId = $row.data('task-id');
         const filename = String($row.data('file-name') || '');
+        const isDir = String($row.data('file-is-dir')).toLowerCase() === 'true';
         if (!taskId || !filename) return;
 
         $btn.data('loading', true)
@@ -114,7 +153,7 @@ $(document).ready(function() {
             .addClass('loading')
             .html(`
             <span class="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
-            <span class="label">Anonymizing PII in file</span>
+            <span class="label">Preparing download</span>
           `);
 
         $row.attr('aria-busy', 'true');
@@ -122,7 +161,8 @@ $(document).ready(function() {
         const url = `/files/${encodeURIComponent(taskId)}/download?path=${encodeURIComponent(filename)}`;
         const a = document.createElement('a');
         a.href = url;
-        a.download = filename.split('/').pop();
+        const baseName = filename.split('/').pop();
+        a.download = isDir ? `${baseName}.tar.gz` : baseName;
         document.body.appendChild(a);
         a.click();
         a.remove();
