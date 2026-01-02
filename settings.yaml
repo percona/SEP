@@ -71,6 +71,10 @@ default:
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo
         CSS_CLASS: backup_mongo
+      - NAME: Dipper Data Collection
+        MODULE_NAME: dipper
+        URI_PATH: /dipper
+        CSS_CLASS: dipper
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
