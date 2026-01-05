@@ -108,7 +108,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                 ttl_dns_cache=300,
                 keepalive_timeout=15,
             )
-            timeout = ClientTimeout(total=30, connect=5, sock_connect=5, sock_read=20)
+            timeout = ClientTimeout(total=300, connect=5, sock_connect=5, sock_read=120)
             self._session = ClientSession(
                 base_url=self.base_url,
                 headers=self.headers or None,
