@@ -1650,7 +1650,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             exclude_args = '--exclude="*"'
             include_args = ''
             try:
-                with open(files_list, 'r', encoding=stdout.encoding) as f:
+                with open(files_list, 'r', encoding=sys.stdout.encoding) as f:
                     for line in f:
                         line = line.strip()
                         if line:
