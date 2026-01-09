@@ -1285,10 +1285,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             'BACKUP_TEXTFILE_COLLECTOR_DIR',
             BACKUP_TEXTFILE_COLLECTOR_DIR
         )
-        # Use restore_user credentials file for binlog restore operations
-        self.defaults_cnf_file = os.path.expanduser('~/.my.cnf.restore')
-        if not os.path.isfile(self.defaults_cnf_file):
-            self.defaults_cnf_file = server_data.get('DEFAULTS_FILE', DEFAULT_MYCNF)
+        self.defaults_cnf_file = server_data.get('DEFAULTS_FILE', DEFAULT_MYCNF)
         self.hostname = str(server_data.get('HOSTNAME', socket.gethostname().split('.')[0]))
         self.slave_from_master = server_data.get('SLAVE_FROM_MASTER', False)
         self.continue_replication = server_data.get('CONTINUE_REPLICATION', False)
