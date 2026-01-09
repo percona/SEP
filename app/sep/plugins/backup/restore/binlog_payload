@@ -2037,8 +2037,7 @@ class Binlog(Restore):
         start_file_idx = 0
         if self.start_file:
             start_file_idx = self._get_binlog_index(self.start_file)
-        
-        # Use AWS CLI to list files from S3
+
         ls_cmd = ['aws', 's3', 'ls', os.path.join(self.backup_source, ""), '--recursive']
         ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
