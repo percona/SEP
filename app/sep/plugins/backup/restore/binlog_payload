@@ -2034,21 +2034,14 @@ class Binlog(Restore):
 
     def _create_file_list(self):
         """Creates a temp file with list of binlgos to download"""
-        start_file_idx = 0
-        if self.start_file:
-            start_file_idx = self._get_binlog_index(self.start_file)
-
-        ls_cmd = ['aws', 's3', 'ls', os.path.join(self.backup_source, ""), '--recursive']
+        start_file_idx = self._get_binlog_index(self.start_file)
+        ls_cmd = [PYTHON_BIN, S3CMD_BIN, 'ls', os.path.join(self.backup_source, "")]
         ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
         self.fd_list = tempfile.NamedTemporaryFile(mode='w+t')
         while line:
-            parts = line.strip().split()
-            if parts:
-                filename = parts[-1]
-                filename = os.path.basename(filename)
-                if filename and self._get_binlog_index(filename) >= start_file_idx:
-                    self.fd_list.writelines('{0}\n'.format(filename))
+            if self._get_binlog_index(line) >= start_file_idx:
+                self.fd_list.writelines('{0}\n'.format(line.split('/')[-1:][0]))
             line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
         self.fd_list.flush()
         return self.fd_list.name
