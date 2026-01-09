@@ -1648,15 +1648,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             include_args = '--include="%s*"' % info_file[self.backup_code]
         elif files_list:
             exclude_args = '--exclude="*"'
-            include_args = ''
-            try:
-                with open(files_list, 'r', encoding=sys.stdout.encoding) as f:
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            include_args += '--include="%s" ' % line
-            except Exception as e:
-                raise BackupError(f"Error reading files list: {e}")
+            include_args = '--include-from=%s' % files_list
         else:
             exclude_args = ""
             for path in kwargs.get('exclude', []):
