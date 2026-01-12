@@ -810,6 +810,16 @@
                     </label>
                     <br>
                     <br>
+                          {% set awscli_s3_upload_extra_args_title = "Additional ExtraArgs to pass to AWS S3 upload (e.g. ChecksumAlgorithm=CRC32C)" %}
+                          <label for="awscli_s3_upload_extra_args" title="{{ awscli_s3_upload_extra_args_title }}">
+                           AWSCLI S3 Upload Extra Args (optional):
+                           <input type="text"
+                               id="awscli_s3_upload_extra_args"
+                               name="awscli_s3_upload_extra_args"
+                               placeholder="e.g. ChecksumAlgorithm=CRC32C" />
+                          </label>
+                          <br>
+                          <br>
                     {% set skip_s3_safety_check_title = "Disable safety checks before uploading backups to S3. Use with caution to avoid accidental data loss." %}
                     <label class="checkbox"
                            for="skip_s3_safety_check"
@@ -947,6 +957,10 @@
             container.classList.remove('visible');
         }
     }
+            const awscliExtraArgsInput = document.getElementById('awscli_s3_upload_extra_args');
+            if (awscliExtraArgsInput) {
+                awscliExtraArgsInput.value = '';
+            }
 
     function updateBackupTypeUI() {
         const backupType = backupTypeSelect.value;
