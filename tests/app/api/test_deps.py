@@ -1,7 +1,7 @@
 """Define tests for the app.api.deps module."""
 
 import pytest
-from jwt import InvalidTokenError
+from pydantic import ValidationError
 
 from app.api.deps import get_current_admin, get_current_user
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
@@ -23,7 +23,7 @@ async def test_get_current_user_valid_token(casdoor_mock, valid_username):
 async def test_get_current_user_invalid_token(casdoor_mock, mocker):
     """Test get_current_user raises HTTPUnauthorizedException for an invalid token."""
     token = "invalid_token"
-    mocker.patch("app.api.deps.User.from_jwt", side_effect=InvalidTokenError)
+    mocker.patch("app.api.deps.User.from_jwt", side_effect=ValidationError)
     with pytest.raises(HTTPUnauthorizedException):
         await get_current_user(token)
 
