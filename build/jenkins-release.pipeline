@@ -9,11 +9,11 @@ pipeline {
 
 	parameters {
 		gitParameter branchFilter: 'origin/main',
-	        defaultValue: 'main',
-	        name: 'releaseTag',
-	        selectedValue: 'TOP',
-	        sortMode: 'DESCENDING_SMART',
-		tagFilter: 'v*',
+			defaultValue: 'main',
+			name: 'releaseTag',
+			selectedValue: 'TOP',
+			sortMode: 'DESCENDING_SMART',
+			tagFilter: 'v*',
 	        type: 'PT_TAG',
 	        requiredParameter: true,
 			useRepository: 'https://github.com/percona/SEP.git'
@@ -36,6 +36,11 @@ pipeline {
 			name: 'pushImage',
 			defaultValue: true,
 			description: 'Push the image to the registry'
+		)
+		booleanParam(
+			name: 'pushImageDocker',
+			defaultValue: false,
+			description: 'Push the image to the Docker registry'
 		)
 	}
 
@@ -87,7 +92,8 @@ pipeline {
 					[$class: 'StringParameterValue', name: 'releaseTag', value: "${env.GIT_COMMIT_SHA}"],
 					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
 					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")],
-					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")]
+					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")],
+					[$class: 'BooleanParameterValue', name: 'pushImageDocker', value: Boolean.valueOf("${params.pushImageDocker}")]
 				], propagate: true, wait: true
 			}
 		}
