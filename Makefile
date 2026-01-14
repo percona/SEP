@@ -61,7 +61,7 @@ djlint: venv
 
 lint: ruff djlint
 
-audit: run-pre-commit bandit pip-audit
+audit: bandit pip-audit
 
 run-pre-commit: venv
 	@"${VENV_BIN}"/pre-commit run --all-files
