@@ -30,6 +30,8 @@ jobs:
         uses: ./.github/actions/setup-python-job
 
       - name: Perform pre-commit checks
+        env:
+          POETRY: poetry
         run: |
           make run-pre-commit
 
