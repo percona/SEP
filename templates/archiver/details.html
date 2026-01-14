@@ -54,8 +54,14 @@
         <tbody>
             <tr>
                 <td>{{ task.hostname }}</td>
-                <td>{{ task.source_table }}  {{ task.source_query }}</td>
-                <td>{{ task.dest_table }} {{ task.dest_file }}</td>
+                <td>
+                    {% if task.source_table %}{{ task.source_table }}{% endif %}
+                    {% if task.source_query %}{{ task.source_query }}{% endif %}
+                </td>
+                <td>
+                    {% if task.dest_table %}{{ task.dest_table }}{% endif %}
+                    {% if task.dest_file %}{{ task.dest_file }}{% endif %}
+                </td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
                 <td>{{ user_id_to_username.get(task["created_by"], task["created_by"]) or '' }}</td>
