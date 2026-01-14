@@ -25,7 +25,7 @@ APPS=tasks inventory sep
 venv: pyproject.toml poetry.lock
 	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
 	@"${PIP}" install --no-cache ${START_PKGS};
-	@source "${VENV_BIN}"/activate; "${POETRY}" install --with audit
+	@source "${VENV_BIN}"/activate; "${POETRY}" install --all-extras --all-groups
 
 build: venv app/
 	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
@@ -67,7 +67,6 @@ run-pre-commit: venv
 	@"${VENV_BIN}"/pre-commit run --all-files
 
 pip-audit: venv
-	@"${POETRY}" install --all-extras --all-groups
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off
 
 bandit: venv
