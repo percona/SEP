@@ -2272,14 +2272,9 @@ class Xtrabackup(Backup):
             xtrabackup_cmd.append('--slave-info')
 
         if self.builtin_kill:
-            # Check xtrabackup version for this feature
-            if Version(version) >= Version('2.1'):
-                xtrabackup_cmd.append('--kill-long-queries-timeout=%s' % (self.builtin_kill_timeout,))
-                xtrabackup_cmd.append('--kill-long-query-type=%s' % (self.builtin_kill_type,))
-                self.logger.info('Using built-in kill queries with xtrabackup %s', version)
-            else:
-                self.logger.warn('Built-in kill not available with xtrabackup %s. '
-                                 'Please consider to upgrade to >=2.1', version)
+            xtrabackup_cmd.append('--kill-long-queries-timeout=%s' % (self.builtin_kill_timeout,))
+            xtrabackup_cmd.append('--kill-long-query-type=%s' % (self.builtin_kill_type,))
+            self.logger.info('Using built-in kill queries with xtrabackup %s', version)
 
         self._define_incremental_options()
         if self.incremental:

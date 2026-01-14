@@ -76,6 +76,7 @@ async def build_archives_task_payload(
         ),
     }
 
+    schema = None
     if form.source_db_id is not None:
         schema = await get_created_entity(
             inventory_api,
@@ -93,15 +94,20 @@ async def build_archives_task_payload(
             schema_id=schema.id,
         )
         purge_item_data["source_table"] = source_table.name
+    elif source_db := form.source_db_name.rstrip():
+        purge_item_data["source_db"] = source_db
+        if source_table := form.source_table_name.rstrip():
+            purge_item_data["source_table"] = source_table
 
     if form.dest_table_id is not None:
         dest_table = await get_created_entity(
             inventory_api,
             SyncInventoryEntityTypeEnum.TABLE,
             form.dest_table_id,
-            schema_id=schema.id,
         )
         purge_item_data["dest_table"] = dest_table.name
+    elif dest_table := form.dest_table_name.rstrip():
+        purge_item_data["dest_table"] = dest_table
     elif form.dest_file is not None:
         purge_item_data["dest_file"] = form.dest_file
 
