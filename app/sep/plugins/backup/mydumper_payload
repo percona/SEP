@@ -1697,15 +1697,19 @@ class MyDumperRunner(multiprocessing.Process):
         for server_data in servers:
             bkp = MyDumper(server_data, logger=self.logger)
             try:
+                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=1)
                 bkp.run()
+                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=0)
             except BackupError as exc:
                 self.logger.exception(exc.message)
                 self.logger.exception("Backup failed for this host.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
                 sys.exit(1)
             except:
                 self.logger.exception("Unhandled exception occurred.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
                 sys.exit(1)
 
             logging_set_host(None, LOGGING_NAME)
