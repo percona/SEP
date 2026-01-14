@@ -1809,19 +1809,7 @@ class MyDumper(Backup):
         # Check mydumper version for schemas support
         if self.mydumper_for_schemas:
             version = self._get_version()
-            try:
-                if version and Version(version) >= Version("0.9"):
-                    self.logger.info("Using mydumper %s for schemas", version)
-                else:
-                    self.mydumper_for_schemas = False
-                    self.logger.info(
-                        "mydumper %s does not support schemas. "
-                        "Please consider upgrading to >=0.9",
-                        version if version else "unknown",
-                    )
-            except ValueError as err:
-                self.logger.exception("Failed to parse the mydumper version")
-                raise BackupError("Invalid mydumper version") from err
+            self.logger.info('Using mydumper %s for schemas', version)
 
         if not self.mydumper_for_schemas:
             raise BackupError("MYDUMPER_SCHEMAS has been disabled, please enable it")
