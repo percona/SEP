@@ -974,6 +974,7 @@ class BaseBackup:
         backup_code: str | None = None,
         alias: str | None = None,
         upload: bool | None = None,
+        backup_running: int | None = None,
     ) -> None:
         """Write backup or restore status to textfile collector for Prometheus.
 
@@ -981,6 +982,7 @@ class BaseBackup:
         :param backup_code: Backup code (if not provided, uses self.backup_code).
         :param alias: Host alias (if not provided, uses self.alias).
         :param upload: Whether upload is indicated (not fully used).
+        :param backup_running: Whether backup is running (0 or 1).
         """
         if backup_code is None:
             backup_code = self.backup_code
@@ -1007,8 +1009,25 @@ class BaseBackup:
         metrics_text = (
             f"# HELP msp_{backup_restore}_status The status of the job\n"
             f"# TYPE msp_{backup_restore}_status Untyped\n"
+        )
+
+        # Add backup_running metric help if provided
+        if backup_running is not None:
+            metrics_text += (
+                f"# HELP msp_{backup_restore}_running The status of the backup job\n"
+                f"# TYPE msp_{backup_restore}_running Untyped\n"
+            )
+
+        metrics_text += (
             f"# HELP msp_{backup_restore}_last_report_ts The Last Report Time\n"
             f"# TYPE msp_{backup_restore}_last_report_ts Untyped\n"
+        )
+
+        # Now add the metric values
+        if backup_running is not None:
+            metrics_text += f'msp_{backup_restore}_running{{type="{backup_type}", alias="{alias}"}} {backup_running}\n'
+
+        metrics_text += (
             f'msp_{backup_restore}_status{{type="{backup_type}", alias="{alias}", encryption="{encryption_val}", '
             f'backup_id="{backup_id_val}", start_time="{start_time_val}", end_time="{end_time_val}"'
         )
@@ -1766,6 +1785,7 @@ class S3UploadProvider:
         self.fake_s3_upload = settings.get("FAKE_S3_UPLOAD")
         self.s3_limit_rate = settings.get("S3_LIMIT_RATE")
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
+        self.awscli_s3_upload_extra_args = settings.get('AWSCLI_S3_UPLOAD_EXTRA_ARGS')
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
         self.logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
@@ -1840,6 +1860,12 @@ class S3UploadProvider:
                     "StorageClass": self.s3_storage_class,
                     "ServerSideEncryption": "AES256",
                 }
+
+                if self.awscli_s3_upload_extra_args:
+                    for arg in self.awscli_s3_upload_extra_args.split():
+                        if "=" in arg:
+                            arg_key, arg_value = arg.split("=", 1)
+                            extra_args[arg_key] = arg_value
 
                 self.logger.info(
                     "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
@@ -1947,14 +1973,18 @@ class XtraBackupRunner(multiprocessing.Process):
                 bkp = Xtrabackup(server_data, logger=self.logger)
                 # Catch exceptions so we can continue with other servers.
                 try:
+                    bkp.textfile_collector_write_status(STATUS_OK, backup_running=1)
                     bkp.run()
+                    bkp.textfile_collector_write_status(STATUS_OK, backup_running=0)
                 except BackupError as exc:
                     self.logger.error(exc.message)
                     self.logger.error('Backup failed for this host.')
                     bkp.notify(STATUS_CRITICAL, exc.message)
+                    bkp.textfile_collector_write_status(STATUS_CRITICAL, backup_running=0)
                     sys.exit(1)
                 except Exception:
                     self.logger.exception('Unhandled exception occurred.')
+                    bkp.textfile_collector_write_status(STATUS_CRITICAL, backup_running=0)
                     sys.exit(1)
 
                 logging_set_host(None, 'xtrabackup.log')
@@ -2250,14 +2280,9 @@ class Xtrabackup(Backup):
             xtrabackup_cmd.append('--slave-info')
 
         if self.builtin_kill:
-            # Check xtrabackup version for this feature
-            if Version(version) >= Version('2.1'):
-                xtrabackup_cmd.append('--kill-long-queries-timeout=%s' % (self.builtin_kill_timeout,))
-                xtrabackup_cmd.append('--kill-long-query-type=%s' % (self.builtin_kill_type,))
-                self.logger.info('Using built-in kill queries with xtrabackup %s', version)
-            else:
-                self.logger.warn('Built-in kill not available with xtrabackup %s. '
-                                 'Please consider to upgrade to >=2.1', version)
+            xtrabackup_cmd.append('--kill-long-queries-timeout=%s' % (self.builtin_kill_timeout,))
+            xtrabackup_cmd.append('--kill-long-query-type=%s' % (self.builtin_kill_type,))
+            self.logger.info('Using built-in kill queries with xtrabackup %s', version)
 
         self._define_incremental_options()
         if self.incremental:

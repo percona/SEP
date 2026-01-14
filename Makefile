@@ -68,7 +68,7 @@ run-pre-commit: venv
 
 pip-audit: venv
 	@"${POETRY}" install --all-extras --all-groups
-	@"${POETRY}" run pip-audit --verbose --progress-spinner=off --ignore-vuln GHSA-4xh5-x5gv-qwph
+	@"${POETRY}" run pip-audit --verbose --progress-spinner=off
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app

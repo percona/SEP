@@ -49,6 +49,13 @@
         max-height: 0;
         pointer-events: none;
     }
+
+    #source_db_name_field,
+    #source_table_name_field,
+    #dest_table_name_field {
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+    }
 </style>
 <form id="edit-task-form"
       class="edit-task-form window"
@@ -163,28 +170,67 @@
                         </div>
                     </div>
                     <br>
-                    <div style=" display: flex; align-items: center; flex-wrap: wrap ">
-                        <div class="select">
-                            {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
-                            <label for="source_db_id" title="{{ source_db_id_title }}">
-                                <span class="material-symbols-outlined">arrow_drop_down</span>
-                                <span class="label">Schema</span>
-                                <select id="source_db_id" name="source_db_id" class="validate" required>
-                                    <option value="">Select a schema</option>
-                                </select>
-                            </label>
+                    <div class="field">
+                        <label for="use_manual_input_source"
+                               title="Toggle to manually type source schema and table even if inventory exists.">
+                            Manual input (Source)
+                        </label>
+                        <label class="checkbox" style="width: auto;">
+                            <input type="checkbox"
+                                   id="use_manual_input_source"
+                                   name="use_manual_input_source" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Type schema/table</span>
+                        </label>
+                    </div>
+                    <div>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 1em">
+                            <div class="select">
+                                {% set source_db_id_title = "Select the source database schema from which data will be purged." %}
+                                <label for="source_db_id" title="{{ source_db_id_title }}">
+                                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                                    <span class="label">Schema</span>
+                                    <select id="source_db_id" name="source_db_id" class="validate" disabled>
+                                        <option value="">Select a schema</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="select" id="source_db_name_field" style="display:none;">
+                                <label for="source_db_name" title="Type the source database schema name.">
+                                    <span class="label">Schema</span>
+                                    <input type="text"
+                                           id="source_db_name"
+                                           name="source_db_name"
+                                           class="validate"
+                                           placeholder="database_name" />
+                                </label>
+                            </div>
                         </div>
                         {% set source_table_id_title = "Select the source table from which data will be purged." %}
-                        <div class="select">
-                            <label for="source_table_id" title="{{ source_table_id_title }}">
-                                <span class="material-symbols-outlined">arrow_drop_down</span>
-                                <span class="label">Table</span>
-                                <select id="source_table_id" name="source_table_id" class="validate" required>
-                                    <option value="">Select a table</option>
-                                </select>
-                            </label>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 1em">
+                            <div class="select">
+                                <label for="source_table_id" title="{{ source_table_id_title }}">
+                                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                                    <span class="label">Table</span>
+                                    <select id="source_table_id" name="source_table_id" class="validate" disabled>
+                                        <option value="">Select a table</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="select" id="source_table_name_field" style="display:none;">
+                                <label for="source_table_name" title="Type the source table name.">
+                                    <span class="label">Table</span>
+                                    <input type="text"
+                                           id="source_table_name"
+                                           name="source_table_name"
+                                           class="validate"
+                                           placeholder="table_name" />
+                                </label>
+                            </div>
                         </div>
-                        <br>
                         <div id="source_query_container"
                              style="width: fit-content;
                                     margin-left: 1em;
@@ -320,26 +366,46 @@
                 <br>
                 <fieldset id="destination_fieldset">
                     <legend>Destination details</legend>
-                    <div id="destination_container"
-                         style="display: flex;
-                                align-items: center;
-                                flex-wrap: wrap">
+                    <div class="field" id="dest_manual_input_container">
+                        <label for="use_manual_input_dest"
+                               title="Toggle to manually type destination table even if inventory exists.">
+                            Manual input (Destination)
+                        </label>
+                        <label class="checkbox" style="width: auto;">
+                            <input type="checkbox"
+                                   id="use_manual_input_dest"
+                                   name="use_manual_input_dest" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Type table</span>
+                        </label>
+                    </div>
+                    <div id="destination_container">
                         {% set dest_table_id_title = "Select the destination table for the archived data." %}
-                        <div class="select">
-                            <label for="dest_table_id" title="{{ dest_table_id_title }}">
-                                <span class="material-symbols-outlined">arrow_drop_down</span>
-                                <span class="label">Destination Database</span>
-                                <select id="dest_table_id"
-                                        name="dest_table_id"
-                                        class="validate"
-                                        disabled
-                                        required>
-                                    <option value="">Select a table</option>
-                                </select>
-                            </label>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 1em">
+                            <div class="select">
+                                <label for="dest_table_id" title="{{ dest_table_id_title }}">
+                                    <span class="material-symbols-outlined">arrow_drop_down</span>
+                                    <span class="label">Destination Database</span>
+                                    <select id="dest_table_id" name="dest_table_id" class="validate" disabled>
+                                        <option value="">Select a table</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="select" id="dest_table_name_field" style="display:none;">
+                                <label for="dest_table_name" title="Type the destination table name.">
+                                    <span class="label">Destination Table</span>
+                                    <input type="text"
+                                           id="dest_table_name"
+                                           name="dest_table_name"
+                                           class="validate"
+                                           placeholder="table_name" />
+                                </label>
+                            </div>
                         </div>
                         <div id="dest_file_container" style="width: fit-content; margin-top: 1em;">
-                            &nbsp; &nbsp; &nbsp; &nbsp;
                             <label>OR</label>
                             {% set dest_file_title = "Type the file path where the archived data will be stored." %}
                             <label for="dest_file" title="{{ dest_file_title }}">
@@ -396,8 +462,22 @@
       };
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('source_db_id');
+    const schemaSelectContainer = schemaSelect ? schemaSelect.closest('.select') : null;
+    const schemaSelectParent = schemaSelectContainer ? schemaSelectContainer.parentElement : null;
     const sourceTableSelect = document.getElementById('source_table_id');
+    const sourceTableSelectContainer = sourceTableSelect ? sourceTableSelect.closest('.select') : null;
+    const sourceTableSelectParent = sourceTableSelectContainer ? sourceTableSelectContainer.parentElement : null;
+    const sourceDbNameInput = document.getElementById('source_db_name');
+    const sourceTableNameInput = document.getElementById('source_table_name');
+    const sourceDbNameField = document.getElementById('source_db_name_field');
+    const sourceTableNameField = document.getElementById('source_table_name_field');
     const destTableSelect = document.getElementById('dest_table_id');
+    const destTableSelectContainer = destTableSelect ? destTableSelect.closest('.select') : null;
+    const destTableNameInput = document.getElementById('dest_table_name');
+    const destTableNameField = document.getElementById('dest_table_name_field');
+    const manualInputToggleSource = document.getElementById('use_manual_input_source');
+    const manualInputToggleDest = document.getElementById('use_manual_input_dest');
+    const manualInputSourceContainer = manualInputToggleSource ? manualInputToggleSource.closest('.field') : null;
     const dstFileInput = document.getElementById('dest_file');
     const swapDropSelect = document.getElementById('swap_drop');
     const destinationFieldset = document.getElementById('destination_fieldset');
@@ -405,6 +485,7 @@
     const srcQueryInput = document.getElementById('source_query');
     const srcQueryContainer = document.getElementById('source_query_container');
     const destinationContainer = document.getElementById('destination_container');
+    const destManualInputContainer = document.getElementById('dest_manual_input_container');
     const deleteDataContainer = document.getElementById('delete_data_container');
     const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
@@ -417,6 +498,77 @@
     const purgeConfigOptionsContainer = document.getElementById('purge_options_container');
     const form = document.getElementById('edit-task-form');
     const editButton = form.querySelector('button[type="submit"]');
+
+    let useManualInputSource = false;
+    let useManualInputDest = false;
+
+    function setManualInputSource(enabled, forceToggleChecked) {
+        useManualInputSource = enabled;
+        if (forceToggleChecked) {
+            manualInputToggleSource.checked = enabled;
+        }
+        if (enabled) {
+            sourceDbNameField.style.display = 'flex';
+            sourceTableNameField.style.display = 'flex';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'none';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'none';
+            schemaSelect.value = "";
+            sourceTableSelect.value = "";
+            schemaSelect.disabled = true;
+            sourceTableSelect.disabled = true;
+            document.getElementById("source_db_id_hidden")?.remove();
+            document.getElementById("source_table_id_hidden")?.remove();
+            if (source_data.schema) {
+                sourceDbNameInput.value = source_data.schema;
+            }
+            if (source_data.table) {
+                sourceTableNameInput.value = source_data.table;
+            }
+        } else {
+            sourceDbNameField.style.display = 'none';
+            sourceTableNameField.style.display = 'none';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'flex';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'flex';
+            if (srcQueryInput.value === '') {
+                schemaSelect.disabled = false;
+            }
+            sourceTableSelect.disabled = true;
+        }
+        toggleSchemaAndTable();
+        toggleSourceQueryInput();
+    }
+
+    function setManualInputDest(enabled, forceToggleChecked) {
+        useManualInputDest = enabled;
+        if (forceToggleChecked) {
+            manualInputToggleDest.checked = enabled;
+        }
+        if (enabled) {
+            destTableNameField.style.display = 'flex';
+            if (destTableSelectContainer) destTableSelectContainer.style.display = 'none';
+            destTableSelect.value = "";
+            destTableSelect.disabled = true;
+            document.getElementById("dest_table_id_hidden")?.remove();
+            if (source_data.dest_table) {
+                destTableNameInput.value = source_data.dest_table;
+            }
+        } else {
+            destTableNameField.style.display = 'none';
+            if (destTableSelectContainer) destTableSelectContainer.style.display = 'flex';
+            if (!dstFileInput.value) {
+                destTableSelect.disabled = false;
+            }
+        }
+        updateDestinationFieldset();
+    }
+
+    manualInputToggleSource.addEventListener('change', function() {
+        setManualInputSource(this.checked, false);
+    });
+
+    manualInputToggleDest.addEventListener('change', function() {
+        setManualInputDest(this.checked, false);
+    });
 
     function populateSchemas(selectedService) {
         schemaSelect.innerHTML = '<option value="">Select a schema</option>';
@@ -548,42 +700,164 @@
     function updateDestinationFieldset() {
         if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
             destinationContainer.classList.add('hidden');
+            if (destManualInputContainer) destManualInputContainer.style.display = 'none';
             destTableSelect.disabled = true;
+            destTableNameInput.disabled = true;
             dstFileInput.disabled = true;
+            destTableSelect.removeAttribute('required');
+            destTableNameInput.removeAttribute('required');
+            removeHiddenInput('dest_table_id');
+            removeHiddenInput('dest_file');
+            destTableSelect.removeAttribute('name');
+            destTableNameInput.removeAttribute('name');
+            if (destTableSelectContainer) destTableSelectContainer.style.display = 'none';
+            destTableNameField.style.display = 'none';
         } else {
             destinationContainer.classList.remove('hidden');
-            if (!dstFileInput.value)
-                destTableSelect.disabled = false;
-            if (!destTableSelect.value)
-                dstFileInput.disabled = false;
+            const hasDestFile = dstFileInput.value.trim() !== '';
+            const hasDestTable = useManualInputDest
+                ? (destTableNameInput.value.trim() !== '')
+                : (destTableSelect.value !== '');
 
-            destTableSelect.setAttribute('name', 'dest_table_id');
-            dstFileInput.setAttribute('name', 'dest_file');
+            if (hasDestFile) {
+                if (destManualInputContainer) destManualInputContainer.style.display = 'none';
+            } else {
+                if (destManualInputContainer) destManualInputContainer.style.display = 'block';
+            }
+
+            if (useManualInputDest) {
+                destTableSelect.disabled = true;
+                destTableSelect.removeAttribute('required');
+                destTableSelect.removeAttribute('name');
+                if (destTableSelectContainer) destTableSelectContainer.style.display = 'none';
+
+                if (hasDestFile) {
+                    destTableNameInput.disabled = true;
+                    destTableNameInput.removeAttribute('required');
+                    destTableNameInput.removeAttribute('name');
+                    destTableNameField.style.display = 'none';
+                } else {
+                    destTableNameInput.disabled = false;
+                    destTableNameInput.setAttribute('required', 'required');
+                    destTableNameInput.name = 'dest_table_name';
+                    destTableNameField.style.display = 'flex';
+                }
+            } else {
+                destTableNameInput.disabled = true;
+                destTableNameInput.removeAttribute('required');
+                destTableNameInput.removeAttribute('name');
+                destTableNameField.style.display = 'none';
+
+                if (hasDestFile) {
+                    destTableSelect.disabled = true;
+                    destTableSelect.removeAttribute('required');
+                    destTableSelect.removeAttribute('name');
+                    if (destTableSelectContainer) destTableSelectContainer.style.display = 'none';
+                } else {
+                    destTableSelect.disabled = false;
+                    destTableSelect.setAttribute('required', 'required');
+                    destTableSelect.setAttribute('name', 'dest_table_id');
+                    if (destTableSelectContainer) destTableSelectContainer.style.display = 'flex';
+                }
+            }
+
+            if (hasDestTable) {
+                dstFileInput.disabled = true;
+                dstFileInput.removeAttribute('name');
+                dstFileContainer.classList.add('hidden');
+            } else {
+                dstFileInput.disabled = false;
+                dstFileInput.setAttribute('name', 'dest_file');
+                dstFileContainer.classList.remove('hidden');
+            }
         }
+    }
+
+    function removeHiddenInput(inputName) {
+        const hiddenInput = document.querySelector(`input[type="hidden"][name="${inputName}"]`);
+        if (hiddenInput) {
+            hiddenInput.parentNode.removeChild(hiddenInput);
+        }
+    }
+
+    function addHiddenInput(inputElement) {
+        removeHiddenInput(inputElement.name);
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = inputElement.name;
+        hiddenInput.value = inputElement.value;
+        hiddenInput.id = `${inputElement.id}_hidden`;
+        inputElement.insertAdjacentElement('afterend', hiddenInput);
     }
 
     function toggleSchemaAndTable() {
         if (srcQueryInput.value.trim() !== '') {
             schemaSelect.disabled = true;
             sourceTableSelect.disabled = true;
+            sourceDbNameInput.disabled = true;
+            sourceTableNameInput.disabled = true;
             schemaSelect.removeAttribute('required');
             sourceTableSelect.removeAttribute('required');
+            sourceDbNameInput.removeAttribute('required');
+            sourceTableNameInput.removeAttribute('required');
             schemaSelect.value = '';
             sourceTableSelect.value = '';
+            sourceDbNameInput.value = '';
+            sourceTableNameInput.value = '';
             schemaSelect.removeAttribute('name');
             sourceTableSelect.removeAttribute('name');
+            sourceDbNameInput.removeAttribute('name');
+            sourceTableNameInput.removeAttribute('name');
+            if (schemaSelectParent) schemaSelectParent.style.display = 'none';
+            if (sourceTableSelectParent) sourceTableSelectParent.style.display = 'none';
+            if (manualInputSourceContainer) manualInputSourceContainer.style.display = 'none';
+        } else if (useManualInputSource) {
+            schemaSelect.disabled = true;
+            sourceTableSelect.disabled = true;
+            sourceDbNameInput.disabled = false;
+            sourceTableNameInput.disabled = false;
+            schemaSelect.removeAttribute('required');
+            sourceTableSelect.removeAttribute('required');
+            sourceDbNameInput.setAttribute('required', 'required');
+            sourceTableNameInput.setAttribute('required', 'required');
+            sourceDbNameInput.name = 'source_db_name';
+            sourceTableNameInput.name = 'source_table_name';
+            if (schemaSelectParent) schemaSelectParent.style.display = 'flex';
+            if (sourceTableSelectParent) sourceTableSelectParent.style.display = 'flex';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'none';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'none';
+            if (sourceDbNameField) sourceDbNameField.style.display = 'flex';
+            if (sourceTableNameField) sourceTableNameField.style.display = 'flex';
+            if (manualInputSourceContainer) manualInputSourceContainer.style.display = 'block';
         } else {
             schemaSelect.disabled = false;
             sourceTableSelect.disabled = false;
+            sourceDbNameInput.disabled = true;
+            sourceTableNameInput.disabled = true;
             schemaSelect.setAttribute('required', 'required');
             sourceTableSelect.setAttribute('required', 'required');
+            sourceDbNameInput.removeAttribute('required');
+            sourceTableNameInput.removeAttribute('required');
             schemaSelect.name = 'source_db_id';
             sourceTableSelect.name = 'source_table_id';
+            sourceDbNameInput.removeAttribute('name');
+            sourceTableNameInput.removeAttribute('name');
+            if (schemaSelectParent) schemaSelectParent.style.display = 'flex';
+            if (sourceTableSelectParent) sourceTableSelectParent.style.display = 'flex';
+            if (schemaSelectContainer) schemaSelectContainer.style.display = 'flex';
+            if (sourceTableSelectContainer) sourceTableSelectContainer.style.display = 'flex';
+            if (sourceDbNameField) sourceDbNameField.style.display = 'none';
+            if (sourceTableNameField) sourceTableNameField.style.display = 'none';
+            if (manualInputSourceContainer) manualInputSourceContainer.style.display = 'block';
         }
     }
 
     function toggleSourceQueryInput() {
-        if (schemaSelect.value !== '' && sourceTableSelect.value !== '') {
+        const hasSchemaTable = useManualInputSource
+            ? (sourceDbNameInput.value.trim() !== '' && sourceTableNameInput.value.trim() !== '')
+            : (schemaSelect.value !== '' && sourceTableSelect.value !== '');
+
+        if (hasSchemaTable) {
             srcQueryInput.disabled = true;
             srcQueryInput.removeAttribute('required');
             srcQueryInput.value = '';
@@ -619,7 +893,15 @@
         }
     }
     function toggleDstFileContainer() {
-        if (destTableSelect.value !== '') {
+        if (destinationContainer.classList.contains('hidden')) {
+            return;
+        }
+
+        const hasDestTable = useManualInputDest
+            ? (destTableNameInput.value.trim() !== '')
+            : (destTableSelect.value !== '');
+
+        if (hasDestTable) {
             dstFileContainer.classList.add('hidden');
             dstFileInput.disabled = true;
             dstFileInput.value = '';
@@ -632,13 +914,31 @@
     }
 
     function toggleDestTableSelect() {
-        if (dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+        const shouldDisable = dstFileInput.value.trim() !== '' || swapDropSelect.value === '1' || prgPurgeCheckbox.checked;
+
+        if (shouldDisable) {
             destTableSelect.disabled = true;
             destTableSelect.value = '';
             destTableSelect.removeAttribute('name');
+            if (destTableSelectContainer) destTableSelectContainer.style.display = 'none';
+            removeHiddenInput('dest_table_id');
+
+            if (useManualInputDest) {
+                destTableNameInput.disabled = true;
+                destTableNameInput.value = '';
+                destTableNameInput.removeAttribute('name');
+                destTableNameInput.removeAttribute('required');
+                destTableNameField.style.display = 'none';
+            }
         } else {
-            destTableSelect.disabled = false;
-            destTableSelect.setAttribute('name', 'dest_table_id');
+            if (useManualInputDest) {
+                destTableNameInput.disabled = false;
+                destTableNameField.style.display = 'flex';
+            } else {
+                destTableSelect.disabled = false;
+                destTableSelect.setAttribute('name', 'dest_table_id');
+                if (destTableSelectContainer) destTableSelectContainer.style.display = 'flex';
+            }
         }
     }
 
@@ -720,10 +1020,29 @@
 
     destTableSelect.addEventListener('change', function() {
         toggleDstFileContainer();
+        updateDestinationFieldset();
+    });
+
+    destTableNameInput.addEventListener('input', function() {
+        toggleDstFileContainer();
+        updateDestinationFieldset();
+    });
+
+    sourceDbNameInput.addEventListener('input', function() {
+        if (useManualInputSource) {
+            toggleSourceQueryInput();
+        }
+    });
+
+    sourceTableNameInput.addEventListener('input', function() {
+        if (useManualInputSource) {
+            toggleSourceQueryInput();
+        }
     });
 
     dstFileInput.addEventListener('input', function() {
         toggleDestTableSelect();
+        updateDestinationFieldset();
     });
 
     useIndexInput.addEventListener('input', function() {
@@ -848,6 +1167,13 @@
         if (connectToSelect.options.length != 0) {
             const singleHost = connectToSelect.value;
             populateSchemas(singleHost);
+        }
+        // Enable manual input if schema or table is unknown
+        if (matched.schemaId === "-1" || matched.tableId === "-1") {
+            setManualInputSource(true, true);
+        }
+        if (matched.destTableId === "-2") {
+            setManualInputDest(true, true);
         }
         updateCreateButtonState();
         updateDestinationFieldset();
