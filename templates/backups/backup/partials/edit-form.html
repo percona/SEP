@@ -841,6 +841,18 @@
                         </label>
                         <br>
                         <br>
+                        {% set awscli_s3_upload_extra_args_title = "Additional ExtraArgs to pass to AWS S3 upload (e.g. ChecksumAlgorithm=CRC32C)" %}
+                        <label for="awscli_s3_upload_extra_args"
+                               title="{{ awscli_s3_upload_extra_args_title }}">
+                            AWSCLI S3 Upload Extra Args (optional):
+                            <input type="text"
+                                   id="awscli_s3_upload_extra_args"
+                                   name="awscli_s3_upload_extra_args"
+                                   value="{{ task.awscli_s3_upload_extra_args or '' }}"
+                                   placeholder="e.g. ChecksumAlgorithm=CRC32C" />
+                        </label>
+                        <br>
+                        <br>
                         {% set skip_s3_safety_check_title = "Disable safety checks before uploading backups to S3. Use with caution to avoid accidental data loss." %}
                         <label class="checkbox"
                                for="skip_s3_safety_check"
@@ -1035,6 +1047,10 @@
             s3BucketInput.required = false;
             s3BucketInput.value = '';
             document.getElementById('s3_storage_class').value = '';
+            const awscliExtraArgsInput = document.getElementById('awscli_s3_upload_extra_args');
+            if (awscliExtraArgsInput) {
+                awscliExtraArgsInput.value = '';
+            }
             document.getElementById('skip_s3_safety_check').checked = false;
             toggleS3Btn.textContent = "+ Add S3 upload";
         }
