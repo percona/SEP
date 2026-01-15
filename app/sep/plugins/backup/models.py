@@ -120,6 +120,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     s3_bucket: RequiredStr | EmptyStrToNone = None
     s3_storage_class: RequiredStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
+    awscli_s3_upload_extra_args: RequiredStr | EmptyStrToNone = None
     rsync_path: RequiredStr | EmptyStrToNone = None
 
 
@@ -220,6 +221,9 @@ class BackupCreate(BackupConfigAll):
     :type s3_storage_class: RequiredStr | EmptyStrToNone
     :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
     :type skip_s3_safety_check: bool
+    :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
+        Example: "ChecksumAlgorithm=CRC32C".
+    :type awscli_s3_upload_extra_args: RequiredStr | EmptyStrToNone
     :param rsync_path: Remote destination path for Rsync transfers.
     :type rsync_path: RequiredStr | EmptyStrToNone
     :param task_name: The name of the backup task.

@@ -1649,7 +1649,15 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             include_args = '--include="%s*"' % info_file[self.backup_code]
         elif files_list:
             exclude_args = '--exclude="*"'
-            include_args = '--include-from=%s' % files_list
+            include_args = ''
+            try:
+                with open(files_list, 'r', encoding=sys.stdout.encoding) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            include_args += '--include="%s" ' % line
+            except Exception as e:
+                raise BackupError(f"Error reading files list: {e}")
         else:
             exclude_args = ""
             for path in kwargs.get('exclude', []):
@@ -2025,15 +2033,28 @@ class Binlog(Restore):
         self.logger.info('OK Copy Backup complete.')
 
     def _create_file_list(self):
-        """Creates a temp file with list of binlgos to download"""
+        """Creates a temp file with list of binlogs to download"""
         start_file_idx = self._get_binlog_index(self.start_file)
-        ls_cmd = [PYTHON_BIN, S3CMD_BIN, 'ls', os.path.join(self.backup_source, "")]
-        ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
         self.fd_list = tempfile.NamedTemporaryFile(mode='w+t')
+
+        if self.s3_tool == 'awscli':
+            cmd = [AWS_BIN, 's3', 'ls', os.path.join(self.backup_source, '')]
+        else:
+            cmd = [PYTHON_BIN, S3CMD_BIN, 'ls', os.path.join(self.backup_source, '')]
+        ls_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
         while line:
-            if self._get_binlog_index(line) >= start_file_idx:
-                self.fd_list.writelines('{0}\n'.format(line.split('/')[-1:][0]))
+            filename = None
+
+            if self.s3_tool == 'awscli':
+                parts = line.strip().split()
+                if len(parts) >= 4:
+                    filename = parts[-1]
+            else:
+                filename = line.split('/')[-1].strip()
+
+            if filename and self._get_binlog_index(filename) >= start_file_idx:
+                self.fd_list.writelines(f'{filename}\n')
             line = ls_proc.stdout.readline().decode(sys.stdout.encoding)
         self.fd_list.flush()
         return self.fd_list.name
