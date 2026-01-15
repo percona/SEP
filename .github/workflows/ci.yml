@@ -25,7 +25,6 @@ jobs:
     steps:
       - name: Fail if PR is labeled as 'do not merge'
         run: |
-          echo "This PR is labeled as 'do not merge' and cannot be merged'
           exit 1
 
   precommit:
