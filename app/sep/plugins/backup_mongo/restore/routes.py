@@ -33,7 +33,12 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.get(
+    "/",
+    dependencies=[IsAuthenticated],
+    response_class=HTMLResponse,
+    name="pbm_restores_index",
+)
 async def restores_index(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_restores_index_context)],
@@ -210,5 +215,5 @@ async def restores_delete(
 ) -> RedirectResponse:
     """Delete restores task."""
     await tasks_api.delete(f"/{task.name}")
-    task_path = request.url_for("restores_index")
+    task_path = request.url_for("pbm_restores_index")
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
