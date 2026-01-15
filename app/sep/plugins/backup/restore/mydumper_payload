@@ -895,7 +895,7 @@ class BaseBackup(object):
         return True
 
     # write backup notification
-    def textfile_collector_write_status(self, backup_status, backup_code=None, alias=None, upload=None):
+    def textfile_collector_write_status(self, backup_status, backup_code=None, alias=None, upload=None, backup_running=None):
         """Reporting the status of a backup or a restore."""
         # msp_backup_status{type=xtrabackup, alias=alias1} 0|1
         # msp_backup_last_report_ts{type=xtrabackup, alias=alias1} 1231122341
@@ -924,7 +924,24 @@ class BaseBackup(object):
                         '# HELP msp_{backup_restore}_status The status of the job\n'
                         '# TYPE msp_{backup_restore}_status Untyped\n'
                         '# HELP msp_{backup_restore}_last_report_ts The Last Report Time\n'
-                        '# TYPE msp_{backup_restore}_last_report_ts Untyped\n'
+                        '# TYPE msp_{backup_restore}_last_report_ts Untyped\n'.format(backup_restore=backup_restore)
+                    )
+
+                    if backup_running is not None and backup_restore == "backup" and self.backup_code in ['M', 'X']:
+                        metrics_text += (
+                            '# HELP msp_{backup_restore}_running The status of the backup job\n'
+                            '# TYPE msp_{backup_restore}_running Untyped\n'
+                            'msp_{backup_restore}_running{{type="{backup_type}",'
+                            'backup_id="{backup_id}", alias="{alias}"}} {backup_running}\n'.format(
+                                backup_restore=backup_restore,
+                                backup_type=backup_type,
+                                backup_id=self.backup_uuid,
+                                alias=alias,
+                                backup_running=backup_running
+                            )
+                        )
+
+                    metrics_text += (
                         'msp_{backup_restore}_status{{type="{backup_type}", alias="{alias}",'
                         'encryption="{encryption}", backup_id="{backup_id}",'
                         ' start_time="{start_time}", end_time="{end_time}"'.format(

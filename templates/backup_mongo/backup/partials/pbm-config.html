@@ -1,3 +1,14 @@
+<style>
+    textarea {
+        width: 100%;
+        min-width: 400px;
+        font-family: monospace;
+        font-size: 0.9em;
+        padding: 0.5em;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
+</style>
 <h5>PBM Configuration</h5>
 <input type="hidden" name="backup_config" value="{}">
 <fieldset>
@@ -12,21 +23,29 @@
             -->
         </select>
     </div>
-    <div id="s3_options">
+    <div id="s3_options" style="display: none;">
         <label for="s3_provider">S3 Provider:</label>
         <select id="s3_provider" name="backup_config.storage.s3.provider">
             <option value="aws">AWS</option>
             <option value="minio">MinIO</option>
             <option value="gcp">GCP</option>
         </select>
-        <label for="s3_region">Region:</label>
-        <input type="text" id="s3_region" name="storage_s3_region">
-        <label for="s3_bucket">Bucket Name:</label>
-        <input type="text" id="s3_bucket" name="storage_s3_bucket">
-        <label for="s3_prefix">Prefix (Optional):</label>
-        <input type="text" id="s3_prefix" name="storage_s3_prefix">
-        <label for="s3_endpoint_url">Endpoint URL (Optional):</label>
-        <input type="text" id="s3_endpoint_url" name="storage_s3_endpoint_url">
+        <div id="s3_region_field">
+            <label id="s3_region_label" for="s3_region">Region:</label>
+            <input type="text" id="s3_region" name="storage_s3_region">
+        </div>
+        <div id="s3_bucket_field">
+            <label for="s3_bucket">Bucket Name:</label>
+            <input type="text" id="s3_bucket" name="storage_s3_bucket">
+        </div>
+        <div id="s3_endpoint_url_field">
+            <label id="s3_endpoint_url_label" for="s3_endpoint_url">Endpoint URL:</label>
+            <input type="text" id="s3_endpoint_url" name="storage_s3_endpoint_url">
+        </div>
+        <div id="s3_prefix_field">
+            <label id="s3_prefix_label" for="s3_prefix">Prefix (Optional):</label>
+            <input type="text" id="s3_prefix" name="storage_s3_prefix">
+        </div>
         <!-- Enabled this when requested, it requires dynamic entries
         <label for="s3_endpoint_url_map">Endpoint URL Map (Optional):</label>
         <input type="text" id="s3_endpoint_url_map" name="backup_config.storage.s3.endpoint_url_map">
@@ -111,27 +130,77 @@
         <option value="zstd">zstd</option>
     </select>
 </fieldset>
-<!--
 <fieldset>
     <legend>3. Backup Options</legend>
-    <label for="backup_priority">Node Priority for Backup (Comma-separated, Optional):</label>
-    <input type="text" id="backup_priority" name="backup_config.backup.priority">
-    <label for="backup_compression">Backup Compression:</label>
-    <select id="backup_compression" name="backup_config.backup.compression">
-        <option value="gzip">gzip</option>
-        <option value="snappy">snappy</option>
-        <option value="lz4">lz4</option>
-        <option value="s2">s2</option>
-        <option value="pgzip">pgzip</option>
-        <option value="zstd">zstd</option>
-    </select>
-    <label for="backup_compression_level">Backup Compression Level (Optional):</label>
-    <input type="number" id="backup_compression_level" name="backup_config.backup.compression_level">
-    <label for="backup_timeouts_starting_status">Starting Status Timeout (Seconds):</label>
-    <input type="number" id="backup_timeouts_starting_status" name="backup_config.backup.timeouts.starting_status">
-    <label for="backup_num_parallel_collections">Parallel Collections for Logical Backup:</label>
-    <input type="number" id="backup_num_parallel_collections" name="backup_config.backup.num_parallel_collections">
+    {% set backup_priority_title = "Node priority mapping for backups in YAML format. Example: \"localhost:28019\": 2.5" %}
+    <label for="backup_priority" title="{{ backup_priority_title }}">
+        Node Priority (YAML format, Optional):
+        <textarea id="backup_priority"
+                  name="backup_priority"
+                  rows="4"
+                  placeholder='Example: "localhost:28019": 2.5 "localhost:27018": 2.5 "localhost:27020": 2.0 "localhost:27017": 0.1'></textarea>
+    </label>
+    <br>
+    <br>
+    {% set backup_compression_title = "Compression method for backup snapshots. Default: s2" %}
+    <label for="backup_compression" title="{{ backup_compression_title }}">
+        Backup Compression:
+        <select id="backup_compression" name="backup_compression">
+            <option value="">Select compression method (default: s2)</option>
+            <option value="gzip">gzip</option>
+            <option value="snappy">snappy</option>
+            <option value="lz4">lz4</option>
+            <option value="s2">s2</option>
+            <option value="pgzip">pgzip</option>
+            <option value="zstd">zstd</option>
+        </select>
+    </label>
+    <br>
+    <br>
+    {% set backup_compression_level_title = "Compression level. Default depends on compression method. For zstd: 1-4 (default 2), for lz4: 1-16 (default 1), for gzip/pgzip: -1 to 9 (default -1)" %}
+    <label for="backup_compression_level"
+           title="{{ backup_compression_level_title }}">
+        Backup Compression Level (Optional):
+        <input type="number"
+               id="backup_compression_level"
+               name="backup_compression_level"
+               placeholder="Leave empty for default" />
+    </label>
+    <br>
+    <br>
+    {% set backup_timeouts_starting_status_title = "Wait time (in seconds) for PBM to start backups. Default: 33" %}
+    <label for="backup_timeouts_starting_status"
+           title="{{ backup_timeouts_starting_status_title }}">
+        Starting Status Timeout (Seconds, Optional):
+        <input type="number"
+               id="backup_timeouts_starting_status"
+               name="backup_timeouts_starting_status"
+               placeholder="Default: 33" />
+    </label>
+    <br>
+    <br>
+    {% set backup_oplog_span_min_title = "Duration (in minutes) of oplog slices saved with logical backup snapshot. Default: same as pitr.oplogSpanMin (10 minutes)" %}
+    <label for="backup_oplog_span_min" title="{{ backup_oplog_span_min_title }}">
+        Oplog Span (Minutes, Optional):
+        <input type="number"
+               id="backup_oplog_span_min"
+               name="backup_oplog_span_min"
+               step="0.1"
+               placeholder="Default: same as PITR oplogSpanMin" />
+    </label>
+    <br>
+    <br>
+    {% set backup_num_parallel_collections_title = "Number of parallel collections to process during logical backup. Default: number of CPU cores / 2" %}
+    <label for="backup_num_parallel_collections"
+           title="{{ backup_num_parallel_collections_title }}">
+        Parallel Collections for Logical Backup (Optional):
+        <input type="number"
+               id="backup_num_parallel_collections"
+               name="backup_num_parallel_collections"
+               placeholder="Default: CPU cores / 2" />
+    </label>
 </fieldset>
+<!--
 <fieldset>
     <legend>4. Restore Options</legend>
     <label for="restore_batch_size">Restore Batch Size:</label>
