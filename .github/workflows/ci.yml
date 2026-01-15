@@ -19,6 +19,14 @@ permissions:
   pull-requests: read
 
 jobs:
+  do-not-merge-fail:
+    if: contains(github.event.pull_request.labels.*.name, 'do not merge')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if PR is labeled as 'do not merge'
+        run: |
+          exit 1
+
   precommit:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
@@ -45,6 +53,7 @@ jobs:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     needs:
+      - do-not-merge-fail
       - python
     steps:
       - name: Checkout codebase
