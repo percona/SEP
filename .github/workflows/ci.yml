@@ -22,6 +22,8 @@ jobs:
   do-not-merge-fail:
     if: contains(github.event.pull_request.labels.*.name, 'do not merge')
     runs-on: ubuntu-latest
+    needs:
+      - build
     steps:
       - name: Fail if PR is labeled as 'do not merge'
         run: |
