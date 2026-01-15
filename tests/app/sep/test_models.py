@@ -102,7 +102,8 @@ class TestArchivesCreateModel:
     def test_validate_dest_file_or_dest_table_id(self):
         """Test that dest_table_id and dest_file are mutually exclusive with swap_drop."""
         with pytest.raises(
-            ValidationError, match="both dest_table_id and dest_file must be None"
+            ValidationError,
+            match="both dest_table_id/dest_table_name and dest_file must be None/empty",
         ):
             ArchivesCreate(
                 alias="task-alias",
@@ -121,7 +122,7 @@ class TestArchivesCreateModel:
         """
         with pytest.raises(
             ValidationError,
-            match="At least one of dest_file or dest_table_id must be set",
+            match="At least one of dest_file or dest_table_id/dest_table_name must be set",
         ):
             ArchivesCreate(
                 alias="task-alias",
@@ -165,7 +166,10 @@ class TestArchivesCreateModel:
                 where="id > 100",
             )
         error_message = str(exc_info.value)
-        assert "so source_db_id and source_table_id must be None" in error_message
+        assert (
+            "so source_db_id/source_table_id and source_db_name/source_table_name must be None/empty"
+            in error_message
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             ArchivesCreate(
@@ -177,7 +181,10 @@ class TestArchivesCreateModel:
                 where="id > 100",
             )
         error_message = str(exc_info.value)
-        assert "both source_db_id and source_table_id must be provided" in error_message
+        assert (
+            "either both source_db_id and source_table_id, or both source_db_name and source_table_name must be provided"
+            in error_message
+        )
 
     def test_validate_where_based_on_swap_drop(self):
         """Test that 'where' is set or unset based on the value of swap_drop."""
