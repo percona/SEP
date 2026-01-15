@@ -1702,7 +1702,7 @@ class MyDumperRunner(multiprocessing.Process):
             lock = FileLock(lockfile_name, timeout=600)
 
             try:
-                self.logger.info(f"Acquiring lock for {alias}")
+                self.logger.info("Acquiring lock for %s", alias)
                 should_exit = False
                 with lock:
                     bkp = MyDumper(server_data, logger=self.logger)
@@ -1716,7 +1716,7 @@ class MyDumperRunner(multiprocessing.Process):
                         bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
                         bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
                         should_exit = True
-                    except:
+                    except Exception:
                         self.logger.exception("Unhandled exception occurred.")
                         bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occurred.")
                         bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
@@ -1727,9 +1727,7 @@ class MyDumperRunner(multiprocessing.Process):
                 if should_exit:
                     sys.exit(1)
             except Timeout:
-                self.logger.warning(
-                    f"Another instance of mydumper backup for {alias} currently holds the lock."
-                )
+                self.logger.warning("Another instance of mydumper backup for %s currently holds the lock.", alias)
                 sys.exit(1)
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
