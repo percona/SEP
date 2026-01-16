@@ -325,6 +325,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     encoded_size = hex_size
             logger.debug(f"Final payload after compression and encoding: {len(payload)} -> {encoded_size} bytes (limit: 16384)")
             if encoded_size > 16384:
+                logger.warning(f"Payload size {encoded_size} exceeds Nomad limit of 16384 bytes")
             payload = encoded
 
         filtered_meta = (
