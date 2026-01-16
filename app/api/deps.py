@@ -20,7 +20,6 @@ from typing import Annotated
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
-from jwt import InvalidTokenError
 from pydantic import ValidationError
 
 from app.core.auth.exceptions import (
@@ -51,7 +50,7 @@ async def get_current_user(token: AuthToken) -> User:
     """
     try:
         user = await User.from_jwt(token)
-    except (InvalidTokenError, ValidationError):
+    except ValidationError:
         logger.exception("Failed to authenticate user")
         raise HTTPUnauthorizedException from None
     if not user.is_active:
