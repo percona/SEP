@@ -26,7 +26,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
-from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
@@ -301,7 +300,7 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
     try:
         await User.invalidate_oauth_token(access_token)
-    except (KeyError, InvalidTokenError, ValidationError):
+    except (KeyError, ValidationError):
         logger.debug("Failed to invalidate OAuth token", exc_info=True)
     return response
 

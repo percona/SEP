@@ -17,7 +17,7 @@ ENV FASTAPI_ENV production_docker
 RUN apk update && apk add --no-cache g++
 
 # Export requirements
-RUN pip install --no-cache-dir wheel poetry==2.1.2 poetry-plugin-export
+RUN pip install --no-cache-dir wheel poetry==2.2.1 poetry-plugin-export
 COPY ./pyproject.toml ./poetry.lock /usr/src/sep/
 RUN poetry export --with postgresql --with syncpostgresql --with redis --with spacy_en_model_sm -f requirements.txt --output requirements.txt
 

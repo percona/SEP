@@ -3,7 +3,6 @@
 import subprocess
 import os
 import sys
-import yaml
 
 def pbm_creds():
     """ PBM Credentials """
@@ -17,40 +16,21 @@ def pbm_creds():
 
     return creds
 
-def flatten_yaml_config(yaml_path):
-    """
-    Reads a YAML file and flattens it into a list of (dot-separated key, value) pairs for each end value.
-    """
-    def _flatten(d, parent_key=""):
-        items = []
-        for k, v in d.items():
-            new_key = f"{parent_key}.{k}" if parent_key else k
-            if isinstance(v, dict):
-                items.extend(_flatten(v, new_key))
-            else:
-                items.append(f'{new_key}={v}')
-        return items
-
-    with open(yaml_path, 'r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)
-    return _flatten(data)
-
 def pbm():
     """ PBM Config Payload """
 
     taskdir = os.environ['NOMAD_TASK_DIR']
-    # Remove the last dir if named 'local'
-    if os.path.basename(taskdir) == 'local':
-        taskdir = os.path.dirname(taskdir)
+    #if os.path.basename(taskdir) == 'local':
+    #    taskdir = os.path.dirname(taskdir)
 
     os.environ['PBM_MONGODB_URI'] = pbm_creds()
 
+    config_file = f'{taskdir}/script_config'
     cmd = ['pbm',
            'config',
+           '--file',
+           config_file
            ]
-
-    for setting in flatten_yaml_config(f'{taskdir}/script_config'):
-        cmd.extend(['--set', setting])
 
     try:
         proc = subprocess.Popen(cmd)
