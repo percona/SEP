@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 
 _ONE_MEBIBYTE = 1024 * 1024
 NOMAD_DEAD_JOB_STATUS = "dead"
-NOMAD_PAYLOAD_LIMIT = 16384  # Maximum payload size for Nomad 
+NOMAD_PAYLOAD_LIMIT = 16384  # Maximum payload size for Nomad
 
 
 class NomadAllocStatusEnum(StrEnum):
