@@ -236,6 +236,7 @@
                                     <option value="">Select a S3 Tool type</option>
                                     <option value="s3cmd" {% if task.s3_tool == "s3cmd" %}selected{% endif %}>S3 CMD</option>
                                     <option value="awscli" {% if task.s3_tool == "awscli" %}selected{% endif %}>AWS CLI</option>
+                                    <option value="gsutil" {% if task.s3_tool == "gsutil" %}selected{% endif %}>GSUTIL</option>
                                 </select>
                             </label>
                         </div>
