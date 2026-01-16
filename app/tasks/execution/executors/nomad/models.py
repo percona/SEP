@@ -21,6 +21,7 @@ import io
 import json
 import logging
 import tarfile
+import zstandard
 from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
@@ -292,9 +293,39 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         logger.debug("Dispatching job: %s", queue_item)
         payload = queue_item.execution_request.payload_content
         if payload is not None:
+            original_size = len(payload)
+            logger.debug(f"Original payload size: {original_size} bytes")
             if self.minify_payload:
                 payload = minify_file_content(payload)
-            payload = b2a_base64(gzip_compress(payload)).decode("utf-8")
+                minified_size = len(payload)
+                logger.debug(f"After minify_file_content: {original_size} -> {minified_size} bytes")
+                try:
+                    lines = payload.split('\n')
+                    compacted = '\n'.join(
+                        line.rstrip() for line in lines if line.strip()
+                    )
+                    compacted_size = len(compacted)
+                    if compacted_size < minified_size:
+                        payload = compacted
+                except Exception as e:
+                    logger.debug(f"Could not apply whitespace compaction: {e}")
+            cctx = zstandard.ZstdCompressor(level=22)
+            compressed = cctx.compress(payload.encode('utf-8'))
+            logger.debug(f"After zstandard compression: {len(payload)} -> {len(compressed)} bytes")
+            encoded = b2a_base64(compressed).decode("utf-8").strip()
+            encoded_size = len(encoded)
+            logger.debug(f"After base64 encoding: {len(compressed)} -> {encoded_size} bytes")
+            if encoded_size > 16384:
+                import binascii
+                hex_encoded = binascii.hexlify(compressed).decode("utf-8")
+                hex_size = len(hex_encoded)
+                logger.debug(f"Hex encoding alternative: {len(compressed)} -> {hex_size} bytes")
+                if hex_size < encoded_size:
+                    encoded = hex_encoded
+                    encoded_size = hex_size
+            logger.debug(f"Final payload after compression and encoding: {len(payload)} -> {encoded_size} bytes (limit: 16384)")
+            if encoded_size > 16384:
+            payload = encoded
 
         filtered_meta = (
             {

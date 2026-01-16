@@ -136,7 +136,9 @@ NOMAD_RUN_PYTHON = {
                         "command": "sh",
                         "args": [
                             "-c",
-                            "gzip -d ${NOMAD_TASK_DIR}/script.py.gz;"
+                            "if file ${NOMAD_TASK_DIR}/script.py.gz | grep -q 'Zstandard'; then "
+                            "zstd -d ${NOMAD_TASK_DIR}/script.py.gz -o ${NOMAD_TASK_DIR}/script.py; "
+                            "else gzip -d ${NOMAD_TASK_DIR}/script.py.gz; fi;"
                             "${NOMAD_ALLOC_DIR}/venv/bin/python3"
                             " -u ${NOMAD_TASK_DIR}/script.py --config ${NOMAD_TASK_DIR}/script_config",
                         ],
