@@ -52,7 +52,10 @@ async def restores_index(
 
 
 @router.post(
-    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+    "/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=HTMLResponse,
+    name="pbm_restores_create",
 )
 async def restores_create(
     request: Request,
@@ -64,26 +67,29 @@ async def restores_create(
     logger.debug("Create restores config task: %s", config_task)
     logger.debug("Create restores task: %s", restore_task)
 
-    # Create the config task first
     await task_api.post(
         "/",
         json=config_task.model_dump(),
     )
 
-    # Create the restore task
     await task_api.post(
         "/",
         json=restore_task.model_dump(),
     )
 
-    task_path = request.url_for("restores_detail", task_name=config_task.name)
+    task_path = request.url_for("pbm_restores_detail", task_name=config_task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
 
-@router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.get(
+    "/{task_name}",
+    dependencies=[IsAuthenticated],
+    response_class=HTMLResponse,
+    name="pbm_restores_detail",
+)
 async def restores_detail(
     task: RestoresTask,
     request: Request,
@@ -96,7 +102,7 @@ async def restores_detail(
 
     # If the task has a parent, redirect to the parent task detail page
     if data.get("parent"):
-        task_path = request.url_for("restores_detail", task_name=data.get("parent"))
+        task_path = request.url_for("pbm_restores_detail", task_name=data.get("parent"))
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     meta = data["meta"]
@@ -117,7 +123,7 @@ async def restores_detail(
         "port": server_config.get("DEST_PORT") or 27017,
         "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "backup_source": server_config.get("BACKUP_SOURCE"),
-        "delete_url": request.url_for("restores_delete", task_name=task.name),
+        "delete_url": request.url_for("pbm_restores_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
         "alert_on_fail": task.alert_on_fail,
     }
@@ -125,7 +131,19 @@ async def restores_detail(
     task_data.update(parsed_task_data)
 
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
+    all_history = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = all_history
+    # Filter history by backup_type for logical and physical restores
+    context["history_logical"] = [
+        h
+        for h in all_history
+        if h.get("task", {}).get("data", {}).get("backup_type") == "pbm_logical"
+    ]
+    context["history_physical"] = [
+        h
+        for h in all_history
+        if h.get("task", {}).get("data", {}).get("backup_type") == "pbm_physical"
+    ]
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
@@ -164,6 +182,7 @@ async def restores_detail(
     "/{task_name}",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
+    name="pbm_restores_execute",
 )
 async def restores_execute(
     request: Request,
@@ -176,7 +195,7 @@ async def restores_execute(
         f"/execute/{task.name}",
         json={"eta": eta},
     )  # TODO: send meta form fields  # noqa: TD002, TD003
-    task_path = request.url_for("restores_detail", task_name=task.name)
+    task_path = request.url_for("pbm_restores_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -184,6 +203,7 @@ async def restores_execute(
     "/{task_name}/update",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
+    name="pbm_restores_update",
 )
 async def restores_update(
     request: Request,
@@ -198,7 +218,7 @@ async def restores_update(
         json=updated_task.model_dump(),
     )
     return RedirectResponse(
-        request.url_for("restores_detail", task_name=updated_task.name),
+        request.url_for("pbm_restores_detail", task_name=updated_task.name),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -207,6 +227,7 @@ async def restores_update(
     "/{task_name}/delete",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
+    name="pbm_restores_delete",
 )
 async def restores_delete(
     request: Request,

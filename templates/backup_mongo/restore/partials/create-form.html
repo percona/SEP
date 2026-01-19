@@ -45,7 +45,7 @@
 <form id="create-mongo-restore-form"
       class="create-mongo-restore-form window"
       method="post"
-      action=""
+      action="{{ url_for('pbm_restores_create') }}"
       data-confirm-message="Are you sure you want to create this MongoDB restore task?">
     <dialog id="modalCreateTask"
             aria-modal="true"
@@ -106,7 +106,7 @@
                 <label for="backup_type" title="{{ backup_type_title }}">
                     Backup Type:
                     <select id="backup_type" name="backup_type" required>
-                        <option value="" disabled>Select a backup type</option>
+                        <option value="" disabled selected>Select a backup type</option>
                         <option value="pbm_logical">Logical</option>
                         <option value="pbm_physical">Physical</option>
                     </select>
@@ -255,25 +255,97 @@
             <button type="button" class="text large" data-modal-close>
                 Cancel<sup>ESC</sup>
             </button>
-            <button type="submit" class="contained large submitButton">Create</button>
+            <button type="submit" class="contained large submitButton" disabled>Create</button>
         </footer>
     </dialog>
 </form>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const form = document.getElementById('create-mongo-restore-form');
     const submitButton = form.querySelector('.submitButton');
+    const backupTypeSelect = document.getElementById('backup_type');
+    const hostnameSelect = document.getElementById('hostname');
+    const taskNameInput = document.getElementById('task_name');
+    const backupSourceInput = document.getElementById('backup_source');
+
+    function isFormValid() {
+        // Custom validation for backup_type (disabled empty option can bypass HTML5 validation)
+        if (!backupTypeSelect || !backupTypeSelect.value || backupTypeSelect.value === '') {
+            return false;
+        }
+
+        // Custom validation for hostname (if it's a select, not hidden)
+        if (hostnameSelect && hostnameSelect.tagName === 'SELECT' && (!hostnameSelect.value || hostnameSelect.value === '')) {
+            return false;
+        }
+
+        // Custom validation for required text fields
+        if (taskNameInput && (!taskNameInput.value || taskNameInput.value.trim() === '')) {
+            return false;
+        }
+
+        if (backupSourceInput && (!backupSourceInput.value || backupSourceInput.value.trim() === '')) {
+            return false;
+        }
+
+        // Check HTML5 validation last
+        if (!form.checkValidity()) {
+            return false;
+        }
+
+        return true;
+    }
 
     function updateCreateButtonState() {
         if (submitButton) {
-            submitButton.disabled = !form.checkValidity();
+            submitButton.disabled = !isFormValid();
         }
     }
 
-    // Update button state on form validation changes
+    // Clear empty number inputs before submission to avoid sending empty strings
     if (form) {
+        form.addEventListener('submit', function(e) {
+            const numberInputs = form.querySelectorAll('input[type="number"]');
+            numberInputs.forEach(input => {
+                if (input.value === '' || input.value === null) {
+                    input.value = '';
+                }
+            });
+        });
+
+        // Update button state on form validation changes
         form.addEventListener('input', updateCreateButtonState);
         form.addEventListener('change', updateCreateButtonState);
         // Initialize button state
         updateCreateButtonState();
+    }
+
+    // Also validate when the confirmation modal checks (enhance the shared modal's validation)
+    if (submitButton) {
+        submitButton.addEventListener('click', function(e) {
+            // This runs before the confirmation modal's click handler
+            if (!isFormValid()) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Trigger validation on the first invalid field
+                if (backupTypeSelect && (!backupTypeSelect.value || backupTypeSelect.value === '')) {
+                    backupTypeSelect.focus();
+                    backupTypeSelect.setCustomValidity('Please select a backup type');
+                    backupTypeSelect.reportValidity();
+                    backupTypeSelect.setCustomValidity(''); // Clear custom message after showing
+                } else if (hostnameSelect && hostnameSelect.tagName === 'SELECT' && (!hostnameSelect.value || hostnameSelect.value === '')) {
+                    hostnameSelect.focus();
+                    hostnameSelect.setCustomValidity('Please select an executor host');
+                    hostnameSelect.reportValidity();
+                    hostnameSelect.setCustomValidity('');
+                } else if (taskNameInput && (!taskNameInput.value || taskNameInput.value.trim() === '')) {
+                    taskNameInput.focus();
+                    taskNameInput.reportValidity();
+                } else if (backupSourceInput && (!backupSourceInput.value || backupSourceInput.value.trim() === '')) {
+                    backupSourceInput.focus();
+                    backupSourceInput.reportValidity();
+                }
+                return false;
+            }
+        });
     }
 </script>

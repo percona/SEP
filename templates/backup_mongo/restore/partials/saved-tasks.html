@@ -28,7 +28,7 @@
             {% if not task.parent %}
                 <tr id="{{ task.name }}">
                     <td>
-                        <a href="{{ url_for('restores_detail', task_name=task.name) }}">{{ task.name }}</a>
+                        <a href="{{ url_for('pbm_restores_detail', task_name=task.name) }}">{{ task.name }}</a>
                     </td>
                     <td>{{ task.target }}</td>
                     <td>{{ task.created_at }}</td>

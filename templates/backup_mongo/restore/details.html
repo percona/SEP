@@ -105,27 +105,23 @@
         <br>
         <br>
     {% endif %}
-    {% if history %}
-        {% set restore_history = history|selectattr("data.backup_type", "equalto", "pbm_logical")|list %}
-        {% if restore_history %}
-            <section>
-                <h2>Logical Restore Runs</h2>
-                {% set history_tasks = restore_history %}
-                {% include "tasks/partials/completed-tasks.html" %}
-            </section>
-            <br>
-            <br>
-        {% endif %}
-        {% set restore_history = history|selectattr("data.backup_type", "equalto", "pbm_physical")|list %}
-        {% if restore_history %}
-            <section>
-                <h2>Physical Restore Runs</h2>
-                {% set history_tasks = restore_history %}
-                {% include "tasks/partials/completed-tasks.html" %}
-            </section>
-            <br>
-            <br>
-        {% endif %}
+    {% if history_logical %}
+        <section>
+            <h2>Logical Restore Runs</h2>
+            {% set history_tasks = history_logical %}
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
+    {% if history_physical %}
+        <section>
+            <h2>Physical Restore Runs</h2>
+            {% set history_tasks = history_physical %}
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
+        <br>
+        <br>
     {% endif %}
     <section>
         <h2>Config Sync</h2>

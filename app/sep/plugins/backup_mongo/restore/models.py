@@ -189,13 +189,11 @@ class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
     hostname: RequiredStr
     task_name: RequiredStr
     service_id: RequiredStr | EmptyStrToNone = None
-
-    # Restore options
-    restore_batch_size: int | None = None
-    restore_num_insertion_workers: int | None = None
-    restore_num_parallel_collections: int | None = None
-    restore_num_download_workers: int | None = None
-    restore_max_download_buffer_mb: int | None = None
-    restore_download_chunk_mb: int | None = None
+    restore_batch_size: int | EmptyStrToNone = None
+    restore_num_insertion_workers: int | EmptyStrToNone = None
+    restore_num_parallel_collections: int | EmptyStrToNone = None
+    restore_num_download_workers: int | EmptyStrToNone = None
+    restore_max_download_buffer_mb: int | EmptyStrToNone = None
+    restore_download_chunk_mb: int | EmptyStrToNone = None
     restore_mongod_location: RequiredStr | EmptyStrToNone = None
     restore_mongod_location_map: RequiredStr | EmptyStrToNone = None
