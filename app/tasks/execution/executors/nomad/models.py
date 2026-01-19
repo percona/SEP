@@ -376,8 +376,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             for key, value in queue_item.execution_request.meta.items():
                 if key.startswith("_"):
                     continue
-                if key in {"config_nomad_variable", "config_nomad_variable_namespace"}:
-                    continue
                 filtered_meta[key] = value
 
         custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")

@@ -22,6 +22,9 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from bson import json_util
 from pymongo import MongoClient
@@ -63,14 +66,56 @@ def parse_args() -> argparse.Namespace:
 def load_config(config_path: Optional[str]) -> Dict[str, Any]:
     if not config_path:
         return {}
+    cfg_path = Path(config_path)
     try:
-        with open(config_path, "r", encoding="utf-8") as cfg:
+        with cfg_path.open("r", encoding="utf-8") as cfg:
             content = cfg.read()
-            # Expect JSON (the runner writes exactly what UI sends)
-            return json.loads(content) if content.strip() else {}
+        # Expect JSON (the runner writes exactly what UI sends)
+        return json.loads(content) if content.strip() else {}
     except Exception as exc:  # noqa: BLE001
         print(f"Failed to read config file {config_path}: {exc}", file=sys.stderr)
         return {}
+    finally:
+        try:
+            cfg_path.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"Failed to remove config file {config_path}: {exc}",
+                file=sys.stderr,
+            )
+
+
+def _get_nomad_address() -> str:
+    return (
+        os.environ.get("NOMAD_ADDR")
+        or os.environ.get("NOMAD_HTTP_ADDR")
+        or "http://127.0.0.1:4646"
+    )
+
+
+def _delete_nomad_variable(path: str | None) -> None:
+    if not path:
+        return
+    address = _get_nomad_address().rstrip("/")
+    url = f"{address}/v1/var/{quote(path.strip('/'))}"
+    headers: Dict[str, str] = {}
+    if token := os.environ.get("NOMAD_TOKEN"):
+        headers["X-Nomad-Token"] = token
+    request = Request(url, method="DELETE", headers=headers)
+    try:
+        with urlopen(request, timeout=2) as response:
+            status_code = getattr(response, "status", None)
+            if status_code not in (200, 204, 404):
+                print(
+                    f"Unexpected response deleting Nomad variable {path}: {status_code}",
+                    file=sys.stderr,
+                )
+    except (HTTPError, URLError, TimeoutError) as exc:
+        print(f"Failed to delete Nomad variable {path}: {exc}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Failed to delete Nomad variable {path}: {exc}", file=sys.stderr)
 
 
 def list_users(db) -> None:  # type: ignore[no-untyped-def]
@@ -95,7 +140,7 @@ def normalize_roles(raw_roles: Any, default_db: str) -> List[Dict[str, str]]:
 
 def create_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
     username = config.get("username")
-    password = config.get("password")
+    password = config.pop("password", None)
     db_name = config.get("db", "admin")
     roles = normalize_roles(config.get("roles", []), db_name)
     if not username or not password:
@@ -104,11 +149,16 @@ def create_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
 
     # Switch to the database where the user should be created
     target_db = db.client.get_database(db_name)
-    result = target_db.command({
-        "createUser": username,
-        "pwd": password,
-        "roles": roles,
-    })
+    nomad_variable = os.environ.get("NOMAD_META_config_nomad_variable")
+    try:
+        result = target_db.command({
+            "createUser": username,
+            "pwd": password,
+            "roles": roles,
+        })
+    finally:
+        _delete_nomad_variable(nomad_variable)
+        password = None
     # Print minimal JSON confirmation (do not echo password)
     print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
 
@@ -128,7 +178,7 @@ def update_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
         sys.exit(1)
 
     db_name = config.get("db", "admin")
-    pwd = config.get("password")
+    pwd = config.pop("password", None)
     roles_cfg = config.get("roles")
 
     cmd: Dict[str, Any] = {"updateUser": username}
@@ -139,7 +189,12 @@ def update_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
         cmd["roles"] = normalize_roles(roles_cfg, db_name)
 
     target_db = db.client.get_database(db_name)
-    result = target_db.command(cmd)
+    nomad_variable = os.environ.get("NOMAD_META_config_nomad_variable")
+    try:
+        result = target_db.command(cmd)
+    finally:
+        _delete_nomad_variable(nomad_variable)
+        pwd = None
     print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
 
 

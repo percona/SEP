@@ -18,6 +18,7 @@
 import json
 import logging
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -38,6 +39,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 templates = sep_settings.TEMPLATES
+
+
+def _redact_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
+    if config is None:
+        return None
+    redacted = dict(config)
+    if "password" in redacted:
+        redacted["password"] = "***"
+    return redacted
+
+
+async def _create_nomad_config_variable(
+    tasks_api: TaskAPI,
+    *,
+    config: dict[str, Any],
+    job_prefix: str,
+    namespace: str | None = None,
+) -> str:
+    path = f"sep/runtime/mum/{job_prefix}"
+    payload: dict[str, Any] = {
+        "path": path,
+        "data": {"config": config},
+    }
+    if namespace:
+        payload["namespace"] = namespace
+    try:
+        await tasks_api.post("/nomad/variables/", json=payload)
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error(
+            "Failed to create Nomad variable for MUM task '%s': %s (status: %s)",
+            job_prefix,
+            exc.detail,
+            exc.status_code,
+        )
+        raise
+    return path
 
 
 async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
@@ -85,7 +122,13 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
 
 
 async def _execute_default_task(
-    tasks_api: TaskAPI, *, target: str, config: dict[str, Any]
+    tasks_api: TaskAPI,
+    *,
+    target: str,
+    config: dict[str, Any] | None = None,
+    config_nomad_variable: str | None = None,
+    config_nomad_variable_namespace: str | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Dispatch the default MUM task with the provided config.
     
@@ -94,7 +137,10 @@ async def _execute_default_task(
     Args:
         tasks_api: The TaskAPI instance
         target: Executor host name
-        config: Configuration dict that will be JSON-stringified and passed as meta.config
+        config: Optional config to be JSON-stringified and passed as meta.config
+        config_nomad_variable: Optional Nomad variable path containing config JSON
+        config_nomad_variable_namespace: Optional Nomad namespace for config variable
+        meta: Optional extra metadata to pass to the execution request
         
     Returns:
         Tuple of (task, history) dicts
@@ -102,12 +148,31 @@ async def _execute_default_task(
     logger.debug("Executing default MUM task for target '%s'", target)
     default_task = await _ensure_default_task(tasks_api)
     task_name = default_task["name"]
-    
-    execution_meta = {
-        "target": target,
-        "config": json.dumps(config),
-    }
-    logger.debug("Executing task '%s' on target '%s' with config: %s", task_name, target, config)
+
+    execution_meta = {"target": target}
+    if meta:
+        execution_meta.update(meta)
+    if config is not None:
+        execution_meta["config"] = json.dumps(config)
+    if config_nomad_variable:
+        execution_meta["config_nomad_variable"] = config_nomad_variable
+        if config_nomad_variable_namespace:
+            execution_meta["config_nomad_variable_namespace"] = (
+                config_nomad_variable_namespace
+            )
+        logger.debug(
+            "Executing task '%s' on target '%s' with config from Nomad variable '%s'",
+            task_name,
+            target,
+            config_nomad_variable,
+        )
+    else:
+        logger.debug(
+            "Executing task '%s' on target '%s' with config: %s",
+            task_name,
+            target,
+            _redact_config(config),
+        )
     try:
         history = await tasks_api.post(
             f"/execute/{task_name}", json={"meta": execution_meta}
@@ -262,10 +327,20 @@ async def mum_create_user(
             "roles": roles,
             "db": db_name,
         }
+        job_token = uuid4().hex
+        job_prefix = f"mum-{job_token}"
+        config_nomad_variable = await _create_nomad_config_variable(
+            tasks_api,
+            config=config_obj,
+            job_prefix=job_prefix,
+        )
+        config_obj.pop("password", None)
         default_task, history = await _execute_default_task(
             tasks_api,
             target=target,
             config=config_obj,
+            config_nomad_variable=config_nomad_variable,
+            meta={"_job_id_prefix": job_prefix},
         )
         return JSONResponse(
             content={"task": default_task, "history": history},
@@ -321,10 +396,25 @@ async def mum_update_user(
         if roles is not None:
             config_obj["roles"] = roles
 
+        config_nomad_variable = None
+        exec_meta: dict[str, Any] | None = None
+        if "password" in config_obj:
+            job_token = uuid4().hex
+            job_prefix = f"mum-{job_token}"
+            config_nomad_variable = await _create_nomad_config_variable(
+                tasks_api,
+                config=config_obj,
+                job_prefix=job_prefix,
+            )
+            exec_meta = {"_job_id_prefix": job_prefix}
+            config_obj.pop("password", None)
+
         default_task, history = await _execute_default_task(
             tasks_api,
             target=target,
             config=config_obj,
+            config_nomad_variable=config_nomad_variable,
+            meta=exec_meta,
         )
         return JSONResponse(
             content={"task": default_task, "history": history},
