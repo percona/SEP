@@ -63,14 +63,25 @@ def parse_args() -> argparse.Namespace:
 def load_config(config_path: Optional[str]) -> Dict[str, Any]:
     if not config_path:
         return {}
+    cfg_path = Path(config_path)
     try:
-        with open(config_path, "r", encoding="utf-8") as cfg:
+        with cfg_path.open("r", encoding="utf-8") as cfg:
             content = cfg.read()
-            # Expect JSON (the runner writes exactly what UI sends)
-            return json.loads(content) if content.strip() else {}
+        # Expect JSON (the runner writes exactly what UI sends)
+        return json.loads(content) if content.strip() else {}
     except Exception as exc:  # noqa: BLE001
         print(f"Failed to read config file {config_path}: {exc}", file=sys.stderr)
         return {}
+    finally:
+        try:
+            cfg_path.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"Failed to remove config file {config_path}: {exc}",
+                file=sys.stderr,
+            )
 
 
 def list_users(db) -> None:  # type: ignore[no-untyped-def]
@@ -95,7 +106,7 @@ def normalize_roles(raw_roles: Any, default_db: str) -> List[Dict[str, str]]:
 
 def create_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
     username = config.get("username")
-    password = config.get("password")
+    password = config.pop("password", None)
     db_name = config.get("db", "admin")
     roles = normalize_roles(config.get("roles", []), db_name)
     if not username or not password:
@@ -109,6 +120,7 @@ def create_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
         "pwd": password,
         "roles": roles,
     })
+    password = None
     # Print minimal JSON confirmation (do not echo password)
     print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
 
@@ -128,7 +140,7 @@ def update_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
         sys.exit(1)
 
     db_name = config.get("db", "admin")
-    pwd = config.get("password")
+    pwd = config.pop("password", None)
     roles_cfg = config.get("roles")
 
     cmd: Dict[str, Any] = {"updateUser": username}
@@ -140,6 +152,7 @@ def update_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
 
     target_db = db.client.get_database(db_name)
     result = target_db.command(cmd)
+    pwd = None
     print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
 
 
