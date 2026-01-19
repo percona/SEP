@@ -103,7 +103,7 @@ async def build_backup_task_payload(
         server_list=[BackupConfigServer.model_validate(server_config)],
     )
 
-    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\ns3cmd"
+    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
     if form.backup_type == BackupType.MYDUMPER:
         payload_name = "mydumper_payload"
     elif form.backup_type == BackupType.XTRABACKUP:
