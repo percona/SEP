@@ -2082,12 +2082,12 @@ class Binlog(Restore):
                 start_file_to_process = self.start_file.rstrip('/').split('/')[-1]
             elif ':' in self.start_file and not self.start_file.startswith(('s3://', 'gs://')):
                 start_file_to_process = self.start_file.split('/')[-1]
-            
+
             if start_file_to_process and start_file_to_process != self.start_file:
                 start_file_idx = self._get_binlog_index(start_file_to_process)
             elif start_file_to_process:
                 start_file_idx = self._get_binlog_index(self.start_file)
-        
+
         ls_cmd = []
         source_path = os.path.join(self.backup_source, "")
 
@@ -2142,7 +2142,7 @@ class Binlog(Restore):
                         files.append(filename)
                 except BackupError:
                     continue
-        
+
         if not files:
             self.logger.warning("No files found to copy from: %s", self.backup_source)
         return files
