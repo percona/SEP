@@ -1573,7 +1573,6 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
     def rsync_copy(self, source, destination, log_file, **kwargs):
         """ Rsync remote backups """
 
-        # rsync subprocess doesn't work with list so I had to use a string
         info_file = {'X': 'xtrabackup_info', 'M': 'metadata'}
         info_only = kwargs.get('info_only', False)
         files_list = kwargs.get('files_list', [])
@@ -1606,8 +1605,16 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if os.path.isdir(destination):
             shutil.rmtree(destination)
 
-        rsync_cmd = 'rsync -LAvhr %s %s --rsync-path="sudo rsync" -e "ssh -t -p %s -i /home/%s/.ssh/id_rsa" %s@%s %s' \
-                    % (include_args, exclude_args, self.ssh_port, self.ssh_user, self.ssh_user, source, destination)
+        os.makedirs(destination, exist_ok=True)
+
+        if self.ssh_key.startswith('/'):
+            ssh_key_path = self.ssh_key
+        else:
+            ssh_key_path = '/home/%s/.ssh/%s' % (self.ssh_user, self.ssh_key)
+
+        dest_path = destination if destination.endswith('/') else destination + '/'
+        rsync_cmd = 'rsync -LAvhr %s %s --rsync-path="sudo rsync" -e "ssh -t -p %s -i %s" %s@%s %s' \
+                    % (include_args, exclude_args, self.ssh_port, ssh_key_path, self.ssh_user, source, dest_path)
 
         self.logger.info('Running: %s', rsync_cmd)
         log_stream = open(log_file, 'a')
@@ -1667,7 +1674,8 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
                 for line in files_list:
                     line = line.strip()
                     if line:
-                        include_args += '--include="%s" ' % line
+                        filename = line.split('/')[-1] if '/' in line else line
+                        include_args += '--include="%s" ' % filename
             except Exception as e:
                 raise BackupError(f"Error reading files list: {e}")
         else:
@@ -1694,8 +1702,8 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             download_cmd = '%s s3 sync %s %s %s %s' \
                            % (AWS_BIN, source, destination_dir, exclude_args, include_args)
         else:
-            download_cmd = '%s/bin/s3cmd sync %s %s %s %s' \
-                           % (INSTALL_DIR, source, destination_dir, exclude_args, include_args)
+            download_cmd = '%s sync %s %s %s %s' \
+                           % (S3CMD_BIN, source, destination_dir, exclude_args, include_args)
 
         self.logger.info('Running: %s', download_cmd)
         log_stream = open(log_file, 'a')
@@ -1908,7 +1916,8 @@ class Binlog(Restore):
             self.decompress_binlog(is_binlog_compressed, self.local_path)
 
         latest_file = self._run_mysqlbinlog()
-        self._print_new_binlog_position(latest_file)
+        if latest_file:
+            self._print_new_binlog_position(latest_file)
         self._clean_after_restore(self.local_path)
 
         time_spent = time.time() - start_time
@@ -1973,10 +1982,20 @@ class Binlog(Restore):
             binlog_cmd.append('--stop-position=%s' % self.stop_position)
 
         if self.start_file:
-            start_index = self._get_binlog_index(self.start_file)
+            start_file_to_process = self.start_file
+            if self.start_file.startswith(('s3://', 'gs://')):
+                start_file_to_process = self.start_file.rstrip('/').split('/')[-1]
+            elif ':' in self.start_file and not self.start_file.startswith(('s3://', 'gs://')):
+                start_file_to_process = self.start_file.split('/')[-1]
+            start_index = self._get_binlog_index(start_file_to_process)
 
         if self.stop_file:
-            stop_index = self._get_binlog_index(self.stop_file)
+            stop_file_to_process = self.stop_file
+            if self.stop_file.startswith(('s3://', 'gs://')):
+                stop_file_to_process = self.stop_file.rstrip('/').split('/')[-1]
+            elif ':' in self.stop_file and not self.stop_file.startswith(('s3://', 'gs://')):
+                stop_file_to_process = self.stop_file.split('/')[-1]
+            stop_index = self._get_binlog_index(stop_file_to_process)
 
         for bfile in b_files_list:
             bfile_index = self._get_binlog_index(bfile)
@@ -2026,18 +2045,20 @@ class Binlog(Restore):
 
         if ':' in self.backup_source:
             files_to_copy = self._create_file_list()
-            source_path = os.path.join(self.backup_source, "")
             if self.backup_source.startswith('s3:'):
+                source_path = self.backup_source
                 self.s3_copy(source_path,
                             self.local_path,
                             self.mb_log_file,
                             files_list=files_to_copy)
             elif self.backup_source.startswith('gs:'):
+                source_path = self.backup_source
                 self.gs_copy(source_path,
                             self.local_path,
                             self.mb_log_file,
                             files_list=files_to_copy)
             else:
+                source_path = self.backup_source if self.backup_source.endswith('/') else self.backup_source + '/'
                 self.rsync_copy(source_path,
                                 self.local_path,
                                 self.mb_log_file,
@@ -2054,7 +2075,19 @@ class Binlog(Restore):
         Supports S3, GS, and rsync sources. Returns a list of file names.
         """
 
-        start_file_idx = self._get_binlog_index(self.start_file)
+        start_file_idx = 0
+        if self.start_file:
+            start_file_to_process = self.start_file
+            if self.start_file.startswith(('s3://', 'gs://')):
+                start_file_to_process = self.start_file.rstrip('/').split('/')[-1]
+            elif ':' in self.start_file and not self.start_file.startswith(('s3://', 'gs://')):
+                start_file_to_process = self.start_file.split('/')[-1]
+            
+            if start_file_to_process and start_file_to_process != self.start_file:
+                start_file_idx = self._get_binlog_index(start_file_to_process)
+            elif start_file_to_process:
+                start_file_idx = self._get_binlog_index(self.start_file)
+        
         ls_cmd = []
         source_path = os.path.join(self.backup_source, "")
 
@@ -2067,15 +2100,24 @@ class Binlog(Restore):
         else:
             try:
                 host, path = self.backup_source.split(':', 1)
-                ls_cmd = ['ssh', host, 'ls', '-1', path]
+                if self.ssh_key.startswith('/'):
+                    ssh_key_path = self.ssh_key
+                else:
+                    ssh_key_path = '/home/%s/.ssh/%s' % (self.ssh_user, self.ssh_key)
+                ls_cmd = 'ssh -p %s -l %s -i %s %s ls -1 %s' \
+                         % (self.ssh_port, self.ssh_user, ssh_key_path, host, path)
             except ValueError:
                 self.logger.error("Invalid rsync source format: %s", self.backup_source)
                 return None
         try:
-            ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if isinstance(ls_cmd, str):
+                ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            else:
+                ls_proc = subprocess.Popen(ls_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             stdout, stderr = ls_proc.communicate()
         except OSError as e:
-            self.logger.error("Error executing command %s: %s", ' '.join(ls_cmd), e)
+            cmd_str = ls_cmd if isinstance(ls_cmd, str) else ' '.join(ls_cmd)
+            self.logger.error("Error executing command %s: %s", cmd_str, e)
             return None
         if stderr:
             self.logger.warning("Error while listing files: %s", stderr.decode(sys.stdout.encoding, errors='ignore'))
@@ -2084,17 +2126,23 @@ class Binlog(Restore):
             line = line.strip()
             filename = None
             if line.startswith("gs://"):
-                filename = line.split('/')[-1]
+                filename = line.rstrip('/').split('/')[-1]
+            elif line.startswith("s3://"):
+                filename = line.rstrip('/').split('/')[-1]
             else:
                 parts = line.split()
                 if len(parts) >= 4:
-                    filename = parts[3]
-                elif len(parts) == 1:
-                    filename = parts[0].split('/')[-1]
-                else:
+                    filename = parts[3] if not parts[3].startswith('/') else parts[3].split('/')[-1]
+                elif len(parts) >= 1:
+                    filename = parts[0].split('/')[-1] if '/' in parts[0] else parts[0]
+
+            if filename and not filename.endswith('/') and 'binlog' in filename.lower():
+                try:
+                    if self._get_binlog_index(filename) >= start_file_idx:
+                        files.append(filename)
+                except BackupError:
                     continue
-            if filename and self._get_binlog_index(filename) >= start_file_idx:
-                files.append(filename)
+        
         if not files:
             self.logger.warning("No files found to copy from: %s", self.backup_source)
         return files

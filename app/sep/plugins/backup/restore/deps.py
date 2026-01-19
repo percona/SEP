@@ -26,6 +26,7 @@ from app.sep.plugins.backup.restore.models import (
     RestoreConfigAll,
     RestoreConfigServer,
     RestoreCreate,
+    S3Tool,
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
@@ -83,6 +84,12 @@ async def build_restore_task_payload(
     requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
     if form.backup_type == BackupType.XTRABACKUP:
         requirements += "\nfilelock"
+
+    if form.backup_type == BackupType.BINLOG:
+        if form.s3_tool == S3Tool.S3CMD:
+            requirements += "\ns3cmd"
+        elif form.s3_tool == S3Tool.GSUTIL:
+            requirements += "\ngoogle-cloud-storage"
 
     payload_path = Path(__file__).parent / payload_name
 
