@@ -26,7 +26,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResp
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
-from jwt import InvalidTokenError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
@@ -53,6 +52,7 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.snippets.config import snippets_settings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
@@ -151,6 +151,12 @@ if "snippets" in imported_plugins:
         "/static/snippets",
         AuthenticatedStaticFiles(directory=snippets_settings.SNIPPETS_DIR),
         name="snippets_files",
+    )
+if "dipper" in imported_plugins:
+    sep_app.mount(
+        "/static/dipper",
+        AuthenticatedStaticFiles(directory=DIPPER_PAYLOADS_DIR),
+        name="dipper_files",
     )
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
@@ -296,7 +302,7 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
     try:
         await User.invalidate_oauth_token(access_token)
-    except (KeyError, InvalidTokenError, ValidationError):
+    except (KeyError, ValidationError):
         logger.debug("Failed to invalidate OAuth token", exc_info=True)
     return response
 

@@ -16,6 +16,7 @@
   * [Starting Celery with SEP for development](#starting-celery-with-sep-for-development)
 * [Alternative: Use Docker Compose](#alternative-use-docker-compose)
 * [Contributing](#contributing)
+* [Deployment](#deployment)
 
 ## Prerequisites
 
@@ -593,3 +594,7 @@ You can stop SEP with CTRL-C and later start it again with `docker compose up`.
 ## Contributing
 
 See our [CONTRIBUTING](https://github.com/percona/SEP/blob/main/CONTRIBUTING.md) guide.
+
+## Deployment
+
+See our [INSTALLER](https://github.com/percona/SEP/blob/main/INSTALLER.md) guide for deployment instructions.

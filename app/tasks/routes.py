@@ -53,6 +53,7 @@ from app.tasks.deps import (
 )
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
+    FileMetadataResponse,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -305,11 +306,15 @@ async def stream_task_history_logs(
     )
 
 
-@router.get("/history/{task_history_id}/files/", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/history/{task_history_id}/files/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=dict[str, FileMetadataResponse],
+)
 async def list_task_history_files(
     executor: TaskExecutor,
     task_history: TaskHistoryWithTaskDep,
-) -> dict[str, int]:
+) -> dict[str, dict[str, int | bool]]:
     """List files from a task history."""
     logger.debug("Requesting files for task history %s", task_history.id)
     if not task_history.status.is_finished():

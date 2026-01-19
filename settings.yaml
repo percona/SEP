@@ -75,6 +75,10 @@ default:
         MODULE_NAME: mum
         URI_PATH: /mum
         CSS_CLASS: mum
+      - NAME: Dipper Data Collection
+        MODULE_NAME: dipper
+        URI_PATH: /dipper
+        CSS_CLASS: dipper
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null

@@ -1232,6 +1232,10 @@ button.list-item:focus-visible {
     content: "support";
 }
 
+.list-item.dipper .icon::before {
+    content: "science";
+}
+
 /*=============================================*/
 /* Foundations for the sidebar type of layout */
 /*=============================================*/
