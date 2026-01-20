@@ -175,6 +175,7 @@ def logging_setup(
     :param level: Logging level.
     :return: Configured logger instance.
     """
+    os.umask(0o007)
     real_logging_dir = logging_dir.expanduser().resolve()
 
     if not real_logging_dir.is_dir():
