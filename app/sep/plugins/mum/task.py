@@ -19,7 +19,6 @@ from pathlib import Path
 
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner
 
-LEGACY_TASK_NAME = "mum-users"
 MUM_TASK_NAME_BY_ACTION = {
     "list_users": "mum-user-list",
     "create_user": "mum-user-create",
@@ -49,21 +48,13 @@ def _build_mum_task(task_name: str) -> Task:
     )
 
 
-def get_default_mum_task() -> Task:
-    """Return the legacy MUM task specification."""
-    return _build_mum_task(LEGACY_TASK_NAME)
-
-
 def get_mum_task(task_name: str) -> Task:
     """Return a MUM task specification for a supported task name."""
-    if task_name not in MUM_TASK_NAMES and task_name != LEGACY_TASK_NAME:
+    if task_name not in MUM_TASK_NAMES:
         raise ValueError(f"Unsupported MUM task name: {task_name}")
     return _build_mum_task(task_name)
 
 
-def get_mum_tasks(*, include_legacy: bool = True) -> list[Task]:
+def get_mum_tasks() -> list[Task]:
     """Return the MUM tasks for supported actions."""
-    tasks = [_build_mum_task(task_name) for task_name in MUM_TASK_NAMES]
-    if include_legacy:
-        tasks.append(_build_mum_task(LEGACY_TASK_NAME))
-    return tasks
+    return [_build_mum_task(task_name) for task_name in MUM_TASK_NAMES]
