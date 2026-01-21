@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # vim: noet
 
-set -o errexit -o nounset -o pipefail
-
 # ---
 # title: "dead-mans-snitch"
 # description: "Checks Dead Man's Snitch alerting"
@@ -34,6 +32,8 @@ set -o errexit -o nounset -o pipefail
 
 # Usage: ./dead-mans-snitch.sh [--rule=name] [--snitch-id=ID] [--url=url] [--help]
 # Example: ./dead-mans-snitch.sh --rule=Percona_MS_DeadManSnitch
+
+set -o errexit -o nounset -o pipefail
 
 declare -r PARAMS_SHORT="s:r:u:h"
 declare -r PARAMS_LONG="snitch-id:,rule:,url:,help"
