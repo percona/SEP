@@ -32,13 +32,18 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.utils.decorators import csrf_exempt
-from app.sep.plugins.mum.task import get_default_mum_task, TASK_NAME as DEFAULT_TASK_NAME
+from app.sep.plugins.mum.task import (
+    MUM_TASK_NAME_BY_ACTION,
+    get_mum_task as get_mum_task_spec,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 templates = sep_settings.TEMPLATES
+
+DEFAULT_MUM_ACTION = "list_users"
 
 
 def _redact_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -77,30 +82,41 @@ async def _create_nomad_config_variable(
     return path
 
 
-async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
-    """Ensure the default MUM task exists, creating it if necessary.
-    
-    The task definition is provided by the MUM plugin and is based on the
-    run-python Nomad job. This function ensures the task exists in the database.
-    
-    Returns:
-        dict: The task data as returned by the Tasks API
-    """
+def _resolve_mum_task_name(action: str | None) -> str:
+    """Resolve a MUM task name for an action."""
+    if action is None:
+        return MUM_TASK_NAME_BY_ACTION[DEFAULT_MUM_ACTION]
+    if action not in MUM_TASK_NAME_BY_ACTION:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported MUM action '{action}'.",
+        )
+    return MUM_TASK_NAME_BY_ACTION[action]
+
+
+async def _ensure_mum_task(tasks_api: TaskAPI, task_name: str) -> dict[str, Any]:
+    """Ensure a MUM task exists, creating it if necessary."""
     # First try to get the task via API
     try:
-        task = await tasks_api.get(f"/{DEFAULT_TASK_NAME}")
-        logger.debug("Default MUM task '%s' already exists", DEFAULT_TASK_NAME)
+        task = await tasks_api.get(f"/{task_name}")
+        logger.debug("MUM task '%s' already exists", task_name)
         return task
     except HTTPException as exc:  # type: ignore[name-defined]
         if exc.status_code != status.HTTP_404_NOT_FOUND:
-            logger.error("Failed to get default MUM task '%s': %s (status: %s)", 
-                        DEFAULT_TASK_NAME, exc.detail, exc.status_code)
+            logger.error(
+                "Failed to get MUM task '%s': %s (status: %s)",
+                task_name,
+                exc.detail,
+                exc.status_code,
+            )
             raise
-    
+
     # Task doesn't exist, create it using the plugin's task definition
-    logger.info("Default MUM task '%s' not found, creating it from plugin definition", DEFAULT_TASK_NAME)
-    task_spec = get_default_mum_task()
-    
+    logger.info(
+        "MUM task '%s' not found, creating it from plugin definition", task_name
+    )
+    task_spec = get_mum_task_spec(task_name)
+
     # Convert Task model to dict for API
     task_data = {
         "name": task_spec.name,
@@ -110,44 +126,38 @@ async def _ensure_default_task(tasks_api: TaskAPI) -> dict[str, Any]:
         "alert_on_fail": task_spec.alert_on_fail,
         "data": task_spec.data,
     }
-    
+
     try:
         created = await tasks_api.post("/", json=task_data)
-        logger.info("Successfully created default MUM task '%s' (ID: %s)", DEFAULT_TASK_NAME, created.get("id"))
+        logger.info(
+            "Successfully created MUM task '%s' (ID: %s)",
+            task_name,
+            created.get("id"),
+        )
         return created
     except HTTPException as exc:  # type: ignore[name-defined]
-        logger.error("Failed to create default MUM task '%s': %s (status: %s)", 
-                    DEFAULT_TASK_NAME, exc.detail, exc.status_code)
+        logger.error(
+            "Failed to create MUM task '%s': %s (status: %s)",
+            task_name,
+            exc.detail,
+            exc.status_code,
+        )
         raise
 
 
-async def _execute_default_task(
+async def _execute_mum_task(
     tasks_api: TaskAPI,
     *,
+    task_name: str,
     target: str,
     config: dict[str, Any] | None = None,
     config_nomad_variable: str | None = None,
     config_nomad_variable_namespace: str | None = None,
     meta: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Dispatch the default MUM task with the provided config.
-    
-    The task will be created from the plugin definition if it doesn't exist.
-    
-    Args:
-        tasks_api: The TaskAPI instance
-        target: Executor host name
-        config: Optional config to be JSON-stringified and passed as meta.config
-        config_nomad_variable: Optional Nomad variable path containing config JSON
-        config_nomad_variable_namespace: Optional Nomad namespace for config variable
-        meta: Optional extra metadata to pass to the execution request
-        
-    Returns:
-        Tuple of (task, history) dicts
-    """
-    logger.debug("Executing default MUM task for target '%s'", target)
-    default_task = await _ensure_default_task(tasks_api)
-    task_name = default_task["name"]
+    """Dispatch a MUM task with the provided config."""
+    logger.debug("Executing MUM task '%s' for target '%s'", task_name, target)
+    default_task = await _ensure_mum_task(tasks_api, task_name)
 
     execution_meta = {"target": target}
     if meta:
@@ -177,7 +187,11 @@ async def _execute_default_task(
         history = await tasks_api.post(
             f"/execute/{task_name}", json={"meta": execution_meta}
         )
-        logger.info("Successfully executed task '%s' (history ID: %s)", task_name, history.get("id"))
+        logger.info(
+            "Successfully executed task '%s' (history ID: %s)",
+            task_name,
+            history.get("id"),
+        )
         return default_task, history
     except HTTPException as exc:  # type: ignore[name-defined]
         logger.error("Failed to execute task '%s': %s (status: %s)", task_name, exc.detail, exc.status_code)
@@ -220,9 +234,10 @@ async def mum_options(
     except HTTPException:
         executor_hosts = {}
     try:
-        default_task = await _ensure_default_task(tasks_api)
+        default_task_name = _resolve_mum_task_name(None)
+        default_task = await _ensure_mum_task(tasks_api, default_task_name)
     except HTTPException as exc:  # type: ignore[name-defined]
-        logger.warning("Failed to ensure default MUM task: %s", exc)
+        logger.warning("Failed to ensure MUM task: %s", exc)
         default_task = None
     return JSONResponse(
         content={
@@ -247,7 +262,7 @@ async def mum_list_users(
     body: dict[str, Any],
     tasks_api: TaskAPI,
 ) -> JSONResponse:
-    """List MongoDB users by executing the default MUM task.
+    """List MongoDB users by executing the MUM list task.
     Expects JSON body with:
     - target: executor host name (required)
     """
@@ -264,8 +279,10 @@ async def mum_list_users(
             "action": "list_users",
         }
         logger.debug("Listing users for target '%s'", target)
-        default_task, history = await _execute_default_task(
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
             tasks_api,
+            task_name=task_name,
             target=target,
             config=config_obj,
         )
@@ -335,8 +352,10 @@ async def mum_create_user(
             job_prefix=job_prefix,
         )
         config_obj.pop("password", None)
-        default_task, history = await _execute_default_task(
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
             tasks_api,
+            task_name=task_name,
             target=target,
             config=config_obj,
             config_nomad_variable=config_nomad_variable,
@@ -409,8 +428,10 @@ async def mum_update_user(
             exec_meta = {"_job_id_prefix": job_prefix}
             config_obj.pop("password", None)
 
-        default_task, history = await _execute_default_task(
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
             tasks_api,
+            task_name=task_name,
             target=target,
             config=config_obj,
             config_nomad_variable=config_nomad_variable,
@@ -461,8 +482,10 @@ async def mum_delete_user(
             "username": username,
             "db": db_name,
         }
-        default_task, history = await _execute_default_task(
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
             tasks_api,
+            task_name=task_name,
             target=target,
             config=config_obj,
         )
@@ -482,14 +505,12 @@ async def mum_delete_user(
 async def get_mum_task(
     request: Request,  # noqa: ARG001
     tasks_api: TaskAPI,
+    action: str | None = None,
 ) -> JSONResponse:
-    """Get the default MUM task.
-    Returns the default MUM task (including its ID) as JSON.
-    The task must be pre-configured and available.
-    All MUM operations use this single task with different config arguments.
-    """
+    """Get a MUM task by action, defaulting to list-users."""
     try:
-        default_task = await _ensure_default_task(tasks_api)
-        return JSONResponse(content=default_task, status_code=status.HTTP_200_OK)
+        task_name = _resolve_mum_task_name(action)
+        task = await _ensure_mum_task(tasks_api, task_name)
+        return JSONResponse(content=task, status_code=status.HTTP_200_OK)
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)

@@ -281,21 +281,21 @@ SYSTEM_TASKS = [
 
 # Import plugin tasks
 try:
-    from app.sep.plugins.mum.task import get_default_mum_task
+    from app.sep.plugins.mum.task import get_mum_tasks
 
-    _mum_task = get_default_mum_task()
-    SYSTEM_TASKS.append(
-        Task(
-            name=_mum_task.name,
-            data=_mum_task.data,
-            backend=_mum_task.backend,
-            owner=_mum_task.owner,
-            protected=_mum_task.protected,
-            alert_on_fail=_mum_task.alert_on_fail,
-            anonymize_mask=None,
-            created_by=SYSTEM_USER,
+    for mum_task in get_mum_tasks():
+        SYSTEM_TASKS.append(
+            Task(
+                name=mum_task.name,
+                data=mum_task.data,
+                backend=mum_task.backend,
+                owner=mum_task.owner,
+                protected=mum_task.protected,
+                alert_on_fail=mum_task.alert_on_fail,
+                anonymize_mask=None,
+                created_by=SYSTEM_USER,
+            )
         )
-    )
 except ImportError:
     # MUM plugin not available, skip
     pass
