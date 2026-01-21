@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# vim: noet
+
+set -o errexit -o nounset -o pipefail
 
 # ---
 # title: "pt-summary"
@@ -39,43 +42,38 @@
 # Example: ./pt-summary.sh --dest=/tmp/summary --save-samples
 
 declare DEFAULTS_FILE=""
-declare PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+declare PTDEST=""
 declare SAVE_SAMPLES=0
 
 usage() {
-   cat << EOS
-Usage: $(basename "${0}") [OPTIONS]
-Executes pt-summary script
+    local -i exit_code="${1:-0}"
+    cat <<- EOS
+	Usage: $(basename "${0}") [OPTIONS]
+	Executes pt-summary script
 
-Command line options:
+	Command line options:
 
-   --defaults-file   Path to MySQL defaults-file
-   -d, --dest        Destination for the samples.
-                     Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
-   --save-samples    Save samples
-   -h, --help        Show this help message
+	   --defaults-file   Path to MySQL defaults-file
+	   -d, --dest        Destination for the samples.
+	                     Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
+	   --save-samples    Save samples
+	   -h, --help        Show this help message
 
-EOS
-   exit $1
+	EOS
+    exit ${exit_code}
 }
 
-OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@")
+OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "${@}")
+eval set -- "${OPTS}"
 
-if [ $? -gt 0 ]; then
-   echo "Error parsing options"
-   usage 1
-fi
-
-eval set -- "$OPTS"
-
-while [[ -n "$*" ]]; do
-   case "$1" in
+while [[ -n "${*}" ]]; do
+   case "${1}" in
       --defaults-file)
-         DEFAULTS_FILE="--defaults-file=$2"
+         DEFAULTS_FILE="--defaults-file=${2}"
          shift 2
          ;;
       -d | --dest)
-         PTDEST="$2"
+         PTDEST="${2}"
          shift 2
          ;;
       --save-samples)
@@ -90,20 +88,22 @@ while [[ -n "$*" ]]; do
          ;;
       # Need this to catch options mess up that getopt does not recognize
       *)
-         echo "Unrecognized option '$1'"
+         echo "Unrecognized option '${1}'"
          usage 1
          ;;
    esac
 done
 
-if [ $# -gt 1 ]; then
-   echo "Starting pt-summary with extra options: $@"
+test -n "${PTDEST}" || PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+
+if [ ${#} -gt 1 ]; then
+   echo "Starting pt-summary with extra options: ${*}"
 fi
 
-if [ $SAVE_SAMPLES -eq 1 ]; then
+if [ ${SAVE_SAMPLES} -eq 1 ]; then
    mkdir -p "${PTDEST}"
-   pt-summary ${DEFAULTS_FILE} --save-samples="${PTDEST}" "$@"
-   tar czf "${PTDEST}.tar.gz" -C "$(dirname ${PTDEST})" "$(basename ${PTDEST})"
+   pt-summary "${DEFAULTS_FILE}" --save-samples="${PTDEST}" "${@}"
+   tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 else
-   pt-summary ${DEFAULTS_FILE} "$@"
+   pt-summary "${DEFAULTS_FILE}" "${@}"
 fi
