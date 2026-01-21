@@ -3,6 +3,38 @@
 
 set -o errexit -o nounset -o pipefail
 
+# ---
+# title: "dead-mans-snitch"
+# description: "Checks Dead Man's Snitch alerting"
+# requires_packages:
+#  - jq
+# allow_extra_args: false
+# sudo: never
+# parameters:
+#  - name: rule
+#    type: str
+#    label: Alert rule name
+#    description: The name of the alert rule as per PMM's alerting configuration
+#    default: Percona_MS_DeadManSnitch
+#  - name: url
+#    type: str
+#    label: URL to access the PMM server via the API
+#    description: The URL for accessing PMM via the API
+#    default: https://127.0.0.1:8443
+#  - name: snitch-id
+#    type: str
+#    label: ID for use with nosnch
+#    description: Set the Snitch ID if wishing to test outbound connectivity
+#  - name: help
+#    type: bool
+#    label: Show help message
+#    description: Show help message
+# atw: []
+# ---
+
+# Usage: ./dead-mans-snitch.sh [--rule=name] [--snitch-id=ID] [--url=url] [--help]
+# Example: ./dead-mans-snitch.sh --rule=Percona_MS_DeadManSnitch
+
 declare -r PARAMS_SHORT="s:r:u:h"
 declare -r PARAMS_LONG="snitch-id:,rule:,url:,help"
 declare -r PMM_ALERT_RULES="graph/api/ruler/grafana/api/v1/rules/"
@@ -26,7 +58,9 @@ usage() {
 	Checks Dead Man's Snitch alerting
 
 	Command line options:
-
+	   -r, rule          The alert rule name
+	   -u, --url         The base URL for PMM server
+	   -s, snitch-id     ID for use with nosnch.in
 	   -h, --help        Show this help message
 
 	EOS
