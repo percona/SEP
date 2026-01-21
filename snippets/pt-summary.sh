@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # vim: noet
 
-set -o errexit -o nounset -o pipefail
-
 # ---
 # title: "pt-summary"
 # description: "Executes pt-summary command"
@@ -40,6 +38,8 @@ set -o errexit -o nounset -o pipefail
 
 # Usage: ./pt-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]
 # Example: ./pt-summary.sh --dest=/tmp/summary --save-samples
+
+set -o errexit -o nounset -o pipefail
 
 declare DEFAULTS_FILE=""
 declare PTDEST=""
