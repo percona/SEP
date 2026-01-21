@@ -146,7 +146,7 @@ NOMAD_RUN_PYTHON = {
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                     "Templates": [
                         {
-                            "EmbeddedTmpl": '{{- $var := env "NOMAD_META_config_nomad_variable" -}}{{- if $var -}}{{ with nomadVar $var }}{{ .Data.config }}{{ end }}{{- else -}}{{ env "NOMAD_META_config" }}{{- end -}}',
+                            "EmbeddedTmpl": '{{- $var := env "NOMAD_META_config_nomad_variable" -}}{{- if $var -}}{{ with nomadVar $var }}{{ .config }}{{ end }}{{- else -}}{{ env "NOMAD_META_config" }}{{- end -}}',
                             "DestPath": "local/script_config",
                         },
                         {
