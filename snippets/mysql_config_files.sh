@@ -83,7 +83,7 @@ if [ -n "$MYSQLD_PATH" ]; then
 fi
 
 # Remove duplicates
-UNIQUE_PATHS=($(printf "%s\n" "${COMMON_PATHS[@]}" | sort -u))
+readarray -t UNIQUE_PATHS < <(printf "%s\n" "${COMMON_PATHS[@]}" | sort -u)
 
 # Print found config files and their included files/contents
 echo "=== Checking common config file locations (and their includes) ==="
