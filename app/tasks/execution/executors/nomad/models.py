@@ -277,6 +277,66 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             raise ValueError("The job status could not be determined")
         return job_status
 
+    def _encode_payload(self, payload: str, *, compress: bool) -> str:
+        """Encode and optionally compress a payload for dispatch.
+
+        :param payload: The payload string to encode.
+        :type payload: str
+        :param compress: Whether to compress with zstd before encoding.
+        :type compress: bool
+        :return: The encoded (and optionally compressed) payload string.
+        :rtype: str
+        """
+        if compress:
+            cctx = zstandard.ZstdCompressor(level=22)
+            compressed = cctx.compress(payload.encode("utf-8"))
+            logger.debug(
+                "After zstandard compression: %s -> %s bytes",
+                len(payload),
+                len(compressed),
+            )
+            encoded = b2a_base64(compressed).decode("utf-8").strip()
+            encoded_size = len(encoded)
+            logger.debug(
+                "After base64 encoding: %s -> %s bytes",
+                len(compressed),
+                encoded_size,
+            )
+            if encoded_size > NOMAD_PAYLOAD_LIMIT:
+                import binascii
+
+                hex_encoded = binascii.hexlify(compressed).decode("utf-8")
+                hex_size = len(hex_encoded)
+                logger.debug(
+                    "Hex encoding alternative: %s -> %s bytes",
+                    len(compressed),
+                    hex_size,
+                )
+                if hex_size < encoded_size:
+                    encoded = hex_encoded
+                    encoded_size = hex_size
+            logger.debug(
+                "Final payload after compression and encoding: %s -> %s bytes (limit: %s)",
+                len(payload),
+                encoded_size,
+                NOMAD_PAYLOAD_LIMIT,
+            )
+        else:
+            encoded = b2a_base64(payload.encode("utf-8")).decode("utf-8").strip()
+            encoded_size = len(encoded)
+            logger.debug(
+                "Payload encoded (no compression): %s -> %s bytes",
+                len(payload),
+                encoded_size,
+            )
+        if encoded_size > NOMAD_PAYLOAD_LIMIT:
+            logger.warning(
+                "Payload size %s exceeds Nomad limit of %s bytes",
+                encoded_size,
+                NOMAD_PAYLOAD_LIMIT,
+            )
+        return encoded
+
     def dispatch_job(
         self, queue_item: TaskHistory, task: Task | None = None
     ) -> dict[str, Any]:
@@ -314,46 +374,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         payload = compacted
                 except ValueError as e:
                     logger.debug("Could not apply whitespace compaction: %s", e)
-            cctx = zstandard.ZstdCompressor(level=22)
-            compressed = cctx.compress(payload.encode("utf-8"))
-            logger.debug(
-                "After zstandard compression: %s -> %s bytes",
-                len(payload),
-                len(compressed),
-            )
-            encoded = b2a_base64(compressed).decode("utf-8").strip()
-            encoded_size = len(encoded)
-            logger.debug(
-                "After base64 encoding: %s -> %s bytes",
-                len(compressed),
-                encoded_size,
-            )
-            if encoded_size > NOMAD_PAYLOAD_LIMIT:
-                import binascii
-
-                hex_encoded = binascii.hexlify(compressed).decode("utf-8")
-                hex_size = len(hex_encoded)
-                logger.debug(
-                    "Hex encoding alternative: %s -> %s bytes",
-                    len(compressed),
-                    hex_size,
-                )
-                if hex_size < encoded_size:
-                    encoded = hex_encoded
-                    encoded_size = hex_size
-            logger.debug(
-                "Final payload after compression and encoding: %s -> %s bytes (limit: %s)",
-                len(payload),
-                encoded_size,
-                NOMAD_PAYLOAD_LIMIT,
-            )
-            if encoded_size > NOMAD_PAYLOAD_LIMIT:
-                logger.warning(
-                    "Payload size %s exceeds Nomad limit of %s bytes",
-                    encoded_size,
-                    NOMAD_PAYLOAD_LIMIT,
-                )
-            payload = encoded
+            payload = self._encode_payload(payload, compress=self.minify_payload)
 
         filtered_meta = (
             {

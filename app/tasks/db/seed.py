@@ -136,11 +136,14 @@ NOMAD_RUN_PYTHON = {
                         "command": "sh",
                         "args": [
                             "-c",
-                            "if file ${NOMAD_TASK_DIR}/script.py.gz | grep -q 'Zstandard'; then "
-                            "zstd -d ${NOMAD_TASK_DIR}/script.py.gz -o ${NOMAD_TASK_DIR}/script.py; "
-                            "else gzip -d ${NOMAD_TASK_DIR}/script.py.gz; fi;"
+                            "FILE_TYPE=$(file ${NOMAD_TASK_DIR}/script.py); "
+                            "if echo \"$FILE_TYPE\" | grep -q 'Zstandard'; then "
+                            "zstd -d ${NOMAD_TASK_DIR}/script.py -o ${NOMAD_TASK_DIR}/script_exec.py; "
+                            "elif echo \"$FILE_TYPE\" | grep -q 'gzip'; then "
+                            "zcat ${NOMAD_TASK_DIR}/script.py > ${NOMAD_TASK_DIR}/script_exec.py; "
+                            "else cp ${NOMAD_TASK_DIR}/script.py ${NOMAD_TASK_DIR}/script_exec.py; fi; "
                             "${NOMAD_ALLOC_DIR}/venv/bin/python3"
-                            " -u ${NOMAD_TASK_DIR}/script.py --config ${NOMAD_TASK_DIR}/script_config",
+                            " -u ${NOMAD_TASK_DIR}/script_exec.py --config ${NOMAD_TASK_DIR}/script_config",
                         ],
                         "work_dir": "${NOMAD_TASK_DIR}/output_files",
                     },
@@ -156,7 +159,7 @@ NOMAD_RUN_PYTHON = {
                             "DestPath": "local/output_files/.keep",
                         },
                     ],
-                    "DispatchPayload": {"file": "script.py.gz"},
+                    "DispatchPayload": {"file": "script.py"},
                 },
                 {
                     "Name": "clean-up",
