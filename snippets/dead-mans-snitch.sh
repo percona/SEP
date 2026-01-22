@@ -120,7 +120,7 @@ fi
 echo Checking for "${RULE_NAME}"
 
 jq --arg rule_name "${RULE_NAME}" '.. | objects | select(.title == $rule_name)' alert-rules.json > alert-rules.json.info
-grep -Fq "${RULE_NAME}" alert-rules.json.info || exit 17
+grep -Fq "${RULE_NAME}" alert-rules.json.info || { echo "${RULE_NAME}" does not exist; exit 17; }
 
 echo "${RULE_NAME}" alert rule information
 cat alert-rules.json.info
