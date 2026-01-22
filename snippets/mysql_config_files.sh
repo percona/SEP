@@ -3,7 +3,7 @@
 # ---
 # title: MySQL Config File Discovery Script
 # description: This script finds all MySQL config files, including those referenced by !include and !includedir directives.
-# allow_extra_args: true
+# allow_extra_args: false
 # parameters: []
 # atw:
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
