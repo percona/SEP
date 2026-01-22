@@ -254,8 +254,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 raw_value = json.dumps(value)
             else:
                 raw_value = str(value)
-            encoded = b64encode(raw_value.encode("utf-8")).decode("utf-8")
-            payload["Items"][key] = encoded
+            payload["Items"][key] = raw_value
         endpoint = f"/v1/var/{quote(sanitized_path)}"
         async with self._request("PUT", endpoint, json=payload) as response:
             body = await response.text()
