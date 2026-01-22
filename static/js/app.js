@@ -201,6 +201,14 @@ document.addEventListener('DOMContentLoaded', () => {
             ...tableDefault
         };
 
+        // Special configuration for completed-tasks table: sort by "Started at" column (index 2) descending
+        if (table.getAttribute('data-table') === 'completed-tasks') {
+            config.columns = [{
+                select: 2, // "Started at" column
+                sort: "desc"
+            }];
+        }
+
         const dataTable = new simpleDatatables.DataTable(table, config);
         if (typeof dataTable.on === 'function') {
             dataTable.on('datatable.update', () => {
