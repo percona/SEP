@@ -85,7 +85,8 @@ done
 test -n "${RULE_NAME}" || { echo Please set the rule name ; usage 11 ; }
 test -n "${URL}" || { echo Please set the URL ; usage 11 ; }
 
-test -x "$(which "${CURL[0]}" 2>/dev/null)" || { echo Please install curl ; exit 12 ; }
+#test -x "$(which "${CURL[0]}" 2>/dev/null)" || { echo Please install curl ; exit 12 ; }
+curl --help &>/dev/null || { echo Please install curl ; exit 12 ; }
 
 # Test PMM
 "${CURL[@]}" "${URL}/${PMM_READY_CHECK}" --output pmm_readyz.json > pmm_readyz.json.status
@@ -99,7 +100,8 @@ elif ! grep -Fq 200 pmm_version.json.status; then
     exit 14
 fi
 
-if which jq &>/dev/null; then
+#if which jq &>/dev/null; then
+if jq --help &>/dev/null; then
     if ! jq '.version == .server.version and .version != null' pmm_version.json | grep -Fq true; then
         echo ERROR Unexpected output from PMM version
         jq -cr . pmm_version.json
