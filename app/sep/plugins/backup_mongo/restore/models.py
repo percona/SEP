@@ -10,6 +10,9 @@ from app.sep.plugins.backup_mongo.models import BackupType
 class RestoreConfigRestore(BaseCaseInsensitiveModel):
     """Represent restore configuration options.
 
+    This model uses camelCase serialization aliases to match PBM config format,
+    but still accepts uppercase keys for case-insensitive input.
+
     :param batchSize: The number of documents to buffer.
     :type batchSize: int | None
     :param numInsertionWorkers: Specifies the number of insertion workers to run concurrently per collection.
@@ -28,139 +31,101 @@ class RestoreConfigRestore(BaseCaseInsensitiveModel):
     :type mongodLocationMap: dict[str, str] | EmptyStrToNone
     """
 
+    # Keep alias_generator=None to use explicit serialization aliases (camelCase for PBM)
     model_config = ConfigDict(alias_generator=None)
 
     batch_size: int | None = Field(
         default=500,
-        validation_alias=AliasChoices("batchSize", "BATCHSIZE"),
+        validation_alias=AliasChoices("batchSize", "BATCHSIZE", "BATCH_SIZE"),
         serialization_alias="batchSize",
     )
     num_insertion_workers: int | None = Field(
         default=10,
-        validation_alias=AliasChoices("numInsertionWorkers", "NUMINSERTIONWORKERS"),
+        validation_alias=AliasChoices(
+            "numInsertionWorkers", "NUMINSERTIONWORKERS", "NUM_INSERTION_WORKERS"
+        ),
         serialization_alias="numInsertionWorkers",
     )
     num_parallel_collections: int | None = Field(
         None,
         validation_alias=AliasChoices(
-            "numParallelCollections", "NUMPARALLELCOLLECTIONS"
+            "numParallelCollections",
+            "NUMPARALLELCOLLECTIONS",
+            "NUM_PARALLEL_COLLECTIONS",
         ),
         serialization_alias="numParallelCollections",
     )
     num_download_workers: int | None = Field(
         None,
-        validation_alias=AliasChoices("numDownloadWorkers", "NUMDOWNLOADWORKERS"),
+        validation_alias=AliasChoices(
+            "numDownloadWorkers", "NUMDOWNLOADWORKERS", "NUM_DOWNLOAD_WORKERS"
+        ),
         serialization_alias="numDownloadWorkers",
     )
     max_download_buffer_mb: int | None = Field(
         None,
-        validation_alias=AliasChoices("maxDownloadBufferMb", "MAXDOWNLOADBUFFERMB"),
+        validation_alias=AliasChoices(
+            "maxDownloadBufferMb", "MAXDOWNLOADBUFFERMB", "MAX_DOWNLOAD_BUFFER_MB"
+        ),
         serialization_alias="maxDownloadBufferMb",
     )
     download_chunk_mb: int | None = Field(
         default=32,
-        validation_alias=AliasChoices("downloadChunkMb", "DOWNLOADCHUNKMB"),
+        validation_alias=AliasChoices(
+            "downloadChunkMb", "DOWNLOADCHUNKMB", "DOWNLOAD_CHUNK_MB"
+        ),
         serialization_alias="downloadChunkMb",
     )
     mongod_location: RequiredStr | EmptyStrToNone = Field(
         None,
-        validation_alias=AliasChoices("mongodLocation", "MONGODLOCATION"),
+        validation_alias=AliasChoices(
+            "mongodLocation", "MONGODLOCATION", "MONGOD_LOCATION"
+        ),
         serialization_alias="mongodLocation",
     )
     mongod_location_map: dict[str, str] | EmptyStrToNone = Field(
         None,
-        validation_alias=AliasChoices("mongodLocationMap", "MONGODLOCATIONMAP"),
+        validation_alias=AliasChoices(
+            "mongodLocationMap", "MONGODLOCATIONMAP", "MONGOD_LOCATION_MAP"
+        ),
         serialization_alias="mongodLocationMap",
     )
 
 
-class RestoreConfigAll(BaseCaseInsensitiveModel):
-    """Global config values for restore operations.
-
-    This model contains settings that apply to all servers in a restore operation,
-    including logging and SSH options.
-
-    :param logging_dir: Directory path for storing restore operation logs.
-    :type logging_dir: RequiredStr | EmptyStrToNone
-    :param ssh_user: SSH username for remote operations (default: "percona").
-    :type ssh_user: RequiredStr | EmptyStrToNone
-    :param ssh_port: SSH port for remote operations (default: 22).
-    :type ssh_port: int | EmptyStrToNone
-    :param ssh_key: SSH key name for authentication (not full path).
-    :type ssh_key: RequiredStr | EmptyStrToNone
-    """
-
-    logging_dir: RequiredStr | EmptyStrToNone = None
-
-    # SSH Options
-    ssh_user: RequiredStr | EmptyStrToNone = Field(default="percona")
-    ssh_port: int | EmptyStrToNone = Field(default=22)
-    ssh_key: RequiredStr | EmptyStrToNone = None  # only key name, not full path
-
-
-class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
-    """Restore job configuration for a specific PBM restore job.
-
-    This model contains server-specific settings for a restore operation, including
-    backup source, destination, and restore options.
-
-    :param backup_type: Type of backup to restore from.
-    :type backup_type: BackupType
-    :param backup_source: Source location of the backup (backup name or timestamp).
-    :type backup_source: RequiredStr
-    :param pre_script: Script to execute before restore.
-    :type pre_script: RequiredStr | EmptyStrToNone
-    :param post_script: Script to execute after restore.
-    :type post_script: RequiredStr | EmptyStrToNone
-    """
-
-    backup_type: BackupType
-    backup_source: RequiredStr
-    pre_script: RequiredStr | EmptyStrToNone = None
-    post_script: RequiredStr | EmptyStrToNone = None
-
-
-class RestoreConfigServer(BaseRestoreConfigServer):
-    """Server-specific restore configuration.
-
-    Extends BaseRestoreConfigServer with additional required fields for alias, destination host, and port.
-
-    :param alias: Unique identifier for the restore job.
-    :type alias: RequiredStr
-    :param dest_host: Destination host for the restore.
-    :type dest_host: RequiredStr | EmptyStrToNone
-    :param dest_port: Destination port for the restore.
-    :type dest_port: int
-    """
-
-    alias: RequiredStr
-    dest_host: RequiredStr | EmptyStrToNone = None
-    dest_port: int | EmptyStrToNone = None
-
-
 class RestoreConfig(BaseCaseInsensitiveModel):
-    """Define the complete configuration for a restore operation.
+    """Define the complete configuration for a restore operation in PBM format.
 
-    This model combines global settings applicable to all servers with a list of
-    server-specific configurations and restore options for a complete restore operation setup.
+    This model follows the PBM backup format with lowercase keys and camelCase values,
+    similar to how PBM backup config is structured. Only contains PBM config sections.
+    The backupSource and backupType are stored separately for restore operations.
 
-    :param all_servers: Global configuration settings for all servers.
-    :type all_servers: RestoreConfigAll
-    :param restore: Restore-specific configuration options.
+    :param restore: Restore-specific configuration options (PBM config format).
     :type restore: RestoreConfigRestore | None
-    :param server_list: List of server-specific restore configurations.
-    :type server_list: list[RestoreConfigServer]
+    :param backupSource: Source location of the backup (backup name or timestamp).
+        This is not part of PBM config but needed for restore operations.
+    :type backupSource: RequiredStr
+    :param backupType: Type of backup to restore from.
+        This is not part of PBM config but needed for restore operations.
+    :type backupType: BackupType
     """
 
-    all_servers: RestoreConfigAll
-    restore: RestoreConfigRestore | None = None
-    server_list: list[RestoreConfigServer]
+    model_config = ConfigDict(alias_generator=None)
+
+    restore: RestoreConfigRestore | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("restore", "RESTORE")
+    )
+    backup_source: RequiredStr = Field(
+        validation_alias=AliasChoices("backupSource", "BACKUP_SOURCE", "backup_source"),
+        serialization_alias="backupSource",
+    )
+    backup_type: BackupType = Field(
+        validation_alias=AliasChoices("backupType", "BACKUP_TYPE", "backup_type"),
+        serialization_alias="backupType",
+    )
 
 
-class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
+class RestoreCreate(BaseCaseInsensitiveModel):
     """Model for creating a restore task.
-
-    Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
 
     :param hostname: The hostname of the machine to restore to.
     :type hostname: RequiredStr
@@ -168,6 +133,10 @@ class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
     :type task_name: RequiredStr
     :param service_id: Service identifier for the restore task.
     :type service_id: RequiredStr | EmptyStrToNone = None
+    :param backup_type: Type of backup to restore from.
+    :type backup_type: BackupType
+    :param backup_source: Source location of the backup (backup name or timestamp).
+    :type backup_source: RequiredStr
     :param restore_batch_size: Number of documents to buffer.
     :type restore_batch_size: int | None
     :param restore_num_insertion_workers: Number of insertion workers to run concurrently per collection.
@@ -189,6 +158,8 @@ class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
     hostname: RequiredStr
     task_name: RequiredStr
     service_id: RequiredStr | EmptyStrToNone = None
+    backup_type: BackupType
+    backup_source: RequiredStr
     restore_batch_size: int | EmptyStrToNone = None
     restore_num_insertion_workers: int | EmptyStrToNone = None
     restore_num_parallel_collections: int | EmptyStrToNone = None

@@ -29,8 +29,8 @@ def pbm():
     with open(config_file, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
-    # Get restore configuration
-    restore_config = config.get('RESTORE', {})
+    # Get restore configuration - PBM format (lowercase key)
+    restore_config = config.get('restore', {})
 
     # Update restore section in config if restore options are provided
     if restore_config:

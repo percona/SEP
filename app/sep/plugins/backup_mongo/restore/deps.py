@@ -5,41 +5,22 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form
-from fastapi.encoders import jsonable_encoder
 
-from app.core.utils.pydantic import extract_model_from_instance
-from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
     ExecutorHosts,
-    get_created_entity,
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
-    BaseRestoreConfigServer,
     RestoreConfig,
-    RestoreConfigAll,
     RestoreConfigRestore,
-    RestoreConfigServer,
     RestoreCreate,
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
-
-
-def _update_restore_config_from_service(
-    restore_config_payload: dict[str, Any],
-    service_address: str,
-) -> None:
-    """Update restore config payload with service address information."""
-    if isinstance(service_address, str) and ":" in service_address:
-        host, port_str = service_address.split(":", 1)
-        restore_config_payload["dest_host"] = host.strip()
-        restore_config_payload["dest_port"] = int(port_str.strip())
 
 
 def _parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
@@ -54,7 +35,7 @@ def _parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
 
 
 def _build_restore_config_dict(form: RestoreCreate) -> dict[str, Any]:
-    """Build restore configuration dictionary from form data."""
+    """Build restore configuration dictionary from form data in PBM format."""
     field_mapping = {
         "batchSize": form.restore_batch_size,
         "numInsertionWorkers": form.restore_num_insertion_workers,
@@ -77,36 +58,17 @@ def _build_restore_config_dict(form: RestoreCreate) -> dict[str, Any]:
 
 async def build_restore_config_task_payload(
     form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build task payload for restore config operation."""
-    all_config_dict = extract_model_from_instance(form, RestoreConfigAll)
-    base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
-
-    restore_config_payload: dict[str, Any] = {
-        **base_config_dict.model_dump(),
-        "alias": form.task_name,
-    }
-
-    # Get service information if service_id is provided
-    if form.service_id:
-        service = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SERVICE,
-            form.service_id,
-            type=ServiceTypeEnum.MONGODB,
-        )
-        _update_restore_config_from_service(restore_config_payload, service.address)
-
+    """Build task payload for restore config operation in PBM format."""
     # Build restore configuration
     restore_config_dict = _build_restore_config_dict(form)
 
     restore_config = RestoreConfig(
-        all_servers=RestoreConfigAll.model_validate(all_config_dict),
         restore=RestoreConfigRestore.model_validate(restore_config_dict)
         if restore_config_dict
         else None,
-        server_list=[RestoreConfigServer.model_validate(restore_config_payload)],
+        backup_source=form.backup_source,
+        backup_type=form.backup_type,
     )
 
     requirements = "packaging\nPyYAML"
@@ -120,7 +82,11 @@ async def build_restore_config_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
+                    restore_config.model_dump(
+                        by_alias=True, exclude_none=True, mode="json"
+                    ),
+                    default_flow_style=False,
+                    allow_unicode=True,
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
@@ -132,31 +98,12 @@ async def build_restore_config_task_payload(
 
 async def build_restore_task_payload(
     form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build task payload for a restore operation."""
-    all_config_dict = extract_model_from_instance(form, RestoreConfigAll)
-    base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
-
-    restore_config_payload: dict[str, Any] = {
-        **base_config_dict.model_dump(),
-        "alias": form.task_name,
-    }
-
-    # Get service information if service_id is provided
-    if form.service_id:
-        service = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SERVICE,
-            form.service_id,
-            type=ServiceTypeEnum.MONGODB,
-        )
-        _update_restore_config_from_service(restore_config_payload, service.address)
-
+    """Build task payload for a restore operation in PBM format."""
     restore_config = RestoreConfig(
-        all_servers=RestoreConfigAll.model_validate(all_config_dict),
         restore=None,  # Restore options are already synced in config task
-        server_list=[RestoreConfigServer.model_validate(restore_config_payload)],
+        backup_source=form.backup_source,
+        backup_type=form.backup_type,
     )
 
     backup_type_to_payload = {
@@ -180,7 +127,11 @@ async def build_restore_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
+                    restore_config.model_dump(
+                        by_alias=True, exclude_none=True, mode="json"
+                    ),
+                    default_flow_style=False,
+                    allow_unicode=True,
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
@@ -221,6 +172,7 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
     """Parse restore task data for editing.
 
     Extracts configuration from an existing restore task to populate the edit form.
+    Reads from PBM format config (lowercase keys, camelCase values).
 
     :param task: The task data retrieved from the Tasks API.
     :type task: dict[str, Any]
@@ -230,28 +182,19 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
     data = task["data"]
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
-    server_config = task_config["SERVER_LIST"][0]
-    all_servers_config = task_config.get("ALL_SERVERS", {})
-    restore_config = task_config.get("RESTORE", {})
+    restore_config = task_config.get("restore", {})
 
     result = {
         "name": task["name"],
         "hostname": meta["target"],
-        "backup_type": server_config["BACKUP_TYPE"],
+        "backup_type": task_config.get("backupType"),
         "service_id": None,
-        "host": server_config.get("DEST_HOST"),
-        "port": server_config.get("DEST_PORT") or 27017,
-        "backup_source": server_config.get("BACKUP_SOURCE"),
+        "backup_source": task_config.get("backupSource"),
     }
 
     # Add restore options
     if restore_config:
         result.update(_parse_restore_config_options(restore_config))
-
-    for config in [server_config, all_servers_config]:
-        result.update(
-            {k.lower(): v for k, v in config.items() if k.lower() not in result}
-        )
 
     return result
 
@@ -298,6 +241,7 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant information from a task for the Restores plugin.
 
     Processes the task data to extract hostname and backup information.
+    Reads from PBM format config (lowercase keys, camelCase values).
 
     :param task: The task data retrieved from the Tasks API.
     :type task: dict[str, Any]
@@ -307,16 +251,13 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
     data = task["data"]
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
-    restore_server = task_config["SERVER_LIST"][0]
 
     return {
         "config": task_config,
         "parent": data.get("parent"),
         "target": meta["target"],
         "hostname": meta["target"],
-        "host": restore_server.get("DEST_HOST"),
-        "port": restore_server.get("DEST_PORT") or 27017,
-        "backup_type": BackupType(restore_server.get("BACKUP_TYPE")).name,
+        "backup_type": BackupType(task_config.get("backupType")).name,
         "created_at": task.get("created_at"),
         "created_by": task.get("created_by"),
         "last_updated_by": task.get("last_updated_by"),

@@ -29,8 +29,8 @@ def pbm():
     with open(config_file, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
-    # Get backup name from config (backup timestamp/name to restore)
-    backup_name = config.get('BACKUP_SOURCE') or config.get('SERVER_LIST', [{}])[0].get('BACKUP_SOURCE')
+    # Get backup name from config (backup timestamp/name to restore) - PBM format
+    backup_name = config.get('backupSource')
 
     if not backup_name:
         print("Error: BACKUP_SOURCE (backup name) is required")

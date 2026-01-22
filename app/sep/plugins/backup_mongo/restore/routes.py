@@ -107,9 +107,15 @@ async def restores_detail(
 
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
-    server_config = task_config["SERVER_LIST"][0]
 
     parsed_task_data = parse_restore_task_data(task.model_dump())
+
+    # Build URLs for buttons
+    # Sync Config button executes the config task (parent task)
+    sync_config_url = request.url_for("pbm_restores_execute", task_name=task.name)
+    # Run Restore button executes the restore task (child task with backup_type suffix)
+    restore_task_name = f"{task.name}-{task_config.get('backupType')}"
+    restore_url = request.url_for("pbm_restores_execute", task_name=restore_task_name)
 
     task_data = {
         "name": task.name,
@@ -119,10 +125,10 @@ async def restores_detail(
         "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
-        "host": server_config.get("DEST_HOST"),
-        "port": server_config.get("DEST_PORT") or 27017,
-        "restore_type": BackupType(server_config["BACKUP_TYPE"]).name,
-        "backup_source": server_config.get("BACKUP_SOURCE"),
+        "restore_type": BackupType(task_config.get("backupType")).name,
+        "backup_source": task_config.get("backupSource"),
+        "sync_config_url": sync_config_url,
+        "restore_url": restore_url,
         "delete_url": request.url_for("pbm_restores_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
         "alert_on_fail": task.alert_on_fail,

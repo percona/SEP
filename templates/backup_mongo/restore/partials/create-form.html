@@ -212,43 +212,6 @@
                               placeholder='node01:27017: /usr/bin/mongod&#10;node02:27017: /usr/bin/mongod'></textarea>
                 </label>
             </fieldset>
-            <fieldset>
-                <legend>General Configuration (Optional)</legend>
-                <br>
-                {% set logging_dir_title = "Directory path for storing restore operation logs." %}
-                <label for="logging_dir" title="{{ logging_dir_title }}">
-                    Logging Directory:
-                    <input type="text"
-                           id="logging_dir"
-                           name="logging_dir"
-                           placeholder="/path/to/logs" />
-                </label>
-                <br>
-                <br>
-                {% set ssh_user_title = "SSH username for remote operations (default: percona)." %}
-                <label for="ssh_user" title="{{ ssh_user_title }}">
-                    SSH User:
-                    <input type="text" id="ssh_user" name="ssh_user" placeholder="percona" />
-                </label>
-                <br>
-                <br>
-                {% set ssh_port_title = "SSH port for remote operations (default: 22)." %}
-                <label for="ssh_port" title="{{ ssh_port_title }}">
-                    SSH Port:
-                    <input type="number"
-                           id="ssh_port"
-                           name="ssh_port"
-                           value="22"
-                           placeholder="22" />
-                </label>
-                <br>
-                <br>
-                {% set ssh_key_title = "SSH key name for authentication (not full path)." %}
-                <label for="ssh_key" title="{{ ssh_key_title }}">
-                    SSH Key:
-                    <input type="text" id="ssh_key" name="ssh_key" placeholder="id_rsa" />
-                </label>
-            </fieldset>
             {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
         </section>
         <footer>
