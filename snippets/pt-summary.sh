@@ -32,7 +32,7 @@
 #  - GROUP_REPLICATION
 # ---
 
-# Usage: ./pt-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]
+# Usage: ./pt-summary.sh [--dest=path] [--save-samples] [--help] [-- other args...]
 # Example: ./pt-summary.sh --dest=/tmp/summary --save-samples
 
 set -o errexit -o nounset -o pipefail
