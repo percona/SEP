@@ -7,10 +7,6 @@
 # allow_extra_args: false
 # sudo: always
 # parameters:
-#  - name: defaults-file
-#    type: str
-#    label: Path to the defaults-file
-#    description: Path to the defaults-file
 #  - name: dest
 #    type: str
 #    label: Destination for the summaries
@@ -41,7 +37,6 @@
 
 set -o errexit -o nounset -o pipefail
 
-declare DEFAULTS_FILE=""
 declare PTDEST=""
 declare SAVE_SAMPLES=0
 
@@ -53,7 +48,6 @@ usage() {
 
 	Command line options:
 
-	   --defaults-file   Path to MySQL defaults-file
 	   -d, --dest        Destination for the samples.
 	                     Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
 	   --save-samples    Save samples
@@ -63,15 +57,11 @@ usage() {
     exit ${exit_code}
 }
 
-OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "${@}")
+OPTS=$(getopt --options -d:h --longoptions 'dest:,save-samples,help' -- "${@}")
 eval set -- "${OPTS}"
 
 while [[ -n "${*}" ]]; do
    case "${1}" in
-      --defaults-file)
-         DEFAULTS_FILE="--defaults-file=${2}"
-         shift 2
-         ;;
       -d | --dest)
          PTDEST="${2}"
          shift 2
@@ -102,8 +92,8 @@ fi
 
 if [ ${SAVE_SAMPLES} -eq 1 ]; then
    mkdir -p "${PTDEST}"
-   pt-summary "${DEFAULTS_FILE}" --save-samples="${PTDEST}" "${@}"
+   pt-summary --save-samples="${PTDEST}" "${@}"
    tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 else
-   pt-summary "${DEFAULTS_FILE}" "${@}"
+   pt-summary "${@}"
 fi
