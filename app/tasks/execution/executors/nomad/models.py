@@ -22,7 +22,7 @@ import json
 import logging
 import tarfile
 from base64 import b64encode
-from binascii import b2a_base64
+from binascii import b2a_base64, hexlify
 from collections import defaultdict
 from collections.abc import AsyncGenerator
 from datetime import datetime, UTC
@@ -303,9 +303,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 encoded_size,
             )
             if encoded_size > NOMAD_PAYLOAD_LIMIT:
-                import binascii
-
-                hex_encoded = binascii.hexlify(compressed).decode("utf-8")
+                hex_encoded = hexlify(compressed).decode("utf-8")
                 hex_size = len(hex_encoded)
                 logger.debug(
                     "Hex encoding alternative: %s -> %s bytes",
