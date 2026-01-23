@@ -1,13 +1,14 @@
+---
 default_language_version:
   python: python3
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 871f3bcae4fe473cd7109c3a068db975dc035e3b # 0.9.4
+    rev: 871f3bcae4fe473cd7109c3a068db975dc035e3b  # 0.9.4
     hooks:
       - id: ruff
       - id: ruff-format
   - repo: https://github.com/djlint/djLint
-    rev: 9112cb64851c95a7802358af285d21ad8b7f6437 # v1.36.4
+    rev: 9112cb64851c95a7802358af285d21ad8b7f6437  # v1.36.4
     hooks:
       - id: djlint
       - id: djlint-reformat
@@ -29,7 +30,7 @@ repos:
         files: ^(?!.*\.min\.css$).*\.css$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # v5.0.0
     hooks:
       - id: check-ast
       - id: check-case-conflict
@@ -42,3 +43,4 @@ repos:
       - id: fix-encoding-pragma
         args: ["--remove"]
       - id: trailing-whitespace
+...
