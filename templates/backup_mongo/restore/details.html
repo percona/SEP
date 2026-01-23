@@ -140,6 +140,15 @@
         <br>
         <br>
     {% endif %}
+    {% if history_force_resync %}
+        <section>
+            <h2>Force Resync Runs</h2>
+            {% set history_tasks = history_force_resync %}
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
     <section>
         <h2>Config Sync</h2>
         {% set history_tasks = history %}

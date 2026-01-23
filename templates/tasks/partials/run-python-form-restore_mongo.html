@@ -98,6 +98,14 @@
                 <span class="label">PBM List</span>
             </button>
         {% endif %}
+        {% if task.force_resync_url %}
+            <button type="submit"
+                    class="text medium send-button submitButton"
+                    form="{{ task.name }}-force-resync-send">
+                <span class="material-symbols-outlined">sync</span>
+                <span class="label">Force Resync</span>
+            </button>
+        {% endif %}
         {% if not task.protected %}
             <button class="text medium delete-button submitButton delete-tasks-button"
                     form="delete-task-form">
@@ -122,6 +130,15 @@
           data-confirm-message='Are you sure you want to run pbm list for "{{ task.name }}"?'
           method="post"
           action="{{ task.pbm_list_url }}">
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    </form>
+{% endif %}
+{% if task.force_resync_url %}
+    <form class="send-form"
+          id="{{ task.name }}-force-resync-send"
+          data-confirm-message='Are you sure you want to run pbm config --force-resync for "{{ task.name }}"?'
+          method="post"
+          action="{{ task.force_resync_url }}">
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     </form>
 {% endif %}

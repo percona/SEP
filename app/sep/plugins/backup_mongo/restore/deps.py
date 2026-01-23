@@ -164,6 +164,28 @@ async def build_pbm_list_task_payload(
     )
 
 
+async def build_pbm_force_resync_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+) -> TaskWrite:
+    """Build task payload for pbm config --force-resync command (physical restores only)."""
+    payload_path = Path(__file__).parent / "pbm_force_resync_payload"
+
+    return TaskWrite(
+        name=f"{form.task_name}-pbm-force-resync",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.RESTORE_MONGO,
+        data={
+            "task": "run-python",
+            "meta": {
+                "target": form.hostname,
+                "requirements": "",
+            },
+            "payload": f"file://{payload_path}",
+            "parent": form.task_name,
+        },
+    )
+
+
 def _parse_restore_config_options(restore_config: dict[str, Any]) -> dict[str, Any]:
     """Parse restore configuration options from task data."""
     result = {}
@@ -223,16 +245,26 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
 
 async def build_restore_tasks(
     form: Annotated[RestoreCreate, Form()],
-) -> tuple[TaskWrite, TaskWrite, TaskWrite]:
-    """Build restore config, restore task, and pbm list task payloads."""
+) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
+    """Build restore config, restore task, pbm list task, and optionally force-resync task payloads.
+
+    Force-resync task is only created for physical restores.
+    """
     config_task = await build_restore_config_task_payload(form)
     restore_task = await build_restore_task_payload(form)
     pbm_list_task = await build_pbm_list_task_payload(form)
-    return config_task, restore_task, pbm_list_task
+
+    # Only create force-resync task for physical restores
+    force_resync_task = None
+    if form.backup_type == BackupType.PBM_PHYSICAL:
+        force_resync_task = await build_pbm_force_resync_task_payload(form)
+
+    return config_task, restore_task, pbm_list_task, force_resync_task
 
 
 RestoreTasks = Annotated[
-    tuple[TaskWrite, TaskWrite, TaskWrite], Depends(build_restore_tasks)
+    tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None],
+    Depends(build_restore_tasks),
 ]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
@@ -274,14 +306,22 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
+
+    # Handle tasks that don't have config (e.g., pbm-list task)
+    task_config = {}
+    if "config" in meta:
+        task_config = yaml.safe_load(meta["config"]) or {}
+
+    backup_type = None
+    if task_config.get("backupType"):
+        backup_type = BackupType(task_config.get("backupType")).name
 
     return {
         "config": task_config,
         "parent": data.get("parent"),
         "target": meta["target"],
         "hostname": meta["target"],
-        "backup_type": BackupType(task_config.get("backupType")).name,
+        "backup_type": backup_type,
         "created_at": task.get("created_at"),
         "created_by": task.get("created_by"),
         "last_updated_by": task.get("last_updated_by"),
