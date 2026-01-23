@@ -23,7 +23,7 @@ if [[ $1 == --defaults-file=* ]]; then
     shift
 fi
 
-MYSQL="mysql -B $DEFAULTS_FILE"
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 # Replace the above with a heredoc for better multiline handling
 $MYSQL <<EOF

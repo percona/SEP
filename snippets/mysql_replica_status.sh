@@ -24,7 +24,7 @@ if [[ $1 == --defaults-file=* ]]; then
     shift
 fi
 
-MYSQL="mysql -B $DEFAULTS_FILE"
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 # Try SHOW REPLICA STATUS and check for error anywhere in output
 if ! $MYSQL -e "SHOW REPLICA STATUS\\G" 2>&1 | grep -q "You have an error"; then
