@@ -1468,7 +1468,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             raise BackupError(msg)
 
         # using sync as get was failing PLAT-446
-        s3_cmd = [S3CMD_BIN, 'sync', self.backup_source, latest_local_file_path]
+        s3_cmd = [PYTHON_BIN, S3CMD_BIN, 'sync', self.backup_source, latest_local_file_path]
         s3_proc = subprocess.Popen(s3_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = s3_proc.communicate()
         if s3_proc.returncode != 0:
@@ -2557,7 +2557,7 @@ class MyConfigParser(configparser.ConfigParser):
             pass
         else:
             file = StringIO.StringIO("[dummy]\n" + text)
-            self.read_file(file)
+            self.readfp(file, filename)
 
 def main():
     """Main"""
