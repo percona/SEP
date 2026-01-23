@@ -1,4 +1,4 @@
-#!/bin/bash -u
+#!/usr/bin/env bash
 
 # ---
 # title: "ProxySQL Status"
@@ -7,65 +7,63 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to ProxySQL admin config file
-#    description: Path to the config file containing ProxySQL admin credentials
+#    label: Config file
+#    description: Path to ProxySQL admin config file
 #    default: "/etc/proxysql-admin.cnf"
 #  - name: files
-#    type: int
-#    label: Display contents of proxysql-admin related files
+#    type: bool
+#    label: Show files
 #    description: Display contents of proxysql-admin related files
-#    default: 0
+#    default: false
 #  - name: main
-#    type: int
-#    label: Display main tables
+#    type: bool
+#    label: Main tables
 #    description: Display main tables (both on-disk and runtime)
-#    default: 0
+#    default: false
 #  - name: monitor
-#    type: int
-#    label: Display monitor tables
+#    type: bool
+#    label: Monitor tables
 #    description: Display monitor tables
-#    default: 0
+#    default: false
 #  - name: runtime
-#    type: int
-#    label: Display runtime-related data
+#    type: bool
+#    label: Runtime data
 #    description: Display runtime-related data (implies --main)
-#    default: 0
+#    default: false
 #  - name: stats
-#    type: int
-#    label: Display stats tables
+#    type: bool
+#    label: Stats tables
 #    description: Display stats tables
-#    default: 0
-#  - name: table
-#    type: str
-#    label: Filter by table name
-#    description: Display only tables that contain the table name (case-sensitive)
-#    default: ""
-#  - name: help
-#    type: int
-#    label: Show help message
-#    description: Show help message
-#    default: 0
+#    default: false
 # ---
 
+declare DEFAULTS_FILE="/etc/proxysql-admin.cnf"
+declare USER=""
+declare PASSWORD=""
+declare HOST=""
+declare PORT=""
+declare RUNTIME_OPTION=""
+declare DUMP_ALL=1
+declare DUMP_MAIN=0
+declare DUMP_STATS=0
+declare DUMP_MONITOR=0
+declare DUMP_FILES=0
+declare TABLE_FILTER=""
 
 function usage() {
-    echo "Usage: $0 [--defaults-file <file>] [--files] [--main] [--monitor] [--runtime] [--stats] [--table <table_name>] [--help]"
-    echo "Example: $0 --files"
-    echo "         $0 --main --table mysql_servers"
-    echo "         $0 --defaults-file /path/to/config.cnf --stats"
-    echo ""
-    echo "This script displays ProxySQL status information including tables and configuration files."
-    echo "By default, it displays all tables and files."
-    echo ""
-    echo "Arguments:"
-    echo "  --defaults-file <file>             Optional. Path to ProxySQL admin config file. Defaults to /etc/proxysql-admin.cnf."
-    echo "  --files                           Display contents of proxysql-admin related files."
-    echo "  --main                            Display main tables (both on-disk and runtime)."
-    echo "  --monitor                         Display monitor tables."
-    echo "  --runtime                         Display runtime-related data (implies --main)."
-    echo "  --stats                           Display stats tables."
-    echo "  --table <table_name>              Display only tables that contain the table name (case-sensitive)."
-    echo "  --help                            Show this help message."
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  --defaults-file <file> Config file (default: /etc/proxysql-admin.cnf)
+  --files                Show config files
+  --main                 Show main tables
+  --monitor              Show monitor tables
+  --runtime              Show runtime data
+  --stats                Show stats tables
+  --table <name>         Filter by table name
+  --help                 Show this message
+EOF
     exit 1
 }
 
@@ -101,18 +99,6 @@ function mysql_exec() {
 }
 
 
-declare USER
-declare PASSWORD
-declare HOST
-declare PORT
-declare DEFAULTS_FILE="/etc/proxysql-admin.cnf"
-declare RUNTIME_OPTION=""
-declare DUMP_ALL=1
-declare DUMP_MAIN=0
-declare DUMP_STATS=0
-declare DUMP_MONITOR=0
-declare DUMP_FILES=0
-declare TABLE_FILTER=""
 
 
 function parse_args() {
@@ -121,7 +107,7 @@ function parse_args() {
    # TODO: kennt, what happens if we don't have a functional getopt()?
     # Check if we have a functional getopt(1)
     if ! getopt --test; then
-        go_out="$(getopt --options=h --longoptions=defaults-file:,runtime,main,stats,monitor,files,table:,help \
+        go_out="$(getopt --options=h --longoptions=defaults-file:,runtime,main,stats,monitor,files,table::,help \
         --name="$(basename "$0")" -- "$@")"
         if [[ $? -ne 0 ]]; then
             # no place to send output
@@ -188,11 +174,13 @@ function parse_args() {
         echo "Cannot find or read $DEFAULTS_FILE."
         exit 1
     fi
-    source $DEFAULTS_FILE
-    USER=$PROXYSQL_USERNAME
-    PASSWORD=$PROXYSQL_PASSWORD
-    HOST=$PROXYSQL_HOSTNAME
-    PORT=$PROXYSQL_PORT
+
+    # Load credentials from config file
+    source "$DEFAULTS_FILE"
+    USER=${PROXYSQL_USERNAME:-}
+    PASSWORD=${PROXYSQL_PASSWORD:-}
+    HOST=${PROXYSQL_HOSTNAME:-127.0.0.1}
+    PORT=${PROXYSQL_PORT:-6032}
 }
 
 
@@ -251,14 +239,25 @@ fi
 
 if [[ $DUMP_ALL -eq 1 || $DUMP_FILES -eq 1 ]]; then
     if [[ -z $TABLE_FILTER ]]; then
-        echo "............ DUMPING HOST PRIORITY FILE ............"
-        cat /var/lib/proxysql/host_priority.conf 2>&1
-        echo "............ END OF DUMPING HOST PRIORITY FILE ............"
-        echo ""
+        DATADIR=$(mysql_exec -BN "SELECT variable_value FROM global_variables WHERE variable_name='admin-datadir'" 2>/dev/null)
+        if [[ -z $DATADIR ]]; then
+            DATADIR="/var/lib/proxysql"
+        fi
 
-        echo "............ DUMPING PROXYSQL ADMIN CNF FILE ............"
-        cat /etc/proxysql-admin.cnf 2>&1
-        echo "............ END OF DUMPING PROXYSQL ADMIN CNF FILE ............"
-        echo ""
+        HOST_PRIORITY_CONTENT=$(cat "${DATADIR}/host_priority.conf" 2>/dev/null)
+        if [[ -n $HOST_PRIORITY_CONTENT ]]; then
+            echo "............ DUMPING HOST PRIORITY FILE ............"
+            echo "$HOST_PRIORITY_CONTENT"
+            echo "............ END OF DUMPING HOST PRIORITY FILE ............"
+            echo ""
+        fi
+
+        ADMIN_CNF_CONTENT=$(cat "$DEFAULTS_FILE" 2>/dev/null)
+        if [[ -n $ADMIN_CNF_CONTENT ]]; then
+            echo "............ DUMPING PROXYSQL ADMIN CNF FILE ............"
+            echo "$ADMIN_CNF_CONTENT"
+            echo "............ END OF DUMPING PROXYSQL ADMIN CNF FILE ............"
+            echo ""
+        fi
     fi
 fi
