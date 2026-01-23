@@ -63,9 +63,10 @@ async def restores_create(
     task_api: TaskAPI,
 ) -> RedirectResponse:
     """Create new restores task."""
-    config_task, restore_task = tasks
+    config_task, restore_task, pbm_list_task = tasks
     logger.debug("Create restores config task: %s", config_task)
     logger.debug("Create restores task: %s", restore_task)
+    logger.debug("Create pbm list task: %s", pbm_list_task)
 
     await task_api.post(
         "/",
@@ -75,6 +76,11 @@ async def restores_create(
     await task_api.post(
         "/",
         json=restore_task.model_dump(),
+    )
+
+    await task_api.post(
+        "/",
+        json=pbm_list_task.model_dump(),
     )
 
     task_path = request.url_for("pbm_restores_detail", task_name=config_task.name)
@@ -116,6 +122,9 @@ async def restores_detail(
     # Run Restore button executes the restore task (child task with backup_type suffix)
     restore_task_name = f"{task.name}-{task_config.get('backupType')}"
     restore_url = request.url_for("pbm_restores_execute", task_name=restore_task_name)
+    # PBM List button executes pbm list task
+    pbm_list_task_name = f"{task.name}-pbm-list"
+    pbm_list_url = request.url_for("pbm_restores_execute", task_name=pbm_list_task_name)
 
     task_data = {
         "name": task.name,
@@ -129,6 +138,7 @@ async def restores_detail(
         "backup_source": task_config.get("backupSource"),
         "sync_config_url": sync_config_url,
         "restore_url": restore_url,
+        "pbm_list_url": pbm_list_url,
         "delete_url": request.url_for("pbm_restores_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,
         "alert_on_fail": task.alert_on_fail,
@@ -153,6 +163,24 @@ async def restores_detail(
     context["running_tasks"] = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    # Also get running tasks for child tasks (restore and pbm-list)
+    restore_task_name = f"{task.name}-{task_config.get('backupType')}"
+    context["running_tasks"] += await tasks_api.get(
+        f"/{restore_task_name}/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
+    )
+    pbm_list_task_name = f"{task.name}-pbm-list"
+    context["running_tasks"] += await tasks_api.get(
+        f"/{pbm_list_task_name}/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
+    )
+    # Get pbm-list task history
+    try:
+        context["history_pbm_list"] = await tasks_api.get(
+            f"/{pbm_list_task_name}/history/"
+        )
+    except HTTPException:
+        context["history_pbm_list"] = []
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     try:

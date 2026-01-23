@@ -142,6 +142,28 @@ async def build_restore_task_payload(
     )
 
 
+async def build_pbm_list_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+) -> TaskWrite:
+    """Build task payload for pbm list command."""
+    payload_path = Path(__file__).parent / "pbm_list_payload"
+
+    return TaskWrite(
+        name=f"{form.task_name}-pbm-list",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.RESTORE_MONGO,
+        data={
+            "task": "run-python",
+            "meta": {
+                "target": form.hostname,
+                "requirements": "",
+            },
+            "payload": f"file://{payload_path}",
+            "parent": form.task_name,
+        },
+    )
+
+
 def _parse_restore_config_options(restore_config: dict[str, Any]) -> dict[str, Any]:
     """Parse restore configuration options from task data."""
     result = {}
@@ -201,15 +223,17 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
 
 async def build_restore_tasks(
     form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> tuple[TaskWrite, TaskWrite]:
-    """Build both restore config and restore task payloads."""
-    config_task = await build_restore_config_task_payload(form, inventory_api)
-    restore_task = await build_restore_task_payload(form, inventory_api)
-    return config_task, restore_task
+) -> tuple[TaskWrite, TaskWrite, TaskWrite]:
+    """Build restore config, restore task, and pbm list task payloads."""
+    config_task = await build_restore_config_task_payload(form)
+    restore_task = await build_restore_task_payload(form)
+    pbm_list_task = await build_pbm_list_task_payload(form)
+    return config_task, restore_task, pbm_list_task
 
 
-RestoreTasks = Annotated[tuple[TaskWrite, TaskWrite], Depends(build_restore_tasks)]
+RestoreTasks = Annotated[
+    tuple[TaskWrite, TaskWrite, TaskWrite], Depends(build_restore_tasks)
+]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 

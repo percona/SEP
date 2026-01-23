@@ -90,6 +90,14 @@
                 <span class="label">Run Restore</span>
             </button>
         {% endif %}
+        {% if task.pbm_list_url %}
+            <button type="submit"
+                    class="text medium send-button submitButton"
+                    form="{{ task.name }}-pbm-list-send">
+                <span class="material-symbols-outlined">list</span>
+                <span class="label">PBM List</span>
+            </button>
+        {% endif %}
         {% if not task.protected %}
             <button class="text medium delete-button submitButton delete-tasks-button"
                     form="delete-task-form">
@@ -105,6 +113,15 @@
           data-confirm-message='Are you sure you want to run restore for "{{ task.name }}"?'
           method="post"
           action="{{ task.restore_url }}">
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    </form>
+{% endif %}
+{% if task.pbm_list_url %}
+    <form class="send-form"
+          id="{{ task.name }}-pbm-list-send"
+          data-confirm-message='Are you sure you want to run pbm list for "{{ task.name }}"?'
+          method="post"
+          action="{{ task.pbm_list_url }}">
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
     </form>
 {% endif %}

@@ -131,6 +131,15 @@
         <br>
         <br>
     {% endif %}
+    {% if history_pbm_list %}
+        <section>
+            <h2>PBM List Runs</h2>
+            {% set history_tasks = history_pbm_list %}
+            {% include "tasks/partials/completed-tasks.html" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
     <section>
         <h2>Config Sync</h2>
         {% set history_tasks = history %}
