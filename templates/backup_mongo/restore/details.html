@@ -26,6 +26,14 @@
     <script src="{{ url_for('static', path='/js/logs.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Backup and Restore navigation">
+        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn">Backup</a>
+        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn active">Restore</a>
+    </div>
+{% endblock sticky %}
 {% block main %}
     <h1>PBM Restores: {{ task.name }}</h1>
     <h5>Executor Host: {{ task.hostname }}</h5>
