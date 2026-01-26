@@ -44,7 +44,7 @@ from pydantic import (
     validate_call,
     ValidationError,
 )
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, Index, JSON
 from sqlmodel import Field as SQLField
 
 from app.core.db import BaseSQLModel
@@ -65,6 +65,7 @@ from app.core.utils.fields import (
 from app.core.utils.pydantic import CustomFieldMetadata
 from app.sep.snippets.config import (
     SnippetFilterType,
+    SnippetInterpreterConfig,
     snippets_settings,
     SnippetSudoOption,
 )
@@ -270,38 +271,27 @@ class BaseSnippetArgs(BaseModel):
         )
 
 
-class Snippet(BaseSQLModel, table=True):
-    """Represent a support snippet stored in the database.
+class BaseSnippet(BaseModel):
+    """Base model for an executable snippet.
 
-    :param filename: The snippet filename. Must be unique.
+    :cvar BASE_DIR: The base directory where snippets are stored.
+    :vartype BASE_DIR: ClassVar[Path]
+    :param filename: The snippet filename.
     :type filename: str
+    :param size: The size of the snippet file in bytes.
+    :type size: PositiveInt
     :param md5_digest: The MD5 hash digest of the snippet file.
     :type md5_digest: str
-    :param approved_at: The approval time for the snippet, or None if the snippet is not
-        approved.
-    :type approved_at: UTCDatetime | None
-    :param reason: The reason for the approval or disapproval of the snippet, if any.
-        Defaults to "New snippet".
-    :type reason: str
     :param meta: Additional metadata about the snippet, such as title, description,
         parameters, etc.
     :type meta: dict[str, Any]
     """
 
-    filename: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
+    BASE_DIR: ClassVar[Path] = snippets_settings.SNIPPETS_DIR
+    filename: str = Field(min_length=1, max_length=255)
     size: PositiveInt
-    md5_digest: str = SQLField(min_length=32, max_length=32)
-    approved_at: UTCDatetime | None = SQLField(
-        sa_type=DateTimeWithTimezone,
-        default=None,
-        index=True,
-    )
-    updated_by: str | None = None
-    reason: str = "New snippet"
-    meta: dict[str, Any] = SQLField(
-        sa_column=Column(JSON, nullable=False),
-        default_factory=dict,
-    )
+    md5_digest: str = Field(min_length=32, max_length=32)
+    meta: dict[str, Any] = {}
 
     def __repr__(self) -> str:
         return f"'{self.filename}' ({self.md5_digest})"
@@ -310,18 +300,7 @@ class Snippet(BaseSQLModel, table=True):
         return self.filename
 
     def __fspath__(self) -> str:
-        return str(snippets_settings.SNIPPETS_DIR / self.filename)
-
-    @computed_field
-    @property
-    def is_approved(self) -> bool:
-        """Determine whether the snippet has been approved.
-
-        :return: True if the snippet is approved (i.e. approved_at is not None), else
-            False.
-        :rtype: bool
-        """
-        return self.approved_at is not None
+        return str(self.BASE_DIR / self.filename)
 
     @cached_property
     def title(self) -> str:
@@ -392,20 +371,16 @@ class Snippet(BaseSQLModel, table=True):
     def can_execute(self) -> bool:
         """Determine whether the snippet can be executed.
 
-        A snippet can be executed if it is approved, it has a valid executor
+        A snippet can be executed if it has a valid executor
         interpreter, and either parameter errors are ignored in the settings or there
         are no validation errors in the parameters.
 
         :return: `True` if the snippet can be executed, else `False`.
         :rtype: bool
         """
-        return (
-            self.is_approved
-            and self.execution_interpreter is not None
-            and (
-                snippets_settings.META.IGNORE_INVALID_PARAMETERS
-                or not self.validated_parameters.errors
-            )
+        return self.execution_interpreter is not None and (
+            snippets_settings.META.IGNORE_INVALID_PARAMETERS
+            or not self.validated_parameters.errors
         )
 
     @cached_property
@@ -429,7 +404,53 @@ class Snippet(BaseSQLModel, table=True):
             found.
         :rtype: str | None
         """
-        return self._get_execution_interpreter(self.path)
+        interpreter_config = self._get_execution_interpreter_config(self.path)
+        if interpreter_config is None:
+            return None
+        return interpreter_config.command
+
+    @property
+    def execution_task_name(self) -> str | None:
+        """Get the task name for executing the snippet.
+
+        :return: The task name for executing the snippet, or None if no interpreter is
+            found.
+        :rtype: str | None
+        """
+        interpreter_config = self._get_execution_interpreter_config(self.path)
+        if interpreter_config is None:
+            return None
+        if self.requirements:
+            return interpreter_config.task_with_requirements
+        return interpreter_config.task
+
+    @cached_property
+    def requires_packages(self) -> list[str]:
+        """Return a normalized list of required packages from metadata.
+
+        :return: A list of required package names.
+        :rtype: list[str]
+        """
+        value = self.meta.get("requires_packages")
+        if not value:
+            return []
+        if isinstance(value, str):
+            return value.strip().split()
+        return [
+            normalized_item for item in value if (normalized_item := str(item).strip())
+        ]
+
+    @cached_property
+    def requirements(self) -> str | None:
+        """Get the requirements for the snippet.
+
+        :return: A string containing the requirements for the snippet, or None if there
+            are no requirements.
+        :rtype: str | None
+        """
+        if requirements_list := self.requires_packages:
+            return "\n".join(requirements_list)
+        return None
 
     async def get_preview(self) -> FilePreview:
         """Get a preview of the snippet code.
@@ -444,44 +465,6 @@ class Snippet(BaseSQLModel, table=True):
             snippets_settings.PREVIEW_MAX_LINES,
             file_hash=self.md5_digest,
         )
-
-    async def update_from_snippet(self, snippet: "Snippet") -> None:
-        """Update the current snippet from another snippet.
-
-        :param snippet: The snippet from which to update.
-        :type snippet: Snippet
-        """
-        self.sqlmodel_update(snippet, update={"id": self.id})
-        self.meta = await self.get_meta_by_path(self)
-        self.remove_approval("File contents have changed", None)
-
-    def approve(self, reason: str, user_id: str) -> None:
-        """Mark the snippet as approved.
-
-        Set the snippet's approved_at to the current time and change the reason.
-
-        :param reason: The reason for the approval of the snippet.
-        :type reason: str
-        :param user_id: The ID of the user approving the snippet.
-        :type user_id: str
-        """
-        self.approved_at = utc_now()
-        self.updated_by = user_id
-        self.reason = reason
-
-    def remove_approval(self, reason: str, user_id: str | None) -> None:
-        """Mark the snippet as unapproved.
-
-        Set the snippet's approved_at to None and change the reason.
-
-        :param reason: The reason for the approval removal of the snippet.
-        :type reason: str
-        :param user_id: The ID of the user removing the approval of the snippet.
-        :type user_id: str | None
-        """
-        self.approved_at = None
-        self.updated_by = user_id
-        self.reason = reason
 
     async def update_meta(self) -> None:
         """Update the snippet's metadata."""
@@ -649,7 +632,7 @@ class Snippet(BaseSQLModel, table=True):
         fieldsets = [
             executor_hosts_fieldset,
         ]
-        parameters = Snippet._get_parameters_from_json(parameters_json).parameters
+        parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
         fields = []
         for param in parameters:
@@ -703,7 +686,7 @@ class Snippet(BaseSQLModel, table=True):
             parameters.
         :rtype: type[BaseSnippetArgs]
         """
-        parameters = Snippet._get_parameters_from_json(parameters_json).parameters
+        parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
         unique_identifiers = generate_unique_identifiers()
         fields = {}
@@ -743,19 +726,9 @@ class Snippet(BaseSQLModel, table=True):
 
     @staticmethod
     @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
-    def _get_execution_interpreter(snippet_path: Path) -> str | None:
-        """Determine the execution interpreter for a snippet path.
-
-        This method checks the snippet's file extension and MIME type against the
-        configured list of interpreters in the settings. It returns the most appropriate
-        interpreter found, or None if no interpreter matches.
-
-        :param snippet_path: The path to the snippet file.
-        :type snippet_path: Path
-        :return: The interpreter for executing the snippet, or None if no interpreter is
-            found.
-        :rtype: str | None
-        """
+    def _get_execution_interpreter_config(
+        snippet_path: Path,
+    ) -> SnippetInterpreterConfig | None:
         interpreters = snippets_settings.INTERPRETERS
         snippet_filters = [
             (snippet_path.suffix.lower(), SnippetFilterType.EXTENSION),
@@ -784,20 +757,116 @@ class Snippet(BaseSQLModel, table=True):
             md5_digest.
         :rtype: Snippet
         """
-        path = snippets_settings.SNIPPETS_DIR / Path(path)
+        path = cls.BASE_DIR / Path(path)
         file_hash = hashlib.md5(usedforsecurity=False)
         chunk_size = 8192
         async with aiofiles.open(path, "rb") as f:
             while chunk := await f.read(chunk_size):
                 file_hash.update(chunk)
         snippet = cls(
-            filename=str(path.relative_to(snippets_settings.SNIPPETS_DIR)),
+            filename=str(path.relative_to(cls.BASE_DIR)),
             md5_digest=file_hash.hexdigest(),
             size=await getsize(path),
         )
         if update_meta:
             await snippet.update_meta()
         return snippet
+
+
+class Snippet(BaseSnippet, BaseSQLModel, table=True):
+    """Represent a support snippet stored in the database.
+
+    :param filename: The snippet filename. Must be unique.
+    :type filename: str
+    :param size: The size of the snippet file in bytes.
+    :type size: PositiveInt
+    :param md5_digest: The MD5 hash digest of the snippet file.
+    :type md5_digest: str
+    :param approved_at: The approval time for the snippet, or None if the snippet is not
+        approved.
+    :type approved_at: UTCDatetime | None
+    :param reason: The reason for the approval or disapproval of the snippet, if any.
+        Defaults to "New snippet".
+    :type reason: str
+    :param meta: Additional metadata about the snippet, such as title, description,
+        parameters, etc.
+    :type meta: dict[str, Any]
+    """
+
+    __table_args__ = (Index("ix_snippet_filename", "filename", unique=True),)
+    approved_at: UTCDatetime | None = SQLField(
+        sa_type=DateTimeWithTimezone,
+        default=None,
+        index=True,
+    )
+    updated_by: str | None = None
+    reason: str = "New snippet"
+    meta: dict[str, Any] = SQLField(
+        sa_column=Column(JSON, nullable=False),
+        default_factory=dict,
+    )
+
+    @computed_field
+    @property
+    def is_approved(self) -> bool:
+        """Determine whether the snippet has been approved.
+
+        :return: True if the snippet is approved (i.e. approved_at is not None), else
+            False.
+        :rtype: bool
+        """
+        return self.approved_at is not None
+
+    @property
+    def can_execute(self) -> bool:
+        """Determine whether the snippet can be executed.
+
+        A snippet can be executed if it is approved, it has a valid executor
+        interpreter, and either parameter errors are ignored in the settings or there
+        are no validation errors in the parameters.
+
+        :return: `True` if the snippet can be executed, else `False`.
+        :rtype: bool
+        """
+        return self.is_approved and super().can_execute
+
+    async def update_from_snippet(self, snippet: "Snippet") -> None:
+        """Update the current snippet from another snippet.
+
+        :param snippet: The snippet from which to update.
+        :type snippet: Snippet
+        """
+        self.sqlmodel_update(snippet, update={"id": self.id})
+        self.meta = await self.get_meta_by_path(self)
+        self.remove_approval("File contents have changed", None)
+
+    def approve(self, reason: str, user_id: str) -> None:
+        """Mark the snippet as approved.
+
+        Set the snippet's approved_at to the current time and change the reason.
+
+        :param reason: The reason for the approval of the snippet.
+        :type reason: str
+        :param user_id: The ID of the user approving the snippet.
+        :type user_id: str
+        """
+        self.approved_at = utc_now()
+        self.updated_by = user_id
+        self.reason = reason
+
+    def remove_approval(self, reason: str, user_id: str | None) -> None:
+        """Mark the snippet as unapproved.
+
+        Set the snippet's approved_at to None and change the reason.
+
+        :param reason: The reason for the approval removal of the snippet.
+        :type reason: str
+        :param user_id: The ID of the user removing the approval of the snippet.
+        :type user_id: str | None
+        """
+        self.approved_at = None
+        self.updated_by = user_id
+        self.reason = reason
 
 
 class SnippetExecutionMeta(BaseModel):
@@ -819,6 +888,9 @@ class SnippetExecutionMeta(BaseModel):
     :param args: Additional command-line arguments to pass to the snippet during
         execution.
     :type args: NonEmptyStr | None
+    :param requirements: Optional requirements list to install when executing python
+        snippets.
+    :type requirements: NonEmptyStr | None
     """
 
     target: NonEmptyStr
@@ -828,6 +900,7 @@ class SnippetExecutionMeta(BaseModel):
     snippet_filename: NonEmptyStr = Field(..., serialization_alias="_snippet_filename")
     md5_checksum: str = Field(min_length=32, max_length=32)
     args: NonEmptyStr | EmptyStrToNone = None
+    requirements: NonEmptyStr | EmptyStrToNone = None
 
     @computed_field
     @property

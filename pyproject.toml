@@ -177,6 +177,7 @@ extend-exclude = [
     "payload.py",
     "payload",
     "*_payload",
+    "**/payloads/*",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"

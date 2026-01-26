@@ -267,4 +267,5 @@ def get_snippet_execution_request_meta(
         snippet_filename=snippet.filename,
         md5_checksum=snippet.md5_digest,
         args=execution_args.to_args_string(),
+        requirements=snippet.requirements,
     )

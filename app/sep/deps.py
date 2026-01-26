@@ -78,7 +78,7 @@ def get_base_url(request: Request) -> URL:
     """
     if settings.BASE_URL is not None:
         return settings.BASE_URL
-    return request.url.replace(path="")
+    return request.url.replace(path="", query="", fragment="")
 
 
 BaseURL = Annotated[URL, Depends(get_base_url)]
