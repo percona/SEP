@@ -242,16 +242,19 @@ async def restores_detail(
     all_history = await tasks_api.get(f"/{task.name}/history/")
     context["history"] = all_history
 
-    context["history_logical"] = [
-        h
-        for h in all_history
-        if h.get("task", {}).get("data", {}).get("backup_type") == "pbm_logical"
-    ]
-    context["history_physical"] = [
-        h
-        for h in all_history
-        if h.get("task", {}).get("data", {}).get("backup_type") == "pbm_physical"
-    ]
+    try:
+        context["history_logical"] = await tasks_api.get(
+            f"/{task.name}-pbm_logical/history/"
+        )
+    except HTTPException:
+        context["history_logical"] = []
+
+    try:
+        context["history_physical"] = await tasks_api.get(
+            f"/{task.name}-pbm_physical/history/"
+        )
+    except HTTPException:
+        context["history_physical"] = []
 
     context["running_tasks"] = await _fetch_running_tasks(
         task.name, task_config, tasks_api
