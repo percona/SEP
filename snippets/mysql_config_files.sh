@@ -3,7 +3,7 @@
 # ---
 # title: MySQL Config File Discovery Script
 # description: This script finds all MySQL config files, including those referenced by !include and !includedir directives.
-# allow_extra_args: true
+# allow_extra_args: false
 # parameters: []
 # atw:
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
@@ -83,7 +83,7 @@ if [ -n "$MYSQLD_PATH" ]; then
 fi
 
 # Remove duplicates
-UNIQUE_PATHS=($(printf "%s\n" "${COMMON_PATHS[@]}" | sort -u))
+readarray -t UNIQUE_PATHS < <(printf "%s\n" "${COMMON_PATHS[@]}" | sort -u)
 
 # Print found config files and their included files/contents
 echo "=== Checking common config file locations (and their includes) ==="
