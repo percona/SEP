@@ -307,7 +307,6 @@ def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
     data = task["data"]
     meta = data["meta"]
 
-    # Handle tasks that don't have config (e.g., pbm-list task)
     task_config = {}
     if "config" in meta:
         task_config = yaml.safe_load(meta["config"]) or {}

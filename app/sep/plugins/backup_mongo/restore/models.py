@@ -31,7 +31,6 @@ class RestoreConfigRestore(BaseCaseInsensitiveModel):
     :type mongodLocationMap: dict[str, str] | EmptyStrToNone
     """
 
-    # Keep alias_generator=None to use explicit serialization aliases (camelCase for PBM)
     model_config = ConfigDict(alias_generator=None)
 
     batch_size: int | None = Field(

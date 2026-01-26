@@ -209,18 +209,15 @@ async def restores_detail(
     meta = data["meta"]
     task_config = yaml.safe_load(meta["config"])
 
-    # Ensure restore section exists in config for display
     if "restore" not in task_config:
         task_config["restore"] = {}
 
-    # Update meta with the normalized config for display
     meta["config"] = yaml.dump(
         task_config, default_flow_style=False, allow_unicode=True
     )
 
     parsed_task_data = parse_restore_task_data(task.model_dump())
 
-    # Build URLs for buttons
     urls = _build_task_urls(task.name, task_config, request)
 
     task_data = {
@@ -244,7 +241,7 @@ async def restores_detail(
     context["task"] = task_data
     all_history = await tasks_api.get(f"/{task.name}/history/")
     context["history"] = all_history
-    # Filter history by backup_type for logical and physical restores
+
     context["history_logical"] = [
         h
         for h in all_history
