@@ -77,7 +77,6 @@ optional = true
 
 [tool.poetry.group.audit.dependencies]
 pip-audit = "^2.9.0"
-wheel = ">=0.46.2"
 bandit = {extras = ["toml"], version = "^1.7.9"}
 ruff = "^0.9.4"
 djlint = "^1.36.4"
