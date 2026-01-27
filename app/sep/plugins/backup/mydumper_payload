@@ -1633,11 +1633,7 @@ class S3UploadProvider:
         if self.backup_type not in ["B", "O"] and not (
             self.backup_type == "X" and "_incrementals" in dest_dir
         ):
-            latest_key = str(
-                Path(self.bucket_prefix)
-                / "/".join(full_prefix.split("/")[:-2])
-                / "latest"
-            )
+            latest_key = str(Path(full_prefix).parent / "latest")
             try:
                 tmp_dir = Path("/tmp/percona_backup_latest")
                 tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -1701,15 +1697,19 @@ class MyDumperRunner(multiprocessing.Process):
         for server_data in servers:
             bkp = MyDumper(server_data, logger=self.logger)
             try:
+                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=1)
                 bkp.run()
+                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=0)
             except BackupError as exc:
                 self.logger.exception(exc.message)
                 self.logger.exception("Backup failed for this host.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
                 sys.exit(1)
             except:
                 self.logger.exception("Unhandled exception occurred.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
                 sys.exit(1)
 
             logging_set_host(None, LOGGING_NAME)
@@ -1813,19 +1813,7 @@ class MyDumper(Backup):
         # Check mydumper version for schemas support
         if self.mydumper_for_schemas:
             version = self._get_version()
-            try:
-                if version and Version(version) >= Version("0.9"):
-                    self.logger.info("Using mydumper %s for schemas", version)
-                else:
-                    self.mydumper_for_schemas = False
-                    self.logger.info(
-                        "mydumper %s does not support schemas. "
-                        "Please consider upgrading to >=0.9",
-                        version if version else "unknown",
-                    )
-            except ValueError as err:
-                self.logger.exception("Failed to parse the mydumper version")
-                raise BackupError("Invalid mydumper version") from err
+            self.logger.info('Using mydumper %s for schemas', version)
 
         if not self.mydumper_for_schemas:
             raise BackupError("MYDUMPER_SCHEMAS has been disabled, please enable it")

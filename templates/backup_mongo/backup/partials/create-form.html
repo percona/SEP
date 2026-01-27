@@ -133,29 +133,184 @@
         </dialog>
     </form>
     <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const backupTypeSelect = document.getElementById('backup_type');
-    function updateBackupTaskVisibility() {
-        s3Options.style.display = storageTypeSelect.value === 's3' ? 'block' : 'none';
-        filesystemOptions.style.display = storageTypeSelect.value === 'filesystem' ? 'block' : 'none';
-        azureOptions.style.display = storageTypeSelect.value === 'azure' ? 'block' : 'none';
-    }
-
-
     const storageTypeSelect = document.getElementById('storage_type');
     const s3Options = document.getElementById('s3_options');
     const filesystemOptions = document.getElementById('filesystem_options');
     const azureOptions = document.getElementById('azure_options');
     const logOutputSelect = document.getElementById('log_output');
     const logFileOptions = document.getElementById('log_file_options');
+    const form = document.getElementById('create-mongo-backup-form');
+    const submitButton = form.querySelector('.submitButton');
+
+    // Storage field references
+    const filesystemPathInput = document.getElementById('filesystem_path');
+    const s3ProviderSelect = document.getElementById('s3_provider');
+    const s3RegionInput = document.getElementById('s3_region');
+    const s3BucketInput = document.getElementById('s3_bucket');
+    const s3PrefixInput = document.getElementById('s3_prefix');
+    const s3EndpointUrlInput = document.getElementById('s3_endpoint_url');
+    const s3RegionLabel = document.getElementById('s3_region_label');
+    const s3PrefixLabel = document.getElementById('s3_prefix_label');
+    const s3EndpointUrlLabel = document.getElementById('s3_endpoint_url_label');
+    const s3RegionField = document.getElementById('s3_region_field');
+    const s3BucketField = document.getElementById('s3_bucket_field');
+    const s3EndpointUrlField = document.getElementById('s3_endpoint_url_field');
+    const s3PrefixField = document.getElementById('s3_prefix_field');
+
+    function reorderS3Fields(provider) {
+        if (!s3Options || !s3ProviderSelect) return;
+
+        const providerSelect = s3ProviderSelect;
+
+        const fields = [];
+        if (s3RegionField) fields.push({element: s3RegionField, id: 'region'});
+        if (s3BucketField) fields.push({element: s3BucketField, id: 'bucket'});
+        if (s3EndpointUrlField) fields.push({element: s3EndpointUrlField, id: 'endpoint'});
+        if (s3PrefixField) fields.push({element: s3PrefixField, id: 'prefix'});
+
+        let fieldOrder;
+        if (provider === 'aws' || provider === 'gcp') {
+            fieldOrder = ['region', 'bucket', 'prefix', 'endpoint'];
+        } else if (provider === 'minio') {
+            fieldOrder = ['bucket', 'endpoint', 'region', 'prefix'];
+        } else {
+            fieldOrder = ['region', 'bucket', 'endpoint', 'prefix'];
+        }
+
+        fieldOrder.forEach(fieldId => {
+            const field = fields.find(f => f.id === fieldId);
+            if (field) {
+                s3Options.appendChild(field.element);
+            }
+        });
+    }
+
+    function updateS3ProviderValidation() {
+        if (!s3ProviderSelect) return;
+
+        const provider = s3ProviderSelect.value;
+
+        if (s3BucketInput) s3BucketInput.required = true;
+
+        if (s3PrefixInput) s3PrefixInput.required = false;
+        if (s3PrefixLabel) s3PrefixLabel.textContent = 'Prefix (Optional):';
+
+        if (provider === 'aws') {
+            if (s3RegionInput) s3RegionInput.required = true;
+            if (s3RegionLabel) s3RegionLabel.textContent = 'Region:';
+
+            if (s3EndpointUrlInput) s3EndpointUrlInput.required = false;
+            if (s3EndpointUrlLabel) s3EndpointUrlLabel.textContent = 'Endpoint URL (Optional):';
+        } else if (provider === 'minio') {
+            if (s3RegionInput) s3RegionInput.required = false;
+            if (s3RegionLabel) s3RegionLabel.textContent = 'Region (Optional):';
+
+            if (s3EndpointUrlInput) s3EndpointUrlInput.required = true;
+            if (s3EndpointUrlLabel) s3EndpointUrlLabel.textContent = 'Endpoint URL:';
+        } else if (provider === 'gcp') {
+            if (s3RegionInput) s3RegionInput.required = true;
+            if (s3RegionLabel) s3RegionLabel.textContent = 'Region:';
+
+            if (s3EndpointUrlInput) s3EndpointUrlInput.required = false;
+            if (s3EndpointUrlLabel) s3EndpointUrlLabel.textContent = 'Endpoint URL (Optional):';
+        } else {
+            if (s3RegionInput) s3RegionInput.required = true;
+            if (s3RegionLabel) s3RegionLabel.textContent = 'Region:';
+
+            if (s3EndpointUrlInput) s3EndpointUrlInput.required = true;
+            if (s3EndpointUrlLabel) s3EndpointUrlLabel.textContent = 'Endpoint URL:';
+        }
+
+        reorderS3Fields(provider);
+
+        updateCreateButtonState();
+    }
 
     function updateStorageOptionsVisibility() {
-        s3Options.style.display = storageTypeSelect.value === 's3' ? 'block' : 'none';
-        filesystemOptions.style.display = storageTypeSelect.value === 'filesystem' ? 'block' : 'none';
-        azureOptions.style.display = storageTypeSelect.value === 'azure' ? 'block' : 'none';
+        if (!storageTypeSelect) return;
+
+        const storageType = storageTypeSelect.value;
+
+        if (storageType === 'filesystem') {
+            if (filesystemOptions) filesystemOptions.style.display = 'block';
+            if (s3Options) s3Options.style.display = 'none';
+            if (azureOptions) azureOptions.style.display = 'none';
+
+            if (filesystemPathInput) filesystemPathInput.required = true;
+            if (s3RegionInput) s3RegionInput.required = false;
+            if (s3BucketInput) s3BucketInput.required = false;
+            if (s3PrefixInput) s3PrefixInput.required = false;
+            if (s3EndpointUrlInput) s3EndpointUrlInput.required = false;
+        } else if (storageType === 's3') {
+            if (s3Options) s3Options.style.display = 'block';
+            if (filesystemOptions) filesystemOptions.style.display = 'none';
+            if (azureOptions) azureOptions.style.display = 'none';
+
+            if (filesystemPathInput) filesystemPathInput.required = false;
+
+            updateS3ProviderValidation();
+        } else {
+            if (filesystemOptions) filesystemOptions.style.display = 'none';
+            if (s3Options) s3Options.style.display = 'none';
+            if (azureOptions) azureOptions.style.display = 'none';
+
+            // Remove required attributes
+            if (filesystemPathInput) filesystemPathInput.required = false;
+            if (s3RegionInput) s3RegionInput.required = false;
+            if (s3BucketInput) s3BucketInput.required = false;
+            if (s3PrefixInput) s3PrefixInput.required = false;
+            if (s3EndpointUrlInput) s3EndpointUrlInput.required = false;
+        }
+
+        // Update button state
+        updateCreateButtonState();
     }
 
     function updateLogFileOptionsVisibility() {
-        logFileOptions.style.display = logOutputSelect.value === 'file' ? 'block' : 'none';
+        if (logOutputSelect) {
+            logFileOptions.style.display = logOutputSelect.value === 'file' ? 'block' : 'none';
+        }
+    }
+
+    function updateCreateButtonState() {
+        if (submitButton) {
+            submitButton.disabled = !form.checkValidity();
+        }
+    }
+
+    // Add event listeners
+    if (storageTypeSelect) {
+        storageTypeSelect.addEventListener('change', updateStorageOptionsVisibility);
+        // Initialize on page load
+        updateStorageOptionsVisibility();
+    }
+
+    if (s3ProviderSelect) {
+        s3ProviderSelect.addEventListener('change', updateS3ProviderValidation);
+    }
+
+    if (logOutputSelect) {
+        logOutputSelect.addEventListener('change', updateLogFileOptionsVisibility);
+    }
+
+    // Add input event listeners to update button state on field changes
+    if (filesystemPathInput) {
+        filesystemPathInput.addEventListener('input', updateCreateButtonState);
+    }
+    if (s3RegionInput) {
+        s3RegionInput.addEventListener('input', updateCreateButtonState);
+    }
+    if (s3BucketInput) {
+        s3BucketInput.addEventListener('input', updateCreateButtonState);
+    }
+    if (s3EndpointUrlInput) {
+        s3EndpointUrlInput.addEventListener('input', updateCreateButtonState);
+    }
+
+    // Update button state on form validation changes
+    if (form) {
+        form.addEventListener('input', updateCreateButtonState);
+        form.addEventListener('change', updateCreateButtonState);
     }
 
     </script>

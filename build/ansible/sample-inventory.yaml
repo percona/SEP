@@ -1,0 +1,49 @@
+---
+sep_controller:
+  hosts:
+    deb-controller:
+      ansible_host: x.x.x.x
+    el-controller:
+      ansible_host: x.x.x.x
+  vars:
+    custom_ca_certificate: |
+      -----BEGIN CERTIFICATE-----
+      changemechangemechangeme
+      -----END CERTIFICATE-----
+    sep_image_name: changeme.url/sep
+    sep_image_tag: changeme-latest
+
+mysql:
+  hosts:
+    mysql1-el:
+      ansible_host: x.x.x.x
+      mysql_replication_role: source
+    mysql2-el:
+      ansible_host: x.x.x.x
+      mysql_replication_role: replica
+  vars:
+    mysql_root_password: changeme
+    mysql_service_username: changeme
+    mysql_service_password: changeme
+    mysql_pmm_username: changeme
+    mysql_pmm_password: changeme
+    mysql_replication_username: changeme
+    mysql_replication_password: changeme
+
+mongodb:
+  hosts:
+    mongodb-debian:
+      ansible_host: x.x.x.x
+  vars:
+    mongodb_admin_username: changeme
+    mongodb_admin_password: changeme
+
+postgresql:
+  hosts:
+    postgresql-ubuntu:
+      ansible_host: x.x.x.x
+  vars:
+    postgresql_super_username: changeme
+    postgresql_super_password: changeme
+    postgresql_test_db: changeme-db
+...

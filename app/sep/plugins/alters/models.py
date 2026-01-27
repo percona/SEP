@@ -63,8 +63,10 @@ class AltersCreate(BaseModel):
     task_name: RequiredStr
     hostname: RequiredStr
     service_id: int
-    schema_id: int
-    table_id: int
+    schema_id: int | None = None
+    table_id: int | None = None
+    schema_name: str = ""
+    table_name: str = ""
     recursion_method: RequiredStr
     alter: RequiredStr
     dsn_table: str = ""

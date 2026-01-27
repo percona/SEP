@@ -23,7 +23,6 @@ from zoneinfo import available_timezones
 from fastapi import Depends, HTTPException, Request, status
 from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
-from jwt import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -130,7 +129,7 @@ async def get_current_user(
     token = get_access_token_from_cookie(request)
     try:
         user = await User.from_jwt(token)
-    except (BadSignature, InvalidTokenError, ValidationError) as exc:
+    except (BadSignature, ValidationError) as exc:
         logger.debug("Failed to authenticate user: %s", exc, exc_info=True)
         raise LoginRedirectException(request) from None
     if not user.is_active:

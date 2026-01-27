@@ -17,8 +17,10 @@
 
 import asyncio
 import gzip
+import io
 import json
 import logging
+import tarfile
 from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
@@ -27,8 +29,8 @@ from datetime import datetime, UTC
 from enum import StrEnum
 from functools import cached_property
 from itertools import product
+from pathlib import Path
 from typing import Any
-from uuid import uuid1
 
 from aiohttp import (
     ClientError,
@@ -44,6 +46,7 @@ from app.core.requests import BaseRemoteAPI
 from app.core.utils import (
     async_run,
     b64decode_str,
+    make_datetime_utc,
     slugify,
     sort_dict,
     utc_now,
@@ -154,6 +157,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             or self.verify_ssl,
             cert=cert,
         )
+
+    @staticmethod
+    def timestamp_to_datetime(timestamp: int) -> datetime:
+        """Convert a Nomad timestamp to a datetime object.
+
+        :param timestamp: The Nomad timestamp in nanoseconds.
+        :type timestamp: int
+        :return: The corresponding datetime object in UTC.
+        :rtype: datetime
+        """
+        return datetime.fromtimestamp(timestamp / 10**9, UTC)
 
     @staticmethod
     def get_task_history_status_from_alloc_status(
@@ -464,15 +478,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         job_status = {}
         job = None
-        if self.task_needs_new_job(task):
-            if not task.data.get("ParameterizedJob"):
-                match task.data.get("Type"):
-                    case "batch" | "system" | "sysbatch":
-                        task.data["ID"] += f"-{uuid1()}"
-                    case _:
-                        raise NotImplementedError(
-                            f"{task.data.get('Type')} job support is TBD",
-                        )
+        if self.task_needs_job_register(task):
             job_status = self.register_job(task)
             logger.debug("Job status: %r", job_status)
             job = self.get_job(task.data["ID"])
@@ -485,9 +491,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         submit_timestamp = job.get("SubmitTime")
         if submit_timestamp:
-            queue_item.started_at = datetime.fromtimestamp(
-                submit_timestamp / 10**9, UTC
-            )
+            queue_item.started_at = self.timestamp_to_datetime(submit_timestamp)
         else:
             queue_item.started_at = utc_now()
         queue_item.execution_request.tracking.update(
@@ -663,8 +667,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             if job["Status"] == NOMAD_DEAD_JOB_STATUS:
                 last_modified_timestamp = alloc.get("ModifyTime")
                 if last_modified_timestamp:
-                    queue_item.finished_at = datetime.fromtimestamp(
-                        last_modified_timestamp / 10**9, UTC
+                    queue_item.finished_at = self.timestamp_to_datetime(
+                        last_modified_timestamp
                     )
                 else:
                     queue_item.finished_at = utc_now()
@@ -676,33 +680,30 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
         return queue_item
 
-    def task_needs_new_job(self, task: Task) -> bool:
-        """Determine whether a new job needs to be created for the task.
+    def task_needs_job_register(self, task: Task) -> bool:
+        """Determine whether a job needs to be registered for the task.
 
-        Checks the task's configuration to decide if a new job should be registered.
+        Checks the task's configuration to decide if a job should be registered. If the
+        task is a parameterized job, it checks if the job exists and if it has been
+        updated since the last submission. For other job types, it currently assumes
+        that a new job needs to be created.
 
         :param task: The task to evaluate.
         :type task: Task
         :return: `True` if a new job needs to be created, otherwise `False`.
         :rtype: bool
-        :raises NotImplementedError: If the task's parameterized job feature or job type
-            is not supported.
         :raises BaseNomadException: If there is an issue communicating with the Nomad
             backend.
         """
         if task.data.get("ParameterizedJob"):
             try:
-                self.get_job(task.data["ID"])
+                job = self.get_job(task.data["ID"])
             except JobNotFoundException:
                 return True
-            return False
-        match task.data.get("Type"):
-            case "batch" | "system" | "sysbatch":
-                return True
-            case _:
-                raise NotImplementedError(
-                    f"{task.data.get('Type')} job support is TBD",
-                )
+            return (submit_time := job.get("SubmitTime")) is None or make_datetime_utc(
+                task.updated_at or task.created_at
+            ) > self.timestamp_to_datetime(submit_time)
+        return True
 
     # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -901,6 +902,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> AsyncGenerator[bytes, None]:
         """Stream a file from the allocation's filesystem in chunks.
 
+        Directories are archived on the fly and streamed as a tar.gz archive.
+
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
         :param path: The path to the file to be streamed.
@@ -920,6 +923,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             response.raise_for_status()
             stat = await response.json()
         logger.debug("File stat: %r", stat)
+
+        if self._is_directory(stat):
+            logger.info("Requested path %s is a directory, streaming as tar.gz", path)
+            async for chunk in self._stream_directory_as_tar_gz(
+                queue_item, alloc_id, path
+            ):
+                yield chunk
+            return
+
         file_size = stat.get("Size", 0)
         if file_size == 0:
             logger.warning("File %s is empty or does not exist", path)
@@ -939,6 +951,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         yield anonymize_text(
                             text, queue_item.anonymized_entities
                         ).encode()
+                        continue
                     except UnicodeDecodeError:
                         logger.debug(
                             "Could not decode file content, sending raw bytes",
@@ -946,15 +959,157 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         )
                 yield content
 
-    async def list_files(self, queue_item: TaskHistory, path: str) -> dict[str, int]:
+    @staticmethod
+    def _is_directory(stat: dict[str, Any]) -> bool:
+        """Check whether the given file stat describes a directory."""
+        return bool(
+            stat.get("IsDir")
+            or stat.get("Directory")
+            or stat.get("Type") in {"directory", "dir"}
+        )
+
+    async def _iter_directory_entries(
+        self, alloc_id: str, path: str, relative_prefix: str
+    ) -> AsyncGenerator[tuple[str, str, bool, int], None]:
+        """Yield directory entries recursively with absolute and relative paths."""
+        async with self._request(
+            "GET", f"/v1/client/fs/ls/{alloc_id}", params={"path": path}
+        ) as response:
+            response.raise_for_status()
+            entries = await response.json()
+
+        for entry in entries:
+            name = entry["Name"]
+            if name.startswith("."):
+                continue
+            is_dir = bool(
+                entry.get("IsDir")
+                or entry.get("Directory")
+                or entry.get("Type") in {"directory", "dir"}
+            )
+            size = entry.get("Size", 0)
+            abs_path = "/".join([path.rstrip("/"), name]).replace("//", "/")
+            rel_path = f"{relative_prefix}/{name}".lstrip("/")
+            rel_path = (
+                f"{rel_path}/" if is_dir and not rel_path.endswith("/") else rel_path
+            )
+            yield abs_path, rel_path, is_dir, size
+            if is_dir:
+                async for sub_entry in self._iter_directory_entries(
+                    alloc_id, abs_path, rel_path.rstrip("/")
+                ):
+                    yield sub_entry
+
+    async def _read_file_bytes(
+        self,
+        queue_item: TaskHistory,
+        alloc_id: str,
+        path: str,
+        file_size: int,
+        chunk_size: int = _ONE_MEBIBYTE,
+    ) -> bytes:
+        """Read a remote file fully, applying anonymization when needed."""
+        if file_size == 0:
+            return b""
+        endpoint = f"/v1/client/fs/readat/{alloc_id}"
+        params = {"path": path, "limit": chunk_size}
+        content = bytearray()
+        for offset in range(0, file_size, chunk_size):
+            params["offset"] = offset
+            async with self._request("GET", endpoint, params=params) as response:
+                response.raise_for_status()
+                chunk = await response.read()
+                if queue_item.anonymized_entities:
+                    try:
+                        text = chunk.decode()
+                        chunk = anonymize_text(
+                            text, queue_item.anonymized_entities
+                        ).encode()
+                    except UnicodeDecodeError:
+                        logger.debug(
+                            "Could not decode file content for anonymization, sending raw bytes",
+                            exc_info=True,
+                        )
+                content.extend(chunk)
+        if len(content) != file_size:
+            logger.warning(
+                "Read %s bytes for %s but expected %s; using actual length",
+                len(content),
+                path,
+                file_size,
+            )
+        return bytes(content)
+
+    async def _stream_directory_as_tar_gz(
+        self, queue_item: TaskHistory, alloc_id: str, path: str
+    ) -> AsyncGenerator[bytes, None]:
+        """Archive a directory on the fly and stream it as a tar.gz archive."""
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        root_name = Path(path.rstrip("/")).name or "archive"
+
+        class QueueWriter:
+            def __init__(self, target_queue: asyncio.Queue[bytes | None]) -> None:
+                self.queue = target_queue
+
+            def write(self, data: bytes) -> int:  # pragma: no cover - trivial
+                self.queue.put_nowait(data)
+                return len(data)
+
+        async def produce() -> None:
+            try:
+                writer = QueueWriter(queue)
+                with tarfile.open(mode="w|gz", fileobj=writer) as tar:
+                    root_info = tarfile.TarInfo(name=f"{root_name}/")
+                    root_info.type = tarfile.DIRTYPE
+                    tar.addfile(root_info)
+                    async for (
+                        abs_path,
+                        rel_path,
+                        is_dir,
+                        size,
+                    ) in self._iter_directory_entries(alloc_id, path, root_name):
+                        try:
+                            tarinfo = tarfile.TarInfo(name=rel_path)
+                            tarinfo.mtime = int(utc_now().timestamp())
+                            if is_dir:
+                                tarinfo.type = tarfile.DIRTYPE
+                                tar.addfile(tarinfo)
+                                continue
+                            file_bytes = await self._read_file_bytes(
+                                queue_item, alloc_id, abs_path, size
+                            )
+                            tarinfo.size = len(file_bytes)
+                            tar.addfile(tarinfo, fileobj=io.BytesIO(file_bytes))
+                        except Exception:
+                            logger.exception(
+                                "Failed to add %s to tarball, skipping entry", rel_path
+                            )
+                            continue
+            finally:
+                await queue.put(None)
+
+        producer = asyncio.create_task(produce())
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            await producer
+
+    async def list_files(
+        self, queue_item: TaskHistory, path: str
+    ) -> dict[str, dict[str, int | bool]]:
         """List files in a directory on the allocation's filesystem.
 
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
         :param path: The path to the directory to list files from.
         :type path: str
-        :return: A dictionary with filenames as keys and their sizes as values.
-        :rtype: dict[str, int]
+        :return: A dictionary with filenames as keys and their metadata as values.
+            The metadata includes the file size and whether it is a directory.
+        :rtype: dict[str, dict[str, int | bool]]
         """
         alloc = self.get_allocation_for_task_history(queue_item)
         alloc_id = alloc["ID"]
@@ -964,7 +1119,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             response.raise_for_status()
             files = await response.json()
         return {
-            filename: file["Size"]
+            filename: {
+                "size": file.get("Size", 0),
+                "is_dir": bool(
+                    file.get("IsDir")
+                    or file.get("Directory")
+                    or file.get("Type") in {"directory", "dir"}
+                ),
+            }
             for file in files
             if not (filename := file["Name"]).startswith(".")
         }
