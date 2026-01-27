@@ -14,17 +14,7 @@
         <link rel="stylesheet"
               href="{{ url_for('static', path='/css/select2.min.css') }}">
     {% endif %}
-    <section id="running-tasks">
-        {% include "homepage/running-tasks.html" %}
-    </section>
-    <section id="pending-tasks">
-        <h2>Pending</h2>
-        {% include "homepage/pending-tasks.html" %}
-    </section>
-    <section id="periodic-tasks">
-        <h2>Periodic Tasks</h2>
-        {% include "homepage/scheduled-tasks.html" %}
-    </section>
+    {% include "homepage/tasks.html" %}
     {% include "inventory/partials/inventory-metrics.html" %}
     {% include "tasks/partials/host-metrics.html" %}
 {% endblock main %}
