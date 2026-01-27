@@ -152,7 +152,9 @@ class TestPMMRemoteAPI:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        mock_get_services.assert_awaited_once_with(node_id=node_id, skip_failed=True)
+        mock_get_services.assert_awaited_once_with(
+            node_id=node_id, skip_failed=True, filter_=None
+        )
 
         pmm_remote_api.is_older_than_v3.cache_clear()
 
@@ -175,8 +177,40 @@ class TestPMMRemoteAPI:
         node = await pmm_remote_api.get_node(node_id, skip_failed_services=False)
 
         assert node.external_id == node_id
-        mock_get_services.assert_awaited_once_with(node_id=node_id, skip_failed=False)
+        mock_get_services.assert_awaited_once_with(
+            node_id=node_id, skip_failed=False, filter_=None
+        )
 
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_node_with_filter_excludes_node_when_filter_returns_false(
+        self,
+        mock_request,
+        mock_get_version,
+        mock_get_services,
+        pmm_remote_api,
+    ):
+        """Test get_node returns None when filter_ is provided and returns False."""
+        mock_get_version.return_value = "3.0.0"
+        node_id = "node-123"
+        mock_request.return_value = {
+            "Generic": {
+                "node_id": node_id,
+                "name": "Test Node",
+                "address": "localhost",
+                "custom_labels": {"sep_sync": "disabled"},
+            }
+        }
+
+        def filter_exclude_disabled(item: dict) -> bool:
+            labels = item.get("labels") or item.get("custom_labels") or {}
+            return labels.get("sep_sync") != "disabled"
+
+        node = await pmm_remote_api.get_node(node_id, filter_=filter_exclude_disabled)
+
+        assert node is None
+        mock_get_services.assert_not_awaited()
         pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
@@ -222,6 +256,36 @@ class TestPMMRemoteAPI:
             expected_method, expected_path, **expected_kwargs
         )
 
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_service_with_filter_excludes_service_when_filter_returns_false(
+        self,
+        mock_request,
+        mock_get_version,
+        pmm_remote_api,
+    ):
+        """Test get_service returns None when filter_ is provided and returns False."""
+        mock_get_version.return_value = "3.0.0"
+        service_id = "service-123"
+        mock_request.return_value = {
+            "mysql": {
+                "service_id": service_id,
+                "name": "Test Service",
+                "node_id": "node-123",
+                "custom_labels": {"sep_sync": "disabled"},
+            },
+        }
+
+        def filter_exclude_disabled(item: dict) -> bool:
+            labels = item.get("labels") or item.get("custom_labels") or {}
+            return labels.get("sep_sync") != "disabled"
+
+        service = await pmm_remote_api.get_service(
+            service_id, filter_=filter_exclude_disabled
+        )
+
+        assert service is None
         pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
@@ -377,7 +441,9 @@ class TestPMMRemoteAPI:
             side_effect=_validate_side_effect,
         )
 
-        services = await pmm_remote_api.get_services()
+        services = await pmm_remote_api.get_services(
+            filter_=PMMSyncer._filter_sep_sync_disabled
+        )
 
         assert {s.external_id for s in services} == {"service-2", "service-3"}
         pmm_remote_api.is_older_than_v3.cache_clear()
@@ -398,7 +464,7 @@ class TestPMMRemoteAPI:
             for node_id, services in services_by_node.items()
         } == {service.node_id: service.external_id for service in created_services}
 
-        mock_get_services.assert_awaited_once_with(skip_failed=True)
+        mock_get_services.assert_awaited_once_with(skip_failed=True, filter_=None)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -444,7 +510,7 @@ class TestPMMRemoteAPI:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        mock_get_services.assert_awaited_once_with(skip_failed=True)
+        mock_get_services.assert_awaited_once_with(skip_failed=True, filter_=None)
 
         pmm_remote_api.is_older_than_v3.cache_clear()
 
@@ -520,6 +586,48 @@ class TestPMMRemoteAPI:
         pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
+    async def test_get_nodes_with_filter_excludes_nodes_when_filter_returns_false(
+        self, mock_request, mock_get_version, pmm_remote_api, mocker
+    ):
+        """Test get_nodes excludes nodes for which filter_ returns False."""
+        mock_get_version.return_value = "3.0.0"
+        mocker.patch.object(
+            PMMRemoteAPI,
+            "get_services_by_node_external_id",
+            new=AsyncMock(return_value=defaultdict(list)),
+        )
+        mock_request.return_value = {
+            "Generic": [
+                {
+                    "node_id": "node-1",
+                    "name": "Node 1",
+                    "address": "localhost",
+                    "custom_labels": {"sep_sync": "disabled"},
+                },
+                {
+                    "node_id": "node-2",
+                    "name": "Node 2",
+                    "address": "localhost",
+                    "custom_labels": {"sep_sync": "enabled"},
+                },
+                {
+                    "node_id": "node-3",
+                    "name": "Node 3",
+                    "address": "localhost",
+                },
+            ]
+        }
+
+        def filter_exclude_disabled(item: dict) -> bool:
+            labels = item.get("labels") or item.get("custom_labels") or {}
+            return labels.get("sep_sync") != "disabled"
+
+        nodes = await pmm_remote_api.get_nodes(filter_=filter_exclude_disabled)
+
+        assert {n.external_id for n in nodes} == {"node-2", "node-3"}
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("exception", "default_to_v3", "expected_result", "log_arg"),
         [(TypeError, False, True, "v2"), (KeyError, True, False, "v3")],
@@ -586,6 +694,25 @@ class TestPMMRemoteAPI:
         mock_request.assert_awaited_once_with("GET", "/v1/version")
 
 
+class TestPMMSyncerFilter:
+    """Test PMMSyncer _filter_sep_sync_disabled and filter usage."""
+
+    @pytest.mark.parametrize(
+        ("item", "expected"),
+        [
+            ({"custom_labels": {"sep_sync": "disabled"}}, False),
+            ({"labels": {"sep_sync": "disabled"}}, False),
+            ({"custom_labels": {"sep_sync": "enabled"}}, True),
+            ({"custom_labels": {}}, True),
+            ({}, True),
+            ({"labels": {"other": "value"}}, True),
+        ],
+    )
+    def test_filter_sep_sync_disabled(self, item, expected):
+        """Test _filter_sep_sync_disabled excludes only items with sep_sync: disabled."""
+        assert PMMSyncer._filter_sep_sync_disabled(item) is expected
+
+
 @pytest.mark.asyncio
 async def test_fetch_node(created_node, pmmsyncer):
     """Test fetching updated data for a specific node."""
@@ -602,7 +729,9 @@ async def test_fetch_node(created_node, pmmsyncer):
 
     assert node.name == "Remote Node"
     pmmsyncer.pmm_api.get_node.assert_awaited_once_with(
-        created_node.external_id, skip_failed_services=True
+        created_node.external_id,
+        skip_failed_services=True,
+        filter_=pmmsyncer._filter_sep_sync_disabled,
     )
 
 
@@ -623,7 +752,9 @@ async def test_fetch_node_break_on_error_true_does_not_skip_failed_services(
     await pmmsyncer.fetch_node(created_node)
 
     pmmsyncer.pmm_api.get_node.assert_awaited_once_with(
-        created_node.external_id, skip_failed_services=False
+        created_node.external_id,
+        skip_failed_services=False,
+        filter_=pmmsyncer._filter_sep_sync_disabled,
     )
 
 
@@ -641,7 +772,10 @@ async def test_fetch_service(created_service, pmmsyncer):
     service = await pmmsyncer.fetch_service(created_service)
 
     assert service.name == "Remote Service"
-    pmmsyncer.pmm_api.get_service.assert_awaited_once_with(created_service.external_id)
+    pmmsyncer.pmm_api.get_service.assert_awaited_once_with(
+        created_service.external_id,
+        filter_=pmmsyncer._filter_sep_sync_disabled,
+    )
 
 
 @pytest.mark.asyncio
@@ -700,7 +834,10 @@ async def test_perform_inventory_sync(created_node, pmmsyncer, mocker):
     await pmmsyncer.perform_inventory_sync()
 
     pmmsyncer.inventory_api.get.assert_awaited_once()
-    pmmsyncer.pmm_api.get_nodes.assert_awaited_once_with(skip_failed=True)
+    pmmsyncer.pmm_api.get_nodes.assert_awaited_once_with(
+        skip_failed=True,
+        filter_=pmmsyncer._filter_sep_sync_disabled,
+    )
     pmmsyncer.delete_node.assert_awaited_once()
 
 
@@ -719,5 +856,8 @@ async def test_perform_inventory_sync_break_on_error_true_calls_get_nodes_with_s
 
     await pmmsyncer.perform_inventory_sync()
 
-    pmmsyncer.pmm_api.get_nodes.assert_awaited_once_with(skip_failed=False)
+    pmmsyncer.pmm_api.get_nodes.assert_awaited_once_with(
+        skip_failed=False,
+        filter_=pmmsyncer._filter_sep_sync_disabled,
+    )
     pmmsyncer.delete_node.assert_awaited_once()

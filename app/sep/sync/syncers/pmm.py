@@ -17,6 +17,7 @@
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from types import TracebackType
 from typing import Any, ClassVar, Self
 
@@ -165,8 +166,12 @@ class PMMRemoteAPI(RemoteAPI):
         return version_data["version"]
 
     async def get_node(
-        self, node_id: str, *, skip_failed_services: bool = True
-    ) -> Node:
+        self,
+        node_id: str,
+        *,
+        skip_failed_services: bool = True,
+        filter_: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> Node | None:
         """Retrieve a PMM node by its external ID.
 
         Send a request to the PMM API to fetch a node's details by its external ID.
@@ -176,8 +181,13 @@ class PMMRemoteAPI(RemoteAPI):
         :param skip_failed_services: Whether to skip services that fail validation.
             Defaults to True.
         :type skip_failed_services: bool
-        :return: The retrieved node instance.
-        :rtype: Node
+        :param filter_: Optional callable that takes a node or service dict and returns
+            True if the item should be included, False if it should be filtered out.
+            Used to filter the node and, when loading services, each service.
+            Defaults to None.
+        :type filter_: Callable[[dict[str, Any]], bool] | None
+        :return: The retrieved node instance, or None if filtered out.
+        :rtype: Node | None
         """
         if await self.is_older_than_v3():
             node_data = await self.post(
@@ -189,10 +199,9 @@ class PMMRemoteAPI(RemoteAPI):
                 f"/v1/inventory/nodes/{node_id}",
             )
         node_type, node = next(iter(node_data.items()))
-        labels = node.get("labels") or node.get("custom_labels") or {}
-        if labels.get("sep_sync") == "disabled":
+        if filter_ is not None and not filter_(node):
             self.logger.debug(
-                "Skipping node %s due to sep_sync: disabled label",
+                "Skipping node %s due to filter",
                 node_id,
             )
             return None
@@ -200,20 +209,31 @@ class PMMRemoteAPI(RemoteAPI):
             "source": SourceEnum.PMM,
             "type": node_type,
             "services": await self.get_services(
-                node_id=node_id, skip_failed=skip_failed_services
+                node_id=node_id,
+                skip_failed=skip_failed_services,
+                filter_=filter_,
             ),
         }
         return Node.model_validate(node)
 
-    async def get_service(self, service_id: str) -> PMMService:
+    async def get_service(
+        self,
+        service_id: str,
+        *,
+        filter_: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> PMMService | None:
         """Retrieve a PMM service by its ID.
 
         Send a request to the PMM API to fetch a service's details by its ID.
 
         :param service_id: The identifier of the service to retrieve.
         :type service_id: str
-        :return: The retrieved service instance.
-        :rtype: PMMService
+        :param filter_: Optional callable that takes a service dict and returns True if
+            the service should be included, False if it should be filtered out.
+            Defaults to None.
+        :type filter_: Callable[[dict[str, Any]], bool] | None
+        :return: The retrieved service instance, or None if filtered out.
+        :rtype: PMMService | None
         """
         if await self.is_older_than_v3():
             service_data = await self.post(
@@ -225,10 +245,9 @@ class PMMRemoteAPI(RemoteAPI):
                 f"/v1/inventory/services/{service_id}",
             )
         service_type, service = next(iter(service_data.items()))
-        custom_labels = service.get("custom_labels") or {}
-        if custom_labels.get("sep_sync") == "disabled":
+        if filter_ is not None and not filter_(service):
             self.logger.debug(
-                "Skipping service %s due to sep_sync: disabled label",
+                "Skipping service %s due to filter",
                 service_id,
             )
             return None
@@ -242,6 +261,7 @@ class PMMRemoteAPI(RemoteAPI):
         external_group: str = "",
         *,
         skip_failed: bool = True,
+        filter_: Callable[[dict[str, Any]], bool] | None = None,
     ) -> list[PMMService]:
         """Fetch services from the PMM API.
 
@@ -260,6 +280,10 @@ class PMMRemoteAPI(RemoteAPI):
         :param skip_failed: Whether to skip services that fail validation. Defaults to
             True.
         :type skip_failed: bool
+        :param filter_: Optional callable that takes a service dict and returns True if
+            the service should be included, False if it should be filtered out.
+            Defaults to None.
+        :type filter_: Callable[[dict[str, Any]], bool] | None
         :return: A list of PMMService instances retrieved from the API.
         :rtype: list[PMMService]
         :raises ValidationError: If a service fails validation and `skip_failed` is
@@ -279,10 +303,9 @@ class PMMRemoteAPI(RemoteAPI):
         services = []
         for services_type, service_list in services_data.items():
             for service in service_list:
-                custom_labels = service.get("custom_labels") or {}
-                if custom_labels.get("sep_sync") == "disabled":
+                if filter_ is not None and not filter_(service):
                     self.logger.debug(
-                        "Skipping service %s due to sep_sync: disabled label",
+                        "Skipping service %s due to filter",
                         service.get("service_id"),
                     )
                     continue
@@ -302,7 +325,10 @@ class PMMRemoteAPI(RemoteAPI):
         return services
 
     async def get_services_by_node_external_id(
-        self, *, skip_failed: bool = True
+        self,
+        *,
+        skip_failed: bool = True,
+        filter_: Callable[[dict[str, Any]], bool] | None = None,
     ) -> defaultdict[RequiredStr, list[PMMService]]:
         """Fetch and group services by node ID from the PMM API.
 
@@ -312,16 +338,26 @@ class PMMRemoteAPI(RemoteAPI):
         :param skip_failed: Whether to skip services that fail validation. Defaults to
             True.
         :type skip_failed: bool
+        :param filter_: Optional callable that takes a service dict and returns True if
+            the service should be included, False if it should be filtered out.
+            Defaults to None.
+        :type filter_: Callable[[dict[str, Any]], bool] | None
         :return: A defaultdict mapping node IDs to lists of PMMService instances.
         :rtype: defaultdict[RequiredStr, list[PMMService]]
         """
         services_by_node_id = defaultdict(list)
-        for service in await self.get_services(skip_failed=skip_failed):
+        for service in await self.get_services(
+            skip_failed=skip_failed, filter_=filter_
+        ):
             services_by_node_id[service.node_id].append(service)
         return services_by_node_id
 
     async def get_nodes(
-        self, node_type: str = "", *, skip_failed: bool = True
+        self,
+        node_type: str = "",
+        *,
+        skip_failed: bool = True,
+        filter_: Callable[[dict[str, Any]], bool] | None = None,
     ) -> list[Node]:
         """Fetch nodes from the PMM API.
 
@@ -334,12 +370,17 @@ class PMMRemoteAPI(RemoteAPI):
         :param skip_failed: Whether to skip nodes that fail validation. Defaults to
             True.
         :type skip_failed: bool
+        :param filter_: Optional callable that takes a node or service dict and returns
+            True if the item should be included, False if it should be filtered out.
+            Used to filter nodes and, when loading services, each service.
+            Defaults to None.
+        :type filter_: Callable[[dict[str, Any]], bool] | None
         :return: A list of Node instances retrieved from the API.
         :rtype: list[Node]
         :raises ValidationError: If a node fails validation and `skip_failed` is False.
         """
         services_by_node_id = await self.get_services_by_node_external_id(
-            skip_failed=skip_failed
+            skip_failed=skip_failed, filter_=filter_
         )
         params = remove_falsy_values_from_dict({"node_type": node_type})
         if await self.is_older_than_v3():
@@ -353,10 +394,9 @@ class PMMRemoteAPI(RemoteAPI):
         nodes = []
         for nodes_type, node_list in nodes_data.items():
             for node in node_list:
-                labels = node.get("labels") or node.get("custom_labels") or {}
-                if labels.get("sep_sync") == "disabled":
+                if filter_ is not None and not filter_(node):
                     self.logger.debug(
-                        "Skipping node %s due to sep_sync: disabled label",
+                        "Skipping node %s due to filter",
                         node.get("node_id"),
                     )
                     continue
@@ -467,6 +507,21 @@ class PMMSyncer(BaseSyncer):
             raise ValueError("PMM API client has not been initialized.")
         return self._pmm_api
 
+    @staticmethod
+    def _filter_sep_sync_disabled(item: dict[str, Any]) -> bool:
+        """Filter to exclude items (nodes or services) with sep_sync: disabled label.
+
+        Works for both node and service dicts: nodes use "labels" or "custom_labels",
+        services use "custom_labels".
+
+        :param item: The node or service dictionary to check.
+        :type item: dict[str, Any]
+        :return: True if the item should be included, False if it should be filtered out.
+        :rtype: bool
+        """
+        labels = item.get("labels") or item.get("custom_labels") or {}
+        return labels.get("sep_sync") != "disabled"
+
     @alru_cache
     async def get_inventory_nodes(
         self,
@@ -500,7 +555,10 @@ class PMMSyncer(BaseSyncer):
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.external_id] = node
         logger.debug("Syncable nodes: %s", syncable_nodes)
-        for node in await self.pmm_api.get_nodes(skip_failed=not self.break_on_error):
+        for node in await self.pmm_api.get_nodes(
+            skip_failed=not self.break_on_error,
+            filter_=self._filter_sep_sync_disabled,
+        ):
             if (created_node := syncable_nodes.pop(node.external_id, None)) is None:
                 logger.debug("Creating new node: %r", node)
                 created_node = CreatedNode.model_validate(
@@ -529,7 +587,9 @@ class PMMSyncer(BaseSyncer):
             created_node.external_id,
         )
         return await self.pmm_api.get_node(
-            created_node.external_id, skip_failed_services=not self.break_on_error
+            created_node.external_id,
+            skip_failed_services=not self.break_on_error,
+            filter_=self._filter_sep_sync_disabled,
         )
 
     async def perform_node_sync(
@@ -606,7 +666,10 @@ class PMMSyncer(BaseSyncer):
             "Fetching service from PMM with external id %s",
             created_service.external_id,
         )
-        return await self.pmm_api.get_service(created_service.external_id)
+        return await self.pmm_api.get_service(
+            created_service.external_id,
+            filter_=self._filter_sep_sync_disabled,
+        )
 
     async def perform_service_sync(
         self,
