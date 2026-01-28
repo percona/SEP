@@ -90,7 +90,8 @@ detect_proxysql_errorlog() {
         fi
     fi
 
-    for cfg in /etc/proxysql.cnf /etc/proxysql/proxysql.cnf; do
+
+    for cfg in /etc/proxysql.cnf /etc/proxysql/proxysql.cnf "$HOME/.config/proxysql/proxysql.cnf"; do
         if [[ -f "$cfg" ]]; then
             CFG_LOG=$(grep -E '^\s*errorlog\s*=' "$cfg" \
                 | head -n1 \
