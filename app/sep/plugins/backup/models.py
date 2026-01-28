@@ -57,10 +57,18 @@ class DirEncryptConfig(BaseModel):
 
     :param encryption_recipient: The recipient of the encryption key.
     :type encryption_recipient: RequiredStr | None
+    :param gpg_parallel_threads: Number of parallel GPG processes for encryption
+        and verification. Default 1 (no change in behaviour).
+    :type gpg_parallel_threads: int
     """
 
     encryption_recipient: RequiredStr | None = Field(
         None, serialization_alias="encryption recipient"
+    )
+    gpg_parallel_threads: int = Field(
+        1,
+        serialization_alias="gpg parallel threads",
+        description="Number of parallel GPG processes (default 1).",
     )
 
 
@@ -236,6 +244,8 @@ class BackupCreate(BackupConfigAll):
     :type backup_type: BackupType
     :param encryption_recipient: The recipient used for encryption.
     :type encryption_recipient: RequiredStr | EmptyStrToNone
+    :param gpg_parallel_threads: Number of parallel GPG processes.
+    :type gpg_parallel_threads: int
     :param binlog_alternative_host: Optional alternative host for binlog operations.
     :type binlog_alternative_host: RequiredStr | EmptyStrToNone
     :param alias: Optional alias for the server in the SERVERS_LIST section.
@@ -249,6 +259,7 @@ class BackupCreate(BackupConfigAll):
     service_id: int
     backup_type: BackupType
     encryption_recipient: RequiredStr | EmptyStrToNone = None
+    gpg_parallel_threads: int = 1
     binlog_alternative_host: RequiredStr | EmptyStrToNone = None
     alias: RequiredStr | EmptyStrToNone = None
     alert_on_fail: bool = False

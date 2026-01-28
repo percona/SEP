@@ -67,6 +67,7 @@ async def build_backup_task_payload(
             "service_id",
             "backup_type",
             "encryption_recipient",
+            "gpg_parallel_threads",
             "alias",
         },
         by_alias=True,
@@ -93,10 +94,13 @@ async def build_backup_task_payload(
         "upload": upload_providers,
     }
 
+    server_config["dir_encrypt_config"] = {
+        "gpg_parallel_threads": form.gpg_parallel_threads,
+    }
     if form.encryption_recipient:
-        server_config["dir_encrypt_config"] = {
-            "encryption_recipient": form.encryption_recipient
-        }
+        server_config["dir_encrypt_config"]["encryption_recipient"] = (
+            form.encryption_recipient
+        )
 
     backup_config = BackupConfig(
         all_servers=BackupConfigAll.model_validate(all_config),
@@ -161,8 +165,12 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     }
 
     if "dir_encrypt_config" in server_config:
-        result["encryption_recipient"] = server_config["dir_encrypt_config"].get(
-            "encryption_recipient"
+        dec = server_config["dir_encrypt_config"]
+        result["encryption_recipient"] = dec.get("encryption_recipient") or dec.get(
+            "encryption recipient"
+        )
+        result["gpg_parallel_threads"] = dec.get("gpg_parallel_threads") or dec.get(
+            "gpg parallel threads", 1
         )
 
     upload_providers = server_config.get("UPLOAD", [])

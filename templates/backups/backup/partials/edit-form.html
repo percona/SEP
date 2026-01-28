@@ -354,6 +354,18 @@
                     </label>
                     <br>
                     <br>
+                    {% set gpg_parallel_threads_title = "Number of parallel GPG processes for encryption and verification. Default 1 (no change in behaviour)." %}
+                    <label for="gpg_parallel_threads" title="{{ gpg_parallel_threads_title }}">
+                        GPG Parallel Threads:
+                        <input type="number"
+                               id="gpg_parallel_threads"
+                               name="gpg_parallel_threads"
+                               min="1"
+                               value="{{ task.gpg_parallel_threads | default(1) }}"
+                               placeholder="1" />
+                    </label>
+                    <br>
+                    <br>
                     {% set compression_algorithm_title = "Select the type of compression algorithm" %}
                     <div class="select"
                          style="display:none"
