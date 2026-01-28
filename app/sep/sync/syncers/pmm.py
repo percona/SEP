@@ -18,7 +18,7 @@
 import logging
 from collections import defaultdict
 from types import TracebackType
-from typing import Any, ClassVar, Self
+from typing import ClassVar, Self
 
 from async_lru import _LRUCacheWrapper, alru_cache
 from pydantic import ConfigDict, ValidationError
@@ -28,6 +28,7 @@ from app.core.requests import RemoteAPI
 from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import RequiredStr
 from app.inventory.models import SourceEnum
+from app.sep.config import PMMSettings, sep_settings
 from app.sep.inventory import CreatedNode, CreatedService, Node, Service
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseSyncer
@@ -387,7 +388,7 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm: dict[str, Any]
+    pmm: PMMSettings = sep_settings.PMM
     keepalive_api: bool = True
     _pmm_api: PMMRemoteAPI | None = None
 
@@ -401,7 +402,9 @@ class PMMSyncer(BaseSyncer):
         :rtype: BaseRemoteAPI
         """
         if getattr(self, "_pmm_api", None) is None:
-            self._pmm_api = await settings.get_remote_api(PMMRemoteAPI, **self.pmm)
+            self._pmm_api = await settings.get_remote_api(
+                PMMRemoteAPI, **self.pmm.model_dump()
+            )
         return await super().__aenter__()
 
     async def __aexit__(
