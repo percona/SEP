@@ -80,17 +80,6 @@ usage() {
 
 detect_proxysql_errorlog() {
 
-    if command -v mysql >/dev/null 2>&1; then
-        RUNTIME_LOG=$(mysql -N -B -uadmin -padmin -h127.0.0.1 -P6032 \
-            -e "SHOW GLOBAL VARIABLES LIKE 'errorlog';" 2>/dev/null | awk '{print $2}')
-
-        if [[ -n "$RUNTIME_LOG" && "$RUNTIME_LOG" != "NULL" ]]; then
-            echo "$RUNTIME_LOG"
-            return
-        fi
-    fi
-
-
     for cfg in /etc/proxysql.cnf /etc/proxysql/proxysql.cnf "$HOME/.config/proxysql/proxysql.cnf"; do
         if [[ -f "$cfg" ]]; then
             CFG_LOG=$(grep -E '^\s*errorlog\s*=' "$cfg" \
