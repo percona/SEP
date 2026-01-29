@@ -164,13 +164,12 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "alias": server_config.get("ALIAS"),
     }
 
-    if "dir_encrypt_config" in server_config:
-        dec = server_config["dir_encrypt_config"]
-        result["encryption_recipient"] = dec.get("encryption_recipient") or dec.get(
-            "encryption recipient"
-        )
-        result["gpg_parallel_threads"] = dec.get("gpg_parallel_threads") or dec.get(
-            "gpg parallel threads", 1
+    dec = server_config.get("DIR_ENCRYPT_CONFIG")
+    if dec:
+        result["encryption_recipient"] = dec.get("ENCRYPTION_RECIPIENT")
+        raw_threads = dec.get("GPG_PARALLEL_THREADS")
+        result["gpg_parallel_threads"] = (
+            int(raw_threads) if raw_threads is not None else 1
         )
 
     upload_providers = server_config.get("UPLOAD", [])
