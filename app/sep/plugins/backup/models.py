@@ -3,7 +3,7 @@
 from enum import auto, IntEnum, StrEnum
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
@@ -52,7 +52,7 @@ class UploadProvider(EnumFieldMixin, StrEnum):
     S3 = auto()
 
 
-class DirEncryptConfig(BaseModel):
+class DirEncryptConfig(BaseCaseInsensitiveModel):
     """Represent the encryption configuration for the backup task.
 
     :param encryption_recipient: The recipient of the encryption key.
@@ -62,14 +62,8 @@ class DirEncryptConfig(BaseModel):
     :type gpg_parallel_threads: int
     """
 
-    encryption_recipient: RequiredStr | None = Field(
-        None, serialization_alias="encryption recipient"
-    )
-    gpg_parallel_threads: int = Field(
-        1,
-        serialization_alias="gpg parallel threads",
-        description="Number of parallel GPG processes (default 1).",
-    )
+    encryption_recipient: RequiredStr | None = None
+    gpg_parallel_threads: int = 1
 
 
 class BackupConfigAll(BaseCaseInsensitiveModel):

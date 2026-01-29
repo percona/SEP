@@ -10,6 +10,7 @@ import datetime
 import hashlib
 import json
 import logging
+import multiprocessing
 import multiprocessing.queues
 import os
 import pwd
@@ -557,29 +558,116 @@ def encrypt_dir(path: Path, logger: logging.Logger, **cfg: Any) -> None:
     if not dir_encrypt.encrypt_dir(encr_dir=path):
         raise BackupError("Encryption failed.")
 
-    if not is_encrypted_dir(path, logger):
+    pool_size = _pool_size_from_config(cfg)
+    gpg_bin = cfg.get("gpg bin") or cfg.get("GPG_BIN") or GPG_BIN
+    if not is_encrypted_dir(path, logger, pool_size=pool_size, gpg_bin=gpg_bin):
         raise BackupError("Something wrong, there are still unencrypted files!")
 
     logger.info("OK Encryption complete and verified.")
 
 
-def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
+def _pool_size_from_config(cfg: dict[str, Any]) -> int:
+    """Return GPG pool size from config dict, capped by CPU count (min 1)."""
+    raw = (
+        cfg.get("GPG_PARALLEL_THREADS")
+        or cfg.get("gpg_parallel_threads")
+        or cfg.get("gpg parallel threads")
+        or cfg.get("GPG PARALLEL THREADS")
+    )
+    if raw is None:
+        return 1
+    n = max(1, int(raw))
+    return min(n, os.cpu_count() or 1)
+
+
+def _gpg_verify_one_file(filepath_str: str, gpg_bin: str) -> tuple[str, bool, str]:
+    """Verify a single .gpg file with GPG (--list-only --decrypt). Worker for pool.
+
+    :return: (filepath, True if verification succeeded, error message if failed).
+    """
+    cmd = [
+        gpg_bin,
+        "--batch",
+        "--list-only",
+        "--status-fd",
+        "1",
+        "--decrypt",
+        filepath_str,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            return (filepath_str, True, "")
+        err = (result.stderr or result.stdout or b"").decode("utf-8", "replace")
+        return (filepath_str, False, err.strip() or f"exit code {result.returncode}")
+    except subprocess.TimeoutExpired:
+        return (filepath_str, False, "timeout")
+    except Exception as e:
+        return (filepath_str, False, str(e))
+
+
+def is_encrypted_dir(
+    path: Path,
+    logger: logging.Logger,
+    pool_size: int = 1,
+    gpg_bin: str | None = None,
+) -> bool:
     """Check if all files in the directory are encrypted.
+
+    Uses a multiprocessing pool when pool_size > 1 for parallel verification.
 
     :param path: Directory path.
     :param logger: Logger instance.
+    :param pool_size: Number of parallel GPG workers (1 = sequential).
+    :param gpg_bin: Path to GPG binary (default from env/config).
     :return: True if all files are encrypted, False otherwise.
     :raises BackupError: If GPG encounters a critical error (e.g., missing keys).
     """
+    gpg_bin = gpg_bin or GPG_BIN
+    gpg_files: list[Path] = []
     for file_path in path.rglob("*"):
         if not file_path.is_file() or file_path.name in EXCLUDE_FILES:
             continue
-
         if not file_path.name.endswith(".gpg"):
             return False
+        gpg_files.append(file_path)
 
+    if not gpg_files:
+        return True
+
+    if pool_size > 1:
+        num_files = len(gpg_files)
+        print("Verifying %d file(s) with %d parallel GPG worker(s)..." % (num_files, pool_size))
+        worker_args = [(str(f), gpg_bin) for f in gpg_files]
+        with multiprocessing.Pool(min(pool_size, num_files)) as pool:
+            results = pool.starmap(_gpg_verify_one_file, worker_args)
+        all_ok = True
+        for idx, (filepath_str, ok, err_msg) in enumerate(results, 1):
+            basename = Path(filepath_str).name
+            gpg_slot = (idx - 1) % pool_size + 1
+            if ok:
+                print("  GPG %d: verified: %s" % (gpg_slot, basename))
+            else:
+                all_ok = False
+                print("  GPG %d: FAILED: %s" % (gpg_slot, basename))
+                if logger:
+                    logger.error("%r did not verify: %s", filepath_str, err_msg)
+        if all_ok:
+            print("Verification complete: %d file(s) verified successfully." % num_files)
+        else:
+            fail_count = sum(1 for _ in results if not _[1])
+            print("Verification complete: %d succeeded, %d failed." % (num_files - fail_count, fail_count))
+        return all_ok
+
+    for file_path in gpg_files:
         cmd = [
-            GPG_BIN,
+            gpg_bin,
             "--batch",
             "--list-only",
             "--status-fd",
@@ -587,7 +675,6 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
             "--decrypt",
             str(file_path),
         ]
-
         try:
             result = subprocess.run(
                 cmd,
@@ -602,15 +689,12 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
             raise BackupError(
                 f"GPG encryption verification timed out for {file_path.name}"
             )
-
         if result.returncode == 0:
             continue
-
         stdout_bytes = result.stdout or b""
         err_bytes = result.stderr or b""
         err_str = err_bytes.decode("utf-8", errors="replace")
         stdout_str = stdout_bytes.decode("utf-8", errors="replace")
-
         if b"[GNUPG:] NODATA" in stdout_bytes:
             if logger:
                 logger.error(
@@ -620,7 +704,6 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
                     err_str,
                 )
             return False
-
         if any(pattern in err_bytes for pattern in GPG_NOT_ENCRYPTED_PATTERNS):
             if logger:
                 logger.error(
@@ -630,15 +713,12 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
                     err_str,
                 )
             return False
-
         critical_status_found = any(
             status_code in stdout_bytes for status_code in GPG_CRITICAL_STATUS_CODES
         )
-
         critical_stderr_found = any(
             pattern in err_bytes for pattern in GPG_CRITICAL_ERROR_PATTERNS
         )
-
         if critical_status_found or critical_stderr_found:
             if logger:
                 logger.error("Running: %s", " ".join(cmd))
@@ -653,7 +733,6 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
                 "This usually indicates missing GPG keys or GPG configuration issues. "
                 f"Status: {stdout_str}, Error: {err_str}"
             )
-
         if logger:
             logger.warning(
                 'Unexpected GPG error for file "%s". Status: %s, Error: %s',
@@ -662,7 +741,6 @@ def is_encrypted_dir(path: Path, logger: logging.Logger) -> bool:
                 err_str,
             )
         return False
-
     return True
 
 
@@ -691,6 +769,51 @@ def parse_args() -> argparse.Namespace:
         "-c", "--config", type=Path, help="File name of the YAML config"
     )
     return parser.parse_args()
+
+
+def _gpg_encrypt_one_file(
+    filename: str,
+    gpg_bin: str,
+    recipient: str,
+    home_dir: str,
+    nice: bool,
+) -> tuple[str, bool, str]:
+    """Encrypt a single file with GPG. Used as worker for multiprocessing pool.
+
+    :param filename: Path to the file to encrypt.
+    :param gpg_bin: Path to the GPG binary.
+    :param recipient: GPG recipient.
+    :param home_dir: GPG home directory (empty string to use default).
+    :param nice: Whether to run GPG with nice.
+    :return: (filename, True if encryption succeeded, error message if failed).
+    """
+    output_filename = filename + ".gpg"
+    cmd = [
+        gpg_bin,
+        "--batch",
+        "--no-auto-key-retrieve",
+        "--yes",
+        "--encrypt",
+        "--always-trust",
+        "--quiet",
+        f"--recipient={recipient}",
+        f"--output={output_filename}",
+        filename,
+    ]
+    if nice:
+        cmd.insert(0, "nice")
+    if home_dir:
+        cmd.insert(-1, f"--homedir={home_dir}")
+    try:
+        result = subprocess.run(
+            cmd, check=False, capture_output=True, timeout=300
+        )
+        if result.returncode == 0:
+            return (filename, True, "")
+        err = (result.stderr or result.stdout or b"").decode("utf-8", "replace")
+        return (filename, False, err.strip() or f"exit code {result.returncode}")
+    except Exception as e:
+        return (filename, False, str(e))
 
 
 class DirectoryEncryptor:
@@ -730,88 +853,24 @@ class DirectoryEncryptor:
             "encryption recipient": "directory.encryption@percona.com",
             "encryption home dir": "~/.gnupg",
             "max encryption processes": 5,
+            "gpg parallel threads": 1,
             "encryption nice": False,
             "gpg bin": "/usr/bin/gpg",
             "encryption file filter": "",
         }
 
-    def _start_gpg_subp(
-        self,
-        filename: str,
-        recipient: str = "",
-        *,
-        nice: bool = False,
-    ) -> subprocess.Popen:
-        """Start and return a GPG encryption (or decryption) subprocess.
-
-        :param filename: The input file to encrypt or decrypt.
-        :type filename: str
-        :param recipient: The GPG recipient if encrypting, ignored if decrypting.
-        :type recipient: str
-        :param nice: If True, start the process with `nice`.
-        :type nice: bool
-        :return: The subprocess.Popen object representing the started GPG process.
-        :rtype: subprocess.Popen
-        """
-        gpg_bin = self.config["gpg bin"]
-        home_dir = self.config.get("encryption home dir", "")
-        output_filename = filename + ".gpg"
-        stdin = None
-        cmd = [
-            gpg_bin,
-            "--batch",
-            "--yes",
-            "--encrypt",
-            "--always-trust",
-            "--quiet",
-            f"--recipient={recipient}",
-            f"--output={output_filename}",
-            filename,
-        ]
-
-        if nice:
-            cmd.insert(0, "nice")
-        if home_dir:
-            cmd.insert(-1, f"--homedir={home_dir}")
-        return subprocess.Popen(cmd, stdin=stdin)
-
-    def _prune_finished_procs(
-        self, proc_dict: dict[str, subprocess.Popen], max_live_proc: int = 0
-    ) -> bool:
-        """Check the dictionary of active processes for those that have finished.
-
-        Once a process finishes:
-        - If exit code is 0, the original file is unlinked.
-        - If exit code is non-zero, logs an error and exits the program with status 1.
-
-        Prunes finished processes from the dictionary.
-
-        :param proc_dict: A dictionary of {filename: Popen} representing running
-            encryption processes.
-        :type proc_dict: dict[str, subprocess.Popen]
-        :param max_live_proc: The maximum number of processes allowed before waiting.
-        :type max_live_proc: int
-        :return: True if no errors were encountered, False otherwise.
-        :rtype: bool
-        """
-        ok = True
-        while proc_dict:
-            for fp, proc in list(proc_dict.items()):
-                rc = proc.poll()
-                if rc is None:
-                    continue
-                if rc == 0:
-                    with suppress(OSError):
-                        Path(fp).unlink()
-                else:
-                    ok = False
-                    logging.error("%r did not encrypt correctly.", fp)
-                    sys.exit(1)
-                del proc_dict[fp]
-            if len(proc_dict) < max_live_proc:
-                break
-            time.sleep(0.1)
-        return ok
+    def _effective_pool_size(self) -> int:
+        """Return number of worker processes, capped by CPU count (min 1)."""
+        raw = (
+            self.config.get("GPG_PARALLEL_THREADS")
+            or self.config.get("gpg_parallel_threads")
+            or self.config.get("gpg parallel threads")
+            or self.config.get("GPG PARALLEL THREADS")
+        )
+        if raw is None:
+            raw = self.config.get("max encryption processes", 5)
+        n = max(1, int(raw))
+        return min(n, os.cpu_count() or 1)
 
     def encrypt_dir(
         self,
@@ -819,21 +878,37 @@ class DirectoryEncryptor:
     ) -> bool:
         """Encrypt all regular files under `encr_dir` using GPG.
 
-        If `recipient`, `nice`, and `max_proc` are not provided, the values are taken
-        from the configuration file. If a file is successfully encrypted, the original
+        Uses a multiprocessing pool sized by gpg parallel threads (default 1),
+        capped by CPU count. If a file is successfully encrypted, the original
         file is removed.
 
         :param encr_dir: The directory path containing files to be encrypted.
-        :type encr_dir: str
+        :type encr_dir: Path
         :return: True if all files were encrypted successfully, False otherwise.
         :rtype: bool
         """
-        recipient = self.config.get("encryption recipient", "directory.encryption@percona.com")
-        nice = bool(self.config.get("encryption nice", False))
-        max_proc = int(self.config.get("max encryption processes", 5))
-
-        enc_procs = {}
-        all_ok = True
+        recipient = (
+            self.config.get("ENCRYPTION_RECIPIENT")
+            or self.config.get("encryption_recipient")
+            or self.config.get("encryption recipient")
+            or os.environ.get("ENCRYPTION_RECIPIENT")
+            or "directory.encryption@percona.com"
+        )
+        nice = bool(
+            self.config.get("encryption nice")
+            or self.config.get("ENCRYPTION_NICE")
+            or self.config.get("encryption_nice")
+            or False
+        )
+        gpg_bin = self.config.get("gpg bin") or self.config.get("GPG_BIN") or "/usr/bin/gpg"
+        home_dir = (
+            self.config.get("encryption home dir")
+            or self.config.get("ENCRYPTION_HOME_DIR")
+            or self.config.get("encryption_home_dir")
+            or ""
+        )
+        if home_dir:
+            home_dir = str(Path(home_dir).expanduser().resolve())
 
         exclude_names = {
             "md5sum",
@@ -842,21 +917,62 @@ class DirectoryEncryptor:
             "xtrabackup_checkpoints",
         }
 
-        for file_path in encr_dir.rglob("*"):
-            if (
-                not file_path.is_file()
-                or file_path.name.endswith(".gpg")
-                or file_path.name in exclude_names
-            ):
-                continue
+        files_to_encrypt = [
+            str(p)
+            for p in encr_dir.rglob("*")
+            if p.is_file()
+            and not p.name.endswith(".gpg")
+            and p.name not in exclude_names
+        ]
+        if not files_to_encrypt:
+            return True
 
-            p = self._start_gpg_subp(str(file_path), recipient=recipient, nice=nice)
-            enc_procs[file_path] = p
-            ok = self._prune_finished_procs(enc_procs, max_proc)
-            all_ok = all_ok and ok
-
-        ok = self._prune_finished_procs(enc_procs)
-        return all_ok and ok
+        pool_size = self._effective_pool_size()
+        print("Encryption settings: recipient=%r gpg_parallel_threads=%s gpg_bin=%r encryption_home_dir=%r encryption_nice=%s" % (
+            recipient,
+            pool_size,
+            gpg_bin,
+            home_dir or "(default)",
+            nice,
+        ))
+        home_dir_str = home_dir if isinstance(home_dir, str) else ""
+        num_files = len(files_to_encrypt)
+        print("Encrypting %d file(s) with %d parallel GPG worker(s)..." % (num_files, pool_size))
+        worker_args = [
+            (f, gpg_bin, recipient, home_dir_str, nice) for f in files_to_encrypt
+        ]
+        all_ok = True
+        with multiprocessing.Pool(pool_size) as pool:
+            results = pool.starmap(_gpg_encrypt_one_file, worker_args)
+        failed_messages: list[str] = []
+        fail_count = 0
+        for idx, (filename, ok, error_message) in enumerate(results, 1):
+            basename = Path(filename).name
+            gpg_slot = (idx - 1) % pool_size + 1
+            if ok:
+                with suppress(OSError):
+                    Path(filename).unlink()
+                print("  GPG %d: encrypted: %s" % (gpg_slot, basename))
+            else:
+                all_ok = False
+                fail_count += 1
+                print("  GPG %d: FAILED: %s" % (gpg_slot, basename))
+                logging.error("%r did not encrypt correctly.", filename)
+                if error_message:
+                    logging.error("GPG: %s", error_message)
+                    failed_messages.append(error_message)
+        if all_ok:
+            print("Encryption complete: %d file(s) encrypted successfully." % num_files)
+        if not all_ok:
+            first_err = failed_messages[0] if failed_messages else "Encryption failed."
+            logging.error(
+                "Encryption failed for %d file(s). First error: %s",
+                fail_count,
+                first_err,
+            )
+            print("Encryption complete: %d succeeded, %d failed." % (num_files - fail_count, fail_count))
+            return False
+        return True
 
 
 class BaseBackup:
@@ -956,10 +1072,12 @@ class BaseBackup:
         self,
         backup_status: int,
         msp_action: MSPAction = MSPAction.BACKUP,
+        backup_running: int | None = None,
     ) -> None:
         """Write backup status to textfile collector for Prometheus.
 
         :param backup_status: Backup status code.
+        :param backup_running: Whether backup is running (0 or 1).
         """
         if not self.check_textcollector_dir():
             return
@@ -968,6 +1086,7 @@ class BaseBackup:
             self.backup_textfile_collector_dir
             / f"{msp_action}.{BACKUP_TYPE}.{self.alias}.prom"
         )
+        collector_file.parent.mkdir(parents=True, exist_ok=True)
 
         encryption_val = self.report_options.get("encryption", "")
         start_time_val = str(self.report_options.get("start_time", ""))
@@ -976,17 +1095,38 @@ class BaseBackup:
         metrics_text = (
             f"# HELP msp_{msp_action}_status The status of the job\n"
             f"# TYPE msp_{msp_action}_status Untyped\n"
+        )
+        if backup_running is not None:
+            metrics_text += (
+                f"# HELP msp_{msp_action}_running The status of the backup job\n"
+                f"# TYPE msp_{msp_action}_running Untyped\n"
+            )
+        metrics_text += (
             f"# HELP msp_{msp_action}_last_report_ts The Last Report Time\n"
             f"# TYPE msp_{msp_action}_last_report_ts Untyped\n"
+        )
+        if backup_running is not None:
+            metrics_text += (
+                f'msp_{msp_action}_running{{type="{BACKUP_TYPE}", alias="{self.alias}"}} '
+                f"{backup_running}\n"
+            )
+        metrics_text += (
             f'msp_{msp_action}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
             f'backup_id="", start_time="{start_time_val}", end_time="{end_time_val}"'
         )
 
-        size_bytes = (
-            get_dir_size(self.last_backup_dir)
-            if self.last_backup_dir is not None
-            else 0
-        )
+        if self.last_backup_dir is not None:
+            last_backup_path = (
+                self.last_backup_dir
+                if isinstance(self.last_backup_dir, Path)
+                else Path(self.last_backup_dir)
+            )
+            if last_backup_path.exists() and last_backup_path.is_dir():
+                size_bytes = get_dir_size(last_backup_path)
+            else:
+                size_bytes = 0
+        else:
+            size_bytes = 0
         metrics_text += f', backup_size="{size_bytes}"'
 
         metrics_text += f"}} {backup_status}\n"
@@ -1801,6 +1941,8 @@ class MyDumper(Backup):
 
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
+        self._check_mydumper_available()
+
         if self.check_disk_space:
             is_free, msg = is_free_space(
                 self.backup_server_dir,
@@ -1830,9 +1972,12 @@ class MyDumper(Backup):
         self._purge_old_backups()
 
         # Encrypt backup or hardlink to save space
-        if self.post_run_encrypt:
+        if self.post_run_encrypt or self.encrypt:
             self.report_options["encryption"] = "gpg"
-            self.logger.info("Post-run backup encryption is enabled.")
+            if self.post_run_encrypt:
+                self.logger.info("Post-run backup encryption is enabled.")
+            else:
+                self.logger.info("Encrypting backup (encrypt=true)...")
             encrypt_dir(self.backup_dir, self.logger, **self.dir_encrypt_config)
         else:
             self._save_disk_space()
@@ -2123,6 +2268,33 @@ class MyDumper(Backup):
 
         self.logger.info("OK %s dirs purged.", purges)
         return purges
+
+    def _check_mydumper_available(self) -> None:
+        """Ensure the mydumper binary exists and is executable.
+
+        :raises BackupError: If mydumper is not found or not executable.
+        """
+        bin_path = Path(MYDUMPER_BIN)
+        if bin_path.is_absolute():
+            if not bin_path.is_file():
+                raise BackupError(
+                    f"mydumper is not installed at {MYDUMPER_BIN}. "
+                    "Install mydumper on this host or set PERCONA_BACKUP_MYDUMPER_BIN "
+                    "to the correct binary path."
+                )
+            if not os.access(MYDUMPER_BIN, os.X_OK):
+                raise BackupError(
+                    f"mydumper at {MYDUMPER_BIN} is not executable. "
+                    "Fix permissions or set PERCONA_BACKUP_MYDUMPER_BIN to the correct path."
+                )
+        else:
+            resolved = shutil.which(MYDUMPER_BIN)
+            if not resolved:
+                raise BackupError(
+                    f"mydumper is not installed or not in PATH. "
+                    "Install mydumper on this host or set PERCONA_BACKUP_MYDUMPER_BIN "
+                    "to the full binary path (e.g. /usr/bin/mydumper)."
+                )
 
     def _get_version(self) -> str | None:
         """Extract MyDumper version.
