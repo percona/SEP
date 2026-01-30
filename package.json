@@ -25,5 +25,12 @@
     "webpack": "5.101.0",
     "webpack-cli": "^5",
     "webpack-dev-server": "^4"
+  },
+  "engines": {
+    "runtime": {
+      "name": "node",
+      "version": "^24.11.0",
+      "onFail": "download"
+    }
   }
 }
