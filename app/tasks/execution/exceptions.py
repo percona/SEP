@@ -13,16 +13,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define exceptions for the Nomad executor."""
-
-from nomad.api.exceptions import BaseNomadException
-
-from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
+"""Define base exceptions for task execution."""
 
 
-class AllocationNotFoundError(TaskDataNotFoundInExecutorError, BaseNomadException):
-    """Define exception for when an allocation is not found."""
-
-
-class JobNotFoundError(TaskDataNotFoundInExecutorError, BaseNomadException):
-    """Define exception for when a job is not found."""
+class TaskDataNotFoundInExecutorError(Exception):
+    """Define exception for when task data is not found in executor."""

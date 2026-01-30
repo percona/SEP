@@ -55,8 +55,8 @@ from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.executors.nomad.exceptions import (
-    AllocationNotFoundException,
-    JobNotFoundException,
+    AllocationNotFoundError,
+    JobNotFoundError,
 )
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
@@ -217,14 +217,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :rtype: Task
         """
         task = queue_item.task if task is None else task
-        # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD002, TD003
+        # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD003
         task.data["ID"] += f"-{slugify(queue_item.execution_request.target)}"
         if queue_item.execution_request.meta:
-            # TODO: target is currently pushed in to meta  # noqa: TD002, TD003
+            # TODO: target is currently pushed in to meta  # noqa: TD003
             queue_item.execution_request.meta["target"] = (
                 queue_item.execution_request.target
             )
-            # TODO: allow templates in more fields, currently only for constraints  # noqa: TD002, TD003
+            # TODO: allow templates in more fields, currently only for constraints  # noqa: TD003
             for meta_var, meta_val in queue_item.execution_request.meta.items():
                 for i, constraint in enumerate(task.data["Constraints"]):
                     meta = "${NOMAD_META_" + meta_var + "}"
@@ -331,12 +331,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type job_id: str
         :return: The job details retrieved from Nomad.
         :rtype: dict[str, Any]
-        :raises JobNotFoundException: If the job could not be determined.
+        :raises JobNotFoundError: If the job could not be determined.
         """
         try:
             return self.backend.job.get_job(job_id)
         except URLNotFoundNomadException as exc:
-            raise JobNotFoundException(exc.nomad_resp) from None
+            raise JobNotFoundError(exc.nomad_resp) from None
 
     def get_job_for_task_history(self, queue_item: TaskHistory) -> dict[str, Any]:
         """Retrieve the job associated with a task history record.
@@ -349,12 +349,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type queue_item: TaskHistory
         :return: The job details retrieved from Nomad.
         :rtype: dict[str, Any]
-        :raises JobNotFoundException: If the job ID is missing or the job cannot be
+        :raises JobNotFoundError: If the job ID is missing or the job cannot be
             found.
         """
         if job_id := queue_item.execution_request.tracking.get("job_id"):
             return self.get_job(job_id)
-        raise JobNotFoundException(
+        raise JobNotFoundError(
             f"Missing job_id in task history tracking ({queue_item.id})"
         )
 
@@ -384,7 +384,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type queue_item: TaskHistory
         :return: The allocation details from Nomad.
         :rtype: dict[str, Any]
-        :raises AllocationNotFoundException: If allocation cannot be found directly
+        :raises AllocationNotFoundError: If allocation cannot be found directly
             through an allocation_id and no allocations are found with the job_id and
             evaluation_id attached to the queue_item.
         """
@@ -417,7 +417,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :return: The allocation details from Nomad, or None if no allocations are found.
         :rtype: dict[str, Any] | None
         :raises ValueError: If neither job_id nor eval_id is provided.
-        :raises AllocationNotFoundException: If no allocations are found with the
+        :raises AllocationNotFoundError: If no allocations are found with the
             specified filters.
         """
         allocation_filters = []
@@ -433,7 +433,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             reverse=True,
         )
         if not allocations:
-            raise AllocationNotFoundException(
+            raise AllocationNotFoundError(
                 f"No allocations found with filter {allocation_filter!r}"
             )
         logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
@@ -608,7 +608,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     task_states={},
                     task_logs={},
                 )
-        except AllocationNotFoundException:
+        except AllocationNotFoundError:
             logger.debug("Allocation not found for task history %s", queue_item.id)
             try:
                 job = self.get_job_for_task_history(queue_item)
@@ -622,7 +622,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
                     queue_item.status = TaskHistoryStatusEnum.FAILED
                     queue_item.started_at = None
-            except JobNotFoundException:
+            except JobNotFoundError:
                 logger.warning(
                     "Lost job and allocation from task history %s", queue_item.id
                 )
@@ -661,7 +661,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         try:
             job = self.get_job(job_id)
-        except JobNotFoundException:
+        except JobNotFoundError:
             queue_item.status = TaskHistoryStatusEnum.LOST
         else:
             if job["Status"] == NOMAD_DEAD_JOB_STATUS:
@@ -698,14 +698,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if task.data.get("ParameterizedJob"):
             try:
                 job = self.get_job(task.data["ID"])
-            except JobNotFoundException:
+            except JobNotFoundError:
                 return True
             return (submit_time := job.get("SubmitTime")) is None or make_datetime_utc(
                 task.updated_at or task.created_at
             ) > self.timestamp_to_datetime(submit_time)
         return True
 
-    # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
+    # TODO: Use pydantic models instead of dict for job validation  # noqa: TD003
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Validate a Nomad job specification.
 
