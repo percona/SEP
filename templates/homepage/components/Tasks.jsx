@@ -87,60 +87,70 @@ const useDomThemeMode = () => {
   return mode;
 };
 
-const buildTheme = (mode) =>
-  createTheme({
+const buildTheme = (mode) => {
+  const styles =
+    typeof document !== "undefined" ? getComputedStyle(document.body) : null;
+  const getVar = (name, fallback) => {
+    if (!styles) {
+      return fallback;
+    }
+    const value = styles.getPropertyValue(name);
+    return value ? value.trim() : fallback;
+  };
+
+  return createTheme({
     palette: {
       mode,
       primary: {
-        main: "var(--primaryMain)",
-        light: "var(--primaryLight)",
-        dark: "var(--primaryDark)",
-        contrastText: "var(--primaryContrast)",
+        main: getVar("--primaryMain", "#1976d2"),
+        light: getVar("--primaryLight", "#42a5f5"),
+        dark: getVar("--primaryDark", "#1565c0"),
+        contrastText: getVar("--primaryContrast", "#ffffff"),
       },
       secondary: {
-        main: "var(--lineFocus)",
-        light: "var(--lineFocus)",
-        dark: "var(--lineFocus)",
-        contrastText: "var(--textPrimary)",
+        main: getVar("--lineFocus", "#0288d1"),
+        light: getVar("--lineFocus", "#03a9f4"),
+        dark: getVar("--lineFocus", "#0277bd"),
+        contrastText: getVar("--textPrimary", "#ffffff"),
       },
       success: {
-        main: "var(--successMain)",
-        light: "var(--successLight)",
-        dark: "var(--successDark)",
-        contrastText: "var(--successContrast)",
+        main: getVar("--successMain", "#2e7d32"),
+        light: getVar("--successLight", "#60ad5e"),
+        dark: getVar("--successDark", "#1b5e20"),
+        contrastText: getVar("--successContrast", "#ffffff"),
       },
       error: {
-        main: "var(--errorMain)",
-        light: "var(--errorLight)",
-        dark: "var(--errorDark)",
-        contrastText: "var(--errorContrast)",
+        main: getVar("--errorMain", "#d32f2f"),
+        light: getVar("--errorLight", "#ef5350"),
+        dark: getVar("--errorDark", "#c62828"),
+        contrastText: getVar("--errorContrast", "#ffffff"),
       },
       info: {
-        main: "var(--lineFocus)",
-        light: "var(--lineFocus)",
-        dark: "var(--lineFocus)",
-        contrastText: "var(--textPrimary)",
+        main: getVar("--lineFocus", "#0288d1"),
+        light: getVar("--lineFocus", "#03a9f4"),
+        dark: getVar("--lineFocus", "#0277bd"),
+        contrastText: getVar("--textPrimary", "#ffffff"),
       },
       warning: {
-        main: "var(--primaryLight)",
-        light: "var(--primaryLight)",
-        dark: "var(--primaryDark)",
-        contrastText: "var(--primaryContrast)",
+        main: getVar("--primaryLight", "#ed6c02"),
+        light: getVar("--primaryLight", "#ff9800"),
+        dark: getVar("--primaryDark", "#e65100"),
+        contrastText: getVar("--primaryContrast", "#ffffff"),
       },
       text: {
-        primary: "var(--textPrimary)",
-        secondary: "var(--textSecondary)",
-        disabled: "var(--textDisabled)",
+        primary: getVar("--textPrimary", "#111111"),
+        secondary: getVar("--textSecondary", "#555555"),
+        disabled: getVar("--textDisabled", "#9e9e9e"),
       },
-      divider: "var(--lineDivider)",
+      divider: getVar("--lineDivider", "rgba(0, 0, 0, 0.12)"),
       background: {
-        default: "var(--surfaceElevation0)",
-        paper: "var(--surfaceElevation1)",
+        default: getVar("--surfaceElevation0", "#ffffff"),
+        paper: getVar("--surfaceElevation1", "#ffffff"),
       },
       action: {
-        hover: "var(--actionHover)",
-        disabled: "var(--actionDisabled)",
-        focus: "var(--actionFocus)",
+        hover: getVar("--actionHover", "rgba(0, 0, 0, 0.04)"),
+        disabled: getVar("--actionDisabled", "rgba(0, 0, 0, 0.26)"),
+        focus: getVar("--actionFocus", "rgba(0, 0, 0, 0.12)"),
       },
     },
     typography: {
@@ -159,6 +169,7 @@ const buildTheme = (mode) =>
       },
     },
   });
+};
 
 const ROWS_PER_PAGE = 10;
 
