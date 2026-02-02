@@ -8,6 +8,7 @@ import {
   Box,
   Chip,
   CircularProgress,
+  IconButton,
   Paper,
   Table,
   TableBody,
@@ -16,8 +17,10 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  Tooltip,
 } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import { format } from "date-fns";
 import axios from "axios";
 
@@ -193,10 +196,9 @@ const statusChipColor = (status) => {
 };
 
 const TasksTable = () => {
-  const { data, error, isLoading } = useQuery({
+  const { data, error, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["tasks_history"],
     queryFn: fetchTasksHistory,
-    refetchInterval: 10000,
   });
   const [page, setPage] = useState(0);
 
@@ -238,7 +240,21 @@ const TasksTable = () => {
 
   return (
     <div>
-      <h2>Tasks</h2>
+      <Box display="flex" alignItems="center" justifyContent="space-between">
+        <h2>Tasks</h2>
+        <Tooltip title="Refresh tasks">
+          <span>
+            <IconButton
+              aria-label="Refresh tasks"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              size="small"
+            >
+              <RefreshIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
       <TableContainer component={Paper} className="tasks-table-container">
         <Table className="responsive-table tasks-table" size="small" stickyHeader>
           <TableHead>
