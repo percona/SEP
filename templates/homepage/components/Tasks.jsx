@@ -17,6 +17,7 @@ import {
   TablePagination,
   TableRow,
 } from "@mui/material";
+import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { format } from "date-fns";
 import axios from "axios";
 
@@ -34,6 +35,130 @@ const formatDateTime = (value) => {
   }
   return format(new Date(value), "yyyy-MM-dd HH:mm:ss");
 };
+
+const getThemeModeFromDom = () => {
+  if (typeof document === "undefined") {
+    return "light";
+  }
+
+  const domTheme = document.body?.getAttribute("data-theme");
+  if (domTheme === "dark" || domTheme === "light") {
+    return domTheme;
+  }
+
+  const storedTheme =
+    typeof window !== "undefined" ? window.localStorage?.getItem("theme") : null;
+  if (storedTheme === "dark" || storedTheme === "light") {
+    return storedTheme;
+  }
+
+  const prefersDark =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  return prefersDark ? "dark" : "light";
+};
+
+const useDomThemeMode = () => {
+  const [mode, setMode] = useState(getThemeModeFromDom);
+
+  useEffect(() => {
+    const body = document.body;
+    if (!body) {
+      return undefined;
+    }
+
+    const updateMode = () => {
+      const nextMode =
+        body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      setMode(nextMode);
+    };
+
+    updateMode();
+
+    const observer = new MutationObserver(updateMode);
+    observer.observe(body, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  return mode;
+};
+
+const buildTheme = (mode) =>
+  createTheme({
+    palette: {
+      mode,
+      primary: {
+        main: "var(--primaryMain)",
+        light: "var(--primaryLight)",
+        dark: "var(--primaryDark)",
+        contrastText: "var(--primaryContrast)",
+      },
+      secondary: {
+        main: "var(--lineFocus)",
+        light: "var(--lineFocus)",
+        dark: "var(--lineFocus)",
+        contrastText: "var(--textPrimary)",
+      },
+      success: {
+        main: "var(--successMain)",
+        light: "var(--successLight)",
+        dark: "var(--successDark)",
+        contrastText: "var(--successContrast)",
+      },
+      error: {
+        main: "var(--errorMain)",
+        light: "var(--errorLight)",
+        dark: "var(--errorDark)",
+        contrastText: "var(--errorContrast)",
+      },
+      info: {
+        main: "var(--lineFocus)",
+        light: "var(--lineFocus)",
+        dark: "var(--lineFocus)",
+        contrastText: "var(--textPrimary)",
+      },
+      warning: {
+        main: "var(--primaryLight)",
+        light: "var(--primaryLight)",
+        dark: "var(--primaryDark)",
+        contrastText: "var(--primaryContrast)",
+      },
+      text: {
+        primary: "var(--textPrimary)",
+        secondary: "var(--textSecondary)",
+        disabled: "var(--textDisabled)",
+      },
+      divider: "var(--lineDivider)",
+      background: {
+        default: "var(--surfaceElevation0)",
+        paper: "var(--surfaceElevation1)",
+      },
+      action: {
+        hover: "var(--actionHover)",
+        disabled: "var(--actionDisabled)",
+        focus: "var(--actionFocus)",
+      },
+    },
+    typography: {
+      fontFamily: "'Roboto', sans-serif",
+    },
+    components: {
+      MuiTableCell: {
+        styleOverrides: {
+          root: {
+            borderBottomColor: "var(--lineDivider)",
+          },
+          head: {
+            fontWeight: 600,
+          },
+        },
+      },
+    },
+  });
 
 const ROWS_PER_PAGE = 10;
 
@@ -191,10 +316,15 @@ const TasksTable = () => {
 };
 
 const App = () => {
+  const mode = useDomThemeMode();
+  const theme = useMemo(() => buildTheme(mode), [mode]);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <TasksTable />
-    </QueryClientProvider>
+    <ThemeProvider theme={theme}>
+      <QueryClientProvider client={queryClient}>
+        <TasksTable />
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 };
 
