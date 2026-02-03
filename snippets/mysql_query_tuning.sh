@@ -184,7 +184,7 @@ QUERY=$(echo "$QUERY" | sed -e 's/[;[:space:]]*$//')
 [ "$SEPDEBUG" ] && echo "Using query: '${QUERY}'"
 
 # We can only define MYSQL command after we have defaults-file
-MYSQL="mysql -B $DEFAULTS_FILE"
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 # 1. Check if the query starts with "SELECT"
 # 2. Else, check if the query is DML (INSERT, UPDATE, DELETE)

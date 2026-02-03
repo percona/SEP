@@ -22,9 +22,12 @@ DEFAULTS_FILE=""
 if [[ $1 == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
+elif [[ $1 == --defaults-file ]]; then
+    DEFAULTS_FILE="--defaults-file=${2}"
+    shift 2
 fi
 
-MYSQL="mysql -B $DEFAULTS_FILE"
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 # Try SHOW REPLICA STATUS and check for error anywhere in output
 if ! $MYSQL -e "SHOW REPLICA STATUS\\G" 2>&1 | grep -q "You have an error"; then
