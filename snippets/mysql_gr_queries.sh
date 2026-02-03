@@ -22,9 +22,12 @@ DEFAULTS_FILE=""
 if [[ $1 == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
+elif [[ $1 == --defaults-file ]]; then
+    DEFAULTS_FILE="--defaults-file=${2}"
+    shift 2
 fi
 
-MYSQL="mysql -B $DEFAULTS_FILE"
+MYSQL="mysql $DEFAULTS_FILE -B "
 
 echo "Query: replication_group_member_stats"
 $MYSQL -e "select * from performance_schema.replication_group_member_stats;"
