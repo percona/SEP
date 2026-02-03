@@ -201,16 +201,46 @@ document.addEventListener('DOMContentLoaded', () => {
             ...tableDefault
         };
 
+        const tableId = table.getAttribute('data-table') || 'default';
+
         // Special configuration for completed-tasks table: sort by "Started at" column (index 2) descending
-        if (table.getAttribute('data-table') === 'completed-tasks') {
-            config.columns = [{
-                select: 2, // "Started at" column
-                sort: "desc"
-            }];
+        const defaultSort = tableId === 'completed-tasks' ? {
+            select: 2, // "Started at" column
+            sort: "desc"
+        } : config.columns[0];
+
+        // Check for saved sort preference in sessionStorage
+        const sortStorageKey = `datatable-sort-${tableId}`;
+        const savedSort = sessionStorage.getItem(sortStorageKey);
+
+        if (savedSort) {
+            try {
+                const {
+                    column,
+                    direction
+                } = JSON.parse(savedSort);
+                config.columns = [{
+                    select: column,
+                    sort: direction
+                }];
+            } catch (e) {
+                // If parsing fails, use default sort
+                config.columns = [defaultSort];
+            }
+        } else {
+            config.columns = [defaultSort];
         }
 
         const dataTable = new simpleDatatables.DataTable(table, config);
         if (typeof dataTable.on === 'function') {
+            // Save sort preference to sessionStorage when user changes sort
+            dataTable.on('datatable.sort', (column, direction) => {
+                sessionStorage.setItem(sortStorageKey, JSON.stringify({
+                    column: column,
+                    direction: direction
+                }));
+            });
+
             dataTable.on('datatable.update', () => {
                 table.querySelectorAll('.menu').forEach(setupExpandable);
                 table.querySelectorAll('[data-tooltip]').forEach(trigger => {
