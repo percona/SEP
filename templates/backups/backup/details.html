@@ -3,6 +3,8 @@
     Backups - {{ task.name }}
 {%- endblock title %}
 {% block style %}
+    <script src="{{ url_for('static', path='/js/info-tooltip.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     <style>
         label+input[type=text] {
             display: block
