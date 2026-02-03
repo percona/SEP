@@ -1956,7 +1956,7 @@ class Binlog(Restore):
         binlog_cmd = [MYSQLBINLOG_CMD]
 
         if self.binlog_restore_extra_args:
-            binlog_cmd.extend(self.binlog_restore_extra_args.split(' '))
+            binlog_cmd.extend(shlex.split(self.binlog_restore_extra_args))
 
         if self.start_position:
             binlog_cmd.append('--start-position=%s' % self.start_position)
