@@ -24,11 +24,6 @@
 #    label: Database to use
 #    description: Database to use for the query tuning
 #    default: ""
-#  - name: dest
-#    type: str
-#    label: Destination for the diagnostic queries file and results
-#    description: Path to the directory where the diagnostic queries file and results will be saved
-#    default: .$(pwd)/$(hostname)
 #  - name: profile
 #    type: int
 #    label: Profile the query
@@ -58,8 +53,7 @@ declare DEFAULTS_FILE=""
 declare QUERY=""
 declare FILE=""
 declare DATABASE=""
-declare DEST
-DEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+declare DEST=
 declare PROFILE=0
 declare FORCE=0
 declare EXECUTE=0
@@ -155,12 +149,14 @@ while [[ -n $* ]]; do
     esac
 done
 
+test -n "${PTDEST}" || DEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+
 if [[ -z $QUERY && -z $FILE ]] || [[ -n $QUERY && -n $FILE ]]; then
     echo "Error: Either --query or --file must be specified."
     usage 1
 fi
 
-mkdir -p "${DEST}"
+mkdir "${DEST}"
 
 if [[ -z $QUERY ]]; then
     if ! QUERY=$(cat "$FILE"); then
