@@ -26,7 +26,7 @@ fi
 MYSQL="mysql -B $DEFAULTS_FILE"
 
 # Replace the above with a heredoc for better multiline handling
-$MYSQL <<EOF
+$MYSQL << EOF
 SELECT
   TABLES.table_name, TABLES.TABLE_SCHEMA
 FROM INFORMATION_SCHEMA.TABLES

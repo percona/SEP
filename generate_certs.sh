@@ -5,11 +5,20 @@ additional_dnsname="localhost"
 additional_ip="127.0.0.1"
 
 # Parse input arguments
-while [[ "$#" -gt 0 ]]; do
+while [[ $# -gt 0 ]]; do
     case $1 in
-        --additional-dnsname) additional_dnsname="$2,$additional_dnsname"; shift ;;
-        --additional-ip) additional_ip="$2,$additional_ip"; shift ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+        --additional-dnsname)
+            additional_dnsname="$2,$additional_dnsname"
+            shift
+            ;;
+        --additional-ip)
+            additional_ip="$2,$additional_ip"
+            shift
+            ;;
+        *)
+            echo "Unknown parameter passed: $1"
+            exit 1
+            ;;
     esac
     shift
 done
@@ -41,7 +50,7 @@ mv global*.pem nomad/
 # Generate PKCS12 certificate for browsers
 openssl pkcs12 -export -inkey nomad/global-client-nomad-key.pem -in nomad/global-client-nomad.pem -out nomad/global-client-nomad.p12 -passout pass:
 
-cat > "$data_dir/nomad.hcl" <<-EOF
+cat > "$data_dir/nomad.hcl" <<- EOF
 # Full configuration options can be found at https://www.nomadproject.io/docs/configuration
 
 log_level = "DEBUG"
@@ -112,7 +121,7 @@ san=${san::-1}
 
 # Create a temporary openssl config for localhost cert
 openssl_config=$(mktemp)
-cat > "$openssl_config" <<-EOF
+cat > "$openssl_config" <<- EOF
 [ req ]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
@@ -136,7 +145,7 @@ openssl ecparam -genkey -name secp384r1 -out sep/inventory_api-cert-key.pem -noo
 
 # Create a temporary openssl config for inventory_api cert
 openssl_config=$(mktemp)
-cat > "$openssl_config" <<-EOF
+cat > "$openssl_config" <<- EOF
 [ req ]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
@@ -155,13 +164,12 @@ openssl x509 -req -in sep/inventory_api-cert.csr -CA sep-ca.pem -CAkey sep-ca-ke
     -out sep/inventory_api-cert.pem -days 365 -sha384 -extfile "$openssl_config" -extensions v3_req
 rm sep/inventory_api-cert.csr
 
-
 # Generate tasks_api certificate and key
 openssl ecparam -genkey -name secp384r1 -out sep/tasks_api-cert-key.pem -noout
 
 # Create a temporary openssl config for tasks_api cert
 openssl_config=$(mktemp)
-cat > "$openssl_config" <<-EOF
+cat > "$openssl_config" <<- EOF
 [ req ]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
