@@ -39,11 +39,12 @@
 # Example: ./pt-summary.sh --dest=/tmp/summary --save-samples
 
 declare DEFAULTS_FILE=""
-declare PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+declare PTDEST
+PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 declare SAVE_SAMPLES=0
 
 usage() {
-   cat << EOS
+    cat << EOS
 Usage: $(basename "${0}") [OPTIONS]
 Executes pt-summary script
 
@@ -56,54 +57,52 @@ Command line options:
    -h, --help        Show this help message
 
 EOS
-   exit $1
+    exit "$1"
 }
 
-OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@")
-
-if [ $? -gt 0 ]; then
-   echo "Error parsing options"
-   usage 1
+if ! OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@"); then
+    echo "Error parsing options"
+    usage 1
 fi
 
 eval set -- "$OPTS"
 
-while [[ -n "$*" ]]; do
-   case "$1" in
-      --defaults-file)
-         DEFAULTS_FILE="--defaults-file=$2"
-         shift 2
-         ;;
-      -d | --dest)
-         PTDEST="$2"
-         shift 2
-         ;;
-      --save-samples)
-         SAVE_SAMPLES=1
-         shift 1
-         ;;
-      -h | --help)
-         usage
-         ;;
-      --)
-         break
-         ;;
-      # Need this to catch options mess up that getopt does not recognize
-      *)
-         echo "Unrecognized option '$1'"
-         usage 1
-         ;;
-   esac
+while [[ -n $* ]]; do
+    case "$1" in
+        --defaults-file)
+            DEFAULTS_FILE="--defaults-file=$2"
+            shift 2
+            ;;
+        -d | --dest)
+            PTDEST="$2"
+            shift 2
+            ;;
+        --save-samples)
+            SAVE_SAMPLES=1
+            shift 1
+            ;;
+        -h | --help)
+            usage
+            ;;
+        --)
+            break
+            ;;
+        # Need this to catch options mess up that getopt does not recognize
+        *)
+            echo "Unrecognized option '$1'"
+            usage 1
+            ;;
+    esac
 done
 
 if [ $# -gt 1 ]; then
-   echo "Starting pt-summary with extra options: $@"
+    echo "Starting pt-summary with extra options: $*"
 fi
 
 if [ $SAVE_SAMPLES -eq 1 ]; then
-   mkdir -p "${PTDEST}"
-   pt-summary ${DEFAULTS_FILE} --save-samples="${PTDEST}" "$@"
-   tar czf "${PTDEST}.tar.gz" -C "$(dirname ${PTDEST})" "$(basename ${PTDEST})"
+    mkdir -p "${PTDEST}"
+    pt-summary "${DEFAULTS_FILE}" --save-samples="${PTDEST}" "$@"
+    tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 else
-   pt-summary ${DEFAULTS_FILE} "$@"
+    pt-summary "${DEFAULTS_FILE}" "$@"
 fi
