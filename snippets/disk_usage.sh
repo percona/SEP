@@ -52,8 +52,7 @@ usage() {
     exit 1
 }
 
-TEMP=$(getopt -o s,t: -l apparent-size,summarize,threshold:,exclude:,time: -- "$@")
-if [ $? -ne 0 ]; then
+if ! TEMP=$(getopt -o s,t: -l apparent-size,summarize,threshold:,exclude:,time: -- "$@"); then
     usage
 fi
 eval set -- "$TEMP"

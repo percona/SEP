@@ -70,7 +70,8 @@
 # Example: ./pt-stalk.sh --daemon start
 
 declare DEFAULTS_FILE=""
-declare PTDEST="$(pwd)/$(hostname)"
+declare PTDEST
+PTDEST="$(pwd)/$(hostname)"
 declare PID="$PTDEST/pt-stalk.pid"
 declare LOG="$PTDEST/pt-stalk.log"
 declare ITERATIONS=2
@@ -100,16 +101,14 @@ Command line options:
    -h, --help              Show this help message
 
 EOS
-    exit $1
+    exit "$1"
 }
 
 compress_data() {
-    tar czf "${PTDEST}.tar.gz" -C "$(dirname ${PTDEST})" "$(basename ${PTDEST})"
+    tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 }
 
-OPTS=$(getopt --options -s:d:h --longoptions 'defaults-file:,pid:,log:,dest:,iterations:,sleep:,action:,daemon,help,system-only' -- "$@")
-
-if [ $? -gt 0 ]; then
+if ! OPTS=$(getopt --options -s:d:h --longoptions 'defaults-file:,pid:,log:,dest:,iterations:,sleep:,action:,daemon,help,system-only' -- "$@"); then
     echo "Error parsing options"
     usage 1
 fi
@@ -170,21 +169,21 @@ while [[ -n $* ]]; do
 done
 
 if [ $# -gt 0 ]; then
-    echo "Starting pt-stalk with extra options: $@"
+    echo "Starting pt-stalk with extra options: $*"
 fi
 
 case "$ACTION" in
     start)
         mkdir -p "${PTDEST}"
         if [ $IS_DAEMON -eq 1 ]; then
-            pt-stalk "${DEFAULTS_FILE}" --daemonize --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
+            pt-stalk "${DEFAULTS_FILE}" --daemonize --iterations="$ITERATIONS" --sleep="$SLEEP" --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
         else
-            pt-stalk "${DEFAULTS_FILE}" --no-stalk --iterations=$ITERATIONS --sleep=$SLEEP --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
+            pt-stalk "${DEFAULTS_FILE}" --no-stalk --iterations="$ITERATIONS" --sleep="$SLEEP" --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
             compress_data
         fi
         ;;
     stop)
-        kill $(cat ${PID}) && compress_data
+        kill "$(cat "${PID}")" && compress_data
         ;;
     *)
         echo "Unrecognized action '$ACTION'"

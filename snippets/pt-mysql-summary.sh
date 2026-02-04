@@ -38,7 +38,8 @@
 # Example: ./pt-mysql-summary.sh --dest=/tmp/summary --save-samples
 
 declare DEFAULTS_FILE=""
-declare PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+declare PTDEST
+PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 declare SAVE_SAMPLES=0
 
 usage() {
@@ -55,12 +56,10 @@ Command line options:
    -h, --help        Show this help message
 
 EOS
-    exit $1
+    exit "$1"
 }
 
-OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@")
-
-if [ $? -gt 0 ]; then
+if ! OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@"); then
     echo "Error parsing options"
     usage 1
 fi
@@ -96,13 +95,13 @@ while [[ -n $* ]]; do
 done
 
 if [ $# -gt 1 ]; then
-    echo "Starting pt-mysql-summary with extra options: $@"
+    echo "Starting pt-mysql-summary with extra options: $*"
 fi
 
 if [ $SAVE_SAMPLES -eq 1 ]; then
     mkdir -p "${PTDEST}"
-    pt-mysql-summary ${DEFAULTS_FILE} --save-samples="${PTDEST}" "$@"
-    tar czf "${PTDEST}.tar.gz" -C "$(dirname ${PTDEST})" "$(basename ${PTDEST})"
+    pt-mysql-summary "${DEFAULTS_FILE}" --save-samples="${PTDEST}" "$@"
+    tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 else
-    pt-mysql-summary ${DEFAULTS_FILE} "$@"
+    pt-mysql-summary "${DEFAULTS_FILE}" "$@"
 fi

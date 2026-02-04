@@ -48,12 +48,10 @@ Command line options:
    -h, --help        Show this help message
 
 EOS
-    exit $1
+    exit "$1"
 }
 
-OPTS=$(getopt --options -h --longoptions 'basedir:,output-format:,help' -- "$@")
-
-if [ $? -gt 0 ]; then
+if ! OPTS=$(getopt --options -h --longoptions 'basedir:,output-format:,help' -- "$@"); then
     echo "Error parsing options"
     usage 1
 fi
@@ -100,9 +98,7 @@ else
     fi
 fi
 
-VERSION_STRING=$("$MYSQLD" --version 2> /dev/null)
-
-if [[ $? -ne 0 ]]; then
+if ! VERSION_STRING=$("$MYSQLD" --version 2> /dev/null); then
     echo "Failed to retrieve MySQL version. Please check if mysqld is installed correctly."
     exit 1
 fi

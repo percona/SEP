@@ -27,7 +27,7 @@ data_dir="$(pwd)/data"
 
 # Create the certs directory if it doesn't exist and enter it
 mkdir -p data/certs
-cd data/certs
+cd data/certs || exit
 
 # Generate CA key and certificate
 openssl ecparam -genkey -name secp384r1 -out sep-ca-key.pem -noout

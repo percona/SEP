@@ -174,10 +174,8 @@ fi
 #    '%s' gives the Unix epoch time (seconds since 1970-01-01 00:00:00 UTC).
 
 # Convert input time to epoch
-INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null)
-
 # Check if date parsing was successful
-if [ $? -ne 0 ]; then
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
     echo "Error: Could not parse the provided time format: \"$TIME_ARG\""
     echo 'Please ensure the time is in a valid format, e.g., "YYYY-MM-DD HH:MM:SS"'
     exit 1
@@ -185,9 +183,6 @@ fi
 
 if [[ $OUTPUT_MODE == "file" ]]; then
     OUTPUT_FILE="mysql_error_${INPUT_EPOCH}.log"
-    OUTPUT_REDIRECT="> \"$OUTPUT_FILE\""
-else
-    OUTPUT_REDIRECT=""
 fi
 
 # Calculate start and end epoch times
