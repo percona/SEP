@@ -9,11 +9,6 @@
 #    type: str
 #    label: Path to the defaults-file
 #    description: Path to the defaults-file
-#  - name: dest
-#    type: str
-#    label: Destination for the summaries
-#    description: Destination for the summaries
-#    default: ".$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 #  - name: save-samples
 #    type: bool
 #    label: Save samples
@@ -38,8 +33,7 @@
 # Example: ./pt-mysql-summary.sh --dest=/tmp/summary --save-samples
 
 declare DEFAULTS_FILE=""
-declare PTDEST
-PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+declare PTDEST=
 declare SAVE_SAMPLES=0
 
 usage() {
@@ -94,12 +88,19 @@ while [[ -n $* ]]; do
     esac
 done
 
+test -n "${PTDEST}" || PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+
+if [ -d "${PTDEST}" ]; then
+    echo Rejecting use of "${PTDEST}"
+    exit 11
+fi
+
 if [ $# -gt 1 ]; then
     echo "Starting pt-mysql-summary with extra options: $*"
 fi
 
 if [ $SAVE_SAMPLES -eq 1 ]; then
-    mkdir -p "${PTDEST}"
+    mkdir "${PTDEST}"
     pt-mysql-summary "${DEFAULTS_FILE}" --save-samples="${PTDEST}" "$@"
     tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 else
