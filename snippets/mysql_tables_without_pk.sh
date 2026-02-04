@@ -21,9 +21,12 @@ DEFAULTS_FILE=""
 if [[ $1 == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
+elif [[ $1 == --defaults-file ]]; then
+    DEFAULTS_FILE="--defaults-file=${2}"
+    shift 2
 fi
 
-MYSQL="mysql -B $DEFAULTS_FILE"
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 # Replace the above with a heredoc for better multiline handling
 $MYSQL << EOF
