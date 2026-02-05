@@ -52,7 +52,7 @@ from pydantic import (
 )
 
 from app.core.utils import ttl_cache
-from app.core.utils.fields import EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EnumFieldMixin, LenientStr, RequiredStr
 
 HTMLClassName = Annotated[str, Field(pattern=r"^-?[_a-zA-Z]+[_a-zA-Z0-9-]*$")]
 ICON_CLASS = "material-symbols-outlined"
@@ -180,7 +180,7 @@ class TypeableFieldMixin(FormFieldMixin):
     """
 
     placeholder: RequiredStr | None = None
-    value: str | None = Field(None, validation_alias="default")
+    value: LenientStr | None = Field(None, validation_alias="default")
 
 
 class TextFieldMixin(TypeableFieldMixin):

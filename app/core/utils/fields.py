@@ -538,6 +538,9 @@ This class can be used with type parameters (e.g., `UniqueTuple[int]`) to create
 a tuple type where duplicates are automatically removed.
 """
 
+LenientStr = Annotated[str, BeforeValidator(str)]
+"""A string field that accepts any input and converts it to a string."""
+
 LowercaseStr = Annotated[str, StringConstraints(to_lower=True)]
 """A string field that is automatically converted to lowercase."""
 
