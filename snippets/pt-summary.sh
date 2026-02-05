@@ -3,7 +3,7 @@
 # ---
 # title: "pt-summary"
 # description: "Executes pt-summary command"
-# allow_extra_args: true
+# allow_extra_args: false
 # sudo: always
 # parameters:
 #  - name: defaults-file

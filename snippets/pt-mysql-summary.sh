@@ -3,7 +3,7 @@
 # ---
 # title: "pt-mysql-summary"
 # description: "Executes pt-mysql-summary command"
-# allow_extra_args: true
+# allow_extra_args: false
 # parameters:
 #  - name: defaults-file
 #    type: str

@@ -3,7 +3,7 @@
 # ---
 # title: "Disk Usage"
 # description: "This snippet displays the device usage for the specified target."
-# allow_extra_args: true
+# allow_extra_args: false
 # sudo: optional
 # parameters:
 #  - name: apparent-size
