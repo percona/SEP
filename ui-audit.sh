@@ -22,8 +22,7 @@ fi
 # 3. Knip (Waste)
 echo ""
 echo "✂️  Checking for unused files..."
-# We use a flag to ignore your 'static' folder issue from before
-pnpm dlx knip --exclude static
+pnpm dlx knip
 
 echo ""
 echo "✅ Static Analysis Complete! (Build verification skipped)"
