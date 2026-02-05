@@ -3,7 +3,7 @@
 # ---
 # title: "Tables without Primary Key"
 # description: "Prints all tables in all databases that do not have a primary key."
-# allow_extra_args: true
+# allow_extra_args: false
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -21,12 +21,15 @@ DEFAULTS_FILE=""
 if [[ $1 == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
+elif [[ $1 == --defaults-file ]]; then
+    DEFAULTS_FILE="--defaults-file=${2}"
+    shift 2
 fi
 
-MYSQL="mysql -B $DEFAULTS_FILE"
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 # Replace the above with a heredoc for better multiline handling
-$MYSQL <<EOF
+$MYSQL << EOF
 SELECT
   TABLES.table_name, TABLES.TABLE_SCHEMA
 FROM INFORMATION_SCHEMA.TABLES
