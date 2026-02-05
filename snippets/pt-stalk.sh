@@ -10,21 +10,6 @@
 #    type: str
 #    label: Path to the defaults-file
 #    description: Path to the defaults-file
-#  - name: pid
-#    type: str
-#    label: pt-stalk PID file
-#    description: pt-stalk PID file
-#    default: $PTDEST/pt-stalk.pid
-#  - name: log
-#    type: str
-#    label: pt-stalk log file
-#    description: pt-stalk log file
-#    default: $PTDEST/pt-stalk.log
-#  - name: dest
-#    type: str
-#    label: Destination for the summaries
-#    description: Destination for the summaries
-#    default: .$(pwd)/$(hostname)
 #  - name: iterations
 #    type: int
 #    label: How many iterations to run
@@ -70,10 +55,9 @@
 # Example: ./pt-stalk.sh --daemon start
 
 declare DEFAULTS_FILE=""
-declare PTDEST
-PTDEST="$(pwd)/$(hostname)"
-declare PID="$PTDEST/pt-stalk.pid"
-declare LOG="$PTDEST/pt-stalk.log"
+declare PTDEST=
+declare PID=
+declare LOG=
 declare ITERATIONS=2
 declare SLEEP=30
 declare IS_DAEMON=0
@@ -168,13 +152,24 @@ while [[ -n $* ]]; do
     esac
 done
 
+test -n "${PTDEST}" || {
+    PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+    PID="$PTDEST/pt-stalk.pid"
+    LOG="$PTDEST/pt-stalk.log"
+}
+
+if [ -d "${PTDEST}" ]; then
+    echo Rejecting use of "${PTDEST}"
+    exit 11
+fi
+
 if [ $# -gt 0 ]; then
     echo "Starting pt-stalk with extra options: $*"
 fi
 
 case "$ACTION" in
     start)
-        mkdir -p "${PTDEST}"
+        mkdir "${PTDEST}"
         if [ $IS_DAEMON -eq 1 ]; then
             pt-stalk "${DEFAULTS_FILE}" --daemonize --iterations="$ITERATIONS" --sleep="$SLEEP" --dest="${PTDEST}" --pid="${PID}" --log="${LOG}" "${SYSTEM_ONLY}" "$@"
         else
@@ -187,6 +182,6 @@ case "$ACTION" in
         ;;
     *)
         echo "Unrecognized action '$ACTION'"
-        usage 255
+        usage 12
         ;;
 esac
