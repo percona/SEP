@@ -37,8 +37,8 @@
 PT_DIRECTORY=".percona-toolkit"
 DB_CLI_OPTIONS=()
 OUT_DIR=$(hostname)_environment_$(date +%FT%H%M)
-if [[ -z "${ISRDS}" ]]; then
-  ISRDS=0
+if [[ -z ${ISRDS} ]]; then
+    ISRDS=0
 fi
 PIDTOUSE=""
 RUNASROOT=1
@@ -52,7 +52,7 @@ PT_TOOLS=(pt-summary)
 
 ## Parse arguments
 function usage {
-  cat << EOF
+    cat << EOF
  Percona Consulting Scripts - v1.3.0
  Usage: $0 [-h] [-o DB arguments] [-d additional string] [-i RDS hostname] [-t] [-r] [-p pid]
 
@@ -73,141 +73,141 @@ EOF
 }
 
 while getopts hrto:d:i:p: flag; do
-  case ${flag} in
-    o)
-      IFS=" " read -r -a OPTS <<< "${OPTARG}";
-      for o in "${OPTS[@]}"; do
-        DB_CLI_OPTIONS+=("${o}")
-      done
-      ;;
-    d)
-      OUTDIRADD="${OPTARG}_";
-      OUT_DIR="$(hostname)_${OUTDIRADD}environment_"$(date +%FT%H%M)
-      ;;
-    i)
-      echo "** Will not collect CPU/Disk/Memory stats **"
-      ISRDS=1
-      OUT_DIR="${OPTARG}_${OPTARG}environment_"$(date +%FT%H%M);
-      ;;
-    t)
-      SKIPTARRESULT=1;
-      ;;
-    r)
-      SKIPROOTCHECK=1;
-      ;;
-    p)
-      PIDTOUSE="${OPTARG}"
-      ;;
-    h)
-      usage;
-      exit 0;
-      ;;
-    *)
-      usage;
-      exit 1;
-      ;;
-  esac
+    case ${flag} in
+        o)
+            IFS=" " read -r -a OPTS <<< "${OPTARG}"
+            for o in "${OPTS[@]}"; do
+                DB_CLI_OPTIONS+=("${o}")
+            done
+            ;;
+        d)
+            OUTDIRADD="${OPTARG}_"
+            OUT_DIR="$(hostname)_${OUTDIRADD}environment_"$(date +%FT%H%M)
+            ;;
+        i)
+            echo "** Will not collect CPU/Disk/Memory stats **"
+            ISRDS=1
+            OUT_DIR="${OPTARG}_${OPTARG}environment_"$(date +%FT%H%M)
+            ;;
+        t)
+            SKIPTARRESULT=1
+            ;;
+        r)
+            SKIPROOTCHECK=1
+            ;;
+        p)
+            PIDTOUSE="${OPTARG}"
+            ;;
+        h)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
 done
 
-shift $(( OPTIND - 1 ));
+shift $((OPTIND - 1))
 
 ## Functions
 
 # Download pt tools if we cannot find them
 function check_percona_toolkit {
-  mkdir -p "${PT_DIRECTORY}"
+    mkdir -p "${PT_DIRECTORY}"
 
-  echo "Downloading percona toolkit tools, Check http://www.percona.com/software/percona-toolkit for more details"
-  GETBIN=""
-  if check_binary wget; then
-    GETBIN=(wget --no-verbose -O "${PT_DIRECTORY}")
-  elif check_binary curl; then
-    GETBIN=(curl -sS -o "${PT_DIRECTORY}")
-  else
-    echo "Unable to find curl or wget to download tools."
-    exit 1
-  fi
-
-  echo "Using '${GETBIN[*]}/' to download Percona Toolkit tools"
-
-  # shellcheck disable=SC2043  # Ignore single iteration warning
-  for TOOL in pt-summary; do
-    if test -f "${PT_DIRECTORY}/${TOOL}"; then
-      echo "-- Found ${PT_DIRECTORY}/${TOOL}"
+    echo "Downloading percona toolkit tools, Check http://www.percona.com/software/percona-toolkit for more details"
+    GETBIN=""
+    if check_binary wget; then
+        GETBIN=(wget --no-verbose -O "${PT_DIRECTORY}")
+    elif check_binary curl; then
+        GETBIN=(curl -sS -o "${PT_DIRECTORY}")
     else
-      echo "-- Downloading ${TOOL}..."
-      # shellcheck disable=SC2086  # Ignore array expansion warning
-      ${GETBIN[*]}/"${TOOL}" "https://www.percona.com/get/${TOOL}"
+        echo "Unable to find curl or wget to download tools."
+        exit 1
     fi
-  done
 
-  if [[ ! -f "${PT_DIRECTORY}/${PT_TOOLS[0]}" ]]; then
-    echo "Could not download toolkit tools. Please manually download from http://www.percona.com/downloads/percona-toolkit/ and untar"
-    exit 1
-  fi
-  chmod +x "${PT_DIRECTORY}"/pt-*
+    echo "Using '${GETBIN[*]}/' to download Percona Toolkit tools"
+
+    # shellcheck disable=SC2043  # Ignore single iteration warning
+    for TOOL in pt-summary; do
+        if test -f "${PT_DIRECTORY}/${TOOL}"; then
+            echo "-- Found ${PT_DIRECTORY}/${TOOL}"
+        else
+            echo "-- Downloading ${TOOL}..."
+            # shellcheck disable=SC2086  # Ignore array expansion warning
+            ${GETBIN[*]}/"${TOOL}" "https://www.percona.com/get/${TOOL}"
+        fi
+    done
+
+    if [[ ! -f "${PT_DIRECTORY}/${PT_TOOLS[0]}" ]]; then
+        echo "Could not download toolkit tools. Please manually download from http://www.percona.com/downloads/percona-toolkit/ and untar"
+        exit 1
+    fi
+    chmod +x "${PT_DIRECTORY}"/pt-*
 }
 
 function check_perl_module {
-  local module=$1
-  if ! perl "-M${module}" -e 1 2>/dev/null; then
-    echo "Missing Perl ${module}"
-    echo "Typical install via apt|yum install perl-Data-Dumper perl-Digest-MD5 perl-DBD-MySQL"
-    echo "You may also need: perl-English perl-Sys-Hostname perl-FindBin"
-    exit 1
-  fi
+    local module=$1
+    if ! perl "-M${module}" -e 1 2> /dev/null; then
+        echo "Missing Perl ${module}"
+        echo "Typical install via apt|yum install perl-Data-Dumper perl-Digest-MD5 perl-DBD-MySQL"
+        echo "You may also need: perl-English perl-Sys-Hostname perl-FindBin"
+        exit 1
+    fi
 }
 
 # Print error if specified binary not found.
 # @param  Binary.
 # Example: check_binary numactl
 function check_binary {
-  local binary=$1
-  if ! which "${binary}" &>/dev/null; then
-    echo -e "\nWARNING: Could not find ${binary} in '${PATH}', or it is not executable."
-    return 1
-  else
-    return 0
-  fi
+    local binary=$1
+    if ! which "${binary}" &> /dev/null; then
+        echo -e "\nWARNING: Could not find ${binary} in '${PATH}', or it is not executable."
+        return 1
+    else
+        return 0
+    fi
 }
 
 # Check if more than 1 pid for database
 # @param process name
 # @param database name
 function check_pids {
-  local dbname=$1
-  shift
-  local daemon=("$@")
+    local dbname=$1
+    shift
+    local daemon=("$@")
 
-  set +e
-  IFS=" " read -r -a pids <<< "$(pidof "${daemon[@]}")"
-  set -e
-  numPids=${#pids[@]}
+    set +e
+    IFS=" " read -r -a pids <<< "$(pidof "${daemon[@]}")"
+    set -e
+    numPids=${#pids[@]}
 
-  if [[ ${numPids} -eq 1 ]]; then
-    PIDTOUSE="${pids[0]}"
-  elif [[ ${numPids} -gt 1 ]] && [[ -z "${PIDTOUSE}" ]]; then
-    echo "Problem:"
-    echo " Found ${#pids[@]} (${pids[*]}) pids for ${dbname}. Are there multiple instances of ${dbname} running?"
-    echo " You need to specify which PID to use by passing '-p <pid>'"
-    exit 1
-  elif [[ ${numPids} -eq 0 ]]; then
-    echo "Problem:"
-    echo "Could not find a ${dbname} PID"
-    exit 1
-  fi
+    if [[ ${numPids} -eq 1 ]]; then
+        PIDTOUSE="${pids[0]}"
+    elif [[ ${numPids} -gt 1 ]] && [[ -z ${PIDTOUSE} ]]; then
+        echo "Problem:"
+        echo " Found ${#pids[@]} (${pids[*]}) pids for ${dbname}. Are there multiple instances of ${dbname} running?"
+        echo " You need to specify which PID to use by passing '-p <pid>'"
+        exit 1
+    elif [[ ${numPids} -eq 0 ]]; then
+        echo "Problem:"
+        echo "Could not find a ${dbname} PID"
+        exit 1
+    fi
 }
 
 ## Db Functions
 # Try to run a query and print error if it fails.
 function check_mongo_connection {
-  local result
-  result=$("${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval '{ping:1}' | tail -n1)
-  if [[ "${result}" != "1" ]]; then
-    echo "Can't connect to mongodb. Check credentials."
-    echo ""
-    exit 1
-  fi
+    local result
+    result=$("${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval '{ping:1}' | tail -n1)
+    if [[ ${result} != "1" ]]; then
+        echo "Can't connect to mongodb. Check credentials."
+        echo ""
+        exit 1
+    fi
 }
 
 # Execute a query and write output into a text file
@@ -215,20 +215,20 @@ function check_mongo_connection {
 # @param  query
 # @param  new file name
 function query_to_file {
-  local stat_desc=$1
-  local stat_query=$2
-  local stat_file=$3
+    local stat_desc=$1
+    local stat_query=$2
+    local stat_file=$3
 
-  echo " - ${stat_desc}"
-  echo "-----${stat_query}=====" > "${OUT_DIR}"/"${stat_file}"
-  "${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval "${stat_query}" >> "${OUT_DIR}"/"${stat_file}"
+    echo " - ${stat_desc}"
+    echo "-----${stat_query}=====" > "${OUT_DIR}"/"${stat_file}"
+    "${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval "${stat_query}" >> "${OUT_DIR}"/"${stat_file}"
 }
 
 # Determine mongo client
-if command -v mongosh &>/dev/null; then
-  MONGO_SHELL="mongosh"
+if command -v mongosh &> /dev/null; then
+    MONGO_SHELL="mongosh"
 else
-  MONGO_SHELL="mongo"
+    MONGO_SHELL="mongo"
 fi
 
 ## Global Pre-flight Checks
@@ -240,14 +240,14 @@ mkdir -p "${OUT_DIR}"
 date -u -Iseconds > "${OUT_DIR}/collect_env_start"
 
 # Don't need to be root if RDS
-if [[ ${ISRDS} -eq 0 ]] && [[ "$(whoami)" != "root" ]] && [[ "${SKIPROOTCHECK}" -ne 1 ]]; then
-  echo "ERROR: $0 must be run by root"
-  exit 1
+if [[ ${ISRDS} -eq 0 ]] && [[ "$(whoami)" != "root" ]] && [[ ${SKIPROOTCHECK} -ne 1 ]]; then
+    echo "ERROR: $0 must be run by root"
+    exit 1
 fi
 
 # If not root, and skipping root check, don't run anything requiring root
-if [[ "$(whoami)" != "root" ]] && [[ "${SKIPROOTCHECK}" -eq 1 ]]; then
-  RUNASROOT=0
+if [[ "$(whoami)" != "root" ]] && [[ ${SKIPROOTCHECK} -eq 1 ]]; then
+    RUNASROOT=0
 fi
 
 set -ue
@@ -265,8 +265,8 @@ check_mongo_connection
 
 # If not RDS, check for multiple PIDs
 if [[ ${ISRDS} -eq 0 ]]; then
-  daemons=(mongod mongos)
-  check_pids Mongo "${daemons[@]}"
+    daemons=(mongod mongos)
+    check_pids Mongo "${daemons[@]}"
 fi
 
 # Check if we are connecting to a mongos router
@@ -274,18 +274,18 @@ IS_MONGOS=$(${MONGO_SHELL} "${DB_CLI_OPTIONS[@]}" --eval 'db.runCommand({ isMast
 
 # get some MongoDB variables we'll need
 set +e
-if [[ "${IS_MONGOS}" == "false" ]]; then
-  if ! variables_dbpath=$("${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval 'db.adminCommand({ getCmdLineOpts: 1 }).parsed.storage.dbPath' 2>/dev/null); then
-    echo "WARNING: Cannot find Mongo dbpath"
-    variables_dbpath=""
-  fi
+if [[ ${IS_MONGOS} == "false" ]]; then
+    if ! variables_dbpath=$("${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval 'db.adminCommand({ getCmdLineOpts: 1 }).parsed.storage.dbPath' 2> /dev/null); then
+        echo "WARNING: Cannot find Mongo dbpath"
+        variables_dbpath=""
+    fi
 fi
 set -e
 
 VARIABLES_LOG=/var/log/mongodb/mongod.log
-"${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval 'db.adminCommand({ getCmdLineOpts: 1 }).parsed.systemLog.path' &>/dev/null
+"${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval 'db.adminCommand({ getCmdLineOpts: 1 }).parsed.systemLog.path' &> /dev/null
 if [[ $? -ne 1 ]]; then
-  VARIABLES_LOG=$("${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval 'db.adminCommand({ getCmdLineOpts: 1 }).parsed.systemLog.path' | tail -n1)
+    VARIABLES_LOG=$("${MONGO_SHELL}" "${DB_CLI_OPTIONS[@]}" --eval 'db.adminCommand({ getCmdLineOpts: 1 }).parsed.systemLog.path' | tail -n1)
 fi
 
 ## Main
@@ -297,161 +297,161 @@ set +e
 
 if [[ ${ISRDS} -eq 0 ]]; then
 
-  ## Db Sysconfig Pre
+    ## Db Sysconfig Pre
 
-  ## Main sysconfig
-  echo "Collecting system info... "
+    ## Main sysconfig
+    echo "Collecting system info... "
 
-  cat /proc/cpuinfo > "${OUT_DIR}/cpuinfo"
-  cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > "${OUT_DIR}/scaling_governor" 2>/dev/null
-  cpupower frequency-info > "${OUT_DIR}/cpupower_frequency-info" 2>&1
-  cat /proc/meminfo > "${OUT_DIR}/meminfo"
-  cat /proc/sys/vm/swappiness > "${OUT_DIR}/swappiness"
-  "${PT_DIRECTORY}/pt-summary" > "${OUT_DIR}/pt-summary"
+    cat /proc/cpuinfo > "${OUT_DIR}/cpuinfo"
+    cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > "${OUT_DIR}/scaling_governor" 2> /dev/null
+    cpupower frequency-info > "${OUT_DIR}/cpupower_frequency-info" 2>&1
+    cat /proc/meminfo > "${OUT_DIR}/meminfo"
+    cat /proc/sys/vm/swappiness > "${OUT_DIR}/swappiness"
+    "${PT_DIRECTORY}/pt-summary" > "${OUT_DIR}/pt-summary"
 
-  # Some stuff that only can be collected when ran as OS-root
-  if [[ "${RUNASROOT}" -eq 1 ]]; then
+    # Some stuff that only can be collected when ran as OS-root
+    if [[ ${RUNASROOT} -eq 1 ]]; then
 
-    sysctl -a > "${OUT_DIR}/sysctl" || true
-    dmesg > "${OUT_DIR}/dmesg"
+        sysctl -a > "${OUT_DIR}/sysctl" || true
+        dmesg > "${OUT_DIR}/dmesg"
 
-    # Listening tcp ports
-    if check_binary ss; then
-      ss -nltp >"${OUT_DIR}/tcp_listen_ports"
+        # Listening tcp ports
+        if check_binary ss; then
+            ss -nltp > "${OUT_DIR}/tcp_listen_ports"
+        fi
+
+        # LVM
+        if check_binary lvdisplay; then
+            lvdisplay > "${OUT_DIR}/lvdisplay"
+            lvdisplay -vm > "${OUT_DIR}/lvdisplay_vm"
+        fi
+        if check_binary vgdisplay; then
+            vgdisplay > "${OUT_DIR}/vgdisplay"
+        fi
+        if check_binary pvdisplay; then
+            pvdisplay > "${OUT_DIR}/pvdisplay"
+        fi
+        if check_binary lvs; then
+            lvs --segments > "${OUT_DIR}/lvdisplay_segments"
+        fi
+
+        # Other
+        if check_binary dmidecode; then
+            dmidecode > "${OUT_DIR}/dmidecode"
+        fi
+
+        # collecting cron jobs from crontab, and from /etc/cron.d/
+        find /var/spool/cron/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_spool_users"
+        find /etc/cron.d/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_crond"
+        cat /etc/crontab > "${OUT_DIR}/crontab_etc"
+
     fi
 
-    # LVM
-    if check_binary lvdisplay; then
-      lvdisplay > "${OUT_DIR}/lvdisplay"
-      lvdisplay -vm > "${OUT_DIR}/lvdisplay_vm"
+    # If LVM is being used, but not run as root, we can get the dm-* numbers
+    # by looking at /dev/mapper device numbers.
+    # This is useful when looking at the PCS graphs and trying to match DM disks
+    # with mounted filesystems.
+    test -d /dev/mapper && ls -alhs /dev/mapper/ > "${OUT_DIR}/dev_mapper"
+
+    if check_binary lspci; then
+        lspci > "${OUT_DIR}/lspci"
     fi
-    if check_binary vgdisplay; then
-      vgdisplay > "${OUT_DIR}/vgdisplay"
+    if check_binary ip; then
+        ip addr > "${OUT_DIR}/ip"
     fi
-    if check_binary pvdisplay; then
-      pvdisplay > "${OUT_DIR}/pvdisplay"
+    if check_binary ifconfig; then
+        ifconfig > "${OUT_DIR}/ifconfig"
     fi
-    if check_binary lvs; then
-      lvs --segments > "${OUT_DIR}/lvdisplay_segments"
+    if check_binary netstat; then
+        netstat -s > "${OUT_DIR}/netstat"
     fi
-
-    # Other
-    if check_binary dmidecode; then
-      dmidecode > "${OUT_DIR}/dmidecode"
+    if check_binary route; then
+        route -n > "${OUT_DIR}/route"
     fi
+    # get full options of mounted fs
+    cat /proc/mounts > "${OUT_DIR}/mounts"
 
-    # collecting cron jobs from crontab, and from /etc/cron.d/
-    find /var/spool/cron/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_spool_users"
-    find /etc/cron.d/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_crond"
-    cat /etc/crontab > "${OUT_DIR}/crontab_etc"
-
-  fi
-
-  # If LVM is being used, but not run as root, we can get the dm-* numbers
-  # by looking at /dev/mapper device numbers.
-  # This is useful when looking at the PCS graphs and trying to match DM disks
-  # with mounted filesystems.
-  test -d /dev/mapper && ls -alhs /dev/mapper/ > "${OUT_DIR}/dev_mapper"
-
-  if check_binary lspci; then
-    lspci > "${OUT_DIR}/lspci"
-  fi
-  if check_binary ip; then
-    ip addr > "${OUT_DIR}/ip"
-  fi
-  if check_binary ifconfig; then
-    ifconfig > "${OUT_DIR}/ifconfig"
-  fi
-  if check_binary netstat; then
-    netstat -s > "${OUT_DIR}/netstat"
-  fi
-  if check_binary route; then
-    route -n > "${OUT_DIR}/route"
-  fi
-  # get full options of mounted fs
-  cat /proc/mounts > "${OUT_DIR}/mounts"
-
-  # get info related to NUMA
-  if check_binary numactl; then
-    numactl --hardware > "${OUT_DIR}/numa"
-    numactl --show >> "${OUT_DIR}/numa"
-  fi
-  if check_binary numastat; then
-    numastat -m > "${OUT_DIR}/numa_stat"
-  fi
-
-  # lscpu can also provide us numa info
-  if check_binary lscpu; then
-    lscpu > "${OUT_DIR}/lscpu"
-  fi
-
-  # get info related to memory and disk
-  free -m > "${OUT_DIR}/free"
-  df -h > "${OUT_DIR}/df"
-
-  # get oom_score_adj
-  if [[ -f "/proc/${PIDTOUSE}/oom_score_adj" ]]; then
-    cat "/proc/${PIDTOUSE}/oom_score_adj" > "${OUT_DIR}/oom_score_adj"
-  fi
-
-  function get_disk_of_file_info {
-    local filename="$1"
-    local outfile="$2"
-    local datadisk
-
-    echo "${filename}" > "${OUT_DIR}/${outfile}"
-
-    # fast fail if cannot get file info
-    if ! df "${filename}" &>/dev/null; then
-      echo "!! Cannot read '${filename}', thus no disk info for file path. Need to run as root?"
-      return 1
+    # get info related to NUMA
+    if check_binary numactl; then
+        numactl --hardware > "${OUT_DIR}/numa"
+        numactl --show >> "${OUT_DIR}/numa"
+    fi
+    if check_binary numastat; then
+        numastat -m > "${OUT_DIR}/numa_stat"
     fi
 
-    # have permissions to read
-    grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 >> "${OUT_DIR}/${outfile}"
-    datadisk=$(readlink -f "$(grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 | cut -d' ' -f1)")
-
-    # shellcheck disable=SC2129  # Ignore multi-exec redirect
-    echo "${datadisk}" >> "${OUT_DIR}/${outfile}"
-    df -P -h "$(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}')" | tail -n 1 >> "${OUT_DIR}/${outfile}"
-
-    # Need to be root to exec du on most directories
-    if [[ "${RUNASROOT}" -eq 1 ]]; then
-        du -sh "${filename}" >> "${OUT_DIR}/${outfile}"
+    # lscpu can also provide us numa info
+    if check_binary lscpu; then
+        lscpu > "${OUT_DIR}/lscpu"
     fi
 
-    if echo "${datadisk} "| grep 'dm-' >/dev/null 2>&1; then
-        pvs | grep "$(lvdisplay | awk '/LV Name/{n=$3} /VG Name/{v=$3} /Block device/{d=$3; sub(".*:","dm-",d); print d,n,v;}' | grep "${datadisk/\/dev\//}" | awk '{print $3}')" | awk '{print $1}' >> "${OUT_DIR}/datadir"
+    # get info related to memory and disk
+    free -m > "${OUT_DIR}/free"
+    df -h > "${OUT_DIR}/df"
+
+    # get oom_score_adj
+    if [[ -f "/proc/${PIDTOUSE}/oom_score_adj" ]]; then
+        cat "/proc/${PIDTOUSE}/oom_score_adj" > "${OUT_DIR}/oom_score_adj"
     fi
-  }
 
-  ## Db Sysconfig Post
-  if [[ "${IS_MONGOS}" == "false" ]]; then
-    get_disk_of_file_info "${variables_dbpath}" dbpath_disk_info
-  fi
+    function get_disk_of_file_info {
+        local filename="$1"
+        local outfile="$2"
+        local datadisk
 
-  echo "Done."
+        echo "${filename}" > "${OUT_DIR}/${outfile}"
+
+        # fast fail if cannot get file info
+        if ! df "${filename}" &> /dev/null; then
+            echo "!! Cannot read '${filename}', thus no disk info for file path. Need to run as root?"
+            return 1
+        fi
+
+        # have permissions to read
+        grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 >> "${OUT_DIR}/${outfile}"
+        datadisk=$(readlink -f "$(grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 | cut -d' ' -f1)")
+
+        # shellcheck disable=SC2129  # Ignore multi-exec redirect
+        echo "${datadisk}" >> "${OUT_DIR}/${outfile}"
+        df -P -h "$(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}')" | tail -n 1 >> "${OUT_DIR}/${outfile}"
+
+        # Need to be root to exec du on most directories
+        if [[ ${RUNASROOT} -eq 1 ]]; then
+            du -sh "${filename}" >> "${OUT_DIR}/${outfile}"
+        fi
+
+        if echo "${datadisk} " | grep 'dm-' > /dev/null 2>&1; then
+            pvs | grep "$(lvdisplay | awk '/LV Name/{n=$3} /VG Name/{v=$3} /Block device/{d=$3; sub(".*:","dm-",d); print d,n,v;}' | grep "${datadisk/\/dev\//}" | awk '{print $3}')" | awk '{print $1}' >> "${OUT_DIR}/datadir"
+        fi
+    }
+
+    ## Db Sysconfig Post
+    if [[ ${IS_MONGOS} == "false" ]]; then
+        get_disk_of_file_info "${variables_dbpath}" dbpath_disk_info
+    fi
+
+    echo "Done."
 else
-  echo "Environment is RDS. Not collecting system info."
+    echo "Environment is RDS. Not collecting system info."
 fi
 
 ## Database Information
 
 if [[ ${ISRDS} -eq 0 ]]; then
 
-  # Check if the log path is empty
-  if [[ -z "${VARIABLES_LOG}" ]]; then
-      echo "Failed to get MongoDB log path from db.adminCommand({getCmdLineOpts: 1})"
-      exit 1
-  fi
+    # Check if the log path is empty
+    if [[ -z ${VARIABLES_LOG} ]]; then
+        echo "Failed to get MongoDB log path from db.adminCommand({getCmdLineOpts: 1})"
+        exit 1
+    fi
 
-  # Check if the user has permission to access the log file
-  if [[ ! -r "${VARIABLES_LOG}" ]]; then
-      echo "MongoDB log file not accessible: ${VARIABLES_LOG}. Try running as root?"
-  else
-      tail -n 1000 "${VARIABLES_LOG}" > "${OUT_DIR}/mongo_log"
-      echo "Last 1000 lines of MongoDB log have been saved"
-  fi
+    # Check if the user has permission to access the log file
+    if [[ ! -r ${VARIABLES_LOG} ]]; then
+        echo "MongoDB log file not accessible: ${VARIABLES_LOG}. Try running as root?"
+    else
+        tail -n 1000 "${VARIABLES_LOG}" > "${OUT_DIR}/mongo_log"
+        echo "Last 1000 lines of MongoDB log have been saved"
+    fi
 fi
 
 ##
@@ -481,16 +481,16 @@ query_to_file 'Profiling Status' "${query}" 'mongodb_getProfilingStatus'
 query="JSON.stringify(db.adminCommand({getCmdLineOpts: 1}), null, 4);"
 query_to_file 'Command Line Options' "${query}" 'mongodb_getCmdLineOpts'
 
-if [[ "${IS_MONGOS}" == "false" ]]; then
-  ## replica set configuration
-  query="JSON.stringify(rs.conf(), null, 4);"
-  query_to_file 'Replica Set Configuration' "${query}" 'mongodb_rs_conf'
-  ## replica set status
-  query="JSON.stringify(rs.status(), null, 4);"
-  query_to_file 'Replica Set Status' "${query}" 'mongodb_rs_status'
-  ## oplog stats
-  query="JSON.stringify(db.getReplicationInfo(), null, 4);"
-  query_to_file 'oplog stats' "${query}" 'mongodb_print_Replication_info'
+if [[ ${IS_MONGOS} == "false" ]]; then
+    ## replica set configuration
+    query="JSON.stringify(rs.conf(), null, 4);"
+    query_to_file 'Replica Set Configuration' "${query}" 'mongodb_rs_conf'
+    ## replica set status
+    query="JSON.stringify(rs.status(), null, 4);"
+    query_to_file 'Replica Set Status' "${query}" 'mongodb_rs_status'
+    ## oplog stats
+    query="JSON.stringify(db.getReplicationInfo(), null, 4);"
+    query_to_file 'oplog stats' "${query}" 'mongodb_print_Replication_info'
 fi
 
 ## list collection per database
@@ -538,15 +538,15 @@ query="printjson(db.adminCommand({'currentOp': true}))"
 query_to_file 'Current Operations' "${query}" 'mongodb_current_ops'
 
 ## sh.status()
-if [[ "${IS_MONGOS}" == "true" ]]; then
-  query="JSON.stringify(sh.status(), null, 4);"
-  query_to_file 'Sharding Status' "${query}" 'sh_status'
+if [[ ${IS_MONGOS} == "true" ]]; then
+    query="JSON.stringify(sh.status(), null, 4);"
+    query_to_file 'Sharding Status' "${query}" 'sh_status'
 else
-  echo "Skipping collection of sh.status() as I am not connected to a mongos router"
-  echo "Collecting 10 seconds of mongotop..."
-  mongotop -n10 "${DB_CLI_OPTIONS[@]}" > "${OUT_DIR}"/mongotop
-  echo "Collecting 10 seconds of mongostat..."
-  mongostat -n10 "${DB_CLI_OPTIONS[@]}" > "${OUT_DIR}"/mongostat
+    echo "Skipping collection of sh.status() as I am not connected to a mongos router"
+    echo "Collecting 10 seconds of mongotop..."
+    mongotop -n10 "${DB_CLI_OPTIONS[@]}" > "${OUT_DIR}"/mongotop
+    echo "Collecting 10 seconds of mongostat..."
+    mongostat -n10 "${DB_CLI_OPTIONS[@]}" > "${OUT_DIR}"/mongostat
 fi
 
 #
@@ -554,13 +554,13 @@ fi
 #
 date -u -Iseconds > "${OUT_DIR}/collect_env_end"
 
-if [[ "${SKIPTARRESULT}" -eq 0 ]]; then
-  echo "Compressing..."
-  tar czf "${OUT_DIR}".tgz "${OUT_DIR}" && rm -rf "${OUT_DIR}"
-  echo "Filename:" "${OUT_DIR}".tgz
+if [[ ${SKIPTARRESULT} -eq 0 ]]; then
+    echo "Compressing..."
+    tar czf "${OUT_DIR}".tgz "${OUT_DIR}" && rm -rf "${OUT_DIR}"
+    echo "Filename:" "${OUT_DIR}".tgz
 else
-  echo "Skipped results compression."
-  echo "Directory name:" "${OUT_DIR}"
+    echo "Skipped results compression."
+    echo "Directory name:" "${OUT_DIR}"
 fi
 
 echo "All tasks finished."
