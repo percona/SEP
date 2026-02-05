@@ -40,7 +40,7 @@ module.exports = {
         use: {
           loader: 'babel-loader',
           options: {
-            presets: ['@babel/preset-env', '@babel/preset-react', '@babel/preset-typescript'],
+            presets: ['@babel/preset-env', '@babel/preset-react'],
           },
         },
       },
@@ -50,6 +50,11 @@ module.exports = {
     extensions: ['.js', '.jsx', '.tsx'],
     fullySpecified: false,
   },
-  // The 'plugins' array is left empty because we don't need HtmlWebpackPlugin
+  performance: {
+    hints: false, // Disables the warning entirely
+    // OR
+    maxEntrypointSize: 512000, // Raises limit to 512 KiB
+    maxAssetSize: 512000,      // Raises limit to 512 KiB
+  },
   plugins: [], 
 };
