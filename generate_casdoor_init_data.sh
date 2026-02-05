@@ -12,15 +12,18 @@ clientSecret=$(openssl rand -hex 20)
 
 # Generate the user password (20 chars) if not provided as a parameter
 password=""
-while [[ "$#" -gt 0 ]]; do
-  case "$1" in
-    -p|--password) password="$2"; shift ;;
-  esac
-  shift
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -p | --password)
+            password="$2"
+            shift
+            ;;
+    esac
+    shift
 done
 
-if [[ -z "$password" ]]; then
-  password=$(openssl rand -hex 15)
+if [[ -z $password ]]; then
+    password=$(openssl rand -hex 15)
 fi
 adminPassword=$(openssl rand -hex 20)
 
@@ -29,7 +32,7 @@ certificate=$(awk '{printf "%s\\n", $0}' "$data_dir/certs/casdoor/sep_token_jwt_
 privateKey=$(awk '{printf "%s\\n", $0}' "$data_dir/certs/casdoor/sep_token_jwt_key.key")
 
 # Create the casdoor_init_data.json file with replaced values
-cat > "$data_dir/casdoor_init_data.json" <<EOL
+cat > "$data_dir/casdoor_init_data.json" << EOL
 {
   "organizations": [
     {
@@ -212,7 +215,7 @@ EOL
 
 echo "$data_dir/casdoor_init_data.json created successfully."
 
-cat > ".env.docker" <<EOL
+cat > ".env.docker" << EOL
 CASDOOR__CLIENT_ID=$clientId
 CASDOOR__CLIENT_SECRET=$clientSecret
 SEP__SYNCER_EXTRA_KWARGS__PMM__API_KEY=REPLACE_WITH_YOUR_PMM_API_KEY
