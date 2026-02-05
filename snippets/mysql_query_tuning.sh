@@ -149,7 +149,7 @@ while [[ -n $* ]]; do
     esac
 done
 
-test -n "${PTDEST}" || DEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+test -n "${DEST}" || DEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 
 if [[ -z $QUERY && -z $FILE ]] || [[ -n $QUERY && -n $FILE ]]; then
     echo "Error: Either --query or --file must be specified."
