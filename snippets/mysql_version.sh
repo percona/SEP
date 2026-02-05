@@ -30,6 +30,7 @@ declare OUTPUT_FORMAT="full_string"
 declare MYSQLD=""
 
 usage() {
+    local -i exit_code="${1:-0}"
     cat << EOS
 Usage: $(basename "${0}") [OPTIONS]
 Returns the MySQL version.
@@ -48,7 +49,7 @@ Command line options:
    -h, --help        Show this help message
 
 EOS
-    exit "$1"
+    exit ${exit_code}
 }
 
 if ! OPTS=$(getopt --options -h --longoptions 'basedir:,output-format:,help' -- "$@"); then

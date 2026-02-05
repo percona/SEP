@@ -37,6 +37,7 @@ declare PTDEST=
 declare SAVE_SAMPLES=0
 
 usage() {
+    local -i exit_code="${1:-0}"
     cat << EOS
 Usage: $(basename "${0}") [OPTIONS]
 Executes pt-mysql-summary script
@@ -50,7 +51,7 @@ Command line options:
    -h, --help        Show this help message
 
 EOS
-    exit "$1"
+    exit ${exit_code}
 }
 
 if ! OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@"); then
