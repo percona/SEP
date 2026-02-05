@@ -31,10 +31,9 @@ build: venv app/
 	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
 
 ui-audit:
-	pnpm audit --prod
+	@./ui-audit.sh
 ui-install:
-	pnpm install
-
+	pnpm install --frozen-lockfile
 ui-build:
 	pnpm run build
 
