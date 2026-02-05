@@ -12,9 +12,10 @@
 #    description: Path to the defaults-file
 #  - name: run-time
 #    type: int
+#    ge: 0
+#    le: 43200
 #    label: How many seconds to run for
 #    description: How many iterations to run, used with --run-time
-#    default: 2
 #  - name: iterations
 #    type: int
 #    label: How many iterations to run
