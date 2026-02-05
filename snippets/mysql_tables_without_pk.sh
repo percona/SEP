@@ -3,7 +3,7 @@
 # ---
 # title: "Tables without Primary Key"
 # description: "Prints all tables in all databases that do not have a primary key."
-# allow_extra_args: true
+# allow_extra_args: false
 # parameters:
 #  - name: defaults-file
 #    type: str
