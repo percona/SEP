@@ -72,7 +72,7 @@ usage() {
     echo "the provided timestamp."
     echo ""
     echo "Arguments:"
-    echo "  --time \"<YYYY-MM-DD HH:MM:SS>\"   The central timestamp to focus on (required)."
+    echo '  --time "<YYYY-MM-DD HH:MM:SS>"   The central timestamp to focus on (required).'
     echo "  --minutes <minutes>                The number of minutes before and after the timestamp to include (required)."
     echo "  --log-file <path/to/log>           Optional. Path to the MySQL error log file. Defaults to /var/log/mysql/error.log."
     echo "  --output <file|stdout>             Optional. Where to send the output. Use 'stdout' to print to the terminal (default), or 'file' to write the output to a file named by the timestamp."
@@ -85,36 +85,48 @@ usage() {
 TIME_ARG=""
 MINUTES_ARG=""
 LOG_FILE_ARG=""
-OUTPUT_MODE="stdout"  # default
+OUTPUT_MODE="stdout" # default
 
 # Parse named arguments
-while [[ "$#" -gt 0 ]]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
         --time)
-            if [ -z "$2" ]; then echo "Error: --time requires an argument."; usage; fi
+            if [ -z "$2" ]; then
+                echo "Error: --time requires an argument."
+                usage
+            fi
             TIME_ARG="$2"
             shift # Shift past the argument name
             shift # Shift past the argument value
             ;;
         --minutes)
-            if [ -z "$2" ]; then echo "Error: --minutes requires an argument."; usage; fi
+            if [ -z "$2" ]; then
+                echo "Error: --minutes requires an argument."
+                usage
+            fi
             MINUTES_ARG="$2"
             shift
             shift
             ;;
         --log-file)
-            if [ -z "$2" ]; then echo "Error: --log-file requires an argument."; usage; fi
+            if [ -z "$2" ]; then
+                echo "Error: --log-file requires an argument."
+                usage
+            fi
             LOG_FILE_ARG="$2"
             shift
             shift
             ;;
         --output)
-            if [ -z "$2" ]; then echo "Error: --output requires an argument (file|stdout)."; usage; fi
+            if [ -z "$2" ]; then
+                echo "Error: --output requires an argument (file|stdout)."
+                usage
+            fi
             OUTPUT_MODE="$2"
             shift
             shift
             ;;
-        -h|--help)
+        -h | --help)
             usage
             ;;
         *)
@@ -136,7 +148,7 @@ if [ -z "$MINUTES_ARG" ]; then
 fi
 
 # Check if MINUTES_ARG is a positive integer
-if ! [[ "$MINUTES_ARG" =~ ^[0-9]+$ ]] || [ "$MINUTES_ARG" -le 0 ]; then
+if ! [[ $MINUTES_ARG =~ ^[0-9]+$ ]] || [ "$MINUTES_ARG" -le 0 ]; then
     echo "Error: --minutes must be a positive integer."
     usage
 fi
@@ -162,20 +174,15 @@ fi
 #    '%s' gives the Unix epoch time (seconds since 1970-01-01 00:00:00 UTC).
 
 # Convert input time to epoch
-INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2>/dev/null)
-
 # Check if date parsing was successful
-if [ $? -ne 0 ]; then
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
     echo "Error: Could not parse the provided time format: \"$TIME_ARG\""
-    echo "Please ensure the time is in a valid format, e.g., \"YYYY-MM-DD HH:MM:SS\""
+    echo 'Please ensure the time is in a valid format, e.g., "YYYY-MM-DD HH:MM:SS"'
     exit 1
 fi
 
-if [[ "$OUTPUT_MODE" == "file" ]]; then
+if [[ $OUTPUT_MODE == "file" ]]; then
     OUTPUT_FILE="mysql_error_${INPUT_EPOCH}.log"
-    OUTPUT_REDIRECT="> \"$OUTPUT_FILE\""
-else
-    OUTPUT_REDIRECT=""
 fi
 
 # Calculate start and end epoch times
@@ -231,7 +238,7 @@ BEGIN {
     }
 }' \"$MYSQL_ERROR_LOG\""
 
-if [[ "$OUTPUT_MODE" == "file" ]]; then
+if [[ $OUTPUT_MODE == "file" ]]; then
     eval "$AWK_CMD > \"$OUTPUT_FILE\""
     echo "Output written to $OUTPUT_FILE"
 else
