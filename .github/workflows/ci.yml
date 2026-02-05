@@ -41,6 +41,7 @@ jobs:
         env:
           POETRY: poetry
         run: |
+          sudo apt install -qy shellcheck
           make run-pre-commit
 
   python:

@@ -3,7 +3,7 @@
 # ---
 # title: "mysql_version"
 # description: "Returns the MySQL version"
-# allow_extra_args: true
+# allow_extra_args: false
 # parameters:
 #  - name: basedir
 #    type: str
@@ -30,7 +30,7 @@ declare OUTPUT_FORMAT="full_string"
 declare MYSQLD=""
 
 usage() {
-   cat << EOS
+    cat << EOS
 Usage: $(basename "${0}") [OPTIONS]
 Returns the MySQL version.
 
@@ -48,61 +48,57 @@ Command line options:
    -h, --help        Show this help message
 
 EOS
-   exit $1
+    exit "$1"
 }
 
-OPTS=$(getopt --options -h --longoptions 'basedir:,output-format:,help' -- "$@")
-
-if [ $? -gt 0 ]; then
-   echo "Error parsing options"
-   usage 1
+if ! OPTS=$(getopt --options -h --longoptions 'basedir:,output-format:,help' -- "$@"); then
+    echo "Error parsing options"
+    usage 1
 fi
 
 eval set -- "$OPTS"
 
-while [[ -n "$*" ]]; do
-   case "$1" in
-      --basedir)
-         BASEDIR="$2"
-         shift 2
-         ;;
-      --output-format)
-         OUTPUT_FORMAT="$2"
-         shift 2
-         ;;
-      -h | --help)
-         usage
-         ;;
-      --)
-         break
-         ;;
-      # Need this to catch options mess up that getopt does not recognize
-      *)
-         echo "Unrecognized option '$1'"
-         usage 1
-         ;;
-   esac
+while [[ -n $* ]]; do
+    case "$1" in
+        --basedir)
+            BASEDIR="$2"
+            shift 2
+            ;;
+        --output-format)
+            OUTPUT_FORMAT="$2"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            ;;
+        --)
+            break
+            ;;
+        # Need this to catch options mess up that getopt does not recognize
+        *)
+            echo "Unrecognized option '$1'"
+            usage 1
+            ;;
+    esac
 done
 
-if [[ -z "$BASEDIR" ]]; then
+if [[ -z $BASEDIR ]]; then
     # Check if mysqld command is available
     MYSQLD=$(command -v mysqld)
-    if [[ -z "$MYSQLD" ]]; then
+    if [[ -z $MYSQLD ]]; then
         echo "mysqld command not found and option --basedir was not provided. Please ensure MySQL is installed and in your PATH."
         exit 1
     fi
 else
     # Check if mysqld command is available in the specified base directory
     MYSQLD="$(command -v "$BASEDIR"/{bin,sbin,libexec}/mysqld)"
-    if [[ -z "$MYSQLD" ]]; then
+    if [[ -z $MYSQLD ]]; then
         echo "mysqld command not found in the specified base directory: $BASEDIR. Please ensure the path is correct."
         exit 1
     fi
 fi
 
-VERSION_STRING=$("$MYSQLD" --version 2>/dev/null)
-
-if [[ $? -ne 0 ]]; then
+if ! VERSION_STRING=$("$MYSQLD" --version 2> /dev/null); then
     echo "Failed to retrieve MySQL version. Please check if mysqld is installed correctly."
     exit 1
 fi
