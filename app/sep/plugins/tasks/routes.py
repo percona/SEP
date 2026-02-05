@@ -73,13 +73,17 @@ async def tasks_json(
 ) -> JSONResponse:
     """Returns task data as JSON."""
     tasks = await tasks_api.get("/")
-    running_tasks = await tasks_api.get(
-        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
-    )
+    history = await tasks_api.get("/history/")
+    running_tasks = [
+        task
+        for task in history
+        if task.get("status") == TaskHistoryStatusEnum.RUNNING
+    ]
 
     return JSONResponse(
         content={
             "tasks": tasks,
+            "history": history,
             "running_tasks": running_tasks,
         }
     )

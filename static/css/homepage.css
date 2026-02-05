@@ -14,7 +14,7 @@
 /* along with this program. If not, see <https://www.gnu.org/licenses/>.        */
 
 .tasks-table-container {
-    border: 1px solid #c7c7c7;
+    border: 1px solid var(--lineDivider);
     border-radius: 10px;
 }
 
@@ -49,7 +49,7 @@
 }
 
 .scheduled-tasks-table-container {
-    border: 1px solid #c7c7c7;
+    border: 1px solid var(--lineDivider);
     border-radius: 10px;
 }
 
