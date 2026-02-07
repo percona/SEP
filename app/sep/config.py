@@ -21,6 +21,7 @@ from functools import cached_property
 from pathlib import Path
 from string import Template
 from typing import Any, ClassVar, Literal, Self
+from urllib.parse import urlparse
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
@@ -202,6 +203,17 @@ class PMMSettings(BaseModel):
     API_KEY: str | None = None
     VERIFY_SSL: bool = True
     NOMAD_NODE: str | None = None
+
+    @cached_property
+    def hostname(self) -> str | None:
+        """Extract and return the hostname from the PMM endpoint.
+
+        :return: The hostname of the PMM endpoint, or None if not set.
+        :rtype: str | None
+        """
+        if self.ENDPOINT:
+            return urlparse(self.ENDPOINT).hostname
+        return None
 
 
 class SyncOptions(BaseLowercaseModel):
@@ -435,18 +447,26 @@ class SEPSettings(BaseYamlAppSettings):
             deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
             syncers.append(SyncOptions.model_validate(syncer_data))
             try:
-                if (
-                    self.PMM.ENDPOINT is None
-                    and syncer_data["syncer"].endswith("PMMSyncer")
-                    and (pmm_endpoint := syncer_data.get("pmm", {}).get("endpoint"))
+                if syncer_data["syncer"].endswith("PMMSyncer") and (
+                    pmm_data := syncer_data.get("pmm")
                 ):
-                    logger.warning(
-                        "It's recommended to set SEP__PMM__ENDPOINT instead of using the legacy PMMSyncer configuration."
-                    )
-                    self.PMM.ENDPOINT = run_pydantic_type_validator(
-                        StrHttpUrl, pmm_endpoint
-                    )
-                    self.PMM.FRONTEND = self.PMM.FRONTEND or self.PMM.ENDPOINT
+                    if self.PMM.ENDPOINT is None and (
+                        pmm_endpoint := pmm_data.get("endpoint")
+                    ):
+                        logger.warning(
+                            "It's recommended to set SEP__PMM__ENDPOINT instead of using the legacy PMMSyncer configuration."
+                        )
+                        self.PMM.ENDPOINT = run_pydantic_type_validator(
+                            StrHttpUrl, pmm_endpoint
+                        )
+                        self.PMM.FRONTEND = self.PMM.FRONTEND or self.PMM.ENDPOINT
+                    if self.PMM.API_KEY is None and (
+                        pmm_api_key := pmm_data.get("api_key")
+                    ):
+                        logger.warning(
+                            "It's recommended to set SEP__PMM__API_KEY instead of using the legacy PMMSyncer configuration."
+                        )
+                        self.PMM.API_KEY = pmm_api_key
             except AttributeError:
                 continue
             except ValidationError:
