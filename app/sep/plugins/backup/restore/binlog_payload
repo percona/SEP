@@ -1607,14 +1607,8 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         os.makedirs(destination, exist_ok=True)
 
-        if self.ssh_key.startswith('/'):
-            ssh_key_path = self.ssh_key
-        else:
-            ssh_key_path = '/home/%s/.ssh/%s' % (self.ssh_user, self.ssh_key)
-
-        dest_path = destination if destination.endswith('/') else destination + '/'
-        rsync_cmd = 'rsync -LAvhr %s %s --rsync-path="sudo rsync" -e "ssh -t -p %s -i %s" %s@%s %s' \
-                    % (include_args, exclude_args, self.ssh_port, ssh_key_path, self.ssh_user, source, dest_path)
+        rsync_cmd = 'rsync -LAvhr %s %s --rsync-path="sudo rsync" -e "ssh -t -p %s -i /home/%s/.ssh/id_rsa" %s@%s %s' \
+                    % (include_args, exclude_args, self.ssh_port, self.ssh_user, self.ssh_user, source, destination)
 
         self.logger.info('Running: %s', rsync_cmd)
         log_stream = open(log_file, 'a')
@@ -1702,8 +1696,8 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             download_cmd = '%s s3 sync %s %s %s %s' \
                            % (AWS_BIN, source, destination_dir, exclude_args, include_args)
         else:
-            download_cmd = '%s sync %s %s %s %s' \
-                           % (S3CMD_BIN, source, destination_dir, exclude_args, include_args)
+            download_cmd = '%s/bin/s3cmd sync %s %s %s %s' \
+                           % (INSTALL_DIR, source, destination_dir, exclude_args, include_args)
 
         self.logger.info('Running: %s', download_cmd)
         log_stream = open(log_file, 'a')
@@ -2100,12 +2094,7 @@ class Binlog(Restore):
         else:
             try:
                 host, path = self.backup_source.split(':', 1)
-                if self.ssh_key.startswith('/'):
-                    ssh_key_path = self.ssh_key
-                else:
-                    ssh_key_path = '/home/%s/.ssh/%s' % (self.ssh_user, self.ssh_key)
-                ls_cmd = 'ssh -p %s -l %s -i %s %s ls -1 %s' \
-                         % (self.ssh_port, self.ssh_user, ssh_key_path, host, path)
+                ls_cmd = 'ssh -t -p %s -i /home/%s/.ssh/id_rsa %s@%s ls -1 %s' % (self.ssh_port, self.ssh_user, self.ssh_user, host, path)
             except ValueError:
                 self.logger.error("Invalid rsync source format: %s", self.backup_source)
                 return None

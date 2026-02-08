@@ -14,7 +14,6 @@ class S3Tool(EnumFieldMixin, StrEnum):
 
     S3CMD = "s3cmd"
     AWSCLI = "awscli"
-    GSUTIL = "gsutil"
 
 
 class XtraBackupTool(EnumFieldMixin, StrEnum):
