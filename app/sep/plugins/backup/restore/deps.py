@@ -26,7 +26,6 @@ from app.sep.plugins.backup.restore.models import (
     RestoreConfigAll,
     RestoreConfigServer,
     RestoreCreate,
-    S3Tool,
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
