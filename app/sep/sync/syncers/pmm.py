@@ -619,20 +619,6 @@ class PMMSyncer(BaseSyncer):
                 port_to_id[service.port] = service.id
         for service in updated_node.services:
             if (
-                service.custom_labels
-                and service.custom_labels.get("sep_sync") == "disabled"
-            ):
-                logger.debug(
-                    "Skipping service %s due to sep_sync: disabled label",
-                    service.external_id,
-                )
-                service_id = external_id_to_id.get(
-                    service.external_id, port_to_id.get(service.port)
-                )
-                if service_id:
-                    syncable_services.pop(service_id, None)
-                continue
-            if (
                 created_service := syncable_services.pop(
                     external_id_to_id.get(
                         service.external_id, port_to_id.get(service.port)
@@ -652,15 +638,16 @@ class PMMSyncer(BaseSyncer):
         for service in syncable_services.values():
             await self.delete_service(service)
 
-    async def fetch_service(self, created_service: CreatedService) -> PMMService:
+    async def fetch_service(self, created_service: CreatedService) -> PMMService | None:
         """Fetch updated data for a specific service.
 
         Retrieve the latest information for the specified service from the PMM API.
+        Returns None if the service is filtered out (e.g., has sep_sync: disabled).
 
         :param created_service: The service instance for which to fetch updated data.
         :type created_service: CreatedService
-        :return: The updated service data.
-        :rtype: PMMService
+        :return: The updated service data, or None if filtered out.
+        :rtype: PMMService | None
         """
         logger.debug(
             "Fetching service from PMM with external id %s",
