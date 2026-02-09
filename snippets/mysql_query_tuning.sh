@@ -59,6 +59,7 @@ declare FORCE=0
 declare EXECUTE=0
 
 usage() {
+    local -i exit_code="${1:-0}"
     cat << EOS
 Usage: $(basename "${0}") [OPTIONS]
 Collects data for MySQL query tuning.
@@ -86,7 +87,7 @@ Command line options:
    -h, --help       Show this help message
 
 EOS
-    exit "$1"
+    exit ${exit_code}
 }
 
 compress_data() {
