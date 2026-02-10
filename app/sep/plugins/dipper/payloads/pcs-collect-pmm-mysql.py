@@ -418,7 +418,7 @@ def render_graphs(
         raise
 
 
-def get_dashboard(uid: str) -> str:
+def get_dashboard(uid: str) -> dict:
     # https://10.0.1.38/graph/d/node-instance-summary/node-summary?from=now-12h&to=now...
     #                           ^------- uid -------^ ^-- slug --^
     headers = build_header()

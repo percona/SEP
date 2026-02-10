@@ -633,7 +633,7 @@ class PMMSyncer(BaseSyncer):
         :param value: The PMM settings value to validate and merge.
         :type value: Any
         :return: The merged PMM settings.
-        :rtype: dict[str, Any] | PMMSettings
+        :rtype: Any
         """
         if isinstance(value, dict):
             return sep_settings.PMM.model_dump() | value

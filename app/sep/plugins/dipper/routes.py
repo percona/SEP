@@ -21,7 +21,7 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.plugins.dipper.deps import (
-    DipperScriptDep,
+    DipperScriptWithMetaDep,
     get_dipper_execution_meta,
     get_dipper_script_filename,
     has_pmm_script,
@@ -161,7 +161,7 @@ async def dipper_execute(
     request: Request,
     tasks_api: TaskAPI,
     execution_meta: ExecutionMetaDep,
-    script: DipperScriptDep,
+    script: DipperScriptWithMetaDep,
     service_id: int,
     collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
 ) -> RedirectResponse:
