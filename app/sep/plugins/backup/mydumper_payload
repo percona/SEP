@@ -1744,7 +1744,7 @@ class MyDumper(Backup):
             "MYDUMPER_DUMP_TRIGGERS", True
         )
         self.desync_pxc: bool = server_data.get("MYDUMPER_DESYNC_PXC", False)
-        self.less_locking: bool = server_data.get("MYDUMPER_LESS_LOCKING", True)
+        self.less_locking: bool = server_data.get("MYDUMPER_LESS_LOCKING", False)
         self.updated_since: int = server_data.get("MYDUMPER_UPDATED_SINCE", 0)
         self.mydumper_extra_args: str | None = server_data.get("MYDUMPER_EXTRA_ARGS")
         self.use_ftwrl_guardian: bool = server_data.get("USE_FTWRL_GUARDIAN", True)
