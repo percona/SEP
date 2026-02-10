@@ -207,7 +207,7 @@ def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
 
     host = None
     for node_name, node_address in executor_hosts.items():
-        if pmm.execution_target in (node_name, node_address):
+        if pmm.execution_target and pmm.execution_target in (node_name, node_address):
             return node_name
         if pmm.hostname == node_address:
             host = node_name
