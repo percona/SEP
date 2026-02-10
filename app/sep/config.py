@@ -183,27 +183,27 @@ class CsrfSettings(BaseModel):
     TOKEN_LOCATION: str = "body"  # noqa: S105
 
 
-class PMMSettings(BaseModel):
+class PMMSettings(BaseLowercaseModel):
     """Define centralized PMM configuration.
 
-    :param ENDPOINT: The PMM server URL.
-    :type ENDPOINT: StrHttpUrl | None
-    :param FRONTEND: The PMM frontend URL.
-    :type FRONTEND: StrHttpUrl | None
-    :param API_KEY: API key for PMM authentication.
-    :type API_KEY: str | None
-    :param VERIFY_SSL: Whether to verify SSL certificates.
-    :type VERIFY_SSL: bool
-    :param EXECUTION_TARGET: Explicit execution target name or address for PMM tasks.
-    :type EXECUTION_TARGET: str | None
+    :param endpoint: The PMM server URL.
+    :type endpoint: StrHttpUrl | None
+    :param frontend: The PMM frontend URL.
+    :type frontend: StrHttpUrl | None
+    :param api_key: API key for PMM authentication.
+    :type api_key: str | None
+    :param verify_ssl: Whether to verify SSL certificates.
+    :type verify_ssl: bool
+    :param execution_target: Explicit execution target name or address for PMM tasks.
+    :type execution_target: str | None
     """
 
     model_config = ConfigDict(extra="allow")
-    ENDPOINT: StrHttpUrl | None = None
-    FRONTEND: StrHttpUrl | None = None
-    API_KEY: str | None = None
-    VERIFY_SSL: bool = True
-    EXECUTION_TARGET: str | None = None
+    endpoint: StrHttpUrl | None = None
+    frontend: StrHttpUrl | None = None
+    api_key: str | None = None
+    verify_ssl: bool = True
+    execution_target: str | None = None
 
     @cached_property
     def hostname(self) -> str | None:
@@ -212,8 +212,8 @@ class PMMSettings(BaseModel):
         :return: The hostname of the PMM endpoint, or None if not set.
         :rtype: str | None
         """
-        if self.ENDPOINT:
-            return urlparse(self.ENDPOINT).hostname
+        if self.endpoint:
+            return urlparse(self.endpoint).hostname
         return None
 
 
@@ -427,8 +427,8 @@ class SEPSettings(BaseYamlAppSettings):
         :return: The updated PMMSettings instance.
         :rtype: PMMSettings
         """
-        if v.FRONTEND is None and (pmm_frontend := info.data.get("PMM_FRONTEND")):
-            v.FRONTEND = pmm_frontend
+        if v.frontend is None and (pmm_frontend := info.data.get("PMM_FRONTEND")):
+            v.frontend = pmm_frontend
         return v
 
     @model_validator(mode="after")
@@ -452,23 +452,23 @@ class SEPSettings(BaseYamlAppSettings):
                 if syncer_data["syncer"].endswith("PMMSyncer") and (
                     pmm_data := syncer_data.get("pmm")
                 ):
-                    if self.PMM.ENDPOINT is None and (
+                    if self.PMM.endpoint is None and (
                         pmm_endpoint := pmm_data.get("endpoint")
                     ):
                         logger.warning(
                             "It's recommended to set SEP__PMM__ENDPOINT instead of using the legacy PMMSyncer configuration."
                         )
-                        self.PMM.ENDPOINT = run_pydantic_type_validator(
+                        self.PMM.endpoint = run_pydantic_type_validator(
                             StrHttpUrl, pmm_endpoint
                         )
-                        self.PMM.FRONTEND = self.PMM.FRONTEND or self.PMM.ENDPOINT
-                    if self.PMM.API_KEY is None and (
+                        self.PMM.frontend = self.PMM.frontend or self.PMM.endpoint
+                    if self.PMM.api_key is None and (
                         pmm_api_key := pmm_data.get("api_key")
                     ):
                         logger.warning(
                             "It's recommended to set SEP__PMM__API_KEY instead of using the legacy PMMSyncer configuration."
                         )
-                        self.PMM.API_KEY = pmm_api_key
+                        self.PMM.api_key = pmm_api_key
             except AttributeError:
                 continue
             except ValidationError:

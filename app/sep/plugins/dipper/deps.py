@@ -148,14 +148,14 @@ async def get_dipper_execution_args(
 
     if collector_type == CollectorTypeEnum.PMM:
         pmm = sep_settings.PMM
-        pmm_server = form_data.get("pmmserver") or pmm.ENDPOINT
+        pmm_server = form_data.get("pmmserver") or pmm.endpoint
         if not pmm_server:
             raise HTTPUnprocessableEntityException(
                 detail="PMM server URL is required."
                 " Provide it in the form or configure SEP__PMM__ENDPOINT.",
             )
         form_data["pmmserver"] = pmm_server
-        form_data["apikey"] = form_data.get("apikey") or pmm.API_KEY
+        form_data["apikey"] = form_data.get("apikey") or pmm.api_key
 
     try:
         return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
@@ -207,7 +207,7 @@ def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
 
     host = None
     for node_name, node_address in executor_hosts.items():
-        if pmm.EXECUTION_TARGET in (node_name, node_address):
+        if pmm.execution_target in (node_name, node_address):
             return node_name
         if pmm.hostname == node_address:
             host = node_name
@@ -215,7 +215,7 @@ def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
         logger.debug(
             "Configured PMM hostname (%r) and EXECUTION_TARGET (%r) did not match any available executor host: %r",
             pmm.hostname,
-            pmm.EXECUTION_TARGET,
+            pmm.execution_target,
             executor_hosts,
         )
     return host
