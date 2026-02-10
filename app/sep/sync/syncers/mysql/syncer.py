@@ -654,7 +654,8 @@ class MySQLSyncer(BaseTaskSyncer):
         ) is None:
             script_config = self.build_script_config(host, schema=created_schema.name)
             task_target = await self.get_task_target(
-                created_service.node.address, created_service.name
+                created_service.node.address,
+                created_service.node.name,
             )
             schemas_index = await self._fetch_inventory_index(
                 script_config,
