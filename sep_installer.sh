@@ -70,13 +70,13 @@ except Exception:
     local i=0
     while kill -0 $pid 2> /dev/null; do
         i=$(((i + 1) % 4))
-        printf "\b%s" "${spin:i:1}"  >&2
+        printf "\b%s" "${spin:i:1}" >&2
         sleep .1
     done
     wait $pid || {
-                   printf "\bFailed.\n" >&2
-                                             echo "Failed to create venv." >&2
-                                                                                return 1
+        printf "\bFailed.\n" >&2
+        echo "Failed to create venv." >&2
+        return 1
     }
     printf "\bDone.\n" >&2
 
@@ -792,9 +792,9 @@ spin_or_die() {
     else
         echo ">> ${title}"
         if ! output=$(bash -c "${cmd}" 2>&1); then
-             log_err "Command Failed: ${cmd}"
-             [ -n "${output}" ] && echo "${output}" >&2
-             exit 1
+            log_err "Command Failed: ${cmd}"
+            [ -n "${output}" ] && echo "${output}" >&2
+            exit 1
         fi
     fi
 }
@@ -835,7 +835,7 @@ SEP_PMM_NOMAD_DATA_DIR="${SEP_PMM_NOMAD_DATA_DIR:-${INSTALL_DIR}/nomad_data}"
 SEP_PMM_CONTAINER_NAME="${SEP_PMM_CONTAINER_NAME:-sep-pmm-1}"
 SEP_PMM_URL_AUTH_ACCOUNT_USER="${SEP_PMM_URL_AUTH_ACCOUNT_USER:-}"
 SEP_PMM_URL_AUTH_ACCOUNT_PASS="${SEP_PMM_URL_AUTH_ACCOUNT_PASS:-}"
-if [[ (-z ${SEP_PMM_URL_AUTH_ACCOUNT_USER} || -z ${SEP_PMM_URL_AUTH_ACCOUNT_PASS}) && -n ${SEP_PMM_URL_AUTH_ACCOUNT:-}        ]]; then
+if [[ (-z ${SEP_PMM_URL_AUTH_ACCOUNT_USER} || -z ${SEP_PMM_URL_AUTH_ACCOUNT_PASS}) && -n ${SEP_PMM_URL_AUTH_ACCOUNT:-} ]]; then
     SEP_PMM_URL_AUTH_ACCOUNT_USER="${SEP_PMM_URL_AUTH_ACCOUNT%%:*}"
     SEP_PMM_URL_AUTH_ACCOUNT_PASS="${SEP_PMM_URL_AUTH_ACCOUNT#*:}"
 fi
@@ -1458,12 +1458,12 @@ pull_and_start() {
             fi
             if [ -z "${DOCKER_TOKEN}" ]; then
                 if [ "${NO_UI}" -eq 0 ]; then
-                     local token_file="${TEMP_DIR}/docker_token.txt"
-                     run_ui input --prompt "Docker Token" --password --output "$token_file"
-                     DOCKER_TOKEN=$(cat "$token_file")
+                    local token_file="${TEMP_DIR}/docker_token.txt"
+                    run_ui input --prompt "Docker Token" --password --output "$token_file"
+                    DOCKER_TOKEN=$(cat "$token_file")
                 else
-                     read -rsp "Docker Token: " DOCKER_TOKEN
-                     echo ""
+                    read -rsp "Docker Token: " DOCKER_TOKEN
+                    echo ""
                 fi
             fi
 
@@ -1629,8 +1629,8 @@ main() {
         summary_screen
     else
         if [ "$CREATE_PMM_CONTAINER" -eq 0 ]; then
-             SEP_PMM_URL_AUTH_ACCOUNT="${SEP_PMM_URL_AUTH_ACCOUNT_USER:-admin}:${SEP_PMM_URL_AUTH_ACCOUNT_PASS:-admin}"
-             export SEP_PMM_URL_AUTH_ACCOUNT
+            SEP_PMM_URL_AUTH_ACCOUNT="${SEP_PMM_URL_AUTH_ACCOUNT_USER:-admin}:${SEP_PMM_URL_AUTH_ACCOUNT_PASS:-admin}"
+            export SEP_PMM_URL_AUTH_ACCOUNT
         fi
     fi
     check_install_dir_writable

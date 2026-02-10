@@ -42,8 +42,8 @@
 PT_DIRECTORY=".percona-toolkit"
 DB_CLI_OPTIONS=()
 OUT_DIR=$(hostname)_environment_$(date +%FT%H%M)
-if [[ -z "${ISRDS}" ]]; then
-  ISRDS=0
+if [[ -z ${ISRDS} ]]; then
+    ISRDS=0
 fi
 PIDTOUSE=""
 RUNASROOT=1
@@ -59,7 +59,7 @@ PT_TOOLS=(pt-summary pt-pg-summary)
 
 ## Parse arguments
 function usage {
-  cat << EOF
+    cat << EOF
  Percona Consulting Scripts - v1.3.0
  Usage: $0 [-h] [-o DB arguments] [-d additional string] [-i RDS hostname] [-t] [-r] [-p pid] [-s] [-w]
 
@@ -83,147 +83,147 @@ EOF
 }
 
 while getopts hrto:d:i:p:sw flag; do
-  case ${flag} in
-    o)
-      IFS=" " read -r -a OPTS <<< "${OPTARG}";
-      for o in "${OPTS[@]}"; do
-        DB_CLI_OPTIONS+=("${o}")
-      done
-      ;;
-    d)
-      OUTDIRADD="${OPTARG}_";
-      OUT_DIR="$(hostname)_${OUTDIRADD}environment_"$(date +%FT%H%M)
-      ;;
-    i)
-      echo "** Will not collect CPU/Disk/Memory stats **"
-      ISRDS=1
-      OUT_DIR="${OPTARG}_${OPTARG}environment_"$(date +%FT%H%M);
-      ;;
-    t)
-      SKIPTARRESULT=1;
-      ;;
-    p)
-      PIDTOUSE="${OPTARG}"
-      ;;
-    h)
-      usage;
-      exit 0;
-      ;;
-    s)
-      echo "** Will add SQL to output files"
-      SQLINOUTPUT=1;
-      ;;
-    w)
-      echo "** Will NOT collect WALL statistics"
-      COLLECT_WALL_STATS=0;
-      ;;
-    *)
-      usage;
-      exit 1;
-      ;;
-  esac
+    case ${flag} in
+        o)
+            IFS=" " read -r -a OPTS <<< "${OPTARG}"
+            for o in "${OPTS[@]}"; do
+                DB_CLI_OPTIONS+=("${o}")
+            done
+            ;;
+        d)
+            OUTDIRADD="${OPTARG}_"
+            OUT_DIR="$(hostname)_${OUTDIRADD}environment_"$(date +%FT%H%M)
+            ;;
+        i)
+            echo "** Will not collect CPU/Disk/Memory stats **"
+            ISRDS=1
+            OUT_DIR="${OPTARG}_${OPTARG}environment_"$(date +%FT%H%M)
+            ;;
+        t)
+            SKIPTARRESULT=1
+            ;;
+        p)
+            PIDTOUSE="${OPTARG}"
+            ;;
+        h)
+            usage
+            exit 0
+            ;;
+        s)
+            echo "** Will add SQL to output files"
+            SQLINOUTPUT=1
+            ;;
+        w)
+            echo "** Will NOT collect WALL statistics"
+            COLLECT_WALL_STATS=0
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
 done
 
-shift $(( OPTIND - 1 ));
+shift $((OPTIND - 1))
 
 ## Functions
 
 # Download pt tools if we cannot find them
 function check_percona_toolkit {
-  mkdir -p "${PT_DIRECTORY}"
+    mkdir -p "${PT_DIRECTORY}"
 
-  echo "Downloading percona toolkit tools, Check http://www.percona.com/software/percona-toolkit for more details"
-  GETBIN=""
-  if check_binary wget; then
-    GETBIN=(wget --no-verbose -O "${PT_DIRECTORY}")
-  elif check_binary curl; then
-    GETBIN=(curl -sS -o "${PT_DIRECTORY}")
-  else
-    echo "Unable to find curl or wget to download tools."
-    exit 1
-  fi
-
-  echo "Using '${GETBIN[*]}/' to download Percona Toolkit tools"
-
-  # shellcheck disable=SC2043  # Ignore single iteration warning
-  for TOOL in pt-summary pt-pg-summary; do
-    if test -f "${PT_DIRECTORY}/${TOOL}"; then
-      echo "-- Found ${PT_DIRECTORY}/${TOOL}"
+    echo "Downloading percona toolkit tools, Check http://www.percona.com/software/percona-toolkit for more details"
+    GETBIN=""
+    if check_binary wget; then
+        GETBIN=(wget --no-verbose -O "${PT_DIRECTORY}")
+    elif check_binary curl; then
+        GETBIN=(curl -sS -o "${PT_DIRECTORY}")
     else
-      echo "-- Downloading ${TOOL}..."
-      # shellcheck disable=SC2086  # Ignore array expansion warning
-      ${GETBIN[*]}/"${TOOL}" "https://www.percona.com/get/${TOOL}"
+        echo "Unable to find curl or wget to download tools."
+        exit 1
     fi
-  done
 
-  if [[ ! -f "${PT_DIRECTORY}/${PT_TOOLS[0]}" ]]; then
-    echo "Could not download toolkit tools. Please manually download from http://www.percona.com/downloads/percona-toolkit/ and untar"
-    exit 1
-  fi
-  chmod +x "${PT_DIRECTORY}"/pt-*
+    echo "Using '${GETBIN[*]}/' to download Percona Toolkit tools"
+
+    # shellcheck disable=SC2043  # Ignore single iteration warning
+    for TOOL in pt-summary pt-pg-summary; do
+        if test -f "${PT_DIRECTORY}/${TOOL}"; then
+            echo "-- Found ${PT_DIRECTORY}/${TOOL}"
+        else
+            echo "-- Downloading ${TOOL}..."
+            # shellcheck disable=SC2086  # Ignore array expansion warning
+            ${GETBIN[*]}/"${TOOL}" "https://www.percona.com/get/${TOOL}"
+        fi
+    done
+
+    if [[ ! -f "${PT_DIRECTORY}/${PT_TOOLS[0]}" ]]; then
+        echo "Could not download toolkit tools. Please manually download from http://www.percona.com/downloads/percona-toolkit/ and untar"
+        exit 1
+    fi
+    chmod +x "${PT_DIRECTORY}"/pt-*
 }
 
 function check_perl_module {
-  local module=$1
-  if ! perl "-M${module}" -e 1 2>/dev/null; then
-    echo "Missing Perl ${module}"
-    echo "Typical install via apt|yum install perl-Data-Dumper perl-Digest-MD5 perl-DBD-MySQL"
-    echo "You may also need: perl-English perl-Sys-Hostname perl-FindBin"
-    exit 1
-  fi
+    local module=$1
+    if ! perl "-M${module}" -e 1 2> /dev/null; then
+        echo "Missing Perl ${module}"
+        echo "Typical install via apt|yum install perl-Data-Dumper perl-Digest-MD5 perl-DBD-MySQL"
+        echo "You may also need: perl-English perl-Sys-Hostname perl-FindBin"
+        exit 1
+    fi
 }
 
 # Print error if specified binary not found.
 # @param  Binary.
 # Example: check_binary numactl
 function check_binary {
-  local binary=$1
-  if ! which "${binary}" &>/dev/null; then
-    echo -e "\nWARNING: Could not find ${binary} in '${PATH}', or it is not executable."
-    return 1
-  else
-    return 0
-  fi
+    local binary=$1
+    if ! which "${binary}" &> /dev/null; then
+        echo -e "\nWARNING: Could not find ${binary} in '${PATH}', or it is not executable."
+        return 1
+    else
+        return 0
+    fi
 }
 
 # Check if more than 1 pid for database
 # @param process name
 # @param database name
 function check_pids {
-  local dbname=$1
-  shift
-  local daemon=("$@")
+    local dbname=$1
+    shift
+    local daemon=("$@")
 
-  set +e
-  IFS=" " read -r -a pids <<< "$(pidof "${daemon[@]}")"
-  set -e
-  numPids=${#pids[@]}
+    set +e
+    IFS=" " read -r -a pids <<< "$(pidof "${daemon[@]}")"
+    set -e
+    numPids=${#pids[@]}
 
-  if [[ ${numPids} -eq 1 ]]; then
-    PIDTOUSE="${pids[0]}"
-  elif [[ ${numPids} -gt 1 ]] && [[ -z "${PIDTOUSE}" ]]; then
-    echo "Problem:"
-    echo " Found ${#pids[@]} (${pids[*]}) pids for ${dbname}. Are there multiple instances of ${dbname} running?"
-    echo " You need to specify which PID to use by passing '-p <pid>'"
-    exit 1
-  elif [[ ${numPids} -eq 0 ]]; then
-    echo "Problem:"
-    echo "Could not find a ${dbname} PID"
-    exit 1
-  fi
+    if [[ ${numPids} -eq 1 ]]; then
+        PIDTOUSE="${pids[0]}"
+    elif [[ ${numPids} -gt 1 ]] && [[ -z ${PIDTOUSE} ]]; then
+        echo "Problem:"
+        echo " Found ${#pids[@]} (${pids[*]}) pids for ${dbname}. Are there multiple instances of ${dbname} running?"
+        echo " You need to specify which PID to use by passing '-p <pid>'"
+        exit 1
+    elif [[ ${numPids} -eq 0 ]]; then
+        echo "Problem:"
+        echo "Could not find a ${dbname} PID"
+        exit 1
+    fi
 }
 
 ## Db Functions
 # Try to run a query and print error if it fails.
 function check_pgsql_connection {
-  local result
-  result=$(/bin/su postgres -c "echo \"SELECT 1\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
-  if [[ "${result}" != "1" ]]; then
-    echo "Can't connect to psql using '${PSQLBIN} ${DB_CLI_OPTIONS[*]}'"
-    echo "Please confirm connectivity."
-    echo ""
-    exit 1
-  fi
+    local result
+    result=$(/bin/su postgres -c "echo \"SELECT 1\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
+    if [[ ${result} != "1" ]]; then
+        echo "Can't connect to psql using '${PSQLBIN} ${DB_CLI_OPTIONS[*]}'"
+        echo "Please confirm connectivity."
+        echo ""
+        exit 1
+    fi
 }
 
 # Execute an SQL string and write output into a text file
@@ -234,30 +234,30 @@ function check_pgsql_connection {
 # Example:
 # sql_to_file 'Useless list of collations' 'SHOW COLLATIONS' 'collations'
 function sql_to_file {
-  local stat_desc=$1
-  local stat_query=$2
-  local stat_file=$3
-  local stat_database=${4:-postgres}
+    local stat_desc=$1
+    local stat_query=$2
+    local stat_file=$3
+    local stat_database=${4:-postgres}
 
-  # per-database stats get their own file
-  if [[ "${stat_database}" != "global" ]]; then
-    stat_file="db_${stat_database}_${stat_file}"
-  else
-    # if global query, use the postgres database
-    stat_database="postgres"
-  fi
+    # per-database stats get their own file
+    if [[ ${stat_database} != "global" ]]; then
+        stat_file="db_${stat_database}_${stat_file}"
+    else
+        # if global query, use the postgres database
+        stat_database="postgres"
+    fi
 
-  echo " - ${stat_desc} (${stat_database})"
+    echo " - ${stat_desc} (${stat_database})"
 
-  if [[ "${SQLINOUTPUT}" -eq 0 ]]; then
-    echo "-----SQL_NOT_INCLUDED=====" > "${OUT_DIR}/${stat_file}"
-  else
-    # shellcheck disable=SC2086 # Ignore quoting to prevent stat_query from being double parsed
-    echo '-----'${stat_query}'=====' > "${OUT_DIR}/${stat_file}"
-  fi
+    if [[ ${SQLINOUTPUT} -eq 0 ]]; then
+        echo "-----SQL_NOT_INCLUDED=====" > "${OUT_DIR}/${stat_file}"
+    else
+        # shellcheck disable=SC2086 # Ignore quoting to prevent stat_query from being double parsed
+        echo '-----'${stat_query}'=====' > "${OUT_DIR}/${stat_file}"
+    fi
 
-  # Script is executed as root. Use 'su' to run SQL under postgres user
-  /bin/su postgres -c "echo \"${stat_query}\" | \"${PSQLBIN}\" -d ${stat_database} \"${DB_CLI_OPTIONS[*]}\"" 1>> "${OUT_DIR}/${stat_file}"
+    # Script is executed as root. Use 'su' to run SQL under postgres user
+    /bin/su postgres -c "echo \"${stat_query}\" | \"${PSQLBIN}\" -d ${stat_database} \"${DB_CLI_OPTIONS[*]}\"" 1>> "${OUT_DIR}/${stat_file}"
 }
 
 ## Global Pre-flight Checks
@@ -269,14 +269,14 @@ mkdir -p "${OUT_DIR}"
 date -u -Iseconds > "${OUT_DIR}/collect_env_start"
 
 # Don't need to be root if RDS
-if [[ ${ISRDS} -eq 0 ]] && [[ "$(whoami)" != "root" ]] && [[ "${SKIPROOTCHECK}" -ne 1 ]]; then
-  echo "ERROR: $0 must be run by root"
-  exit 1
+if [[ ${ISRDS} -eq 0 ]] && [[ "$(whoami)" != "root" ]] && [[ ${SKIPROOTCHECK} -ne 1 ]]; then
+    echo "ERROR: $0 must be run by root"
+    exit 1
 fi
 
 # If not root, and skipping root check, don't run anything requiring root
-if [[ "$(whoami)" != "root" ]] && [[ "${SKIPROOTCHECK}" -eq 1 ]]; then
-  RUNASROOT=0
+if [[ "$(whoami)" != "root" ]] && [[ ${SKIPROOTCHECK} -eq 1 ]]; then
+    RUNASROOT=0
 fi
 
 set -ue
@@ -304,140 +304,140 @@ set +e
 
 if [[ ${ISRDS} -eq 0 ]]; then
 
-  ## Db Sysconfig Pre
+    ## Db Sysconfig Pre
 
-  ## Main sysconfig
-  echo "Collecting system info... "
+    ## Main sysconfig
+    echo "Collecting system info... "
 
-  cat /proc/cpuinfo > "${OUT_DIR}/cpuinfo"
-  cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > "${OUT_DIR}/scaling_governor" 2>/dev/null
-  cpupower frequency-info > "${OUT_DIR}/cpupower_frequency-info" 2>&1
-  cat /proc/meminfo > "${OUT_DIR}/meminfo"
-  cat /proc/sys/vm/swappiness > "${OUT_DIR}/swappiness"
-  "${PT_DIRECTORY}/pt-summary" > "${OUT_DIR}/pt-summary"
+    cat /proc/cpuinfo > "${OUT_DIR}/cpuinfo"
+    cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > "${OUT_DIR}/scaling_governor" 2> /dev/null
+    cpupower frequency-info > "${OUT_DIR}/cpupower_frequency-info" 2>&1
+    cat /proc/meminfo > "${OUT_DIR}/meminfo"
+    cat /proc/sys/vm/swappiness > "${OUT_DIR}/swappiness"
+    "${PT_DIRECTORY}/pt-summary" > "${OUT_DIR}/pt-summary"
 
-  # Some stuff that only can be collected when ran as OS-root
-  if [[ "${RUNASROOT}" -eq 1 ]]; then
+    # Some stuff that only can be collected when ran as OS-root
+    if [[ ${RUNASROOT} -eq 1 ]]; then
 
-    sysctl -a > "${OUT_DIR}/sysctl" || true
-    dmesg > "${OUT_DIR}/dmesg"
+        sysctl -a > "${OUT_DIR}/sysctl" || true
+        dmesg > "${OUT_DIR}/dmesg"
 
-    # Listening tcp ports
-    if check_binary ss; then
-      ss -nltp >"${OUT_DIR}/tcp_listen_ports"
+        # Listening tcp ports
+        if check_binary ss; then
+            ss -nltp > "${OUT_DIR}/tcp_listen_ports"
+        fi
+
+        # LVM
+        if check_binary lvdisplay; then
+            lvdisplay > "${OUT_DIR}/lvdisplay"
+            lvdisplay -vm > "${OUT_DIR}/lvdisplay_vm"
+        fi
+        if check_binary vgdisplay; then
+            vgdisplay > "${OUT_DIR}/vgdisplay"
+        fi
+        if check_binary pvdisplay; then
+            pvdisplay > "${OUT_DIR}/pvdisplay"
+        fi
+        if check_binary lvs; then
+            lvs --segments > "${OUT_DIR}/lvdisplay_segments"
+        fi
+
+        # Other
+        if check_binary dmidecode; then
+            dmidecode > "${OUT_DIR}/dmidecode"
+        fi
+
+        # collecting cron jobs from crontab, and from /etc/cron.d/
+        find /var/spool/cron/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_spool_users"
+        find /etc/cron.d/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_crond"
+        cat /etc/crontab > "${OUT_DIR}/crontab_etc"
+
     fi
 
-    # LVM
-    if check_binary lvdisplay; then
-      lvdisplay > "${OUT_DIR}/lvdisplay"
-      lvdisplay -vm > "${OUT_DIR}/lvdisplay_vm"
+    # If LVM is being used, but not run as root, we can get the dm-* numbers
+    # by looking at /dev/mapper device numbers.
+    # This is useful when looking at the PCS graphs and trying to match DM disks
+    # with mounted filesystems.
+    test -d /dev/mapper && ls -alhs /dev/mapper/ > "${OUT_DIR}/dev_mapper"
+
+    if check_binary lspci; then
+        lspci > "${OUT_DIR}/lspci"
     fi
-    if check_binary vgdisplay; then
-      vgdisplay > "${OUT_DIR}/vgdisplay"
+    if check_binary ip; then
+        ip addr > "${OUT_DIR}/ip"
     fi
-    if check_binary pvdisplay; then
-      pvdisplay > "${OUT_DIR}/pvdisplay"
+    if check_binary ifconfig; then
+        ifconfig > "${OUT_DIR}/ifconfig"
     fi
-    if check_binary lvs; then
-      lvs --segments > "${OUT_DIR}/lvdisplay_segments"
+    if check_binary netstat; then
+        netstat -s > "${OUT_DIR}/netstat"
     fi
-
-    # Other
-    if check_binary dmidecode; then
-      dmidecode > "${OUT_DIR}/dmidecode"
+    if check_binary route; then
+        route -n > "${OUT_DIR}/route"
     fi
+    # get full options of mounted fs
+    cat /proc/mounts > "${OUT_DIR}/mounts"
 
-    # collecting cron jobs from crontab, and from /etc/cron.d/
-    find /var/spool/cron/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_spool_users"
-    find /etc/cron.d/ -type f -print -exec cat {} \; > "${OUT_DIR}/crontab_crond"
-    cat /etc/crontab > "${OUT_DIR}/crontab_etc"
-
-  fi
-
-  # If LVM is being used, but not run as root, we can get the dm-* numbers
-  # by looking at /dev/mapper device numbers.
-  # This is useful when looking at the PCS graphs and trying to match DM disks
-  # with mounted filesystems.
-  test -d /dev/mapper && ls -alhs /dev/mapper/ > "${OUT_DIR}/dev_mapper"
-
-  if check_binary lspci; then
-    lspci > "${OUT_DIR}/lspci"
-  fi
-  if check_binary ip; then
-    ip addr > "${OUT_DIR}/ip"
-  fi
-  if check_binary ifconfig; then
-    ifconfig > "${OUT_DIR}/ifconfig"
-  fi
-  if check_binary netstat; then
-    netstat -s > "${OUT_DIR}/netstat"
-  fi
-  if check_binary route; then
-    route -n > "${OUT_DIR}/route"
-  fi
-  # get full options of mounted fs
-  cat /proc/mounts > "${OUT_DIR}/mounts"
-
-  # get info related to NUMA
-  if check_binary numactl; then
-    numactl --hardware > "${OUT_DIR}/numa"
-    numactl --show >> "${OUT_DIR}/numa"
-  fi
-  if check_binary numastat; then
-    numastat -m > "${OUT_DIR}/numa_stat"
-  fi
-
-  # lscpu can also provide us numa info
-  if check_binary lscpu; then
-    lscpu > "${OUT_DIR}/lscpu"
-  fi
-
-  # get info related to memory and disk
-  free -m > "${OUT_DIR}/free"
-  df -h > "${OUT_DIR}/df"
-
-  # get oom_score_adj
-  if [[ -f "/proc/${PIDTOUSE}/oom_score_adj" ]]; then
-    cat "/proc/${PIDTOUSE}/oom_score_adj" > "${OUT_DIR}/oom_score_adj"
-  fi
-
-  function get_disk_of_file_info {
-    local filename="$1"
-    local outfile="$2"
-    local datadisk
-
-    echo "${filename}" > "${OUT_DIR}/${outfile}"
-
-    # fast fail if cannot get file info
-    if ! df "${filename}" &>/dev/null; then
-      echo "!! Cannot read '${filename}', thus no disk info for file path. Need to run as root?"
-      return 1
+    # get info related to NUMA
+    if check_binary numactl; then
+        numactl --hardware > "${OUT_DIR}/numa"
+        numactl --show >> "${OUT_DIR}/numa"
+    fi
+    if check_binary numastat; then
+        numastat -m > "${OUT_DIR}/numa_stat"
     fi
 
-    # have permissions to read
-    grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 >> "${OUT_DIR}/${outfile}"
-    datadisk=$(readlink -f "$(grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 | cut -d' ' -f1)")
-
-    # shellcheck disable=SC2129  # Ignore multi-exec redirect
-    echo "${datadisk}" >> "${OUT_DIR}/${outfile}"
-    df -P -h "$(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}')" | tail -n 1 >> "${OUT_DIR}/${outfile}"
-
-    # Need to be root to exec du on most directories
-    if [[ "${RUNASROOT}" -eq 1 ]]; then
-        du -sh "${filename}" >> "${OUT_DIR}/${outfile}"
+    # lscpu can also provide us numa info
+    if check_binary lscpu; then
+        lscpu > "${OUT_DIR}/lscpu"
     fi
 
-    if echo "${datadisk} "| grep 'dm-' >/dev/null 2>&1; then
-        pvs | grep "$(lvdisplay | awk '/LV Name/{n=$3} /VG Name/{v=$3} /Block device/{d=$3; sub(".*:","dm-",d); print d,n,v;}' | grep "${datadisk/\/dev\//}" | awk '{print $3}')" | awk '{print $1}' >> "${OUT_DIR}/datadir"
+    # get info related to memory and disk
+    free -m > "${OUT_DIR}/free"
+    df -h > "${OUT_DIR}/df"
+
+    # get oom_score_adj
+    if [[ -f "/proc/${PIDTOUSE}/oom_score_adj" ]]; then
+        cat "/proc/${PIDTOUSE}/oom_score_adj" > "${OUT_DIR}/oom_score_adj"
     fi
-  }
 
-  ## Db Sysconfig Post
-  get_disk_of_file_info "${variables_datadir}" datadir
+    function get_disk_of_file_info {
+        local filename="$1"
+        local outfile="$2"
+        local datadisk
 
-  echo "Done."
+        echo "${filename}" > "${OUT_DIR}/${outfile}"
+
+        # fast fail if cannot get file info
+        if ! df "${filename}" &> /dev/null; then
+            echo "!! Cannot read '${filename}', thus no disk info for file path. Need to run as root?"
+            return 1
+        fi
+
+        # have permissions to read
+        grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 >> "${OUT_DIR}/${outfile}"
+        datadisk=$(readlink -f "$(grep " $(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}') " /proc/mounts | tail -n 1 | cut -d' ' -f1)")
+
+        # shellcheck disable=SC2129  # Ignore multi-exec redirect
+        echo "${datadisk}" >> "${OUT_DIR}/${outfile}"
+        df -P -h "$(df -P "${filename}" | awk 'NR==1 {next} {print $6; exit}')" | tail -n 1 >> "${OUT_DIR}/${outfile}"
+
+        # Need to be root to exec du on most directories
+        if [[ ${RUNASROOT} -eq 1 ]]; then
+            du -sh "${filename}" >> "${OUT_DIR}/${outfile}"
+        fi
+
+        if echo "${datadisk} " | grep 'dm-' > /dev/null 2>&1; then
+            pvs | grep "$(lvdisplay | awk '/LV Name/{n=$3} /VG Name/{v=$3} /Block device/{d=$3; sub(".*:","dm-",d); print d,n,v;}' | grep "${datadisk/\/dev\//}" | awk '{print $3}')" | awk '{print $1}' >> "${OUT_DIR}/datadir"
+        fi
+    }
+
+    ## Db Sysconfig Post
+    get_disk_of_file_info "${variables_datadir}" datadir
+
+    echo "Done."
 else
-  echo "Environment is RDS. Not collecting system info."
+    echo "Environment is RDS. Not collecting system info."
 fi
 
 ## Database Information
@@ -452,13 +452,13 @@ echo -n "Collecting PGSQL info... "
 # MAJOR_VERSION=$(/bin/su postgres -c "echo \"SELECT SUBSTRING(version() FROM '[0-9]+')\" | \"${PSQLBIN}\" \"${OPTIONS[*]}\" 2> /dev/null")
 # MINOR_VERSION=$(/bin/su postgres -c "echo \"SELECT RIGHT(SUBSTRING(version() FROM '\.[0-9]+'), -1)\" | \"${PSQLBIN}\" \"${OPTIONS[*]}\" 2> /dev/null")
 
-if [[ "${ISRDS}" -eq 1 ]]; then
-  echo "Environment is RDS. Not collecting datadir sizes"
-elif [[ -d "${variables_datadir}" ]]; then
-  du -sh "${variables_datadir}" >> "${OUT_DIR}/data_usage_raw"
-  echo "Done."
+if [[ ${ISRDS} -eq 1 ]]; then
+    echo "Environment is RDS. Not collecting datadir sizes"
+elif [[ -d ${variables_datadir} ]]; then
+    du -sh "${variables_datadir}" >> "${OUT_DIR}/data_usage_raw"
+    echo "Done."
 else
-  echo "Can't find the datadir; Will skip collection raw data info."
+    echo "Can't find the datadir; Will skip collection raw data info."
 fi
 
 #############################
@@ -488,8 +488,8 @@ mapfile -t db_list < <(sed '1d' "${OUT_DIR}"/db_list)
 # loop over the databases. execute queries for each db.
 for db_to_process in "${db_list[@]}"; do
 
-  ## Duplicate indexes
-  sql="
+    ## Duplicate indexes
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -518,10 +518,10 @@ for db_to_process in "${db_list[@]}"; do
     sum(pg_relation_size(idx)) DESC
   ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Duplicate Indexes' "${sql}" duplicateIndexes.csv "${db_to_process}"
+    sql_to_file 'Duplicate Indexes' "${sql}" duplicateIndexes.csv "${db_to_process}"
 
-  ## Foreign keys without indexes
-  sql="
+    ## Foreign keys without indexes
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -564,10 +564,10 @@ for db_to_process in "${db_list[@]}"; do
     pg_catalog.pg_relation_size(c.conrelid) DESC
   ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Foreign Keys without Indexes' "${sql}" foreignKeysWithoutIndexes.csv "${db_to_process}"
+    sql_to_file 'Foreign Keys without Indexes' "${sql}" foreignKeysWithoutIndexes.csv "${db_to_process}"
 
-  ## Index Bloat
-  sql="
+    ## Index Bloat
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -742,10 +742,10 @@ for db_to_process in "${db_list[@]}"; do
     nspname, tblname, idxname
   ) to stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Index Bloat' "${sql}" indexBloat.csv "${db_to_process}"
+    sql_to_file 'Index Bloat' "${sql}" indexBloat.csv "${db_to_process}"
 
-  ## Index Bloat v2
-  sql="
+    ## Index Bloat v2
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -837,10 +837,10 @@ for db_to_process in "${db_list[@]}"; do
     wastedbytes DESC
   ) to stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Index Bloat v2' "${sql}" indexBloatV2.csv "${db_to_process}"
+    sql_to_file 'Index Bloat v2' "${sql}" indexBloatV2.csv "${db_to_process}"
 
-  ## Index Usage
-  sql="
+    ## Index Usage
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -867,10 +867,10 @@ for db_to_process in "${db_list[@]}"; do
     3
   ) to stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Index Usage' "${sql}" indexUsage.csv "${db_to_process}"
+    sql_to_file 'Index Usage' "${sql}" indexUsage.csv "${db_to_process}"
 
-  ## Invalid Indexes
-  sql="
+    ## Invalid Indexes
+    sql="
   COPY (
   with table_info as (
     SELECT
@@ -909,22 +909,22 @@ for db_to_process in "${db_list[@]}"; do
     t2
   ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Invalid Indexes' "${sql}" invalidIndexes.csv "${db_to_process}"
+    sql_to_file 'Invalid Indexes' "${sql}" invalidIndexes.csv "${db_to_process}"
 
-  ## Stat User Tables
-  sql="
+    ## Stat User Tables
+    sql="
   COPY ( SELECT current_database(),* FROM pg_stat_user_tables ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Stat User Tables' "${sql}" statUserTables.csv "${db_to_process}"
+    sql_to_file 'Stat User Tables' "${sql}" statUserTables.csv "${db_to_process}"
 
-  ## Stat IO User Tables
-  sql="
+    ## Stat IO User Tables
+    sql="
   COPY ( SELECT current_database(), * FROM pg_statio_user_tables ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Stat IO User Tables' "${sql}" statioUserTables.csv "${db_to_process}"
+    sql_to_file 'Stat IO User Tables' "${sql}" statioUserTables.csv "${db_to_process}"
 
-  ## Table Activity
-  sql="
+    ## Table Activity
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -942,10 +942,10 @@ for db_to_process in "${db_list[@]}"; do
     AND c.relname = s.relname
   ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Table Activity' "${sql}" tableActivity.csv "${db_to_process}"
+    sql_to_file 'Table Activity' "${sql}" tableActivity.csv "${db_to_process}"
 
-  ## Table Bloat
-  sql="
+    ## Table Bloat
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -1068,10 +1068,10 @@ for db_to_process in "${db_list[@]}"; do
     tblname
   ) to stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Table Bloat' "${sql}" tableBloat.csv "${db_to_process}"
+    sql_to_file 'Table Bloat' "${sql}" tableBloat.csv "${db_to_process}"
 
-  ## Table sizes
-  sql="
+    ## Table sizes
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -1093,10 +1093,10 @@ for db_to_process in "${db_list[@]}"; do
     4 desc, 1, 2
   ) TO stdout WITH (FORMAT csv)
   "
-  sql_to_file 'Table Sizes' "${sql}" tableSizes.csv "${db_to_process}"
+    sql_to_file 'Table Sizes' "${sql}" tableSizes.csv "${db_to_process}"
 
-  ## Unused Indexes
-  sql="
+    ## Unused Indexes
+    sql="
   COPY (
   SELECT
     current_database(),
@@ -1121,21 +1121,21 @@ for db_to_process in "${db_list[@]}"; do
     index_size desc
   ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Unused Indexes' "${sql}" unusedIndexes.csv "${db_to_process}"
+    sql_to_file 'Unused Indexes' "${sql}" unusedIndexes.csv "${db_to_process}"
 
-  ## Extension versions
-  sql="
+    ## Extension versions
+    sql="
   COPY ( SELECT name, default_version, installed_version from pg_available_extensions WHERE installed_version IS NOT NULL ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Extension versions' "${sql}" extensionVersions.csv "${db_to_process}"
+    sql_to_file 'Extension versions' "${sql}" extensionVersions.csv "${db_to_process}"
 
-  ## Installed extensions
-  sql="
+    ## Installed extensions
+    sql="
   COPY ( SELECT  * FROM pg_extension ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'Installed extentions' "${sql}" installedExtensions.csv "${db_to_process}"
+    sql_to_file 'Installed extentions' "${sql}" installedExtensions.csv "${db_to_process}"
 
-# End db for-loop
+    # End db for-loop
 done
 
 ## Locks
@@ -1195,29 +1195,29 @@ sql_to_file 'pg_stat_database' "${sql}" statDatabase.csv "global"
 
 ## Stat Statements
 check=$(/bin/su postgres -c "echo \"SELECT COUNT(1) FROM pg_available_extensions WHERE name = 'pg_stat_statements'\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
-if [[ "${check}" -eq 1 ]]; then
-  sql="COPY (SELECT * FROM pg_stat_statements
+if [[ ${check} -eq 1 ]]; then
+    sql="COPY (SELECT * FROM pg_stat_statements
   WHERE dbid = (SELECT datid FROM pg_stat_database where datname = current_database())
   AND query != '<insufficient privilege>') TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'PG Stat Statements' "${sql}" statStatements.csv "global"
+    sql_to_file 'PG Stat Statements' "${sql}" statStatements.csv "global"
 else
-  echo " - !! pg_stat_statements extension not enabled !!"
+    echo " - !! pg_stat_statements extension not enabled !!"
 fi
 
 ## WAL Info
-if [[ "${COLLECT_WALL_STATS}" -eq 1 ]]; then
-  echo " - !! Collecting WAL activity. This takes 5 minutes to execute. !!"
-  sql="
+if [[ ${COLLECT_WALL_STATS} -eq 1 ]]; then
+    echo " - !! Collecting WAL activity. This takes 5 minutes to execute. !!"
+    sql="
   COPY (
   WITH wal_activity AS (SELECT pg_current_wal_insert_lsn() startof, pg_sleep(300), pg_current_wal_insert_lsn() endof)
   SELECT w.startof, w.endof, pg_wal_lsn_diff(w.endof, w.startof) as growth
   FROM wal_activity w
   ) TO stdout WITH (FORMAT csv);
   "
-  sql_to_file 'WAL Info' "${sql}" walinfo.csv "global"
+    sql_to_file 'WAL Info' "${sql}" walinfo.csv "global"
 else
-  echo " -- !! NOT Collecting WAL activity. !!"
+    echo " -- !! NOT Collecting WAL activity. !!"
 fi
 
 #
@@ -1225,13 +1225,13 @@ fi
 #
 date -u -Iseconds > "${OUT_DIR}/collect_env_end"
 
-if [[ "${SKIPTARRESULT}" -eq 0 ]]; then
-  echo "Compressing..."
-  tar czf "${OUT_DIR}".tgz "${OUT_DIR}" && rm -rf "${OUT_DIR}"
-  echo "Filename:" "${OUT_DIR}".tgz
+if [[ ${SKIPTARRESULT} -eq 0 ]]; then
+    echo "Compressing..."
+    tar czf "${OUT_DIR}".tgz "${OUT_DIR}" && rm -rf "${OUT_DIR}"
+    echo "Filename:" "${OUT_DIR}".tgz
 else
-  echo "Skipped results compression."
-  echo "Directory name:" "${OUT_DIR}"
+    echo "Skipped results compression."
+    echo "Directory name:" "${OUT_DIR}"
 fi
 
 echo "All tasks finished."
