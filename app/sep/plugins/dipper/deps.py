@@ -237,7 +237,7 @@ async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
                 "/services/", params={"service_type": service_type.value}
             )
         )
-    logger.info("Supported Dipper services: %s", services)
+    logger.debug("Supported Dipper services: %s", services)
     return services
 
 
