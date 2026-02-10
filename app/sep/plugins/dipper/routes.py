@@ -147,7 +147,7 @@ async def dipper_index(
             },
         ),
     }
-    logger.info("Context for Dipper index page: %s", context)
+    logger.debug("Context for Dipper index page: %s", context)
 
     return templates.TemplateResponse(
         request=request,
