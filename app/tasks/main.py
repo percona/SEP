@@ -81,7 +81,7 @@ async def task_data_not_found_handler(
 ) -> None:
     """Handle exceptions raised when task data is not found in the executor."""
     logger.debug("Task data not found in executor: %s", exc_info=exc)
-    # TODO: Add more details to the exception response
+    # TODO: Add more details to the exception response  # noqa: TD002
     # SEP-733
     raise HTTPGoneException(
         "The requested task data is no longer available in the executor."

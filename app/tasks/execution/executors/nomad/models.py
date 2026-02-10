@@ -217,14 +217,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :rtype: Task
         """
         task = queue_item.task if task is None else task
-        # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD003
+        # TODO: determine scenarios for execution, such as looking up an existing job  # noqa: TD002, TD003
         task.data["ID"] += f"-{slugify(queue_item.execution_request.target)}"
         if queue_item.execution_request.meta:
-            # TODO: target is currently pushed in to meta  # noqa: TD003
+            # TODO: target is currently pushed in to meta  # noqa: TD002, TD003
             queue_item.execution_request.meta["target"] = (
                 queue_item.execution_request.target
             )
-            # TODO: allow templates in more fields, currently only for constraints  # noqa: TD003
+            # TODO: allow templates in more fields, currently only for constraints  # noqa: TD002, TD003
             for meta_var, meta_val in queue_item.execution_request.meta.items():
                 for i, constraint in enumerate(task.data["Constraints"]):
                     meta = "${NOMAD_META_" + meta_var + "}"
@@ -705,7 +705,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             ) > self.timestamp_to_datetime(submit_time)
         return True
 
-    # TODO: Use pydantic models instead of dict for job validation  # noqa: TD003
+    # TODO: Use pydantic models instead of dict for job validation  # noqa: TD002, TD003
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Validate a Nomad job specification.
 
