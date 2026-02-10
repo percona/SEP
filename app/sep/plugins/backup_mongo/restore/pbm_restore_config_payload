@@ -12,7 +12,8 @@ def pbm_creds():
     try:
         with open(creds_path, 'r', encoding='utf-8') as fpt:
             creds = fpt.read().strip()
-    except Exception:
+    except Exception as err:
+        print(f"Error reading PBM credentials from {creds_path}: {err}")
         sys.exit(1)
 
     return creds

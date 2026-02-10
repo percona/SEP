@@ -11,7 +11,8 @@ def pbm_creds():
     try:
         with open(creds_path, 'r', encoding='utf-8') as fpt:
             creds = fpt.read().strip()
-    except Exception:
+    except Exception as err:
+        print(f"Error reading PBM credentials from {creds_path}: {err}")
         sys.exit(1)
 
     return creds
@@ -22,15 +23,10 @@ def pbm():
     os.environ['PBM_MONGODB_URI'] = pbm_creds()
     cmd = ['pbm', 'list']
 
-    try:
-        proc = subprocess.Popen(cmd)
-        proc.wait()
-        ret_code = proc.poll()
-        if ret_code != 0:
-            sys.exit(ret_code)
-
-    except subprocess.CalledProcessError as err:
-        print(f"Command failed with error: {err}")
-        sys.exit(1)
+    proc = subprocess.Popen(cmd)
+    proc.wait()
+    ret_code = proc.poll()
+    if ret_code != 0:
+        sys.exit(ret_code)
 
 pbm()
