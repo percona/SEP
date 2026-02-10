@@ -55,6 +55,8 @@ from app.core.utils.fields import (
     URL,
 )
 
+DEFAULT_SNIPPETS_TASK = "exec-artifact"
+
 
 class SnippetSudoOption(EnumFieldMixin, Enum):
     """Enumerate options for executing a snippet with sudo."""
@@ -217,8 +219,8 @@ class SnippetInterpreterConfig(BaseModel):
     """
 
     command: str
-    task: str = "exec-artifact"
-    task_with_requirements: str = "exec-artifact"
+    task: str = DEFAULT_SNIPPETS_TASK
+    task_with_requirements: str = DEFAULT_SNIPPETS_TASK
 
     @model_validator(mode="before")
     @classmethod

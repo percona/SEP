@@ -251,7 +251,7 @@ def get_dipper_execution_meta(
     script_source: Annotated[str, Depends(get_dipper_script_source)],
     execution_args: Annotated[BaseSnippetArgs, Depends(get_dipper_execution_args)],
 ) -> SnippetExecutionMeta:
-    """Create the exec-artifact task metadata payload for Dipper executions."""
+    """Create the task metadata payload for Dipper executions."""
     snippet_filename = f"dipper/{service.id}/{script.filename}"
     interpreter = script.execution_interpreter
     if script.sudo == SnippetSudoOption.ALWAYS or getattr(

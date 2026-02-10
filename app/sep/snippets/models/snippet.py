@@ -64,6 +64,7 @@ from app.core.utils.fields import (
 )
 from app.core.utils.pydantic import CustomFieldMetadata
 from app.sep.snippets.config import (
+    DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
     SnippetInterpreterConfig,
     snippets_settings,
@@ -411,7 +412,7 @@ class BaseSnippet(BaseModel):
         return interpreter_config.command
 
     @property
-    def execution_task_name(self) -> str | None:
+    def execution_task_name(self) -> str:
         """Get the task name for executing the snippet.
 
         :return: The task name for executing the snippet, or None if no interpreter is
@@ -420,7 +421,7 @@ class BaseSnippet(BaseModel):
         """
         interpreter_config = self._get_execution_interpreter_config(self.path)
         if interpreter_config is None:
-            return None
+            return DEFAULT_SNIPPETS_TASK
         if self.requirements:
             return interpreter_config.task_with_requirements
         return interpreter_config.task

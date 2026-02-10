@@ -165,7 +165,7 @@ async def dipper_execute(
     service_id: int,
     collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
 ) -> RedirectResponse:
-    """Dispatch an exec-artifact job for the selected service."""
+    """Dispatch a dipper task for the selected service."""
     await tasks_api.post(
         f"/execute/{script.execution_task_name}",
         json={"meta": execution_meta.model_dump(by_alias=True, exclude_none=True)},
