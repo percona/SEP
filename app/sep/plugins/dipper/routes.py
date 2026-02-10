@@ -26,6 +26,8 @@ from app.sep.plugins.dipper.deps import (
     get_dipper_script_filename,
     has_pmm_script,
     resolve_executor_host_for_service,
+    resolve_pmm_executor_host,
+    SupportedDipperServices,
 )
 from app.sep.plugins.dipper.models import DipperScript
 from app.sep.snippets.models.snippet import SnippetExecutionMeta
@@ -39,38 +41,23 @@ templates = sep_settings.TEMPLATES
 ExecutionMetaDep = Annotated[SnippetExecutionMeta, Depends(get_dipper_execution_meta)]
 
 
-async def _list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
-    services: list[dict] = []
-    for service_type in DIPPER_SCRIPT_BY_SERVICE_TYPE:
-        services.extend(
-            await inventory_api.get(
-                "/services/", params={"service_type": service_type.value}
-            )
-        )
-    return services
-
-
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def dipper_index(
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
+    supported_services: SupportedDipperServices,
     tasks_api: TaskAPI,
     executor_hosts: ExecutorHosts,
     service_id: int | None = None,
     collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
 ) -> HTMLResponse:
     """Render the Dipper page with service selection and execution history."""
-    context["services"] = await _list_supported_services(inventory_api)
-    context["selected_service_id"] = service_id
-    context["selected_service"] = None
-    context["script"] = None
-    context["script_preview"] = None
-    context["script_form"] = None
-    context["history_tasks"] = []
-    context["running_tasks"] = []
-    context["collector_type"] = collector_type
-    context["pmm_available"] = False
+    context |= {
+        "services": supported_services,
+        "selected_service_id": service_id,
+        "collector_type": collector_type,
+    }
 
     if service_id is None:
         return templates.TemplateResponse(
@@ -92,12 +79,9 @@ async def dipper_index(
         )
 
     selected_service = CreatedService.model_validate(service_data)
-    context["selected_service"] = selected_service
-    context["pmm_available"] = has_pmm_script(selected_service.type)
 
     script_filename = get_dipper_script_filename(selected_service.type, collector_type)
     script = await DipperScript.from_path(script_filename, update_meta=True)
-    context["script"] = script
     try:
         preview = await script.get_preview()
         context["script_preview"] = syntax_highlight(
@@ -106,20 +90,26 @@ async def dipper_index(
     except UnicodeDecodeError:
         logger.exception("Could not decode dipper script for preview")
 
-    resolved_host = resolve_executor_host_for_service(executor_hosts, selected_service)
-    if resolved_host is None:
-        messages.warning(
-            request,
-            "Could not map selected service to a Nomad client hostname; execution may fail.",
+    default_executor_host = None
+    if collector_type == CollectorTypeEnum.PMM:
+        resolved_executor_host = resolve_pmm_executor_host(executor_hosts)
+        if resolved_executor_host is None:
+            messages.warning(
+                request,
+                "Failed to resolve PMM server to an execution target; please select manually.",
+            )
+            default_executor_host = resolve_executor_host_for_service(
+                executor_hosts, selected_service
+            )
+    else:
+        resolved_executor_host = resolve_executor_host_for_service(
+            executor_hosts, selected_service
         )
-        resolved_host = next(iter(executor_hosts.keys()), "")
-
-    context["resolved_executor_host"] = resolved_host
-    execute_url = f"/dipper/execute?service_id={selected_service.id}&collector_type={collector_type.value}"
-    context["script_form"] = script.to_form(
-        list({resolved_host}),
-        execute_url,
-    )
+        if resolved_executor_host is None:
+            messages.warning(
+                request,
+                "Could not map selected service to an execution target; please select manually.",
+            )
 
     snippet_filename = f"dipper/{selected_service.id}/{script.filename}"
     history_tasks = await tasks_api.get(
@@ -133,14 +123,31 @@ async def dipper_index(
             )
         except HTTPException:
             history["available_files"] = []
-    context["history_tasks"] = history_tasks
-    context["running_tasks"] = await tasks_api.get(
-        f"/{script.execution_task_name}/history/",
-        params={
-            "snippet_filename": snippet_filename,
-            "status": TaskHistoryStatusEnum.RUNNING,
-        },
-    )
+
+    context |= {
+        "is_pmm_script_available": has_pmm_script(selected_service.type),
+        "selected_service": selected_service,
+        "script": script,
+        "script_execution_url": str(
+            request.url_for("dipper_execute").include_query_params(
+                service_id=selected_service.id, collector_type=collector_type.value
+            )
+        ),
+        "executor_hosts": {resolved_executor_host}
+        if resolved_executor_host
+        else set(executor_hosts),
+        "resolved_executor_host": resolved_executor_host,
+        "default_executor_host": default_executor_host,
+        "history_tasks": history_tasks,
+        "running_tasks": await tasks_api.get(
+            f"/{script.execution_task_name}/history/",
+            params={
+                "snippet_filename": snippet_filename,
+                "status": TaskHistoryStatusEnum.RUNNING,
+            },
+        ),
+    }
+    logger.info("Context for Dipper index page: %s", context)
 
     return templates.TemplateResponse(
         request=request,

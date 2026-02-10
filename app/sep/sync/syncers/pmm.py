@@ -18,10 +18,10 @@
 import logging
 from collections import defaultdict
 from types import TracebackType
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
 from async_lru import _LRUCacheWrapper, alru_cache
-from pydantic import ConfigDict, ValidationError
+from pydantic import ConfigDict, field_validator, ValidationError
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
@@ -619,3 +619,22 @@ class PMMSyncer(BaseSyncer):
             and service.node.source == SourceEnum.PMM
             and service.external_id
         )
+
+    @field_validator("pmm", mode="before")
+    @classmethod
+    def merge_global_pmm_setting(cls, value: Any) -> Any:
+        """Merge the global PMM settings with any provided PMM settings.
+
+        This validator checks if the provided value is a dictionary and, if so, merges
+        it with the global PMM settings defined in `sep_settings`. This allows for any
+        PMMSyncer instance to override specific PMM settings while still inheriting
+        defaults from the global configuration.
+
+        :param value: The PMM settings value to validate and merge.
+        :type value: Any
+        :return: The merged PMM settings.
+        :rtype: dict[str, Any] | PMMSettings
+        """
+        if isinstance(value, dict):
+            return sep_settings.PMM.model_dump() | value
+        return value

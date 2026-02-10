@@ -87,7 +87,7 @@ default:
       VERIFY_SSL: true
       FRONTEND: null # Optional: PMM frontend URL for links
       API_KEY: null  # Set via environment variable or .env file
-      NOMAD_NODE: null  # Optional: explicit Nomad node for PMM tasks
+      EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer

@@ -21,11 +21,11 @@ from pathlib import Path
 from app import BASE_DIR
 
 
-def resolve_relative_path(path: PathLike | str) -> Path:
+def resolve_relative_path(path: str | bytes | PathLike) -> Path:
     """Resolve relative paths with BASE_DIR.
 
     :param path: The relative path to resolve.
-    :type path: PathLike | str
+    :type path: str | bytes | PathLike
     :return: The resolved absolute path.
     :rtype: Path
     :raises ValueError: If the path cannot be resolved.

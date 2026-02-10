@@ -35,9 +35,11 @@
         width: 100%;
     }
 
+    {% if resolved_executor_host is defined and resolved_executor_host %}
     #snippetExecuteForm fieldset:first-of-type {
         display: none;
     }
+    {% endif %}
     </style>
 {% endblock style %}
 {% block behaviours_optimized_extra %}
@@ -80,6 +82,15 @@
                     navigateWithParams(serviceId, this.value);
                 });
             }
+
+            {% if default_executor_host is defined and default_executor_host %}
+            const executorHostSelector = '#snippetExecuteForm .executorHostSelect';
+
+            if ($(executorHostSelector + " option[value='{{ default_executor_host }}']").length > 0) {
+                $(executorHostSelector).val('{{ default_executor_host }}');
+            }
+            {% endif %}
+
         })();
     </script>
 {% endblock behaviours_optimized_extra %}
@@ -103,7 +114,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                {% if pmm_available %}
+                {% if is_pmm_script_available %}
                     <div class="collector-select-wrapper">
                         <label for="dipperCollectorSelect">Collector</label>
                         <select id="dipperCollectorSelect" name="collector_type">
@@ -129,10 +140,12 @@
                 <dd>
                     <pre>{{ selected_service.node.name }} / {{ selected_service.node.address }}</pre>
                 </dd>
-                <dt>Executor Host</dt>
-                <dd>
-                    <pre>{{ resolved_executor_host }}</pre>
-                </dd>
+                {%- if resolved_executor_host is defined and resolved_executor_host %}
+                    <dt>Executor Host</dt>
+                    <dd>
+                        <pre>{{ resolved_executor_host }}</pre>
+                    </dd>
+                {%- endif %}
                 <dt>Script</dt>
                 <dd>
                     <pre>{{ script.filename }}</pre>
@@ -149,11 +162,7 @@
         </section>
         <section>
             <h3>Execute</h3>
-            {% if script_form %}
-                {{ script_form | safe }}
-            {% else %}
-                <p>Execution form is unavailable.</p>
-            {% endif %}
+            {{ script.to_form(executor_hosts, script_execution_url) | safe }}
         </section>
         {% if running_tasks %}
             <section id="running-tasks">

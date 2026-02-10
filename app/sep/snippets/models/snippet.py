@@ -125,6 +125,7 @@ def get_executor_hosts_fieldset(executor_hosts: frozenset[str]) -> FieldsetEleme
                 title="Select the hostname of the target system for snippet execution.",
                 label="Select host",
                 required=True,
+                classes={"executorHostSelect"},
             ),
         ],
     )
@@ -159,7 +160,7 @@ class FilePreview(NamedTuple):
         its content, limited to a certain number of characters and lines.
 
         :param path: The file path to read for generating the preview.
-        :type path: PathLike
+        :type path: str | bytes | PathLike
         :param max_chars: The maximum number of characters to include in the preview.
         :type max_chars: PositiveInt
         :param max_lines: The maximum number of lines to include in the preview.
@@ -519,7 +520,7 @@ class BaseSnippet(BaseModel):
         )
 
     @staticmethod
-    async def get_meta_by_path(path: PathLike) -> dict[str, Any]:
+    async def get_meta_by_path(path: str | bytes | PathLike) -> dict[str, Any]:
         """Extract metadata from a snippet file.
 
         This method reads the first few lines of the file and extracts metadata
@@ -527,7 +528,7 @@ class BaseSnippet(BaseModel):
         extracted metadata.
 
         :param path: The path to the snippet file.
-        :type path: PathLike
+        :type path: str | bytes | PathLike
         :return: A dictionary containing the extracted metadata.
         :rtype: dict[str, Any]
         """
@@ -735,21 +736,24 @@ class BaseSnippet(BaseModel):
             (guess_mime_type(snippet_path), SnippetFilterType.MIME_TYPE),
         ]
         snippet_filters.sort(
-            key=lambda f: f in interpreters
-            and len(interpreters) - list(interpreters).index(f),
+            key=lambda f: (
+                f in interpreters and len(interpreters) - list(interpreters).index(f)
+            ),
             reverse=True,
         )
         return interpreters.get(snippet_filters[0])
 
     @classmethod
-    async def from_path(cls, path: PathLike, *, update_meta: bool = False) -> Self:
+    async def from_path(
+        cls, path: str | bytes | PathLike, *, update_meta: bool = False
+    ) -> Self:
         """Create a new Snippet instance from a file path.
 
         This method computes the MD5 hash digest of the file at the specified path and
         instantiates a new Snippet with the filename and computed MD5 hash.
 
         :param path: A path-like object pointing to the snippet file.
-        :type path: PathLike
+        :type path: str | bytes | PathLike
         :param update_meta: Whether to update the snippet's metadata after creation.
             Defaults to False.
         :type update_meta: bool

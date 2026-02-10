@@ -335,7 +335,7 @@ class MySQLSyncer(BaseTaskSyncer):
                 logger.exception("Failed to decode JSON line: %s", line[:200])
 
     @alru_cache
-    async def get_task_target(self, host: str) -> str:
+    async def get_task_target(self, host: str, name: str | None = None) -> str:
         """Return the target host for the task from the host.
 
         This method returns `self.force_executor_host` if set. Otherwise, it tries to
@@ -344,12 +344,16 @@ class MySQLSyncer(BaseTaskSyncer):
 
         :param host: The target host.
         :type host: str
+        :param name: The target name. Defaults to `None`.
+        :type name: str | None
         :return: The target host for the task.
         :rtype: str
         """
         if self.force_executor_host:
             return self.force_executor_host
         available_hosts = await self.get_available_hosts()
+        if name and name in available_hosts:
+            return name
         for target, address in available_hosts.items():
             if address == host:
                 return target
@@ -503,7 +507,9 @@ class MySQLSyncer(BaseTaskSyncer):
             if self.can_sync_service(service)
         }
         script_config = self.build_script_config(*hosts)
-        task_target = await self.get_task_target(created_node.address)
+        task_target = await self.get_task_target(
+            created_node.address, created_node.name
+        )
         services_index = await self._fetch_inventory_index(
             script_config, task_target, _MySQLSyncResultEntityTypeEnum.SERVICES
         )
@@ -556,7 +562,9 @@ class MySQLSyncer(BaseTaskSyncer):
             ].get(created_service.address)
         ) is None:
             script_config = self.build_script_config(created_service.address)
-            task_target = await self.get_task_target(created_service.node.address)
+            task_target = await self.get_task_target(
+                created_service.node.address, created_service.name
+            )
             services_index = await self._fetch_inventory_index(
                 script_config, task_target, _MySQLSyncResultEntityTypeEnum.SERVICES
             )
@@ -645,7 +653,9 @@ class MySQLSyncer(BaseTaskSyncer):
             ].pop(self._build_entity_address(host, created_schema.name), None)
         ) is None:
             script_config = self.build_script_config(host, schema=created_schema.name)
-            task_target = await self.get_task_target(created_service.node.address)
+            task_target = await self.get_task_target(
+                created_service.node.address, created_service.name
+            )
             schemas_index = await self._fetch_inventory_index(
                 script_config,
                 task_target,
@@ -737,7 +747,9 @@ class MySQLSyncer(BaseTaskSyncer):
         )
         meta = await self.build_meta(
             script_config,
-            await self.get_task_target(created_service.node.address),
+            await self.get_task_target(
+                created_service.node.address, created_service.name
+            ),
         )
         task_result = await self.wait_for_task_output(**meta)
         table_data = json.loads(task_result.stdout)[

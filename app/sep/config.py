@@ -193,8 +193,8 @@ class PMMSettings(BaseModel):
     :type API_KEY: str | None
     :param VERIFY_SSL: Whether to verify SSL certificates.
     :type VERIFY_SSL: bool
-    :param NOMAD_NODE: Explicit Nomad node name or address for PMM tasks.
-    :type NOMAD_NODE: str | None
+    :param EXECUTION_TARGET: Explicit execution target name or address for PMM tasks.
+    :type EXECUTION_TARGET: str | None
     """
 
     model_config = ConfigDict(extra="allow")
@@ -202,7 +202,7 @@ class PMMSettings(BaseModel):
     FRONTEND: StrHttpUrl | None = None
     API_KEY: str | None = None
     VERIFY_SSL: bool = True
-    NOMAD_NODE: str | None = None
+    EXECUTION_TARGET: str | None = None
 
     @cached_property
     def hostname(self) -> str | None:
