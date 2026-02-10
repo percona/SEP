@@ -162,6 +162,7 @@ exclude_dirs = [
     "build",
     "venv",
     "app/tests/",
+    "app/sep/plugins/dipper/payloads/",
 ]
 
 [tool.ruff]
