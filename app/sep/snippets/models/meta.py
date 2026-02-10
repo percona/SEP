@@ -167,7 +167,7 @@ class SnippetMetaParameter(BaseModel):
     """
 
     name: NonEmptyStr = Field(
-        ..., pattern=r"^\w(?:[\w-]+\w)?\w*$", serialization_alias="title"
+        ..., pattern=r"^\w(?:[\w-]*\w)?$", serialization_alias="title"
     )
     py_type: SnippetMetaParameterType = Field(
         SnippetMetaParameterType.STR, validation_alias="type"
