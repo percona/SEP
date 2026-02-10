@@ -59,6 +59,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
 logger = logging.getLogger(__name__)
@@ -341,6 +342,7 @@ class SEPSettings(BaseYamlAppSettings):
         )
         env.filters |= DEFAULT_FILTERS
         env.globals["syntax_highlight_css"] = syntax_highlight_css
+        env.globals["get_messages"] = messages.get_messages
         return env
 
     @computed_field
