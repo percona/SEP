@@ -749,7 +749,7 @@ class MySQLSyncer(BaseTaskSyncer):
         meta = await self.build_meta(
             script_config,
             await self.get_task_target(
-                created_service.node.address, created_service.name
+                created_service.node.address, created_service.node.name
             ),
         )
         task_result = await self.wait_for_task_output(**meta)
