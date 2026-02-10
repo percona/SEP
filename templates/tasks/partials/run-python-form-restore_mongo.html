@@ -58,8 +58,12 @@
                         Payload
                         {% if nomad_payload_rule == "required" %}(required){% endif %}
                     </label>
-                    <textarea name="payload" id="payload" cols="80" rows="30" {% if nomad_payload_rule=="required" %} required{%
-                endif %} class="form-input"></textarea>
+                    <textarea name="payload"
+                              id="payload"
+                              cols="80"
+                              rows="30"
+                              class="form-input"
+                              {% if nomad_payload_rule=="required" %}required{% endif %}></textarea>
                 </div>
             {% endif %}
         </fieldset>

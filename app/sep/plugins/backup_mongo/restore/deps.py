@@ -1,5 +1,6 @@
 """Define dependencies for the Restores plugin."""
 
+import logging
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -22,15 +23,28 @@ from app.sep.plugins.backup_mongo.restore.models import (
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
+logger = logging.getLogger(__name__)
+
 
 def _parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
-    """Parse mongod location map from YAML string."""
+    """Parse mongod location map from YAML string.
+
+    Expects a YAML object (mapping). Returns None and logs a warning if the input
+    is invalid YAML or does not parse to a dictionary.
+    """
     try:
         mongod_location_map = yaml.safe_load(location_map_str)
-        if isinstance(mongod_location_map, dict):
-            return mongod_location_map
     except yaml.YAMLError:
-        pass  # Ignore invalid YAML
+        logger.warning("Failed to parse mongod location map YAML: %s", location_map_str)
+        return None
+    if mongod_location_map is None:
+        return None
+    if isinstance(mongod_location_map, dict):
+        return mongod_location_map
+    logger.warning(
+        "Mongod location map must be a dictionary/mapping, got: %s",
+        type(mongod_location_map),
+    )
     return None
 
 

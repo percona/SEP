@@ -12,11 +12,7 @@
         white-space: break-spaces;
     }
 
-        {
-            {
-            syntax_highlight_css(style="sas")
-        }
-    }
+    {{ syntax_highlight_css(style="sas") }}
     </style>
     <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
 {% endblock style %}

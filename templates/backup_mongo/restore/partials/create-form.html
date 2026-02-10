@@ -264,13 +264,13 @@
         }
     }
 
-    // Clear empty number inputs before submission to avoid sending empty strings
+    // Omit empty number inputs from submission so the server does not receive empty strings
     if (form) {
         form.addEventListener('submit', function(e) {
             const numberInputs = form.querySelectorAll('input[type="number"]');
             numberInputs.forEach(input => {
                 if (input.value === '' || input.value === null) {
-                    input.value = '';
+                    input.removeAttribute('name');
                 }
             });
         });
