@@ -225,7 +225,11 @@ async def get_validated_execution_args(
         return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
     except ValidationError as exc:
         messages.from_validation_error(
-            request, exc, "Error executing snippet", request.url.path
+            request,
+            exc,
+            "Error executing snippet",
+            request.url.path,
+            exclude_types=("none_required",),
         )
         raise _get_snippet_redirect_exc(request, referer) from None
 

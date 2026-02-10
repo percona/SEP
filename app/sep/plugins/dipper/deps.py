@@ -162,7 +162,11 @@ async def get_dipper_execution_args(
     except ValidationError as exc:
         logger.debug("Invalid execution args: %s", exc_info=True)
         messages.from_validation_error(
-            request, exc, "Error executing script", request.url.path
+            request,
+            exc,
+            "Error executing script",
+            request.url.path,
+            exclude_types=("none_required",),
         )
         raise HTTPRedirectException(
             location=referer
