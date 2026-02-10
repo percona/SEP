@@ -292,7 +292,7 @@ class BaseSnippet(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     size: PositiveInt
     md5_digest: str = Field(min_length=32, max_length=32)
-    meta: dict[str, Any] = {}
+    meta: dict[str, Any] = Field(default_factory=dict)
 
     def __repr__(self) -> str:
         return f"'{self.filename}' ({self.md5_digest})"
