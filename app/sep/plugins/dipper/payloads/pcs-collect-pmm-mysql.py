@@ -262,7 +262,7 @@ class CollectPmmError(Exception):
 #
 # Base Functions
 #
-def get_graph_window(startstr: str, endstr: str) -> list:
+def get_graph_window(startstr: str, endstr: str) -> tuple[datetime.datetime, datetime.datetime]:
     # Defaults to 24hrs ago
     end = datetime.datetime.now(tz=datetime.UTC)
     start = end - datetime.timedelta(seconds=86400)
