@@ -30,7 +30,7 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.plugins.dipper.models import DipperScript
-from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippetArgs, SnippetExecutionMeta
 
 logger = logging.getLogger(__name__)
@@ -250,6 +250,10 @@ def get_dipper_execution_meta(
     """Create the exec-artifact task metadata payload for Dipper executions."""
     snippet_filename = f"dipper/{service.id}/{script.filename}"
     interpreter = script.execution_interpreter
+    if script.sudo == SnippetSudoOption.ALWAYS or getattr(
+        execution_args, execution_args.sudo_field, False
+    ):
+        interpreter = f"sudo {interpreter}"
     if interpreter is None:
         raise HTTPBadRequestException(detail="No interpreter configured for script")
     return SnippetExecutionMeta(
