@@ -51,7 +51,7 @@ declare DUMP_FILES=0
 declare TABLE_FILTER=""
 
 function usage() {
-    cat <<EOF
+    cat << EOF
 Usage: $0 [OPTIONS]
 
 Options:
@@ -81,34 +81,32 @@ EOF
 #   2: the query
 #
 function mysql_exec() {
-  local args=$1
-  local query=$2
-  local retvalue
-  local retoutput
+        local args=$1
+        local query=$2
+        local retvalue
+        local retoutput
 
-  retoutput=$(printf "[client]\nuser=${USER}\npassword=\"${PASSWORD}\"\nhost=${HOST}\nport=${PORT}"  \
-      | mysql --defaults-file=/dev/stdin --protocol=tcp \
-            ${args} -e "${query}")
-  retvalue=$?
+        retoutput=$(printf "[client]\nuser=${USER}\npassword=\"${PASSWORD}\"\nhost=${HOST}\nport=${PORT}" |
+                mysql --defaults-file=/dev/stdin --protocol=tcp \
+                        ${args} -e "${query}")
+        retvalue=$?
 
-  if [[ -n $retoutput ]]; then
-    retoutput+="\n"
-  fi
-  printf "${retoutput//%/%%}"
-  return $retvalue
+        if [[ -n $retoutput ]]; then
+                retoutput+="\n"
+        fi
+        printf "${retoutput//%/%%}"
+        return $retvalue
 }
-
-
 
 
 function parse_args() {
     local go_out=""
 
-   # TODO: kennt, what happens if we don't have a functional getopt()?
+    # TODO: kennt, what happens if we don't have a functional getopt()?
     # Check if we have a functional getopt(1)
     if ! getopt --test; then
         go_out="$(getopt --options=h --longoptions=defaults-file:,runtime,main,stats,monitor,files,table::,help \
-        --name="$(basename "$0")" -- "$@")"
+            --name="$(basename "$0")" -- "$@")"
         if [[ $? -ne 0 ]]; then
             # no place to send output
             echo "Script error: getopt() failed" >&2
@@ -117,56 +115,59 @@ function parse_args() {
         eval set -- "$go_out"
     fi
 
-    for arg
-    do
+    for arg; do
         case "$arg" in
-            -- ) shift; break;;
-            --defaults-file )
-                if [[ -z "$2" || "$2" == --* ]]; then
+            --)
+                shift
+                break
+                ;;
+            --defaults-file)
+                if [[ -z $2 || $2 == --* ]]; then
                     echo "Error: --defaults-file requires an argument."
                     usage
                 fi
                 DEFAULTS_FILE=$2
                 shift 2
                 ;;
-            --runtime )
+            --runtime)
                 shift
                 RUNTIME_OPTION=" LIKE 'runtime_%'"
                 DUMP_ALL=0
                 DUMP_MAIN=1
                 ;;
-            --main )
+            --main)
                 shift
                 DUMP_ALL=0
                 DUMP_MAIN=1
                 ;;
-            --stats )
+            --stats)
                 shift
                 DUMP_ALL=0
                 DUMP_STATS=1
                 ;;
-            --monitor )
+            --monitor)
                 shift
                 DUMP_ALL=0
                 DUMP_MONITOR=1
                 ;;
-            --files )
+            --files)
                 shift
                 DUMP_ALL=0
                 DUMP_FILES=1
                 ;;
-            --table )
-                if [[ -z "$2" || "$2" == --* ]]; then
+            --table)
+                if [[ -z $2 || $2 == --* ]]; then
                     echo "Error: --table requires an argument."
                     usage
                 fi
                 TABLE_FILTER=$2
                 shift 2
                 ;;
-            -h | --help )
+            -h | --help)
                 usage
                 exit 1
-                break;;
+                break
+                ;;
         esac
     done
 
@@ -188,9 +189,8 @@ parse_args "$@"
 
 if [[ $DUMP_ALL -eq 1 || $DUMP_MAIN -eq 1 ]]; then
     echo "............ DUMPING MAIN DATABASE ............"
-    TABLES=$(mysql_exec -BN "SHOW TABLES $RUNTIME_OPTION" 2>/dev/null)
-    for table in $TABLES
-    do
+    TABLES=$(mysql_exec -BN "SHOW TABLES $RUNTIME_OPTION" 2> /dev/null)
+    for table in $TABLES; do
         if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
             continue
         fi
@@ -206,8 +206,7 @@ fi
 if [[ $DUMP_ALL -eq 1 || $DUMP_STATS -eq 1 ]]; then
     echo "............ DUMPING STATS DATABASE ............"
     TABLES=$(mysql_exec -BN "SHOW TABLES FROM stats" 2> /dev/null)
-    for table in $TABLES
-    do
+    for table in $TABLES; do
         if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
             continue
         fi
@@ -223,8 +222,7 @@ fi
 if [[ $DUMP_ALL -eq 1 || $DUMP_MONITOR -eq 1 ]]; then
     echo "............ DUMPING MONITOR DATABASE ............"
     TABLES=$(mysql_exec -BN "SHOW TABLES FROM monitor" 2> /dev/null)
-    for table in $TABLES
-    do
+    for table in $TABLES; do
         if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
             continue
         fi
@@ -239,12 +237,12 @@ fi
 
 if [[ $DUMP_ALL -eq 1 || $DUMP_FILES -eq 1 ]]; then
     if [[ -z $TABLE_FILTER ]]; then
-        DATADIR=$(mysql_exec -BN "SELECT variable_value FROM global_variables WHERE variable_name='admin-datadir'" 2>/dev/null)
+        DATADIR=$(mysql_exec -BN "SELECT variable_value FROM global_variables WHERE variable_name='admin-datadir'" 2> /dev/null)
         if [[ -z $DATADIR ]]; then
             DATADIR="/var/lib/proxysql"
         fi
 
-        HOST_PRIORITY_CONTENT=$(cat "${DATADIR}/host_priority.conf" 2>/dev/null)
+        HOST_PRIORITY_CONTENT=$(cat "${DATADIR}/host_priority.conf" 2> /dev/null)
         if [[ -n $HOST_PRIORITY_CONTENT ]]; then
             echo "............ DUMPING HOST PRIORITY FILE ............"
             echo "$HOST_PRIORITY_CONTENT"
@@ -252,7 +250,7 @@ if [[ $DUMP_ALL -eq 1 || $DUMP_FILES -eq 1 ]]; then
             echo ""
         fi
 
-        ADMIN_CNF_CONTENT=$(cat "$DEFAULTS_FILE" 2>/dev/null)
+        ADMIN_CNF_CONTENT=$(cat "$DEFAULTS_FILE" 2> /dev/null)
         if [[ -n $ADMIN_CNF_CONTENT ]]; then
             echo "............ DUMPING PROXYSQL ADMIN CNF FILE ............"
             echo "$ADMIN_CNF_CONTENT"
