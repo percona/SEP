@@ -200,9 +200,12 @@
                                 <span class="label">Select a Database Host:</span>
                                 <span class="select-input-wrapper">
                                     {% if services|length > 0 %}
+                                        {% set db_host = task.get("db_host_for_display", task["host"]) %}
+                                        {% set executor_host_ip = task.get("executor_host_ip") %}
                                         {% set matched_service_list = [] %}
                                         {% for service in services %}
-                                            {% if task["host"] == service.node.address and task["port"] == service.port %}
+                                            {% set addr_match = (db_host == service.node.address) or (executor_host_ip and executor_host_ip == service.node.address) %}
+                                            {% if addr_match and task["port"] == service.port %}
                                                 {% do matched_service_list.append(1) %}
                                             {% endif %}
                                         {% endfor %}
@@ -212,10 +215,11 @@
                                                 Select a database host
                                             </option>
                                             {% if matched_service_list|length == 0 %}
-                                                <option value="-1" selected>Unknown({{ task["host"] }}:{{ task["port"] }})</option>
+                                                <option value="-1" selected>Unknown({{ db_host }}:{{ task["port"] }})</option>
                                             {% endif %}
                                             {% for service in services %}
-                                                {% set is_selected = task["host"] == service.node.address and task["port"] == service.port %}
+                                                {% set addr_match = (db_host == service.node.address) or (executor_host_ip and executor_host_ip == service.node.address) %}
+                                                {% set is_selected = addr_match and task["port"] == service.port %}
                                                 <option value="{{ service.id }}" {% if is_selected %}selected{% endif %}>
                                                     {{ service.name }} ({{ service.node_id }})
                                                 </option>
@@ -978,9 +982,38 @@
     let rsyncVisible = false;
 
     const source_data = { "host": "{{ task.host }}", "port": "{{ task.port }}" };
+    const executor_host = "{{ task.hostname }}";
+    const executor_hosts_dict = {{ executor_hosts_dict | default({}) | tojson }};
+    const executor_host_ip = executor_hosts_dict[executor_host] || null;
+    const backup_type = "{{ task.backup_type }}";
+    const services_data = [
+        {% for service in services %}
+        { "id": {{ service.id }}, "node_address": {{ service.node.address | tojson }}, "port": {{ service.port or 3306 }} }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
     const matched = {
         serviceId: null
     };
+
+    function getHostsForInventoryCheck() {
+        if (source_data.host === 'localhost' || source_data.host === '127.0.0.1') {
+            const candidates = [executor_host];
+            if (executor_host_ip) candidates.push(executor_host_ip);
+            if (executor_host !== '127.0.0.1') candidates.push('127.0.0.1');
+            return candidates;
+        }
+        return [source_data.host];
+    }
+
+    function findMatchingServiceId() {
+        const hostsToTry = getHostsForInventoryCheck();
+        const portMatch = (s) => String(s.port) === String(source_data.port);
+        for (const host of hostsToTry) {
+            const svc = services_data.find(s => s.node_address === host && portMatch(s));
+            if (svc) return String(svc.id);
+        }
+        return null;
+    }
 
     const compressionWrapper = document.getElementById('compression_algorithm_wrapper');
     const compressCheckbox = document.getElementById('compress');
@@ -1128,18 +1161,21 @@
     }
 
     function updateEditButtonState() {
-        const selectElementValues = [
-            serviceSelect.value
-        ];
-
-        const hasInvalidValue = selectElementValues.includes("-1");
+        const hasInvalidValue = serviceSelect.value === "-1";
         editButton.disabled = !form.checkValidity() || hasInvalidValue;
     }
 
     function initSource() {
-        const selectedServiceId = serviceSelect.value;
-        if (selectedServiceId === "-1") {
-            matched.serviceId = "-1";
+        let selectedServiceId = serviceSelect.value;
+        if (selectedServiceId === "" || selectedServiceId === "-1") {
+            const matchingId = findMatchingServiceId();
+            if (matchingId) {
+                serviceSelect.value = matchingId;
+                selectedServiceId = matchingId;
+                matched.serviceId = matchingId;
+            } else {
+                matched.serviceId = selectedServiceId || null;
+            }
         } else {
             matched.serviceId = selectedServiceId;
         }
