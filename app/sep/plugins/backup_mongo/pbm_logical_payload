@@ -3,16 +3,24 @@
 import subprocess
 import os
 import sys
+import yaml
 
 
 def _creds_path():
-    """Path to MongoDB URI credentials file """
-    path = os.environ.get('PBM_CREDENTIALS_PATH')
-    if path:
-        return path
+    """ Path to MongoDB URI credentials file """
+    config_yaml = os.environ.get('NOMAD_META_CONFIG')
+    if config_yaml:
+        try:
+            config = yaml.safe_load(config_yaml)
+            if config:
+                path = config.get('credentials_path')
+                if path:
+                    return path
+        except Exception:
+            pass
     envhome = os.environ.get('HOME')
     if not envhome:
-        print("PBM credentials path not set (PBM_CREDENTIALS_PATH) and HOME is unset", file=sys.stderr)
+        print('PBM credentials path not set (credentials_path in backup config) and HOME is unset', file=sys.stderr)
         sys.exit(1)
     return f'{envhome}/.mongodb_uri'
 
@@ -40,7 +48,7 @@ def pbm():
             sys.exit(ret_code)
 
     except subprocess.CalledProcessError as err:
-        print(f"Command failed with error: {err}")
+        print(f'Command failed with error: {err}')
         sys.exit(1)
 
 pbm()
