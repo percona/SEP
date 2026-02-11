@@ -13,24 +13,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define path-related utilities."""
-
-from os import PathLike
-from pathlib import Path
-
-from app import BASE_DIR
+"""Define base exceptions for task execution."""
 
 
-def resolve_relative_path(path: str | bytes | PathLike) -> Path:
-    """Resolve relative paths with BASE_DIR.
-
-    :param path: The relative path to resolve.
-    :type path: str | bytes | PathLike
-    :return: The resolved absolute path.
-    :rtype: Path
-    :raises ValueError: If the path cannot be resolved.
-    """
-    try:
-        return BASE_DIR / path
-    except TypeError as exc:
-        raise ValueError(f"Unable to resolve path: {path}") from exc
+class TaskDataNotFoundInExecutorError(Exception):
+    """Define exception for when task data is not found in executor."""

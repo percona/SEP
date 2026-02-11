@@ -28,6 +28,13 @@ repos:
         language: python
         additional_dependencies: ["cssbeautifier==1.15.1"]
         files: ^(?!.*\.min\.css$).*\.css$
+      - id: update-installer-checksum
+        name: Update sep_installer.sh checksum
+        description: "Update sep_installer.sha256 when sep_installer.sh changes"
+        entry: sh -c 'sha256sum sep_installer.sh > sep_installer.sha256'
+        language: system
+        files: ^sep_installer\.sh$
+        pass_filenames: false
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: 745eface02aef23e168a8afb6b5737818efbea95  # v0.11.0.1
