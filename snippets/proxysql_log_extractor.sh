@@ -71,7 +71,7 @@ usage() {
     echo "the provided timestamp."
     echo ""
     echo "Arguments:"
-    echo "  --time \"<YYYY-MM-DD HH:MM:SS>\"   The central timestamp to focus on (required)."
+    echo '  --time "<YYYY-MM-DD HH:MM:SS>"   The central timestamp to focus on (required).'
     echo "  --minutes <minutes>                The number of minutes before and after the timestamp to include (required)."
     echo "  --log-file <path/to/log>           Optional. Path to the ProxySQL log file. Defaults to /var/lib/proxysql/proxysql.log."
     echo "  --output <file|stdout>             Optional. Where to send the output. Use 'stdout' to print to the terminal (default), or 'file' to write the output to a file named by the timestamp."
@@ -81,12 +81,12 @@ usage() {
 detect_proxysql_errorlog() {
 
     for cfg in /etc/proxysql.cnf /etc/proxysql/proxysql.cnf "$HOME/.config/proxysql/proxysql.cnf"; do
-        if [[ -f "$cfg" ]]; then
-            CFG_LOG=$(grep -E '^\s*errorlog\s*=' "$cfg" \
-                | head -n1 \
-                | cut -d'=' -f2 \
-                | tr -d '" ')
-            if [[ -n "$CFG_LOG" ]]; then
+        if [[ -f $cfg ]]; then
+            CFG_LOG=$(grep -E '^\s*errorlog\s*=' "$cfg" |
+                head -n1 |
+                cut -d'=' -f2 |
+                tr -d '" ')
+            if [[ -n $CFG_LOG ]]; then
                 echo "$CFG_LOG"
                 return
             fi
@@ -99,48 +99,58 @@ detect_proxysql_errorlog() {
 TIME_ARG=""
 MINUTES_ARG=""
 LOG_FILE_ARG=""
-OUTPUT_MODE="stdout"  # default
+OUTPUT_MODE="stdout" # default
 
 # Parse named arguments
-while [[ "$#" -gt 0 ]]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
         --time)
-            TIME_ARG="$2"; shift 2 ;;
+            TIME_ARG="$2"
+            shift 2
+            ;;
         --minutes)
-            MINUTES_ARG="$2"; shift 2 ;;
+            MINUTES_ARG="$2"
+            shift 2
+            ;;
         --log-file)
-            LOG_FILE_ARG="$2"; shift 2 ;;
+            LOG_FILE_ARG="$2"
+            shift 2
+            ;;
         --output)
-            OUTPUT_MODE="$2"; shift 2 ;;
-        -h|--help)
-            usage ;;
+            OUTPUT_MODE="$2"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            ;;
         *)
             echo "Unknown argument: $1"
-            usage ;;
+            usage
+            ;;
     esac
 done
 
-[[ -z "$TIME_ARG" || -z "$MINUTES_ARG" ]] && usage
+[[ -z $TIME_ARG || -z $MINUTES_ARG ]] && usage
 
-if ! [[ "$MINUTES_ARG" =~ ^[0-9]+$ ]] || [[ "$MINUTES_ARG" -le 0 ]]; then
+if ! [[ $MINUTES_ARG =~ ^[0-9]+$ ]] || [[ $MINUTES_ARG -le 0 ]]; then
     echo "Error: --minutes must be a positive integer"
     exit 1
 fi
 
-if [[ -n "$LOG_FILE_ARG" ]]; then
+if [[ -n $LOG_FILE_ARG ]]; then
     PROXYSQL_LOG="$LOG_FILE_ARG"
 else
     PROXYSQL_LOG="$(detect_proxysql_errorlog)"
 fi
 
-if [[ ! -f "$PROXYSQL_LOG" || ! -r "$PROXYSQL_LOG" ]]; then
+if [[ ! -f $PROXYSQL_LOG || ! -r $PROXYSQL_LOG ]]; then
     echo "Error: Cannot read ProxySQL log file: $PROXYSQL_LOG"
     exit 1
 fi
 
 echo "Using ProxySQL log file: $PROXYSQL_LOG" >&2
 
-INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2>/dev/null) || {
+INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null) || {
     echo "Invalid time format"
     exit 1
 }
@@ -148,7 +158,7 @@ INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2>/dev/null) || {
 START_EPOCH=$((INPUT_EPOCH - (MINUTES_ARG * 60)))
 END_EPOCH=$((INPUT_EPOCH + (MINUTES_ARG * 60)))
 
-if [[ "$OUTPUT_MODE" == "file" ]]; then
+if [[ $OUTPUT_MODE == "file" ]]; then
     OUTPUT_FILE="proxysql_log_${INPUT_EPOCH}.log"
 fi
 
@@ -169,10 +179,10 @@ BEGIN { print_flag = 0 }
 {
     if (print_flag) print
 }
-' "$PROXYSQL_LOG" \
-| if [[ "$OUTPUT_MODE" == "file" ]]; then
-      tee "$OUTPUT_FILE"
-      echo "Output written to $OUTPUT_FILE" >&2
-  else
-      cat
-  fi
+' "$PROXYSQL_LOG" |
+    if [[ $OUTPUT_MODE == "file" ]]; then
+        tee "$OUTPUT_FILE"
+        echo "Output written to $OUTPUT_FILE" >&2
+    else
+        cat
+    fi
