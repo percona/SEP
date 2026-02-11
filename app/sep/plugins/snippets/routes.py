@@ -64,7 +64,8 @@ async def snippets_detail(
 ) -> HTMLResponse:
     """Retrieve and display information about a snippet."""
     history_tasks = await tasks_api.get(
-        "/exec-artifact/history/", params={"snippet_filename": snippet.filename}
+        f"/{snippet.execution_task_name}/history/",
+        params={"snippet_filename": snippet.filename},
     )
     for history in history_tasks:
         try:
@@ -83,7 +84,7 @@ async def snippets_detail(
         "executor_hosts": list(executor_hosts),
         "history_tasks": history_tasks,
         "running_tasks": await tasks_api.get(
-            "/exec-artifact/history/",
+            f"/{snippet.execution_task_name}/history/",
             params={
                 "snippet_filename": snippet.filename,
                 "status": TaskHistoryStatusEnum.RUNNING,
@@ -168,8 +169,10 @@ async def snippets_execute(
         "Execution meta for snippet %r: %s", snippet.filename, execution_request_meta
     )
     await tasks_api.post(
-        "/execute/exec-artifact",
-        json={"meta": execution_request_meta.model_dump(by_alias=True)},
+        f"/execute/{snippet.execution_task_name}",
+        json={
+            "meta": execution_request_meta.model_dump(by_alias=True, exclude_none=True)
+        },
     )
     return RedirectResponse(
         request.url_for("snippets_detail", snippet_filename=snippet.filename),
