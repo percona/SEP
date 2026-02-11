@@ -18,6 +18,7 @@
 __all__ = [
     "add_message",
     "error",
+    "from_validation_error",
     "get_messages",
     "info",
     "success",
@@ -26,9 +27,12 @@ __all__ = [
 
 import logging
 from collections import OrderedDict
+from collections.abc import Iterable
 
+from pydantic import ValidationError
 from starlette.requests import Request
 
+from app.core.utils.pydantic import loc_to_dot_sep
 from app.sep.middleware.messages.config import messages_settings
 from app.sep.middleware.messages.models import Message, MessageLevel
 
@@ -218,3 +222,45 @@ def error(
     :type sticky: bool
     """
     add_message(request, MessageLevel.ERROR, text, path_pattern, sticky=sticky)
+
+
+def from_validation_error(
+    request: Request,
+    exc: ValidationError,
+    base_text: str = "Error",
+    path_pattern: str | None = None,
+    *,
+    sticky: bool = False,
+    exclude_types: Iterable[str] = (),
+) -> None:
+    """Add error messages to the request from a Pydantic ValidationError.
+
+    This function iterates over the errors in the provided ValidationError and adds
+    error messages to the request's message queue. It allows for customization of the
+    base text of the message, an optional path pattern, and the ability to exclude
+    certain error types.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param exc: The Pydantic ValidationError instance.
+    :type exc: ValidationError
+    :param base_text: The base text for the error messages, defaults to "Error".
+    :type base_text: str
+    :param path_pattern: An optional path regex pattern associated with the messages.
+        If provided, the messages will only be shown on requests matching this pattern.
+    :type path_pattern: str | None
+    :param sticky: Whether the messages should persist until explicitly dismissed,
+        defaults to False.
+    :type sticky: bool
+    :param exclude_types: An iterable of error types to exclude from messaging.
+        Defaults to an empty tuple.
+    :type exclude_types: Iterable[str]
+    """
+    for err in exc.errors():
+        if err.get("type") not in exclude_types:
+            err_msg = base_text
+            if err_loc := err.get("loc", ()):
+                err_msg += f" [{loc_to_dot_sep(err_loc)}]"
+            if err_msg_detail := err.get("msg"):
+                err_msg += f": {err_msg_detail}"
+            error(request, err_msg, path_pattern, sticky=sticky)

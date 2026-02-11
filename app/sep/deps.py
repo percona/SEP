@@ -78,7 +78,7 @@ def get_base_url(request: Request) -> URL:
     """
     if settings.BASE_URL is not None:
         return settings.BASE_URL
-    return request.url.replace(path="")
+    return request.url.replace(path="", query="", fragment="")
 
 
 BaseURL = Annotated[URL, Depends(get_base_url)]
@@ -238,8 +238,7 @@ async def get_default_context(
         "plugins": sep_settings.PLUGINS,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
-        "messages": messages.get_messages(request),
-        "pmm_url": sep_settings.PMM_FRONTEND,
+        "pmm_url": sep_settings.PMM.frontend,
         "footer_text": sep_settings.FOOTER_TEXT,
         "user_id_to_username": await get_username_mapping(),
     }
