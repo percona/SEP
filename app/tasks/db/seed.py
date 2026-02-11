@@ -115,7 +115,7 @@ NOMAD_RUN_PYTHON = {
                         "command": "sh",
                         "args": [
                             "-c",
-                            "python3 -m venv ${NOMAD_ALLOC_DIR}/venv;"
+                            "python3 -m venv --copies ${NOMAD_ALLOC_DIR}/venv;"
                             "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
                         ],
                     },
@@ -253,6 +253,122 @@ NOMAD_EXEC_ARTIFACT = {
     ],
 }
 
+NOMAD_EXEC_PYTHON_ARTIFACT = {
+    "ID": "exec-python-artifact",
+    "Name": "exec-python-artifact",
+    "Type": "batch",
+    "Datacenters": ["*"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": [
+            "target",
+            "snippet_source",
+            "interpreter",
+            "access_token",
+            "md5_checksum",
+        ],
+        "MetaOptional": ["args", "requirements"],
+    },
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "PreventRescheduleOnLost": True,
+            "ReschedulePolicy": {"Attempts": 0},
+            "Tasks": [
+                {
+                    "Name": "prepare-env",
+                    "Lifecycle": {"hook": "prestart", "sidecar": False},
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "sh",
+                        "args": [
+                            "-c",
+                            "python3 -m venv --copies ${NOMAD_ALLOC_DIR}/venv;"
+                            "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_requirements" }}',
+                            "DestPath": "requirements.txt",
+                        },
+                    ],
+                },
+                {
+                    "Name": "run-script",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "sh",
+                        "args": [
+                            "-c",
+                            "PYTHON_CMD=${NOMAD_ALLOC_DIR}/venv/bin/python3;"
+                            'case "${NOMAD_META_interpreter}" in "sudo "*) '
+                            'PYTHON_CMD="sudo ${NOMAD_ALLOC_DIR}/venv/bin/python3";; esac;'
+                            "xargs --arg-file ${NOMAD_TASK_DIR}/args_file -- "
+                            "$PYTHON_CMD -u ${NOMAD_TASK_DIR}/script",
+                        ],
+                        "work_dir": "${NOMAD_TASK_DIR}/output_files",
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": '{{ env "NOMAD_META_args" }}',
+                            "DestPath": "local/args_file",
+                        },
+                        {
+                            "EmbeddedTmpl": ".keep",
+                            "DestPath": "local/output_files/.keep",
+                        },
+                    ],
+                    "Artifacts": [
+                        {
+                            "GetterSource": "${NOMAD_META_snippet_source}",
+                            "GetterMode": "file",
+                            "RelativeDest": "local/script",
+                            "GetterHeaders": {
+                                "Authorization": "Bearer ${NOMAD_META_access_token}"
+                            },
+                            "GetterOptions": {
+                                "checksum": "md5:${NOMAD_META_md5_checksum}",
+                            },
+                            "GetterInsecure": True,
+                        }
+                    ],
+                },
+                {
+                    "Name": "clean-up",
+                    "Lifecycle": {"hook": "poststop", "sidecar": False},
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "rm",
+                        "args": [
+                            "-rf",
+                            "${NOMAD_ALLOC_DIR}/venv",
+                            "requirements.txt",
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                },
+            ],
+        },
+    ],
+}
+
 SYSTEM_TASKS = [
     Task(
         name="run-command",
@@ -272,6 +388,14 @@ SYSTEM_TASKS = [
     Task(
         name="exec-artifact",
         data=NOMAD_EXEC_ARTIFACT,
+        protected=True,
+        anonymize_mask=None,
+        output_files_path="run-script/local/output_files",
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name="exec-python-artifact",
+        data=NOMAD_EXEC_PYTHON_ARTIFACT,
         protected=True,
         anonymize_mask=None,
         output_files_path="run-script/local/output_files",
