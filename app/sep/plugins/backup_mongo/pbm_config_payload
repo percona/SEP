@@ -4,17 +4,27 @@ import subprocess
 import os
 import sys
 
+
+def _creds_path():
+    """ Path to MongoDB URI credentials file """
+    path = os.environ.get('PBM_CREDENTIALS_PATH')
+    if path:
+        return path
+    envhome = os.environ.get('HOME')
+    if not envhome:
+        print("PBM credentials path not set (PBM_CREDENTIALS_PATH) and HOME is unset", file=sys.stderr)
+        sys.exit(1)
+    return f'{envhome}/.mongodb_uri'
+
+
 def pbm_creds():
     """ PBM Credentials """
-    envhome = os.environ['HOME']
-    creds_path = f'{envhome}/.mongodb_uri'
+    creds_path = _creds_path()
     try:
         with open(creds_path, 'r', encoding='utf-8') as fpt:
-            creds = fpt.read().strip()
+            return fpt.read().strip()
     except Exception:
         sys.exit(1)
-
-    return creds
 
 def pbm():
     """ PBM Config Payload """
