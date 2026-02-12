@@ -706,6 +706,20 @@ class TestPMMSyncerFilter:
             ({"custom_labels": {}}, True),
             ({}, True),
             ({"labels": {"other": "value"}}, True),
+            (
+                {
+                    "labels": {"other": "value"},
+                    "custom_labels": {"sep_sync": "disabled"},
+                },
+                False,
+            ),
+            (
+                {
+                    "labels": {"sep_sync": "enabled"},
+                    "custom_labels": {"sep_sync": "disabled"},
+                },
+                False,
+            ),
         ],
     )
     def test_filter_sep_sync_disabled(self, item, expected):

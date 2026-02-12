@@ -522,7 +522,7 @@ class PMMSyncer(BaseSyncer):
         :return: True if the item should be included, False if it should be filtered out.
         :rtype: bool
         """
-        labels = item.get("labels") or item.get("custom_labels") or {}
+        labels = {**item.get("labels", {}), **item.get("custom_labels", {})}
         return labels.get("sep_sync") != "disabled"
 
     @alru_cache
@@ -575,15 +575,16 @@ class PMMSyncer(BaseSyncer):
         for node in syncable_nodes.values():
             await self.delete_node(node)
 
-    async def fetch_node(self, created_node: CreatedNode) -> Node:
+    async def fetch_node(self, created_node: CreatedNode) -> Node | None:
         """Fetch updated data for a specific node.
 
         Retrieve the latest information for the specified node from the PMM API.
+        Returns None if the node is filtered out (e.g., has sep_sync: disabled).
 
         :param created_node: The node instance to fetch updated data for.
         :type created_node: CreatedNode
-        :return: The updated node data.
-        :rtype: Node
+        :return: The updated node data, or None if filtered out.
+        :rtype: Node | None
         """
         logger.debug(
             "Fetching node from PMM with external id %s",
