@@ -15,11 +15,13 @@
 
 """Define SEP settings."""
 
+import logging
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
 from string import Template
 from typing import Any, ClassVar, Literal, Self
+from urllib.parse import urlparse
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
@@ -34,6 +36,7 @@ from pydantic import (
     model_validator,
     ValidationError,
 )
+from pydantic_core.core_schema import ValidationInfo
 
 from app import __summary__, __version__
 from app.core.config import (
@@ -56,7 +59,10 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
+
+logger = logging.getLogger(__name__)
 
 
 class Plugin(BaseCaseInsensitiveModel):
@@ -177,6 +183,40 @@ class CsrfSettings(BaseModel):
     TOKEN_LOCATION: str = "body"  # noqa: S105
 
 
+class PMMSettings(BaseLowercaseModel):
+    """Define centralized PMM configuration.
+
+    :param endpoint: The PMM server URL.
+    :type endpoint: StrHttpUrl | None
+    :param frontend: The PMM frontend URL.
+    :type frontend: StrHttpUrl | None
+    :param api_key: API key for PMM authentication.
+    :type api_key: str | None
+    :param verify_ssl: Whether to verify SSL certificates.
+    :type verify_ssl: bool
+    :param execution_target: Explicit execution target name or address for PMM tasks.
+    :type execution_target: str | None
+    """
+
+    model_config = ConfigDict(extra="allow")
+    endpoint: StrHttpUrl | None = None
+    frontend: StrHttpUrl | None = None
+    api_key: str | None = None
+    verify_ssl: bool = True
+    execution_target: str | None = None
+
+    @cached_property
+    def hostname(self) -> str | None:
+        """Extract and return the hostname from the PMM endpoint.
+
+        :return: The hostname of the PMM endpoint, or None if not set.
+        :rtype: str | None
+        """
+        if self.endpoint:
+            return urlparse(self.endpoint).hostname
+        return None
+
+
 class SyncOptions(BaseLowercaseModel):
     """Represent a synchronizer for the SEP app.
 
@@ -256,8 +296,10 @@ class SEPSettings(BaseYamlAppSettings):
     :type SYNC_REFRESH_TIME: int
     :param PMM_FRONTEND: The URL for the PMM frontend. Defaults to `None`. If not set,
         it will be determined based on the `pmm.endpoint` from the `PMMSyncer` (if
-        available).
+        available). This field is deprecated; use `PMM.FRONTEND` instead.
     :type PMM_FRONTEND: StrHttpUrl | None
+    :param PMM: Centralized PMM configuration options.
+    :type PMM: PMMSettings
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -273,7 +315,11 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
-    PMM_FRONTEND: StrHttpUrl | None = None
+    PMM_FRONTEND: StrHttpUrl | None = Field(
+        None,
+        deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
+    )
+    PMM: PMMSettings = PMMSettings()
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field
@@ -296,6 +342,7 @@ class SEPSettings(BaseYamlAppSettings):
         )
         env.filters |= DEFAULT_FILTERS
         env.globals["syntax_highlight_css"] = syntax_highlight_css
+        env.globals["get_messages"] = messages.get_messages
         return env
 
     @computed_field
@@ -344,13 +391,54 @@ class SEPSettings(BaseYamlAppSettings):
             return Template(v)
         return v
 
+    @field_validator("PMM_FRONTEND", mode="after")
+    @classmethod
+    def warn_deprecated_pmm_field(cls, v: StrHttpUrl | None) -> StrHttpUrl | None:
+        """Warn about the deprecated PMM_FRONTEND field.
+
+        If the `PMM_FRONTEND` field is set, log a warning indicating that it is
+        deprecated and suggest using `PMM.FRONTEND` instead.
+
+        :param v: The value of the `PMM_FRONTEND` field.
+        :type v: StrHttpUrl | None
+        :return: The original value of the `PMM_FRONTEND` field.
+        :rtype: StrHttpUrl | None
+        """
+        if v is not None:
+            logger.warning(
+                "SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead."
+            )
+        return v
+
+    @field_validator("PMM")
+    @classmethod
+    def fallback_to_deprecated_frontend(
+        cls, v: PMMSettings, info: ValidationInfo
+    ) -> PMMSettings:
+        """Fallback to deprecated PMM_FRONTEND if PMM.FRONTEND is not set.
+
+        If `PMM.FRONTEND` is not set, check if the deprecated `PMM_FRONTEND` field
+        has a value and use it to set `PMM.FRONTEND`.
+
+        :param v: The PMMSettings instance being validated.
+        :type v: PMMSettings
+        :param info: The validation info containing context.
+        :type info: ValidationInfo
+        :return: The updated PMMSettings instance.
+        :rtype: PMMSettings
+        """
+        if v.frontend is None and (pmm_frontend := info.data.get("PMM_FRONTEND")):
+            v.frontend = pmm_frontend
+        return v
+
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:
         """Integrate extra keyword arguments into synchronizers and set PMM_FRONTEND.
 
         Merge additional keyword arguments from `SYNCER_EXTRA_KWARGS` into each
-        synchronizer in `SYNCERS` and update the list accordingly. If `PMM_FRONTEND` is
-        not already set, check if `PMMSyncer` is enabled and use the `pmm.endpoint`.
+        synchronizer in `SYNCERS` and update the list accordingly. If the PMM
+        endpoint is not set and a `PMMSyncer` is found with an endpoint,
+        extract and validate it to set the centralized PMM endpoint.
 
         :return: The updated `SEPSettings` instance with modified `SYNCERS`.
         :rtype: Self
@@ -361,14 +449,26 @@ class SEPSettings(BaseYamlAppSettings):
             deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
             syncers.append(SyncOptions.model_validate(syncer_data))
             try:
-                if (
-                    self.PMM_FRONTEND is None
-                    and syncer_data["syncer"].endswith("PMMSyncer")
-                    and (pmm_endpoint := syncer_data.get("pmm", {}).get("endpoint"))
+                if syncer_data["syncer"].endswith("PMMSyncer") and (
+                    pmm_data := syncer_data.get("pmm")
                 ):
-                    self.PMM_FRONTEND = run_pydantic_type_validator(
-                        StrHttpUrl, pmm_endpoint
-                    )
+                    if self.PMM.endpoint is None and (
+                        pmm_endpoint := pmm_data.get("endpoint")
+                    ):
+                        logger.warning(
+                            "It's recommended to set SEP__PMM__ENDPOINT instead of using the legacy PMMSyncer configuration."
+                        )
+                        self.PMM.endpoint = run_pydantic_type_validator(
+                            StrHttpUrl, pmm_endpoint
+                        )
+                        self.PMM.frontend = self.PMM.frontend or self.PMM.endpoint
+                    if self.PMM.api_key is None and (
+                        pmm_api_key := pmm_data.get("api_key")
+                    ):
+                        logger.warning(
+                            "It's recommended to set SEP__PMM__API_KEY instead of using the legacy PMMSyncer configuration."
+                        )
+                        self.PMM.api_key = pmm_api_key
             except AttributeError:
                 continue
             except ValidationError:

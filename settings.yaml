@@ -86,11 +86,13 @@ default:
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
       NAME: sep.db
+    PMM:
+      ENDPOINT: https://127.0.0.1:8443
+      VERIFY_SSL: true
+      FRONTEND: null # Optional: PMM frontend URL for links
+      EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
     SYNCERS:
       - SYNCER: PMMSyncer
-        PMM:
-          ENDPOINT: https://127.0.0.1:8443
-          VERIFY_SSL: True
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -98,7 +100,6 @@ default:
           - mysql
           - information_schema
     SYNC_REFRESH_TIME: 5  # Browser refresh interval during sync (seconds)
-    PMM_FRONTEND: null
   INVENTORY:
     SSL_KEYFILE: null
     SSL_CERTFILE: null
@@ -149,11 +150,11 @@ development:
         MODULE_NAME: tasks
         URI_PATH: /tasks
         CSS_CLASS: tasks
+    PMM:
+      ENDPOINT: https://127.0.0.1:8443
+      VERIFY_SSL: false
     SYNCERS:
       - SYNCER: PMMSyncer
-        PMM:
-          ENDPOINT: https://127.0.0.1:8443
-          VERIFY_SSL: False
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -234,12 +235,11 @@ production_docker:
     SESSION:
       COOKIE_NAME: casdoorToken
       SECURE: True
+    PMM:
+      ENDPOINT: https://127.0.0.1
+      VERIFY_SSL: false
     SYNCERS:
       - SYNCER: PMMSyncer
-        PMM:
-          API_KEY: "xxx"
-          ENDPOINT: https://127.0.0.1
-          VERIFY_SSL: False
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
