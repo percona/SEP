@@ -17,10 +17,12 @@
 
 from nomad.api.exceptions import BaseNomadException
 
+from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 
-class AllocationNotFoundException(BaseNomadException):
+
+class AllocationNotFoundError(TaskDataNotFoundInExecutorError, BaseNomadException):
     """Define exception for when an allocation is not found."""
 
 
-class JobNotFoundException(BaseNomadException):
+class JobNotFoundError(TaskDataNotFoundInExecutorError, BaseNomadException):
     """Define exception for when a job is not found."""
