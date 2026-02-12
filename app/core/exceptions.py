@@ -55,6 +55,32 @@ class HTTPBadRequestException(HTTPException):
         super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
+class HTTPUnprocessableEntityException(HTTPException):
+    """Define exception raised for unprocessable entity (HTTP 422).
+
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Unprocessable Entity".
+    :type detail: str
+    """
+
+    def __init__(self, detail: str = "Unprocessable Entity") -> None:
+        super().__init__(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail
+        )
+
+
+class HTTPGoneException(HTTPException):
+    """Define exception raised for resource gone (HTTP 410).
+
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Gone".
+    :type detail: str
+    """
+
+    def __init__(self, detail: str = "Gone") -> None:
+        super().__init__(status_code=status.HTTP_410_GONE, detail=detail)
+
+
 class HTTPRedirectException(StarletteHTTPException):
     """Define exception raised for redirects.
 

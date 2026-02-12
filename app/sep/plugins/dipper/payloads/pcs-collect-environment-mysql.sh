@@ -3,6 +3,7 @@
 # ---
 # title: Collect Environment (MySQL)
 # description: Collect diagnostic environment data for a MySQL host and store results in an archive.
+# sudo: optional
 # parameters:
 #   - name: o
 #     label: DB CLI options
@@ -21,11 +22,6 @@
 #     description: Do not create a tar archive after the collection finishes.
 #     type: bool
 #     arg_format: "-t"
-#   - name: r
-#     label: Run without root
-#     description: Run without root privileges (may cause permission denied errors).
-#     type: bool
-#     arg_format: "-r"
 #   - name: p
 #     label: DB PID
 #     description: Use this specific PID when multiple instances are running.
@@ -47,7 +43,7 @@ if [[ -z ${ISRDS} ]]; then
 fi
 PIDTOUSE=""
 RUNASROOT=1
-SKIPROOTCHECK=0
+SKIPROOTCHECK=1
 SKIPTARRESULT=0
 
 ## DB Globals
@@ -100,9 +96,6 @@ while getopts hrto:d:i:p:n: flag; do
             ;;
         t)
             SKIPTARRESULT=1
-            ;;
-        r)
-            SKIPROOTCHECK=1
             ;;
         p)
             PIDTOUSE="${OPTARG}"
@@ -281,12 +274,6 @@ mkdir -p "${OUT_DIR}"
 
 # Start
 date -u -Iseconds > "${OUT_DIR}/collect_env_start"
-
-# Don't need to be root if RDS
-if [[ ${ISRDS} -eq 0 ]] && [[ "$(whoami)" != "root" ]] && [[ ${SKIPROOTCHECK} -ne 1 ]]; then
-    echo "ERROR: $0 must be run by root"
-    exit 1
-fi
 
 # If not root, and skipping root check, don't run anything requiring root
 if [[ "$(whoami)" != "root" ]] && [[ ${SKIPROOTCHECK} -eq 1 ]]; then
