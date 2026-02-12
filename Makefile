@@ -30,8 +30,6 @@ venv: pyproject.toml poetry.lock
 build: venv app/
 	@source "${VENV_BIN}"/activate; "${POETRY}" build --format wheel --output dist
 
-ui-audit:
-	@./ui-audit.sh
 ui-install:
 	pnpm install --frozen-lockfile
 ui-build:
@@ -68,13 +66,15 @@ djlint: venv
 
 lint: ruff djlint
 
-audit: bandit pip-audit
+audit: bandit pip-audit ui-audit
 
 run-pre-commit: venv
 	@"${VENV_BIN}"/pre-commit run --all-files
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off
+ui-audit:
+	@./ui-audit.sh
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
