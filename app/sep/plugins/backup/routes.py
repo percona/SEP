@@ -98,6 +98,25 @@ async def backups_detail(
 
     parsed_task_data = parse_backup_task_data(task.model_dump())
 
+    host = server_config["HOST"]
+    backup_type = BackupType(server_config["BACKUP_TYPE"]).name
+    db_host_for_display = (
+        meta["target"]
+        if host in ("localhost", "127.0.0.1") and server_config["BACKUP_TYPE"] == "X"
+        else host
+    )
+
+    try:
+        executor_hosts = await tasks_api.get("/hosts/")
+        executor_host_ip = (
+            executor_hosts.get(meta["target"])
+            if isinstance(executor_hosts, dict)
+            else None
+        )
+    except HTTPException:
+        executor_hosts = {}
+        executor_host_ip = None
+
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -106,9 +125,11 @@ async def backups_detail(
         "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
-        "host": server_config["HOST"],
+        "host": host,
+        "db_host_for_display": db_host_for_display,
+        "executor_host_ip": executor_host_ip,
         "port": server_config.get("PORT") or 3306,
-        "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
+        "backup_type": backup_type,
         "entities": {entity.name: entity.value for entity in decoded_entities},
         "delete_url": request.url_for("backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
@@ -125,12 +146,14 @@ async def backups_detail(
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    try:
-        executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
-    except HTTPException:
-        executor_hosts = {}
-        context["executor_hosts"] = {task_data["hostname"]}
+    context["executor_hosts"] = (
+        set(executor_hosts) | {task_data["hostname"]}
+        if isinstance(executor_hosts, dict)
+        else {task_data["hostname"]}
+    )
+    context["executor_hosts_dict"] = (
+        executor_hosts if isinstance(executor_hosts, dict) else {}
+    )
 
     try:
         services = await inventory_api.get(
