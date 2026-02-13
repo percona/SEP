@@ -23,7 +23,6 @@ from zoneinfo import available_timezones
 from fastapi import Depends, HTTPException, Request, status
 from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
-from jwt import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -79,7 +78,7 @@ def get_base_url(request: Request) -> URL:
     """
     if settings.BASE_URL is not None:
         return settings.BASE_URL
-    return request.url.replace(path="")
+    return request.url.replace(path="", query="", fragment="")
 
 
 BaseURL = Annotated[URL, Depends(get_base_url)]
@@ -130,7 +129,7 @@ async def get_current_user(
     token = get_access_token_from_cookie(request)
     try:
         user = await User.from_jwt(token)
-    except (BadSignature, InvalidTokenError, ValidationError) as exc:
+    except (BadSignature, ValidationError) as exc:
         logger.debug("Failed to authenticate user: %s", exc, exc_info=True)
         raise LoginRedirectException(request) from None
     if not user.is_active:
@@ -239,8 +238,7 @@ async def get_default_context(
         "plugins": sep_settings.PLUGINS,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
-        "messages": messages.get_messages(request),
-        "pmm_url": sep_settings.PMM_FRONTEND,
+        "pmm_url": sep_settings.PMM.frontend,
         "footer_text": sep_settings.FOOTER_TEXT,
         "user_id_to_username": await get_username_mapping(),
     }

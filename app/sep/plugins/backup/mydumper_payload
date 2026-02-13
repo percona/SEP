@@ -956,10 +956,13 @@ class BaseBackup:
         self,
         backup_status: int,
         msp_action: MSPAction = MSPAction.BACKUP,
+        backup_running: int | None = None,
     ) -> None:
         """Write backup status to textfile collector for Prometheus.
 
         :param backup_status: Backup status code.
+        :param msp_action: MSP action (BACKUP or UPLOAD).
+        :param backup_running: Whether backup is running (0 or 1).
         """
         if not self.check_textcollector_dir():
             return
@@ -978,6 +981,16 @@ class BaseBackup:
             f"# TYPE msp_{msp_action}_status Untyped\n"
             f"# HELP msp_{msp_action}_last_report_ts The Last Report Time\n"
             f"# TYPE msp_{msp_action}_last_report_ts Untyped\n"
+        )
+
+        # Add backup_running metric help if provided
+        if backup_running is not None and msp_action == MSPAction.BACKUP:
+            metrics_text += (
+                f"# HELP msp_{msp_action}_running The status of the backup job\n"
+                f"# TYPE msp_{msp_action}_running Untyped\n"
+            )
+
+        metrics_text += (
             f'msp_{msp_action}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
             f'backup_id="", start_time="{start_time_val}", end_time="{end_time_val}"'
         )
@@ -991,6 +1004,9 @@ class BaseBackup:
 
         metrics_text += f"}} {backup_status}\n"
         metrics_text += f'msp_{msp_action}_last_report_ts{{type="{BACKUP_TYPE}", alias="{self.alias}", backup_id=""}} {int(time.time())}\n'
+
+        if backup_running is not None and msp_action == MSPAction.BACKUP:
+            metrics_text += f'msp_{msp_action}_running{{type="{BACKUP_TYPE}", alias="{self.alias}"}} {backup_running}\n'
 
         with collector_file.open("w") as outfile:
             outfile.write(metrics_text)
@@ -1697,15 +1713,19 @@ class MyDumperRunner(multiprocessing.Process):
         for server_data in servers:
             bkp = MyDumper(server_data, logger=self.logger)
             try:
+                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=1)
                 bkp.run()
+                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=0)
             except BackupError as exc:
                 self.logger.exception(exc.message)
                 self.logger.exception("Backup failed for this host.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
                 sys.exit(1)
             except:
                 self.logger.exception("Unhandled exception occurred.")
                 bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
+                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
                 sys.exit(1)
 
             logging_set_host(None, LOGGING_NAME)
@@ -1740,7 +1760,7 @@ class MyDumper(Backup):
             "MYDUMPER_DUMP_TRIGGERS", True
         )
         self.desync_pxc: bool = server_data.get("MYDUMPER_DESYNC_PXC", False)
-        self.less_locking: bool = server_data.get("MYDUMPER_LESS_LOCKING", True)
+        self.less_locking: bool = server_data.get("MYDUMPER_LESS_LOCKING", False)
         self.updated_since: int = server_data.get("MYDUMPER_UPDATED_SINCE", 0)
         self.mydumper_extra_args: str | None = server_data.get("MYDUMPER_EXTRA_ARGS")
         self.use_ftwrl_guardian: bool = server_data.get("USE_FTWRL_GUARDIAN", True)
@@ -1809,19 +1829,7 @@ class MyDumper(Backup):
         # Check mydumper version for schemas support
         if self.mydumper_for_schemas:
             version = self._get_version()
-            try:
-                if version and Version(version) >= Version("0.9"):
-                    self.logger.info("Using mydumper %s for schemas", version)
-                else:
-                    self.mydumper_for_schemas = False
-                    self.logger.info(
-                        "mydumper %s does not support schemas. "
-                        "Please consider upgrading to >=0.9",
-                        version if version else "unknown",
-                    )
-            except ValueError as err:
-                self.logger.exception("Failed to parse the mydumper version")
-                raise BackupError("Invalid mydumper version") from err
+            self.logger.info('Using mydumper %s for schemas', version)
 
         if not self.mydumper_for_schemas:
             raise BackupError("MYDUMPER_SCHEMAS has been disabled, please enable it")

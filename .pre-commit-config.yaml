@@ -1,13 +1,14 @@
+---
 default_language_version:
-  python: python3.11
+  python: python3
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 871f3bcae4fe473cd7109c3a068db975dc035e3b # 0.9.4
+    rev: 871f3bcae4fe473cd7109c3a068db975dc035e3b  # 0.9.4
     hooks:
       - id: ruff
       - id: ruff-format
   - repo: https://github.com/djlint/djLint
-    rev: 9112cb64851c95a7802358af285d21ad8b7f6437 # v1.36.4
+    rev: 9112cb64851c95a7802358af285d21ad8b7f6437  # v1.36.4
     hooks:
       - id: djlint
       - id: djlint-reformat
@@ -27,9 +28,28 @@ repos:
         language: python
         additional_dependencies: ["cssbeautifier==1.15.1"]
         files: ^(?!.*\.min\.css$).*\.css$
+      - id: update-installer-checksum
+        name: Update sep_installer.sh checksum
+        description: "Update sep_installer.sha256 when sep_installer.sh changes"
+        entry: sh -c 'sha256sum sep_installer.sh > sep_installer.sha256'
+        language: system
+        files: ^sep_installer\.sh$
+        pass_filenames: false
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: 745eface02aef23e168a8afb6b5737818efbea95  # v0.11.0.1
+    hooks:
+      - id: shellcheck
+        types: [shell]
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: 2a30809d16bc7a60d9b97353c797f42b510d3368  # v3.12.0-2
+    hooks:
+      - id: shfmt
+        args: ["--diff", "--write", "--indent=4", "--case-indent", "--space-redirects", "--simplify"]
+        types: [shell]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # v5.0.0
     hooks:
       - id: check-ast
       - id: check-case-conflict
@@ -42,3 +62,4 @@ repos:
       - id: fix-encoding-pragma
         args: ["--remove"]
       - id: trailing-whitespace
+...
