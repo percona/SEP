@@ -440,19 +440,6 @@
                         </div>
                         <span class="label">Desync PXCs</span>{{ info_icon(mydumper_desync_pxc_title) }}
                     </label>
-                    {% set mydumper_less_locking_title = "Minimize table locking during backup to reduce impact on database performance." %}
-                    <label class="checkbox" for="mydumper_less_locking">
-                        <input type="checkbox"
-                               id="mydumper_less_locking"
-                               name="mydumper_less_locking"
-                               value="1"
-                               checked>
-                        <div class="checkmark">
-                            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                            <span class="material-symbols-outlined checked">check_box</span>
-                        </div>
-                        <span class="label">Less Locking</span>{{ info_icon(mydumper_less_locking_title) }}
-                    </label>
                     {% set mydumper_use_numa_title = "Enable NUMA (Non-Uniform Memory Access) awareness to optimize memory allocation for backup processes." %}
                     <label class="checkbox" for="mydumper_use_numa">
                         <input type="checkbox"
