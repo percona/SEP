@@ -1007,7 +1007,7 @@ class BaseBackup:
 
         if backup_running is not None and msp_action == MSPAction.BACKUP:
             metrics_text += f'msp_{msp_action}_running{{type="{BACKUP_TYPE}", alias="{self.alias}"}} {backup_running}\n'
-        
+
         with collector_file.open("w") as outfile:
             outfile.write(metrics_text)
 
