@@ -957,10 +957,13 @@ class BaseBackup:
         self,
         backup_status: int,
         msp_action: MSPAction = MSPAction.BACKUP,
+        backup_running: int | None = None,
     ) -> None:
         """Write backup status to textfile collector for Prometheus.
 
         :param backup_status: Backup status code.
+        :param msp_action: MSP action (BACKUP or UPLOAD).
+        :param backup_running: Whether backup is running (0 or 1).
         """
         if not self.check_textcollector_dir():
             return
@@ -979,6 +982,16 @@ class BaseBackup:
             f"# TYPE msp_{msp_action}_status Untyped\n"
             f"# HELP msp_{msp_action}_last_report_ts The Last Report Time\n"
             f"# TYPE msp_{msp_action}_last_report_ts Untyped\n"
+        )
+
+        # Add backup_running metric help if provided
+        if backup_running is not None and msp_action == MSPAction.BACKUP:
+            metrics_text += (
+                f"# HELP msp_{msp_action}_running The status of the backup job\n"
+                f"# TYPE msp_{msp_action}_running Untyped\n"
+            )
+
+        metrics_text += (
             f'msp_{msp_action}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
             f'backup_id="", start_time="{start_time_val}", end_time="{end_time_val}"'
         )
@@ -992,6 +1005,9 @@ class BaseBackup:
 
         metrics_text += f"}} {backup_status}\n"
         metrics_text += f'msp_{msp_action}_last_report_ts{{type="{BACKUP_TYPE}", alias="{self.alias}", backup_id=""}} {int(time.time())}\n'
+
+        if backup_running is not None and msp_action == MSPAction.BACKUP:
+            metrics_text += f'msp_{msp_action}_running{{type="{BACKUP_TYPE}", alias="{self.alias}"}} {backup_running}\n'
 
         with collector_file.open("w") as outfile:
             outfile.write(metrics_text)

@@ -14,7 +14,7 @@ import getpass
 import hashlib
 import json
 import logging
-import multiprocessing.queues
+import multiprocessing
 import os
 import pwd
 import re
@@ -23,12 +23,10 @@ import socket
 import subprocess
 import sys
 import time
-import uuid
-from collections.abc import Generator
 from contextlib import suppress
 from filelock import FileLock, Timeout
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any
 
 import boto3
 import pymysql
@@ -41,13 +39,7 @@ from pymysql import Error, InternalError, OperationalError, ProgrammingError
 BYTES_PER_MB = 1024**2
 
 BACKUP_DIR_REGEX = {
-    "B": r"\.[0-9]{6}",
-    "M": r"^2[0-9]{7}$",
-    "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$",
-    "I": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$",
-    "T": r"^2[0-9]{7}$",
-    "H": r"2[0-9]{7}$",
-    "O": r"[0-9]{10}",
+    "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$"
 }
 
 # Check if the user is running as sudo
@@ -76,32 +68,10 @@ if not BACKUP_TEXTFILE_COLLECTOR_DIR.endswith("/"):
 
 # Backup code to CNS report mapping. Also used for logging.
 BACKUP_TYPES = {
-    "B": "Binlogs",
-    "G": "GCESnapshot",
-    "L": "LVMBackup",
-    "M": "Mydumper",
     "X": "Xtrabackup",
-    "T": "Tokudb",
-    "R": "RDSSnapshot",
-    "MC": "MongoDBCluster",
-    "O": "Oplog",
-    "H": "PSMDBHotBackup",
-    "P": "PgBackRest",
-    "E": "EBSSnapshot",
 }
 COMPRESSION_ALGORITHMS = {
-    "B": ["gzip"],
-    "G": [""],
-    "L": [""],
-    "M": ["gzip"],  # TODO: add support for zstd later
-    "X": ["zstd", "quicklz", "lz4"],
-    "T": [""],
-    "R": [""],
-    "MC": [""],
-    "O": [""],
-    "H": [""],
-    "P": [""],
-    "E": [""],
+    "X": ["zstd", "quicklz", "lz4"]
 }
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_CFG_DIR = Path(
@@ -133,22 +103,9 @@ LOGGING_FORMAT_DEBUG = (
 )
 LOGGING_LEVEL = logging.INFO
 LOGGING_NAME = {
-    "B": "binlog.log",
-    "G": "gcesnapshot.log",
-    "L": "mylvmbackup.log",
-    "M": "mydumper.log",
-    "X": "xtrabackup.log",
-    "T": "tokudb.log",
-    "R": "rdssnapshot.log",
-    "MC": "mongodb_cluster.log",
-    "O": "mongodb_oplog.log",
-    "H": "psmdb_hot_backup.log",
-    "P": "pgbackrest.log",
-    "E": "ebssnapshot.log",
+    "X": "xtrabackup.log"
 }
 MD5SUM_FILE = "md5sum"
-MYDUMPER_METADATA = "metadata"
-MYSQLBINLOG_RESTART_DELAY = 5 * 60
 SSH_ARGS = "-o PasswordAuthentication=no -o StrictHostKeyChecking=no"
 # Status codes
 STATUS_CRITICAL = 2
@@ -162,27 +119,13 @@ XTRABACKUP_INFO = "xtrabackup_info"
 XTRABACKUP_CHECKPOINTS = "xtrabackup_checkpoints"
 
 # Backup binary dependency constants
-INSTALL_DIR = os.getenv(
-    "PERCONA_BACKUP_INSTALL_DIR", str(Path(CURRENT_USER_HOME_DIR) / "bin")
-)
-PYTHON_BIN = sys.executable
-AWS_BIN = os.getenv("PERCONA_BACKUP_AWS_BIN", "/usr/bin/aws")
-AZCMD_BIN = os.getenv("PERCONA_BACKUP_AZCMD_BIN", "/usr/bin/az")
 DU_BIN = os.getenv("PERCONA_BACKUP_DU_BIN", "/usr/bin/du")
-GCLOUD_BIN = os.getenv("PERCONA_BACKUP_GCLOUD_BIN", "/usr/bin/gcloud")
 GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
-GSUTIL_BIN = os.getenv("PERCONA_BACKUP_GSUTIL_BIN", "/usr/local/bin/gsutil")
 GZIP_BIN = os.getenv("PERCONA_BACKUP_GZIP_BIN", "/usr/bin/gzip")
 INNOCHECKSUM_BIN = "innochecksum"
 LZ4_BIN = os.getenv("PERCONA_BACKUP_LZ4_BIN", "/usr/bin/lz4")
-MYDUMPER_BIN = os.getenv("PERCONA_BACKUP_MYDUMPER_BIN", "/usr/bin/mydumper")
-MYLOADER_BIN = os.getenv("PERCONA_BACKUP_MYLOADER_BIN", "/usr/bin/myloader")
-MYSQLBINLOG_CMD = os.getenv("PERCONA_BACKUP_MYSQLBINLOG_CMD", "/usr/bin/mysqlbinlog")
-MYSQLDUMP_BIN = os.getenv("PERCONA_BACKUP_MYSQLDUMP_BIN", "/usr/bin/mysqldump")
 QPRESS_BIN = os.getenv("PERCONA_BACKUP_QPRESS_BIN", "/usr/bin/qpress")
-S3CMD_BIN = os.getenv("PERCONA_BACKUP_S3CMD_BIN", "/usr/bin/s3cmd")
 RSYNC_BIN = "/usr/bin/rsync"
-TAR_BIN = "/bin/tar"
 XBCRYPT_BIN = os.getenv("PERCONA_BACKUP_XBCRYPT_BIN", "/usr/bin/xbcrypt")
 XTRABACKUP_BIN = os.getenv("PERCONA_BACKUP_XTRABACKUP_BIN", "/usr/bin/innobackupex")
 XTRABACKUP_BIN_REAL = os.getenv(
@@ -826,8 +769,6 @@ class BaseBackup:
         self.logging_stdout = self.server_data.get(
             "LOGGING_STDOUT", DEFAULT_LOGGING_STDOUT
         )
-        self._backup_uuid: uuid.UUID | None = None
-
         if isinstance(logger, logging.Logger):
             self.logger = logger
         elif "Restore" in self.__class__.__name__:
@@ -849,18 +790,6 @@ class BaseBackup:
         self.is_replica = False
         self.last_backup_dir = ""
 
-    def get_policy(self) -> str | None:
-        """Retrieve the notification policy.
-
-        :return: The policy if valid, None otherwise.
-        """
-        policy = self.server_data.get("POLICY")
-        if policy in VALID_POLICIES:
-            self.logger.debug("Detected notification policy as %s", policy)
-            return policy
-        self.logger.error("Invalid policy detected: %s", policy)
-        return None
-
     def check_compression_algorithm(self, algorithm: str) -> None:
         """Check if the given compression algorithm is compatible with the backup type.
 
@@ -878,24 +807,6 @@ class BaseBackup:
         raise BackupError(
             f"algorithm {algorithm} is not one of {COMPRESSION_ALGORITHMS[self.backup_code]}"
         )
-
-    def compression_matches_ext(self, path: str) -> bool:
-        """Check if the file extension of a path matches the configured compression algorithm.
-
-        :param path: File path to check.
-        :return: True if extension matches, False otherwise.
-        """
-        stripped_path = path
-        for ext in [".xbcrypt", ".gpg"]:
-            stripped_path = stripped_path.replace(ext, "")
-        expected_ext = {
-            "": stripped_path,
-            "gzip": ".gz",
-            "lz4": ".lz4",
-            "quicklz": ".qp",
-            "zstd": ".zst",
-        }.get(self.compression_algorithm)
-        return stripped_path.endswith(expected_ext if expected_ext else "")
 
     def get_compression_ext(self) -> str | None:
         """Get the expected file extension for the current compression algorithm.
@@ -1509,19 +1420,14 @@ class Upload(Backup):
 
         root_backup_dir = settings["BACKUP_DIR"]
         root_backup_path = Path(root_backup_dir)
-        self.backup_type_dir = ""
-        if self.backup_code == "M":
-            self.backup_type_dir = "mydumper"
-        elif self.backup_code == "X":
-            self.backup_type_dir = "xtrabackup"
-        elif self.backup_code == "B":
-            self.backup_type_dir = "binlogs"
-        elif self.backup_code == "T":
-            self.backup_type_dir = "tokudb"
-        elif self.backup_code == "O":
-            self.backup_type_dir = "oplog"
-        elif self.backup_code == "H":
-            self.backup_type_dir = "hotbackup"
+        self.backup_type_dir = {
+            "M": "mydumper",
+            "X": "xtrabackup",
+            "B": "binlogs",
+            "T": "tokudb",
+            "O": "oplog",
+            "H": "hotbackup",
+        }.get(self.backup_code, "")
 
         self.relative_backup_path = Path(self.backup_type_dir) / self.alias
         self.full_backup_path = root_backup_path / self.relative_backup_path
