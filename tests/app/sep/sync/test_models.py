@@ -352,6 +352,35 @@ async def test_sync_node(created_node, mock_remote_api, mock_sync_items, mocker)
 
 
 @pytest.mark.asyncio
+async def test_sync_node_skips_when_fetch_returns_none(
+    created_node, mock_remote_api, mock_sync_items, mocker
+):
+    """Test sync_node skips synchronization when fetch_node returns None."""
+
+    class TestSyncer(BaseSyncer):
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
+        _session = (AsyncMock(spec=AsyncSession),)
+
+    syncer = TestSyncer(
+        inventory_api=mock_remote_api,
+        sync_instance=None,
+        sync_items=mock_sync_items,
+    )
+
+    mock_perform_node_sync = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.perform_node_sync",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.fetch_node",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    await syncer.sync_node(created_node, None)
+    mock_perform_node_sync.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_sync_service(created_service, mock_remote_api, mock_sync_items, mocker):
     """Test synchronizing data for a specific service."""
 
@@ -376,6 +405,35 @@ async def test_sync_service(created_service, mock_remote_api, mock_sync_items, m
     await syncer.sync_service(created_service, None)
     mock_perform_service_sync.assert_called_once()
     mock_fetch_service.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_service_skips_when_fetch_returns_none(
+    created_service, mock_remote_api, mock_sync_items, mocker
+):
+    """Test sync_service skips synchronization when fetch_service returns None."""
+
+    class TestSyncer(BaseSyncer):
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SERVICE
+        _session = (AsyncMock(spec=AsyncSession),)
+
+    syncer = TestSyncer(
+        inventory_api=mock_remote_api,
+        sync_instance=None,
+        sync_items=mock_sync_items,
+    )
+
+    mock_perform_service_sync = mocker.patch(
+        "app.sep.sync.models.BaseSyncer.perform_service_sync",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.fetch_service",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    await syncer.sync_service(created_service, None)
+    mock_perform_service_sync.assert_not_called()
 
 
 @pytest.mark.asyncio
