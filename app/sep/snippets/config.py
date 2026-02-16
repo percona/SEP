@@ -15,7 +15,12 @@
 
 """Define settings for support snippets in the SEP app."""
 
-__all__ = ["SnippetFilter", "SnippetFilterType", "snippets_settings"]
+__all__ = [
+    "SnippetFilter",
+    "SnippetFilterType",
+    "SnippetInterpreterConfig",
+    "snippets_settings",
+]
 
 import re
 from collections import OrderedDict
@@ -49,6 +54,8 @@ from app.core.utils.fields import (
     RequiredStr,
     URL,
 )
+
+DEFAULT_SNIPPETS_TASK = "exec-artifact"
 
 
 class SnippetSudoOption(EnumFieldMixin, Enum):
@@ -198,13 +205,69 @@ class SnippetFilter(NamedTuple):
         )
 
 
+class SnippetInterpreterConfig(BaseModel):
+    """Define an interpreter configuration for snippets.
+
+    :param command: The interpreter command to use.
+    :type command: str
+    :param task: Optional task name override for executing snippets with this
+        interpreter.
+    :type task: str | None
+    :param task_with_requirements: Optional task name to use when the snippet metadata
+        includes `requires_packages`.
+    :type task_with_requirements: str | None
+    """
+
+    command: str
+    task: str = DEFAULT_SNIPPETS_TASK
+    task_with_requirements: str = DEFAULT_SNIPPETS_TASK
+
+    @model_validator(mode="before")
+    @classmethod
+    def from_str(cls, data: Any) -> Any:
+        """Create a SnippetInterpreterConfig instance from a string.
+
+        If the input is a string, it is treated as the `command`. If it's already
+        a SnippetInterpreterConfig instance, it is returned as is.
+
+        :param data: The input data, which can be a string or a
+            SnippetInterpreterConfig instance.
+        :type data: Any
+        :return: A SnippetInterpreterConfig instance or the original data if it's
+            already an instance.
+        :rtype: Any
+        """
+        if isinstance(data, str):
+            return {"command": data}
+        return data
+
+
+_BASH_INTERPRETER_CONFIG = SnippetInterpreterConfig(command="bash")
+_PYTHON_INTERPRETER_CONFIG = SnippetInterpreterConfig(
+    command="python3", task_with_requirements="exec-python-artifact"
+)
 DEFAULT_INTERPRETERS = OrderedDict(
     {
-        SnippetFilter(".sh", SnippetFilterType.EXTENSION): "bash",
-        SnippetFilter("text/x-shellscript", SnippetFilterType.MIME_TYPE): "bash",
-        SnippetFilter("text/x-sh", SnippetFilterType.MIME_TYPE): "bash",
-        SnippetFilter("application/x-shellscript", SnippetFilterType.MIME_TYPE): "bash",
-        SnippetFilter("application/x-sh", SnippetFilterType.MIME_TYPE): "bash",
+        SnippetFilter(".sh", SnippetFilterType.EXTENSION): _BASH_INTERPRETER_CONFIG,
+        SnippetFilter(
+            "text/x-shellscript", SnippetFilterType.MIME_TYPE
+        ): _BASH_INTERPRETER_CONFIG,
+        SnippetFilter(
+            "text/x-sh", SnippetFilterType.MIME_TYPE
+        ): _BASH_INTERPRETER_CONFIG,
+        SnippetFilter(
+            "application/x-shellscript", SnippetFilterType.MIME_TYPE
+        ): _BASH_INTERPRETER_CONFIG,
+        SnippetFilter(
+            "application/x-sh", SnippetFilterType.MIME_TYPE
+        ): _BASH_INTERPRETER_CONFIG,
+        SnippetFilter(".py", SnippetFilterType.EXTENSION): _PYTHON_INTERPRETER_CONFIG,
+        SnippetFilter(
+            "text/x-python", SnippetFilterType.MIME_TYPE
+        ): _PYTHON_INTERPRETER_CONFIG,
+        SnippetFilter(
+            "text/x-script.python", SnippetFilterType.MIME_TYPE
+        ): _PYTHON_INTERPRETER_CONFIG,
     }
 )
 
@@ -283,10 +346,10 @@ class SnippetsSettings(BaseYamlSettings):
         `SNIPPETS_DIR`. Each filter can specify a file extension or MIME type. If
         `None`, no filtering is applied. Defaults to `None`.
     :type SYNC_FILTER: set[SnippetFilter] | None
-    :param INTERPRETERS: A mapping of `SnippetFilter` to interpreter command names.
-        This defines which interpreter to use for snippets matching the specified
-        filter. Defaults to a predefined set of common script types.
-    :type INTERPRETERS: dict[SnippetFilter, str]
+    :param INTERPRETERS: A mapping of `SnippetFilter` to interpreter configs. This
+        defines which interpreter to use for snippets matching the specified filter.
+        Defaults to a predefined set of common script types.
+    :type INTERPRETERS: dict[SnippetFilter, SnippetInterpreterConfig]
     :param USE_MAGIC: Whether to use the `python-magic` package to determine file types.
         Defaults to `False`. If `True`, the `python-magic` package must be installed.
     :type USE_MAGIC: bool
@@ -312,7 +375,9 @@ class SnippetsSettings(BaseYamlSettings):
     SNIPPETS_BASE_URL: URL | None = None
     META: SnippetsMetaOptions = SnippetsMetaOptions()
     SYNC_FILTER: set[SnippetFilter] | None = None
-    INTERPRETERS: OrderedDict[SnippetFilter, str] = DEFAULT_INTERPRETERS
+    INTERPRETERS: OrderedDict[SnippetFilter, SnippetInterpreterConfig] = (
+        DEFAULT_INTERPRETERS
+    )
     USE_MAGIC: bool = False
     SYNC_INTERVAL: IntervalSchedule = IntervalSchedule(every=1, period=Period.HOURS)
     ENABLE_MANUAL_SYNC: bool = False
