@@ -3,6 +3,8 @@ const fs = require('fs');
 
 const pluginsDir = path.resolve(__dirname, 'templates');
 const pluginsBuildDir = path.resolve(__dirname, 'static/plugins');
+const SHARED_RUNTIME_CHUNK = 'shared/runtime';
+const SHARED_MATERIAL_UI_CHUNK = 'shared/material-ui';
 const entry = {};
 
 // Find plugin directories that have a 'components' subdirectory
@@ -18,10 +20,13 @@ pluginDirectories.forEach(pluginName => {
 
 module.exports = {
   // Use the dynamically created entry object
-  entry: entry, 
+  entry: entry,
   output: {
-    // The [name] placeholder will be replaced by the key from the 'entry' object (e.g., 'plugin_one')
-    filename: '[name]/bundle.js', 
+    filename: ({ chunk }) =>
+      chunk.name && chunk.name.startsWith('shared/')
+        ? `${chunk.name}.js`
+        : `${chunk.name}/bundle.js`,
+    chunkFilename: '[name].js',
     path: pluginsBuildDir,
     libraryTarget: 'umd',
     library: 'Plugin[name]',
@@ -49,6 +54,23 @@ module.exports = {
   resolve: {
     extensions: ['.js', '.jsx', '.tsx'],
     fullySpecified: false,
+  },
+  optimization: {
+    runtimeChunk: {
+      name: SHARED_RUNTIME_CHUNK,
+    },
+    splitChunks: {
+      cacheGroups: {
+        default: false,
+        defaultVendors: false,
+        materialUI: {
+          name: SHARED_MATERIAL_UI_CHUNK,
+          test: /[\\/]node_modules[\\/](?:@mui|@emotion)[\\/]/,
+          chunks: 'all',
+          enforce: true,
+        },
+      },
+    },
   },
   performance: {
     hints: false, // Disables the warning entirely

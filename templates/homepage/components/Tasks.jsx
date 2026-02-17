@@ -19,7 +19,6 @@ import {
   TableRow,
   Tooltip,
 } from "@mui/material";
-import { createTheme, ThemeProvider } from "@mui/material/styles";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { format } from "date-fns";
 import axios from "axios";
@@ -37,141 +36,6 @@ const formatDateTime = (value) => {
     return "";
   }
   return format(new Date(value), "yyyy-MM-dd HH:mm:ss");
-};
-
-const getThemeModeFromDom = () => {
-  if (typeof document === "undefined") {
-    return "light";
-  }
-
-  const domTheme = document.body?.getAttribute("data-theme");
-  if (domTheme === "dark" || domTheme === "light") {
-    return domTheme;
-  }
-
-  const storedTheme =
-    typeof window !== "undefined" ? window.localStorage?.getItem("theme") : null;
-  if (storedTheme === "dark" || storedTheme === "light") {
-    return storedTheme;
-  }
-
-  const prefersDark =
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  return prefersDark ? "dark" : "light";
-};
-
-const useDomThemeMode = () => {
-  const [mode, setMode] = useState(getThemeModeFromDom);
-
-  useEffect(() => {
-    const body = document.body;
-    if (!body) {
-      return undefined;
-    }
-
-    const updateMode = () => {
-      const nextMode =
-        body.getAttribute("data-theme") === "dark" ? "dark" : "light";
-      setMode(nextMode);
-    };
-
-    updateMode();
-
-    const observer = new MutationObserver(updateMode);
-    observer.observe(body, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  return mode;
-};
-
-const buildTheme = (mode) => {
-  const styles =
-    typeof document !== "undefined" ? getComputedStyle(document.body) : null;
-  const getVar = (name, fallback) => {
-    if (!styles) {
-      return fallback;
-    }
-    const value = styles.getPropertyValue(name);
-    return value ? value.trim() : fallback;
-  };
-
-  return createTheme({
-    palette: {
-      mode,
-      primary: {
-        main: getVar("--primaryMain", "#1976d2"),
-        light: getVar("--primaryLight", "#42a5f5"),
-        dark: getVar("--primaryDark", "#1565c0"),
-        contrastText: getVar("--primaryContrast", "#ffffff"),
-      },
-      secondary: {
-        main: getVar("--lineFocus", "#0288d1"),
-        light: getVar("--lineFocus", "#03a9f4"),
-        dark: getVar("--lineFocus", "#0277bd"),
-        contrastText: getVar("--textPrimary", "#ffffff"),
-      },
-      success: {
-        main: getVar("--successMain", "#2e7d32"),
-        light: getVar("--successLight", "#60ad5e"),
-        dark: getVar("--successDark", "#1b5e20"),
-        contrastText: getVar("--successContrast", "#ffffff"),
-      },
-      error: {
-        main: getVar("--errorMain", "#d32f2f"),
-        light: getVar("--errorLight", "#ef5350"),
-        dark: getVar("--errorDark", "#c62828"),
-        contrastText: getVar("--errorContrast", "#ffffff"),
-      },
-      info: {
-        main: getVar("--lineFocus", "#0288d1"),
-        light: getVar("--lineFocus", "#03a9f4"),
-        dark: getVar("--lineFocus", "#0277bd"),
-        contrastText: getVar("--textPrimary", "#ffffff"),
-      },
-      warning: {
-        main: getVar("--primaryLight", "#ed6c02"),
-        light: getVar("--primaryLight", "#ff9800"),
-        dark: getVar("--primaryDark", "#e65100"),
-        contrastText: getVar("--primaryContrast", "#ffffff"),
-      },
-      text: {
-        primary: getVar("--textPrimary", "#111111"),
-        secondary: getVar("--textSecondary", "#555555"),
-        disabled: getVar("--textDisabled", "#9e9e9e"),
-      },
-      divider: getVar("--lineDivider", "rgba(0, 0, 0, 0.12)"),
-      background: {
-        default: getVar("--surfaceElevation0", "#ffffff"),
-        paper: getVar("--surfaceElevation1", "#ffffff"),
-      },
-      action: {
-        hover: getVar("--actionHover", "rgba(0, 0, 0, 0.04)"),
-        disabled: getVar("--actionDisabled", "rgba(0, 0, 0, 0.26)"),
-        focus: getVar("--actionFocus", "rgba(0, 0, 0, 0.12)"),
-      },
-    },
-    typography: {
-      fontFamily: "'Roboto', sans-serif",
-    },
-    components: {
-      MuiTableCell: {
-        styleOverrides: {
-          root: {
-            borderBottomColor: "var(--lineDivider)",
-          },
-          head: {
-            fontWeight: 600,
-          },
-        },
-      },
-    },
-  });
 };
 
 const ROWS_PER_PAGE = 10;
@@ -343,15 +207,10 @@ const TasksTable = () => {
 };
 
 const App = () => {
-  const mode = useDomThemeMode();
-  const theme = useMemo(() => buildTheme(mode), [mode]);
-
   return (
-    <ThemeProvider theme={theme}>
-      <QueryClientProvider client={queryClient}>
-        <TasksTable />
-      </QueryClientProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <TasksTable />
+    </QueryClientProvider>
   );
 };
 

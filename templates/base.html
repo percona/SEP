@@ -159,6 +159,10 @@
         </div>
         <!-- Scripting zone -->
         {% block behaviours_optimized %}
+            <script src="{{ url_for('static', path='/plugins/shared/runtime.js') }}"
+                    nonce="{{ request.state.csp_nonce }}"></script>
+            <script src="{{ url_for('static', path='/plugins/shared/material-ui.js') }}"
+                    nonce="{{ request.state.csp_nonce }}"></script>
             <script src="{{ url_for('static', path='/js/jquery-3.7.1.min.js') }}"
                     nonce="{{ request.state.csp_nonce }}"></script>
             <script src="{{ url_for('static', path='/js/floating-ui.core.umd.min.js') }}"
