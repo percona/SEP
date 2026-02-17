@@ -494,7 +494,7 @@ def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> 
         logger.info("Running on: %s", path)
 
     dir_encrypt = DirectoryEncryptor(cfg_path=DIR_ENCRYPT_CFG_PATH, **cfg)
-    if not dir_encrypt.encrypt_dir(encr_dir=path):
+    if not dir_encrypt.encrypt_dir(encr_dir=Path(path)):
         raise BackupError("Encryption failed.")
 
     if not is_encrypted_dir(path, logger=logger):

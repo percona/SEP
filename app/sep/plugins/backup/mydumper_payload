@@ -380,8 +380,16 @@ def hardlink_listed_files(
 
 
 def get_dir_size(start_path: Path) -> int:
-    """Get the disk usage of a directory in bytes."""
-    total_size = start_path.stat().st_blocks * ST_BLOCKS_SIZE
+    """Get the disk usage of a directory in bytes.
+
+    Returns 0 if the path does not exist.
+    """
+    if not start_path.exists():
+        return 0
+    try:
+        total_size = start_path.stat().st_blocks * ST_BLOCKS_SIZE
+    except OSError:
+        return 0
     try:
         for file in start_path.rglob("*"):
             if not file.is_symlink():
