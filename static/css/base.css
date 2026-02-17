@@ -330,6 +330,55 @@ body[data-theme="light"] .theme-change.light {
 }
 
 /*=============================================*/
+/* Material UI bridge to inherit app theme     */
+/*=============================================*/
+
+body .MuiPaper-root {
+    color: var(--textPrimary) !important;
+    background-color: var(--surfaceElevation1) !important;
+}
+
+body .MuiTableCell-root {
+    color: var(--textPrimary) !important;
+    border-bottom-color: var(--lineDivider) !important;
+}
+
+body .MuiTableCell-head,
+body .MuiTableCell-stickyHeader {
+    font-weight: 600;
+    background-color: var(--surfaceElevation1) !important;
+}
+
+body .MuiTablePagination-root,
+body .MuiTablePagination-selectLabel,
+body .MuiTablePagination-displayedRows,
+body .MuiTablePagination-actions,
+body .MuiTablePagination-selectIcon {
+    color: var(--textPrimary) !important;
+}
+
+body .MuiInputBase-input,
+body .MuiSelect-select,
+body .MuiSvgIcon-root,
+body .MuiIconButton-root {
+    color: var(--textPrimary) !important;
+}
+
+body .MuiIconButton-root.Mui-disabled,
+body .MuiSvgIcon-root.Mui-disabled {
+    color: var(--textDisabled) !important;
+}
+
+body .MuiMenu-paper {
+    color: var(--textPrimary) !important;
+    background-color: var(--surfaceElevation1) !important;
+}
+
+body .MuiDivider-root {
+    border-color: var(--lineDivider) !important;
+}
+
+/*=============================================*/
 /* Setting the stage and the layout */
 /*=============================================*/
 
