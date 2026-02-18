@@ -59,22 +59,25 @@ def pbm():
     os.environ['PBM_MONGODB_URI'] = pbm_creds()
 
     # Write PBM config file (full config minus SEP-only keys like credentials_path).
+    # Always create the file so "pbm config --file" never sees a missing path; use {}
+    # when config is absent or contains only SEP-only keys (e.g. credentials_path).
     config_yaml = os.environ.get('NOMAD_META_CONFIG')
     config_file = f'{taskdir}/script_config'
+    pbm_config = {}
     if config_yaml:
         try:
             config = yaml.safe_load(config_yaml)
-            pbm_config = _config_for_pbm(config)
-            if pbm_config:
-                with open(config_file, 'w', encoding='utf-8') as f:
-                    yaml.dump(
-                        pbm_config,
-                        f,
-                        default_flow_style=False,
-                        allow_unicode=True,
-                    )
-        except Exception:
-            pass
+            if config is not None:
+                pbm_config = _config_for_pbm(config)
+        except Exception as e:
+            print(f'Failed to parse backup config YAML, using empty PBM config: {e}', file=sys.stderr)
+    with open(config_file, 'w', encoding='utf-8') as f:
+        yaml.dump(
+            pbm_config,
+            f,
+            default_flow_style=False,
+            allow_unicode=True,
+        )
     cmd = ['pbm',
            'config',
            '--file',
