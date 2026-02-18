@@ -622,15 +622,16 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         """
         raise NotImplementedError(".perform_inventory_sync() must be overridden.")
 
-    async def fetch_node(self, created_node: CreatedNode) -> Node:
+    async def fetch_node(self, created_node: CreatedNode) -> Node | None:
         """Fetch updated data for a specific node.
 
         Retrieve the latest information for the specified node.
+        May return None if the node is filtered out by the implementation.
 
         :param created_node: The node instance to fetch updated data for.
         :type created_node: CreatedNode
-        :return: The updated node data.
-        :rtype: Node
+        :return: The updated node data, or None if filtered out.
+        :rtype: Node | None
         :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".fetch_node() must be overridden.")
@@ -704,6 +705,12 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                     if updated_node is None
                     else updated_node
                 )
+                if updated_node is None:
+                    logger.debug(
+                        "Skipping node %s synchronization: node filtered out",
+                        created_node.id,
+                    )
+                    return
                 await self.perform_node_sync(created_node, updated_node)
             logger.info(
                 "Finished node synchronization (%s) for node %s",
@@ -730,15 +737,16 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         """
         raise NotImplementedError(".perform_node_sync() must be overridden.")
 
-    async def fetch_service(self, created_service: CreatedService) -> Service:
+    async def fetch_service(self, created_service: CreatedService) -> Service | None:
         """Fetch updated data for a specific service.
 
         Retrieve the latest information for the specified service.
+        May return None if the service is filtered out by the implementation.
 
         :param created_service: The service instance for which to fetch updated data.
         :type created_service: CreatedService
-        :return: The updated service data.
-        :rtype: Service
+        :return: The updated service data, or None if filtered out.
+        :rtype: Service | None
         :raises NotImplementedError: If the method is not overridden by the subclass.
         """
         raise NotImplementedError(".fetch_service() must be overridden.")
@@ -815,6 +823,12 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                     if updated_service is None
                     else updated_service
                 )
+                if updated_service is None:
+                    logger.debug(
+                        "Skipping service %s synchronization: service filtered out",
+                        created_service.id,
+                    )
+                    return
                 await self.perform_service_sync(created_service, updated_service)
             logger.info(
                 "Finished service synchronization (%s) for service %s",

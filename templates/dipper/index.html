@@ -10,13 +10,36 @@
     {% endif %}
     {% if script_preview %}<style>{{ syntax_highlight_css(style="monokai") }}</style>{% endif %}
     <style>
-    #dipperServiceSelect {
+    .dipper-selects {
+        display: flex;
+        gap: 1rem;
+        align-items: flex-end;
+        flex-wrap: wrap;
+    }
+
+    .dipper-selects .service-select-wrapper {
+        flex: 1;
+        min-width: 300px;
         max-width: 900px;
     }
 
+    .dipper-selects .collector-select-wrapper {
+        min-width: 150px;
+    }
+
+    #dipperServiceSelect {
+        width: 100%;
+    }
+
+    #dipperCollectorSelect {
+        width: 100%;
+    }
+
+    {% if resolved_executor_host is defined and resolved_executor_host %}
     #snippetExecuteForm fieldset:first-of-type {
         display: none;
     }
+    {% endif %}
     </style>
 {% endblock style %}
 {% block behaviours_optimized_extra %}
@@ -28,15 +51,46 @@
     {% endif %}
     <script nonce="{{ request.state.csp_nonce }}">
         (function () {
-            const select = document.getElementById('dipperServiceSelect');
-            if (!select) return;
-            select.addEventListener('change', function () {
-                const id = this.value;
+            const serviceSelect = document.getElementById('dipperServiceSelect');
+            const collectorSelect = document.getElementById('dipperCollectorSelect');
+
+            function navigateWithParams(serviceId, collectorType) {
                 const url = new URL(window.location.href);
-                if (id) url.searchParams.set('service_id', id);
-                else url.searchParams.delete('service_id');
+                if (serviceId) {
+                    url.searchParams.set('service_id', serviceId);
+                } else {
+                    url.searchParams.delete('service_id');
+                }
+                if (collectorType && collectorType !== 'environment') {
+                    url.searchParams.set('collector_type', collectorType);
+                } else {
+                    url.searchParams.delete('collector_type');
+                }
                 window.location.href = url.toString();
-            });
+            }
+
+            if (serviceSelect) {
+                serviceSelect.addEventListener('change', function () {
+                    // Reset collector to environment when service changes
+                    navigateWithParams(this.value, 'environment');
+                });
+            }
+
+            if (collectorSelect) {
+                collectorSelect.addEventListener('change', function () {
+                    const serviceId = serviceSelect ? serviceSelect.value : '';
+                    navigateWithParams(serviceId, this.value);
+                });
+            }
+
+            {% if default_executor_host is defined and default_executor_host %}
+            const executorHostSelector = '#snippetExecuteForm .executorHostSelect';
+
+            if ($(executorHostSelector + " option[value='{{ default_executor_host }}']").length > 0) {
+                $(executorHostSelector).val('{{ default_executor_host }}');
+            }
+            {% endif %}
+
         })();
     </script>
 {% endblock behaviours_optimized_extra %}
@@ -47,16 +101,30 @@
         <br>
         <fieldset class="window">
             <legend>Service</legend>
-            <label for="dipperServiceSelect">Select a database service</label>
-            <select id="dipperServiceSelect" name="service_id" required>
-                <option value="">Select a service</option>
-                {% for service in services %}
-                    {% set selected = selected_service_id == service.id %}
-                    <option value="{{ service.id }}" {% if selected %}selected{% endif %}>
-                        {{ service.service_type|upper }} - {{ service.service_name }} ({{ service.node.name }} / {{ service.node.address }})
-                    </option>
-                {% endfor %}
-            </select>
+            <div class="dipper-selects">
+                <div class="service-select-wrapper">
+                    <label for="dipperServiceSelect">Select a database service</label>
+                    <select id="dipperServiceSelect" name="service_id" required>
+                        <option value="">Select a service</option>
+                        {% for service in services %}
+                            {% set selected = selected_service_id == service.id %}
+                            <option value="{{ service.id }}" {% if selected %}selected{% endif %}>
+                                {{ service.service_type|upper }} - {{ service.service_name }} ({{ service.node.name }} / {{ service.node.address }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if is_pmm_script_available %}
+                    <div class="collector-select-wrapper">
+                        <label for="dipperCollectorSelect">Collector</label>
+                        <select id="dipperCollectorSelect" name="collector_type">
+                            <option value="environment"
+                                    {% if collector_type == 'environment' %}selected{% endif %}>Environment</option>
+                            <option value="pmm" {% if collector_type == 'pmm' %}selected{% endif %}>PMM</option>
+                        </select>
+                    </div>
+                {% endif %}
+            </div>
         </fieldset>
     </section>
     {% if selected_service and script %}
@@ -72,10 +140,12 @@
                 <dd>
                     <pre>{{ selected_service.node.name }} / {{ selected_service.node.address }}</pre>
                 </dd>
-                <dt>Executor Host</dt>
-                <dd>
-                    <pre>{{ resolved_executor_host }}</pre>
-                </dd>
+                {%- if resolved_executor_host is defined and resolved_executor_host %}
+                    <dt>Executor Host</dt>
+                    <dd>
+                        <pre>{{ resolved_executor_host }}</pre>
+                    </dd>
+                {%- endif %}
                 <dt>Script</dt>
                 <dd>
                     <pre>{{ script.filename }}</pre>
@@ -92,11 +162,7 @@
         </section>
         <section>
             <h3>Execute</h3>
-            {% if script_form %}
-                {{ script_form | safe }}
-            {% else %}
-                <p>Execution form is unavailable.</p>
-            {% endif %}
+            {{ script.to_form(executor_hosts, script_execution_url) | safe }}
         </section>
         {% if running_tasks %}
             <section id="running-tasks">
