@@ -196,6 +196,24 @@ SEP:
 - `SAME_SITE`: SameSite attribute for the cookie (lax, strict, none)
 - `MAX_AGE`: Maximum age of the session in seconds
 
+### CSRF Protection
+
+SEP uses double-submit cookie CSRF protection. The same token can be reused for
+multiple POST requests (e.g. from a React SPA), so you do not need to refetch
+a token after each request. Send the token in the `X-CSRF-TOKEN` header or in
+the form body as `csrf-token`. The token expires with the session (see
+[Session Management](#session-management)).
+
+CSRF token lifetime is tied to the session `MAX_AGE`. Use the same
+`SEP__SESSION` section to control how long the token stays valid:
+
+```yaml
+SEP:
+  SESSION:
+    COOKIE_NAME: casdoorToken
+    MAX_AGE: 604800   # 7 days (seconds); CSRF token expires after the same period
+```
+
 ### Security Headers
 
 SEP supports configurable security headers through the `SEP__SECURITY_HEADERS` section:
