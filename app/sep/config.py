@@ -174,6 +174,9 @@ class CsrfSettings(BaseModel):
     :type TOKEN_KEY: str
     :param TOKEN_LOCATION: Location where the CSRF token is expected.
     :type TOKEN_LOCATION: str
+    :param TOKEN_TIME_LIMIT: Maximum age of the CSRF token; should match
+        session MAX_AGE so the token expires with the session.
+    :type TOKEN_TIME_LIMIT: TimedeltaSeconds
     """
 
     SECRET_KEY: str = settings.SECRET_KEY
@@ -181,6 +184,7 @@ class CsrfSettings(BaseModel):
     COOKIE_SAMESITE: str = "none"
     TOKEN_KEY: str = "csrf-token"  # noqa: S105
     TOKEN_LOCATION: str = "body"  # noqa: S105
+    TOKEN_TIME_LIMIT: TimedeltaSeconds = timedelta(days=7)
 
 
 class PMMSettings(BaseLowercaseModel):
