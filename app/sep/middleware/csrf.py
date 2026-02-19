@@ -53,15 +53,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         endpoint = request.scope.get("endpoint")
-        if not isinstance(endpoint, StaticFiles) and not getattr(
-            request.state, "is_csrf_exempt", False
+        if (
+            not isinstance(endpoint, StaticFiles)
+            and not getattr(request.state, "is_csrf_exempt", False)
+            and method == "GET"
         ):
-            csrf_cookie_handler = {
-                "GET": lambda: self.csrf_protect.set_csrf_cookie(
-                    signed_token, response
-                ),
-                "POST": lambda: self.csrf_protect.unset_csrf_cookie(response),
-            }
-            csrf_cookie_handler.get(method, lambda: None)()
+            self.csrf_protect.set_csrf_cookie(signed_token, response)
 
         return response
