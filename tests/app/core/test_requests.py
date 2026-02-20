@@ -132,3 +132,64 @@ async def test_request_error(remote_api):
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
         assert exc_info.value.detail == conflict_error_msg
         assert exc_info.value.headers == {"X-Error-Code": conflict_error_code}
+
+
+@pytest.mark.asyncio
+async def test_internal_request_log_redacts_sensitive_kwargs(remote_api):
+    """Ensure request debug logs mask passwords and authorization headers."""
+    mock_response = AsyncMock()
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    async with remote_api:
+        with (
+            patch.object(remote_api.session, "request", return_value=mock_context_manager),
+            patch.object(remote_api.logger, "debug") as debug_mock,
+        ):
+            async with remote_api._request(
+                "POST",
+                "/nomad/variables/",
+                headers={"Authorization": "Bearer super-secret-token"},
+                json={
+                    "data": {
+                        "config": {
+                            "username": "alice",
+                            "password": "plain-password",
+                        }
+                    }
+                },
+            ):
+                pass
+
+    logged_kwargs = debug_mock.call_args.args[4]
+    assert logged_kwargs["headers"]["Authorization"] == "***"
+    assert logged_kwargs["json"]["data"]["config"]["password"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_internal_request_log_redacts_json_strings(remote_api):
+    """Ensure request debug logs sanitize JSON-encoded secret values."""
+    mock_response = AsyncMock()
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    async with remote_api:
+        with (
+            patch.object(remote_api.session, "request", return_value=mock_context_manager),
+            patch.object(remote_api.logger, "debug") as debug_mock,
+        ):
+            async with remote_api._request(
+                "PUT",
+                "/v1/var/sep/runtime/mum/test",
+                json={
+                    "Items": {
+                        "config": '{"action":"create_user","password":"p@ssw0rd"}',
+                    }
+                },
+            ):
+                pass
+
+    logged_kwargs = debug_mock.call_args.args[4]
+    assert logged_kwargs["json"]["Items"]["config"]["password"] == "***"
