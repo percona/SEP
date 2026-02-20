@@ -10,14 +10,15 @@ Supported actions (via --config file containing JSON):
 - {"action":"delete_user", "username":"...", "db":"admin"}
 
 When no config is provided, defaults to list_users.
-The script connects using a MongoDB connection string stored at
-"~/.mongodb_uri" and prints JSON to stdout for consumption by the runner.
+The script connects using a MongoDB connection string from MONGODB_URI
+or, if not provided, "~/.mongodb_uri", and prints JSON to stdout.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -44,23 +45,23 @@ def sanitize_error_message(error_message: str) -> str:
 
 
 def mum_creds() -> str:
-    """Load MongoDB URI from ~/.mongodb_uri.
+    """Load MongoDB URI from env first, then ~/.mongodb_uri.
 
-    Exits with code 1 if the file cannot be read.
+    Exits with code 1 if no usable URI source is available.
     """
+    env_uri = os.environ.get("MONGODB_URI", "").strip()
+    if env_uri:
+        return env_uri
 
-    # Use Path.home() to get the current user's home directory
-    # Then use the / operator to join with the filename, which works cross-platform
-    creds_path_obj = Path.home() / ".mongodb_uri" 
-    creds_path = str(creds_path_obj) # Convert the Path object back to a string for open()
-
+    creds_path_obj = Path.home() / ".mongodb_uri"
+    creds_path = str(creds_path_obj)
     try:
-        with open(creds_path_obj, "r", encoding="utf-8") as fpt: # You can use the Path object directly in open() in modern Python
+        with open(creds_path_obj, "r", encoding="utf-8") as fpt:
             creds = fpt.read().strip()
-            if not creds:
-                raise ValueError("Empty MongoDB URI")
-            return creds
-    except Exception as exc: # noqa: BLE001 - we want to exit on any error
+        if not creds:
+            raise ValueError("Empty MongoDB URI")
+        return creds
+    except Exception as exc:  # noqa: BLE001 - we want to exit on any error
         print(f"Failed to read MongoDB URI from {creds_path}: {exc}", file=sys.stderr)
         sys.exit(1)
 
