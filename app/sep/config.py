@@ -199,7 +199,8 @@ class PMMSettings(BaseLowercaseModel):
     :param verify_ssl: Whether to verify SSL certificates.
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
-    :type execution_target: str | None
+        Defaults to ``"pmm-server"``.
+    :type execution_target: str
     """
 
     model_config = ConfigDict(extra="allow")
@@ -207,7 +208,19 @@ class PMMSettings(BaseLowercaseModel):
     frontend: StrHttpUrl | None = None
     api_key: str | None = None
     verify_ssl: bool = True
-    execution_target: str | None = None
+    execution_target: str = "pmm-server"
+
+    @field_validator("execution_target", mode="before")
+    @classmethod
+    def coerce_none_to_default(cls, v: str | None) -> str:
+        """Coerce ``None`` to the default execution target.
+
+        :param v: The raw execution target value.
+        :type v: str | None
+        :return: The original value when truthy, otherwise ``"pmm-server"``.
+        :rtype: str
+        """
+        return v or "pmm-server"
 
     @cached_property
     def hostname(self) -> str | None:

@@ -24,6 +24,7 @@ from app.sep.plugins.dipper.deps import (
     DipperScriptWithMetaDep,
     get_dipper_execution_meta,
     get_dipper_script_filename,
+    get_pmm_form_defaults,
     has_pmm_script,
     resolve_executor_host_for_service,
     resolve_pmm_executor_host,
@@ -111,6 +112,16 @@ async def dipper_index(
                 "Could not map selected service to an execution target; please select manually.",
             )
 
+    form_defaults = (
+        get_pmm_form_defaults(
+            resolved_executor_host,
+            selected_service.name,
+            selected_service.node.name if selected_service.node else None,
+        )
+        if collector_type == CollectorTypeEnum.PMM
+        else None
+    )
+
     snippet_filename = f"dipper/{selected_service.id}/{script.filename}"
     history_tasks = await tasks_api.get(
         f"/{script.execution_task_name}/history/",
@@ -138,6 +149,7 @@ async def dipper_index(
         else set(executor_hosts),
         "resolved_executor_host": resolved_executor_host,
         "default_executor_host": default_executor_host,
+        "form_defaults": form_defaults,
         "history_tasks": history_tasks,
         "running_tasks": await tasks_api.get(
             f"/{script.execution_task_name}/history/",
