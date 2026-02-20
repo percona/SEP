@@ -77,6 +77,38 @@ def test_valid_csrf_token(test_client: TestClient):
     assert response.json() == {"detail": "OK"}
 
 
+def test_csrf_token_reuse_across_multiple_posts(test_client: TestClient):
+    """Test that the same CSRF token can be used for multiple sequential POSTs."""
+
+    @CsrfProtect.load_config
+    def get_configs():
+        return CsrfSettings()
+
+    response = test_client.get("/gen-token")
+    assert response.status_code == status.HTTP_200_OK
+    csrf_token = response.json().get("csrf_token")
+    assert csrf_token is not None
+    csrf_cookie = test_client.cookies.get("fastapi-csrf-token")
+    assert csrf_cookie is not None
+    test_client.cookies["fastapi-csrf-token"] = csrf_cookie
+
+    # First POST
+    response1 = test_client.post(
+        "/protected",
+        data={"csrf-token": csrf_token},
+    )
+    assert response1.status_code == status.HTTP_200_OK
+    assert response1.json() == {"detail": "OK"}
+
+    # Second POST with the same token, no GET in between (token is reusable)
+    response2 = test_client.post(
+        "/protected",
+        data={"csrf-token": csrf_token},
+    )
+    assert response2.status_code == status.HTTP_200_OK
+    assert response2.json() == {"detail": "OK"}
+
+
 def test_invalid_csrf_token(test_client: TestClient):
     """Test handling of invalid CSRF tokens and missing cookies."""
 

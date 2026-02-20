@@ -191,7 +191,8 @@ async def validate_csrf(
     :param csrf_protect: The CSRF protection mechanism dependency.
     :type csrf_protect: CsrfProtect
     """
-    await csrf_protect.validate_csrf(request)
+    time_limit = int(sep_settings.SESSION.MAX_AGE.total_seconds())
+    await csrf_protect.validate_csrf(request, time_limit=time_limit)
 
 
 IsCsrfValidated = Depends(validate_csrf)
