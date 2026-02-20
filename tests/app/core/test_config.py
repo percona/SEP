@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
-from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
@@ -181,9 +180,10 @@ async def test_default_lifespan():
 
 
 def test_settings_secret_key_is_secretstr():
-    """Test that SECRET_KEY is a SecretStr instance."""
+    """Test that SECRET_KEY is a SecretStr instance and masked in repr."""
+    from pydantic import SecretStr
+
     assert isinstance(settings.SECRET_KEY, SecretStr)
-    # Verify that repr masks the value (non-empty keys show '**********')
-    secret = SecretStr("test-secret")
-    assert "**********" in repr(secret)
-    assert "test-secret" not in repr(secret)
+    secret_value = settings.SECRET_KEY.get_secret_value()
+    if secret_value:
+        assert secret_value not in repr(settings.SECRET_KEY)
