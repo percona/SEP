@@ -30,14 +30,15 @@ async def test_cleanup_nomad_variable_clears_meta_after_success(nomad_executor, 
     """Cleanup should remove variable references after successful deletion."""
     queue_item = _queue_item_with_nomad_variable()
     mock_delete = mocker.AsyncMock(return_value=None)
-    mocker.patch.object(nomad_executor, "delete_nomad_variable", mock_delete)
+    mocker.patch.object(NomadExecutor, "delete_nomad_variable", mock_delete)
 
     await nomad_executor._cleanup_nomad_variable(queue_item)
 
-    mock_delete.assert_awaited_once_with(
-        path="sep/runtime/mum/job-1",
-        namespace="default",
-    )
+    mock_delete.assert_awaited_once()
+    assert mock_delete.await_args.kwargs == {
+        "path": "sep/runtime/mum/job-1",
+        "namespace": "default",
+    }
     assert queue_item.execution_request.meta.get("config_nomad_variable") is None
     assert (
         queue_item.execution_request.meta.get("config_nomad_variable_namespace")
@@ -57,7 +58,7 @@ async def test_cleanup_nomad_variable_keeps_meta_when_delete_fails(
             detail="boom",
         )
     )
-    mocker.patch.object(nomad_executor, "delete_nomad_variable", mock_delete)
+    mocker.patch.object(NomadExecutor, "delete_nomad_variable", mock_delete)
 
     await nomad_executor._cleanup_nomad_variable(queue_item)
 

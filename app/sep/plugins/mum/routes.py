@@ -65,7 +65,7 @@ async def _create_nomad_config_variable(
     path = f"sep/runtime/mum/{job_prefix}"
     payload: dict[str, Any] = {
         "path": path,
-        "data": {"config": config},
+        "data": {"config": dict(config)},
     }
     if namespace:
         payload["namespace"] = namespace
