@@ -118,7 +118,7 @@ def get_csrf_config() -> CsrfSettings:
     :return: An instance of `CsrfSettings` containing CSRF protection configuration.
     :rtype: CsrfSettings
     """
-    return CsrfSettings()
+    return CsrfSettings(TOKEN_TIME_LIMIT=sep_settings.SESSION.MAX_AGE)
 
 
 imported_plugins = set()
