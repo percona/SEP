@@ -1,5 +1,7 @@
 """Define tests for the app.core.db.config module."""
 
+from pydantic import SecretStr
+
 from app.core.db.config import DatabaseOptions
 from app.core.utils.fields import AsyncDatabaseEngine
 
@@ -31,7 +33,7 @@ def test_database_options_url_with_host():
         HOST="localhost",
         PORT=3306,
         USER="user",
-        PASSWORD="pass",
+        PASSWORD=SecretStr("pass"),
         NAME="testdb",
     )
 
@@ -46,9 +48,21 @@ def test_database_options_url_with_postgresql():
         HOST="localhost",
         PORT=5432,
         USER="user",
-        PASSWORD="pass",
+        PASSWORD=SecretStr("pass"),
         NAME="testdb",
     )
 
     expected_url = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
     assert expected_url == db_options.URL
+
+
+def test_database_options_password_masked_in_repr():
+    """Test that PASSWORD is masked in repr output."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.MYSQL,
+        HOST="localhost",
+        USER="user",
+        PASSWORD=SecretStr("supersecret"),
+        NAME="testdb",
+    )
+    assert "supersecret" not in repr(db_options)
