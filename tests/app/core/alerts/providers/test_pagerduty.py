@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.core.alerts.models import Alert, AlertSeverity
 from app.core.alerts.providers.pagerduty import (
@@ -41,7 +41,7 @@ async def test_send_alert_builds_correct_payload(mocker, mock_remote_api, sample
         "get_api",
         new=AsyncMock(return_value=mock_remote_api),
     )
-    prov = PagerDutyEventsAlertProvider(routing_key="rk1")
+    prov = PagerDutyEventsAlertProvider(routing_key=SecretStr("rk1"))
 
     await prov.send_alert(sample_alert)
     mock_remote_api.post.assert_awaited_once_with(
@@ -64,6 +64,12 @@ async def test_send_alert_builds_correct_payload(mocker, mock_remote_api, sample
             },
         },
     )
+
+
+def test_pagerduty_routing_key_masked_in_repr():
+    """Test that routing_key is masked in repr output."""
+    prov = PagerDutyEventsAlertProvider(routing_key=SecretStr("secret-routing-key"))
+    assert "secret-routing-key" not in repr(prov)
 
 
 def test_pagerduty_alert_extra_ignored_and_validation():
