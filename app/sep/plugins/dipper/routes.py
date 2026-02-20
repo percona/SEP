@@ -116,7 +116,7 @@ async def dipper_index(
         get_pmm_form_defaults(
             resolved_executor_host,
             selected_service.name,
-            selected_service.node.name if selected_service.node else None,
+            selected_service.node.name,
         )
         if collector_type == CollectorTypeEnum.PMM
         else None

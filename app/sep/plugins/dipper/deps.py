@@ -224,7 +224,7 @@ def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
 def get_pmm_form_defaults(
     resolved_executor_host: str | None,
     service_name: str,
-    node_name: str | None,
+    node_name: str,
 ) -> dict[str, str]:
     """Build default form values for PMM collector scripts.
 
@@ -233,19 +233,18 @@ def get_pmm_form_defaults(
     :type resolved_executor_host: str | None
     :param service_name: The name of the selected service.
     :type service_name: str
-    :param node_name: The name of the service node, or None if unavailable.
-    :type node_name: str | None
+    :param node_name: The name of the service node.
+    :type node_name: str
     :return: A dictionary of default parameter values for the PMM form.
     :rtype: dict[str, str]
     """
     pmm = sep_settings.PMM
-    defaults: dict[str, str] = {}
+    defaults = {}
     if resolved_executor_host is not None:
         defaults["pmmserver"] = "https://localhost:8443"
     elif pmm.endpoint:
-        defaults["pmmserver"] = str(pmm.endpoint)
-    if node_name:
-        defaults["node"] = node_name
+        defaults["pmmserver"] = pmm.endpoint
+    defaults["node"] = node_name
     defaults["service"] = service_name
     return defaults
 
