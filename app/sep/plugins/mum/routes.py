@@ -82,6 +82,27 @@ async def _create_nomad_config_variable(
     return path
 
 
+async def _delete_nomad_config_variable(
+    tasks_api: TaskAPI,
+    *,
+    path: str,
+    namespace: str | None = None,
+) -> None:
+    """Best-effort deletion for temporary Nomad variable paths."""
+    try:
+        await tasks_api.delete(
+            f"/nomad/variables/{path}",
+            params={"namespace": namespace} if namespace else None,
+        )
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.warning(
+            "Failed to delete Nomad variable '%s' after dispatch error: %s (status: %s)",
+            path,
+            exc.detail,
+            exc.status_code,
+        )
+
+
 def _resolve_mum_task_name(action: str | None) -> str:
     """Resolve a MUM task name for an action."""
     if action is None:
@@ -162,7 +183,7 @@ async def _execute_mum_task(
     execution_meta = {"target": target}
     if meta:
         execution_meta.update(meta)
-    if config is not None:
+    if config is not None and not config_nomad_variable:
         execution_meta["config"] = json.dumps(config)
     if config_nomad_variable:
         execution_meta["config_nomad_variable"] = config_nomad_variable
@@ -353,14 +374,18 @@ async def mum_create_user(
         )
         config_obj.pop("password", None)
         task_name = _resolve_mum_task_name(config_obj["action"])
-        default_task, history = await _execute_mum_task(
-            tasks_api,
-            task_name=task_name,
-            target=target,
-            config=config_obj,
-            config_nomad_variable=config_nomad_variable,
-            meta={"_job_id_prefix": job_prefix},
-        )
+        try:
+            default_task, history = await _execute_mum_task(
+                tasks_api,
+                task_name=task_name,
+                target=target,
+                config=None,
+                config_nomad_variable=config_nomad_variable,
+                meta={"_job_id_prefix": job_prefix},
+            )
+        except Exception:
+            await _delete_nomad_config_variable(tasks_api, path=config_nomad_variable)
+            raise
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
@@ -429,14 +454,21 @@ async def mum_update_user(
             config_obj.pop("password", None)
 
         task_name = _resolve_mum_task_name(config_obj["action"])
-        default_task, history = await _execute_mum_task(
-            tasks_api,
-            task_name=task_name,
-            target=target,
-            config=config_obj,
-            config_nomad_variable=config_nomad_variable,
-            meta=exec_meta,
-        )
+        try:
+            default_task, history = await _execute_mum_task(
+                tasks_api,
+                task_name=task_name,
+                target=target,
+                config=None if config_nomad_variable else config_obj,
+                config_nomad_variable=config_nomad_variable,
+                meta=exec_meta,
+            )
+        except Exception:
+            if config_nomad_variable:
+                await _delete_nomad_config_variable(
+                    tasks_api, path=config_nomad_variable
+                )
+            raise
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,6 +26,21 @@ from typing import Any, Dict, List, Optional
 from bson import json_util
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
+
+
+def sanitize_error_message(error_message: str) -> str:
+    """Redact credential-like values from exception text."""
+    redacted_message = re.sub(
+        r"(?i)(password|passwd|pwd)\s*[:=]\s*[^,\s]+",
+        r"\1=***",
+        error_message,
+    )
+    redacted_message = re.sub(
+        r"(?i)(mongodb(?:\+srv)?://[^:/\s]+:)([^@/\s]+)@",
+        r"\1***@",
+        redacted_message,
+    )
+    return redacted_message
 
 
 def mum_creds() -> str:
@@ -177,7 +192,6 @@ def delete_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
 def mum() -> None:
     """Connect to MongoDB and perform an action based on config."""
     uri = mum_creds()
-    os.environ["MONGODB_URI"] = uri
 
     args = parse_args()
     config = load_config(args.config)
@@ -198,10 +212,16 @@ def mum() -> None:
         else:
             list_users(db)
     except PyMongoError as exc:
-        print(f"MongoDB error: {exc}", file=sys.stderr)
+        print(
+            f"MongoDB error: {sanitize_error_message(str(exc))}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     except Exception as exc:  # noqa: BLE001
-        print(f"Unexpected error: {exc}", file=sys.stderr)
+        print(
+            f"Unexpected error: {sanitize_error_message(str(exc))}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     finally:
         if client is not None:

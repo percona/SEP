@@ -304,11 +304,22 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return
         try:
             await self.delete_nomad_variable(path=path, namespace=namespace)
-        except BaseNomadException:
+        except (BaseNomadException, HTTPException):
             logger.warning("Failed to delete Nomad variable %s", path, exc_info=True)
-        finally:
-            meta.pop("config_nomad_variable", None)
-            meta.pop("config_nomad_variable_namespace", None)
+            return
+        meta.pop("config_nomad_variable", None)
+        meta.pop("config_nomad_variable_namespace", None)
+
+    @staticmethod
+    def _task_context_started(task_states: dict[str, Any]) -> bool:
+        """Return whether at least one task has started in the allocation."""
+        for task_state in task_states.values():
+            state = str(task_state.get("State", "")).lower()
+            if task_state.get("StartedAt") is not None:
+                return True
+            if state in {"running", "dead", "complete", "failed", "lost"}:
+                return True
+        return False
 
     async def parse_payload(
         self, payload: str | bytes, payload_format: str
@@ -706,6 +717,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return queue_item
 
         task_states = alloc["TaskStates"]
+        if self._task_context_started(task_states):
+            # Once tasks started, the rendered template is available in alloc context,
+            # so the temporary variable is no longer needed.
+            await self._cleanup_nomad_variable(queue_item)
         task_logs = self.get_logs_for_allocation(
             alloc,
             queue_item.task_logs,
