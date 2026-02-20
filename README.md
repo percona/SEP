@@ -324,6 +324,13 @@ it should be in http://localhost:9999/applications/built-in/app-built-in
 3. Copy the app's Client ID and Client Secret and replace the respective `YOUR_CASDOOR_CLIENT_ID`
 and `YOUR_CASDOOR_CLIENT_SECRET` in the .env file you created.
 
+#### MongoDB User Management Secrets
+
+The MUM plugin stores temporary MongoDB user configs inside Nomad Variables, which Nomad
+encrypts at rest. Ensure the Nomad ACL tokens used by the Tasks API can create variables
+under the `sep/mum/*` prefix so the plugin can persist short-lived credentials without
+writing them to the Tasks database. No additional SEP-specific secret is required.
+
 ### Environment
 
 You can categorize settings by environments in settings.yaml:

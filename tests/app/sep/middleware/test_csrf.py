@@ -169,3 +169,32 @@ def test_excluded_paths(mock_get_response, test_client: TestClient):
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"detail": "Stream OK"}
     assert test_client.cookies.get("fastapi-csrf-token") is None
+
+
+def test_csrf_token_remains_stable_across_gets(test_client: TestClient):
+    """Ensure GET requests do not rotate the CSRF token unexpectedly."""
+
+    @CsrfProtect.load_config
+    def get_configs():
+        return CsrfSettings()
+
+    response = test_client.get("/gen-token")
+    assert response.status_code == status.HTTP_200_OK
+    first_token = response.json()["csrf_token"]
+    first_cookie = test_client.cookies.get("fastapi-csrf-token")
+
+    assert first_cookie is not None
+
+    response = test_client.get("/gen-token")
+    assert response.status_code == status.HTTP_200_OK
+    second_token = response.json()["csrf_token"]
+    second_cookie = test_client.cookies.get("fastapi-csrf-token")
+
+    assert first_cookie == second_cookie
+    assert first_token == second_token
+
+    response = test_client.post(
+        "/protected",
+        data={"csrf-token": first_token},
+    )
+    assert response.status_code == status.HTTP_200_OK

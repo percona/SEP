@@ -22,7 +22,7 @@ from traceback import format_exception
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
@@ -134,6 +134,7 @@ if {
     "backup",
     "backup_mongo",
     "checksums",
+    "mum"
 } & imported_plugins:
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
@@ -213,10 +214,11 @@ async def custom_404_handler(
     )
 
 
-@sep_app.exception_handler(CsrfProtectError)
-async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> None:
-    """Handle exceptions raised by CSRF protection."""
-    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+async def csrf_protect_exception_handler(request: Request, exc: CsrfProtectError) -> JSONResponse:
+    """Handle CSRF errors by returning a JSON response, not a redirect."""
+    # Do not use the default HTTPException handler (which redirects).
+    # Instead, return a JSON payload so XHR/SPA clients can handle the error.
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 
 @sep_app.exception_handler(BaseAuthProviderException)

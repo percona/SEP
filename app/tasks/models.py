@@ -165,6 +165,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUP_MONGO = "BACKUP_MONGO"
     RESTORE_MONGO = "RESTORE_MONGO"
     BACKUP_PG = "BACKUP_PG"
+    MUM = "MUM"
 
 
 class TaskLogType(StrEnum):
@@ -818,3 +819,21 @@ class DispatchLock(BaseSQLModel, table=True):
     """
 
     name: str = SQLField(max_length=255, index=True, unique=True)
+
+class NomadVariable(BaseModel):
+    """Define the request body for the /transform/ API route.
+
+    :param path: Path of the nomad variable.
+    :type path: str | bytes
+    :param value: Variable value.
+    :type value: str | bytes
+    """
+    path: str | bytes
+    value: str | bytes
+
+class NomadVariableRequest:
+    """
+    Define a request of a new Nomad variable being created
+    :param nomad_variable: Represents a Nomad Variable
+    :type nomad_variable: NomadVariable
+    """

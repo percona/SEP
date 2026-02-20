@@ -31,6 +31,8 @@ from functools import cached_property
 from itertools import product
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+from uuid import uuid1
 
 from aiohttp import (
     ClientError,
@@ -233,6 +235,81 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
         return task
 
+    async def create_nomad_variable(
+        self,
+        *,
+        path: str,
+        data: dict[str, Any],
+        namespace: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a Nomad variable with the provided data."""
+        sanitized_path = path.strip("/")
+        payload: dict[str, Any] = {
+            "Path": sanitized_path,
+            "Namespace": namespace or "default",
+            "Items": {},
+        }
+        for key, value in data.items():
+            if isinstance(value, (dict, list)):
+                raw_value = json.dumps(value)
+            else:
+                raw_value = str(value)
+            payload["Items"][key] = raw_value
+        endpoint = f"/v1/var/{quote(sanitized_path)}"
+        async with self._request("PUT", endpoint, json=payload) as response:
+            body = await response.text()
+            if response.status >= status.HTTP_400_BAD_REQUEST:
+                detail = (
+                    json.loads(body).get("error")
+                    if body and body.startswith("{")
+                    else body or "Failed to create Nomad variable"
+                )
+                raise HTTPException(status_code=response.status, detail=detail)
+            try:
+                return json.loads(body) if body else {"Path": sanitized_path}
+            except json.JSONDecodeError:
+                return {"Path": sanitized_path}
+
+    async def delete_nomad_variable(
+        self,
+        *,
+        path: str,
+        namespace: str | None = None,
+    ) -> None:
+        """Delete a Nomad variable."""
+        sanitized_path = path.strip("/")
+        params = {"namespace": namespace} if namespace else None
+        endpoint = f"/v1/var/{quote(sanitized_path)}"
+        async with self._request("DELETE", endpoint, params=params) as response:
+            body = await response.text()
+            if response.status in (
+                status.HTTP_200_OK,
+                status.HTTP_204_NO_CONTENT,
+                status.HTTP_404_NOT_FOUND,
+            ):
+                return
+            detail = (
+                json.loads(body).get("error")
+                if body and body.startswith("{")
+                else body or "Failed to delete Nomad variable"
+            )
+            raise HTTPException(status_code=response.status, detail=detail)
+
+    async def _cleanup_nomad_variable(self, queue_item: TaskHistory) -> None:
+        """Remove temporary Nomad variables referenced by this execution."""
+        meta = queue_item.execution_request.meta or {}
+        path = meta.get("config_nomad_variable")
+        namespace = meta.get("config_nomad_variable_namespace")
+        if not path:
+            return
+        try:
+            await self.delete_nomad_variable(path=path, namespace=namespace)
+        except BaseNomadException:
+            logger.warning("Failed to delete Nomad variable %s", path, exc_info=True)
+        finally:
+            meta.pop("config_nomad_variable", None)
+            meta.pop("config_nomad_variable_namespace", None)
+
     async def parse_payload(
         self, payload: str | bytes, payload_format: str
     ) -> dict[str, Any]:
@@ -296,15 +373,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 payload = minify_file_content(payload)
             payload = b2a_base64(gzip_compress(payload)).decode("utf-8")
 
-        filtered_meta = (
-            {
-                key: value
-                for key, value in queue_item.execution_request.meta.items()
-                if not key.startswith("_")
-            }
-            if queue_item.execution_request.meta
-            else {}
-        )
+        filtered_meta = {}
+        if queue_item.execution_request.meta:
+            for key, value in queue_item.execution_request.meta.items():
+                if key.startswith("_"):
+                    continue
+                filtered_meta[key] = value
 
         custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
         if custom_prefix:
@@ -627,6 +701,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     "Lost job and allocation from task history %s", queue_item.id
                 )
                 queue_item.status = TaskHistoryStatusEnum.LOST
+            if queue_item.status != TaskHistoryStatusEnum.RUNNING:
+                await self._cleanup_nomad_variable(queue_item)
             return queue_item
 
         task_states = alloc["TaskStates"]
@@ -678,6 +754,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.status,
                     stopped=job.get("Stop", False),
                 )
+        if queue_item.status != TaskHistoryStatusEnum.RUNNING:
+            await self._cleanup_nomad_variable(queue_item)
         return queue_item
 
     def task_needs_job_register(self, task: Task) -> bool:
