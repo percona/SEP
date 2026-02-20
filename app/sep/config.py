@@ -179,7 +179,7 @@ class CsrfSettings(BaseModel):
     :type TOKEN_TIME_LIMIT: TimedeltaSeconds
     """
 
-    SECRET_KEY: str = settings.SECRET_KEY
+    SECRET_KEY: str = settings.SECRET_KEY.get_secret_value()
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "none"
     TOKEN_KEY: str = "csrf-token"  # noqa: S105
