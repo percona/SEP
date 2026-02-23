@@ -24,8 +24,10 @@ from fastapi import FastAPI, HTTPException, Request, status
 from nomad.api.exceptions import BaseNomadException
 
 from app.core.config import create_app, default_lifespan, settings
+from app.core.exceptions import HTTPGoneException
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import init_tasks_db
+from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.periodic.routes import router as periodic_router
 from app.tasks.routes import router as tasks_router
 
@@ -70,6 +72,20 @@ async def internal_error_handler(
     """Proper log unhandled exceptions."""
     logger.exception("Unhandled exception:", exc_info=exc)
     raise exc
+
+
+@tasks_app.exception_handler(TaskDataNotFoundInExecutorError)
+async def task_data_not_found_handler(
+    _: Request,
+    exc: TaskDataNotFoundInExecutorError,
+) -> None:
+    """Handle exceptions raised when task data is not found in the executor."""
+    logger.debug("Task data not found in executor: %s", exc_info=exc)
+    # TODO: Add more details to the exception response  # noqa: TD002
+    # SEP-733
+    raise HTTPGoneException(
+        "The requested task data is no longer available in the executor."
+    )
 
 
 @tasks_app.exception_handler(BaseNomadException)

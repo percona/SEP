@@ -224,14 +224,13 @@ async def get_validated_execution_args(
     try:
         return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
     except ValidationError as exc:
-        for error in exc.errors():
-            if error.get("type") != "none_required":
-                error_msg = "Error executing snippet"
-                if error_loc := error.get("loc", ()):
-                    error_msg += f" [{error_loc[0]}]"
-                if error_msg_detail := error.get("msg"):
-                    error_msg += f": {error_msg_detail}"
-                messages.error(request, error_msg, request.url.path)
+        messages.from_validation_error(
+            request,
+            exc,
+            "Error executing snippet",
+            request.url.path,
+            exclude_types=("none_required",),
+        )
         raise _get_snippet_redirect_exc(request, referer) from None
 
 
@@ -267,4 +266,5 @@ def get_snippet_execution_request_meta(
         snippet_filename=snippet.filename,
         md5_checksum=snippet.md5_digest,
         args=execution_args.to_args_string(),
+        requirements=snippet.requirements,
     )

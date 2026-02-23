@@ -14,7 +14,7 @@ ENV PYTHONUNBUFFERED 1
 ENV FASTAPI_ENV production_docker
 
 # Install dependencies
-RUN apk update && apk add --no-cache g++
+RUN apk update && apk add --no-cache g++ git
 
 # Export requirements
 RUN pip install --no-cache-dir wheel poetry==2.2.1 poetry-plugin-export
@@ -22,4 +22,7 @@ COPY ./pyproject.toml ./poetry.lock /usr/src/sep/
 RUN poetry export --with postgresql --with syncpostgresql --with redis --with spacy_en_model_sm -f requirements.txt --output requirements.txt
 
 # Build Wheel archives for requirements
-RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.txt
+RUN grep -v " @ git+" requirements.txt > requirements.pypi.txt
+RUN grep " @ git+" requirements.txt > requirements.vcs.txt
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.pypi.txt
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.vcs.txt

@@ -117,6 +117,7 @@ LOGGING_CONFIG = {
             "level": "INFO",
             "propagate": False,
         },
+        "watchfiles.main": {"handlers": ["default"], "level": "WARNING"},
     },
 }
 
