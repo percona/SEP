@@ -27,7 +27,7 @@ from pydantic import (
 from app.core.alerts.models import Alert, BaseAlertProvider
 from app.core.config import settings
 from app.core.requests import RemoteAPI
-from app.core.utils.fields import EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 
 
 class PagerDutyAlertSeverity(EnumFieldMixin, StrEnum):
@@ -50,16 +50,16 @@ class PagerDutyAlert(Alert):
     :param dedup_key: A unique key to deduplicate alerts. If provided, PagerDuty will
         not trigger a new incident if an alert with the same dedup_key is already
         active. Defaults to None.
-    :type dedup_key: RequiredStr | None
+    :type dedup_key: NonEmptyStr | None
     :param component: The component affected by the alert, such as a service or
         application. Defaults to None.
-    :type component: RequiredStr | None
+    :type component: NonEmptyStr | None
     :param group: The group associated with the alert, such as a team or department.
         Defaults to None.
-    :type group: RequiredStr | None
+    :type group: NonEmptyStr | None
     :param class_: The class of the alert, which can be used to categorize it.
         Defaults to None.
-    :type class_: RequiredStr | None
+    :type class_: NonEmptyStr | None
     :param custom_details: Additional custom details to include in the alert.
         Defaults to None.
     :type custom_details: dict[str, Any] | None
@@ -73,10 +73,10 @@ class PagerDutyAlert(Alert):
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
     severity: PagerDutyAlertSeverity
-    dedup_key: RequiredStr | None = None
-    component: RequiredStr | None = None
-    group: RequiredStr | None = None
-    class_: RequiredStr | None = Field(None, alias="class")
+    dedup_key: NonEmptyStr | None = None
+    component: NonEmptyStr | None = None
+    group: NonEmptyStr | None = None
+    class_: NonEmptyStr | None = Field(None, alias="class")
     custom_details: dict[str, Any] | None = None
     images: list[dict[str, str]] | None = None
     links: list[dict[str, str]] | None = None

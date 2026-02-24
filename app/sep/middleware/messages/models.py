@@ -29,7 +29,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.core.utils.fields import EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 
 
 class MessageLevel(EnumFieldMixin, IntEnum):
@@ -67,7 +67,7 @@ class Message(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
     level: MessageLevel = Field(alias="l")
-    text: RequiredStr = Field(alias="t", max_length=512)
+    text: NonEmptyStr = Field(alias="t", max_length=512)
     path_pattern: re.Pattern[str] | None = Field(default=None, alias="p")
     sticky: bool = Field(default=False, exclude=True)
 
