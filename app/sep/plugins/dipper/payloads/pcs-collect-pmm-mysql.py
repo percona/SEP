@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 # ---
 # title: Collect PMM MySQL Graphs
 # description: Collect PMM MySQL dashboard graphs and diagnostics from a PMM server.
@@ -94,6 +92,8 @@ from __future__ import annotations
 #     description: Collect Amazon RDS Aurora MySQL graphs.
 #     type: bool
 # ---
+
+from __future__ import annotations
 
 import argparse
 import datetime
