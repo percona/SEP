@@ -74,18 +74,30 @@ async def internal_error_handler(
     raise exc
 
 
+def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict:
+    """Build structured detail for HTTP 410 from TaskDataNotFoundInExecutorError."""
+    detail: dict = {
+        "message": "The requested task data is no longer available in the executor.",
+    }
+    if exc.resource_type is not None:
+        detail["resource_type"] = exc.resource_type
+    if exc.resource_id is not None:
+        detail["resource_id"] = exc.resource_id
+    if exc.executor_name is not None:
+        detail["executor"] = exc.executor_name
+    if exc.args:
+        detail["detail"] = str(exc.args[0])
+    return detail
+
+
 @tasks_app.exception_handler(TaskDataNotFoundInExecutorError)
 async def task_data_not_found_handler(
     _: Request,
     exc: TaskDataNotFoundInExecutorError,
 ) -> None:
     """Handle exceptions raised when task data is not found in the executor."""
-    logger.debug("Task data not found in executor: %s", exc_info=exc)
-    # TODO: Add more details to the exception response  # noqa: TD002
-    # SEP-733
-    raise HTTPGoneException(
-        "The requested task data is no longer available in the executor."
-    )
+    logger.debug("Task data not found in executor: %s", exc)
+    raise HTTPGoneException(detail=task_data_not_found_detail(exc))
 
 
 @tasks_app.exception_handler(BaseNomadException)
