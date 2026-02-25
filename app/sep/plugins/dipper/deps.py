@@ -155,7 +155,9 @@ async def get_dipper_execution_args(
                 " Provide it in the form or configure SEP__PMM__ENDPOINT.",
             )
         form_data["pmmserver"] = pmm_server
-        form_data["apikey"] = form_data.get("apikey") or pmm.api_key
+        form_data["apikey"] = form_data.get("apikey") or (
+            pmm.api_key.get_secret_value() if pmm.api_key else None
+        )
 
     try:
         return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
