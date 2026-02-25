@@ -22,6 +22,7 @@ jobs:
   # TODO: Remove after the required status check is deleted from the ruleset.
   # Kept as a no-op so the existing "do-not-merge-fail" requirement passes.
   do-not-merge-fail:
+    if: contains(github.event.pull_request.labels.*.name, 'run-dnmf')
     runs-on: ubuntu-latest
     steps:
       - run: 'true'
