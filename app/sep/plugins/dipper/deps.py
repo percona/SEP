@@ -223,6 +223,34 @@ def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
     return host
 
 
+def get_pmm_form_defaults(
+    resolved_executor_host: str | None,
+    service_name: str,
+    node_name: str,
+) -> dict[str, str]:
+    """Build default form values for PMM collector scripts.
+
+    :param resolved_executor_host: The resolved executor host for PMM, or None
+        if resolution failed.
+    :type resolved_executor_host: str | None
+    :param service_name: The name of the selected service.
+    :type service_name: str
+    :param node_name: The name of the service node.
+    :type node_name: str
+    :return: A dictionary of default parameter values for the PMM form.
+    :rtype: dict[str, str]
+    """
+    pmm = sep_settings.PMM
+    defaults = {}
+    if resolved_executor_host is not None:
+        defaults["pmmserver"] = "https://localhost:8443"
+    elif pmm.endpoint:
+        defaults["pmmserver"] = pmm.endpoint
+    defaults["node"] = node_name
+    defaults["service"] = service_name
+    return defaults
+
+
 async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
     """Fetch the list of services that are supported by Dipper plugin.
 
