@@ -104,10 +104,14 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        tasks_app,
+        "app.tasks.main:tasks_app",
         host=tasks_settings.UVICORN_HOST,
         port=tasks_settings.UVICORN_PORT,
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
+        reload=True,
+        reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
+        reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
+        reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
     )
