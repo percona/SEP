@@ -336,7 +336,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         try:
             return self.backend.job.get_job(job_id)
         except URLNotFoundNomadException as exc:
-            raise JobNotFoundError(exc.nomad_resp) from None
+            raise JobNotFoundError(
+                exc.nomad_resp,
+                executor_name="nomad",
+                resource_type="job",
+                resource_id=job_id,
+            ) from None
 
     def get_job_for_task_history(self, queue_item: TaskHistory) -> dict[str, Any]:
         """Retrieve the job associated with a task history record.
@@ -355,7 +360,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if job_id := queue_item.execution_request.tracking.get("job_id"):
             return self.get_job(job_id)
         raise JobNotFoundError(
-            f"Missing job_id in task history tracking ({queue_item.id})"
+            f"Missing job_id in task history tracking ({queue_item.id})",
+            executor_name="nomad",
+            resource_type="job",
         )
 
     def get_hosts(self) -> dict[str, str]:
@@ -434,7 +441,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         )
         if not allocations:
             raise AllocationNotFoundError(
-                f"No allocations found with filter {allocation_filter!r}"
+                f"No allocations found with filter {allocation_filter!r}",
+                executor_name="nomad",
+                resource_type="allocation",
+                resource_id=allocation_filter,
             )
         logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
         alloc = allocations[0]
