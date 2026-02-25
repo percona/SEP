@@ -472,7 +472,12 @@ class BaseSnippet(BaseModel):
         """Update the snippet's metadata."""
         self.meta = await self.get_meta_by_path(self)
 
-    def to_form(self, executor_hosts: Iterable[str], form_action: str = "") -> str:
+    def to_form(
+        self,
+        executor_hosts: Iterable[str],
+        form_action: str = "",
+        defaults: dict[str, Any] | None = None,
+    ) -> str:
         """Generate an HTML form for executing the snippet.
 
         This method creates a form with fields based on the snippet's metadata and
@@ -485,6 +490,10 @@ class BaseSnippet(BaseModel):
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
+        :param defaults: Optional dictionary of default values keyed by parameter
+            name.  When provided, matching parameter defaults are overridden before
+            form generation.
+        :type defaults: dict[str, Any] | None
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
@@ -492,6 +501,13 @@ class BaseSnippet(BaseModel):
             "Generating execution form for snippet %s (action=%r)", self, form_action
         )
         parameters = self.meta.get("parameters", [])
+        if defaults:
+            parameters = [
+                {**param, "default": defaults[param["name"]]}
+                if param.get("name") in defaults
+                else param
+                for param in parameters
+            ]
         logger.debug("Meta Snippet parameters: %s)", parameters)
         return self._to_form(
             json_serializer(parameters, sort_keys=True),
