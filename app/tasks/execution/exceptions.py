@@ -17,4 +17,29 @@
 
 
 class TaskDataNotFoundInExecutorError(Exception):
-    """Define exception for when task data is not found in executor."""
+    """Define exception for when task data is not found in executor.
+
+    Subclasses can pass optional structured context for HTTP response details:
+
+    :param *args: Passed through to :class:`Exception` (e.g. a message string).
+    :param executor_name: Name of the executor where the resource was missing
+        (e.g. ``"nomad"``).
+    :param resource_type: Type of missing resource (e.g. ``"job"``,
+        ``"allocation"``).
+    :param resource_id: Identifier for the missing resource when available
+        (job ID, allocation ID, filter expression, etc.).
+    :param **kwargs: Passed through to the next base class.
+    """
+
+    def __init__(
+        self,
+        *args: object,
+        executor_name: str | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.executor_name = executor_name
+        self.resource_type = resource_type
+        self.resource_id = resource_id
