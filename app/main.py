@@ -104,10 +104,14 @@ if __name__ == "__main__":
 
         try:
             uvicorn.run(
-                app,
+                "app.main:app",
                 host=sep_settings.UVICORN_HOST,
                 port=sep_settings.UVICORN_PORT,
                 log_config=settings.LOGGING_CONFIG,
+                reload=True,
+                reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
+                reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
+                reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
             )
         except KeyboardInterrupt:
             logging.info("Shutting down Celery worker...")
@@ -121,8 +125,12 @@ if __name__ == "__main__":
     else:
         logging.config.dictConfig(settings.LOGGING_CONFIG)
         uvicorn.run(
-            app,
+            "app.main:app",
             host=sep_settings.UVICORN_HOST,
             port=sep_settings.UVICORN_PORT,
             log_config=settings.LOGGING_CONFIG,
+            reload=True,
+            reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
+            reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
+            reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
         )

@@ -843,7 +843,7 @@ class BaseBackup:
 
         collector_file = (
             self.backup_textfile_collector_dir
-            / f"{msp_action}.{BACKUP_TYPE}.{self.alias}.prom"
+            / f"{msp_action.value}.{BACKUP_TYPE}.{self.alias}.prom"
         )
 
         encryption_val = self.report_options.get("encryption", "")
@@ -851,11 +851,11 @@ class BaseBackup:
         end_time_val = str(self.report_options.get("end_time", ""))
 
         metrics_text = (
-            f"# HELP msp_{msp_action}_status The status of the job\n"
-            f"# TYPE msp_{msp_action}_status Untyped\n"
-            f"# HELP msp_{msp_action}_last_report_ts The Last Report Time\n"
-            f"# TYPE msp_{msp_action}_last_report_ts Untyped\n"
-            f'msp_{msp_action}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
+            f"# HELP msp_{msp_action.value}_status The status of the job\n"
+            f"# TYPE msp_{msp_action.value}_status Untyped\n"
+            f"# HELP msp_{msp_action.value}_last_report_ts The Last Report Time\n"
+            f"# TYPE msp_{msp_action.value}_last_report_ts Untyped\n"
+            f'msp_{msp_action.value}_status{{type="{BACKUP_TYPE}", alias="{self.alias}", encryption="{encryption_val}", '
             f'backup_id="", start_time="{start_time_val}", end_time="{end_time_val}"'
         )
 
@@ -867,7 +867,7 @@ class BaseBackup:
         metrics_text += f', backup_size="{size_bytes}"'
 
         metrics_text += f"}} {backup_status}\n"
-        metrics_text += f'msp_{msp_action}_last_report_ts{{type="{BACKUP_TYPE}", alias="{self.alias}", backup_id=""}} {int(time.time())}\n'
+        metrics_text += f'msp_{msp_action.value}_last_report_ts{{type="{BACKUP_TYPE}", alias="{self.alias}", backup_id=""}} {int(time.time())}\n'
 
         with collector_file.open("w") as outfile:
             outfile.write(metrics_text)
