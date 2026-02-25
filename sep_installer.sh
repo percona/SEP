@@ -1312,7 +1312,7 @@ render_templates_cli() {
                 if [ "${DEFAULT_CONTAINER_REGISTRY}/" != "docker.io/" ]; then
                     sed -i "s^docker.io/^${DEFAULT_CONTAINER_REGISTRY}/^g" "${outfile}.tmp"
                 fi
-            ;;
+                ;;
         esac
 
         sed \
