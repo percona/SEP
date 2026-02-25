@@ -19,16 +19,38 @@ permissions:
   pull-requests: read
 
 jobs:
+  # TODO: Remove after the required status check is deleted from the ruleset.
+  # Kept as a no-op so the existing "do-not-merge-fail" requirement passes.
   do-not-merge-fail:
-    if: contains(github.event.pull_request.labels.*.name, 'do not merge')
+    if: contains(github.event.pull_request.labels.*.name, 'run-dnmf')
     runs-on: ubuntu-latest
     steps:
-      - name: Fail if PR is labeled as 'do not merge'
+      - run: 'true'
+
+  label-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block merge on disqualifying labels
+        if: >-
+          contains(github.event.pull_request.labels.*.name, 'do not merge') ||
+          contains(github.event.pull_request.labels.*.name, 'qa in progress') ||
+          contains(github.event.pull_request.labels.*.name, 'qa failed')
         run: |
+          echo "::error::PR is blocked by label. Remove 'do not merge', 'qa in progress', or 'qa failed' to proceed."
+          exit 1
+
+      - name: Require QA approval label
+        if: >-
+          !contains(github.event.pull_request.labels.*.name, 'qa passed') &&
+          !contains(github.event.pull_request.labels.*.name, 'skip-test')
+        run: |
+          echo "::error::PR requires 'qa passed' or 'skip-test' label to merge."
           exit 1
 
   precommit:
     if: ${{ github.event.pull_request.draft == false }}
+    needs:
+      - label-gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout codebase
