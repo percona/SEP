@@ -21,6 +21,7 @@ from typing import Any, ClassVar
 from pydantic import (
     ConfigDict,
     Field,
+    SecretStr,
     validate_call,
 )
 
@@ -90,14 +91,14 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
     :cvar API_ENDPOINT: The API endpoint for Events v2.
     :vartype API_ENDPOINT: str
     :param routing_key: The routing key used for API requests.
-    :type routing_key: str
+    :type routing_key: SecretStr
     """
 
     API_ENDPOINT: ClassVar[str] = "https://events.pagerduty.com/v2/"
-    routing_key: str
+    routing_key: SecretStr
 
     def __hash__(self) -> int:
-        return hash((self.__class__.__name__, self.routing_key))
+        return hash((self.__class__.__name__, self.routing_key.get_secret_value()))
 
     async def get_api(self) -> RemoteAPI:
         """Get the PagerDuty API client.
@@ -120,7 +121,7 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         await pagerduty_api.post(
             "enqueue",
             json={
-                "routing_key": self.routing_key,
+                "routing_key": self.routing_key.get_secret_value(),
                 "event_action": "trigger",
                 **alert.model_dump(
                     include={"dedup_key", "images", "links"}, exclude_none=True

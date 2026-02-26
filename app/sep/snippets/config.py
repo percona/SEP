@@ -64,6 +64,29 @@ class SnippetSudoOption(EnumFieldMixin, Enum):
     NEVER = 0
     ALWAYS = 1
     OPTIONAL = 2
+    OPTIONAL_DEFAULT_TRUE = 3
+    OPTIONAL_DEFAULT_FALSE = OPTIONAL
+
+    @property
+    def is_optional(self) -> bool:
+        """Return whether this option renders a sudo checkbox.
+
+        :return: `True` for optional variants, `False` otherwise.
+        :rtype: bool
+        """
+        return self in (
+            SnippetSudoOption.OPTIONAL,
+            SnippetSudoOption.OPTIONAL_DEFAULT_TRUE,
+        )
+
+    @property
+    def sudo_default(self) -> bool:
+        """Return the default checked state for the sudo checkbox.
+
+        :return: `True` only for `OPTIONAL_DEFAULT_TRUE`.
+        :rtype: bool
+        """
+        return self == SnippetSudoOption.OPTIONAL_DEFAULT_TRUE
 
 
 class SnippetFilterType(EnumFieldMixin, StrEnum):
