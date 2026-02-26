@@ -84,7 +84,7 @@ class CasdoorTokenPayload(BaseTokenPayload):
         :return: The validated audience list.
         :rtype: list[str]
         """
-        if settings.CASDOOR.client_id not in v:
+        if settings.CASDOOR.client_id.get_secret_value() not in v:
             raise ValueError(f"Client ID not part of audience: {v}")
         return v
 
