@@ -163,27 +163,43 @@ if [[ $OUTPUT_MODE == "file" ]]; then
     OUTPUT_FILE="proxysql_log_${INPUT_EPOCH}.log"
 fi
 
-awk -v start_e="$START_EPOCH" -v end_e="$END_EPOCH" '
-BEGIN { print_flag = 0 }
-{
-    ts = substr($0, 1, 19)
-    cmd = "date -d \"" ts "\" +%s 2>/dev/null"
-    cmd | getline epoch
-    close(cmd)
+if [[ $OUTPUT_MODE == "file" ]]; then
+    awk -v start_e="$START_EPOCH" -v end_e="$END_EPOCH" '
+    BEGIN { print_flag = 0 }
+    {
+        ts = substr($0, 1, 19)
+        cmd = "date -d \"" ts "\" +%s 2>/dev/null"
+        cmd | getline epoch
+        close(cmd)
 
-    if (epoch >= start_e && epoch <= end_e) {
-        print_flag = 1
-    } else if (epoch > end_e && print_flag == 1) {
-        exit
+        if (epoch >= start_e && epoch <= end_e) {
+            print_flag = 1
+        } else if (epoch > end_e && print_flag == 1) {
+            exit
+        }
     }
-}
-{
-    if (print_flag) print
-}
-' "$PROXYSQL_LOG" |
-    if [[ $OUTPUT_MODE == "file" ]]; then
-        tee "$OUTPUT_FILE"
-        echo "Output written to $OUTPUT_FILE" >&2
-    else
-        cat
-    fi
+    {
+        if (print_flag) print
+    }
+    ' "$PROXYSQL_LOG" > "$OUTPUT_FILE"
+    echo "Output written to $OUTPUT_FILE" >&2
+else
+    awk -v start_e="$START_EPOCH" -v end_e="$END_EPOCH" '
+    BEGIN { print_flag = 0 }
+    {
+        ts = substr($0, 1, 19)
+        cmd = "date -d \"" ts "\" +%s 2>/dev/null"
+        cmd | getline epoch
+        close(cmd)
+
+        if (epoch >= start_e && epoch <= end_e) {
+            print_flag = 1
+        } else if (epoch > end_e && print_flag == 1) {
+            exit
+        }
+    }
+    {
+        if (print_flag) print
+    }
+    ' "$PROXYSQL_LOG"
+fi
