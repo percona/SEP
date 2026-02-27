@@ -24,7 +24,7 @@ from typing import Any, Literal, Self
 from aiohttp import ClientConnectionError
 from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import HTTPException, status
-from pydantic import computed_field, ConfigDict, model_validator
+from pydantic import computed_field, ConfigDict, model_validator, SecretStr
 
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
@@ -75,9 +75,9 @@ class CasdoorSDK(RemoteAPI):
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param client_id: The client ID for Casdoor authentication.
-    :type client_id: str
+    :type client_id: SecretStr
     :param client_secret: The client secret for Casdoor authentication.
-    :type client_secret: str
+    :type client_secret: SecretStr
     :param organization_name: The organization name in Casdoor.
     :type organization_name: str
     :param organization_name: The name of the organization in Casdoor. Defaults to
@@ -103,8 +103,8 @@ class CasdoorSDK(RemoteAPI):
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     logger_name: str = __name__
-    client_id: str
-    client_secret: str
+    client_id: SecretStr
+    client_secret: SecretStr
     organization_name: str = "built-in"
     application_name: str = "app-built-in"
     front_endpoint: URL = URL()
@@ -151,7 +151,7 @@ class CasdoorSDK(RemoteAPI):
         :rtype: str
         """
         return b64encode(
-            f"{self.client_id}:{self.client_secret}".encode(),
+            f"{self.client_id.get_secret_value()}:{self.client_secret.get_secret_value()}".encode(),
         ).decode("utf-8")
 
     @model_validator(mode="after")
@@ -240,8 +240,8 @@ class CasdoorSDK(RemoteAPI):
         """
         data = {
             "grant_type": "refresh_token",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
+            "client_id": self.client_id.get_secret_value(),
+            "client_secret": self.client_secret.get_secret_value(),
             "scope": scope,
             "refresh_token": refresh_token,
         }
@@ -275,8 +275,8 @@ class CasdoorSDK(RemoteAPI):
         """
         data = {
             "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
+            "client_id": self.client_id.get_secret_value(),
+            "client_secret": self.client_secret.get_secret_value(),
         }
         invalid_grant_message = "Invalid credentials."
         if code:

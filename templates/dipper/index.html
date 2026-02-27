@@ -162,7 +162,7 @@
         </section>
         <section>
             <h3>Execute</h3>
-            {{ script.to_form(executor_hosts, script_execution_url) | safe }}
+            {{ script.to_form(executor_hosts, script_execution_url, form_defaults) | safe }}
         </section>
         {% if running_tasks %}
             <section id="running-tasks">
