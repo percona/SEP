@@ -99,15 +99,15 @@ function mysql_exec() {
     local retvalue
     local retoutput
 
-    retoutput=$(printf "[client]\nuser=${USER}\npassword=\"${PASSWORD}\"\nhost=${HOST}\nport=${PORT}" |
+    retoutput=$(printf "[client]\nuser=%s\npassword=\"%s\"\nhost=%s\nport=%s" "${USER}" "${PASSWORD}" "${HOST}" "${PORT}" |
         mysql --defaults-file=/dev/stdin --protocol=tcp \
-            ${args} -e "${query}")
+            "${args}" -e "${query}" 2>&1 | grep -v "mylogin.cnf")
     retvalue=$?
 
     if [[ -n $retoutput ]]; then
-        retoutput+="\n"
+        retoutput+=$'\n'
     fi
-    printf "${retoutput//%/%%}"
+    printf "%s" "${retoutput//%/%%}"
     return $retvalue
 }
 
@@ -117,9 +117,8 @@ function parse_args() {
     # TODO: kennt, what happens if we don't have a functional getopt()?
     # Check if we have a functional getopt(1)
     if ! getopt --test; then
-        go_out="$(getopt --options=h --longoptions=defaults-file:,runtime,main,stats,monitor,files,table::,output:,help \
-            --name="$(basename "$0")" -- "$@")"
-        if [[ $? -ne 0 ]]; then
+        if ! go_out="$(getopt --options=h --longoptions=defaults-file:,runtime,main,stats,monitor,files,table::,output:,help \
+            --name="$(basename "$0")" -- "$@")"; then
             # no place to send output
             echo "Script error: getopt() failed" >&2
             exit 1
@@ -185,8 +184,6 @@ function parse_args() {
                 ;;
             -h | --help)
                 usage
-                exit 1
-                break
                 ;;
         esac
     done
@@ -197,6 +194,7 @@ function parse_args() {
     fi
 
     # Load credentials from config file
+    # shellcheck disable=SC1090
     source "$DEFAULTS_FILE"
     USER=${PROXYSQL_USERNAME:-}
     PASSWORD=${PROXYSQL_PASSWORD:-}
