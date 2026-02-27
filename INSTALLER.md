@@ -181,6 +181,7 @@ Related environment variables (advanced):
 
 | Environment variable | Purpose | Default |
 |---|---|---|
+| `CONTAINER_REGISTRY` | Address for the container registry | docker.io |
 | `SEP_PMM_PUBLIC_HOST` | PMM host address used in rendered config | `127.0.0.1` |
 | `SEP_PMM_PORT` | PMM port | `8443` |
 | `SEP_PMM_FRONTEND` | PMM base URL | `https://${SEP_PMM_PUBLIC_HOST}` |

@@ -10,6 +10,7 @@ from app.core.config import (
     BaseYamlAppSettings,
     default_lifespan,
     Settings,
+    settings,
     YamlPrefixConfigSettingsSource,
 )
 
@@ -176,3 +177,13 @@ async def test_default_lifespan():
     mock_casdoor.__aenter__.assert_called_once()
     mock_casdoor.__aexit__.assert_called_once()
     mock_close_registry.assert_called_once()
+
+
+def test_settings_secret_key_is_secretstr():
+    """Test that SECRET_KEY is a SecretStr instance and masked in repr."""
+    from pydantic import SecretStr
+
+    assert isinstance(settings.SECRET_KEY, SecretStr)
+    secret_value = settings.SECRET_KEY.get_secret_value()
+    if secret_value:
+        assert secret_value not in repr(settings.SECRET_KEY)

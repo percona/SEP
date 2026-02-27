@@ -34,6 +34,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    SecretStr,
     ValidationError,
 )
 from pydantic_core.core_schema import ValidationInfo
@@ -174,13 +175,17 @@ class CsrfSettings(BaseModel):
     :type TOKEN_KEY: str
     :param TOKEN_LOCATION: Location where the CSRF token is expected.
     :type TOKEN_LOCATION: str
+    :param TOKEN_TIME_LIMIT: Maximum age of the CSRF token; should match
+        session MAX_AGE so the token expires with the session.
+    :type TOKEN_TIME_LIMIT: TimedeltaSeconds
     """
 
-    SECRET_KEY: str = settings.SECRET_KEY
+    SECRET_KEY: str = settings.SECRET_KEY.get_secret_value()
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "none"
     TOKEN_KEY: str = "csrf-token"  # noqa: S105
     TOKEN_LOCATION: str = "body"  # noqa: S105
+    TOKEN_TIME_LIMIT: TimedeltaSeconds = timedelta(days=7)
 
 
 class PMMSettings(BaseLowercaseModel):
@@ -191,7 +196,7 @@ class PMMSettings(BaseLowercaseModel):
     :param frontend: The PMM frontend URL.
     :type frontend: StrHttpUrl | None
     :param api_key: API key for PMM authentication.
-    :type api_key: str | None
+    :type api_key: SecretStr | None
     :param verify_ssl: Whether to verify SSL certificates.
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
@@ -201,7 +206,7 @@ class PMMSettings(BaseLowercaseModel):
     model_config = ConfigDict(extra="allow")
     endpoint: StrHttpUrl | None = None
     frontend: StrHttpUrl | None = None
-    api_key: str | None = None
+    api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
 
@@ -468,7 +473,7 @@ class SEPSettings(BaseYamlAppSettings):
                         logger.warning(
                             "It's recommended to set SEP__PMM__API_KEY instead of using the legacy PMMSyncer configuration."
                         )
-                        self.PMM.api_key = pmm_api_key
+                        self.PMM.api_key = SecretStr(pmm_api_key)
             except AttributeError:
                 continue
             except ValidationError:

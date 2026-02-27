@@ -31,7 +31,7 @@ from app.sep.deps import (
     TasksClient,
 )
 from app.sep.utils.decorators import csrf_exempt
-from app.tasks.models import FileMetadataResponse, TaskHistoryResponse
+from app.tasks.models import FileMetadata, TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,14 +40,14 @@ router = APIRouter()
 @router.get(
     "/{task_history_id}",
     dependencies=[IsAuthenticated],
-    response_model=dict[str, FileMetadataResponse],
+    response_model=dict[str, FileMetadata],
 )
 @csrf_exempt
 async def list_task_history_files(
     request: Request,  # noqa: ARG001
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_api: TaskAPI,
-) -> dict[str, FileMetadataResponse]:
+) -> dict[str, FileMetadata]:
     """Stream a task history's logs as server-sent events."""
     return await tasks_api.get(f"/history/{task_history.id}/files/")
 
