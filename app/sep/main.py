@@ -324,11 +324,15 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        sep_app,
+        "app.sep.main:sep_app",
         host=sep_settings.UVICORN_HOST,
         port=sep_settings.UVICORN_PORT,
         proxy_headers=sep_settings.PROXY_HEADERS,
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
+        reload=True,
+        reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
+        reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
+        reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
     )

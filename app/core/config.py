@@ -33,6 +33,7 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    SecretStr,
     validate_call,
 )
 from pydantic_settings import (
@@ -284,7 +285,7 @@ class Settings(BaseYamlSettings):
     CELERY: CeleryOptions
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     ALLOW_CONCURRENT_SESSIONS: bool = False
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePath | None = None
