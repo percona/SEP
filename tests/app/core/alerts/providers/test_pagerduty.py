@@ -66,6 +66,12 @@ async def test_send_alert_builds_correct_payload(mocker, mock_remote_api, sample
     )
 
 
+def test_pagerduty_routing_key_masked_in_repr():
+    """Test that routing_key is masked in repr output."""
+    prov = PagerDutyEventsAlertProvider(routing_key="secret-routing-key")
+    assert "secret-routing-key" not in repr(prov)
+
+
 def test_pagerduty_alert_extra_ignored_and_validation():
     """Ensure PagerDutyAlert ignores extras and validates severity enum."""
     a = PagerDutyAlert(summary="s", source="o", severity="warning", foo="bar")
