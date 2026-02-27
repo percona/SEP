@@ -35,6 +35,16 @@
 #    label: Stats tables
 #    description: Display stats tables
 #    default: false
+#  - name: output
+#    type: str
+#    description: Where to send the output
+#    label: Output destination
+#    default: stdout
+#    choices:
+#      - value: stdout
+#        label: Print to the terminal (default)
+#      - value: file
+#        label: Write the output to a file named by the timestamp
 # ---
 
 declare DEFAULTS_FILE="/etc/proxysql-admin.cnf"
@@ -49,6 +59,8 @@ declare DUMP_STATS=0
 declare DUMP_MONITOR=0
 declare DUMP_FILES=0
 declare TABLE_FILTER=""
+declare OUTPUT_MODE="stdout"
+declare OUTPUT_FILE=""
 
 function usage() {
     cat << EOF
@@ -62,6 +74,7 @@ Options:
   --runtime              Show runtime data
   --stats                Show stats tables
   --table <name>         Filter by table name
+  --output <file|stdout> Output destination (default: stdout)
   --help                 Show this message
 EOF
     exit 1
@@ -81,23 +94,22 @@ EOF
 #   2: the query
 #
 function mysql_exec() {
-        local args=$1
-        local query=$2
-        local retvalue
-        local retoutput
+    local args=$1
+    local query=$2
+    local retvalue
+    local retoutput
 
-        retoutput=$(printf "[client]\nuser=${USER}\npassword=\"${PASSWORD}\"\nhost=${HOST}\nport=${PORT}" |
-                mysql --defaults-file=/dev/stdin --protocol=tcp \
-                        ${args} -e "${query}")
-        retvalue=$?
+    retoutput=$(printf "[client]\nuser=${USER}\npassword=\"${PASSWORD}\"\nhost=${HOST}\nport=${PORT}" |
+        mysql --defaults-file=/dev/stdin --protocol=tcp \
+            ${args} -e "${query}")
+    retvalue=$?
 
-        if [[ -n $retoutput ]]; then
-                retoutput+="\n"
-        fi
-        printf "${retoutput//%/%%}"
-        return $retvalue
+    if [[ -n $retoutput ]]; then
+        retoutput+="\n"
+    fi
+    printf "${retoutput//%/%%}"
+    return $retvalue
 }
-
 
 function parse_args() {
     local go_out=""
@@ -105,7 +117,7 @@ function parse_args() {
     # TODO: kennt, what happens if we don't have a functional getopt()?
     # Check if we have a functional getopt(1)
     if ! getopt --test; then
-        go_out="$(getopt --options=h --longoptions=defaults-file:,runtime,main,stats,monitor,files,table::,help \
+        go_out="$(getopt --options=h --longoptions=defaults-file:,runtime,main,stats,monitor,files,table::,output:,help \
             --name="$(basename "$0")" -- "$@")"
         if [[ $? -ne 0 ]]; then
             # no place to send output
@@ -163,6 +175,14 @@ function parse_args() {
                 TABLE_FILTER=$2
                 shift 2
                 ;;
+            --output)
+                if [[ -z $2 || $2 == --* ]]; then
+                    echo "Error: --output requires an argument (file|stdout)."
+                    usage
+                fi
+                OUTPUT_MODE=$2
+                shift 2
+                ;;
             -h | --help)
                 usage
                 exit 1
@@ -182,80 +202,101 @@ function parse_args() {
     PASSWORD=${PROXYSQL_PASSWORD:-}
     HOST=${PROXYSQL_HOSTNAME:-127.0.0.1}
     PORT=${PROXYSQL_PORT:-6032}
-}
 
+    # Validate output mode
+    if [[ $OUTPUT_MODE != "stdout" && $OUTPUT_MODE != "file" ]]; then
+        echo "Error: --output must be either 'stdout' or 'file'."
+        usage
+    fi
+
+    # If output is file, create filename with timestamp
+    if [[ $OUTPUT_MODE == "file" ]]; then
+        OUTPUT_FILE="proxysql_status_$(date +%s).log"
+    fi
+}
 
 parse_args "$@"
 
-if [[ $DUMP_ALL -eq 1 || $DUMP_MAIN -eq 1 ]]; then
-    echo "............ DUMPING MAIN DATABASE ............"
-    TABLES=$(mysql_exec -BN "SHOW TABLES $RUNTIME_OPTION" 2> /dev/null)
-    for table in $TABLES; do
-        if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
-            continue
-        fi
-        echo "***** DUMPING $table *****"
-        mysql_exec -t "SELECT * FROM $table"
-        echo "***** END OF DUMPING $table *****"
-        echo ""
-    done
-    echo "............ END OF DUMPING MAIN DATABASE ............"
-    echo ""
-fi
-
-if [[ $DUMP_ALL -eq 1 || $DUMP_STATS -eq 1 ]]; then
-    echo "............ DUMPING STATS DATABASE ............"
-    TABLES=$(mysql_exec -BN "SHOW TABLES FROM stats" 2> /dev/null)
-    for table in $TABLES; do
-        if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
-            continue
-        fi
-        echo "***** DUMPING stats.$table *****"
-        mysql_exec "-t --database=stats" "SELECT * FROM $table" 2> /dev/null
-        echo "***** END OF DUMPING stats.$table *****"
-        echo ""
-    done
-    echo "............ END OF DUMPING STATS DATABASE ............"
-    echo ""
-fi
-
-if [[ $DUMP_ALL -eq 1 || $DUMP_MONITOR -eq 1 ]]; then
-    echo "............ DUMPING MONITOR DATABASE ............"
-    TABLES=$(mysql_exec -BN "SHOW TABLES FROM monitor" 2> /dev/null)
-    for table in $TABLES; do
-        if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
-            continue
-        fi
-        echo "***** DUMPING monitor.$table *****"
-        mysql_exec "-t --database=monitor" "SELECT * FROM $table" 2> /dev/null
-        echo "***** END OF DUMPING monitor.$table *****"
-        echo ""
-    done
-    echo "............ END OF DUMPING MONITOR DATABASE ............"
-    echo ""
-fi
-
-if [[ $DUMP_ALL -eq 1 || $DUMP_FILES -eq 1 ]]; then
-    if [[ -z $TABLE_FILTER ]]; then
-        DATADIR=$(mysql_exec -BN "SELECT variable_value FROM global_variables WHERE variable_name='admin-datadir'" 2> /dev/null)
-        if [[ -z $DATADIR ]]; then
-            DATADIR="/var/lib/proxysql"
-        fi
-
-        HOST_PRIORITY_CONTENT=$(cat "${DATADIR}/host_priority.conf" 2> /dev/null)
-        if [[ -n $HOST_PRIORITY_CONTENT ]]; then
-            echo "............ DUMPING HOST PRIORITY FILE ............"
-            echo "$HOST_PRIORITY_CONTENT"
-            echo "............ END OF DUMPING HOST PRIORITY FILE ............"
+# Function to execute the main script logic
+function run_dumps() {
+    if [[ $DUMP_ALL -eq 1 || $DUMP_MAIN -eq 1 ]]; then
+        echo "............ DUMPING MAIN DATABASE ............"
+        TABLES=$(mysql_exec -BN "SHOW TABLES $RUNTIME_OPTION" 2> /dev/null)
+        for table in $TABLES; do
+            if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
+                continue
+            fi
+            echo "***** DUMPING $table *****"
+            mysql_exec -t "SELECT * FROM $table"
+            echo "***** END OF DUMPING $table *****"
             echo ""
-        fi
+        done
+        echo "............ END OF DUMPING MAIN DATABASE ............"
+        echo ""
+    fi
 
-        ADMIN_CNF_CONTENT=$(cat "$DEFAULTS_FILE" 2> /dev/null)
-        if [[ -n $ADMIN_CNF_CONTENT ]]; then
-            echo "............ DUMPING PROXYSQL ADMIN CNF FILE ............"
-            echo "$ADMIN_CNF_CONTENT"
-            echo "............ END OF DUMPING PROXYSQL ADMIN CNF FILE ............"
+    if [[ $DUMP_ALL -eq 1 || $DUMP_STATS -eq 1 ]]; then
+        echo "............ DUMPING STATS DATABASE ............"
+        TABLES=$(mysql_exec -BN "SHOW TABLES FROM stats" 2> /dev/null)
+        for table in $TABLES; do
+            if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
+                continue
+            fi
+            echo "***** DUMPING stats.$table *****"
+            mysql_exec "-t --database=stats" "SELECT * FROM $table" 2> /dev/null
+            echo "***** END OF DUMPING stats.$table *****"
             echo ""
+        done
+        echo "............ END OF DUMPING STATS DATABASE ............"
+        echo ""
+    fi
+
+    if [[ $DUMP_ALL -eq 1 || $DUMP_MONITOR -eq 1 ]]; then
+        echo "............ DUMPING MONITOR DATABASE ............"
+        TABLES=$(mysql_exec -BN "SHOW TABLES FROM monitor" 2> /dev/null)
+        for table in $TABLES; do
+            if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
+                continue
+            fi
+            echo "***** DUMPING monitor.$table *****"
+            mysql_exec "-t --database=monitor" "SELECT * FROM $table" 2> /dev/null
+            echo "***** END OF DUMPING monitor.$table *****"
+            echo ""
+        done
+        echo "............ END OF DUMPING MONITOR DATABASE ............"
+        echo ""
+    fi
+
+    if [[ $DUMP_ALL -eq 1 || $DUMP_FILES -eq 1 ]]; then
+        if [[ -z $TABLE_FILTER ]]; then
+            DATADIR=$(mysql_exec -BN "SELECT variable_value FROM global_variables WHERE variable_name='admin-datadir'" 2> /dev/null)
+            if [[ -z $DATADIR ]]; then
+                DATADIR="/var/lib/proxysql"
+            fi
+
+            HOST_PRIORITY_CONTENT=$(cat "${DATADIR}/host_priority.conf" 2> /dev/null)
+            if [[ -n $HOST_PRIORITY_CONTENT ]]; then
+                echo "............ DUMPING HOST PRIORITY FILE ............"
+                echo "$HOST_PRIORITY_CONTENT"
+                echo "............ END OF DUMPING HOST PRIORITY FILE ............"
+                echo ""
+            fi
+
+            ADMIN_CNF_CONTENT=$(cat "$DEFAULTS_FILE" 2> /dev/null)
+            if [[ -n $ADMIN_CNF_CONTENT ]]; then
+                echo "............ DUMPING PROXYSQL ADMIN CNF FILE ............"
+                echo "$ADMIN_CNF_CONTENT"
+                echo "............ END OF DUMPING PROXYSQL ADMIN CNF FILE ............"
+                echo ""
+            fi
         fi
     fi
+}
+
+# Execute dumps and handle output mode
+if [[ $OUTPUT_MODE == "file" ]]; then
+    run_dumps > "$OUTPUT_FILE" 2>&1
+    echo "Output written to $OUTPUT_FILE"
+else
+    run_dumps
 fi
