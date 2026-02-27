@@ -293,7 +293,6 @@ function run_dumps() {
     fi
 }
 
-# Execute dumps and handle output mode
 if [[ $OUTPUT_MODE == "file" ]]; then
     run_dumps > "$OUTPUT_FILE" 2>&1
     echo "Output written to $OUTPUT_FILE"
