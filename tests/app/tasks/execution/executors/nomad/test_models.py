@@ -1,6 +1,6 @@
 """Define tests for app.tasks.execution.executors.nomad.models._sync_task_history."""
 
-from unittest.mock import call, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -34,19 +34,14 @@ def _make_queue_item() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_dead_job_calls_get_logs_for_allocation_twice():
-    """When the Nomad job is dead, get_logs_for_allocation must be called twice.
-
-    The second call receives the first call's result as ``initial_logs`` so that
-    any stdout bytes still in Nomad's buffer at task completion are captured.
-    """
+async def test_dead_job_fetches_logs_after_job_status_check():
+    """Assert logs are fetched after confirming dead status, capturing buffered output."""
     alloc = _make_alloc()
-    first_logs = {"step1": {"stdout": "initial log lines\n"}}
-    second_logs = {"step1": {"stdout": "initial log lines\nfinal buffered lines\n"}}
+    logs = {"step1": {"stdout": "complete output including final lines\n"}}
 
     executor = MagicMock()
     executor.get_allocation_for_task_history.return_value = alloc
-    executor.get_logs_for_allocation.side_effect = [first_logs, second_logs]
+    executor.get_logs_for_allocation.return_value = logs
     executor.get_job.return_value = {"Status": NOMAD_DEAD_JOB_STATUS, "Stop": False}
     executor.get_task_history_status_from_alloc_status.return_value = (
         TaskHistoryStatusEnum.SUCCESS
@@ -56,15 +51,16 @@ async def test_dead_job_calls_get_logs_for_allocation_twice():
     queue_item = _make_queue_item()
     await NomadExecutor._sync_task_history(executor, queue_item)
 
-    assert executor.get_logs_for_allocation.call_count == 2  # noqa: PLR2004
-    _, second_call = executor.get_logs_for_allocation.call_args_list
-    # The second call must pass the first call's result as initial_logs.
-    assert second_call == call(alloc, first_logs, queue_item.anonymized_entities)
+    executor.get_logs_for_allocation.assert_called_once_with(
+        alloc, queue_item.task_logs, queue_item.anonymized_entities
+    )
+    method_names = [c[0] for c in executor.mock_calls]
+    assert method_names.index("get_job") < method_names.index("get_logs_for_allocation")
 
 
 @pytest.mark.asyncio
 async def test_running_job_calls_get_logs_for_allocation_once():
-    """When the Nomad job is still running, get_logs_for_allocation is called once."""
+    """Assert get_logs_for_allocation is called once when the job is still running."""
     alloc = _make_alloc()
     logs = {"step1": {"stdout": "partial logs\n"}}
 
