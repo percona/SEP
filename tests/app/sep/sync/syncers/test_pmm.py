@@ -7,8 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.inventory.models import Service, ServiceTypeEnum, SourceEnum
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.inventory import CreatedNode, CreatedService, Node
-from app.sep.sync.syncers.pmm import PMMRemoteAPI, PMMSyncer
+from app.sep.sync.syncers.pmm import PMMSyncer
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
@@ -83,7 +84,7 @@ class TestPMMRemoteAPI:
     def mock_get_services(self, mocker, created_services) -> AsyncMock:
         """Mock get_services method."""
         return mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMRemoteAPI.get_services",
+            "app.sep.clients.pmm.PMMRemoteAPI.get_services",
             new=AsyncMock(return_value=created_services),
         )
 
@@ -95,13 +96,13 @@ class TestPMMRemoteAPI:
     @pytest.fixture
     def mock_logger(self, mocker) -> Mock:
         """Mock logger object."""
-        return mocker.patch("app.sep.sync.syncers.pmm.PMMRemoteAPI.logger")
+        return mocker.patch("app.sep.clients.pmm.PMMRemoteAPI.logger")
 
     @pytest.fixture
     def mock_get_version(self, mocker) -> AsyncMock:
         """Mock get_version method."""
         return mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMRemoteAPI.get_version", new_callable=AsyncMock
+            "app.sep.clients.pmm.PMMRemoteAPI.get_version", new_callable=AsyncMock
         )
 
     @pytest.fixture
@@ -355,7 +356,7 @@ class TestPMMRemoteAPI:
             )
 
         validate = mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMService.model_validate",
+            "app.sep.clients.pmm.PMMService.model_validate",
             side_effect=_validate_side_effect,
         )
 
@@ -390,7 +391,7 @@ class TestPMMRemoteAPI:
             )
 
         mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMService.model_validate",
+            "app.sep.clients.pmm.PMMService.model_validate",
             side_effect=_validate_side_effect,
         )
 
@@ -437,7 +438,7 @@ class TestPMMRemoteAPI:
             )
 
         mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMService.model_validate",
+            "app.sep.clients.pmm.PMMService.model_validate",
             side_effect=_validate_side_effect,
         )
 
@@ -541,7 +542,7 @@ class TestPMMRemoteAPI:
             )
 
         node_ctor = mocker.patch(
-            "app.sep.sync.syncers.pmm.Node", side_effect=_node_side_effect
+            "app.sep.clients.pmm.Node", side_effect=_node_side_effect
         )
 
         nodes = await pmm_remote_api.get_nodes(skip_failed=True)
@@ -577,7 +578,7 @@ class TestPMMRemoteAPI:
                 external_id=kwargs.get("node_id"), services=kwargs.get("services", [])
             )
 
-        mocker.patch("app.sep.sync.syncers.pmm.Node", side_effect=_node_side_effect)
+        mocker.patch("app.sep.clients.pmm.Node", side_effect=_node_side_effect)
 
         with pytest.raises(ValidationError):
             await pmm_remote_api.get_nodes(skip_failed=False)
