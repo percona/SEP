@@ -159,12 +159,14 @@
                         <select name="execute_request_chain_task_name"
                                 form="edit-periodic-task-form-{{ periodic_task.id }}">
                             <option value="">None</option>
-                            {% for t in chainable_tasks %}
-                                <option value="{{ t.name }}"
-                                        {%- if periodic_task.execute_request and periodic_task.execute_request.chain_task_name == t.name %}
-                                        selected
-                                        {%- endif %}>{{ t.name }}</option>
-                            {% endfor %}
+                            {% if chainable_tasks is defined %}
+                                {% for t in chainable_tasks %}
+                                    <option value="{{ t.name }}"
+                                            {%- if periodic_task.execute_request and periodic_task.execute_request.chain_task_name == t.name %}
+                                            selected
+                                            {%- endif %}>{{ t.name }}</option>
+                                {% endfor %}
+                            {% endif %}
                         </select>
                     </td>
                     <td style="padding-left: 0.5em">
@@ -252,7 +254,9 @@
                 <td>
                     <select name="execute_request_chain_task_name" form="new-periodic-task-form">
                         <option value="">None</option>
-                        {% for t in chainable_tasks %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
+                        {% if chainable_tasks is defined %}
+                            {% for t in chainable_tasks %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
+                        {% endif %}
                     </select>
                 </td>
                 <td style="padding-left: 0.5em">

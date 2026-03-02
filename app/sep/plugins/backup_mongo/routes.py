@@ -179,7 +179,7 @@ async def pbm_backups_detail(
     context["chainable_tasks"] = [
         t
         for t in all_tasks
-        if t["data"]["meta"]["target"] == task_data["hostname"]
+        if t.get("data", {}).get("meta", {}).get("target") == task_data["hostname"]
         and t["name"] != task.name
     ]
 

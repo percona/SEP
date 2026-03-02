@@ -177,13 +177,9 @@ def test_backups_detail_chainable_tasks_excludes_current_and_wrong_host(
     response = test_client.get(f"/backups/{created_task.name}")
 
     assert response.status_code == status.HTTP_200_OK
-    assert "other-backup" in response.text
-    assert "wrong-host-backup" not in response.text
-    assert (
-        created_task.name not in response.text.split("chainable")[1]
-        if "chainable" in response.text
-        else True
-    )
+    assert '<option value="other-backup"' in response.text
+    assert '<option value="wrong-host-backup"' not in response.text
+    assert f'<option value="{created_task.name}"' not in response.text
 
 
 @pytest.mark.usefixtures(

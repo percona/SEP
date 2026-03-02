@@ -380,7 +380,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         )
     if (
         was_running
-        and not saved.is_running
+        and saved.status == TaskHistoryStatusEnum.SUCCESS
         and (chain_task_name := saved.execution_request.meta.get("chain_task_name"))
     ):
         await _dispatch_chained_task(chain_task_name, saved)
@@ -388,7 +388,12 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
 
 
 async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> None:
-    """Dispatch the chained task after the parent task completes.
+    """Dispatch the chained task after the parent task completes successfully.
+
+    Load the task by name, build a new TaskHistory inheriting the parent's executor
+    target, and call `dispatch_queue_item`. Multi-level chaining is supported: if the
+    chained task's own ``data["meta"]`` contains a ``chain_task_name``, that next link
+    will be dispatched after the chained task completes, subject to ``_MAX_CHAIN_DEPTH``.
 
     :param chain_task_name: The name of the task to chain.
     :type chain_task_name: str

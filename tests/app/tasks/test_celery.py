@@ -231,6 +231,56 @@ async def test_sync_queue_item_no_chain_dispatch_when_still_running() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sync_queue_item_no_chain_dispatch_when_task_failed() -> None:
+    """Test that sync_queue_item does not dispatch chain when the task fails."""
+    main_task = _make_task("main-task")
+    chain_task = _make_task("chain-task")
+
+    running_history = _make_history(
+        main_task,
+        TaskHistoryStatusEnum.RUNNING,
+        {"chain_task_name": chain_task.name},
+    )
+    failed_history = _make_history(
+        main_task,
+        TaskHistoryStatusEnum.FAILED,
+        {"chain_task_name": chain_task.name},
+    )
+
+    session_maker, _ = _make_session_mock()
+
+    with (
+        patch("app.tasks.celery.get_async_session_maker", return_value=session_maker),
+        patch(
+            "app.tasks.celery.TaskHistoryManager.get_or_404",
+            new_callable=AsyncMock,
+            return_value=running_history,
+        ),
+        patch(
+            "app.tasks.celery.TaskManager.get_root_task",
+            new_callable=AsyncMock,
+            return_value=main_task,
+        ),
+        patch("app.tasks.celery.get_executor_for_task") as mock_executor,
+        patch(
+            "app.tasks.celery.TaskHistoryManager.save",
+            new_callable=AsyncMock,
+            return_value=failed_history,
+        ),
+        patch(
+            "app.tasks.celery._dispatch_chained_task", new_callable=AsyncMock
+        ) as mock_chain,
+    ):
+        executor = AsyncMock()
+        executor.sync_task_history = AsyncMock(return_value=failed_history)
+        mock_executor.return_value = executor
+
+        await sync_queue_item(1)
+
+    mock_chain.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_sync_queue_item_no_chain_dispatch_when_no_chain_task_name() -> None:
     """Test that sync_queue_item does not dispatch chain when chain_task_name is absent."""
     main_task = _make_task("main-task")
