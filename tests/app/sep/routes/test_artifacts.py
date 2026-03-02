@@ -1,16 +1,13 @@
 """Define tests for the app.sep.routes.artifacts module."""
 
-import time
 from unittest.mock import patch
 
-from itsdangerous import URLSafeTimedSerializer
 from starlette.status import (
     HTTP_200_OK,
     HTTP_303_SEE_OTHER,
 )
 
 from app.core.security import crypto_timestamp_serializer
-from app.sep.routes.artifacts import ARTIFACT_DOWNLOAD_TTL
 
 
 def _make_token(payload: dict, salt: str = "artifact-download") -> str:
@@ -61,15 +58,12 @@ class TestDownloadArtifact:
             "filename": "test_script.sh",
             "md5": "abc123",
         }
-        secret = crypto_timestamp_serializer.secret_keys[0]
-        serializer = URLSafeTimedSerializer(secret)
-        token = serializer.dumps(payload, salt="artifact-download")
+        token = _make_token(payload)
 
         with (
+            patch("app.sep.routes.artifacts.ARTIFACT_DOWNLOAD_TTL", 0),
             patch("app.sep.routes.artifacts.snippets_settings.SNIPPETS_DIR", tmp_path),
-            patch("itsdangerous.timed.time") as mock_time,
         ):
-            mock_time.return_value = time.time() + ARTIFACT_DOWNLOAD_TTL + 10
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )

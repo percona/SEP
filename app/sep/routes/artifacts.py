@@ -58,7 +58,7 @@ async def download_artifact(token: str) -> FileResponse:
         raise HTTPBadRequestException(detail="Invalid artifact type")
 
     base_dir = _BASE_DIRS[artifact_type]().resolve()
-    resolved = (base_dir / payload["filename"]).resolve()
+    resolved = (base_dir / payload.get("filename", "")).resolve()
     if not resolved.is_relative_to(base_dir):
         raise HTTPBadRequestException(detail="Invalid artifact path")
 
