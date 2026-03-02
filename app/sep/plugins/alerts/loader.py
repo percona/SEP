@@ -2,11 +2,10 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
 
 import yaml
-from fastapi import Depends
 
+from app.sep.config import sep_settings
 from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
 
 DEFAULT_DEFINITIONS_DIR = Path(__file__).parent / "alert_definitions"
@@ -35,7 +34,7 @@ def load_alert_templates(
     :raises pydantic.ValidationError: If any YAML file contains invalid data that
         does not satisfy the `AlertTemplate` schema.
     """
-    templates: dict[ServiceType, list[AlertTemplate]] = {svc: [] for svc in ServiceType}
+    templates = {svc: [] for svc in ServiceType}
     for yaml_file in sorted(definitions_dir.glob("*.yaml")):
         data = yaml.safe_load(yaml_file.read_text())
         template = AlertTemplate.model_validate(data)
@@ -54,12 +53,5 @@ def get_alert_templates() -> dict[ServiceType, list[AlertTemplate]]:
         objects loaded for that type.
     :rtype: dict[ServiceType, list[AlertTemplate]]
     """
-    from app.sep.config import sep_settings
-
     definitions_dir = sep_settings.ALERT_DEFINITIONS_DIR or DEFAULT_DEFINITIONS_DIR
     return load_alert_templates(definitions_dir)
-
-
-AlertTemplatesDep = Annotated[
-    dict[ServiceType, list[AlertTemplate]], Depends(get_alert_templates)
-]
