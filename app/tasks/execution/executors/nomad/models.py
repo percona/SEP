@@ -666,6 +666,26 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             queue_item.status = TaskHistoryStatusEnum.LOST
         else:
             if job["Status"] == NOMAD_DEAD_JOB_STATUS:
+                # One additional fetch to capture stdout lines buffered at task completion.
+                task_logs = self.get_logs_for_allocation(
+                    alloc,
+                    task_logs,
+                    queue_item.anonymized_entities,
+                )
+                queue_item.execution_request.tracking.update(
+                    task_logs=b64encode(
+                        gzip.compress(
+                            json.dumps(
+                                sort_dict(
+                                    task_logs,
+                                    lambda item: list(task_states.keys()).index(
+                                        item[0]
+                                    ),
+                                )
+                            ).encode()
+                        )
+                    ).decode(),
+                )
                 last_modified_timestamp = alloc.get("ModifyTime")
                 if last_modified_timestamp:
                     queue_item.finished_at = self.timestamp_to_datetime(
