@@ -55,7 +55,9 @@ async def test_dead_job_fetches_logs_after_job_status_check():
         alloc, queue_item.task_logs, queue_item.anonymized_entities
     )
     method_names = [c[0] for c in executor.mock_calls]
-    assert method_names.index("get_job") < method_names.index("get_logs_for_allocation")
+    assert method_names.index(
+        "get_task_history_status_from_alloc_status"
+    ) < method_names.index("get_logs_for_allocation")
 
 
 @pytest.mark.asyncio
