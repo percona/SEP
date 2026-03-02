@@ -17,7 +17,7 @@ def load_alert_templates(
 ) -> dict[ServiceType, tuple[AlertTemplate, ...]]:
     """Load and return alert templates grouped by service type from a directory.
 
-    Read all ``*.yaml`` files in `definitions_dir`, validate each one as an
+    Read all `*.yaml` files in `definitions_dir`, validate each one as an
     `AlertTemplate`, and group the results by `ServiceType`. Every `ServiceType`
     is represented as a key in the returned mapping, even when no templates
     exist for that type.
@@ -44,7 +44,7 @@ def load_alert_templates(
             f"Alert definitions directory does not exist or is not a directory: "
             f"{definitions_dir}"
         )
-    result: dict[ServiceType, list[AlertTemplate]] = {svc: [] for svc in ServiceType}
+    result = {svc: [] for svc in ServiceType}
     for yaml_file in sorted(definitions_dir.glob("*.yaml")):
         data = yaml.safe_load(yaml_file.read_text())
         if not isinstance(data, dict):

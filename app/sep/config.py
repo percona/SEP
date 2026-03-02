@@ -306,7 +306,7 @@ class SEPSettings(BaseYamlAppSettings):
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
-        definition files. When ``None``, the bundled ``alert_definitions/`` directory
+        definition files. When `None`, the bundled `alert_definitions/` directory
         inside the alerts plugin is used.
     :type ALERT_DEFINITIONS_DIR: Path | None
     """
