@@ -30,6 +30,7 @@ default:
     PROXY_HEADERS: False
     TEMPLATES_DIR: templates
     STATIC_DIR: static
+    ALERT_DEFINITIONS_DIR: null
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:

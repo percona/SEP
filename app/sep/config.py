@@ -305,6 +305,10 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
+        definition files. When ``None``, the bundled ``alert_definitions/`` directory
+        inside the alerts plugin is used.
+    :type ALERT_DEFINITIONS_DIR: Path | None
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -312,6 +316,7 @@ class SEPSettings(BaseYamlAppSettings):
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
+    ALERT_DEFINITIONS_DIR: Path | None = None
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
