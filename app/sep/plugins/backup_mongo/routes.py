@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated, Any
+from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -21,7 +22,7 @@ from app.sep.plugins.backup_mongo.deps import (
     BackupsTask,
     get_backups_index_context,
 )
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
 
 from .restore.routes import router as restore_router
 
@@ -172,6 +173,15 @@ async def pbm_backups_detail(
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
+    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
+    all_tasks = await tasks_api.get("/", params={"owner": TaskOwner.BACKUP_MONGO})
+    context["chainable_tasks"] = [
+        t
+        for t in all_tasks
+        if t["data"]["meta"]["target"] == task_data["hostname"]
+        and t["name"] != task.name
+    ]
 
     return templates.TemplateResponse(
         request=request,
@@ -190,12 +200,13 @@ async def pbm_backups_execute(
     task: BackupsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
+    chain_task_name: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute backups task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta},
-    )  # TODO: send meta form fields  # noqa: TD002, TD003
+        json={"eta": eta, "chain_task_name": chain_task_name},
+    )
     task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 

@@ -21,6 +21,7 @@
             <th id="start-time-header">Start Time</th>
             <th id="last-run-at-header">Last Run At</th>
             <th>Runs</th>
+            <th>Chain with</th>
             <th>Enabled</th>
             <th>Actions</th>
         </tr>
@@ -49,6 +50,9 @@
                     <td class="relativeTime">{{ periodic_task.start_time or '' }}</td>
                     <td class="relativeTime">{{ periodic_task["last_run_at"] or '' }}</td>
                     <td>{{ periodic_task.total_run_count }}</td>
+                    <td>
+                        {{ periodic_task.execute_request.chain_task_name if periodic_task.execute_request and periodic_task.execute_request.chain_task_name else '—' }}
+                    </td>
                     <td>
                         <form method="post"
                               action="{{ url_for('periodic_task_update', periodic_task_id=periodic_task.id) }}"
@@ -151,6 +155,18 @@
                     </td>
                     <td></td>
                     <td>{{ periodic_task.total_run_count }}</td>
+                    <td>
+                        <select name="execute_request_chain_task_name"
+                                form="edit-periodic-task-form-{{ periodic_task.id }}">
+                            <option value="">None</option>
+                            {% for t in chainable_tasks %}
+                                <option value="{{ t.name }}"
+                                        {%- if periodic_task.execute_request and periodic_task.execute_request.chain_task_name == t.name %}
+                                        selected
+                                        {%- endif %}>{{ t.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
                     <td style="padding-left: 0.5em">
                         <input type="hidden"
                                name="enabled"
@@ -233,6 +249,12 @@
                 </td>
                 <td></td>
                 <td>0</td>
+                <td>
+                    <select name="execute_request_chain_task_name" form="new-periodic-task-form">
+                        <option value="">None</option>
+                        {% for t in chainable_tasks %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
+                    </select>
+                </td>
                 <td style="padding-left: 0.5em">
                     <input type="hidden"
                            form="new-periodic-task-form"
@@ -259,7 +281,7 @@
                 </td>
             </tr>
             <tr id="add-periodic-task-row" class="hide-on-create-mode">
-                <td colspan="7"></td>
+                <td colspan="8"></td>
                 <td class="actions-cell flex">
                     <button id="add-periodic-task-button"
                             title="Create new periodic task"

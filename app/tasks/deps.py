@@ -134,6 +134,8 @@ def prepare_task_history(
     if task.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
+    if execution_data.chain_task_name:
+        execution_data.meta["chain_task_name"] = execution_data.chain_task_name
     target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
         0
     ].get("RTarget")

@@ -25,7 +25,7 @@ from datetime import timedelta
 from hashlib import sha256
 from typing import Any
 
-from celery import Task
+from celery import Task as CeleryTask
 from celery.app.task import Context
 from celery.signals import task_revoked
 from fastapi.encoders import jsonable_encoder
@@ -59,12 +59,16 @@ from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     DispatchLock,
     SYSTEM_USER,
+    Task,
+    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
 )
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
 logger = logging.getLogger(__name__)
+
+_MAX_CHAIN_DEPTH = 10
 
 
 @task_revoked.connect
@@ -86,11 +90,11 @@ def task_revoked_handler(*, request: Context, expired: bool, **kwargs: Any) -> N
     retry_backoff=True,
     retry_kwargs={"max_retries": celery.conf.max_retries},
 )
-def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
+def execute_task_queue(self: CeleryTask, queue_id: int) -> dict[str, Any]:
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.
-    :type self: Task
+    :type self: CeleryTask
     :param queue_id: The ID of the queue item to trigger.
     :type queue_id: int
     :return: The data of the processed TaskHistory.
@@ -110,7 +114,7 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     retry_kwargs={"max_retries": celery.conf.max_retries},
 )
 def execute_task_by_name(
-    self: Task,
+    self: CeleryTask,
     task_name: str,
     periodic_task_name: str | None = None,
     execution_data: PeriodicTaskExecuteRequest | None = None,
@@ -118,7 +122,7 @@ def execute_task_by_name(
     """Define Celery task to execute a SEP task by name.
 
     :param self: The Celery task instance.
-    :type self: Task
+    :type self: CeleryTask
     :param task_name: The name of the task to execute.
     :type task_name: int | None
     :param periodic_task_name: The name of the periodic task, if available.
@@ -365,13 +369,76 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
             id=queue_id,
         )
         task = await TaskManager.get_root_task(session, queue_item.task)
-    if queue_item.is_running:
+    was_running = queue_item.is_running
+    if was_running:
         executor = get_executor_for_task(task)
         queue_item = await executor.sync_task_history(queue_item)
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
-        return await TaskHistoryManager.save(
+        saved = await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
+        )
+    if (
+        was_running
+        and not saved.is_running
+        and (chain_task_name := saved.execution_request.meta.get("chain_task_name"))
+    ):
+        await _dispatch_chained_task(chain_task_name, saved)
+    return saved
+
+
+async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> None:
+    """Dispatch the chained task after the parent task completes.
+
+    :param chain_task_name: The name of the task to chain.
+    :type chain_task_name: str
+    :param parent: The completed parent TaskHistory.
+    :type parent: TaskHistory
+    """
+    if parent.execution_request.meta.get("chain_depth", 0) >= _MAX_CHAIN_DEPTH:
+        logger.warning(
+            "Chain depth limit (%d) reached for task %r; skipping chain to %r",
+            _MAX_CHAIN_DEPTH,
+            parent.execution_request.task,
+            chain_task_name,
+        )
+        return
+    try:
+        async_session = get_async_session_maker()
+        async with async_session() as session:
+            chain_task = await TaskManager.first(
+                session, name=chain_task_name, is_active=True
+            )
+        if chain_task is None:
+            logger.warning(
+                "Chained task %r not found; skipping chain dispatch", chain_task_name
+            )
+            return
+        chain_meta = dict(chain_task.data.get("meta", {}))
+        chain_meta["target"] = parent.execution_request.target
+        chain_meta["chain_depth"] = (
+            parent.execution_request.meta.get("chain_depth", 0) + 1
+        )
+        chain_history = TaskHistory(
+            task_id=chain_task.id,
+            task=chain_task,
+            execution_request=TaskExecutionRequest(
+                task=chain_task.name,
+                target=parent.execution_request.target,
+                meta=chain_meta,
+                payload=chain_task.data.get("payload"),
+                tracking={"evaluation_id": ""},
+            ),
+            status=TaskHistoryStatusEnum.PENDING,
+            executed_by=parent.executed_by,
+            anonymize_mask=parent.anonymize_mask,
+        )
+        await dispatch_queue_item(chain_history)
+    except Exception:
+        logger.exception(
+            "Failed to dispatch chained task %r from parent %r",
+            chain_task_name,
+            parent.execution_request.task,
         )
 
 

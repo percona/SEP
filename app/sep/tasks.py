@@ -53,14 +53,16 @@ class PeriodicTaskRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def set_period(cls, data: Any) -> Any:
-        """Populate period (interval or crontab) data.
+        """Populate period (interval or crontab) data and execute_request fields.
 
         Transforms the input form data into the interval/crontab format.
         When setting one schedule type, clears the other to avoid conflicts.
+        Also extracts keys prefixed with 'execute_request_' into execute_request.
 
         :param data: The form input.
         :type data: Any
-        :return: The modified data with appropriate interval/crontab fields.
+        :return: The modified data with appropriate interval/crontab and execute_request
+            fields.
         :rtype: Any
         """
         if isinstance(data, dict):
@@ -83,6 +85,14 @@ class PeriodicTaskRequest(BaseModel):
                     "day_of_week": day_of_week,
                 }
                 data["interval"] = None
+            execute_request_data = {}
+            for key, value in list(data.items()):
+                if key.startswith("execute_request_"):
+                    execute_request_data[key.replace("execute_request_", "")] = value
+            if execute_request_data:
+                data["execute_request"] = PeriodicTaskExecuteRequest(
+                    **execute_request_data
+                )
         return data
 
 
@@ -112,8 +122,8 @@ class PeriodicTaskCreateRequest(PeriodicTaskRequest):
 class EnhancedPeriodicTaskCreateRequest(PeriodicTaskCreateRequest):
     """Define a model for creating periodic tasks compatible with the SEP app form data.
 
-    This model populates the execute_request field by extracting keys prefixed with 'execute_request_'
-    and combines them into an ExecuteRequest object.
+    This model accepts keys prefixed with 'execute_request_' from form data, which are
+    parsed by the base class into an execute_request object.
 
     :param start_time: The start time for the task execution.
     :type start_time: UTCDatetime | EmptyStrToNone
@@ -128,24 +138,3 @@ class EnhancedPeriodicTaskCreateRequest(PeriodicTaskCreateRequest):
     :param task: The SEP task name.
     :type task: str
     """
-
-    @model_validator(mode="before")
-    @classmethod
-    def populate_execute_request(cls, data: Any) -> Any:
-        """Populate the execute_request field by extracting keys prefixed with 'execute_request_'.
-
-        :param data: The input data containing potential execute_request fields.
-        :type data: Any
-        :return: The modified data with the execute_request field populated.
-        :rtype: Any
-        """
-        if isinstance(data, dict):
-            execute_request_data = {}
-            for key, value in list(data.items()):
-                if key.startswith("execute_request_"):
-                    execute_request_data[key.replace("execute_request_", "")] = value
-            if execute_request_data:
-                data["execute_request"] = PeriodicTaskExecuteRequest(
-                    **execute_request_data
-                )
-        return data

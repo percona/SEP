@@ -64,6 +64,15 @@
             {% endif %}
         </fieldset>
     {% endif %}
+    {% if chainable_tasks is defined and chainable_tasks %}
+        <div style="margin-bottom: 15px;">
+            <label for="chain_task_name" class="form-label">Chain with task (optional)</label>
+            <select name="chain_task_name" id="chain_task_name" class="form-input">
+                <option value="">None</option>
+                {% for t in chainable_tasks %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
+            </select>
+        </div>
+    {% endif %}
     <div class="actions-cell flex">
         <button type="button"
                 class="text medium submitButton triggerScheduleExec schedule-task-form"

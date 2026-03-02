@@ -164,5 +164,9 @@
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html" %}
     </section>
+    <section>
+        <h2>Scheduled Tasks</h2>
+        {% include "tasks/partials/scheduled-tasks.html" %}
+    </section>
     {% include "backups/backup/partials/edit-form.html" %}
 {% endblock main %}

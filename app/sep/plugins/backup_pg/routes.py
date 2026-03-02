@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated, Any
+from zoneinfo import available_timezones
 
 import yaml
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -26,7 +27,7 @@ from app.sep.plugins.backup_pg.deps import (
     parse_backup_task_data,
 )
 from app.sep.plugins.backup_pg.models import BackupType
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -126,6 +127,15 @@ async def pg_backups_detail(
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
+    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
+    all_tasks = await tasks_api.get("/", params={"owner": TaskOwner.BACKUP_PG})
+    context["chainable_tasks"] = [
+        t
+        for t in all_tasks
+        if t["data"]["meta"]["target"] == task_data["hostname"]
+        and t["name"] != task.name
+    ]
 
     return templates.TemplateResponse(
         request=request,
@@ -144,11 +154,12 @@ async def pg_backups_execute(
     task: BackupsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
+    chain_task_name: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute backups task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta},
-    )  # TODO: send meta form fields  # noqa: TD002, TD003
+        json={"eta": eta, "chain_task_name": chain_task_name},
+    )
     task_path = request.url_for("pg_backups_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

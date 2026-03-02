@@ -438,12 +438,18 @@ class TaskExecuteRequest(BaseModel):
     :param eta: The earliest time the task can be executed. Defaults to None, meaning
         it will be executed as soon as possible.
     :type eta: datetime | None
+    :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
+    :type anonymize_mask: int | None
+    :param chain_task_name: Name of the task to execute after this one completes.
+        Defaults to None.
+    :type chain_task_name: str | None
     """
 
     meta: dict[str, Any] = {}
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
     anonymize_mask: int | None = None
+    chain_task_name: str | None = None
 
     @model_validator(mode="before")
     @classmethod
