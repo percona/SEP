@@ -18,6 +18,7 @@
 import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from celery.utils.log import get_task_logger
 from fastapi import FastAPI, HTTPException, Request, status
@@ -74,9 +75,16 @@ async def internal_error_handler(
     raise exc
 
 
-def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict:
-    """Build structured detail for HTTP 410 from TaskDataNotFoundInExecutorError."""
-    detail: dict = {
+def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str, Any]:
+    """Build structured detail for HTTP 410 from TaskDataNotFoundInExecutorError.
+
+    :param exc: The exception indicating task data was not found in the executor.
+    :type exc: TaskDataNotFoundInExecutorError
+    :return: A dictionary with message and optional resource_type, resource_id,
+        executor, and detail keys for use in an HTTP 410 response body.
+    :rtype: dict[str, Any]
+    """
+    detail: dict[str, Any] = {
         "message": "The requested task data is no longer available in the executor.",
     }
     if exc.resource_type is not None:

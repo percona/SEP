@@ -12,7 +12,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
 from app.tasks.main import task_data_not_found_detail, task_data_not_found_handler
 
 
-def testtask_data_not_found_detail_base_exception_without_structured_fields():
+def test_task_data_not_found_detail_base_exception_without_structured_fields():
     """Response detail includes only message when exception has no structured fields."""
     exc = TaskDataNotFoundInExecutorError()
     detail = task_data_not_found_detail(exc)
@@ -21,7 +21,7 @@ def testtask_data_not_found_detail_base_exception_without_structured_fields():
     }
 
 
-def testtask_data_not_found_detail_base_exception_with_message_only():
+def test_task_data_not_found_detail_base_exception_with_message_only():
     """Response detail includes message and detail when exception has args only."""
     exc = TaskDataNotFoundInExecutorError("Custom message")
     detail = task_data_not_found_detail(exc)
@@ -32,7 +32,7 @@ def testtask_data_not_found_detail_base_exception_with_message_only():
     assert detail["detail"] == "Custom message"
 
 
-def testtask_data_not_found_detail_allocation_not_found_with_structured_fields():
+def test_task_data_not_found_detail_allocation_not_found_with_structured_fields():
     """Response detail includes resource_type and resource_id for AllocationNotFoundError."""
     exc = AllocationNotFoundError(
         'No allocations found with filter JobID == "my-job"',
@@ -51,7 +51,7 @@ def testtask_data_not_found_detail_allocation_not_found_with_structured_fields()
     assert "No allocations found" in detail["detail"]
 
 
-def testtask_data_not_found_detail_job_not_found_with_structured_fields():
+def test_task_data_not_found_detail_job_not_found_with_structured_fields():
     """Response detail includes resource_type and resource_id for JobNotFoundError."""
     exc = JobNotFoundError(
         "Job not found in Nomad",
@@ -70,7 +70,7 @@ def testtask_data_not_found_detail_job_not_found_with_structured_fields():
     assert detail["detail"] == "Job not found in Nomad"
 
 
-def testtask_data_not_found_detail_job_not_found_without_resource_id():
+def test_task_data_not_found_detail_job_not_found_without_resource_id():
     """Response detail omits resource_id when not provided (e.g. missing job_id case)."""
     exc = JobNotFoundError(
         "Missing job_id in task history tracking (queue-42)",
