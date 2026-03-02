@@ -247,6 +247,12 @@ $(document).ready(function() {
                 const stdoutPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stdout" style="display: none;"></pre>');
                 const stderrPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display: none;"></pre>');
 
+                const $checkbox = $logConsole.find('.word-wrap-checkbox');
+                if ($checkbox.is(':checked')) {
+                    stdoutPre.addClass('soft-wrap');
+                    stderrPre.addClass('soft-wrap');
+                }
+
                 const selectedTab = $logConsole.find('[role="log-tab"][aria-selected="true"]');
                 const selectedLogType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
                 if (selectedLogType === 'stdout') stdoutPre.show();
@@ -407,7 +413,7 @@ $(document).ready(function() {
         }
     });
 
-    $('.word-wrap-checkbox').change(function() {
+    $(document).on('change', '.word-wrap-checkbox', function() {
         const $this = $(this);
         const $logConsole = $this.closest('.log-console');
         if ($this.is(':checked')) {
@@ -416,6 +422,7 @@ $(document).ready(function() {
             $logConsole.find('.log-output').removeClass('soft-wrap');
         }
     });
+    // Initialize state for checkboxes that exist at page load
     $('.word-wrap-checkbox').trigger("change");
 
     $('.toggle-label').click(function(e) {
