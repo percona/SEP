@@ -79,7 +79,7 @@ def _encode_anonymize_mask(v: Any) -> Any:
 AnonymizeMask = Annotated[int, BeforeValidator(_encode_anonymize_mask)]
 
 
-class FileMetadataResponse(BaseModel):
+class FileMetadata(BaseModel):
     """Represent file metadata for task artifacts."""
 
     size: int = 0

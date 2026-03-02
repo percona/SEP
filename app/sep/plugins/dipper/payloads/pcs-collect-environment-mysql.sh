@@ -3,7 +3,7 @@
 # ---
 # title: Collect Environment (MySQL)
 # description: Collect diagnostic environment data for a MySQL host and store results in an archive.
-# sudo: optional
+# sudo: optional_default_true
 # parameters:
 #   - name: o
 #     label: DB CLI options

@@ -24,7 +24,7 @@ def test_set_alerts_providers_success(tmp_path):
     assert len(provs) == 1
     p = next(iter(provs))
     assert isinstance(p, PagerDutyEventsAlertProvider)
-    assert p.routing_key == "abc123"
+    assert p.routing_key.get_secret_value() == "abc123"
     assert settings.SOURCE_PREFIX == "X-"
     assert settings.SOURCE_SUFFIX == "-Y"
 
