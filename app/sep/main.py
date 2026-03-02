@@ -118,7 +118,7 @@ def get_csrf_config() -> CsrfSettings:
     :return: An instance of `CsrfSettings` containing CSRF protection configuration.
     :rtype: CsrfSettings
     """
-    return CsrfSettings()
+    return CsrfSettings(TOKEN_TIME_LIMIT=sep_settings.SESSION.MAX_AGE)
 
 
 imported_plugins = set()
@@ -324,11 +324,15 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        sep_app,
+        "app.sep.main:sep_app",
         host=sep_settings.UVICORN_HOST,
         port=sep_settings.UVICORN_PORT,
         proxy_headers=sep_settings.PROXY_HEADERS,
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
+        reload=True,
+        reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
+        reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
+        reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
     )

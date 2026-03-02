@@ -22,7 +22,7 @@ from types import TracebackType
 from typing import Any, ClassVar, Self
 
 from async_lru import _LRUCacheWrapper, alru_cache
-from pydantic import ConfigDict, field_validator, ValidationError
+from pydantic import ConfigDict, field_validator, SecretStr, ValidationError
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
@@ -89,7 +89,7 @@ class PMMRemoteAPI(RemoteAPI):
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param api_key: The API key for authentication. Defaults to None.
-    :type api_key: str | None
+    :type api_key: SecretStr | None
     :param error_detail_key: The key to expect errors details to be. Defaults to
         "message".
     :type error_detail_key: RequiredStr
@@ -102,7 +102,7 @@ class PMMRemoteAPI(RemoteAPI):
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
-    api_key: str
+    api_key: SecretStr
     error_detail_key: RequiredStr = "message"
     error_code_key: RequiredStr | None = "code"
     default_to_v3: bool = True
@@ -118,7 +118,7 @@ class PMMRemoteAPI(RemoteAPI):
         """
         return {
             **super().headers,
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {self.api_key.get_secret_value()}",
         }
 
     @alru_cache(ttl=600)
