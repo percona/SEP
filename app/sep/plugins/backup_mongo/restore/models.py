@@ -106,6 +106,9 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     :param backupType: Type of backup to restore from.
         This is not part of PBM config but needed for restore operations.
     :type backupType: BackupType
+    :param credentials_path: Path to MongoDB URI credentials file on the Nomad node
+        (SEP-only, not part of PBM config; used by payloads).
+    :type credentials_path: RequiredStr | EmptyStrToNone
     """
 
     model_config = ConfigDict(alias_generator=None)
@@ -120,6 +123,10 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     backup_type: BackupType = Field(
         validation_alias=AliasChoices("backupType", "BACKUP_TYPE", "backup_type"),
         serialization_alias="backupType",
+    )
+    credentials_path: RequiredStr | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("credentials_path", "CREDENTIALS_PATH"),
     )
 
 
@@ -152,6 +159,8 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     :type restore_mongod_location: RequiredStr | EmptyStrToNone
     :param restore_mongod_location_map: Custom paths to mongod binaries on every node (YAML string).
     :type restore_mongod_location_map: RequiredStr | EmptyStrToNone
+    :param credentials_path: Optional path to MongoDB URI credentials file on the Nomad node.
+    :type credentials_path: RequiredStr | EmptyStrToNone
     """
 
     hostname: RequiredStr
@@ -167,3 +176,4 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     restore_download_chunk_mb: int | EmptyStrToNone = None
     restore_mongod_location: RequiredStr | EmptyStrToNone = None
     restore_mongod_location_map: RequiredStr | EmptyStrToNone = None
+    credentials_path: RequiredStr | EmptyStrToNone = None

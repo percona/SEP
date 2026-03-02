@@ -5,18 +5,39 @@ import os
 import sys
 import yaml
 
-def pbm_creds():
+
+def _creds_path_from_config(config):
+    """ Path to MongoDB URI credentials file from config dict """
+    if config:
+        path = config.get('credentials_path')
+        if path:
+            return path
+    envhome = os.environ.get('HOME')
+    if not envhome:
+        print('PBM credentials path not set (credentials_path in restore config) and HOME is unset', file=sys.stderr)
+        sys.exit(1)
+    return f'{envhome}/.mongodb_uri'
+
+
+def pbm_creds(config):
     """ PBM Credentials """
-    envhome = os.environ['HOME']
-    creds_path = f'{envhome}/.mongodb_uri'
+    creds_path = _creds_path_from_config(config)
     try:
         with open(creds_path, 'r', encoding='utf-8') as fpt:
-            creds = fpt.read().strip()
+            return fpt.read().strip()
+    except FileNotFoundError as err:
+        print(f'Credentials file not found: {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+    except PermissionError as err:
+        print(f'Permission denied reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+    except OSError as err:
+        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
     except Exception as err:
-        print(f"Error reading PBM credentials from {creds_path}: {err}")
+        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
         sys.exit(1)
 
-    return creds
 
 def pbm():
     """ PBM Restore Config Payload """
@@ -25,7 +46,17 @@ def pbm():
     config_file = f'{taskdir}/script_config'
     merged_config_file = f'{taskdir}/merged_config.yaml'
 
-    os.environ['PBM_MONGODB_URI'] = pbm_creds()
+    # Load restore configuration from script_config for credentials_path
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            script_config = yaml.safe_load(f)
+        if script_config is None:
+            script_config = {}
+    except Exception as err:
+        print(f"Error reading script_config: {err}", file=sys.stderr)
+        sys.exit(1)
+
+    os.environ['PBM_MONGODB_URI'] = pbm_creds(script_config)
 
     # First, get the current PBM config to preserve existing settings
     pbm_config_cmd = ['pbm', 'config']
@@ -69,17 +100,7 @@ def pbm():
         print(f"Error getting/parsing current PBM config: {err}")
         sys.exit(1)
 
-    # Load restore configuration from script_config
-    try:
-        with open(config_file, 'r', encoding='utf-8') as f:
-            script_config = yaml.safe_load(f)
-        if script_config is None:
-            script_config = {}
-    except Exception as err:
-        print(f"Error reading script_config: {err}")
-        sys.exit(1)
-
-    # Get restore configuration - PBM format (lowercase key)
+    # Get restore configuration - PBM format (lowercase key); script_config already loaded above
     restore_config = script_config.get('restore', {})
 
     # Merge current PBM config with new restore options

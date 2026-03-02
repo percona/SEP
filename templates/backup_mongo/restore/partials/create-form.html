@@ -122,6 +122,17 @@
                            required
                            placeholder="2025-12-15T19:04:05Z" />
                 </label>
+                <br>
+                <br>
+                {% set credentials_path_title = "Optional: path to MongoDB URI credentials file on the Nomad node (e.g. /opt/sep/.mongodb_uri). Stored in restore config and used by the task." %}
+                <label for="credentials_path" title="{{ credentials_path_title }}">
+                    Credentials path (optional):
+                    <input type="text"
+                           id="credentials_path"
+                           name="credentials_path"
+                           class="validate"
+                           placeholder="e.g. /opt/sep/.mongodb_uri" />
+                </label>
             </fieldset>
             <fieldset>
                 <legend>Restore Options (Optional)</legend>

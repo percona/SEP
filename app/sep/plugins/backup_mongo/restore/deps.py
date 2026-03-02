@@ -83,6 +83,7 @@ async def build_restore_config_task_payload(
         else None,
         backup_source=form.backup_source,
         backup_type=form.backup_type,
+        credentials_path=form.credentials_path or None,
     )
 
     requirements = "packaging\nPyYAML"
@@ -118,6 +119,7 @@ async def build_restore_task_payload(
         restore=None,  # Restore options are already synced in config task
         backup_source=form.backup_source,
         backup_type=form.backup_type,
+        credentials_path=form.credentials_path or None,
     )
 
     backup_type_to_payload = {
@@ -161,6 +163,9 @@ async def build_pbm_list_task_payload(
 ) -> TaskWrite:
     """Build task payload for pbm list command."""
     payload_path = Path(__file__).parent / "pbm_list_payload"
+    config_dict = (
+        {"credentials_path": form.credentials_path} if form.credentials_path else {}
+    )
 
     return TaskWrite(
         name=f"{form.task_name}-pbm-list",
@@ -170,6 +175,9 @@ async def build_pbm_list_task_payload(
             "task": "run-python",
             "meta": {
                 "target": form.hostname,
+                "config": yaml.dump(config_dict, default_flow_style=False)
+                if config_dict
+                else "",
                 "requirements": "",
             },
             "payload": f"file://{payload_path}",
@@ -183,6 +191,9 @@ async def build_pbm_force_resync_task_payload(
 ) -> TaskWrite:
     """Build task payload for pbm config --force-resync command (physical restores only)."""
     payload_path = Path(__file__).parent / "pbm_force_resync_payload"
+    config_dict = (
+        {"credentials_path": form.credentials_path} if form.credentials_path else {}
+    )
 
     return TaskWrite(
         name=f"{form.task_name}-pbm-force-resync",
@@ -192,6 +203,9 @@ async def build_pbm_force_resync_task_payload(
             "task": "run-python",
             "meta": {
                 "target": form.hostname,
+                "config": yaml.dump(config_dict, default_flow_style=False)
+                if config_dict
+                else "",
                 "requirements": "",
             },
             "payload": f"file://{payload_path}",
@@ -248,6 +262,7 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "backup_type": task_config.get("backupType"),
         "service_id": None,
         "backup_source": task_config.get("backupSource"),
+        "credentials_path": task_config.get("credentials_path"),
     }
 
     # Add restore options
