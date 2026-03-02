@@ -1,4 +1,4 @@
-""" PBM Physical Payload """
+""" PBM Force Resync Payload """
 
 import subprocess
 import os
@@ -20,7 +20,7 @@ def _creds_path():
             print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}. Falling back to HOME-based credentials path.', file=sys.stderr)
     envhome = os.environ.get('HOME')
     if not envhome:
-        print('PBM credentials path not set (credentials_path in backup config) and HOME is unset', file=sys.stderr)
+        print('PBM credentials path not set (credentials_path in restore config) and HOME is unset', file=sys.stderr)
         sys.exit(1)
     return f'{envhome}/.mongodb_uri'
 
@@ -44,21 +44,17 @@ def pbm_creds():
         print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
         sys.exit(1)
 
+
 def pbm():
-    """ PBM Physical Payload """
+    """ PBM Force Resync Payload """
 
     os.environ['PBM_MONGODB_URI'] = pbm_creds()
-    cmd = ['pbm', 'backup', '--type', 'physical', '--wait']
+    cmd = ['pbm', 'config', '--force-resync']
 
-    try:
-        proc = subprocess.Popen(cmd)
-        proc.wait()
-        ret_code = proc.poll()
-        if ret_code != 0:
-            sys.exit(ret_code)
-
-    except OSError as err:
-        print(f'Failed to run pbm: {err}', file=sys.stderr)
-        sys.exit(1)
+    proc = subprocess.Popen(cmd)
+    proc.wait()
+    ret_code = proc.poll()
+    if ret_code != 0:
+        sys.exit(ret_code)
 
 pbm()
