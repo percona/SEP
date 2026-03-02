@@ -1,0 +1,325 @@
+<style>
+
+    .hidden {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    .visible {
+        opacity: 1;
+        max-height: 1000px;
+        /* Large enough to show all content */
+        pointer-events: auto;
+    }
+
+    button {
+        margin-top: 1em;
+        margin-right: 1em;
+    }
+
+    .checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1em;
+        align-items: center;
+    }
+
+    .checkbox-group label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25em;
+        margin-top: 0;
+    }
+
+    .checkbox-group input {
+        margin-top: 0 !important;
+    }
+
+    fieldset + fieldset {
+        margin: 1em 0;
+    }
+</style>
+<form id="create-mongo-restore-form"
+      class="create-mongo-restore-form window"
+      method="post"
+      action="{{ url_for('pbm_restores_create') }}"
+      data-confirm-message="Are you sure you want to create this MongoDB restore task?">
+    <dialog id="modalCreateTask"
+            aria-modal="true"
+            aria-labelledby="modalCreateTaskTitle"
+            data-modal="target"
+            class="large">
+        <header>
+            <h3 id="modalCreateTaskTitle" class="h5 title">Configure a MongoDB restore task</h3>
+        </header>
+        <section>
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+            <h5>Main Options</h5>
+            <fieldset>
+                <legend>Executor Host</legend>
+                {% set hostname_title = "Select the hostname of the target system for task execution." %}
+                <label for="hostname" title="{{ hostname_title }}">Select Executor Host:</label>
+                {% if executor_hosts|length == 1 %}
+                    {% set single_service = executor_hosts[0] %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                    </select>
+                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                {% else %}
+                    <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
+                        <option value="" selected>Select a host</option>
+                        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                    </select>
+                {% endif %}
+            </fieldset>
+            <fieldset>
+                <legend>Basic Task Information</legend>
+                <br>
+                {% set task_name_title = "Type the name of task to be created." %}
+                <label for="task_name" title="{{ task_name_title }}">
+                    Task Name:
+                    <input type="text"
+                           id="task_name"
+                           name="task_name"
+                           class="validate"
+                           required
+                           placeholder="Enter a unique task name" />
+                </label>
+                <br>
+                <br>
+                {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                <label for="service_id" title="{{ service_id_title }}">
+                    Select a Database Service:
+                    <select id="service_id" name="service_id">
+                        <option value="" selected>Select a database host (optional)</option>
+                        {% for service in services %}
+                            <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <br>
+                <br>
+                {% set backup_type_title = "Select the type of backup to restore from: Logical or Physical." %}
+                <label for="backup_type" title="{{ backup_type_title }}">
+                    Backup Type:
+                    <select id="backup_type" name="backup_type" required>
+                        <option value="" disabled selected>Select a backup type</option>
+                        <option value="pbm_logical">Logical</option>
+                        <option value="pbm_physical">Physical</option>
+                    </select>
+                </label>
+                <br>
+                <br>
+                {% set backup_source_title = "Enter the backup name or timestamp to restore from (e.g., 2025-12-15T19:04:05Z)." %}
+                <label for="backup_source" title="{{ backup_source_title }}">
+                    Backup Source (Backup Name/Timestamp):
+                    <input type="text"
+                           id="backup_source"
+                           name="backup_source"
+                           required
+                           placeholder="2025-12-15T19:04:05Z" />
+                </label>
+                <br>
+                <br>
+                {% set credentials_path_title = "Optional: path to MongoDB URI credentials file on the Nomad node (e.g. /opt/sep/.mongodb_uri). Stored in restore config and used by the task." %}
+                <label for="credentials_path" title="{{ credentials_path_title }}">
+                    Credentials path (optional):
+                    <input type="text"
+                           id="credentials_path"
+                           name="credentials_path"
+                           class="validate"
+                           placeholder="e.g. /opt/sep/.mongodb_uri" />
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Restore Options (Optional)</legend>
+                <br>
+                {% set restore_batch_size_title = "Number of documents to buffer (default: 500)." %}
+                <label for="restore_batch_size" title="{{ restore_batch_size_title }}">
+                    Batch Size:
+                    <input type="number"
+                           id="restore_batch_size"
+                           name="restore_batch_size"
+                           placeholder="500" />
+                </label>
+                <br>
+                <br>
+                {% set restore_num_insertion_workers_title = "Number of insertion workers to run concurrently per collection (default: 10)." %}
+                <label for="restore_num_insertion_workers"
+                       title="{{ restore_num_insertion_workers_title }}">
+                    Number of Insertion Workers:
+                    <input type="number"
+                           id="restore_num_insertion_workers"
+                           name="restore_num_insertion_workers"
+                           placeholder="10" />
+                </label>
+                <br>
+                <br>
+                {% set restore_num_parallel_collections_title = "Number of collections to process in parallel during logical restore (default: CPU cores / 2)." %}
+                <label for="restore_num_parallel_collections"
+                       title="{{ restore_num_parallel_collections_title }}">
+                    Number of Parallel Collections:
+                    <input type="number"
+                           id="restore_num_parallel_collections"
+                           name="restore_num_parallel_collections"
+                           placeholder="Auto" />
+                </label>
+                <br>
+                <br>
+                {% set restore_num_download_workers_title = "Number of workers that request data chunks from storage (default: CPU cores)." %}
+                <label for="restore_num_download_workers"
+                       title="{{ restore_num_download_workers_title }}">
+                    Number of Download Workers:
+                    <input type="number"
+                           id="restore_num_download_workers"
+                           name="restore_num_download_workers"
+                           placeholder="Auto" />
+                </label>
+                <br>
+                <br>
+                {% set restore_max_download_buffer_mb_title = "Maximum size of in-memory buffer for downloading files from S3 (in MB)." %}
+                <label for="restore_max_download_buffer_mb"
+                       title="{{ restore_max_download_buffer_mb_title }}">
+                    Max Download Buffer (MB):
+                    <input type="number"
+                           id="restore_max_download_buffer_mb"
+                           name="restore_max_download_buffer_mb"
+                           placeholder="Auto" />
+                </label>
+                <br>
+                <br>
+                {% set restore_download_chunk_mb_title = "Size of data chunk in MB to download from S3 storage (default: 32)." %}
+                <label for="restore_download_chunk_mb"
+                       title="{{ restore_download_chunk_mb_title }}">
+                    Download Chunk Size (MB):
+                    <input type="number"
+                           id="restore_download_chunk_mb"
+                           name="restore_download_chunk_mb"
+                           placeholder="32" />
+                </label>
+                <br>
+                <br>
+                {% set restore_mongod_location_title = "Custom path to mongod binaries." %}
+                <label for="restore_mongod_location"
+                       title="{{ restore_mongod_location_title }}">
+                    Mongod Location:
+                    <input type="text"
+                           id="restore_mongod_location"
+                           name="restore_mongod_location"
+                           placeholder="/usr/bin/mongod" />
+                </label>
+                <br>
+                <br>
+                {% set restore_mongod_location_map_title = "Custom paths to mongod binaries on every node (YAML format, e.g., 'node01:27017: /usr/bin/mongod')." %}
+                <label for="restore_mongod_location_map"
+                       title="{{ restore_mongod_location_map_title }}">
+                    Mongod Location Map (YAML):
+                    <textarea id="restore_mongod_location_map"
+                              name="restore_mongod_location_map"
+                              rows="3"
+                              placeholder='node01:27017: /usr/bin/mongod&#10;node02:27017: /usr/bin/mongod'></textarea>
+                </label>
+            </fieldset>
+            {% include "tasks/partials/create-form-alert-on-failure-input.html" %}
+        </section>
+        <footer>
+            <button type="button" class="text large" data-modal-close>
+                Cancel<sup>ESC</sup>
+            </button>
+            <button type="submit" class="contained large submitButton" disabled>Create</button>
+        </footer>
+    </dialog>
+</form>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    const form = document.getElementById('create-mongo-restore-form');
+    const submitButton = form.querySelector('.submitButton');
+    const backupTypeSelect = document.getElementById('backup_type');
+    const hostnameSelect = document.getElementById('hostname');
+    const taskNameInput = document.getElementById('task_name');
+    const backupSourceInput = document.getElementById('backup_source');
+
+    function isFormValid() {
+        // Custom validation for backup_type (disabled empty option can bypass HTML5 validation)
+        if (!backupTypeSelect || !backupTypeSelect.value || backupTypeSelect.value === '') {
+            return false;
+        }
+
+        // Custom validation for hostname (if it's a select, not hidden)
+        if (hostnameSelect && hostnameSelect.tagName === 'SELECT' && (!hostnameSelect.value || hostnameSelect.value === '')) {
+            return false;
+        }
+
+        // Custom validation for required text fields
+        if (taskNameInput && (!taskNameInput.value || taskNameInput.value.trim() === '')) {
+            return false;
+        }
+
+        if (backupSourceInput && (!backupSourceInput.value || backupSourceInput.value.trim() === '')) {
+            return false;
+        }
+
+        // Check HTML5 validation last
+        if (!form.checkValidity()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function updateCreateButtonState() {
+        if (submitButton) {
+            submitButton.disabled = !isFormValid();
+        }
+    }
+
+    // Omit empty number inputs from submission so the server does not receive empty strings
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const numberInputs = form.querySelectorAll('input[type="number"]');
+            numberInputs.forEach(input => {
+                if (input.value === '' || input.value === null) {
+                    input.removeAttribute('name');
+                }
+            });
+        });
+
+        // Update button state on form validation changes
+        form.addEventListener('input', updateCreateButtonState);
+        form.addEventListener('change', updateCreateButtonState);
+        // Initialize button state
+        updateCreateButtonState();
+    }
+
+    // Also validate when the confirmation modal checks (enhance the shared modal's validation)
+    if (submitButton) {
+        submitButton.addEventListener('click', function(e) {
+            // This runs before the confirmation modal's click handler
+            if (!isFormValid()) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Trigger validation on the first invalid field
+                if (backupTypeSelect && (!backupTypeSelect.value || backupTypeSelect.value === '')) {
+                    backupTypeSelect.focus();
+                    backupTypeSelect.setCustomValidity('Please select a backup type');
+                    backupTypeSelect.reportValidity();
+                    backupTypeSelect.setCustomValidity(''); // Clear custom message after showing
+                } else if (hostnameSelect && hostnameSelect.tagName === 'SELECT' && (!hostnameSelect.value || hostnameSelect.value === '')) {
+                    hostnameSelect.focus();
+                    hostnameSelect.setCustomValidity('Please select an executor host');
+                    hostnameSelect.reportValidity();
+                    hostnameSelect.setCustomValidity('');
+                } else if (taskNameInput && (!taskNameInput.value || taskNameInput.value.trim() === '')) {
+                    taskNameInput.focus();
+                    taskNameInput.reportValidity();
+                } else if (backupSourceInput && (!backupSourceInput.value || backupSourceInput.value.trim() === '')) {
+                    backupSourceInput.focus();
+                    backupSourceInput.reportValidity();
+                }
+                return false;
+            }
+        });
+    }
+</script>
