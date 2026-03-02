@@ -125,13 +125,14 @@ async def test_dispatch_chained_task_max_depth_exceeded_no_dispatch() -> None:
     parent_history = _make_history(main_task, TaskHistoryStatusEnum.SUCCESS, meta)
 
     with (
-        patch("app.tasks.celery.get_async_session_maker"),
+        patch("app.tasks.celery.get_async_session_maker") as mock_session_maker,
         patch(
             "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
         ) as mock_dispatch,
     ):
         await _dispatch_chained_task("chain-task", parent_history)
 
+    mock_session_maker.assert_not_called()
     mock_dispatch.assert_not_awaited()
 
 

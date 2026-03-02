@@ -156,18 +156,20 @@
                     <td></td>
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td>
-                        <select name="execute_request_chain_task_name"
-                                form="edit-periodic-task-form-{{ periodic_task.id }}">
-                            <option value="">None</option>
-                            {% if chainable_tasks is defined %}
+                        {% if chainable_tasks is defined and chainable_tasks %}
+                            <select name="execute_request_chain_task_name"
+                                    form="edit-periodic-task-form-{{ periodic_task.id }}">
+                                <option value="">None</option>
                                 {% for t in chainable_tasks %}
                                     <option value="{{ t.name }}"
                                             {%- if periodic_task.execute_request and periodic_task.execute_request.chain_task_name == t.name %}
                                             selected
                                             {%- endif %}>{{ t.name }}</option>
                                 {% endfor %}
-                            {% endif %}
-                        </select>
+                            </select>
+                        {% else %}
+                            {{ periodic_task.execute_request.chain_task_name if periodic_task.execute_request and periodic_task.execute_request.chain_task_name else '—' }}
+                        {% endif %}
                     </td>
                     <td style="padding-left: 0.5em">
                         <input type="hidden"

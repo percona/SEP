@@ -392,8 +392,8 @@ async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> N
 
     Load the task by name, build a new TaskHistory inheriting the parent's executor
     target, and call `dispatch_queue_item`. Multi-level chaining is supported: if the
-    chained task's own ``data["meta"]`` contains a ``chain_task_name``, that next link
-    will be dispatched after the chained task completes, subject to ``_MAX_CHAIN_DEPTH``.
+    chained task's own `data["meta"]` contains a `chain_task_name`, that next link
+    will be dispatched after the chained task completes, subject to `_MAX_CHAIN_DEPTH`.
 
     :param chain_task_name: The name of the task to chain.
     :type chain_task_name: str
@@ -412,7 +412,7 @@ async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> N
         async_session = get_async_session_maker()
         async with async_session() as session:
             chain_task = await TaskManager.first(
-                session, name=chain_task_name, is_active=True
+                session, col(Task.deleted_at).is_(None), name=chain_task_name
             )
         if chain_task is None:
             logger.warning(

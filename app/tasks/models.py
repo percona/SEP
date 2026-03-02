@@ -442,14 +442,14 @@ class TaskExecuteRequest(BaseModel):
     :type anonymize_mask: int | None
     :param chain_task_name: Name of the task to execute after this one completes.
         Defaults to None.
-    :type chain_task_name: str | None
+    :type chain_task_name: str | EmptyStrToNone
     """
 
     meta: dict[str, Any] = {}
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
     anonymize_mask: int | None = None
-    chain_task_name: str | None = None
+    chain_task_name: str | EmptyStrToNone = None
 
     @model_validator(mode="before")
     @classmethod
