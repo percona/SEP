@@ -3,7 +3,7 @@
 from pydantic import AliasChoices, ConfigDict, Field
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.sep.plugins.backup_mongo.models import BackupType
 
 
@@ -26,7 +26,7 @@ class RestoreConfigRestore(BaseCaseInsensitiveModel):
     :param downloadChunkMb: The size of the data chunk in MB to download from the S3 storage.
     :type downloadChunkMb: int | None
     :param mongodLocation: The custom path to mongod binaries.
-    :type mongodLocation: RequiredStr | EmptyStrToNone
+    :type mongodLocation: NonEmptyStr | EmptyStrToNone
     :param mongodLocationMap: The list of custom paths to mongod binaries on every node.
     :type mongodLocationMap: dict[str, str] | EmptyStrToNone
     """
@@ -75,7 +75,7 @@ class RestoreConfigRestore(BaseCaseInsensitiveModel):
         ),
         serialization_alias="downloadChunkMb",
     )
-    mongod_location: RequiredStr | EmptyStrToNone = Field(
+    mongod_location: NonEmptyStr | EmptyStrToNone = Field(
         None,
         validation_alias=AliasChoices(
             "mongodLocation", "MONGODLOCATION", "MONGOD_LOCATION"
@@ -102,13 +102,13 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     :type restore: RestoreConfigRestore | None
     :param backupSource: Source location of the backup (backup name or timestamp).
         This is not part of PBM config but needed for restore operations.
-    :type backupSource: RequiredStr
+    :type backupSource: NonEmptyStr
     :param backupType: Type of backup to restore from.
         This is not part of PBM config but needed for restore operations.
     :type backupType: BackupType
     :param credentials_path: Path to MongoDB URI credentials file on the Nomad node
         (SEP-only, not part of PBM config; used by payloads).
-    :type credentials_path: RequiredStr | EmptyStrToNone
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
     """
 
     model_config = ConfigDict(alias_generator=None)
@@ -116,7 +116,7 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     restore: RestoreConfigRestore | EmptyStrToNone = Field(
         None, validation_alias=AliasChoices("restore", "RESTORE")
     )
-    backup_source: RequiredStr = Field(
+    backup_source: NonEmptyStr = Field(
         validation_alias=AliasChoices("backupSource", "BACKUP_SOURCE", "backup_source"),
         serialization_alias="backupSource",
     )
@@ -124,7 +124,7 @@ class RestoreConfig(BaseCaseInsensitiveModel):
         validation_alias=AliasChoices("backupType", "BACKUP_TYPE", "backup_type"),
         serialization_alias="backupType",
     )
-    credentials_path: RequiredStr | EmptyStrToNone = Field(
+    credentials_path: NonEmptyStr | EmptyStrToNone = Field(
         None,
         validation_alias=AliasChoices("credentials_path", "CREDENTIALS_PATH"),
     )
@@ -134,15 +134,15 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     """Model for creating a restore task.
 
     :param hostname: The hostname of the machine to restore to.
-    :type hostname: RequiredStr
+    :type hostname: NonEmptyStr
     :param task_name: Name of the restore task.
-    :type task_name: RequiredStr
+    :type task_name: NonEmptyStr
     :param service_id: Service identifier for the restore task.
-    :type service_id: RequiredStr | EmptyStrToNone = None
+    :type service_id: NonEmptyStr | EmptyStrToNone = None
     :param backup_type: Type of backup to restore from.
     :type backup_type: BackupType
     :param backup_source: Source location of the backup (backup name or timestamp).
-    :type backup_source: RequiredStr
+    :type backup_source: NonEmptyStr
     :param restore_batch_size: Number of documents to buffer.
     :type restore_batch_size: int | None
     :param restore_num_insertion_workers: Number of insertion workers to run concurrently per collection.
@@ -156,24 +156,24 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     :param restore_download_chunk_mb: Size of data chunk in MB to download from S3 storage.
     :type restore_download_chunk_mb: int | None
     :param restore_mongod_location: Custom path to mongod binaries.
-    :type restore_mongod_location: RequiredStr | EmptyStrToNone
+    :type restore_mongod_location: NonEmptyStr | EmptyStrToNone
     :param restore_mongod_location_map: Custom paths to mongod binaries on every node (YAML string).
-    :type restore_mongod_location_map: RequiredStr | EmptyStrToNone
+    :type restore_mongod_location_map: NonEmptyStr | EmptyStrToNone
     :param credentials_path: Optional path to MongoDB URI credentials file on the Nomad node.
-    :type credentials_path: RequiredStr | EmptyStrToNone
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
     """
 
-    hostname: RequiredStr
-    task_name: RequiredStr
-    service_id: RequiredStr | EmptyStrToNone = None
+    hostname: NonEmptyStr
+    task_name: NonEmptyStr
+    service_id: NonEmptyStr | EmptyStrToNone = None
     backup_type: BackupType
-    backup_source: RequiredStr
+    backup_source: NonEmptyStr
     restore_batch_size: int | EmptyStrToNone = None
     restore_num_insertion_workers: int | EmptyStrToNone = None
     restore_num_parallel_collections: int | EmptyStrToNone = None
     restore_num_download_workers: int | EmptyStrToNone = None
     restore_max_download_buffer_mb: int | EmptyStrToNone = None
     restore_download_chunk_mb: int | EmptyStrToNone = None
-    restore_mongod_location: RequiredStr | EmptyStrToNone = None
-    restore_mongod_location_map: RequiredStr | EmptyStrToNone = None
-    credentials_path: RequiredStr | EmptyStrToNone = None
+    restore_mongod_location: NonEmptyStr | EmptyStrToNone = None
+    restore_mongod_location_map: NonEmptyStr | EmptyStrToNone = None
+    credentials_path: NonEmptyStr | EmptyStrToNone = None

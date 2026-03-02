@@ -60,6 +60,7 @@ async def test_build_backup_task_payload(
     created_service.node = CreatedNode(
         id=1,
         address="fake-address",
+        node_name="fake-node",
     )
 
     form_data = {
