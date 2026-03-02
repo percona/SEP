@@ -635,24 +635,22 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         try:
             job = self.get_job(job_id)
         except JobNotFoundError:
-            job = None
-
-        if job is None:
             queue_item.status = TaskHistoryStatusEnum.LOST
-        elif job["Status"] == NOMAD_DEAD_JOB_STATUS:
-            last_modified_timestamp = alloc.get("ModifyTime")
-            if last_modified_timestamp:
-                queue_item.finished_at = self.timestamp_to_datetime(
-                    last_modified_timestamp
-                )
-            else:
-                queue_item.finished_at = utc_now()
+        else:
+            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
+                last_modified_timestamp = alloc.get("ModifyTime")
+                if last_modified_timestamp:
+                    queue_item.finished_at = self.timestamp_to_datetime(
+                        last_modified_timestamp
+                    )
+                else:
+                    queue_item.finished_at = utc_now()
 
-            queue_item.status = self.get_task_history_status_from_alloc_status(
-                alloc["ClientStatus"],
-                queue_item.status,
-                stopped=job.get("Stop", False),
-            )
+                queue_item.status = self.get_task_history_status_from_alloc_status(
+                    alloc["ClientStatus"],
+                    queue_item.status,
+                    stopped=job.get("Stop", False),
+                )
 
         task_logs = self.get_logs_for_allocation(
             alloc,
