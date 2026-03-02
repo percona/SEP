@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title -%}
-    PBM Backups
+    PBM Restores
 {%- endblock title %}
 {% block style %}
     {% if history_tasks or running_tasks %}
@@ -41,15 +41,15 @@
     <div class="toggle-btn-group"
          role="group"
          aria-label="Backup and Restore navigation">
-        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn active">Backup</a>
-        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn">Restore</a>
+        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn">Backup</a>
+        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn active">Restore</a>
     </div>
 {% endblock sticky %}
 {% block main %}
-    <h1>PBM Backups</h1>
+    <h1>PBM Restores</h1>
     <p>
-        Generate a <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backup, currently only
-        supporting Logical, Physical methods.
+        Restore from <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backups, currently only
+        supporting Logical, Physical restore methods.
     </p>
     {% if not tasks and not history_tasks %}
         {% set modal_required = False %}
@@ -70,8 +70,8 @@
             </section>
         {% endif %}
         <section id="saved-tasks">
-            <h2>Configured Backups</h2>
-            {% include "backup_mongo/backup/partials/saved-tasks.html" %}
+            <h2>Configured Restores</h2>
+            {% include "backup_mongo/restore/partials/saved-tasks.html" %}
             {% if executor_hosts|length < 1 %}
                 <p>Unable to find suitable executor hosts.</p>
             {% else %}
@@ -81,7 +81,7 @@
                         data-modal-target="modalCreateTask">Create New Task</button>
             {% endif %}
             <h2>Periodic Tasks</h2>
-            {%- set detail_route = "pbm_backups_detail" %}
+            {%- set detail_route = "pbm_restores_detail" %}
             {% include "tasks/partials/scheduled-tasks.html" %}
         </section>
         <section id="pending-tasks">
@@ -95,6 +95,6 @@
     {% endif %}
     <!-- Create Form Modal -->
     {% if executor_hosts|length >= 1 %}
-        {% include "backup_mongo/backup/partials/create-form.html" %}
+        {% include "backup_mongo/restore/partials/create-form.html" %}
     {% endif %}
 {% endblock main %}
