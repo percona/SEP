@@ -223,6 +223,10 @@ class BackupConfig(BaseCaseInsensitiveModel):
         ),
         serialization_alias="pbm_config_yaml_payload",
     )
+    credentials_path: NonEmptyStr | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("credentials_path", "CREDENTIALS_PATH"),
+    )
 
 
 class BackupCreate(BaseCaseInsensitiveModel):
@@ -261,3 +265,5 @@ class BackupCreate(BaseCaseInsensitiveModel):
     backup_timeouts_starting_status: int | EmptyStrToNone = None
     backup_oplog_span_min: float | EmptyStrToNone = None
     backup_num_parallel_collections: int | EmptyStrToNone = None
+    # Path to MongoDB URI credentials file on the Nomad node (passed as task meta, used by payloads).
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
