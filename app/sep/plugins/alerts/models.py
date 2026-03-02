@@ -50,7 +50,10 @@ class AlertTemplate(BaseModel):
     :param expression: The PromQL expression used to evaluate the alert condition.
         Must be non-empty after stripping whitespace.
     :type expression: str
-    :param default_threshold: The default numeric threshold value for the alert.
+    :param default_threshold: The default numeric threshold displayed and configured
+        in the UI. This is independent of `expression` — the bundled PromQL expression
+        may embed its own comparison value. `default_threshold` is UI metadata that
+        the alert management UI (SEP-779) uses to pre-populate the threshold input.
     :type default_threshold: float
     :param severity: The severity level of the alert.
     :type severity: AlertSeverity

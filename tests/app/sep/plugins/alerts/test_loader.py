@@ -1,12 +1,16 @@
 """Define tests for the app.sep.plugins.alerts.loader module."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
 from pydantic import ValidationError
 
-from app.sep.plugins.alerts.loader import load_alert_templates
+from app.sep.plugins.alerts.loader import (
+    get_alert_templates,
+    load_alert_templates,
+)
 from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
 
 _ONE_TEMPLATE_PER_TYPE = 1
@@ -15,6 +19,14 @@ _TOTAL_TEMPLATES_IN_FIXTURE = len(ServiceType)
 
 def _write_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.dump(data))
+
+
+@pytest.fixture(autouse=True)
+def clear_loader_cache() -> None:
+    """Clear the load_alert_templates LRU cache before and after each test."""
+    load_alert_templates.cache_clear()
+    yield
+    load_alert_templates.cache_clear()
 
 
 @pytest.fixture
@@ -100,11 +112,22 @@ class TestLoadAlertTemplates:
             for template in templates:
                 assert isinstance(template, AlertTemplate)
 
-    def test_empty_dir_returns_empty_lists(self, tmp_path: Path) -> None:
-        """Assert an empty directory returns a mapping with empty lists."""
+    def test_values_are_tuples(self, definitions_dir: Path) -> None:
+        """Assert the per-service-type sequences are tuples, not lists."""
+        result = load_alert_templates(definitions_dir)
+        for templates in result.values():
+            assert isinstance(templates, tuple)
+
+    def test_empty_dir_returns_empty_tuples(self, tmp_path: Path) -> None:
+        """Assert an empty directory returns a mapping with empty tuples."""
         result = load_alert_templates(tmp_path)
-        assert all(len(v) == 0 for v in result.values())
+        assert all(templates == () for templates in result.values())
         assert set(result.keys()) == set(ServiceType)
+
+    def test_nonexistent_dir_raises_not_a_directory_error(self, tmp_path: Path) -> None:
+        """Assert NotADirectoryError is raised for a non-existent directory."""
+        with pytest.raises(NotADirectoryError):
+            load_alert_templates(tmp_path / "does_not_exist")
 
     def test_invalid_yaml_raises_validation_error(self, tmp_path: Path) -> None:
         """Assert a ValidationError is raised when a YAML file has invalid data."""
@@ -114,8 +137,33 @@ class TestLoadAlertTemplates:
         with pytest.raises(ValidationError):
             load_alert_templates(tmp_path)
 
+    def test_empty_yaml_file_raises_type_error(self, tmp_path: Path) -> None:
+        """Assert a TypeError is raised for an empty YAML file."""
+        (tmp_path / "empty.yaml").write_text("")
+        with pytest.raises(TypeError, match="empty file"):
+            load_alert_templates(tmp_path)
+
     def test_lru_cache_returns_same_object(self, definitions_dir: Path) -> None:
         """Assert repeated calls with the same path return the cached object."""
         result1 = load_alert_templates(definitions_dir)
         result2 = load_alert_templates(definitions_dir)
         assert result1 is result2
+
+
+class TestGetAlertTemplates:
+    """Test the get_alert_templates FastAPI dependency function."""
+
+    def test_falls_back_to_default_dir_when_setting_is_none(self) -> None:
+        """Assert DEFAULT_DEFINITIONS_DIR is used when ALERT_DEFINITIONS_DIR is None."""
+        with patch("app.sep.plugins.alerts.loader.sep_settings") as mock_settings:
+            mock_settings.ALERT_DEFINITIONS_DIR = None
+            result = get_alert_templates()
+        assert set(result.keys()) == set(ServiceType)
+        assert any(len(templates) > 0 for templates in result.values())
+
+    def test_uses_custom_dir_when_setting_is_set(self, definitions_dir: Path) -> None:
+        """Assert a custom ALERT_DEFINITIONS_DIR is used when configured."""
+        with patch("app.sep.plugins.alerts.loader.sep_settings") as mock_settings:
+            mock_settings.ALERT_DEFINITIONS_DIR = definitions_dir
+            result = get_alert_templates()
+        assert sum(len(t) for t in result.values()) == _TOTAL_TEMPLATES_IN_FIXTURE
