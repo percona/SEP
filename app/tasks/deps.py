@@ -21,11 +21,12 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
 from app.api.deps import CurrentUserID
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -113,9 +114,10 @@ async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Ta
 ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
 
 
-def prepare_task_history(
+async def prepare_task_history(
     task: ExecutableTaskDep,
     executed_by: CurrentUserID,
+    session: SessionDep,
     execution_data: TaskExecuteRequest | None = None,
 ) -> TaskHistory:
     """Prepare the history of a task execution request.
@@ -124,10 +126,13 @@ def prepare_task_history(
     :type task: Task
     :param executed_by: The ID of the user executing the task.
     :type executed_by: CurrentUserID
+    :param session: The async database session for validation queries.
+    :type session: AsyncSession
     :param execution_data: Execution details and parameters, if any.
     :type execution_data: TaskExecuteRequest | None
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
+    :raises HTTPNotFoundException: If the specified chain task does not exist.
     """
     logger.debug("Preparing TaskHistory for %s", task.name)
     execution_data = TaskExecuteRequest() if execution_data is None else execution_data
@@ -135,6 +140,15 @@ def prepare_task_history(
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
     if execution_data.chain_task_name:
+        chain_task = await TaskManager.first(
+            session,
+            col(Task.deleted_at).is_(None),
+            name=execution_data.chain_task_name,
+        )
+        if chain_task is None:
+            raise HTTPNotFoundException(
+                f"Chained task {execution_data.chain_task_name!r} not found."
+            )
         execution_data.meta["chain_task_name"] = execution_data.chain_task_name
     target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
         0

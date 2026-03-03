@@ -1,7 +1,7 @@
 """Define tests for the Tasks API dependency injection functions."""
 
 from collections import defaultdict
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -157,32 +157,42 @@ class TestGetExecutableTaskByName:
 class TestPrepareTaskHistory:
     """Test the prepare_task_history dependency."""
 
-    def test_nomad_backend_with_target_in_meta(self, nomad_task) -> None:
+    @pytest.mark.asyncio
+    async def test_nomad_backend_with_target_in_meta(self, nomad_task) -> None:
         """Assert NOMAD task with target in meta creates valid TaskHistory."""
         execution_data = TaskExecuteRequest(meta={"target": "node-1"})
-        result = prepare_task_history(nomad_task, "user-1", execution_data)
+        result = await prepare_task_history(
+            nomad_task, "user-1", AsyncMock(), execution_data
+        )
         assert isinstance(result, TaskHistory)
         assert result.task_id == nomad_task.id
         assert result.execution_request.target == "node-1"
         assert result.executed_by == "user-1"
         assert result.status == TaskHistoryStatusEnum.PENDING
 
-    def test_nomad_backend_does_not_merge_task_data(self, nomad_task) -> None:
+    @pytest.mark.asyncio
+    async def test_nomad_backend_does_not_merge_task_data(self, nomad_task) -> None:
         """Assert NOMAD backend does not merge meta/payload from task.data."""
         nomad_task.data = {"meta": {"env": "staging"}, "payload": "override"}
         execution_data = TaskExecuteRequest(meta={"target": "node-1"})
-        result = prepare_task_history(nomad_task, "user-1", execution_data)
+        result = await prepare_task_history(
+            nomad_task, "user-1", AsyncMock(), execution_data
+        )
         assert "env" not in result.execution_request.meta
         assert result.execution_request.payload is None
 
-    def test_proxy_backend_merges_meta_and_payload(self, proxy_task) -> None:
+    @pytest.mark.asyncio
+    async def test_proxy_backend_merges_meta_and_payload(self, proxy_task) -> None:
         """Assert PROXY backend merges meta and payload from task.data."""
         execution_data = TaskExecuteRequest(meta={"target": "node-1"})
-        result = prepare_task_history(proxy_task, "user-1", execution_data)
+        result = await prepare_task_history(
+            proxy_task, "user-1", AsyncMock(), execution_data
+        )
         assert result.execution_request.meta["env"] == "prod"
         assert result.execution_request.payload == "p1"
 
-    def test_proxy_backend_execution_data_payload_kept_when_no_task_payload(
+    @pytest.mark.asyncio
+    async def test_proxy_backend_execution_data_payload_kept_when_no_task_payload(
         self,
     ) -> None:
         """Assert PROXY keeps execution_data payload when task has no payload."""
@@ -195,10 +205,11 @@ class TestPrepareTaskHistory:
         execution_data = TaskExecuteRequest(
             meta={"target": "node-1"}, payload="my-payload"
         )
-        result = prepare_task_history(task, "user-1", execution_data)
+        result = await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
         assert result.execution_request.payload == "my-payload"
 
-    def test_missing_target_raises_bad_request(self) -> None:
+    @pytest.mark.asyncio
+    async def test_missing_target_raises_bad_request(self) -> None:
         """Assert missing target raises HTTPBadRequestException."""
         task = Task(
             id=1,
@@ -208,9 +219,10 @@ class TestPrepareTaskHistory:
         )
         execution_data = TaskExecuteRequest(meta={})
         with pytest.raises(HTTPBadRequestException, match="target is required"):
-            prepare_task_history(task, "user-1", execution_data)
+            await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
 
-    def test_target_from_constraints_rtarget(self) -> None:
+    @pytest.mark.asyncio
+    async def test_target_from_constraints_rtarget(self) -> None:
         """Assert target is extracted from Constraints[0].RTarget when not in meta."""
         task = Task(
             id=2,
@@ -219,10 +231,11 @@ class TestPrepareTaskHistory:
             data={"Constraints": [{"RTarget": "constraint-node"}]},
         )
         execution_data = TaskExecuteRequest(meta={})
-        result = prepare_task_history(task, "user-1", execution_data)
+        result = await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
         assert result.execution_request.target == "constraint-node"
 
-    def test_no_execution_data_defaults_to_empty_request(self) -> None:
+    @pytest.mark.asyncio
+    async def test_no_execution_data_defaults_to_empty_request(self) -> None:
         """Assert None execution_data defaults to an empty TaskExecuteRequest."""
         task = Task(
             id=3,
@@ -230,11 +243,12 @@ class TestPrepareTaskHistory:
             backend=TaskBackendEnum.NOMAD,
             data={"Constraints": [{"RTarget": "node-x"}]},
         )
-        result = prepare_task_history(task, "user-1", None)
+        result = await prepare_task_history(task, "user-1", AsyncMock(), None)
         assert result.execution_request.target == "node-x"
         assert result.execution_request.payload is None
 
-    def test_anonymize_mask_task_takes_priority(self) -> None:
+    @pytest.mark.asyncio
+    async def test_anonymize_mask_task_takes_priority(self) -> None:
         """Assert task.anonymize_mask takes priority over execution_data mask."""
         task = Task(
             id=4,
@@ -244,10 +258,11 @@ class TestPrepareTaskHistory:
             anonymize_mask=TASK_ANONYMIZE_MASK,
         )
         execution_data = TaskExecuteRequest(meta={"target": "n"}, anonymize_mask=99)
-        result = prepare_task_history(task, "user-1", execution_data)
+        result = await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
         assert result.anonymize_mask == TASK_ANONYMIZE_MASK
 
-    def test_anonymize_mask_uses_execution_data_when_task_is_none(self) -> None:
+    @pytest.mark.asyncio
+    async def test_anonymize_mask_uses_execution_data_when_task_is_none(self) -> None:
         """Assert execution_data mask is used when task mask is None."""
         task = Task(
             id=5,
@@ -259,11 +274,12 @@ class TestPrepareTaskHistory:
         execution_data = TaskExecuteRequest(
             meta={"target": "n"}, anonymize_mask=EXECUTION_ANONYMIZE_MASK
         )
-        result = prepare_task_history(task, "user-1", execution_data)
+        result = await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
         assert result.anonymize_mask == EXECUTION_ANONYMIZE_MASK
 
+    @pytest.mark.asyncio
     @patch("app.tasks.deps.anonymizer_settings")
-    def test_anonymize_mask_falls_back_to_settings(
+    async def test_anonymize_mask_falls_back_to_settings(
         self, mock_anonymizer_settings
     ) -> None:
         """Assert anonymizer_settings default is used when both masks are None."""
@@ -279,22 +295,51 @@ class TestPrepareTaskHistory:
             owner="BACKUPS",
         )
         execution_data = TaskExecuteRequest(meta={"target": "n"}, anonymize_mask=None)
-        result = prepare_task_history(task, "user-1", execution_data)
+        result = await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
         assert result.anonymize_mask == DEFAULT_ANONYMIZE_MASK
         mock_anonymizer_settings.get_anonymize_mask.assert_called_once_with("BACKUPS")
 
-    def test_chain_task_name_injected_in_meta(self) -> None:
+    @pytest.mark.asyncio
+    async def test_chain_task_name_injected_in_meta(self) -> None:
         """Assert prepare_task_history stores chain_task_name in meta when set."""
         task = TaskFactory.build(
             name="test-task",
             backend=TaskBackendEnum.PROXY,
             data={"meta": {"target": "host1"}, "payload": None},
         )
+        chain_task = TaskFactory.build(name="other-task")
         execution_data = TaskExecuteRequest(chain_task_name="other-task")
-        history = prepare_task_history(task, "test-user", execution_data)
+        with patch(
+            "app.tasks.deps.TaskManager.first",
+            new_callable=AsyncMock,
+            return_value=chain_task,
+        ):
+            history = await prepare_task_history(
+                task, "test-user", AsyncMock(), execution_data
+            )
         assert history.execution_request.meta.get("chain_task_name") == "other-task"
 
-    def test_chain_task_name_not_injected_when_absent(self) -> None:
+    @pytest.mark.asyncio
+    async def test_chain_task_name_not_found_raises_404(self) -> None:
+        """Assert prepare_task_history raises HTTPNotFoundException for unknown chain task."""
+        task = TaskFactory.build(
+            name="test-task",
+            backend=TaskBackendEnum.PROXY,
+            data={"meta": {"target": "host1"}, "payload": None},
+        )
+        execution_data = TaskExecuteRequest(chain_task_name="nonexistent-task")
+        with (
+            patch(
+                "app.tasks.deps.TaskManager.first",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            pytest.raises(HTTPNotFoundException, match="nonexistent-task"),
+        ):
+            await prepare_task_history(task, "test-user", AsyncMock(), execution_data)
+
+    @pytest.mark.asyncio
+    async def test_chain_task_name_not_injected_when_absent(self) -> None:
         """Assert prepare_task_history does not add chain_task_name when not set."""
         task = TaskFactory.build(
             name="test-task",
@@ -302,10 +347,13 @@ class TestPrepareTaskHistory:
             data={"meta": {"target": "host1"}, "payload": None},
         )
         execution_data = TaskExecuteRequest()
-        history = prepare_task_history(task, "test-user", execution_data)
+        history = await prepare_task_history(
+            task, "test-user", AsyncMock(), execution_data
+        )
         assert "chain_task_name" not in history.execution_request.meta
 
-    def test_chain_task_name_overrides_task_meta(self) -> None:
+    @pytest.mark.asyncio
+    async def test_chain_task_name_overrides_task_meta(self) -> None:
         """Assert per-execution chain_task_name overrides the task's meta chain_task_name."""
         task = TaskFactory.build(
             name="test-task",
@@ -315,8 +363,16 @@ class TestPrepareTaskHistory:
                 "payload": None,
             },
         )
+        chain_task = TaskFactory.build(name="override-task")
         execution_data = TaskExecuteRequest(chain_task_name="override-task")
-        history = prepare_task_history(task, "test-user", execution_data)
+        with patch(
+            "app.tasks.deps.TaskManager.first",
+            new_callable=AsyncMock,
+            return_value=chain_task,
+        ):
+            history = await prepare_task_history(
+                task, "test-user", AsyncMock(), execution_data
+            )
         assert history.execution_request.meta.get("chain_task_name") == "override-task"
 
 
