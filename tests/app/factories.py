@@ -21,6 +21,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor import CasdoorSDK
+from app.inventory.models import NodeWrite, SchemaWrite, ServiceWrite, TableWrite
 from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
@@ -71,6 +72,32 @@ class AltersCreateFactory(ModelFactory[AltersCreate]):
 
 class ArchivesCreateFactory(ModelFactory[ArchivesCreate]):
     """Define factory for ArchivesCreate instances."""
+
+
+class NodeWriteFactory(ModelFactory[NodeWrite]):
+    """Define factory for NodeWrite instances."""
+
+    source = None
+    external_id = None
+
+
+class ServiceWriteFactory(ModelFactory[ServiceWrite]):
+    """Define factory for ServiceWrite instances."""
+
+    node_id = None
+    external_id = None
+
+
+class SchemaWriteFactory(ModelFactory[SchemaWrite]):
+    """Define factory for SchemaWrite instances."""
+
+    service_id = None
+
+
+class TableWriteFactory(ModelFactory[TableWrite]):
+    """Define factory for TableWrite instances."""
+
+    schema_id = None
 
 
 class CreatedNodeFactory(ModelFactory[CreatedNode]):
