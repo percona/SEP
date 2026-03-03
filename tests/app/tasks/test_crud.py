@@ -135,6 +135,25 @@ class TestTaskManagerListActive:
 
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_with_target_filter(self, session: AsyncSession) -> None:
+        """Assert target filter restricts returned tasks by data.meta.target."""
+        await _create_task(
+            session,
+            name="host1-task",
+            data={"meta": {"target": "host1"}},
+        )
+        await _create_task(
+            session,
+            name="host2-task",
+            data={"meta": {"target": "host2"}},
+        )
+
+        result = await TaskManager.list_active(session, target="host1")
+
+        assert len(result) == 1
+        assert result[0].name == "host1-task"
+
 
 # ---------------------------------------------------------------------------
 # TaskManager.retrieve_by_name

@@ -72,10 +72,12 @@ router = APIRouter(tags=["tasks"])
 
 # TODO: Pagination  # noqa: TD002, TD003
 @router.get("/", dependencies=[IsAuthenticatedDep], response_model=list[TaskResponse])
-async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task]:
+async def list_tasks(
+    session: SessionDep, owner: str | None = None, target: str | None = None
+) -> list[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
-    return await TaskManager.list_active(session=session, owner=owner)
+    return await TaskManager.list_active(session=session, owner=owner, target=target)
 
 
 @router.delete(

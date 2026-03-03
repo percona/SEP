@@ -627,13 +627,8 @@ async def populate_detail_periodic_context(
     """
     context["periodic_tasks"] = await tasks_api.get(f"/{task_name}/periodic/")
     context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
-    all_tasks = await tasks_api.get("/", params={"owner": owner})
-    context["chainable_tasks"] = [
-        t
-        for t in all_tasks
-        if t.get("data", {}).get("meta", {}).get("target") == hostname
-        and t["name"] != task_name
-    ]
+    all_tasks = await tasks_api.get("/", params={"owner": owner, "target": hostname})
+    context["chainable_tasks"] = [t for t in all_tasks if t["name"] != task_name]
 
 
 async def get_tasks_index_context(

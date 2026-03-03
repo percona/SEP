@@ -17,6 +17,7 @@
 
 import logging
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import CursorResult
 from sqlalchemy.orm import aliased
@@ -57,6 +58,7 @@ class TaskManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         owner: TaskOwner | None = None,
+        target: str | None = None,
     ) -> list[Task]:
         """List all active (non-deleted) tasks.
 
@@ -65,10 +67,19 @@ class TaskManager(BaseSQLModelManager):
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
         :type owner: TaskOwner | None
+        :param target: The execution target hostname. If provided, only tasks whose
+            ``data["meta"]["target"]`` matches will be listed.
+        :type target: str | None
         :return: A list of active tasks.
         :rtype: list[Task]
         """
-        return await cls.list(session, col(Task.deleted_at).is_(None), owner=owner)
+        where = [col(Task.deleted_at).is_(None)]
+        kwargs: dict[str, Any] = {}
+        if owner is not None:
+            kwargs["owner"] = owner
+        if target is not None:
+            where.append(Task.data["meta"]["target"].as_string() == target)
+        return await cls.list(session, *where, **kwargs)
 
     @classmethod
     async def retrieve_by_name(

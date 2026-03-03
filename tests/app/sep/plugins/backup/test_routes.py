@@ -142,21 +142,19 @@ def test_backups_detail(
     )
     mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
     mock_task_api_dep.get.assert_any_call(f"/{created_task.name}/periodic/")
-    mock_task_api_dep.get.assert_any_call("/", params={"owner": TaskOwner.BACKUPS})
+    mock_task_api_dep.get.assert_any_call(
+        "/", params={"owner": TaskOwner.BACKUPS, "target": "localhost"}
+    )
 
 
 @pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
-def test_backups_detail_chainable_tasks_excludes_current_and_wrong_host(
+def test_backups_detail_chainable_tasks_excludes_self(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
-    """Test that backups_detail chainable_tasks excludes the current task and wrong-host tasks."""
+    """Test that backups_detail chainable_tasks excludes the current task."""
     same_host_other_task = {
         "name": "other-backup",
         "data": {"meta": {"target": "localhost"}},
-    }
-    wrong_host_task = {
-        "name": "wrong-host-backup",
-        "data": {"meta": {"target": "other-host"}},
     }
     same_task_self = {
         "name": created_task.name,
@@ -169,7 +167,10 @@ def test_backups_detail_chainable_tasks_excludes_current_and_wrong_host(
             [],  # stats
             {},  # /hosts/ (no executor_host_ip)
             [],  # periodic_tasks
-            [same_host_other_task, wrong_host_task, same_task_self],  # all_tasks
+            [
+                same_host_other_task,
+                same_task_self,
+            ],  # all_tasks (server-filtered by target)
         ]
     )
     mock_inventory_api_dep.get.return_value = []
@@ -178,7 +179,6 @@ def test_backups_detail_chainable_tasks_excludes_current_and_wrong_host(
 
     assert response.status_code == status.HTTP_200_OK
     assert '<option value="other-backup"' in response.text
-    assert '<option value="wrong-host-backup"' not in response.text
     assert f'<option value="{created_task.name}"' not in response.text
 
 
