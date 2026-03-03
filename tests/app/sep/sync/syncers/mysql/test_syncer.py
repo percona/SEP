@@ -45,7 +45,9 @@ def created_service() -> CreatedService:
     created_service = CreatedServiceFactory.build()
     created_service.node_id = MOCK_CREATED_NODE_ID
     created_service.type = ServiceTypeEnum.MYSQL
-    created_service.node = CreatedNode(address="localhost", id=MOCK_CREATED_NODE_ID)
+    created_service.node = CreatedNode(
+        address="localhost", id=MOCK_CREATED_NODE_ID, node_name="localhost"
+    )
     created_service.port = 8000
     return created_service
 
@@ -256,6 +258,7 @@ class TestPerformMethods:
                 node_id=created_node.services[0].node_id,
                 type=ServiceTypeEnum.MYSQL,
                 port=created_node.services[0].port,
+                name="extra-service",
             )
         )
         sync_service = mocker.patch.object(
@@ -475,8 +478,9 @@ class TestModelIteratorsAndGuards:
         """Test returning True only when node has a MySQL service."""
         node_with_mysql = Node(
             address="x",
+            name="x",
             services=[Service(type=ServiceTypeEnum.MYSQL, port=3306, name="s")],
         )
-        node_without_mysql = Node(address="y", services=[])
+        node_without_mysql = Node(address="y", name="y", services=[])
         assert mock_mysql_syncer.can_sync_node(node_with_mysql) is True
         assert mock_mysql_syncer.can_sync_node(node_without_mysql) is False

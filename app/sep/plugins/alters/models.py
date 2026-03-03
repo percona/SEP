@@ -2,16 +2,16 @@
 
 from pydantic import BaseModel
 
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 
 
 class AltersCreate(BaseModel):
     """Represent an Alters creation form.
 
     :param task_name: The name of the task to be created.
-    :type task_name: RequiredStr
+    :type task_name: NonEmptyStr
     :param hostname: The target hostname for the task execution.
-    :type hostname: RequiredStr
+    :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the database service to connect to.
     :type service_id: int
     :param schema_id: The database schema ID on which the task will operate.
@@ -19,9 +19,9 @@ class AltersCreate(BaseModel):
     :param table_id: The table ID within the schema to be altered.
     :type table_id: int
     :param recursion_method: The method for handling recursion.
-    :type recursion_method: RequiredStr
+    :type recursion_method: NonEmptyStr
     :param alter: The specific alter command to be executed.
-    :type alter: RequiredStr
+    :type alter: NonEmptyStr
     :param dsn_table: The DSN table for recursion method when using `dsn`. Defaults to
         an empty string.
     :type dsn_table: str
@@ -60,15 +60,15 @@ class AltersCreate(BaseModel):
     :type alert_on_fail: bool
     """
 
-    task_name: RequiredStr
-    hostname: RequiredStr
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
     service_id: int
     schema_id: int | None = None
     table_id: int | None = None
     schema_name: str = ""
     table_name: str = ""
-    recursion_method: RequiredStr
-    alter: RequiredStr
+    recursion_method: NonEmptyStr
+    alter: NonEmptyStr
     dsn_table: str = ""
     pause_file: str = ""
     new_table_name: str = ""
