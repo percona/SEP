@@ -12,6 +12,12 @@ repos:
     hooks:
       - id: djlint
       - id: djlint-reformat
+  - repo: https://github.com/google/addlicense
+    rev: b289835c0741ba2fb92dd5f61af070e79c69a55e  # v1.2.0
+    hooks:
+      - id: addlicense
+        args: ['-f', '.license-header.txt', '-c', 'Percona LLC']
+        types: [python]
   - repo: local
     hooks:
       - id: js-beautify
