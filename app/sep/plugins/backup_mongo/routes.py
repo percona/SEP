@@ -2,7 +2,6 @@
 
 import logging
 from typing import Annotated, Any
-from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,6 +14,7 @@ from app.sep.deps import (
     HasNoConflictedRunningTasks,
     IsAuthenticated,
     IsCsrfValidated,
+    populate_detail_periodic_context,
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.deps import (
@@ -173,15 +173,9 @@ async def pbm_backups_detail(
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
-    context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
-    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
-    all_tasks = await tasks_api.get("/", params={"owner": TaskOwner.BACKUP_MONGO})
-    context["chainable_tasks"] = [
-        t
-        for t in all_tasks
-        if t.get("data", {}).get("meta", {}).get("target") == task_data["hostname"]
-        and t["name"] != task.name
-    ]
+    await populate_detail_periodic_context(
+        context, tasks_api, task.name, task_data["hostname"], TaskOwner.BACKUP_MONGO
+    )
 
     return templates.TemplateResponse(
         request=request,

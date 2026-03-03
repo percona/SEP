@@ -2,7 +2,6 @@
 
 import logging
 from typing import Annotated, Any
-from zoneinfo import available_timezones
 
 import yaml
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -18,6 +17,7 @@ from app.sep.deps import (
     InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
+    populate_detail_periodic_context,
     TaskAPI,
 )
 from app.sep.plugins.backup.deps import (
@@ -166,15 +166,9 @@ async def backups_detail(
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
-    context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
-    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
-    all_tasks = await tasks_api.get("/", params={"owner": TaskOwner.BACKUPS})
-    context["chainable_tasks"] = [
-        t
-        for t in all_tasks
-        if t.get("data", {}).get("meta", {}).get("target") == task_data["hostname"]
-        and t["name"] != task.name
-    ]
+    await populate_detail_periodic_context(
+        context, tasks_api, task.name, task_data["hostname"], TaskOwner.BACKUPS
+    )
 
     return templates.TemplateResponse(
         request=request,
