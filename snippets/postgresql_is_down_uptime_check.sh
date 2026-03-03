@@ -17,18 +17,6 @@ echo "********* Server uptime *********"
 echo ""
 uptime
 
-echo "********* PostgreSQL uptime (via psql) *********"
-  38 echo ""
-  39 $PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_time() AS uptime;" 2>/dev/null \
-  40     || echo "Could not connect to PostgreSQL via psql."
-  41
-  42 echo ""
-  43 echo "********* Recent PostgreSQL log entries *********"
-  44 echo ""
-  45 tail -50 /var/log/postgresql/postgresql-*.log 2>/dev/null \
-  46     || tail -50 /var/log/postgresql/postgresql*.log 2>/dev/null \
-  47     || echo "No PostgreSQL logs found in /var/log/postgresql/."
-
 echo "********* PostgreSQL service status *********"
 echo ""
 systemctl status postgres* --no-pager 2> /dev/null || echo "No PostgreSQL systemd service found."
