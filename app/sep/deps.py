@@ -63,6 +63,7 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+AVAILABLE_TIMEZONES = sorted(available_timezones())
 
 
 def get_base_url(request: Request) -> URL:
@@ -591,7 +592,7 @@ async def get_tasks_context(
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
-            "AVAILABLE_TIMEZONES": list(available_timezones()),
+            "AVAILABLE_TIMEZONES": AVAILABLE_TIMEZONES,
             "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
             "alert_on_fail_available": alert_on_fail_available,
         }
@@ -625,7 +626,7 @@ async def populate_detail_periodic_context(
     :type owner: TaskOwner
     """
     context["periodic_tasks"] = await tasks_api.get(f"/{task_name}/periodic/")
-    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
+    context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     all_tasks = await tasks_api.get("/", params={"owner": owner})
     context["chainable_tasks"] = [
         t
