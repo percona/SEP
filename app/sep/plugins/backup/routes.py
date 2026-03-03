@@ -17,7 +17,6 @@ from app.sep.deps import (
     InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
-    populate_detail_periodic_context,
     TaskAPI,
 )
 from app.sep.plugins.backup.deps import (
@@ -27,7 +26,7 @@ from app.sep.plugins.backup.deps import (
     parse_backup_task_data,
 )
 from app.sep.plugins.backup.models import BackupType
-from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
 
@@ -166,9 +165,6 @@ async def backups_detail(
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
-    await populate_detail_periodic_context(
-        context, tasks_api, task.name, task_data["hostname"], TaskOwner.BACKUPS
-    )
 
     return templates.TemplateResponse(
         request=request,

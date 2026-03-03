@@ -123,8 +123,6 @@ def test_backups_detail(
             {},  # running_tasks
             [],  # stats
             {"address1": "host1", "address2": "host2"},  # /hosts/
-            [],  # periodic_tasks
-            [],  # all_tasks for chainable_tasks
         ]
     )
     mock_inventory_api_dep.get.return_value = AsyncMock()
@@ -141,45 +139,6 @@ def test_backups_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
-    mock_task_api_dep.get.assert_any_call(f"/{created_task.name}/periodic/")
-    mock_task_api_dep.get.assert_any_call(
-        "/", params={"owner": TaskOwner.BACKUPS, "target": "localhost"}
-    )
-
-
-@pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
-def test_backups_detail_chainable_tasks_excludes_self(
-    test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
-):
-    """Test that backups_detail chainable_tasks excludes the current task."""
-    same_host_other_task = {
-        "name": "other-backup",
-        "data": {"meta": {"target": "localhost"}},
-    }
-    same_task_self = {
-        "name": created_task.name,
-        "data": {"meta": {"target": "localhost"}},
-    }
-    mock_task_api_dep.get = AsyncMock(
-        side_effect=[
-            {},  # history
-            {},  # running_tasks
-            [],  # stats
-            {},  # /hosts/ (no executor_host_ip)
-            [],  # periodic_tasks
-            [
-                same_host_other_task,
-                same_task_self,
-            ],  # all_tasks (server-filtered by target)
-        ]
-    )
-    mock_inventory_api_dep.get.return_value = []
-
-    response = test_client.get(f"/backups/{created_task.name}")
-
-    assert response.status_code == status.HTTP_200_OK
-    assert '<option value="other-backup"' in response.text
-    assert f'<option value="{created_task.name}"' not in response.text
 
 
 @pytest.mark.usefixtures(

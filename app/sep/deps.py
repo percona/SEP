@@ -600,37 +600,6 @@ async def get_tasks_context(
     return context
 
 
-async def populate_detail_periodic_context(
-    context: dict[str, Any],
-    tasks_api: RemoteAPI,
-    task_name: str,
-    hostname: str,
-    owner: TaskOwner,
-) -> None:
-    """Populate periodic-task and chain-task context for a task detail page.
-
-    Add `periodic_tasks`, `AVAILABLE_TIMEZONES`, and `chainable_tasks`
-    to *context* so that the `scheduled-tasks.html` partial can render the
-    periodic-task table with chain selectors.
-
-    :param context: Mutable template-context dict to update.
-    :type context: dict[str, Any]
-    :param tasks_api: The Tasks API client.
-    :type tasks_api: RemoteAPI
-    :param task_name: Name of the task whose detail page is being rendered.
-    :type task_name: str
-    :param hostname: Target hostname of the current task, used to filter
-        chainable tasks to the same host.
-    :type hostname: str
-    :param owner: Owner filter for retrieving sibling tasks.
-    :type owner: TaskOwner
-    """
-    context["periodic_tasks"] = await tasks_api.get(f"/{task_name}/periodic/")
-    context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
-    all_tasks = await tasks_api.get("/", params={"owner": owner, "target": hostname})
-    context["chainable_tasks"] = [t for t in all_tasks if t["name"] != task_name]
-
-
 async def get_tasks_index_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,

@@ -14,7 +14,6 @@ from app.sep.deps import (
     HasNoConflictedRunningTasks,
     IsAuthenticated,
     IsCsrfValidated,
-    populate_detail_periodic_context,
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.deps import (
@@ -22,7 +21,7 @@ from app.sep.plugins.backup_mongo.deps import (
     BackupsTask,
     get_backups_index_context,
 )
-from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
 
@@ -173,9 +172,6 @@ async def pbm_backups_detail(
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
-    await populate_detail_periodic_context(
-        context, tasks_api, task.name, task_data["hostname"], TaskOwner.BACKUP_MONGO
-    )
 
     return templates.TemplateResponse(
         request=request,
