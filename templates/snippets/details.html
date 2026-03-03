@@ -96,7 +96,22 @@
             {% endif %}
         </h3>
         {% if snippet_preview -%}
-            {{ snippet_preview.content|syntax_highlight(style="monokai", linenos=True, wrapcode=True) |safe }}
+            {% if snippet_preview.frontmatter -%}
+                <div class="highlight-wrapper">
+                    {% if snippet_preview.preamble -%}
+                        {{ snippet_preview.preamble|syntax_highlight(style="monokai", linenos=True, wrapcode=True) |safe }}
+                    {%- endif %}
+                    <details class="frontmatter-toggle">
+                        <summary>▶ frontmatter ({{ snippet_preview.frontmatter_line_count }} lines)</summary>
+                        {{ snippet_preview.frontmatter|syntax_highlight(style="monokai", linenos=True, wrapcode=True, linenostart=snippet_preview.preamble_line_count + 1) |safe }}
+                    </details>
+                    {% if snippet_preview.content -%}
+                        {{ snippet_preview.content|syntax_highlight(style="monokai", linenos=True, wrapcode=True, linenostart=snippet_preview.code_linenostart) |safe }}
+                    {%- endif %}
+                </div>
+            {% else -%}
+                {{ snippet_preview.content|syntax_highlight(style="monokai", linenos=True, wrapcode=True) |safe }}
+            {%- endif %}
             {% if snippet_preview.is_truncated -%}
                 <p class="iconTextLine">
                     <i class="material-symbols-outlined unselectable" style="color: #e0b731">warning</i> <span>File is too large to preview. Please <a class="downloadSnippet"
