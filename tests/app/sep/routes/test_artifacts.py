@@ -61,7 +61,7 @@ class TestDownloadArtifact:
         token = _make_token(payload)
 
         with (
-            patch("app.sep.routes.artifacts.ARTIFACT_DOWNLOAD_TTL", 0),
+            patch("app.sep.routes.artifacts.sep_settings.ARTIFACT_DOWNLOAD_TTL", 0),
             patch("app.sep.routes.artifacts.snippets_settings.SNIPPETS_DIR", tmp_path),
         ):
             response = test_client.get(

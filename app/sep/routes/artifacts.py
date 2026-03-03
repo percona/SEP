@@ -21,10 +21,9 @@ from itsdangerous import BadSignature, SignatureExpired
 
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.security import crypto_timestamp_serializer
+from app.sep.config import sep_settings
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.snippets.config import snippets_settings
-
-ARTIFACT_DOWNLOAD_TTL = 600
 
 router = APIRouter()
 
@@ -48,7 +47,7 @@ async def download_artifact(token: str) -> FileResponse:
     """
     try:
         payload = crypto_timestamp_serializer.loads(
-            token, salt="artifact-download", max_age=ARTIFACT_DOWNLOAD_TTL
+            token, salt="artifact-download", max_age=sep_settings.ARTIFACT_DOWNLOAD_TTL
         )
     except (SignatureExpired, BadSignature) as exc:
         raise HTTPBadRequestException(detail="Invalid or expired token") from exc
