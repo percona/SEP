@@ -763,6 +763,39 @@ class TestDispatchChainedTask:
         assert dispatched_history.execution_request.meta.get("chain_depth") == 1
 
     @pytest.mark.asyncio
+    async def test_static_meta_chain_task_name_stripped(self) -> None:
+        """Assert _dispatch_chained_task strips chain_task_name from chained task's static meta."""
+        main_task = _make_chain_task("main-task")
+        chain_task = _make_chain_task("chain-task")
+        chain_task.data = {"meta": {"target": "host1", "chain_task_name": "auto-next"}}
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {"chain_task_name": chain_task.name},
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+        ):
+            mock_task_first.return_value = chain_task
+            mock_dispatch.return_value = AsyncMock()
+
+            await _dispatch_chained_task(chain_task.name, parent_history)
+
+        dispatched_history = mock_dispatch.call_args[0][0]
+        assert "chain_task_name" not in dispatched_history.execution_request.meta
+
+    @pytest.mark.asyncio
     async def test_unknown_task_logs_warning(self) -> None:
         """Assert _dispatch_chained_task logs a warning when task name is not found."""
         main_task = _make_chain_task("main-task")

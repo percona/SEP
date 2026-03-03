@@ -394,9 +394,9 @@ async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> N
     """Dispatch the chained task after the parent task completes successfully.
 
     Load the task by name, build a new TaskHistory inheriting the parent's executor
-    target, and call `dispatch_queue_item`. Multi-level chaining is supported: if the
-    chained task's own `data["meta"]` contains a `chain_task_name`, that next link
-    will be dispatched after the chained task completes, subject to `_MAX_CHAIN_DEPTH`.
+    target, and call `dispatch_queue_item`. Any ``chain_task_name`` in the chained
+    task's static ``data["meta"]`` is stripped to prevent unintended multi-level
+    chaining; further chaining only occurs if explicitly set per-execution.
 
     :param chain_task_name: The name of the task to chain.
     :type chain_task_name: str
@@ -423,6 +423,7 @@ async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> N
             )
             return
         chain_meta = dict(chain_task.data.get("meta", {}))
+        chain_meta.pop("chain_task_name", None)
         chain_meta["target"] = parent.execution_request.target
         chain_meta["chain_depth"] = (
             parent.execution_request.meta.get("chain_depth", 0) + 1
