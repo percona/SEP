@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from starlette.status import HTTP_200_OK
 
 from app.core.requests import RemoteAPI
@@ -164,8 +165,6 @@ class TestDownloadTaskHistoryFile:
         self, test_client, mock_tasks_client_dep, task_history_response
     ):
         """Assert file still streams when metadata fetch raises HTTPException."""
-        from fastapi import HTTPException
-
         mock_tasks_client_dep.get.side_effect = HTTPException(status_code=500)
         mock_tasks_client_dep.stream.return_value = _mock_file_stream(
             [b"fallback-data"]
