@@ -77,3 +77,11 @@ async def table(session: AsyncSession, schema: Schema) -> Table:
     return await TableManager.create(
         session, TableWriteFactory.build(), schema_id=schema.id
     )
+
+
+@pytest_asyncio.fixture
+async def second_table(session: AsyncSession, schema: Schema) -> Table:
+    """Create a second table in the database."""
+    return await TableManager.create(
+        session, TableWriteFactory.build(), schema_id=schema.id
+    )
