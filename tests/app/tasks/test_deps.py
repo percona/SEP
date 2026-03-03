@@ -183,7 +183,7 @@ class TestPrepareTaskHistory:
         assert result.execution_request.payload == "p1"
 
     def test_proxy_backend_execution_data_payload_kept_when_no_task_payload(
-        self, session
+        self,
     ) -> None:
         """Assert PROXY keeps execution_data payload when task has no payload."""
         task = Task(
