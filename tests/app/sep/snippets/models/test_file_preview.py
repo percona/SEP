@@ -81,6 +81,18 @@ class TestFilePreviewFromPath:
         assert result.is_truncated is False
 
     @pytest.mark.asyncio
+    async def test_unclosed_frontmatter(self, tmp_path):
+        """Include all lines in frontmatter when closing delimiter is missing."""
+        f = tmp_path / "unclosed.sh"
+        f.write_text("# ---\n# key: val\ncode here\n")
+        result = await FilePreview._from_path(
+            f, max_chars=PREVIEW_MAX_CHARS, max_lines=PREVIEW_MAX_LINES
+        )
+        assert result.frontmatter == "# ---\n# key: val\ncode here\n"
+        assert result.content == ""
+        assert result.is_truncated is False
+
+    @pytest.mark.asyncio
     async def test_non_comment_before_delimiter_stops_search(self, tmp_path):
         """Treat everything as code when a non-comment line appears before # ---."""
         f = tmp_path / "nocomment.sh"
