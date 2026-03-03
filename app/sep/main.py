@@ -180,7 +180,7 @@ async def internal_error_handler(
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        name="error.html",
+        name="error.html.j2",
         context={
             "exception": "".join(format_exception(exc, limit=-1, chain=False)),
             **await get_default_context(request, user, base_url),
@@ -205,7 +205,7 @@ async def custom_404_handler(
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
-        name="404.html",
+        name="404.html.j2",
         context={
             "exception": exc,
             **await get_default_context(request, user, base_url),
@@ -256,7 +256,7 @@ async def login_form(
     """Display login form."""
     return templates.TemplateResponse(
         request=request,
-        name="login.html",
+        name="login.html.j2",
         context={
             "csrf_token": request.state.csrf_token,
             "messages": messages.get_messages(request),
@@ -313,7 +313,7 @@ async def read_root(
     """Homepage route."""
     return templates.TemplateResponse(
         request=request,
-        name="homepage.html",
+        name="homepage.html.j2",
         context=context,
     )
 

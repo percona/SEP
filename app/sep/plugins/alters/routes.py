@@ -58,7 +58,7 @@ async def alters_index(
     """Homepage of alters plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="alters/index.html",
+        name="alters/index.html.j2",
         context=context,
     )
 
@@ -239,7 +239,7 @@ async def alters_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="alters/details.html",
+        name="alters/details.html.j2",
         context=context,
     )
 

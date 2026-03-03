@@ -56,7 +56,7 @@ async def archives_index(
     """Homepage of archives plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="archiver/index.html",
+        name="archiver/index.html.j2",
         context=context,
     )
 
@@ -158,7 +158,7 @@ async def archives_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="archiver/details.html",
+        name="archiver/details.html.j2",
         context=context,
     )
 

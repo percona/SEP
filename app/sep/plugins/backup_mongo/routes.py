@@ -55,7 +55,7 @@ async def pbm_backups_index(
     """Homepage of PBM backup mongo plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backup_mongo/backup/index.html",
+        name="backup_mongo/backup/index.html.j2",
         context=context,
     )
 
@@ -190,7 +190,7 @@ async def pbm_backups_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="backup_mongo/backup/details.html",
+        name="backup_mongo/backup/details.html.j2",
         context=context,
     )
 

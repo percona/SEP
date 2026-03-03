@@ -55,7 +55,7 @@ async def restores_index(
     """Homepage of restores plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/restore/index.html",
+        name="backups/restore/index.html.j2",
         context=context,
     )
 
@@ -153,7 +153,7 @@ async def restores_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="backups/restore/details.html",
+        name="backups/restore/details.html.j2",
         context=context,
     )
 

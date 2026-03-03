@@ -72,6 +72,6 @@ async def app_index(
         ]
     return templates.TemplateResponse(
         request=request,
-        name="atw/index.html",
+        name="atw/index.html.j2",
         context=context,
     )

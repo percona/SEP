@@ -56,7 +56,7 @@ async def pg_backups_index(
     """Homepage of PG backups plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backup_pg/index.html",
+        name="backup_pg/index.html.j2",
         context=context,
     )
 
@@ -144,7 +144,7 @@ async def pg_backups_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="backup_pg/details.html",
+        name="backup_pg/details.html.j2",
         context=context,
     )
 

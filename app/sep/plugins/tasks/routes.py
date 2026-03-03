@@ -63,7 +63,7 @@ async def tasks_list(
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
-        name="tasks/list.html",
+        name="tasks/list.html.j2",
         context=context,
     )
 
@@ -112,7 +112,7 @@ async def tasks_detail(
     context["AVAILABLE_TIMEZONES"] = list(available_timezones())
     return templates.TemplateResponse(
         request=request,
-        name="tasks/view.html",
+        name="tasks/view.html.j2",
         context=context,
     )
 

@@ -56,7 +56,7 @@ async def checksums_index(
     context["csrf_token"] = request.state.csrf_token
     return templates.TemplateResponse(
         request=request,
-        name="checksums/index.html",
+        name="checksums/index.html.j2",
         context=context,
     )
 
@@ -144,7 +144,7 @@ async def checksums_detail(
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
     return templates.TemplateResponse(
         request=request,
-        name="checksums/details.html",
+        name="checksums/details.html.j2",
         context=context,
     )
 

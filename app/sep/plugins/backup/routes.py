@@ -60,7 +60,7 @@ async def backups_index(
     """Homepage of backups plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/index.html",
+        name="backups/backup/index.html.j2",
         context=context,
     )
 
@@ -70,7 +70,7 @@ async def backups_docs(request: Request, context: DefaultContext) -> HTMLRespons
     """Standalone documentation page for backup configuration."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/docs.html",
+        name="backups/backup/docs.html.j2",
         context=context,
     )
 
@@ -183,7 +183,7 @@ async def backups_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/details.html",
+        name="backups/backup/details.html.j2",
         context=context,
     )
 

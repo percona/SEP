@@ -62,7 +62,7 @@ async def snippets_index(
     context["enable_snippets_refresh"] = snippets_settings.ENABLE_MANUAL_SYNC
     return templates.TemplateResponse(
         request=request,
-        name="snippets/index.html",
+        name="snippets/index.html.j2",
         context=context,
     )
 
@@ -113,7 +113,7 @@ async def snippets_detail(
         logger.debug("Could not decode snippet code", exc_info=True)
     return templates.TemplateResponse(
         request=request,
-        name="snippets/details.html",
+        name="snippets/details.html.j2",
         context=context,
     )
 

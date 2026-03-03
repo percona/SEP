@@ -77,7 +77,7 @@ async def dipper_index(
 
     if service_id is None:
         return templates.TemplateResponse(
-            request=request, name="dipper/index.html", context=context
+            request=request, name="dipper/index.html.j2", context=context
         )
 
     try:
@@ -85,13 +85,13 @@ async def dipper_index(
     except HTTPException as exc:
         messages.error(request, f"Could not load service {service_id}: {exc.detail}")
         return templates.TemplateResponse(
-            request=request, name="dipper/index.html", context=context
+            request=request, name="dipper/index.html.j2", context=context
         )
 
     if service_data.get("type") not in {t.value for t in DIPPER_SCRIPT_BY_SERVICE_TYPE}:
         messages.error(request, "Selected service type is not supported by Dipper")
         return templates.TemplateResponse(
-            request=request, name="dipper/index.html", context=context
+            request=request, name="dipper/index.html.j2", context=context
         )
 
     selected_service = CreatedService.model_validate(service_data)
@@ -178,7 +178,7 @@ async def dipper_index(
 
     return templates.TemplateResponse(
         request=request,
-        name="dipper/index.html",
+        name="dipper/index.html.j2",
         context=context,
     )
 
