@@ -27,6 +27,7 @@ from app.sep.snippets.config import snippets_settings
 
 router = APIRouter()
 
+ARTIFACT_DOWNLOAD_SALT = "artifact-download"
 ARTIFACT_TYPE_SNIPPET = "snippet"
 ARTIFACT_TYPE_DIPPER = "dipper"
 
@@ -50,7 +51,9 @@ async def download_artifact(token: str) -> FileResponse:
     """
     try:
         payload = crypto_timestamp_serializer.loads(
-            token, salt="artifact-download", max_age=sep_settings.ARTIFACT_DOWNLOAD_TTL
+            token,
+            salt=ARTIFACT_DOWNLOAD_SALT,
+            max_age=sep_settings.ARTIFACT_DOWNLOAD_TTL,
         )
     except (SignatureExpired, BadSignature) as exc:
         raise HTTPBadRequestException(detail="Invalid or expired token") from exc
