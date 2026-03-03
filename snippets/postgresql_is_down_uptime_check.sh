@@ -41,8 +41,8 @@ $PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_ti
 echo ""
 echo "********* Recent PostgreSQL log entries *********"
 echo ""
-tail -50 /var/log/postgresql/postgresql-*.log 2>/dev/null \
-    || tail -50 /var/log/postgresql/postgresql*.log 2>/dev/null \
+tail -50 /var/log/postgresql/postgresql-*.log 2> /dev/null \
+    || tail -50 /var/log/postgresql/postgresql*.log 2> /dev/null \
     || echo "No PostgreSQL logs found in /var/log/postgresql/."
 
 echo ""
