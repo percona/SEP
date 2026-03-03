@@ -2,16 +2,16 @@
 
 from pydantic import BaseModel
 
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 
 
 class ChecksumsCreate(BaseModel):
     """Represent a Checksums creation form.
 
     :param task_name: The name of the task to be created.
-    :type task_name: RequiredStr
+    :type task_name: NonEmptyStr
     :param hostname: The target hostname for the task execution.
-    :type hostname: RequiredStr
+    :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the database service to connect to.
     :type service_id: int
     :param schema_id: The database schema IDs on which the task will operate.
@@ -23,7 +23,7 @@ class ChecksumsCreate(BaseModel):
     :param tables: The tables within the schema to be checksummed.
     :type tables: str
     :param recursion_method: The method for handling recursion.
-    :type recursion_method: RequiredStr
+    :type recursion_method: NonEmptyStr
     :param dsn_table: The DSN table for recursion method when using `dsn`. Defaults to
         an empty string.
     :type dsn_table: str
@@ -53,8 +53,8 @@ class ChecksumsCreate(BaseModel):
     :type alert_on_fail: bool
     """
 
-    task_name: RequiredStr
-    hostname: RequiredStr
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
     service_id: int
     schema_id: set[int] = None
     databases: str = ""

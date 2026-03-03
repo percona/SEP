@@ -823,8 +823,9 @@ check_cmd_silent() {
 ################################################################################
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 CREATE_PMM_CONTAINER="${CREATE_PMM_CONTAINER:-0}"
+DEFAULT_CONTAINER_REGISTRY="${CONTAINER_REGISTRY:-docker.io}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
-SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-docker.io/percona/percona-sep}"
+SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-${DEFAULT_CONTAINER_REGISTRY}/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-latest}"
 SEP_HTTP_PORT="${SEP_HTTP_PORT:-8080}"
 SEP_HTTPS_PORT="${SEP_HTTPS_PORT:-8444}"
@@ -1305,6 +1306,14 @@ render_templates_cli() {
         outfile="${file_var#*:}"
 
         printf '%s' "${!data_var_name}" | base64 -d | gunzip > "${outfile}.tmp"
+
+        case "${outfile}" in
+            "${ABS_INSTALL_DIR}/compose.yaml")
+                if [ "${DEFAULT_CONTAINER_REGISTRY}/" != "docker.io/" ]; then
+                    sed -i "s^docker.io/^${DEFAULT_CONTAINER_REGISTRY}/^g" "${outfile}.tmp"
+                fi
+                ;;
+        esac
 
         sed \
             -e "s|\${SEP_HTTP_PORT}|${SEP_HTTP_PORT}|g" \
