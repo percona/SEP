@@ -16,7 +16,7 @@ repos:
     rev: b289835c0741ba2fb92dd5f61af070e79c69a55e  # v1.2.0
     hooks:
       - id: addlicense
-        args: ['-f', '.license_header']
+        args: ["-f", ".license_header", "-v"]
         types: [python]
   - repo: local
     hooks:
@@ -37,7 +37,7 @@ repos:
       - id: update-installer-checksum
         name: Update sep_installer.sh checksum
         description: "Update sep_installer.sha256 when sep_installer.sh changes"
-        entry: sh -c 'sha256sum sep_installer.sh > sep_installer.sha256'
+        entry: sh -c "sha256sum sep_installer.sh > sep_installer.sha256"
         language: system
         files: ^sep_installer\.sh$
         pass_filenames: false
