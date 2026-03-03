@@ -166,6 +166,18 @@ $(document).ready(function() {
         document.body.appendChild(a);
         a.click();
         a.remove();
+
+        // Reset button after download has been triggered (no reliable "download started" event)
+        const ariaLabel = $btn.attr('aria-label') || `Download ${filename}`;
+        setTimeout(function() {
+            $btn.data('loading', false)
+                .attr('aria-disabled', 'false')
+                .prop('disabled', false)
+                .removeClass('loading')
+                .attr('aria-label', ariaLabel)
+                .html('<span class="material-symbols-outlined">file_download</span>');
+            $row.removeAttr('aria-busy');
+        }, 1500);
     });
 
     $(document).on('click', '.view-files-button', function() {
