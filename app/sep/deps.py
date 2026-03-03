@@ -592,6 +592,7 @@ async def get_tasks_context(
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
+            "chainable_tasks": tasks,
             "AVAILABLE_TIMEZONES": AVAILABLE_TIMEZONES,
             "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
             "alert_on_fail_available": alert_on_fail_available,

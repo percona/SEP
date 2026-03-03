@@ -828,6 +828,38 @@ class TestDispatchChainedTask:
         assert "unknown-task" in str(mock_logger.warning.call_args)
 
     @pytest.mark.asyncio
+    async def test_self_chain_skipped(self) -> None:
+        """Assert _dispatch_chained_task skips dispatch when chain target is the parent task."""
+        main_task = _make_chain_task("main-task")
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {"chain_task_name": "main-task"},
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+            patch("app.tasks.celery.logger") as mock_logger,
+        ):
+            mock_task_first.return_value = main_task
+
+            await _dispatch_chained_task("main-task", parent_history)
+
+        mock_dispatch.assert_not_awaited()
+        mock_logger.warning.assert_called_once()
+        assert "same as the parent" in str(mock_logger.warning.call_args)
+
+    @pytest.mark.asyncio
     async def test_max_depth_exceeded_no_dispatch(self) -> None:
         """Assert _dispatch_chained_task does not dispatch when chain depth limit is reached."""
         main_task = _make_chain_task("main-task")

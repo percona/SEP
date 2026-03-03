@@ -422,6 +422,12 @@ async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> N
                 "Chained task %r not found; skipping chain dispatch", chain_task_name
             )
             return
+        if chain_task_name == parent.execution_request.task:
+            logger.warning(
+                "Chained task %r is the same as the parent task; skipping self-chain",
+                chain_task_name,
+            )
+            return
         chain_meta = dict(chain_task.data.get("meta", {}))
         chain_meta.pop("chain_task_name", None)
         chain_meta["target"] = parent.execution_request.target

@@ -114,6 +114,33 @@ async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Ta
 ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
 
 
+async def validate_chain_task_name(
+    session: AsyncSession,
+    chain_task_name: str,
+    task_name: str,
+) -> None:
+    """Validate that a chain task name exists and is not a self-reference.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param chain_task_name: Name of the task to chain to.
+    :type chain_task_name: str
+    :param task_name: Name of the parent task (to prevent self-chaining).
+    :type task_name: str
+    :raises HTTPBadRequestException: If the chain task name equals the parent task name.
+    :raises HTTPNotFoundException: If the chain task does not exist.
+    """
+    if chain_task_name == task_name:
+        raise HTTPBadRequestException("A task cannot be chained to itself.")
+    chain_task = await TaskManager.first(
+        session,
+        col(Task.deleted_at).is_(None),
+        name=chain_task_name,
+    )
+    if chain_task is None:
+        raise HTTPNotFoundException(f"Chained task {chain_task_name!r} not found.")
+
+
 async def prepare_task_history(
     task: ExecutableTaskDep,
     executed_by: CurrentUserID,
@@ -140,15 +167,9 @@ async def prepare_task_history(
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
     if execution_data.chain_task_name:
-        chain_task = await TaskManager.first(
-            session,
-            col(Task.deleted_at).is_(None),
-            name=execution_data.chain_task_name,
+        await validate_chain_task_name(
+            session, execution_data.chain_task_name, task.name
         )
-        if chain_task is None:
-            raise HTTPNotFoundException(
-                f"Chained task {execution_data.chain_task_name!r} not found."
-            )
         execution_data.meta["chain_task_name"] = execution_data.chain_task_name
     target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
         0

@@ -48,6 +48,7 @@ from app.tasks.deps import (
     TaskDep,
     TaskExecutor,
     TaskHistoryWithTaskDep,
+    validate_chain_task_name,
 )
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
@@ -165,11 +166,16 @@ async def list_periodic_tasks_by_task_name(
 )
 async def create_periodic_task_for_task_name(
     celery_beat_session: CeleryBeatSessionDep,
+    session: SessionDep,
     task: ExecutableTaskDep,
     periodic_task: PeriodicTaskCreate,
 ) -> PeriodicTask:
     """Create a new periodic task for the specified task name."""
     logger.debug("Creating periodic task %s", periodic_task)
+    if periodic_task.execute_request and periodic_task.execute_request.chain_task_name:
+        await validate_chain_task_name(
+            session, periodic_task.execute_request.chain_task_name, task.name
+        )
     kwargs = json.loads(periodic_task.kwargs)
     kwargs["task_name"] = task.name
     if not periodic_task.name:

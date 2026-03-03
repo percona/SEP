@@ -160,7 +160,7 @@
                             <select name="execute_request_chain_task_name"
                                     form="edit-periodic-task-form-{{ periodic_task.id }}">
                                 <option value="">None</option>
-                                {% for t in chainable_tasks %}
+                                {% for t in chainable_tasks if t.name != periodic_task.task %}
                                     <option value="{{ t.name }}"
                                             {%- if periodic_task.execute_request and periodic_task.execute_request.chain_task_name == t.name %}
                                             selected

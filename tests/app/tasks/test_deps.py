@@ -339,6 +339,20 @@ class TestPrepareTaskHistory:
             await prepare_task_history(task, "test-user", AsyncMock(), execution_data)
 
     @pytest.mark.asyncio
+    async def test_chain_task_name_self_chain_raises_400(self) -> None:
+        """Assert prepare_task_history raises HTTPBadRequestException for self-chain."""
+        task = TaskFactory.build(
+            name="test-task",
+            backend=TaskBackendEnum.PROXY,
+            data={"meta": {"target": "host1"}, "payload": None},
+        )
+        execution_data = TaskExecuteRequest(chain_task_name="test-task")
+        with pytest.raises(
+            HTTPBadRequestException, match="cannot be chained to itself"
+        ):
+            await prepare_task_history(task, "test-user", AsyncMock(), execution_data)
+
+    @pytest.mark.asyncio
     async def test_chain_task_name_not_injected_when_absent(self) -> None:
         """Assert prepare_task_history does not add chain_task_name when not set."""
         task = TaskFactory.build(

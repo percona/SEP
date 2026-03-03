@@ -138,6 +138,59 @@ class TestUpdatePeriodicTask:
         assert data["task"] == "new-task-name"
 
 
+class TestCreatePeriodicTaskChainValidation:
+    """Test chain_task_name validation on POST /{task_name}/periodic/."""
+
+    @pytest.mark.asyncio
+    async def test_self_chain_returns_400(self, periodic_test_client, tasks_session):
+        """Assert creating a periodic task that chains to itself returns 400."""
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="my-task")),
+        )
+        payload = {
+            "interval": {"every": 10, "period": "minutes"},
+            "execute_request": {"chain_task_name": "my-task"},
+        }
+        response = periodic_test_client.post("/my-task/periodic/", json=payload)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "itself" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_chain_task_returns_404(
+        self, periodic_test_client, tasks_session
+    ):
+        """Assert creating a periodic task with a nonexistent chain task returns 404."""
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="my-task")),
+        )
+        payload = {
+            "interval": {"every": 10, "period": "minutes"},
+            "execute_request": {"chain_task_name": "does-not-exist"},
+        }
+        response = periodic_test_client.post("/my-task/periodic/", json=payload)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_valid_chain_task_succeeds(self, periodic_test_client, tasks_session):
+        """Assert creating a periodic task with a valid chain task succeeds."""
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="task-a")),
+        )
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="task-b")),
+        )
+        payload = {
+            "interval": {"every": 10, "period": "minutes"},
+            "execute_request": {"chain_task_name": "task-b"},
+        }
+        response = periodic_test_client.post("/task-a/periodic/", json=payload)
+        assert response.status_code == status.HTTP_201_CREATED
+
+
 class TestDeletePeriodicTask:
     """Test the DELETE /periodic/{periodic_task_id} endpoint."""
 
