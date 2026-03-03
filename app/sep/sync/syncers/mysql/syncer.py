@@ -339,8 +339,9 @@ class MySQLSyncer(BaseTaskSyncer):
         """Return the target host for the task from the host.
 
         This method returns `self.force_executor_host` if set. Otherwise, it tries to
-        find a target with the same address as `host`. If it can't, the first available
-        host is returned.
+        find a target with the same address as `host` or the same name. If no match is
+        found, it returns `self.default_executor_host` if set, otherwise the first
+        available host.
 
         :param host: The target host.
         :type host: str
@@ -357,6 +358,8 @@ class MySQLSyncer(BaseTaskSyncer):
         for target, address in available_hosts.items():
             if address == host:
                 return target
+        if self.default_executor_host:
+            return self.default_executor_host
         return next(iter(available_hosts))
 
     def build_script_config(
