@@ -30,6 +30,7 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.plugins.dipper.models import DipperScript
+from app.sep.routes.artifacts import ARTIFACT_TYPE_DIPPER
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippetArgs, SnippetExecutionMeta
 
@@ -122,7 +123,11 @@ def get_dipper_script_source(request: Request, script: DipperScriptDep) -> str:
     :rtype: str
     """
     token = crypto_timestamp_serializer.dumps(
-        {"type": "dipper", "filename": script.filename, "md5": script.md5_digest},
+        {
+            "type": ARTIFACT_TYPE_DIPPER,
+            "filename": script.filename,
+            "md5": script.md5_digest,
+        },
         salt="artifact-download",
     )
     base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)

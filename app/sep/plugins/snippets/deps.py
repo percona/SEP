@@ -15,6 +15,7 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
+from app.sep.routes.artifacts import ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -195,7 +196,11 @@ def get_snippet_source(request: Request, snippet: SnippetDep) -> str:
     :rtype: str
     """
     token = crypto_timestamp_serializer.dumps(
-        {"type": "snippet", "filename": snippet.filename, "md5": snippet.md5_digest},
+        {
+            "type": ARTIFACT_TYPE_SNIPPET,
+            "filename": snippet.filename,
+            "md5": snippet.md5_digest,
+        },
         salt="artifact-download",
     )
     base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)

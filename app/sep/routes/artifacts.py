@@ -27,9 +27,12 @@ from app.sep.snippets.config import snippets_settings
 
 router = APIRouter()
 
+ARTIFACT_TYPE_SNIPPET = "snippet"
+ARTIFACT_TYPE_DIPPER = "dipper"
+
 _BASE_DIRS = {
-    "snippet": lambda: snippets_settings.SNIPPETS_DIR,
-    "dipper": lambda: DIPPER_PAYLOADS_DIR,
+    ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR,
+    ARTIFACT_TYPE_DIPPER: lambda: DIPPER_PAYLOADS_DIR,
 }
 
 
@@ -56,12 +59,15 @@ async def download_artifact(token: str) -> FileResponse:
     if artifact_type not in _BASE_DIRS:
         raise HTTPBadRequestException(detail="Invalid artifact type")
 
+    if not (filename := payload.get("filename")):
+        raise HTTPBadRequestException(detail="Invalid artifact filename")
+
     base_dir = _BASE_DIRS[artifact_type]().resolve()
-    resolved = (base_dir / payload.get("filename", "")).resolve()
+    resolved = (base_dir / filename).resolve()
     if not resolved.is_relative_to(base_dir):
         raise HTTPBadRequestException(detail="Invalid artifact path")
 
     if not resolved.is_file():
         raise HTTPNotFoundException
 
-    return FileResponse(resolved)
+    return FileResponse(resolved, filename=filename)
