@@ -41,9 +41,17 @@ $PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_ti
 echo ""
 echo "********* Recent PostgreSQL log entries *********"
 echo ""
-tail -50 /var/log/postgresql/postgresql-*.log 2> /dev/null \
-    || tail -50 /var/log/postgresql/postgresql*.log 2> /dev/null \
-    || echo "No PostgreSQL logs found in /var/log/postgresql/."
+tail -50 $(
+    $PSQL -tA -c "
+        SELECT CASE
+            WHEN current_setting('log_directory') LIKE '/%'
+            THEN current_setting('log_directory') || '/*.log'
+            ELSE current_setting('data_directory') || '/'
+                 || current_setting('log_directory') || '/*.log'
+        END;
+    "
+) 2> /dev/null \
+    || echo "No PostgreSQL logs found in log_directory or problem occurred when querying for log_directory parameter."
 
 echo ""
 echo "********* Last logins to the server *********"
