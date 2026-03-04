@@ -1,0 +1,27 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% if executor_hosts|length == 1 %}
+    {% set single_host = executor_hosts[0] %}
+    <select id="meta_{{ item }}" name="meta_{{ item }}" disabled>
+        <option value="{{ single_host }}" selected>{{ single_host }}</option>
+    </select>
+    <input type="hidden" name="meta_{{ item }}" value="{{ single_host }}">
+{% else %}
+    <select id="meta_{{ item }}" name="meta_{{ item }}">
+        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+    </select>
+{% endif %}
