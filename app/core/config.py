@@ -362,6 +362,7 @@ class Settings(BaseYamlSettings):
 
 
 def _create_settings() -> Settings:
+    """Create a :class:`Settings` instance and apply its logging configuration."""
     s = Settings()
     logging.config.dictConfig(s.LOGGING_CONFIG)
     return s

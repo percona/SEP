@@ -27,7 +27,7 @@ PATCHED_VALUE = 999
 
 
 class _DummySettings:
-    """Minimal stand-in for a settings object."""
+    """Provide a minimal stand-in for a settings object."""
 
     def __init__(self) -> None:
         self.value = INITIAL_VALUE
