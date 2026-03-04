@@ -16,9 +16,11 @@
 """Define models for periodic tasks in the Tasks app."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, UTC
 from typing import Any, Self
+from zoneinfo import ZoneInfo
 
+from croniter import croniter
 from pydantic import (
     BaseModel,
     computed_field,
@@ -148,6 +150,9 @@ class PeriodicTaskResponse(BasePeriodicTask):
     :param crontab: The crontab schedule for the task. Defaults to None. This field
         is populated with the alias "model_crontabschedule".
     :type crontab: CrontabSchedule | None
+    :param next_run_at: The next scheduled execution time in UTC, computed from the
+        task's schedule. `None` if the task is disabled.
+    :type next_run_at: UTCDatetime | None
     """
 
     id: int
@@ -160,6 +165,38 @@ class PeriodicTaskResponse(BasePeriodicTask):
     crontab: CrontabSchedule | None = Field(
         None, validation_alias="model_crontabschedule"
     )
+
+    @computed_field
+    @property
+    def next_run_at(self) -> UTCDatetime | None:
+        """Compute the next scheduled execution time.
+
+        Return the next execution time based on the task's schedule. For crontab
+        schedules, use `croniter` to compute the next fire time from the cron
+        expression in the schedule's timezone, converted to UTC. For interval
+        schedules, add the interval duration to `last_run_at`, falling back to
+        `start_time`, then the current time.
+
+        :return: The next scheduled execution time in UTC, or `None` if the task
+            is disabled.
+        :rtype: UTCDatetime | None
+        """
+        if not self.enabled:
+            return None
+        if self.crontab is not None:
+            tz = ZoneInfo(self.crontab.timezone)
+            now = datetime.now(tz)
+            cron_expr = (
+                f"{self.crontab.minute} {self.crontab.hour} "
+                f"{self.crontab.day_of_month} {self.crontab.month_of_year} "
+                f"{self.crontab.day_of_week}"
+            )
+            return croniter(cron_expr, now).get_next(datetime).astimezone(UTC)
+        if self.interval is not None:
+            delta = timedelta(**{self.interval.period.value: self.interval.every})
+            base = self.last_run_at or self.start_time or datetime.now(UTC)
+            return base + delta
+        return None
 
     @model_validator(mode="before")
     @classmethod
