@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # ---
-# title: "PostgreSQL Transaction Duration/Too Many Locks Check"
-# description: "This script identifies long-running active transactions and any blocking queries to diagnose transaction duration and too-many-locks-acquired alerts."
+# title: "PostgreSQL Transaction Duration/Idle In Transaction/Too Many Locks Check"
+# description: "This script identifies long-running active transactions and any blocking queries to diagnose transaction duration, idle-in-transaction, and too-many-locks-acquired alerts."
 # allow_extra_args: false
 # sudo: optional
 # ---
@@ -21,6 +21,17 @@ FROM pg_stat_activity
 WHERE now()-query_start > interval '7 minutes'
   AND query NOT ILIKE '%START_REPLICATION%'
   AND state = 'active'
+SQL
+
+echo ""
+echo "********* Idle in transaction sessions *********"
+echo ""
+$PSQL <<SQL
+SELECT now()-query_start AS age, *
+FROM pg_stat_activity
+WHERE now()-query_start > interval '7 minutes'
+  AND query NOT ILIKE '%START_REPLICATION%'
+  AND state = 'idle in transaction'
 SQL
 
 echo ""
@@ -60,4 +71,11 @@ echo "********* Current statement_timeout setting *********"
 echo ""
 $PSQL <<SQL
 SHOW statement_timeout;
+SQL
+
+echo ""
+echo "********* Current idle_in_transaction_session_timeout setting *********"
+echo ""
+$PSQL <<SQL
+SHOW idle_in_transaction_session_timeout;
 SQL
