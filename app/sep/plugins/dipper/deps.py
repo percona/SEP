@@ -13,12 +13,12 @@ from app.core.exceptions import (
     HTTPRedirectException,
     HTTPUnprocessableEntityException,
 )
+from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     CreatedServiceDep,
-    CurrentUser,
     ExecutorHosts,
     get_base_url,
     InventoryAPI,
@@ -30,6 +30,7 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.plugins.dipper.models import DipperScript
+from app.sep.routes.artifacts import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_DIPPER
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippetArgs, SnippetExecutionMeta
 
@@ -112,10 +113,25 @@ DipperScriptWithMetaDep = Annotated[DipperScript, Depends(get_dipper_script_with
 
 
 def get_dipper_script_source(request: Request, script: DipperScriptDep) -> str:
-    """Build the absolute URL used by Nomad hosts to download the payload script."""
-    dipper_path = request.url_for("dipper_files", path=script.filename).path
+    """Return a signed URL for Nomad to download the dipper payload script.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param script: The dipper script to generate the signed download URL for.
+    :type script: DipperScript
+    :return: The signed URL to download the dipper artifact.
+    :rtype: str
+    """
+    token = crypto_timestamp_serializer.dumps(
+        {
+            "type": ARTIFACT_TYPE_DIPPER,
+            "filename": script.filename,
+            "md5": script.md5_digest,
+        },
+        salt=ARTIFACT_DOWNLOAD_SALT,
+    )
     base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)
-    return str(base_url.replace(path=dipper_path))
+    return str(base_url.replace(path=f"/artifacts/download/{token}"))
 
 
 async def get_dipper_execution_args(
@@ -155,7 +171,9 @@ async def get_dipper_execution_args(
                 " Provide it in the form or configure SEP__PMM__ENDPOINT.",
             )
         form_data["pmmserver"] = pmm_server
-        form_data["apikey"] = form_data.get("apikey") or pmm.api_key
+        form_data["apikey"] = form_data.get("apikey") or (
+            pmm.api_key.get_secret_value() if pmm.api_key else None
+        )
 
     try:
         return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
@@ -221,6 +239,34 @@ def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
     return host
 
 
+def get_pmm_form_defaults(
+    resolved_executor_host: str | None,
+    service_name: str,
+    node_name: str,
+) -> dict[str, str]:
+    """Build default form values for PMM collector scripts.
+
+    :param resolved_executor_host: The resolved executor host for PMM, or None
+        if resolution failed.
+    :type resolved_executor_host: str | None
+    :param service_name: The name of the selected service.
+    :type service_name: str
+    :param node_name: The name of the service node.
+    :type node_name: str
+    :return: A dictionary of default parameter values for the PMM form.
+    :rtype: dict[str, str]
+    """
+    pmm = sep_settings.PMM
+    defaults = {}
+    if resolved_executor_host is not None:
+        defaults["pmmserver"] = "https://localhost:8443"
+    elif pmm.endpoint:
+        defaults["pmmserver"] = pmm.endpoint
+    defaults["node"] = node_name
+    defaults["service"] = service_name
+    return defaults
+
+
 async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
     """Fetch the list of services that are supported by Dipper plugin.
 
@@ -245,13 +291,25 @@ SupportedDipperServices = Annotated[list[dict], Depends(list_supported_services)
 
 
 def get_dipper_execution_meta(
-    user: CurrentUser,
     service: CreatedServiceDep,
     script: DipperScriptWithMetaDep,
     script_source: Annotated[str, Depends(get_dipper_script_source)],
     execution_args: Annotated[BaseSnippetArgs, Depends(get_dipper_execution_args)],
 ) -> SnippetExecutionMeta:
-    """Create the task metadata payload for Dipper executions."""
+    """Create the task metadata payload for Dipper executions.
+
+    :param service: The target service for the Dipper execution.
+    :type service: CreatedServiceDep
+    :param script: The Dipper payload script with metadata.
+    :type script: DipperScript
+    :param script_source: The signed URL to download the Dipper artifact.
+    :type script_source: str
+    :param execution_args: The execution arguments for the Dipper script.
+    :type execution_args: BaseSnippetArgs
+    :return: The prepared execution metadata.
+    :rtype: SnippetExecutionMeta
+    :raises HTTPBadRequestException: If no interpreter is configured for the script.
+    """
     snippet_filename = f"dipper/{service.id}/{script.filename}"
     interpreter = script.execution_interpreter
     if script.sudo == SnippetSudoOption.ALWAYS or getattr(
@@ -264,7 +322,6 @@ def get_dipper_execution_meta(
         target=execution_args.executor_host,
         interpreter=interpreter,
         snippet_source=script_source,
-        access_token=user.access_token,
         snippet_filename=snippet_filename,
         md5_checksum=script.md5_digest,
         args=execution_args.to_args_string(),

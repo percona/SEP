@@ -34,6 +34,8 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    PositiveInt,
+    SecretStr,
     ValidationError,
 )
 from pydantic_core.core_schema import ValidationInfo
@@ -51,7 +53,7 @@ from app.core.utils import (
     slugify,
 )
 from app.core.utils.fields import (
-    RelativeDirectoryPath,
+    RelativeDirectoryPathField,
     StrHttpUrl,
     StrImportableAttribute,
     StrImportableModule,
@@ -179,7 +181,7 @@ class CsrfSettings(BaseModel):
     :type TOKEN_TIME_LIMIT: TimedeltaSeconds
     """
 
-    SECRET_KEY: str = settings.SECRET_KEY
+    SECRET_KEY: str = settings.SECRET_KEY.get_secret_value()
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "none"
     TOKEN_KEY: str = "csrf-token"  # noqa: S105
@@ -195,7 +197,7 @@ class PMMSettings(BaseLowercaseModel):
     :param frontend: The PMM frontend URL.
     :type frontend: StrHttpUrl | None
     :param api_key: API key for PMM authentication.
-    :type api_key: str | None
+    :type api_key: SecretStr | None
     :param verify_ssl: Whether to verify SSL certificates.
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
@@ -205,7 +207,7 @@ class PMMSettings(BaseLowercaseModel):
     model_config = ConfigDict(extra="allow")
     endpoint: StrHttpUrl | None = None
     frontend: StrHttpUrl | None = None
-    api_key: str | None = None
+    api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
 
@@ -272,10 +274,10 @@ class SEPSettings(BaseYamlAppSettings):
     :type SESSION: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         `Path("templates")`.
-    :type TEMPLATES_DIR: RelativeDirectoryPath
+    :type TEMPLATES_DIR: RelativeDirectoryPathField
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
-    :type STATIC_DIR: RelativeDirectoryPath
+    :type STATIC_DIR: RelativeDirectoryPathField
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -304,13 +306,16 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
+        tokens. Defaults to 600.
+    :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     SESSION: SessionOptions = SessionOptions()
-    TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
-    STATIC_DIR: RelativeDirectoryPath = Path("static")
+    TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
+    STATIC_DIR: RelativeDirectoryPathField = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
@@ -324,6 +329,7 @@ class SEPSettings(BaseYamlAppSettings):
         deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
     )
     PMM: PMMSettings = PMMSettings()
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field
@@ -472,7 +478,7 @@ class SEPSettings(BaseYamlAppSettings):
                         logger.warning(
                             "It's recommended to set SEP__PMM__API_KEY instead of using the legacy PMMSyncer configuration."
                         )
-                        self.PMM.api_key = pmm_api_key
+                        self.PMM.api_key = SecretStr(pmm_api_key)
             except AttributeError:
                 continue
             except ValidationError:

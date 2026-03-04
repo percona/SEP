@@ -472,7 +472,12 @@ class BaseSnippet(BaseModel):
         """Update the snippet's metadata."""
         self.meta = await self.get_meta_by_path(self)
 
-    def to_form(self, executor_hosts: Iterable[str], form_action: str = "") -> str:
+    def to_form(
+        self,
+        executor_hosts: Iterable[str],
+        form_action: str = "",
+        defaults: dict[str, Any] | None = None,
+    ) -> str:
         """Generate an HTML form for executing the snippet.
 
         This method creates a form with fields based on the snippet's metadata and
@@ -485,6 +490,10 @@ class BaseSnippet(BaseModel):
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
+        :param defaults: Optional dictionary of default values keyed by parameter
+            name.  When provided, matching parameter defaults are overridden before
+            form generation.
+        :type defaults: dict[str, Any] | None
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
@@ -492,12 +501,20 @@ class BaseSnippet(BaseModel):
             "Generating execution form for snippet %s (action=%r)", self, form_action
         )
         parameters = self.meta.get("parameters", [])
+        if defaults:
+            parameters = [
+                {**param, "default": defaults[param["name"]]}
+                if param.get("name") in defaults
+                else param
+                for param in parameters
+            ]
         logger.debug("Meta Snippet parameters: %s)", parameters)
         return self._to_form(
             json_serializer(parameters, sort_keys=True),
             executor_hosts,
             add_extra_args_field=self.allow_extra_args,
-            add_sudo_field=self.sudo == SnippetSudoOption.OPTIONAL,
+            add_sudo_field=self.sudo.is_optional,
+            sudo_default=self.sudo.sudo_default,
             form_action=form_action,
             disabled=not self.can_execute,
         )
@@ -517,7 +534,8 @@ class BaseSnippet(BaseModel):
         return self._get_execution_model(
             json_serializer(parameters, sort_keys=True),
             add_extra_args_field=self.allow_extra_args,
-            add_sudo_field=self.sudo == SnippetSudoOption.OPTIONAL,
+            add_sudo_field=self.sudo.is_optional,
+            sudo_default=self.sudo.sudo_default,
         )
 
     @staticmethod
@@ -599,6 +617,7 @@ class BaseSnippet(BaseModel):
         *,
         add_extra_args_field: bool = False,
         add_sudo_field: bool = False,
+        sudo_default: bool = False,
         form_action: str = "",
         disabled: bool = False,
     ) -> str:
@@ -620,6 +639,9 @@ class BaseSnippet(BaseModel):
         :param add_sudo_field: Whether to include a sudo checkbox in the form.
             Defaults to `False`.
         :type add_sudo_field: bool
+        :param sudo_default: The default checked state for the sudo checkbox. Only
+            relevant when `add_sudo_field` is `True`. Defaults to `False`.
+        :type sudo_default: bool
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
@@ -645,7 +667,15 @@ class BaseSnippet(BaseModel):
         if add_extra_args_field:
             fields.append(EXTRA_ARGS_INPUT)
         if add_sudo_field:
-            fields.append(SUDO_INPUT)
+            fields.append(
+                CheckboxInputElement(
+                    name=SUDO_INPUT_NAME,
+                    title="Execute the snippet with sudo",
+                    label="Use sudo",
+                    id="sudoCheckbox",
+                    checked=sudo_default,
+                )
+            )
         logger.debug("Generated snippet form fields from params: %s", fields)
         if fields:
             fieldsets.append(
@@ -670,6 +700,7 @@ class BaseSnippet(BaseModel):
         *,
         add_extra_args_field: bool = False,
         add_sudo_field: bool = False,
+        sudo_default: bool = False,
     ) -> type[BaseSnippetArgs]:
         """Generate a Pydantic model for validating snippet execution parameters.
 
@@ -684,6 +715,9 @@ class BaseSnippet(BaseModel):
         :param add_sudo_field: Whether to include a sudo field in the model. Defaults to
             `False`.
         :type add_sudo_field: bool
+        :param sudo_default: The default value for the sudo field. Only relevant when
+            `add_sudo_field` is `True`. Defaults to `False`.
+        :type sudo_default: bool
         :return: A Pydantic model class for validating the snippet's execution
             parameters.
         :rtype: type[BaseSnippetArgs]
@@ -714,7 +748,7 @@ class BaseSnippet(BaseModel):
             fields[BaseSnippetArgs.sudo_field] = (
                 bool,
                 Field(
-                    default=False,
+                    default=sudo_default,
                     alias=SUDO_INPUT_NAME,
                 ),
             )
@@ -884,8 +918,6 @@ class SnippetExecutionMeta(BaseModel):
     :type interpreter: NonEmptyStr
     :param snippet_source: The URL to the snippet source file.
     :type snippet_source: StrAnyUrl
-    :param access_token: The access token for authentication when fetching the snippet.
-    :type access_token: NonEmptyStr
     :param md5_checksum: The MD5 checksum of the snippet file to verify integrity.
     :type md5_checksum: str
     :param snippet_filename: The filename of the snippet.
@@ -901,7 +933,6 @@ class SnippetExecutionMeta(BaseModel):
     target: NonEmptyStr
     interpreter: NonEmptyStr
     snippet_source: StrAnyUrl
-    access_token: NonEmptyStr
     snippet_filename: NonEmptyStr = Field(..., serialization_alias="_snippet_filename")
     md5_checksum: str = Field(min_length=32, max_length=32)
     args: NonEmptyStr | EmptyStrToNone = None

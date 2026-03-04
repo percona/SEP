@@ -3,18 +3,46 @@
 import subprocess
 import os
 import sys
+import yaml
+
+
+def _creds_path():
+    """ Path to MongoDB URI credentials file """
+    config_yaml = os.environ.get('NOMAD_META_CONFIG')
+    if config_yaml:
+        try:
+            config = yaml.safe_load(config_yaml)
+            if config:
+                path = config.get('credentials_path')
+                if path:
+                    return path
+        except yaml.YAMLError as err:
+            print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}. Falling back to HOME-based credentials path.', file=sys.stderr)
+    envhome = os.environ.get('HOME')
+    if not envhome:
+        print('PBM credentials path not set (credentials_path in backup config) and HOME is unset', file=sys.stderr)
+        sys.exit(1)
+    return f'{envhome}/.mongodb_uri'
+
 
 def pbm_creds():
     """ PBM Credentials """
-    envhome = os.environ['HOME']
-    creds_path = f'{envhome}/.mongodb_uri'
+    creds_path = _creds_path()
     try:
         with open(creds_path, 'r', encoding='utf-8') as fpt:
-            creds = fpt.read().strip()
-    except Exception:
+            return fpt.read().strip()
+    except FileNotFoundError as err:
+        print(f'Credentials file not found: {creds_path}: {err}', file=sys.stderr)
         sys.exit(1)
-
-    return creds
+    except PermissionError as err:
+        print(f'Permission denied reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+    except OSError as err:
+        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+    except Exception as err:
+        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
 
 def pbm():
     """ PBM Logical Payload """
@@ -29,8 +57,8 @@ def pbm():
         if ret_code != 0:
             sys.exit(ret_code)
 
-    except subprocess.CalledProcessError as err:
-        print(f"Command failed with error: {err}")
+    except OSError as err:
+        print(f'Failed to run pbm: {err}', file=sys.stderr)
         sys.exit(1)
 
 pbm()

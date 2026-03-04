@@ -32,7 +32,7 @@ from pydantic import (
 )
 
 from app.core.utils.date_time import utc_now
-from app.core.utils.fields import EmptyStrToNone, RequiredStr, TimedeltaSeconds
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr, TimedeltaSeconds
 
 
 class OAuthToken(BaseModel):
@@ -104,7 +104,7 @@ class BaseUser(BaseModel, ABC):
     :param id: The unique identifier of the user.
     :type id: UUID4
     :param username: The username of the user. Must be at least 1 character long.
-    :type username: RequiredStr
+    :type username: NonEmptyStr
     :param email: The email address of the user.
     :type email: EmailStr | Literal[""]
     :param first_name: The first name of the user.
@@ -123,7 +123,7 @@ class BaseUser(BaseModel, ABC):
     """
 
     id: UUID4
-    username: RequiredStr
+    username: NonEmptyStr
     email: EmailStr | Literal[""] = ""
     first_name: str = ""
     last_name: str = ""
@@ -226,14 +226,14 @@ class BaseUser(BaseModel, ABC):
 
     @classmethod
     @abstractmethod
-    async def get_user(cls, username: RequiredStr) -> Self:
+    async def get_user(cls, username: NonEmptyStr) -> Self:
         """Retrieve a user by username.
 
         This method must be overridden in subclasses to provide specific logic for
         retrieving a user from the data store.
 
         :param username: The username of the user to retrieve.
-        :type username: RequiredStr
+        :type username: NonEmptyStr
         :return: An instance of the user model.
         :rtype: Self
         """

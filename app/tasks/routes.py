@@ -33,7 +33,7 @@ from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import utc_now
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 from app.tasks.celery import (
     celery,
     dispatch_queue_item,
@@ -53,7 +53,7 @@ from app.tasks.deps import (
 )
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
-    FileMetadataResponse,
+    FileMetadata,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -257,7 +257,7 @@ async def get_task_history(
     session: SessionDep,
     task: str,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
-    snippet_filename: RequiredStr | None = None,
+    snippet_filename: NonEmptyStr | None = None,
 ) -> list[TaskHistory]:
     """Retrieve a task history by task name."""
     logger.debug("Requesting task history for %s", task)
@@ -309,12 +309,12 @@ async def stream_task_history_logs(
 @router.get(
     "/history/{task_history_id}/files/",
     dependencies=[IsAuthenticatedDep],
-    response_model=dict[str, FileMetadataResponse],
+    response_model=dict[str, FileMetadata],
 )
 async def list_task_history_files(
     executor: TaskExecutor,
     task_history: TaskHistoryWithTaskDep,
-) -> dict[str, dict[str, int | bool]]:
+) -> dict[str, FileMetadata]:
     """List files from a task history."""
     logger.debug("Requesting files for task history %s", task_history.id)
     if not task_history.status.is_finished():

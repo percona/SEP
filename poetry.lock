@@ -2885,17 +2885,18 @@ murmurhash = ">=0.28.0,<1.1.0"
 
 [[package]]
 name = "presidio-analyzer"
-version = "2.2.360"
+version = "2.2.361"
 description = "Presidio Analyzer package"
 optional = false
-python-versions = "<3.14,>=3.9"
+python-versions = "<3.14,>=3.10"
 groups = ["main"]
 files = [
-    {file = "presidio_analyzer-2.2.360-py3-none-any.whl", hash = "sha256:aa6e83779b8f23587000ccfa3ef47aa34356a60b51284742e0d2a96b33205c4e"},
+    {file = "presidio_analyzer-2.2.361-py3-none-any.whl", hash = "sha256:7054b36303f5f47dd4bb3b00600bc936fb46aa3cc5e6befde3de839f0205f7f2"},
 ]
 
 [package.dependencies]
 phonenumbers = ">=8.12,<10.0.0"
+pydantic = ">=2.0.0,<3.0.0"
 pyyaml = "*"
 regex = "*"
 spacy = ">=3.4.4,<3.7.0 || >3.7.0"
@@ -2904,20 +2905,22 @@ tldextract = "*"
 [package.extras]
 ahds = ["azure-health-deidentification (>=1.1.0b1,<2.0.0)", "azure-identity (>=1.23.0,<2.0.0)"]
 azure-ai-language = ["azure-ai-textanalytics", "azure-core"]
-gliner = ["gliner (>=0.2.13,<1.0.0) ; python_version >= \"3.10\"", "huggingface_hub", "onnxruntime (>=1.19) ; python_version >= \"3.10\"", "transformers"]
-server = ["flask (>=1.1)", "gunicorn"]
+gliner = ["gliner (>=0.2.13,<1.0.0)", "huggingface_hub", "onnxruntime (>=1.19) ; python_version > \"3.10\"", "onnxruntime (>=1.19,<1.24.1) ; python_version == \"3.10\"", "transformers"]
+langextract = ["azure-identity (>=1.18.0)", "jinja2 (>=3.0.0)", "langextract (>=1.0.0)", "more-itertools (>=10.0.0)", "openai (>=1.50.0)"]
+server = ["flask (>=1.1)", "gunicorn ; platform_system != \"Windows\"", "waitress ; platform_system == \"Windows\""]
 stanza = ["stanza (>=1.10.1,<2.0.0)"]
 transformers = ["accelerate", "huggingface_hub", "spacy_huggingface_pipelines", "transformers"]
 
 [[package]]
 name = "presidio-anonymizer"
-version = "2.2.360"
+version = "2.2.361"
 description = "Presidio Anonymizer package - replaces analyzed text with desired values."
 optional = false
-python-versions = ">=3.10,<4.0"
+python-versions = "<4.0,>=3.10"
 groups = ["main"]
-files = []
-develop = false
+files = [
+    {file = "presidio_anonymizer-2.2.361-py3-none-any.whl", hash = "sha256:ff0f64c234aa7ac37042cf7f187ed4a47587cff65418304d716af7d194c96ed3"},
+]
 
 [package.dependencies]
 cryptography = ">=46.0.4"
@@ -2925,13 +2928,6 @@ cryptography = ">=46.0.4"
 [package.extras]
 ahds = ["azure-health-deidentification (>=1.1.0b1,<2.0.0)", "azure-identity (>=1.23.0,<2.0.0)"]
 server = ["flask (>=1.1)", "gunicorn ; platform_system != \"Windows\"", "waitress ; platform_system == \"Windows\""]
-
-[package.source]
-type = "git"
-url = "https://github.com/microsoft/presidio.git"
-reference = "a8dc07658e9733092387fbd09d8cd8f137564ffb"
-resolved_reference = "a8dc07658e9733092387fbd09d8cd8f137564ffb"
-subdirectory = "presidio-anonymizer"
 
 [[package]]
 name = "prompt-toolkit"
@@ -5057,4 +5053,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11.9,!=3.12.0,!=3.12.1,!=3.12.2,<3.14"
-content-hash = "8406030796d0f0fd1e4cca38f0fc12ab87a83686f089fb25a43c1bdd3f7598f4"
+content-hash = "802785759979ef62f1a5a47f31a3e860399fd4eba90fa8a9be685413b1080270"

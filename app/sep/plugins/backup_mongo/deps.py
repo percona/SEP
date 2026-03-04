@@ -160,12 +160,10 @@ async def build_backup_task_payload(
         backup=BackupConfigBackup.model_validate(backup_config_dict)
         if backup_config_dict
         else None,
+        credentials_path=form.credentials_path or None,
     )
 
-    if form.backup_type == "pbm_config":
-        requirements = "packaging\nPyYAML"
-    else:
-        requirements = "packaging"
+    requirements = "packaging\nPyYAML"
 
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 

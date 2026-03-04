@@ -52,3 +52,15 @@ def test_database_options_url_with_postgresql():
 
     expected_url = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
     assert expected_url == db_options.URL
+
+
+def test_database_options_password_masked_in_repr():
+    """Test that PASSWORD is masked in repr output."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.MYSQL,
+        HOST="localhost",
+        USER="user",
+        PASSWORD="supersecret",
+        NAME="testdb",
+    )
+    assert "supersecret" not in repr(db_options)

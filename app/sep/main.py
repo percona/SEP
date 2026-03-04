@@ -146,6 +146,11 @@ if {
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
 
+if {"snippets", "dipper"} & imported_plugins:
+    from app.sep.routes.artifacts import router as artifacts_router
+
+    sep_app.include_router(artifacts_router, prefix="/artifacts")
+
 if "snippets" in imported_plugins:
     sep_app.mount(
         "/static/snippets",
@@ -326,11 +331,15 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        sep_app,
+        "app.sep.main:sep_app",
         host=sep_settings.UVICORN_HOST,
         port=sep_settings.UVICORN_PORT,
         proxy_headers=sep_settings.PROXY_HEADERS,
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
+        reload=True,
+        reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
+        reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
+        reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
     )
