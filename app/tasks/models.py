@@ -245,7 +245,7 @@ class TaskExecutionRequest(BaseModel):
 
 
 class TaskExecutionRequestJSON(TypeDecorator):
-    """JSON column type that deserializes values into `TaskExecutionRequest`.
+    """Define JSON column type that deserializes values into `TaskExecutionRequest`.
 
     Use this on columns that should store and return `TaskExecutionRequest` objects
     instead of plain dicts. Other JSON columns are unaffected.
