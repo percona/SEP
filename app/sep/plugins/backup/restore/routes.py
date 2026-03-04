@@ -157,12 +157,13 @@ async def restores_execute(
     task: RestoresTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
+    chain_task_names: Annotated[list[str] | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute restores task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta},
-    )  # TODO: send meta form fields  # noqa: TD002, TD003
+        json={"eta": eta, "chain_task_names": chain_task_names},
+    )
     task_path = request.url_for("restores_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 

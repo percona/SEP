@@ -130,7 +130,7 @@ async def validate_chain_task_names(
     :raises HTTPBadRequestException: If a cycle is detected in the chain.
     :raises HTTPNotFoundException: If any chain task does not exist.
     """
-    seen: set[str] = {task_name}
+    seen = {task_name}
     for name in chain_task_names:
         if name in seen:
             raise HTTPBadRequestException(

@@ -17,7 +17,6 @@
 
 import logging
 from collections.abc import Sequence
-from typing import Any
 
 from sqlalchemy import CursorResult
 from sqlalchemy.orm import aliased
@@ -68,13 +67,13 @@ class TaskManager(BaseSQLModelManager):
             will be listed.
         :type owner: TaskOwner | None
         :param target: The execution target hostname. If provided, only tasks whose
-            ``data["meta"]["target"]`` matches will be listed.
+            `data["meta"]["target"]` matches will be listed.
         :type target: str | None
         :return: A list of active tasks.
         :rtype: list[Task]
         """
         where = [col(Task.deleted_at).is_(None)]
-        kwargs: dict[str, Any] = {}
+        kwargs = {}
         if owner is not None:
             kwargs["owner"] = owner
         if target is not None:

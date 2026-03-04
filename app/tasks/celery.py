@@ -398,9 +398,9 @@ async def _dispatch_chained_task(
     """Dispatch the next chained task after the parent completes successfully.
 
     Load the task by name, build a new TaskHistory inheriting the parent's executor
-    target, and call `dispatch_queue_item`. Any ``chain_task_names`` in the chained
-    task's static ``data["meta"]`` is stripped to prevent unintended multi-level
-    chaining; the ``remaining_chain`` is set as the next chain steps.
+    target, and call `dispatch_queue_item`. Any `chain_task_names` in the chained
+    task's static `data["meta"]` is stripped to prevent unintended multi-level
+    chaining; the `remaining_chain` is set as the next chain steps.
 
     :param chain_task_name: The name of the next task to dispatch.
     :type chain_task_name: str

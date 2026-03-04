@@ -147,12 +147,13 @@ async def checksums_execute(
     task: ChecksumsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
+    chain_task_names: Annotated[list[str] | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute checksums task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta},
-    )  # TODO: send meta form fields  # noqa: TD002, TD003
+        json={"eta": eta, "chain_task_names": chain_task_names},
+    )
     return RedirectResponse("/checksums", status_code=status.HTTP_303_SEE_OTHER)
 
 
