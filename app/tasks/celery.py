@@ -372,12 +372,22 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         task = await TaskManager.get_root_task(session, queue_item.task)
     if not queue_item.is_running:
         async with async_session() as session:
-            await TaskHistoryManager.update_where(
+            result = await TaskHistoryManager.update_where(
                 session,
                 {"sync_in_progress_started_at": None},
+                TaskHistory.status != TaskHistoryStatusEnum.RUNNING,
                 id=queue_id,
             )
-        return queue_item
+            if result.rowcount == 0:
+                queue_item = await TaskHistoryManager.get_or_404(
+                    session,
+                    select_related=[TaskHistory.task],
+                    query_options=[undefer(TaskHistory.execution_request)],
+                    id=queue_id,
+                )
+                task = await TaskManager.get_root_task(session, queue_item.task)
+            else:
+                return queue_item
     executor = get_executor_for_task(task)
     queue_item = await executor.sync_task_history(queue_item)
     queue_item.sync_in_progress_started_at = None
