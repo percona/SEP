@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, call, MagicMock
 
 import pytest
+from aiohttp import ClientResponse
 
 from app.sep.clients.pmm import (
     AlertRule,
@@ -432,7 +433,7 @@ class TestDeleteRule:
         self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
         """Test delete_rule sends a DELETE request with the uid and alerting headers."""
-        mock_response = MagicMock()
+        mock_response = MagicMock(spec=ClientResponse)
         mock_response.raise_for_status = MagicMock()
         captured = []
 
@@ -458,7 +459,7 @@ class TestDeleteRule:
         self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
         """Test delete_rule returns None on success."""
-        mock_response = MagicMock()
+        mock_response = MagicMock(spec=ClientResponse)
         mock_response.raise_for_status = MagicMock()
 
         @asynccontextmanager
@@ -623,7 +624,7 @@ class TestUpdateContactPoint:
         self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
         """Test update_contact_point sends a PUT with uid and alerting headers."""
-        mock_response = MagicMock()
+        mock_response = MagicMock(spec=ClientResponse)
         mock_response.raise_for_status = MagicMock()
         captured = []
 

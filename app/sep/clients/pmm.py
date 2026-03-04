@@ -20,7 +20,9 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
+from aiohttp import ClientResponseError
 from async_lru import _LRUCacheWrapper, alru_cache
+from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
@@ -58,20 +60,20 @@ class AlertRule(BaseModel):
     :param title: The display title of the rule.
     :type title: str
     :param labels: Labels attached to the rule.
-    :type labels: dict
+    :type labels: dict[str, str]
     :param annotations: Annotations attached to the rule.
-    :type annotations: dict
+    :type annotations: dict[str, str]
     :param data: Query data for the rule.
-    :type data: list
+    :type data: list[dict[str, Any]]
     """
 
     model_config = ConfigDict(extra="allow")
 
     uid: str
     title: str
-    labels: dict = {}
-    annotations: dict = {}
-    data: list = []
+    labels: dict[str, str] = {}
+    annotations: dict[str, str] = {}
+    data: list[dict[str, Any]] = []
 
 
 class Folder(BaseModel):
@@ -102,7 +104,7 @@ class ContactPoint(BaseModel):
     :param type: The type of the contact point (e.g., "slack", "email").
     :type type: str
     :param settings: Type-specific configuration settings.
-    :type settings: dict
+    :type settings: dict[str, Any]
     """
 
     model_config = ConfigDict(extra="allow")
@@ -110,7 +112,7 @@ class ContactPoint(BaseModel):
     uid: str
     name: str
     type: str
-    settings: dict = {}
+    settings: dict[str, Any] = {}
 
 
 class NotificationPolicy(BaseModel):
@@ -121,14 +123,14 @@ class NotificationPolicy(BaseModel):
     :param group_by: Labels used to group alerts.
     :type group_by: list[str]
     :param routes: Nested routing rules.
-    :type routes: list[dict]
+    :type routes: list[dict[str, Any]]
     """
 
     model_config = ConfigDict(extra="allow")
 
     receiver: str
     group_by: list[str] = []
-    routes: list[dict] = []
+    routes: list[dict[str, Any]] = []
 
 
 class PMMService(Service):
@@ -440,15 +442,13 @@ class PMMRemoteAPI(RemoteAPI):
         :rtype: AlertTemplate
         """
         if await self.is_older_than_v3():
-            data = await self.request(
-                "POST",
+            data = await self.post(
                 "/v1/management/alerting/Templates/Create",
                 json={"yaml": yaml},
                 headers=self.alerting_headers,
             )
         else:
-            data = await self.request(
-                "POST",
+            data = await self.post(
                 "/v1/alerting/templates",
                 json={"yaml": yaml},
                 headers=self.alerting_headers,
@@ -468,15 +468,13 @@ class PMMRemoteAPI(RemoteAPI):
         :rtype: list[AlertTemplate]
         """
         if await self.is_older_than_v3():
-            data = await self.request(
-                "POST",
+            data = await self.post(
                 "/v1/management/alerting/Templates/List",
                 json={},
                 headers=self.alerting_headers,
             )
         else:
-            data = await self.request(
-                "GET",
+            data = await self.get(
                 "/v1/alerting/templates",
                 params={"page_size": page_size, "page_index": page_index},
                 headers=self.alerting_headers,
@@ -536,15 +534,13 @@ class PMMRemoteAPI(RemoteAPI):
             body["params"] = params
 
         if await self.is_older_than_v3():
-            data = await self.request(
-                "POST",
+            data = await self.post(
                 "/v1/management/alerting/Rules/Create",
                 json=body,
                 headers=self.alerting_headers,
             )
         else:
-            data = await self.request(
-                "POST",
+            data = await self.post(
                 "/v1/alerting/rules",
                 json=body,
                 headers=self.alerting_headers,
@@ -557,8 +553,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: A flat list of alert rules.
         :rtype: list[AlertRule]
         """
-        data = await self.request(
-            "GET",
+        data = await self.get(
             "/graph/api/ruler/grafana/api/v1/rules/",
             headers=self.alerting_headers,
         )
@@ -583,7 +578,13 @@ class PMMRemoteAPI(RemoteAPI):
             f"/graph/api/v1/provisioning/alert-rules/{uid}",
             headers=self.alerting_headers,
         ) as response:
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except ClientResponseError as err:
+                raise HTTPException(
+                    status_code=err.status,
+                    detail=err.message,
+                ) from None
 
     async def update_rule(
         self,
@@ -637,9 +638,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: A list of Grafana folder objects.
         :rtype: list[Folder]
         """
-        data = await self.request(
-            "GET", "/graph/api/folders/", headers=self.alerting_headers
-        )
+        data = await self.get("/graph/api/folders/", headers=self.alerting_headers)
         return [Folder.model_validate(f) for f in data]
 
     async def list_contact_points(self) -> list[ContactPoint]:
@@ -648,8 +647,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: A list of contact point objects.
         :rtype: list[ContactPoint]
         """
-        data = await self.request(
-            "GET",
+        data = await self.get(
             "/graph/api/v1/provisioning/contact-points/",
             headers=self.alerting_headers,
         )
@@ -669,8 +667,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The created contact point.
         :rtype: ContactPoint
         """
-        data = await self.request(
-            "POST",
+        data = await self.post(
             "/graph/api/v1/provisioning/contact-points/",
             json={"name": name, "type": type_, "settings": settings},
             headers=self.alerting_headers,
@@ -700,7 +697,13 @@ class PMMRemoteAPI(RemoteAPI):
             json={"uid": uid, "name": name, "type": type_, "settings": settings},
             headers=self.alerting_headers,
         ) as response:
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except ClientResponseError as err:
+                raise HTTPException(
+                    status_code=err.status,
+                    detail=err.message,
+                ) from None
 
     async def get_notification_policy(self) -> NotificationPolicy:
         """Fetch the current notification policy tree from PMM.
@@ -708,8 +711,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The root notification policy.
         :rtype: NotificationPolicy
         """
-        data = await self.request(
-            "GET",
+        data = await self.get(
             "/graph/api/v1/provisioning/policies",
             headers=self.alerting_headers,
         )
@@ -725,8 +727,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The updated notification policy as returned by the API.
         :rtype: NotificationPolicy
         """
-        data = await self.request(
-            "PUT",
+        data = await self.put(
             "/graph/api/v1/provisioning/policies",
             json=policy.model_dump(exclude_none=True),
             headers=self.alerting_headers,
