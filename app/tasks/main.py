@@ -94,7 +94,7 @@ def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str
     if exc.executor_name is not None:
         detail["executor"] = exc.executor_name
     if exc.args:
-        detail["detail"] = str(exc.args[0])
+        detail["detail"] = str(exc)
     return detail
 
 

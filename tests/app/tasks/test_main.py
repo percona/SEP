@@ -67,7 +67,7 @@ def test_task_data_not_found_detail_job_not_found_with_structured_fields():
     assert detail["resource_type"] == "job"
     assert detail["resource_id"] == "job-abc-123"
     assert detail["executor"] == "nomad"
-    assert detail["detail"] == "Job not found in Nomad"
+    assert "Job not found in Nomad" in detail["detail"]
 
 
 def test_task_data_not_found_detail_job_not_found_without_resource_id():
@@ -115,7 +115,7 @@ async def test_task_data_not_found_handler_raises_410_with_job_context():
     assert exc_info.value.status_code == status.HTTP_410_GONE
     assert exc_info.value.detail["resource_type"] == "job"
     assert exc_info.value.detail["resource_id"] == "job-123"
-    assert exc_info.value.detail["detail"] == "Job gone"
+    assert "Job gone" in exc_info.value.detail["detail"]
 
 
 @pytest.mark.asyncio

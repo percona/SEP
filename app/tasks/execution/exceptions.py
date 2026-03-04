@@ -23,9 +23,9 @@ class TaskDataNotFoundInExecutorError(Exception):
 
     :param *args: Passed through to :class:`Exception` (e.g. a message string).
     :param executor_name: Name of the executor where the resource was missing
-        (e.g. ``"nomad"``).
-    :param resource_type: Type of missing resource (e.g. ``"job"``,
-        ``"allocation"``).
+        (e.g. `"nomad"`).
+    :param resource_type: Type of missing resource (e.g. `"job"`,
+        `"allocation"`).
     :param resource_id: Identifier for the missing resource when available
         (job ID, allocation ID, filter expression, etc.).
     :param **kwargs: Passed through to the next base class.
