@@ -736,7 +736,7 @@ class TestDispatchChainedTask:
         parent_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.SUCCESS,
-            {"chain_task_name": chain_task.name},
+            {"chain_task_names": [chain_task.name]},
         )
 
         session_maker, _ = _make_chain_session_mock()
@@ -763,15 +763,17 @@ class TestDispatchChainedTask:
         assert dispatched_history.execution_request.meta.get("chain_depth") == 1
 
     @pytest.mark.asyncio
-    async def test_static_meta_chain_task_name_stripped(self) -> None:
-        """Assert _dispatch_chained_task strips chain_task_name from chained task's static meta."""
+    async def test_static_meta_chain_task_names_stripped(self) -> None:
+        """Assert _dispatch_chained_task strips chain_task_names from chained task's static meta."""
         main_task = _make_chain_task("main-task")
         chain_task = _make_chain_task("chain-task")
-        chain_task.data = {"meta": {"target": "host1", "chain_task_name": "auto-next"}}
+        chain_task.data = {
+            "meta": {"target": "host1", "chain_task_names": ["auto-next"]}
+        }
         parent_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.SUCCESS,
-            {"chain_task_name": chain_task.name},
+            {"chain_task_names": [chain_task.name]},
         )
 
         session_maker, _ = _make_chain_session_mock()
@@ -793,7 +795,7 @@ class TestDispatchChainedTask:
             await _dispatch_chained_task(chain_task.name, parent_history)
 
         dispatched_history = mock_dispatch.call_args[0][0]
-        assert "chain_task_name" not in dispatched_history.execution_request.meta
+        assert "chain_task_names" not in dispatched_history.execution_request.meta
 
     @pytest.mark.asyncio
     async def test_unknown_task_logs_warning(self) -> None:
@@ -802,7 +804,7 @@ class TestDispatchChainedTask:
         parent_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.SUCCESS,
-            {"chain_task_name": "unknown-task"},
+            {"chain_task_names": ["unknown-task"]},
         )
 
         session_maker, _ = _make_chain_session_mock()
@@ -834,7 +836,7 @@ class TestDispatchChainedTask:
         parent_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.SUCCESS,
-            {"chain_task_name": "main-task"},
+            {"chain_task_names": ["main-task"]},
         )
 
         session_maker, _ = _make_chain_session_mock()
@@ -864,7 +866,7 @@ class TestDispatchChainedTask:
         """Assert _dispatch_chained_task does not dispatch when chain depth limit is reached."""
         main_task = _make_chain_task("main-task")
         meta = {
-            "chain_task_name": "chain-task",
+            "chain_task_names": ["chain-task"],
             "chain_depth": _MAX_CHAIN_DEPTH,
         }
         parent_history = _make_chain_history(
@@ -895,12 +897,12 @@ class TestSyncQueueItemChainDispatch:
         running_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.RUNNING,
-            {"chain_task_name": chain_task.name},
+            {"chain_task_names": [chain_task.name]},
         )
         done_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.SUCCESS,
-            {"chain_task_name": chain_task.name},
+            {"chain_task_names": [chain_task.name]},
         )
 
         session_maker, _ = _make_chain_session_mock()
@@ -935,7 +937,7 @@ class TestSyncQueueItemChainDispatch:
 
             await sync_queue_item(1)
 
-        mock_chain.assert_awaited_once_with(chain_task.name, done_history)
+        mock_chain.assert_awaited_once_with(chain_task.name, done_history, [])
 
     @pytest.mark.asyncio
     async def test_no_chain_dispatch_when_still_running(self) -> None:
@@ -946,7 +948,7 @@ class TestSyncQueueItemChainDispatch:
         running_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.RUNNING,
-            {"chain_task_name": chain_task.name},
+            {"chain_task_names": [chain_task.name]},
         )
 
         session_maker, _ = _make_chain_session_mock()
@@ -992,12 +994,12 @@ class TestSyncQueueItemChainDispatch:
         running_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.RUNNING,
-            {"chain_task_name": chain_task.name},
+            {"chain_task_names": [chain_task.name]},
         )
         failed_history = _make_chain_history(
             main_task,
             TaskHistoryStatusEnum.FAILED,
-            {"chain_task_name": chain_task.name},
+            {"chain_task_names": [chain_task.name]},
         )
 
         session_maker, _ = _make_chain_session_mock()
@@ -1035,8 +1037,8 @@ class TestSyncQueueItemChainDispatch:
         mock_chain.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_no_chain_dispatch_when_no_chain_task_name(self) -> None:
-        """Assert sync_queue_item does not dispatch chain when chain_task_name is absent."""
+    async def test_no_chain_dispatch_when_no_chain_task_names(self) -> None:
+        """Assert sync_queue_item does not dispatch chain when chain_task_names is absent."""
         main_task = _make_chain_task("main-task")
 
         running_history = _make_chain_history(

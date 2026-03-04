@@ -146,6 +146,7 @@ def test_archives_detail(
         [],  # for running tasks at /{task.name}/history/
         [],  # for /stats/{task.name}
         {"127.0.0.1": "localhost"},  # for /hosts/
+        [],  # chainable_tasks
     ]
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK

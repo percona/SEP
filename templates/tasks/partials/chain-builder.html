@@ -1,0 +1,16 @@
+{% if chainable_tasks is defined and chainable_tasks %}
+    <div class="chain-builder{% if compact %} chain-builder--compact{% endif %}"
+         data-task-name="{{ chain_task_name }}"
+         data-form-id="{{ chain_form_id }}"
+         {% if chain_input_name %}data-input-name="{{ chain_input_name }}"{% endif %}
+         {% if initial_chain %}data-initial-chain='{{ initial_chain | tojson }}'{% endif %}>
+        <label class="form-label">Chain tasks after execution (optional)</label>
+        <div class="chain-sequence"></div>
+        <div class="chain-add-controls">
+            <select class="chain-task-select form-input">
+                <option value="">Add task to chain...</option>
+                {% for t in chainable_tasks %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
+            </select>
+        </div>
+    </div>
+{% endif %}

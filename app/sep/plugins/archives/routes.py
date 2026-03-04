@@ -13,6 +13,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    get_chainable_tasks,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -140,6 +141,9 @@ async def archives_detail(
     context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["chainable_tasks"] = await get_chainable_tasks(
+        tasks_api, task.owner, meta["target"], task.name
+    )
 
     return templates.TemplateResponse(
         request=request,

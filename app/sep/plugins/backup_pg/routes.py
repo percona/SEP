@@ -13,6 +13,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    get_chainable_tasks,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -126,6 +127,9 @@ async def pg_backups_detail(
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["chainable_tasks"] = await get_chainable_tasks(
+        tasks_api, task.owner, meta["target"], task.name
+    )
 
     return templates.TemplateResponse(
         request=request,
@@ -144,12 +148,12 @@ async def pg_backups_execute(
     task: BackupsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
-    chain_task_name: Annotated[str | None, Form()] = None,
+    chain_task_names: Annotated[list[str] | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute backups task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta, "chain_task_name": chain_task_name},
+        json={"eta": eta, "chain_task_names": chain_task_names},
     )
     task_path = request.url_for("pg_backups_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

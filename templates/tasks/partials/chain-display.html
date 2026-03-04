@@ -1,0 +1,10 @@
+{% if chain_names %}
+    <div class="chain-display chain-display--compact">
+        {% for name in chain_names %}
+            <span class="chain-chip--small">{{ name }}</span>
+            {% if not loop.last %}<span class="chain-arrow-small">→</span>{% endif %}
+        {% endfor %}
+    </div>
+{% else %}
+    —
+{% endif %}

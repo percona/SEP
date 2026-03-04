@@ -3,6 +3,7 @@
         <thead>
             <tr>
                 <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Name</th>
+                <th data-sortable="false" data-searchable="false">Chain</th>
                 <th data-sortable="false" data-searchable="false">Status</th>
                 <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Started at</th>
                 <th aria-label="Click to sort alphanumerically" data-tooltip="1000">Completed at</th>
@@ -19,6 +20,21 @@
                 {% if task_history.status in ['success', 'failed', 'stopped', 'lost'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>
+                        <td>
+                            {% set chain = task_history.execution_request.meta.get('chain_task_names', []) if task_history.execution_request and task_history.execution_request.meta else [] %}
+                            {% if chain %}
+                                {% with chain_names=chain %}
+                                    {% include "tasks/partials/chain-display.html" %}
+                                {% endwith %}
+                            {% elif task_history.execution_request and task_history.execution_request.meta and task_history.execution_request.meta.get('chain_depth', 0) > 0 %}
+                                <span class="chain-depth-indicator"
+                                      title="Chained task (depth: {{ task_history.execution_request.meta.chain_depth }})">
+                                    <span class="material-symbols-outlined">link</span>
+                                </span>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
                         <td class="status">
                             {% if task_history.status == 'success' %}
                                 <div class="success">

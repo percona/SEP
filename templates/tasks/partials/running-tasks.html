@@ -4,6 +4,7 @@
             <tr>
                 <th>Name</th>
                 <th>Host</th>
+                <th>Chain</th>
                 <th>Start At</th>
                 <th>Executed by</th>
                 <th class="options">Actions</th>
@@ -16,6 +17,16 @@
                     <tr class="previous-log-row">
                         <td>{{ task_name }}</td>
                         <td>{{ task['execution_request']['target'] }}</td>
+                        <td>
+                            {% set chain = task.execution_request.meta.get('chain_task_names', []) if task.execution_request and task.execution_request.meta else [] %}
+                            {% if chain %}
+                                {% with chain_names=chain %}
+                                    {% include "tasks/partials/chain-display.html" %}
+                                {% endwith %}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
                         <td class="relativeTime">{{ task['updated_at'] }}</td>
                         <td>{{ user_id_to_username.get(task.executed_by, task.executed_by) or '' }}</td>
                         <td class="options">
@@ -94,7 +105,7 @@
                 {% endfor %}
             {% else %}
                 <tr>
-                    <td colspan="5" class="no-tasks">No tasks running</td>
+                    <td colspan="6" class="no-tasks">No tasks running</td>
                 </tr>
             {% endif %}
         </tbody>

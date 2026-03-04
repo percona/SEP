@@ -15,11 +15,15 @@
     {{ syntax_highlight_css(style="sas") }}
     </style>
     <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/chain-builder.css') }}">
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/logs.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/chain-builder.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
 {% block sticky %}

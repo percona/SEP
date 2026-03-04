@@ -14,6 +14,8 @@
         <link rel="stylesheet"
               href="{{ url_for('static', path='/css/scheduled.css') }}">
         <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/chain-builder.css') }}">
+        <link rel="stylesheet"
               href="{{ url_for('static', path='/css/select2.min.css') }}">
     {% endif %}
 {% endblock style %}
@@ -36,6 +38,8 @@
         <script src="{{ url_for('static', path='/js/saved.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
         <script src="{{ url_for('static', path='/js/scheduled.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/chain-builder.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
 {% endblock behaviours_optimized_extra %}

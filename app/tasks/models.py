@@ -440,16 +440,43 @@ class TaskExecuteRequest(BaseModel):
     :type eta: datetime | None
     :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
     :type anonymize_mask: int | None
-    :param chain_task_name: Name of the task to execute after this one completes.
-        Defaults to None.
-    :type chain_task_name: str | EmptyStrToNone
+    :param chain_task_names: Ordered list of task names to execute sequentially after
+        this one completes. Defaults to None.
+    :type chain_task_names: list[str] | None
     """
 
     meta: dict[str, Any] = {}
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
     anonymize_mask: int | None = None
-    chain_task_name: str | EmptyStrToNone = None
+    chain_task_names: list[str] | None = None
+
+    @field_validator("chain_task_names", mode="before")
+    @classmethod
+    def normalize_chain_task_names(cls, v: Any) -> list[str] | None:
+        """Normalize chain task names to a list or None.
+
+        Accept a JSON-encoded list, a plain string (single task name), or
+        a Python list. Normalize empty values to None.
+
+        :param v: The raw chain_task_names value.
+        :type v: Any
+        :return: A list of task names or None.
+        :rtype: list[str] | None
+        """
+        if isinstance(v, str):
+            if not v:
+                return None
+            if v.startswith("["):
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    filtered = [name for name in parsed if name]
+                    return filtered or None
+            return [v]
+        if isinstance(v, list):
+            filtered = [name for name in v if name]
+            return filtered or None
+        return v
 
     @model_validator(mode="before")
     @classmethod

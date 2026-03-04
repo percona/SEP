@@ -384,24 +384,30 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
     if (
         was_running
         and saved.status == TaskHistoryStatusEnum.SUCCESS
-        and (chain_task_name := saved.execution_request.meta.get("chain_task_name"))
+        and (chain_task_names := saved.execution_request.meta.get("chain_task_names"))
     ):
-        await _dispatch_chained_task(chain_task_name, saved)
+        await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
     return saved
 
 
-async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> None:
-    """Dispatch the chained task after the parent task completes successfully.
+async def _dispatch_chained_task(
+    chain_task_name: str,
+    parent: TaskHistory,
+    remaining_chain: list[str] | None = None,
+) -> None:
+    """Dispatch the next chained task after the parent completes successfully.
 
     Load the task by name, build a new TaskHistory inheriting the parent's executor
-    target, and call `dispatch_queue_item`. Any ``chain_task_name`` in the chained
+    target, and call `dispatch_queue_item`. Any ``chain_task_names`` in the chained
     task's static ``data["meta"]`` is stripped to prevent unintended multi-level
-    chaining; further chaining only occurs if explicitly set per-execution.
+    chaining; the ``remaining_chain`` is set as the next chain steps.
 
-    :param chain_task_name: The name of the task to chain.
+    :param chain_task_name: The name of the next task to dispatch.
     :type chain_task_name: str
     :param parent: The completed parent TaskHistory.
     :type parent: TaskHistory
+    :param remaining_chain: Task names to chain after this one, if any.
+    :type remaining_chain: list[str] | None
     """
     if parent.execution_request.meta.get("chain_depth", 0) >= _MAX_CHAIN_DEPTH:
         logger.warning(
@@ -429,7 +435,9 @@ async def _dispatch_chained_task(chain_task_name: str, parent: TaskHistory) -> N
             )
             return
         chain_meta = dict(chain_task.data.get("meta", {}))
-        chain_meta.pop("chain_task_name", None)
+        chain_meta.pop("chain_task_names", None)
+        if remaining_chain:
+            chain_meta["chain_task_names"] = remaining_chain
         chain_meta["target"] = parent.execution_request.target
         chain_meta["chain_depth"] = (
             parent.execution_request.meta.get("chain_depth", 0) + 1

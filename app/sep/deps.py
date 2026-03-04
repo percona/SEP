@@ -601,6 +601,31 @@ async def get_tasks_context(
     return context
 
 
+async def get_chainable_tasks(
+    tasks_api: RemoteAPI,
+    owner: str,
+    target: str,
+    exclude_task_name: str,
+) -> list[dict[str, Any]]:
+    """Fetch tasks that can be chained after a given task.
+
+    Return tasks matching the same owner and target, excluding the current task.
+
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: RemoteAPI
+    :param owner: The task owner to filter by.
+    :type owner: str
+    :param target: The execution target to filter by.
+    :type target: str
+    :param exclude_task_name: The current task name to exclude from results.
+    :type exclude_task_name: str
+    :return: A list of chainable task dicts.
+    :rtype: list[dict[str, Any]]
+    """
+    all_tasks = await tasks_api.get("/", params={"owner": owner, "target": target})
+    return [t for t in all_tasks if t["name"] != exclude_task_name]
+
+
 async def get_tasks_index_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,

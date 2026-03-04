@@ -51,7 +51,13 @@
                     <td class="relativeTime">{{ periodic_task["last_run_at"] or '' }}</td>
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td>
-                        {{ periodic_task.execute_request.chain_task_name if periodic_task.execute_request and periodic_task.execute_request.chain_task_name else '—' }}
+                        {% if periodic_task.execute_request and periodic_task.execute_request.chain_task_names %}
+                            {% with chain_names=periodic_task.execute_request.chain_task_names %}
+                                {% include "tasks/partials/chain-display.html" %}
+                            {% endwith %}
+                        {% else %}
+                            —
+                        {% endif %}
                     </td>
                     <td>
                         <form method="post"
@@ -157,18 +163,17 @@
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td>
                         {% if chainable_tasks is defined and chainable_tasks %}
-                            <select name="execute_request_chain_task_name"
-                                    form="edit-periodic-task-form-{{ periodic_task.id }}">
-                                <option value="">None</option>
-                                {% for t in chainable_tasks if t.name != periodic_task.task %}
-                                    <option value="{{ t.name }}"
-                                            {%- if periodic_task.execute_request and periodic_task.execute_request.chain_task_name == t.name %}
-                                            selected
-                                            {%- endif %}>{{ t.name }}</option>
-                                {% endfor %}
-                            </select>
+                            {% with chain_task_name=periodic_task.task, chain_form_id="edit-periodic-task-form-" ~ periodic_task.id, compact=true, chain_input_name="execute_request_chain_task_names", initial_chain=periodic_task.execute_request.chain_task_names if periodic_task.execute_request and periodic_task.execute_request.chain_task_names else [] %}
+                                {% include "tasks/partials/chain-builder.html" %}
+                            {% endwith %}
                         {% else %}
-                            {{ periodic_task.execute_request.chain_task_name if periodic_task.execute_request and periodic_task.execute_request.chain_task_name else '—' }}
+                            {% if periodic_task.execute_request and periodic_task.execute_request.chain_task_names %}
+                                {% with chain_names=periodic_task.execute_request.chain_task_names %}
+                                    {% include "tasks/partials/chain-display.html" %}
+                                {% endwith %}
+                            {% else %}
+                                —
+                            {% endif %}
                         {% endif %}
                     </td>
                     <td style="padding-left: 0.5em">
@@ -254,12 +259,13 @@
                 <td></td>
                 <td>0</td>
                 <td>
-                    <select name="execute_request_chain_task_name" form="new-periodic-task-form">
-                        <option value="">None</option>
-                        {% if chainable_tasks is defined %}
-                            {% for t in chainable_tasks %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
-                        {% endif %}
-                    </select>
+                    {% if chainable_tasks is defined and chainable_tasks %}
+                        {% with chain_task_name="", chain_form_id="new-periodic-task-form", compact=true, chain_input_name="execute_request_chain_task_names" %}
+                            {% include "tasks/partials/chain-builder.html" %}
+                        {% endwith %}
+                    {% else %}
+                        —
+                    {% endif %}
                 </td>
                 <td style="padding-left: 0.5em">
                     <input type="hidden"

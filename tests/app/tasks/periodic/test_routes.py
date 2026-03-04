@@ -139,7 +139,7 @@ class TestUpdatePeriodicTask:
 
 
 class TestCreatePeriodicTaskChainValidation:
-    """Test chain_task_name validation on POST /{task_name}/periodic/."""
+    """Test chain_task_names validation on POST /{task_name}/periodic/."""
 
     @pytest.mark.asyncio
     async def test_self_chain_returns_400(self, periodic_test_client, tasks_session):
@@ -150,11 +150,11 @@ class TestCreatePeriodicTaskChainValidation:
         )
         payload = {
             "interval": {"every": 10, "period": "minutes"},
-            "execute_request": {"chain_task_name": "my-task"},
+            "execute_request": {"chain_task_names": ["my-task"]},
         }
         response = periodic_test_client.post("/my-task/periodic/", json=payload)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "itself" in response.json()["detail"]
+        assert "Cycle detected" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_nonexistent_chain_task_returns_404(
@@ -167,7 +167,7 @@ class TestCreatePeriodicTaskChainValidation:
         )
         payload = {
             "interval": {"every": 10, "period": "minutes"},
-            "execute_request": {"chain_task_name": "does-not-exist"},
+            "execute_request": {"chain_task_names": ["does-not-exist"]},
         }
         response = periodic_test_client.post("/my-task/periodic/", json=payload)
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -185,7 +185,7 @@ class TestCreatePeriodicTaskChainValidation:
         )
         payload = {
             "interval": {"every": 10, "period": "minutes"},
-            "execute_request": {"chain_task_name": "task-b"},
+            "execute_request": {"chain_task_names": ["task-b"]},
         }
         response = periodic_test_client.post("/task-a/periodic/", json=payload)
         assert response.status_code == status.HTTP_201_CREATED

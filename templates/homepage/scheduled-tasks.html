@@ -13,6 +13,7 @@
                 <th>Period</th>
                 <th>Last Run At</th>
                 <th>Runs</th>
+                <th>Chain with</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -36,6 +37,15 @@
                             <td class="relativeTime">{{ periodic_task.last_run_at or '' }}</td>
                             <td>{{ periodic_task.total_run_count }}</td>
                             <td>
+                                {% if periodic_task.execute_request and periodic_task.execute_request.chain_task_names %}
+                                    {% with chain_names=periodic_task.execute_request.chain_task_names %}
+                                        {% include "tasks/partials/chain-display.html" %}
+                                    {% endwith %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>
                                 {% if is_task_manager_enabled %}
                                     <a href="{{ url_for('tasks_detail', task_name=task_name) }}"><span class="material-symbols-outlined">visibility</span></a>
                                 {% else %}
@@ -50,7 +60,7 @@
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="5" class="no-tasks">No periodic tasks</td>
+                        <td colspan="7" class="no-tasks">No periodic tasks</td>
                     </tr>
                 {% endif %}
             </tbody>

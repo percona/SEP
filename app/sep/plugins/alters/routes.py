@@ -13,6 +13,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    get_chainable_tasks,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -221,6 +222,9 @@ async def alters_detail(
     context["services"] = services
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["chainable_tasks"] = await get_chainable_tasks(
+        tasks_api, task.owner, meta["target"], task.name
+    )
 
     return templates.TemplateResponse(
         request=request,
