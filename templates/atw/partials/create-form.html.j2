@@ -1,0 +1,322 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<style>
+    fieldset {
+        width: 95%;
+        justify-content: flex-start;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        margin-bottom: 0.5em;
+    }
+
+    .field {
+        flex: 0 0 48%;
+        box-sizing: border-box;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+    }
+
+    fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1))>.field {
+        flex: 0 0 48%;
+    }
+
+    .field label {
+        width: 135px;
+        margin-right: 10px;
+    }
+
+    .field input,
+    .field select {
+        flex: 1;
+    }
+
+
+    label+select,
+    label+input {
+        vertical-align: middle;
+        margin-right: 0px;
+    }
+
+    label:has(+ select),
+    label:has(+ input) {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0px !important;
+        width: 130px;
+    }
+
+    .selection-panel,
+    .result-panel {
+        background-color: #fff;
+        padding-left: 20px;
+        padding-right: 20px;
+        border-radius: 5px;
+    }
+
+    #toggleCreateTable {
+        padding: 10px 20px;
+    }
+
+    #createTableOutput {
+        background-color: #272822;
+        color: #f8f8f2;
+        padding: 15px;
+        border-radius: 5px;
+        overflow-x: auto;
+        max-height: 1000px;
+        font-family: monospace;
+        line-height: 1.4em;
+        white-space: pre-wrap;
+    }
+
+    #statusMessage {
+        margin-top: 20px;
+    }
+
+    #statusMessage.success {
+        color: green;
+    }
+
+    #statusMessage.error {
+        color: red;
+    }
+
+    #result-panel {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 1000px;
+    }
+
+    #result-panel.fade {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    input[type="checkbox"] {
+        flex: none;
+        margin-right: 0.5em;
+    }
+
+    pre {
+        white-space: pre;
+    }
+
+    {{ syntax_highlight_css(style="monokai") }}
+</style>
+{% set form_class = "modal" if modal_required else "" %}
+<form action=""
+      method="post"
+      class="{{ form_class }}"
+      style="padding-left: 0">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <fieldset>
+        <legend style="margin-bottom: 0.8em;">Main options</legend>
+        <fieldset>
+            <legend>Select Issue Category</legend>
+            <br>
+            <div class="select">
+                <select id="category1" name="category1">
+                    <option value="">-- Select Category --</option>
+                </select>
+                <select id="category2" name="category2" disabled>
+                    <option value="">-- Select Subcategory 1 --</option>
+                </select>
+                <select id="category3" name="category3" disabled>
+                    <option value="">-- Select Subcategory 2 --</option>
+                </select>
+                <select id="snippet" name="snippet" disabled>
+                    <option value="">-- Select Snippet --</option>
+                </select>
+            </div>
+            <br>
+        </fieldset>
+        <br>
+        <fieldset>
+            <legend>Preview</legend>
+            <section id="snippetPreview">
+            </section>
+        </fieldset>
+        <br>
+        <br>
+    </fieldset>
+</form>
+<div id="categoryInfo" class="text-sm text-gray-700"></div>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    // --- Data Structure for Categories ---
+    // Defines the relationship between categories and subcategories.
+    const categoryData = {"MySQL": {{ atw_categories|tojson }}};
+    const snippets = {{ snippets|tojson }};
+    const previews = {{ previews|tojson }};
+    console.log(categoryData);
+
+
+
+
+    // --- DOM Element References ---
+    const category1Select = document.getElementById('category1');
+    const category2Select = document.getElementById('category2');
+    const category3Select = document.getElementById('category3');
+    const snippetSelect = document.getElementById('snippet');
+    const categoryInfoDiv = document.getElementById('categoryInfo');
+    const snippetPreview = document.getElementById('snippetPreview');
+
+    // --- Helper Function to Reset and Populate a Select Box ---
+    /**
+     * Clears existing options, adds a default option, populates with new options, and sets disabled state.
+     * @param {HTMLSelectElement} selectElement - The select element to manage.
+     * @param {string[]} options - An array of strings for the options. Empty array clears options.
+     * @param {string} defaultOptionText - The text for the default placeholder option.
+     */
+    function updateSelectOptions(selectElement, options, defaultOptionText) {
+        // Clear existing options and add the default placeholder
+        selectElement.innerHTML = `<option value="">-- ${defaultOptionText} --</option>`;
+
+        // Add new options if provided
+        if (options && options.length > 0) {
+            options.forEach(optionValue => {
+                const option = document.createElement('option');
+                // Value and Text are the same (e.g., "Shoes"), as per categoryData
+                option.value = optionValue;
+                option.textContent = optionValue;
+                selectElement.appendChild(option);
+            });
+            // Enable the select box only if there are options
+            selectElement.disabled = false;
+        } else {
+            // Disable the select box if no options are provided
+            selectElement.disabled = true;
+        }
+    }
+
+
+    // --- Function to Update Information Display ---
+    /**
+     * Displays information based on the combined selections from all three categories.
+     */
+    function updateCategoryInfo() {
+        const selectedCategory1 = category1Select.value;
+        const selectedCategory2 = category2Select.value;
+        const selectedCategory3 = category3Select.value;
+        const selectedSnippet = snippetSelect.value;
+
+        // **MODIFIED**: Create a composite key for lookup
+
+        // Check if all categories are selected and the composite key exists in the info map
+        if (selectedCategory1 && selectedCategory2 && selectedCategory3 && snippets[selectedSnippet]) {
+            // Get the info using the composite key
+            const info = snippets[selectedSnippet];
+                // Display the info (using the simple format from the original code)
+            categoryInfoDiv.innerHTML = `${info}`;
+            const preview = previews[selectedSnippet];
+            snippetPreview.innerHTML = `${preview}`;
+                // If you want to display the detailed HTML, use this instead:
+                // categoryInfoDiv.innerHTML = info;
+        } else {
+            // Clear the info if any category is not selected or the key doesn't match
+            categoryInfoDiv.innerHTML = '';
+            snippetPreview.innerHTML = '';
+        }
+    }
+
+    // --- Event Listener for Category 1 Change ---
+    category1Select.addEventListener('change', function() {
+        const selectedCategory1 = this.value;
+        let category2Options = []; // Default to empty array
+
+        // Reset downstream selects and clear info
+        updateSelectOptions(category2Select, [], 'Select Subcategory 1');
+        updateSelectOptions(category3Select, [], 'Select Subcategory 2');
+        updateSelectOptions(snippetSelect, [], 'Select Snippet');
+        snippetPreview.innerHTML = '';
+        categoryInfoDiv.innerHTML = '';
+
+        if (selectedCategory1 && categoryData[selectedCategory1]) {
+            // Get the subcategories for category 2
+            category2Options = Object.keys(categoryData[selectedCategory1]);
+        }
+        // Update category 2 options (will enable/disable based on options)
+        updateSelectOptions(category2Select, category2Options, 'Select Subcategory 1');
+    });
+
+    // --- Event Listener for Category 2 Change ---
+    category2Select.addEventListener('change', function() {
+        const selectedCategory1 = category1Select.value;
+        const selectedCategory2 = this.value;
+        let category3Options = []; // Default to empty array
+
+        // Reset category 3 select and clear info
+        updateSelectOptions(category3Select, [], 'Select Subcategory 2');
+        updateSelectOptions(snippetSelect, [], 'Select Snippet');
+        snippetPreview.innerHTML = '';
+        categoryInfoDiv.innerHTML = '';
+
+        console.log("MUDOU")
+        // Check if valid selections exist in the data structure
+        if (selectedCategory1 && selectedCategory2 &&
+            categoryData[selectedCategory1][selectedCategory2]) { // Use optional chaining for safety
+            // Get the subcategories for category 3 (these values might be duplicated, e.g., "Shoes")
+            category3Options = Object.keys(categoryData[selectedCategory1][selectedCategory2]);
+            console.log(category3Options)
+            console.log("AAAAAAA")
+        }
+            // Update category 3 options (will enable/disable based on options)
+        updateSelectOptions(category3Select, category3Options, 'Select Subcategory 2');
+    });
+
+
+    category3Select.addEventListener('change', function() {
+        const selectedCategory1 = category1Select.value;
+        const selectedCategory2 = category2Select.value;
+        const selectedCategory3 = this.value;
+        let snippetOptions = []; // Default to empty array
+
+        // Reset snippetSelect select and clear info
+        updateSelectOptions(snippetSelect, [], 'Select Snippet');
+        snippetPreview.innerHTML = '';
+        categoryInfoDiv.innerHTML = '';
+
+        // Check if valid selections exist in the data structure
+        if (selectedCategory1 && selectedCategory2 && selectedCategory3 &&
+            categoryData[selectedCategory1][selectedCategory2][selectedCategory3]) { // Use optional chaining for safety
+            // Get the subcategories for category 3 (these values might be duplicated, e.g., "Shoes")
+            snippetOptions = categoryData[selectedCategory1][selectedCategory2][selectedCategory3];
+            console.log(snippetOptions)
+        }
+            // Update category 3 options (will enable/disable based on options)
+        updateSelectOptions(snippetSelect, snippetOptions, 'Select Snippet');
+    });
+
+    // --- Event Listener for Category 3 Change ---
+    // When the final category changes, update the information display using the composite key logic
+    snippetSelect.addEventListener('change', updateCategoryInfo);
+
+    // --- Initial Population of Category 1 ---
+    window.onload = () => {
+        const category1Options = Object.keys(categoryData);
+        // Populate category 1 initially
+        updateSelectOptions(category1Select, category1Options, 'Select Category');
+        // Ensure category 2 and 3 are disabled initially
+        updateSelectOptions(category2Select, [], 'Select Subcategory 1');
+        updateSelectOptions(category3Select, [], 'Select Subcategory 2');
+        updateSelectOptions(snippetSelect, [], 'Select Snippet');
+        categoryInfoDiv.innerHTML = ''; // Ensure info is clear on load
+        snippetPreview.innerHTML = ''; // Ensure info is clear on load
+    };
+</script>
