@@ -725,8 +725,8 @@ class TestSyncQueueItem:
         mock_save.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_running_saves_via_orm_without_flag_modified(self):
-        """Assert running sync saves via ORM save without flag_modified_fields."""
+    async def test_running_saves_via_orm_with_flag_modified(self):
+        """Assert running sync saves via ORM save with flag_modified_fields."""
         from app.tasks.celery import sync_queue_item
 
         task = _make_task()

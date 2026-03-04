@@ -190,7 +190,10 @@ async def get_task_history(queue_id: int) -> TaskHistory:
     async_session = get_async_session_maker()
     async with async_session() as session:
         return await TaskHistoryManager.get_or_404(
-            session, select_related=[TaskHistory.task], id=queue_id
+            session,
+            select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=queue_id,
         )
 
 
