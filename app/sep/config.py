@@ -308,7 +308,7 @@ class SEPSettings(BaseYamlAppSettings):
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
         definition files. When `None`, the bundled `alert_definitions/` directory
         inside the alerts plugin is used.
-    :type ALERT_DEFINITIONS_DIR: Path | None
+    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -316,7 +316,7 @@ class SEPSettings(BaseYamlAppSettings):
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
-    ALERT_DEFINITIONS_DIR: Path | None = None
+    ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
@@ -399,27 +399,6 @@ class SEPSettings(BaseYamlAppSettings):
         """
         if isinstance(v, str):
             return Template(v)
-        return v
-
-    @field_validator("ALERT_DEFINITIONS_DIR", mode="after")
-    @classmethod
-    def validate_alert_definitions_dir(cls, v: Path | None) -> Path | None:
-        """Validate that ALERT_DEFINITIONS_DIR points to an existing directory.
-
-        When set, verify that the path exists and is a directory so that
-        misconfiguration is caught at startup rather than at first request.
-
-        :param v: The configured alert definitions directory path, or `None`.
-        :type v: Path | None
-        :return: The validated path, or `None` if not set.
-        :rtype: Path | None
-        :raises ValueError: If the path is set but does not exist or is not a
-            directory.
-        """
-        if v is not None and not v.is_dir():
-            raise ValueError(
-                f"ALERT_DEFINITIONS_DIR '{v}' does not exist or is not a directory"
-            )
         return v
 
     @field_validator("PMM_FRONTEND", mode="after")
