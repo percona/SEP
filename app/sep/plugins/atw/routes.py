@@ -55,7 +55,7 @@ async def app_index(
     # arrumar linenos
     context["previews"] = {
         snippet.filename: syntax_highlight(
-            (await snippet.get_preview()).content,
+            (await snippet.get_preview()).full_content,
             style="monokai",
             linenos=False,
             wrapcode=True,

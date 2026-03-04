@@ -101,7 +101,7 @@ async def dipper_index(
     try:
         preview = await script.get_preview()
         context["script_preview"] = syntax_highlight(
-            preview.content, style="monokai", linenos=True, wrapcode=True
+            preview.full_content, style="monokai", linenos=True, wrapcode=True
         )
     except UnicodeDecodeError:
         logger.exception("Could not decode dipper script for preview")

@@ -185,6 +185,15 @@ class FilePreview(NamedTuple):
         """
         return self.preamble_line_count + self.frontmatter_line_count + 1
 
+    @property
+    def full_content(self) -> str:
+        """Return the complete preview content including preamble and frontmatter.
+
+        :return: Concatenation of preamble, frontmatter, and code body.
+        :rtype: str
+        """
+        return self.preamble + self.frontmatter + self.content
+
     @classmethod
     @validate_call
     async def from_path(
