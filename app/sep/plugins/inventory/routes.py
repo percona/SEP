@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -68,7 +68,7 @@ async def node_list(
     context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
-        name="inventory/node-list.html",
+        name="inventory/node-list.html.j2",
         context=context,
     )
 
@@ -101,7 +101,7 @@ async def node_detail(
     context["can_sync"] = any(syncer.can_sync_node(node) for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
-        name="inventory/node-detail.html",
+        name="inventory/node-detail.html.j2",
         context=context,
     )
 
@@ -162,7 +162,7 @@ async def service_detail(
     context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
-        name="inventory/service-detail.html",
+        name="inventory/service-detail.html.j2",
         context=context,
     )
 
@@ -237,7 +237,7 @@ async def schema_detail(
     context["can_sync"] = any(syncer.can_sync_schema(schema) for syncer in syncers)
     return templates.TemplateResponse(
         request=request,
-        name="inventory/schema-detail.html",
+        name="inventory/schema-detail.html.j2",
         context=context,
     )
 
