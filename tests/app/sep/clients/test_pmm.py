@@ -434,7 +434,7 @@ class TestDeleteRule:
         """Test delete_rule sends a DELETE request with the uid and alerting headers."""
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        captured: list[dict] = []
+        captured = []
 
         @asynccontextmanager
         async def fake_request(self_arg, method: str, path: str, **kwargs):
@@ -620,37 +620,38 @@ class TestUpdateContactPoint:
 
     @pytest.mark.asyncio
     async def test_update_contact_point_puts_to_provisioning_endpoint(
-        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+        self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
-        """Test update_contact_point sends a PUT with uid and updated data."""
-        mock_request.return_value = {
-            "uid": "cp-123",
-            "name": "Updated Email",
-            "type": "email",
-            "settings": {"addresses": "new@example.com"},
-        }
+        """Test update_contact_point sends a PUT with uid and alerting headers."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        captured = []
 
-        result = await pmm_remote_api.update_contact_point(
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            captured.append({"method": method, "path": path, "kwargs": kwargs})
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        await pmm_remote_api.update_contact_point(
             uid="cp-123",
             name="Updated Email",
             type_="email",
             settings={"addresses": "new@example.com"},
         )
 
-        assert isinstance(result, ContactPoint)
-        assert result.uid == "cp-123"
-        assert result.name == "Updated Email"
-        mock_request.assert_awaited_once_with(
-            "PUT",
-            "/graph/api/v1/provisioning/contact-points/cp-123",
-            json={
-                "uid": "cp-123",
-                "name": "Updated Email",
-                "type": "email",
-                "settings": {"addresses": "new@example.com"},
-            },
-            headers=ALERTING_HEADERS,
-        )
+        assert len(captured) == 1
+        assert captured[0]["method"] == "PUT"
+        assert captured[0]["path"] == "/graph/api/v1/provisioning/contact-points/cp-123"
+        assert captured[0]["kwargs"].get("json") == {
+            "uid": "cp-123",
+            "name": "Updated Email",
+            "type": "email",
+            "settings": {"addresses": "new@example.com"},
+        }
+        assert captured[0]["kwargs"].get("headers") == ALERTING_HEADERS
+        mock_response.raise_for_status.assert_called_once()
 
 
 class TestGetNotificationPolicy:

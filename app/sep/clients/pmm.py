@@ -423,7 +423,7 @@ class PMMRemoteAPI(RemoteAPI):
     def alerting_headers(self) -> dict[str, str]:
         """Return headers required for all PMM alerting API requests.
 
-        The ``X-Disable-Provenance`` header ensures that items created through
+        The `X-Disable-Provenance` header ensures that items created through
         the API remain editable in the PMM UI.
 
         :return: A dictionary containing the alerting-specific request headers.
@@ -523,7 +523,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The created alert rule.
         :rtype: AlertRule
         """
-        body: dict[str, Any] = {
+        body = {
             "name": name,
             "template_name": template_name,
             "folder_uid": folder_uid,
@@ -572,7 +572,7 @@ class PMMRemoteAPI(RemoteAPI):
     async def delete_rule(self, uid: str) -> None:
         """Delete a PMM alert rule by its UID.
 
-        Uses the raw ``_request`` context manager directly because the DELETE
+        Uses the raw `_request` context manager directly because the DELETE
         endpoint returns a 204 No Content response with no JSON body.
 
         :param uid: The UID of the rule to delete.
@@ -679,8 +679,11 @@ class PMMRemoteAPI(RemoteAPI):
 
     async def update_contact_point(
         self, uid: str, name: str, type_: str, settings: dict[str, Any]
-    ) -> ContactPoint:
+    ) -> None:
         """Update an existing alert contact point in PMM.
+
+        Use the raw `_request` context manager directly because the PUT
+        endpoint returns a 202 Accepted response with no JSON body.
 
         :param uid: The UID of the contact point to update.
         :type uid: str
@@ -690,16 +693,14 @@ class PMMRemoteAPI(RemoteAPI):
         :type type_: str
         :param settings: Updated type-specific configuration settings.
         :type settings: dict[str, Any]
-        :return: The updated contact point.
-        :rtype: ContactPoint
         """
-        data = await self.request(
+        async with self._request(
             "PUT",
             f"/graph/api/v1/provisioning/contact-points/{uid}",
             json={"uid": uid, "name": name, "type": type_, "settings": settings},
             headers=self.alerting_headers,
-        )
-        return ContactPoint.model_validate(data)
+        ) as response:
+            response.raise_for_status()
 
     async def get_notification_policy(self) -> NotificationPolicy:
         """Fetch the current notification policy tree from PMM.
