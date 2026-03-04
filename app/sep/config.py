@@ -326,6 +326,7 @@ class SEPSettings(BaseYamlAppSettings):
     )
     PMM: PMMSettings = PMMSettings()
     FOOTER_TEMPLATE: Template = Template("$summary $version")
+    FOOTER_EXTRA: str | None = None
 
     @computed_field
     @cached_property

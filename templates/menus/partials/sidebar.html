@@ -33,6 +33,7 @@
         <footer>
             <ul role="menu">
                 <li role="none">{{ footer_text }}</li>
+                {% if footer_extra %}<li role="none">{{ footer_extra }}</li>{% endif %}
                 <li role="none">
                     <a href="https://percona.com" class="link" target="_blank">
                         <span class="material-symbols-outlined">book_2</span>
