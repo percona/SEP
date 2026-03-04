@@ -1,0 +1,81 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    MySQL Backup Guide
+{%- endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/backups-docs.css') }}">
+{% endblock style %}
+{% block main %}
+    <article class="backup-docs">
+        <header class="backup-docs__header">
+            <div>
+                <h1>MySQL Backup Guide</h1>
+                <p>Use this reference to plan and configure reliable backup jobs for MySQL and MariaDB.</p>
+            </div>
+            <div class="backup-docs__header-actions">
+                <a href="{{ url_for('backups_index') }}">
+                    <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+                    Back to backups
+                </a>
+            </div>
+        </header>
+        <section id="prerequisites" class="backup-docs__section">
+            <h2>Prerequisites</h2>
+            <ul>
+                <li>
+                    Executor host must provide <code>MyDumper ≥ 0.17.1.1, XtraBackup</code>, or <code>mariadb-backup</code> binaries, plus required CLI tools (<code>rsync, aws-cli, gpg</code>) in <code>$PATH</code>
+                </li>
+                <ul>
+                    <li>
+                        When using <code>XtraBackup</code>, remote database hosts should have necessary Python packages available on the system: <code>PyYAML, PyMySQL[rsa,ed25519], packaging, filelock, boto3</code>. These packages are installed by SEP within a Python virtual environment on the database host
+                    </li>
+                </ul>
+                <li>
+                    Database user grants require <code>SELECT, RELOAD, PROCESS, LOCK TABLES, REPLICATION CLIENT</code>, plus access to replica status queries
+                </li>
+                <li>
+                    Executor host must be able to reach database host(s) on SSH and MySQL ports; plus any remote storage (S3/<code>rsync</code>) locations for backup storage
+                </li>
+            </ul>
+        </section>
+        <section id="workflow" class="backup-docs__section">
+            <h2>Workflow</h2>
+            <ul>
+                <li>Select an executor host and an inventory service for your MySQL/MariaDB database node</li>
+                <li>Enter a unique task name for the backup task</li>
+                <li>Pick a backup type:</li>
+                <ul>
+                    <li>
+                        <b>M</b> (MyDumper) for logical dumps
+                    </li>
+                    <li>
+                        <b>X</b> (XtraBackup) for physical copies
+                    </li>
+                    <li>
+                        <b>B</b> (Binlog) for continuous binary logs
+                    </li>
+                </ul>
+                <li>Fill in generation configuration options (directories, compression, encryption, safety checks)</li>
+                <li>Fill in the backup type options</li>
+                <li>Add uploading and/or alerting options; optional and up to the user's discretion</li>
+            </ul>
+        </section>
+    </article>
+{% endblock main %}
