@@ -67,6 +67,12 @@ class TestSidebarFooterExtra:
         assert "SEP v1.0" in rendered
         assert rendered.count("<li") == 1
 
+    def test_footer_extra_not_rendered_when_empty_string(self, sidebar_env):
+        """Assert no extra list item renders when footer_extra is empty string."""
+        template = sidebar_env.get_template("sidebar.html")
+        rendered = template.render(footer_text="SEP v1.0", footer_extra="")
+        assert rendered.count("<li") == 1
+
     def test_footer_extra_rendered_when_set(self, sidebar_env):
         """Assert an extra list item renders when footer_extra is set."""
         template = sidebar_env.get_template("sidebar.html")
