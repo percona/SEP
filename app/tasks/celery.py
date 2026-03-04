@@ -32,6 +32,7 @@ from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -362,12 +363,20 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
             select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
             id=queue_id,
         )
         task = await TaskManager.get_root_task(session, queue_item.task)
-    if queue_item.is_running:
-        executor = get_executor_for_task(task)
-        queue_item = await executor.sync_task_history(queue_item)
+    if not queue_item.is_running:
+        async with async_session() as session:
+            await TaskHistoryManager.update_where(
+                session,
+                {"sync_in_progress_started_at": None},
+                id=queue_id,
+            )
+        return queue_item
+    executor = get_executor_for_task(task)
+    queue_item = await executor.sync_task_history(queue_item)
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
         return await TaskHistoryManager.save(

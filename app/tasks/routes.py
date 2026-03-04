@@ -24,6 +24,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
@@ -227,7 +228,10 @@ async def list_task_history(
     """Create a new task."""
     logger.debug("Listing task history")
     return await TaskHistoryManager.list(
-        session, select_related=(TaskHistory.task,), status=task_status
+        session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        status=task_status,
     )
 
 
@@ -250,6 +254,7 @@ async def get_task_history(
         status=task_status,
         select_related_task=True,
         snippet_filename=snippet_filename,
+        query_options=[undefer(TaskHistory.execution_request)],
     )
 
 

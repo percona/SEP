@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
@@ -204,7 +205,10 @@ async def get_task_history_with_task(
     """
     logger.debug("Requesting task history %s", task_history_id)
     return await TaskHistoryManager.get_or_404(
-        session=session, select_related=(TaskHistory.task,), id=task_history_id
+        session=session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=task_history_id,
     )
 
 

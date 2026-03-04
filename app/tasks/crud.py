@@ -220,6 +220,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         status: TaskHistoryStatusEnum | None = None,
         snippet_filename: str | None = None,
         select_related_task: bool = False,
+        query_options: Sequence = (),
     ) -> list[TaskHistory]:
         """List task histories by the task's name.
 
@@ -236,6 +237,8 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param snippet_filename: If provided, filter task histories by the specified
             snippet filename in the task's metadata.
         :type snippet_filename: str | None
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :return: A list of task histories for the specified task.
         :rtype: list[TaskHistory]
         """
@@ -256,6 +259,7 @@ class TaskHistoryManager(BaseSQLModelManager):
             query,
             *clauses,
             select_related=select_related,
+            query_options=query_options,
             status=status,
         )
         result = await cls._exec(session, query)

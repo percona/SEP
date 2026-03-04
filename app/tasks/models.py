@@ -39,6 +39,7 @@ from pydantic import (
 )
 from sqlalchemy import Column, Index, JSON
 from sqlalchemy import Enum as EnumField
+from sqlalchemy.orm import column_property
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
@@ -46,6 +47,7 @@ from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.db.sql_types import AutoJSON
 from app.core.utils.fields import (
     EmptyStrToNone,
     EnumFieldMixin,
@@ -487,7 +489,7 @@ class TaskHistoryBase(SQLModel):
     """
 
     execution_request: TaskExecutionRequest = SQLField(
-        sa_column=Column(JSON, nullable=False),
+        sa_column=Column(AutoJSON, nullable=False),
     )
     status: TaskHistoryStatusEnum = SQLField(
         default=TaskHistoryStatusEnum.PENDING,
@@ -643,6 +645,11 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
                     msg=msg[chunk_start:chunk_end],
                     offset=chunk_end,
                 )
+
+
+TaskHistory.execution_request = column_property(
+    TaskHistory.__table__.c.execution_request, deferred=True
+)
 
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):

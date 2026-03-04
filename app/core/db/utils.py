@@ -19,12 +19,14 @@ from typing import Any
 
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import cast, Column, ColumnClause, func, Function, JSON, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.sql_types import AutoJSON
 from app.core.utils.fields import DatabaseDialect
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
@@ -128,5 +130,7 @@ def compare_type(
     :rtype: bool | None
     """
     if isinstance(inspected_type, Text) and isinstance(metadata_type, AutoString):
+        return False
+    if isinstance(metadata_type, AutoJSON) and isinstance(inspected_type, JSONB | JSON):
         return False
     return None

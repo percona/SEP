@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.orm import undefer
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
@@ -88,5 +89,8 @@ async def created_task_with_history(session: AsyncSession) -> TaskHistory:
     )
     saved = await TaskHistoryManager.save(session, history)
     return await TaskHistoryManager.get_or_404(
-        session, select_related=(TaskHistory.task,), id=saved.id
+        session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=saved.id,
     )
