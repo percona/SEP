@@ -150,9 +150,6 @@ class PeriodicTaskResponse(BasePeriodicTask):
     :param crontab: The crontab schedule for the task. Defaults to None. This field
         is populated with the alias "model_crontabschedule".
     :type crontab: CrontabSchedule | None
-    :param next_run_at: The next scheduled execution time in UTC, computed from the
-        task's schedule. `None` if the task is disabled.
-    :type next_run_at: UTCDatetime | None
     """
 
     id: int
