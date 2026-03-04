@@ -3,7 +3,7 @@
 from enum import StrEnum
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -22,12 +22,12 @@ class PgBackRestBackupType(EnumFieldMixin, StrEnum):
 class BackupConfigAll(BaseCaseInsensitiveModel):
     """Represent the general configuration for the backup task."""
 
-    logging_dir: RequiredStr | EmptyStrToNone = None
-    backup_dir: RequiredStr | EmptyStrToNone = None
-    pgbackrest_bin: RequiredStr | EmptyStrToNone = None
-    pgbackrest_config_file: RequiredStr | EmptyStrToNone = None
+    logging_dir: NonEmptyStr | EmptyStrToNone = None
+    backup_dir: NonEmptyStr | EmptyStrToNone = None
+    pgbackrest_bin: NonEmptyStr | EmptyStrToNone = None
+    pgbackrest_config_file: NonEmptyStr | EmptyStrToNone = None
     pgbackrest_backup_type: PgBackRestBackupType | EmptyStrToNone = None
-    pgbackrest_datadir: RequiredStr | EmptyStrToNone = None
+    pgbackrest_datadir: NonEmptyStr | EmptyStrToNone = None
     pgbackrest_retention_full: int | EmptyStrToNone = None
     pgbackrest_retention_archive: int | EmptyStrToNone = None
     pgbackrest_incremental_cycle: int | str | EmptyStrToNone = None
@@ -37,11 +37,11 @@ class BackupConfigServer(BaseCaseInsensitiveModel):
     """Represent an individual server configuration.
 
     :param alias: A unique alias for the server.
-    :type alias: RequiredStr
+    :type alias: NonEmptyStr
     :param backup_type: The type of the backup.
     :type backup_type: BackupType
     :param host: The hostname or address of the server.
-    :type host: RequiredStr
+    :type host: NonEmptyStr
     :param port: The port number used to connect to the host.
     :type port: int | None
     :param upload: A unique list of upload providers to use for the backup, if any.
@@ -50,16 +50,16 @@ class BackupConfigServer(BaseCaseInsensitiveModel):
     :type dir_encrypt_config: DirEncryptConfig | None
     """
 
-    alias: RequiredStr
+    alias: NonEmptyStr
     backup_type: str
-    host: RequiredStr
+    host: NonEmptyStr
 
 
 class BackupCreate(BackupConfigAll):
     """Represent a Backup creation form with proper case-insensitive fields."""
 
-    task_name: RequiredStr
-    hostname: RequiredStr
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
     service_id: int
     backup_type: BackupType
     alert_on_fail: bool = False

@@ -111,11 +111,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePath | None
+    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePath | None
+    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePath | None
+    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.

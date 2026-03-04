@@ -31,7 +31,7 @@ from app.core.auth.exceptions import (
     HTTPUnauthorizedException,
 )
 from app.core.requests import RemoteAPI
-from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
+from app.core.utils.fields import NonEmptyStr, RelativeFilePathField, StrHttpUrl, URL
 
 
 class CasdoorException(BaseAuthProviderException):
@@ -67,11 +67,11 @@ class CasdoorSDK(RemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePath | None
+    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePath | None
+    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePath | None
+    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param client_id: The client ID for Casdoor authentication.
@@ -89,16 +89,16 @@ class CasdoorSDK(RemoteAPI):
     :param front_endpoint: The front-end endpoint for the Casdoor integration.
     :type front_endpoint: URL
     :param certificate_path: The file path to the Casdoor certificate. Defaults to None.
-    :type certificate_path: RelativeFilePath | None
+    :type certificate_path: RelativeFilePathField | None
     :param allowed_issuers: The allowed token issuers (iss) for JWT validation.
         Defaults to an empty list.
     :type allowed_issuers: set[StrHttpUrl] | Literal["*"]
     :param error_detail_key: The key to expect errors details to be. Defaults to
         "message".
-    :type error_detail_key: RequiredStr
+    :type error_detail_key: NonEmptyStr
     :param error_code_key: The key to expect error codes to be, or None if no error
         code is expected. Defaults to "code".
-    :type error_code_key: RequiredStr | None
+    :type error_code_key: NonEmptyStr | None
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
@@ -108,10 +108,10 @@ class CasdoorSDK(RemoteAPI):
     organization_name: str = "built-in"
     application_name: str = "app-built-in"
     front_endpoint: URL = URL()
-    certificate_path: RelativeFilePath | None = None
+    certificate_path: RelativeFilePathField | None = None
     allowed_issuers: set[StrHttpUrl] | Literal["*"] = set()
-    error_detail_key: RequiredStr = "error_description"
-    error_code_key: RequiredStr | None = "error"
+    error_detail_key: NonEmptyStr = "error_description"
+    error_code_key: NonEmptyStr | None = "error"
 
     @computed_field
     @cached_property

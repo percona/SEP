@@ -25,7 +25,7 @@ from pydantic import ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
 from app.core.utils.dict import remove_falsy_values_from_dict
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import SourceEnum
 from app.sep.inventory import Node, Service
 
@@ -49,15 +49,15 @@ class PMMService(Service):
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
+    :type external_id: NonEmptyStr | EmptyStrToNone
     :param name: The name of the service, aliased as "service_name".
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param port: The port number on which the service is running, aliased as
         "service_port". Defaults to None.
     :type port: int | EmptyStrToNone
     :param type: The type of the service (e.g., "service_type"), aliased as
         "service_type". Defaults to "generic".
-    :type type: RequiredStr
+    :type type: NonEmptyStr
     :param node_id: The identifier of the node to which the service is associated.
     :type node_id: str
     """
@@ -76,21 +76,21 @@ class PMMRemoteAPI(RemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePath | None
+    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePath | None
+    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePath | None
+    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param api_key: The API key for authentication. Defaults to None.
     :type api_key: SecretStr | None
     :param error_detail_key: The key to expect errors details to be. Defaults to
         "message".
-    :type error_detail_key: RequiredStr
+    :type error_detail_key: NonEmptyStr
     :param error_code_key: The key to expect error codes to be, or None if no error
         code is expected. Defaults to "code".
-    :type error_code_key: RequiredStr | None
+    :type error_code_key: NonEmptyStr | None
     :param default_to_v3: Whether to default to PMM v3 API endpoints if the API version
         cannot be determined. Defaults to True.
     :type default_to_v3: bool
@@ -98,8 +98,8 @@ class PMMRemoteAPI(RemoteAPI):
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     api_key: SecretStr
-    error_detail_key: RequiredStr = "message"
-    error_code_key: RequiredStr | None = "code"
+    error_detail_key: NonEmptyStr = "message"
+    error_code_key: NonEmptyStr | None = "code"
     default_to_v3: bool = True
 
     @property
@@ -325,7 +325,7 @@ class PMMRemoteAPI(RemoteAPI):
         *,
         skip_failed: bool = True,
         filter_: Callable[[dict[str, Any]], bool] | None = None,
-    ) -> defaultdict[RequiredStr, list[PMMService]]:
+    ) -> defaultdict[NonEmptyStr, list[PMMService]]:
         """Fetch and group services by node ID from the PMM API.
 
         Retrieve all services and organize them into a defaultdict where each key is a
@@ -339,7 +339,7 @@ class PMMRemoteAPI(RemoteAPI):
             Defaults to None.
         :type filter_: Callable[[dict[str, Any]], bool] | None
         :return: A defaultdict mapping node IDs to lists of PMMService instances.
-        :rtype: defaultdict[RequiredStr, list[PMMService]]
+        :rtype: defaultdict[NonEmptyStr, list[PMMService]]
         """
         services_by_node_id = defaultdict(list)
         for service in await self.get_services(
