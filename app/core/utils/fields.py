@@ -386,18 +386,13 @@ def database_url_normalized_scheme_field_factory(
     ]
 
 
-# TODO(yan): Replace RequiredStr with NonEmptyStr accross the codebase
-# SEP-579
-RequiredStr = Annotated[str, Field(min_length=1)]
-"""Define a string field that must not be empty."""
-
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
 """Convert empty strings to None."""
 
-RelativeFilePath = Annotated[
+RelativeFilePathField = Annotated[
     FilePath,
     BeforeValidator(resolve_relative_path),
     Field(validate_default=True),
@@ -408,7 +403,7 @@ This annotated type ensures that the provided file path is valid and resolves
 relative paths based on the application's directory structure.
 """
 
-RelativeDirectoryPath = Annotated[
+RelativeDirectoryPathField = Annotated[
     DirectoryPath,
     BeforeValidator(resolve_relative_path),
     Field(validate_default=True),
@@ -419,7 +414,7 @@ This annotated type ensures that the provided directory path is valid and resolv
 relative paths based on the application's directory structure.
 """
 
-RelativePath = Annotated[
+RelativePathField = Annotated[
     Path,
     BeforeValidator(resolve_relative_path),
     Field(validate_default=True),
@@ -431,7 +426,7 @@ relative paths based on the application's directory structure. This type does no
 validate if the path exists, it only resolves the relative path to an absolute one.
 """
 
-StrRelativePath = Annotated[str, AsTypeValidator(RelativePath, str)]
+StrRelativePath = Annotated[str, AsTypeValidator(RelativePathField, str)]
 """Define a string field representing a relative paths.
 
 This annotated type validates the string as a relative path and ensures it is returned
@@ -482,7 +477,7 @@ StrAnyUrl = Annotated[str, AsTypeValidator(AnyUrl, str)]
 This annotated type validates the string as any valid URL without additional processing.
 """
 
-URIPath = Annotated[str, Field(pattern=r"^\/[^\s]*$")]
+URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]
 """Define a string field representing a URI path.
 
 This annotated type ensures that the string starts with a forward slash and does

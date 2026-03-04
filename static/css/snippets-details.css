@@ -23,8 +23,13 @@ td.code {
     color: #90918B;
 }
 
+.code div {
+    margin-right: 10px;
+}
+
 .code pre {
     overflow: auto;
+    margin-right: 10px;
 }
 
 #actions form {

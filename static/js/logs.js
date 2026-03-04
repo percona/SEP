@@ -166,6 +166,18 @@ $(document).ready(function() {
         document.body.appendChild(a);
         a.click();
         a.remove();
+
+        // Reset button after download has been triggered (no reliable "download started" event)
+        const ariaLabel = $btn.attr('aria-label') || `Download ${filename}`;
+        setTimeout(function() {
+            $btn.data('loading', false)
+                .attr('aria-disabled', 'false')
+                .prop('disabled', false)
+                .removeClass('loading')
+                .attr('aria-label', ariaLabel)
+                .html('<span class="material-symbols-outlined">file_download</span>');
+            $row.removeAttr('aria-busy');
+        }, 1500);
     });
 
     $(document).on('click', '.view-files-button', function() {
@@ -246,6 +258,12 @@ $(document).ready(function() {
 
                 const stdoutPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stdout" style="display: none;"></pre>');
                 const stderrPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display: none;"></pre>');
+
+                const $checkbox = $logConsole.find('.word-wrap-checkbox');
+                if ($checkbox.is(':checked')) {
+                    stdoutPre.addClass('soft-wrap');
+                    stderrPre.addClass('soft-wrap');
+                }
 
                 const selectedTab = $logConsole.find('[role="log-tab"][aria-selected="true"]');
                 const selectedLogType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
@@ -407,7 +425,7 @@ $(document).ready(function() {
         }
     });
 
-    $('.word-wrap-checkbox').change(function() {
+    $(document).on('change', '.word-wrap-checkbox', function() {
         const $this = $(this);
         const $logConsole = $this.closest('.log-console');
         if ($this.is(':checked')) {
@@ -416,6 +434,7 @@ $(document).ready(function() {
             $logConsole.find('.log-output').removeClass('soft-wrap');
         }
     });
+    // Initialize state for checkboxes that exist at page load
     $('.word-wrap-checkbox').trigger("change");
 
     $('.toggle-label').click(function(e) {

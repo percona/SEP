@@ -52,7 +52,7 @@ from app.core.utils import (
     slugify,
 )
 from app.core.utils.fields import (
-    RelativeDirectoryPath,
+    RelativeDirectoryPathField,
     StrHttpUrl,
     StrImportableAttribute,
     StrImportableModule,
@@ -273,10 +273,10 @@ class SEPSettings(BaseYamlAppSettings):
     :type SESSION: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         `Path("templates")`.
-    :type TEMPLATES_DIR: RelativeDirectoryPath
+    :type TEMPLATES_DIR: RelativeDirectoryPathField
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
-    :type STATIC_DIR: RelativeDirectoryPath
+    :type STATIC_DIR: RelativeDirectoryPathField
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -310,8 +310,8 @@ class SEPSettings(BaseYamlAppSettings):
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     SESSION: SessionOptions = SessionOptions()
-    TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
-    STATIC_DIR: RelativeDirectoryPath = Path("static")
+    TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
+    STATIC_DIR: RelativeDirectoryPathField = Path("static")
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
