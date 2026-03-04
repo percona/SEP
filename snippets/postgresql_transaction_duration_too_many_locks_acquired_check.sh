@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # ---
-# title: "PostgreSQL Transaction Duration Check"
-# description: "This script identifies long-running active transactions and any blocking queries to diagnose transaction duration alerts."
+# title: "PostgreSQL Transaction Duration/Too Many Locks Check"
+# description: "This script identifies long-running active transactions and any blocking queries to diagnose transaction duration and too-many-locks-acquired alerts."
 # allow_extra_args: false
 # sudo: optional
 # ---
 
-# Usage: ./postgresql_transaction_duration_check.sh
+# Usage: ./postgresql_transaction_duration_too_many_locks_acquired_check.sh
 
 set -euo pipefail
 
@@ -21,6 +21,25 @@ FROM pg_stat_activity
 WHERE now()-query_start > interval '7 minutes'
   AND query NOT ILIKE '%START_REPLICATION%'
   AND state = 'active'
+SQL
+
+echo ""
+echo "********* Queries that are in the locked state *********"
+echo ""
+$PSQL <<SQL
+SELECT a.datname,
+       l.relation::regclass,
+       l.transactionid,
+       l.mode,
+       l.GRANTED,
+       a.usename,
+       left(a.query, 50),
+       a.query_start,
+       age(now(), a.query_start) AS "age",
+       a.pid
+FROM pg_stat_activity a
+JOIN pg_locks l ON l.pid = a.pid
+WHERE mode ILIKE '%exclusive%';
 SQL
 
 echo ""
