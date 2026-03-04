@@ -11,7 +11,16 @@ repos:
     rev: 9112cb64851c95a7802358af285d21ad8b7f6437  # v1.36.4
     hooks:
       - id: djlint
+        types_or: [jinja]
       - id: djlint-reformat
+        types_or: [jinja]
+  - repo: https://github.com/google/addlicense
+    rev: b289835c0741ba2fb92dd5f61af070e79c69a55e  # v1.2.0
+    hooks:
+      - id: addlicense
+        args: ["-f", ".license_header", "-v"]
+        types_or: [python, javascript, css, jinja]
+        exclude: ^static/(js|css)/vendor/
   - repo: local
     hooks:
       - id: js-beautify
@@ -20,18 +29,18 @@ repos:
         entry: js-beautify --end-with-newline --replace
         language: python
         additional_dependencies: ["jsbeautifier==1.15.1"]
-        files: ^(?!.*\.min\.js$).*\.js$
+        files: ^(?!.*\.min\.js$)(?!static/(js|css)/vendor/).*\.js$
       - id: css-beautify
         name: CSS Beautify
         description: "Run css-beautify (from cssbeautifier) on .css files"
         entry: css-beautify --end-with-newline --replace
         language: python
         additional_dependencies: ["cssbeautifier==1.15.1"]
-        files: ^(?!.*\.min\.css$).*\.css$
+        files: ^(?!.*\.min\.css$)(?!static/(js|css)/vendor/).*\.css$
       - id: update-installer-checksum
         name: Update sep_installer.sh checksum
         description: "Update sep_installer.sha256 when sep_installer.sh changes"
-        entry: sh -c 'sha256sum sep_installer.sh > sep_installer.sha256'
+        entry: sh -c "sha256sum sep_installer.sh > sep_installer.sha256"
         language: system
         files: ^sep_installer\.sh$
         pass_filenames: false

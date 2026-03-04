@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -63,7 +63,7 @@ async def tasks_list(
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
-        name="tasks/list.html",
+        name="tasks/list.html.j2",
         context=context,
     )
 
@@ -112,7 +112,7 @@ async def tasks_detail(
     context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     return templates.TemplateResponse(
         request=request,
-        name="tasks/view.html",
+        name="tasks/view.html.j2",
         context=context,
     )
 

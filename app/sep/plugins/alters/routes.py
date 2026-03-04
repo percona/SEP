@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define routes for the alters plugin."""
 
 import logging
@@ -44,7 +59,7 @@ async def alters_index(
     """Homepage of alters plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="alters/index.html",
+        name="alters/index.html.j2",
         context=context,
     )
 
@@ -228,7 +243,7 @@ async def alters_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="alters/details.html",
+        name="alters/details.html.j2",
         context=context,
     )
 

@@ -1,0 +1,106 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    PostgreSQL Backups
+{%- endblock title %}
+{% block style %}
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    {% endif %}
+    {% if tasks %}
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/saved.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/scheduled.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/chain-builder.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/vendor/select2.min.css') }}">
+    {% endif %}
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history_tasks or running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    {% if tasks %}
+        <script nonce="{{ request.state.csp_nonce }}">
+            const taskNames = {{ tasks|map(attribute='name')|list|tojson }};
+            const availableTimezones = {{ AVAILABLE_TIMEZONES|tojson }};
+        </script>
+        <script src="{{ url_for('static', path='/js/vendor/cronstrue.min.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/vendor/select2.min.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/saved.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/scheduled.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/chain-builder.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+{% endblock behaviours_optimized_extra %}
+{% block main %}
+    <p>Perform PostgreSQL backups with PGBackRest.</p>
+    {% if not tasks and not history_tasks %}
+        {% set modal_required = False %}
+        <h2>Configure a backup task</h2>
+        {% if services|length < 1 %}
+            <p>Unable to find suitable database instances.</p>
+        {% elif executor_hosts|length < 1 %}
+            <p>Unable to find suitable executor hosts.</p>
+        {% else %}
+            {% include "backup_pg/partials/create-form.html.j2" %}
+        {% endif %}
+    {% else %}
+        {% set modal_required = True %}
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html.j2" %}
+            </section>
+        {% endif %}
+        <section id="saved-tasks">
+            <h2>Saved</h2>
+            {% include "backup_pg/partials/saved-tasks.html.j2" %}
+            <h2>Periodic Tasks</h2>
+            {%- set detail_route = "backups_detail" %}
+            {% include "tasks/partials/scheduled-tasks.html.j2" %}
+            <h3>Create a backup process</h3>
+            {% if executor_hosts|length < 1 %}
+                <p>Unable to find suitable executor hosts.</p>
+            {% else %}
+                {% include "backup_pg/partials/create-form.html.j2" %}
+            {% endif %}
+        </section>
+        <br>
+        <br>
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html.j2" %}
+        </section>
+        <br>
+        <br>
+        <section id="completed-tasks">
+            <h2>History</h2>
+            {% include "tasks/partials/completed-tasks.html.j2" %}
+        </section>
+    {% endif %}
+{% endblock main %}

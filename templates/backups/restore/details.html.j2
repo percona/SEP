@@ -1,0 +1,168 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    Restores - {{ task.name }}
+{%- endblock title %}
+{% block style %}
+    <style>
+        label+input[type=text] {
+            display: block
+        }
+
+        pre {
+            white-space: break-spaces;
+        }
+
+        {{ syntax_highlight_css(style="sas") }}
+    </style>
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/saved.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/chain-builder.css') }}">
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/saved.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    <script src="{{ url_for('static', path='/js/chain-builder.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Backup and Restore navigation">
+        <a href="{{ url_for('backups_index') }}" class="toggle-btn">Backup</a>
+        <a href="{{ url_for('restores_index') }}" class="toggle-btn active">Restore</a>
+    </div>
+{% endblock sticky %}
+{% block main %}
+    <table data-table>
+        <caption>Overview</caption>
+        <thead>
+            <tr>
+                <th>Target</th>
+                <th>Host</th>
+                <th>Type</th>
+                <th>Created at</th>
+                <th>Updated at</th>
+                <th>Created by</th>
+                <th>Last Updated by</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{{ task.hostname }}</td>
+                <td>{{ task.host }} ({{ task.port }})</td>
+                <td>{{ task.restore_type }}</td>
+                <td class="relativeTime">{{ task.created_at }}</td>
+                <td class="relativeTime">{{ task.updated_at }}</td>
+                <td>{{ user_id_to_username.get(task["created_by"], task["created_by"]) or '' }}</td>
+                <td>{{ user_id_to_username.get(task["last_updated_by"], task["last_updated_by"]) or '' }}</td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="7"></td>
+            </tr>
+        </tfoot>
+    </table>
+    {% include "tasks/partials/run-python-form.html.j2" %}
+    {% if running_tasks %}
+        <section id="running-tasks">
+            <h2>Running</h2>
+            {% include "tasks/partials/running-tasks.html.j2" %}
+        </section>
+    {% endif %}
+    <section>
+        <h2>Execution</h2>
+        <h5>Parameters</h5>
+        <table>
+            <tbody>
+                {% for k, v in task.meta.items() %}
+                    <tr>
+                        <th>{{ k }}</th>
+                        <td>
+                            {% if v is mapping %}
+                                <ul>
+                                    {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                </ul>
+                            {% elif v is iterable and v is not string %}
+                                {# TODO: Refactor all these weird tests #}
+                                <ul>
+                                    {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                </ul>
+                            {% else %}
+                                {{ v|syntax_highlight(style="sas") |safe }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <br>
+    <br>
+    <section>
+        <h2>Stats</h2>
+        {% if stats and stats.total %}
+            <table data-table>
+                <caption>Aggregated statistics for {{ task_name }}</caption>
+                <thead>
+                    <tr>
+                        <th>Executions</th>
+                        <th>Succeeded</th>
+                        <th>Failed</th>
+                        <th>Last Finished</th>
+                        <th>
+                            Avg Duration (<abbr title="seconds">s</abbr>)
+                        </th>
+                        <th>
+                            Last Duration (<abbr>s</abbr>)
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ stats.total }}</td>
+                        <td>{{ stats.status.pass }}</td>
+                        <td>{{ stats.status.fail }}</td>
+                        <td class="relativeTime">{{ stats.last_finished_at }}</td>
+                        <td>{{ stats.duration.average_seconds or 0|round(3) }}</td>
+                        <td>{{ stats.duration.last_seconds or 0|round(3) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        {% else %}
+            <p>No data</p>
+        {% endif %}
+    </section>
+    <br>
+    <br>
+    <section>
+        <h2>History</h2>
+        {% set history_tasks = history %}
+        {% include "tasks/partials/completed-tasks.html.j2" %}
+    </section>
+    {% include "backups/restore/partials/edit-form.html.j2" %}
+{% endblock main %}

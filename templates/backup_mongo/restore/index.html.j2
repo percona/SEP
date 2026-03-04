@@ -1,0 +1,120 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    PBM Restores
+{%- endblock title %}
+{% block style %}
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    {% endif %}
+    {% if tasks %}
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/saved.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/scheduled.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/chain-builder.css') }}">
+        <link rel="stylesheet"
+              href="{{ url_for('static', path='/css/vendor/select2.min.css') }}">
+    {% endif %}
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history_tasks or running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    {% if tasks %}
+        <script nonce="{{ request.state.csp_nonce }}">
+    const taskNames = {{ tasks| map(attribute = 'name') | list | tojson }};
+    const availableTimezones = {{ AVAILABLE_TIMEZONES| tojson }};
+        </script>
+        <script src="{{ url_for('static', path='/js/vendor/cronstrue.min.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/vendor/select2.min.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/saved.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/scheduled.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+        <script src="{{ url_for('static', path='/js/chain-builder.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+{% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Backup and Restore navigation">
+        <a href="{{ url_for('pbm_backups_index') }}" class="toggle-btn">Backup</a>
+        <a href="{{ url_for('pbm_restores_index') }}" class="toggle-btn active">Restore</a>
+    </div>
+{% endblock sticky %}
+{% block main %}
+    <h1>PBM Restores</h1>
+    <p>
+        Restore from <a href="https://github.com/percona/percona-backup-mongodb">PBM</a> MongoDB backups, currently only
+        supporting Logical, Physical restore methods.
+    </p>
+    {% if not tasks and not history_tasks %}
+        {% set modal_required = False %}
+        {% if executor_hosts|length < 1 %}
+            <p>Unable to find suitable executor hosts.</p>
+        {% else %}
+            <button type="button"
+                    class="contained large"
+                    data-modal="trigger"
+                    data-modal-target="modalCreateTask">Create New Task</button>
+        {% endif %}
+    {% else %}
+        {% set modal_required = True %}
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html.j2" %}
+            </section>
+        {% endif %}
+        <section id="saved-tasks">
+            <h2>Configured Restores</h2>
+            {% include "backup_mongo/restore/partials/saved-tasks.html.j2" %}
+            {% if executor_hosts|length < 1 %}
+                <p>Unable to find suitable executor hosts.</p>
+            {% else %}
+                <button type="button"
+                        class="contained large"
+                        data-modal="trigger"
+                        data-modal-target="modalCreateTask">Create New Task</button>
+            {% endif %}
+            <h2>Periodic Tasks</h2>
+            {%- set detail_route = "pbm_restores_detail" %}
+            {% include "tasks/partials/scheduled-tasks.html.j2" %}
+        </section>
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html.j2" %}
+        </section>
+        <section id="completed-tasks">
+            <h2>History</h2>
+            {% include "tasks/partials/completed-tasks.html.j2" %}
+        </section>
+    {% endif %}
+    <!-- Create Form Modal -->
+    {% if executor_hosts|length >= 1 %}
+        {% include "backup_mongo/restore/partials/create-form.html.j2" %}
+    {% endif %}
+{% endblock main %}
