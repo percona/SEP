@@ -16,7 +16,7 @@
 """Define SEP settings."""
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
 from string import Template
@@ -351,6 +351,7 @@ class SEPSettings(BaseYamlAppSettings):
             extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
         )
         env.filters |= DEFAULT_FILTERS
+        env.globals["now"] = datetime.now
         env.globals["syntax_highlight_css"] = syntax_highlight_css
         env.globals["get_messages"] = messages.get_messages
         return env
