@@ -278,6 +278,10 @@ class SEPSettings(BaseYamlAppSettings):
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
     :type STATIC_DIR: RelativeDirectoryPathField
+    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
+        definition files. When `None`, the bundled `alert_definitions/` directory
+        inside the alerts plugin is used.
+    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -306,10 +310,6 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
-    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
-        definition files. When `None`, the bundled `alert_definitions/` directory
-        inside the alerts plugin is used.
-    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
