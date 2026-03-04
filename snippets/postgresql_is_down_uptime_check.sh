@@ -24,7 +24,7 @@ systemctl status postgres* --no-pager 2> /dev/null || echo "No PostgreSQL system
 echo ""
 echo "********* PostgreSQL processes *********"
 echo ""
-ps -ef | grep "[p]ostgres" || echo "No PostgreSQL processes found."
+ps -ef | grep -E "[p]ostgres|[p]ostmaster" || echo "No PostgreSQL processes found."
 
 echo ""
 echo "********* PostgreSQL listening ports *********"
