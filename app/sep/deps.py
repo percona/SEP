@@ -241,7 +241,6 @@ async def get_default_context(
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "pmm_url": sep_settings.PMM.frontend,
         "footer_text": sep_settings.FOOTER_TEXT,
-        "footer_extra": sep_settings.FOOTER_EXTRA,
         "user_id_to_username": await get_username_mapping(),
     }
 

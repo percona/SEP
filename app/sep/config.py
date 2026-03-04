@@ -309,10 +309,6 @@ class SEPSettings(BaseYamlAppSettings):
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
     :type FOOTER_TEMPLATE: Template
-    :param FOOTER_EXTRA: Optional extra text displayed as an additional line in the
-        sidebar footer, below the version line. Useful for distinguishing between
-        multiple running instances (e.g. `"dev"`). Defaults to `None` (not shown).
-    :type FOOTER_EXTRA: str | None
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
@@ -338,7 +334,6 @@ class SEPSettings(BaseYamlAppSettings):
     PMM: PMMSettings = PMMSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
-    FOOTER_EXTRA: str | None = None
 
     @computed_field
     @cached_property
