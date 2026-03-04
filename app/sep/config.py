@@ -34,6 +34,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    PositiveInt,
     SecretStr,
     ValidationError,
 )
@@ -309,6 +310,9 @@ class SEPSettings(BaseYamlAppSettings):
         definition files. When `None`, the bundled `alert_definitions/` directory
         inside the alerts plugin is used.
     :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
+    :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
+        tokens. Defaults to 600.
+    :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -330,6 +334,7 @@ class SEPSettings(BaseYamlAppSettings):
         deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
     )
     PMM: PMMSettings = PMMSettings()
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field

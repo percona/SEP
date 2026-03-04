@@ -1,12 +1,20 @@
 """Define test cases for the task routes in the FastAPI application."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 import pytest_asyncio
 from fastapi import status
 
-from app.tasks.crud import TaskManager
-from app.tasks.models import Task, TaskWrite
+from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.models import (
+    Task,
+    TaskHistoryStatusEnum,
+    TaskWrite,
+)
 from tests.app.factories import TaskFactory
+
+MOCK_FILE_SIZE = 1024
 
 
 @pytest_asyncio.fixture
@@ -20,7 +28,7 @@ async def created_task(session) -> Task:
 
 @pytest.mark.asyncio
 async def test_list_tasks_only_returns_active(test_client, session, created_task):
-    """Test that listing tasks only returns active (non-deleted) tasks."""
+    """Assert listing tasks only returns active (non-deleted) tasks."""
     response = test_client.get("/")
     assert response.status_code == status.HTTP_200_OK
     assert [task["name"] for task in response.json()] == [created_task.name]
@@ -36,7 +44,7 @@ async def test_list_tasks_only_returns_active(test_client, session, created_task
 async def test_get_task_active_and_get_task_deleted_404(
     test_client, session, created_task
 ):
-    """Test that retrieving an active task works and a deleted task returns 404."""
+    """Assert retrieving an active task works and a deleted task returns 404."""
     response = test_client.get(f"/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     task_data = response.json()
@@ -53,7 +61,7 @@ async def test_get_task_active_and_get_task_deleted_404(
 async def test_delete_task_success_and_cannot_delete_twice(
     mocker, test_client, created_task
 ):
-    """Test that deleting a task works and cannot be deleted twice."""
+    """Assert deleting a task works and cannot be deleted twice."""
     mocker.patch("app.tasks.routes.PeriodicTaskManager.delete_where", return_value=True)
     response = test_client.delete(f"/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
@@ -67,7 +75,7 @@ async def test_delete_task_success_and_cannot_delete_twice(
 
 @pytest.mark.asyncio
 async def test_delete_task_forbidden_when_protected(test_client, session):
-    """Test that deleting a protected task returns 403 Forbidden."""
+    """Assert deleting a protected task returns 403 Forbidden."""
     task_name = "protected-task"
     await TaskManager.create(
         session,
@@ -76,3 +84,352 @@ async def test_delete_task_forbidden_when_protected(test_client, session):
 
     resp = test_client.delete(f"/{task_name}")
     assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_create_task_success(test_client):
+    """Assert creating a valid task returns 201."""
+    task_data = TaskFactory.build(name="new-task")
+    payload = TaskWrite.model_validate(task_data).model_dump(mode="json")
+    response = test_client.post("/", json=payload)
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["name"] == "new-task"
+
+
+@pytest.mark.asyncio
+async def test_create_task_duplicate_name_conflict(test_client, created_task):
+    """Assert creating a task with a duplicate name returns a conflict error."""
+    payload = TaskWrite.model_validate(
+        TaskFactory.build(name=created_task.name)
+    ).model_dump(mode="json")
+    response = test_client.post("/", json=payload)
+    assert response.status_code == status.HTTP_409_CONFLICT
+
+
+@pytest.mark.asyncio
+async def test_update_task_success(test_client, created_task):
+    """Assert updating an existing task returns 201."""
+    updated_data = TaskWrite.model_validate(
+        TaskFactory.build(name=created_task.name)
+    ).model_dump(mode="json")
+    updated_data["owner"] = "BACKUPS"
+    response = test_client.put(f"/{created_task.name}", json=updated_data)
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["owner"] == "BACKUPS"
+
+
+@pytest.mark.asyncio
+async def test_update_task_not_found(test_client):
+    """Assert updating a non-existing task returns 404."""
+    payload = TaskWrite.model_validate(
+        TaskFactory.build(name="nonexistent")
+    ).model_dump(mode="json")
+    response = test_client.put("/nonexistent", json=payload)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_list_task_history(test_client, created_task_with_history):
+    """Assert listing task history returns history records."""
+    response = test_client.get("/history/")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == created_task_with_history.id
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_filter_by_status(
+    test_client, created_task_with_history
+):
+    """Assert filtering task history by status works."""
+    response = test_client.get("/history/", params={"status": "success"})
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.json()) == 1
+
+    response = test_client.get("/history/", params={"status": "failed"})
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_by_task_name(test_client, created_task_with_history):
+    """Assert retrieving task history by task name returns matching records."""
+    task_name = created_task_with_history.task.name
+    response = test_client.get(f"/{task_name}/history/")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == created_task_with_history.id
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_by_task_name_filter_by_status(
+    test_client, created_task_with_history
+):
+    """Assert filtering task history by task name and status works."""
+    task_name = created_task_with_history.task.name
+    response = test_client.get(f"/{task_name}/history/", params={"status": "running"})
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_by_id(test_client, created_task_with_history):
+    """Assert retrieving task history by ID returns the correct record."""
+    history_id = created_task_with_history.id
+    response = test_client.get(f"/history/{history_id}")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["id"] == history_id
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_by_id_not_found(test_client):
+    """Assert retrieving a non-existing task history returns 404."""
+    response = test_client.get("/history/99999")
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_pending_returns_409(
+    test_client, session, created_task_with_history
+):
+    """Assert streaming logs for a PENDING task history returns 409."""
+    created_task_with_history.status = TaskHistoryStatusEnum.PENDING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_409_CONFLICT
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_returns_logs(
+    test_client, created_task_with_history
+):
+    """Assert streaming logs for a finished task history returns log content."""
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_running_uses_executor(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert streaming logs for a RUNNING task delegates to executor."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    async def mock_stream():
+        return
+        yield
+
+    mock_executor.stream_logs = MagicMock(return_value=mock_stream())
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.asyncio
+async def test_list_files_not_finished_returns_409(
+    test_client, session, created_task_with_history
+):
+    """Assert listing files for a non-finished task returns 409."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/files/")
+    assert response.status_code == status.HTTP_409_CONFLICT
+
+
+@pytest.mark.asyncio
+async def test_list_files_no_output_path_returns_400(
+    test_client, session, created_task_with_history
+):
+    """Assert listing files when output_files_path is None returns 400."""
+    created_task_with_history.task.output_files_path = None
+    await TaskManager.save(session, created_task_with_history.task)
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/files/")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.asyncio
+async def test_list_files_success(
+    test_client, mock_executor, created_task_with_history
+):
+    """Assert listing files for a finished task with output path returns file metadata."""
+    mock_executor.list_files.return_value = {
+        "backup.sql": {"size": MOCK_FILE_SIZE, "is_dir": False}
+    }
+    response = test_client.get(f"/history/{created_task_with_history.id}/files/")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "backup.sql" in data
+    assert data["backup.sql"]["size"] == MOCK_FILE_SIZE
+
+
+@pytest.mark.asyncio
+async def test_stream_file_not_finished_returns_409(
+    test_client, session, created_task_with_history
+):
+    """Assert streaming a file for a non-finished task returns 409."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    response = test_client.get(
+        f"/history/{created_task_with_history.id}/file/",
+        params={"path": "backup.sql"},
+    )
+    assert response.status_code == status.HTTP_409_CONFLICT
+
+
+@pytest.mark.asyncio
+async def test_stream_file_no_output_path_returns_400(
+    test_client, session, created_task_with_history
+):
+    """Assert streaming a file when output_files_path is None returns 400."""
+    created_task_with_history.task.output_files_path = None
+    await TaskManager.save(session, created_task_with_history.task)
+
+    response = test_client.get(
+        f"/history/{created_task_with_history.id}/file/",
+        params={"path": "backup.sql"},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.asyncio
+async def test_stream_file_success(
+    test_client, mock_executor, created_task_with_history
+):
+    """Assert streaming a file for a finished task returns file content."""
+
+    async def mock_stream():
+        yield b"file content"
+
+    mock_executor.stream_file = MagicMock(return_value=mock_stream())
+    response = test_client.get(
+        f"/history/{created_task_with_history.id}/file/",
+        params={"path": "backup.sql"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.content == b"file content"
+
+
+@pytest.mark.asyncio
+async def test_stop_task_pending_with_celery_id(
+    test_client, session, created_task_with_history
+):
+    """Assert stopping a PENDING task with a celery_task_id revokes and deletes it."""
+    created_task_with_history.status = TaskHistoryStatusEnum.PENDING
+    created_task_with_history.execution_request.tracking["celery_task_id"] = (
+        "celery-123"
+    )
+    await TaskHistoryManager.save(
+        session,
+        created_task_with_history,
+        flag_modified_fields=["execution_request"],
+    )
+
+    with patch("app.tasks.routes.celery") as mock_celery:
+        response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+
+    assert response.status_code == status.HTTP_200_OK
+    mock_celery.control.revoke.assert_called_once_with("celery-123")
+
+
+@pytest.mark.asyncio
+async def test_stop_task_pending_without_celery_id(
+    test_client, session, created_task_with_history
+):
+    """Assert stopping a PENDING task without celery_task_id just deletes it."""
+    created_task_with_history.status = TaskHistoryStatusEnum.PENDING
+    created_task_with_history.execution_request.tracking.pop("celery_task_id", None)
+    await TaskHistoryManager.save(
+        session,
+        created_task_with_history,
+        flag_modified_fields=["execution_request"],
+    )
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+    assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.asyncio
+async def test_stop_task_running_calls_executor(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert stopping a RUNNING task calls executor.stop_task."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    mock_executor.stop_task.return_value = created_task_with_history
+    response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+    assert response.status_code == status.HTTP_200_OK
+    mock_executor.stop_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_stop_task_finished_returns_400(test_client, created_task_with_history):
+    """Assert stopping a finished task returns 400."""
+    response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.asyncio
+async def test_get_task_stats(test_client, created_task_with_history):
+    """Assert retrieving task stats returns computed statistics."""
+    task_name = created_task_with_history.task.name
+    response = test_client.get(f"/stats/{task_name}")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "total" in data
+    assert data["total"] == 1
+    assert "status" in data
+    assert "duration" in data
+
+
+@pytest.mark.asyncio
+async def test_get_task_stats_empty(test_client, created_task):
+    """Assert retrieving stats for a task with no history returns zero total."""
+    response = test_client.get(f"/stats/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_executor_hosts(test_client, mock_executor):
+    """Assert retrieving executor hosts returns the expected hosts dict."""
+    response = test_client.get("/hosts/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"node1": "10.0.0.1"}
+
+
+@pytest.mark.asyncio
+async def test_transform_payload_proxy_backend(test_client):
+    """Assert transforming a payload with PROXY backend calls parse_payload."""
+    with patch(
+        "app.tasks.routes.parse_payload", return_value={"key": "value"}
+    ) as mock_parse:
+        response = test_client.post(
+            "/transform/",
+            json={"payload": '{"key": "value"}', "fmt": "json"},
+            params={"backend": "proxy"},
+        )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"key": "value"}
+    mock_parse.assert_called_once_with('{"key": "value"}', "json")
+
+
+@pytest.mark.asyncio
+async def test_transform_payload_nomad_backend(test_client, mock_executor):
+    """Assert transforming a payload with NOMAD backend calls executor."""
+    with patch("app.tasks.routes.get_executor", return_value=mock_executor):
+        mock_executor.transform_payload.return_value = {"parsed": True}
+        response = test_client.post(
+            "/transform/",
+            json={"payload": '{"job": {}}', "fmt": "json"},
+            params={"backend": "nomad"},
+        )
+    assert response.status_code == status.HTTP_200_OK
