@@ -54,6 +54,7 @@ from app.core.utils.fields import (
     RelativeDirectoryPathField,
     URL,
 )
+from app.core.utils.lazy import LazyProxy
 
 DEFAULT_SNIPPETS_TASK = "exec-artifact"
 
@@ -465,4 +466,4 @@ class SnippetsSettings(BaseYamlSettings):
         return v
 
 
-snippets_settings = SnippetsSettings()
+snippets_settings: SnippetsSettings = LazyProxy(SnippetsSettings)

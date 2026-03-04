@@ -23,6 +23,7 @@ from pydantic import field_validator, ValidationError
 from app.core.alerts.models import AlertService, BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
 from app.core.config import BaseYamlSettings
+from app.core.utils.lazy import LazyProxy
 
 
 class AlertProviderEnum(Enum):
@@ -76,9 +77,21 @@ class AlertSettings(BaseYamlSettings):
         return providers
 
 
-alert_settings = AlertSettings()
-alert_service = AlertService(
-    providers=alert_settings.PROVIDERS,
-    source_prefix=alert_settings.SOURCE_PREFIX,
-    source_suffix=alert_settings.SOURCE_SUFFIX,
-)
+alert_settings: AlertSettings = LazyProxy(AlertSettings)
+
+_alert_service: AlertService | None = None
+
+
+def __getattr__(name: str) -> AlertService:
+    """Lazily create alert_service on first access from this module."""
+    global _alert_service  # noqa: PLW0603
+    if name == "alert_service":
+        if _alert_service is None:
+            _alert_service = AlertService(
+                providers=alert_settings.PROVIDERS,
+                source_prefix=alert_settings.SOURCE_PREFIX,
+                source_suffix=alert_settings.SOURCE_SUFFIX,
+            )
+        return _alert_service
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

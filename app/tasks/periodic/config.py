@@ -20,6 +20,7 @@ from typing import ClassVar
 
 from app.core.config import BaseYamlSettings
 from app.core.utils.fields import EnumFieldMixin
+from app.core.utils.lazy import LazyProxy
 
 
 class PeriodicTaskAction(EnumFieldMixin, StrEnum):
@@ -49,4 +50,4 @@ class PeriodicTasksSettings(BaseYamlSettings):
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS", "PERIODIC"]
 
 
-periodic_tasks_settings = PeriodicTasksSettings()
+periodic_tasks_settings: PeriodicTasksSettings = LazyProxy(PeriodicTasksSettings)
