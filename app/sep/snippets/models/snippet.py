@@ -918,8 +918,6 @@ class SnippetExecutionMeta(BaseModel):
     :type interpreter: NonEmptyStr
     :param snippet_source: The URL to the snippet source file.
     :type snippet_source: StrAnyUrl
-    :param access_token: The access token for authentication when fetching the snippet.
-    :type access_token: NonEmptyStr
     :param md5_checksum: The MD5 checksum of the snippet file to verify integrity.
     :type md5_checksum: str
     :param snippet_filename: The filename of the snippet.
@@ -935,7 +933,6 @@ class SnippetExecutionMeta(BaseModel):
     target: NonEmptyStr
     interpreter: NonEmptyStr
     snippet_source: StrAnyUrl
-    access_token: NonEmptyStr
     snippet_filename: NonEmptyStr = Field(..., serialization_alias="_snippet_filename")
     md5_checksum: str = Field(min_length=32, max_length=32)
     args: NonEmptyStr | EmptyStrToNone = None

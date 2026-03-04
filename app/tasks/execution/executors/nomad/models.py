@@ -631,6 +631,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return queue_item
 
         task_states = alloc["TaskStates"]
+
+        try:
+            job = self.get_job(job_id)
+        except JobNotFoundError:
+            queue_item.status = TaskHistoryStatusEnum.LOST
+        else:
+            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
+                last_modified_timestamp = alloc.get("ModifyTime")
+                if last_modified_timestamp:
+                    queue_item.finished_at = self.timestamp_to_datetime(
+                        last_modified_timestamp
+                    )
+                else:
+                    queue_item.finished_at = utc_now()
+
+                queue_item.status = self.get_task_history_status_from_alloc_status(
+                    alloc["ClientStatus"],
+                    queue_item.status,
+                    stopped=job.get("Stop", False),
+                )
+
         task_logs = self.get_logs_for_allocation(
             alloc,
             queue_item.task_logs,
@@ -659,26 +680,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
             ).decode(),
         )
-
-        try:
-            job = self.get_job(job_id)
-        except JobNotFoundError:
-            queue_item.status = TaskHistoryStatusEnum.LOST
-        else:
-            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
-                last_modified_timestamp = alloc.get("ModifyTime")
-                if last_modified_timestamp:
-                    queue_item.finished_at = self.timestamp_to_datetime(
-                        last_modified_timestamp
-                    )
-                else:
-                    queue_item.finished_at = utc_now()
-
-                queue_item.status = self.get_task_history_status_from_alloc_status(
-                    alloc["ClientStatus"],
-                    queue_item.status,
-                    stopped=job.get("Stop", False),
-                )
         return queue_item
 
     def task_needs_job_register(self, task: Task) -> bool:

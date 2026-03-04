@@ -26,9 +26,11 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPRedirectException,
 )
+from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
-from app.sep.deps import CurrentUser, get_base_url, SessionDep
+from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
+from app.sep.routes.artifacts import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -199,18 +201,25 @@ ExecutableSnippet = Annotated[Snippet, Depends(get_executable_snippet)]
 
 
 def get_snippet_source(request: Request, snippet: SnippetDep) -> str:
-    """Return the full URL to access the source code of a snippet.
+    """Return a signed URL for Nomad to download the snippet artifact.
 
     :param request: The HTTP request object.
     :type request: Request
-    :param snippet: The snippet to get the source URL for.
+    :param snippet: The snippet to generate the signed download URL for.
     :type snippet: Snippet
-    :return: The full URL to access the snippet source code.
+    :return: The signed URL to download the snippet artifact.
     :rtype: str
     """
-    snippet_path = request.url_for("snippets_files", path=snippet.filename).path
+    token = crypto_timestamp_serializer.dumps(
+        {
+            "type": ARTIFACT_TYPE_SNIPPET,
+            "filename": snippet.filename,
+            "md5": snippet.md5_digest,
+        },
+        salt=ARTIFACT_DOWNLOAD_SALT,
+    )
     base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)
-    return str(base_url.replace(path=snippet_path))
+    return str(base_url.replace(path=f"/artifacts/download/{token}"))
 
 
 async def get_validated_execution_args(
@@ -250,18 +259,15 @@ async def get_validated_execution_args(
 
 
 def get_snippet_execution_request_meta(
-    user: CurrentUser,
     snippet: ExecutableSnippet,
     snippet_source: Annotated[str, Depends(get_snippet_source)],
     execution_args: Annotated[BaseSnippetArgs, Depends(get_validated_execution_args)],
 ) -> SnippetExecutionMeta:
     """Prepare and return the execution metadata for a snippet execution request.
 
-    :param user: The current authenticated user.
-    :type user: CurrentUser
     :param snippet: The executable snippet.
     :type snippet: Snippet
-    :param snippet_source: The full URL to access the snippet source code.
+    :param snippet_source: The signed URL to download the snippet artifact.
     :type snippet_source: str
     :param execution_args: The execution arguments for the snippet.
     :type execution_args: BaseSnippetArgs
@@ -277,7 +283,6 @@ def get_snippet_execution_request_meta(
         target=execution_args.executor_host,
         interpreter=interpreter,
         snippet_source=snippet_source,
-        access_token=user.access_token,
         snippet_filename=snippet.filename,
         md5_checksum=snippet.md5_digest,
         args=execution_args.to_args_string(),

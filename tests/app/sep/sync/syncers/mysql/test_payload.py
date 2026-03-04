@@ -24,6 +24,7 @@ import pytest
 pytestmark = pytest.mark.syncmysql
 
 try:
+    import pymysql
     from pymysql.cursors import DictCursor
 
     from app.sep.sync.syncers.mysql.payload import (
@@ -32,6 +33,7 @@ try:
         get_table,
         iter_schemas,
         iter_tables,
+        main,
         parse_host_port,
     )
 except ImportError as exc:
@@ -182,3 +184,279 @@ class TestAtomicWriteGzipJson:
 
         b1, b2 = out1.read_bytes(), out2.read_bytes()
         assert b1 == b2
+
+
+class TestMain:
+    """Test the main CLI entry point."""
+
+    MODULE = "app.sep.sync.syncers.mysql.payload"
+
+    def _write_config(self, tmp_path, config):
+        """Write a JSON config file and return its path.
+
+        :param tmp_path: Temporary directory provided by pytest.
+        :type tmp_path: Path
+        :param config: Configuration dictionary to serialize.
+        :type config: dict
+        :return: Path to the written config file.
+        :rtype: Path
+        """
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps(config))
+        return config_path
+
+    def _make_mock_connection(self, mock_connect):
+        """Set up pymysql.connect mock to return a cursor via context managers.
+
+        :param mock_connect: The patched pymysql.connect mock.
+        :type mock_connect: MagicMock
+        :return: The mock cursor instance.
+        :rtype: MagicMock
+        """
+        mock_cursor = MagicMock(spec=DictCursor)
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_connect.return_value = mock_conn
+        return mock_cursor
+
+    @patch(f"{MODULE}.socket")
+    @patch(f"{MODULE}.myloginpath")
+    @patch(f"{MODULE}.pymysql")
+    @patch(f"{MODULE}.atomic_write_gzip_json")
+    @patch(f"{MODULE}.iter_schemas")
+    def test_main_multi_host(
+        self,
+        mock_iter_schemas,
+        mock_write,
+        mock_pymysql,
+        mock_myloginpath,
+        mock_socket,
+        tmp_path,
+        capsys,
+        monkeypatch,
+    ):
+        """Assert main processes multiple hosts and writes JSON output."""
+        config_path = self._write_config(
+            tmp_path, {"hosts": ["host1:3306", "host2:3307"]}
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+        monkeypatch.chdir(tmp_path)
+
+        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_socket.gethostbyname.return_value = "10.0.0.1"
+        mock_socket.gethostname.return_value = "testhost"
+        self._make_mock_connection(mock_pymysql.connect)
+        mock_iter_schemas.return_value = iter([{"name": "testdb"}])
+        mock_write.return_value = {"lines": 1, "bytes": 100}
+
+        main()
+
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        expected_connect_calls = 2
+        assert "services" in output
+        assert mock_pymysql.connect.call_count == expected_connect_calls
+
+    @patch(f"{MODULE}.socket")
+    @patch(f"{MODULE}.myloginpath")
+    @patch(f"{MODULE}.pymysql")
+    @patch(f"{MODULE}.get_table")
+    def test_main_schema_and_table(
+        self,
+        mock_get_table,
+        mock_pymysql,
+        mock_myloginpath,
+        mock_socket,
+        tmp_path,
+        capsys,
+        monkeypatch,
+    ):
+        """Assert main fetches a single table when schema and table are specified."""
+        config_path = self._write_config(
+            tmp_path, {"hosts": ["host1:3306"], "schema": "mydb", "table": "mytable"}
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+
+        mock_myloginpath.parse.return_value = {"user": "root", "password": "pass"}
+        mock_socket.gethostbyname.return_value = "10.0.0.1"
+        mock_socket.gethostname.return_value = "testhost"
+        mock_cursor = self._make_mock_connection(mock_pymysql.connect)
+        mock_get_table.return_value = {
+            "name": "mytable",
+            "create": "CREATE TABLE ...",
+            "keys": {},
+        }
+
+        main()
+
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        assert "tables" in output
+        assert "host1:3306/mydb.mytable" in output["tables"]
+        mock_get_table.assert_called_once_with(mock_cursor, "mydb", "mytable")
+
+    @patch(f"{MODULE}.socket")
+    @patch(f"{MODULE}.myloginpath")
+    @patch(f"{MODULE}.pymysql")
+    @patch(f"{MODULE}.atomic_write_gzip_json")
+    @patch(f"{MODULE}.iter_tables")
+    def test_main_schema_only(
+        self,
+        mock_iter_tables,
+        mock_write,
+        mock_pymysql,
+        mock_myloginpath,
+        mock_socket,
+        tmp_path,
+        capsys,
+        monkeypatch,
+    ):
+        """Assert main fetches schema tables when only schema is specified."""
+        config_path = self._write_config(
+            tmp_path, {"hosts": ["host1:3306"], "schema": "mydb"}
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+        monkeypatch.chdir(tmp_path)
+
+        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_socket.gethostbyname.return_value = "10.0.0.1"
+        mock_socket.gethostname.return_value = "testhost"
+        self._make_mock_connection(mock_pymysql.connect)
+        expected_tables_count = 3
+        mock_write.return_value = {"lines": expected_tables_count, "bytes": 200}
+
+        main()
+
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        assert "schemas" in output
+        assert "host1:3306/mydb" in output["schemas"]
+        assert (
+            output["schemas"]["host1:3306/mydb"]["tables_count"]
+            == expected_tables_count
+        )
+
+    def test_main_table_without_schema_exits(self, tmp_path, monkeypatch):
+        """Assert main exits with error when table is specified without schema."""
+        config_path = self._write_config(
+            tmp_path, {"hosts": ["host1:3306"], "table": "mytable"}
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == "schema must be passed along with table"
+
+    def test_main_schema_with_multiple_hosts_exits(self, tmp_path, monkeypatch):
+        """Assert main exits with error when schema has multiple hosts."""
+        config_path = self._write_config(
+            tmp_path, {"hosts": ["host1:3306", "host2:3306"], "schema": "mydb"}
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == "Only one host allowed if schema is specified"
+
+    @patch(f"{MODULE}.socket")
+    @patch(f"{MODULE}.myloginpath")
+    @patch(f"{MODULE}.pymysql")
+    def test_main_connection_error_with_schema_exits(
+        self, mock_pymysql, mock_myloginpath, mock_socket, tmp_path, capsys, monkeypatch
+    ):
+        """Assert main exits with code 2 when connection fails in schema mode."""
+        config_path = self._write_config(
+            tmp_path, {"hosts": ["host1:3306"], "schema": "mydb"}
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+
+        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_socket.gethostbyname.return_value = "10.0.0.1"
+        mock_socket.gethostname.return_value = "testhost"
+        mock_pymysql.connect.side_effect = pymysql.MySQLError("Connection refused")
+        mock_pymysql.MySQLError = pymysql.MySQLError
+
+        exit_code = 2
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == exit_code
+        captured = capsys.readouterr()
+        assert "Error connecting to" in captured.err
+
+    @patch(f"{MODULE}.socket")
+    @patch(f"{MODULE}.myloginpath")
+    @patch(f"{MODULE}.pymysql")
+    def test_main_connection_error_multi_host_continues(
+        self, mock_pymysql, mock_myloginpath, mock_socket, tmp_path, capsys, monkeypatch
+    ):
+        """Assert main continues processing when a host fails in multi-host mode."""
+        config_path = self._write_config(tmp_path, {"hosts": ["host1:3306"]})
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+
+        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_socket.gethostbyname.return_value = "10.0.0.1"
+        mock_socket.gethostname.return_value = "testhost"
+        mock_pymysql.connect.side_effect = pymysql.MySQLError("Connection refused")
+        mock_pymysql.MySQLError = pymysql.MySQLError
+
+        main()
+
+        captured = capsys.readouterr()
+        assert "Error connecting to" in captured.err
+        output = json.loads(captured.out)
+        assert output == {}
+
+    @patch(f"{MODULE}.socket")
+    @patch(f"{MODULE}.myloginpath")
+    @patch(f"{MODULE}.pymysql")
+    @patch(f"{MODULE}.get_table")
+    def test_main_resolve_localhost(
+        self,
+        mock_get_table,
+        mock_pymysql,
+        mock_myloginpath,
+        mock_socket,
+        tmp_path,
+        capsys,
+        monkeypatch,
+    ):
+        """Assert main resolves local IP to 127.0.0.1 when resolve_localhost is set."""
+        local_ip = "192.168.1.100"
+        config_path = self._write_config(
+            tmp_path,
+            {
+                "hosts": [f"{local_ip}:3306"],
+                "schema": "mydb",
+                "table": "mytable",
+                "resolve_localhost": True,
+            },
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
+
+        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_socket.gethostbyname.return_value = local_ip
+        mock_socket.gethostname.return_value = "testhost"
+        self._make_mock_connection(mock_pymysql.connect)
+        mock_get_table.return_value = {
+            "name": "mytable",
+            "create": "CREATE TABLE ...",
+            "keys": {},
+        }
+
+        main()
+
+        expected_port = 3306
+        mock_pymysql.connect.assert_called_once_with(
+            host="127.0.0.1",
+            port=expected_port,
+            user=None,
+            password=None,
+            read_default_file="~/.my.cnf",
+        )

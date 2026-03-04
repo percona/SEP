@@ -145,6 +145,11 @@ if {
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
 
+if {"snippets", "dipper"} & imported_plugins:
+    from app.sep.routes.artifacts import router as artifacts_router
+
+    sep_app.include_router(artifacts_router, prefix="/artifacts")
+
 if "snippets" in imported_plugins:
     sep_app.mount(
         "/static/snippets",

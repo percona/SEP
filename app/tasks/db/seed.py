@@ -196,7 +196,6 @@ NOMAD_EXEC_ARTIFACT = {
             "target",
             "snippet_source",
             "interpreter",
-            "access_token",
             "md5_checksum",
         ],
         "MetaOptional": ["args"],
@@ -238,9 +237,6 @@ NOMAD_EXEC_ARTIFACT = {
                             "GetterSource": "${NOMAD_META_snippet_source}",
                             "GetterMode": "file",
                             "RelativeDest": "local/script",
-                            "GetterHeaders": {
-                                "Authorization": "Bearer ${NOMAD_META_access_token}"
-                            },
                             "GetterOptions": {
                                 "checksum": "md5:${NOMAD_META_md5_checksum}",
                             },
@@ -271,7 +267,6 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "target",
             "snippet_source",
             "interpreter",
-            "access_token",
             "md5_checksum",
         ],
         "MetaOptional": ["args", "requirements"],
@@ -338,9 +333,6 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                             "GetterSource": "${NOMAD_META_snippet_source}",
                             "GetterMode": "file",
                             "RelativeDest": "local/script",
-                            "GetterHeaders": {
-                                "Authorization": "Bearer ${NOMAD_META_access_token}"
-                            },
                             "GetterOptions": {
                                 "checksum": "md5:${NOMAD_META_md5_checksum}",
                             },

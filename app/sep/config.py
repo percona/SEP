@@ -34,6 +34,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    PositiveInt,
     SecretStr,
     ValidationError,
 )
@@ -305,6 +306,9 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
+        tokens. Defaults to 600.
+    :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -325,6 +329,7 @@ class SEPSettings(BaseYamlAppSettings):
         deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
     )
     PMM: PMMSettings = PMMSettings()
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field
