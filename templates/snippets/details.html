@@ -68,7 +68,7 @@
                 <span>Approved at {{ snippet.approved_at|utc_isoformat }}</span> <i class="material-symbols-outlined unselectable" style="color: #8ACE00">check_circle</i>
             </dd>
         {%- else -%}
-            {%- set download_before_approval = snippet_preview.is_truncated or not snippet_preview.content -%}
+            {%- set download_before_approval = snippet_preview.is_truncated or not (snippet_preview.content or snippet_preview.preamble or snippet_preview.frontmatter) -%}
             <dd class="iconTextLine">
                 <span>Not approved</span> <i class="material-symbols-outlined unselectable" style="color: gray;">unpublished</i>
             </dd>

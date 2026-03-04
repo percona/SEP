@@ -28,7 +28,7 @@ from io import SEEK_END
 from os import PathLike
 from pathlib import Path
 from string import Template
-from typing import Annotated, Any, ClassVar, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, NamedTuple, Self, TYPE_CHECKING
 
 import aiofiles
 import yaml
@@ -70,6 +70,9 @@ from app.sep.snippets.config import (
     snippets_settings,
     SnippetSudoOption,
 )
+
+if TYPE_CHECKING:
+    from aiofiles.threadpool.text import AsyncTextIOWrapper
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     FieldsetElement,
@@ -160,7 +163,7 @@ class FilePreview(NamedTuple):
         """
         if not self.preamble:
             return 0
-        return self.preamble.count("\n") or 1
+        return len(self.preamble.splitlines())
 
     @property
     def frontmatter_line_count(self) -> int:
@@ -171,7 +174,7 @@ class FilePreview(NamedTuple):
         """
         if not self.frontmatter:
             return 0
-        return self.frontmatter.count("\n") or 1
+        return len(self.frontmatter.splitlines())
 
     @property
     def code_linenostart(self) -> int:
@@ -210,15 +213,19 @@ class FilePreview(NamedTuple):
 
     @staticmethod
     async def _parse_frontmatter(
-        f: aiofiles.threadpool.text.AsyncTextIOWrapper,
+        f: "AsyncTextIOWrapper",
+        max_scan_lines: int,
     ) -> tuple[list[str], list[str]]:
         """Read lines from an open file and separate preamble from frontmatter.
 
         Stop when the closing `# ---` delimiter is found, when a non-comment
-        line is encountered before any delimiter, or at EOF.
+        line is encountered before any delimiter, at EOF, or after scanning
+        `max_scan_lines` lines without finding a closing delimiter.
 
         :param f: An open async text file handle positioned at the start.
-        :type f: aiofiles.threadpool.text.AsyncTextIOWrapper
+        :type f: AsyncTextIOWrapper
+        :param max_scan_lines: Safety bound on lines to scan for frontmatter.
+        :type max_scan_lines: int
         :return: A `(preamble_lines, frontmatter_lines)` pair.
         :rtype: tuple[list[str], list[str]]
         """
@@ -226,11 +233,13 @@ class FilePreview(NamedTuple):
         preamble_lines = []
         frontmatter_lines = []
         in_frontmatter = False
+        lines_scanned = 0
 
-        while True:
+        while lines_scanned < max_scan_lines:
             line = await f.readline()
             if not line:
                 break
+            lines_scanned += 1
             if meta.STOP_SEARCH_PATTERN.match(line) and not in_frontmatter:
                 preamble_lines.append(line)
                 break
@@ -249,6 +258,10 @@ class FilePreview(NamedTuple):
             else:
                 preamble_lines.append(line)
 
+        if in_frontmatter and lines_scanned >= max_scan_lines:
+            preamble_lines = preamble_lines + frontmatter_lines
+            frontmatter_lines = []
+
         return preamble_lines, frontmatter_lines
 
     @classmethod
@@ -258,7 +271,7 @@ class FilePreview(NamedTuple):
     ) -> Self:
         logger.debug("Generating preview for file: %s", path)
         async with aiofiles.open(path) as f:
-            preamble_raw, frontmatter_raw = await cls._parse_frontmatter(f)
+            preamble_raw, frontmatter_raw = await cls._parse_frontmatter(f, max_lines)
 
             if frontmatter_raw:
                 preamble_str = "".join(preamble_raw)
