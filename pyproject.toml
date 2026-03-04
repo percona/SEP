@@ -313,4 +313,5 @@ commands = [["make", "test"]]
 
 [tool.djlint]
 profile = "jinja"
+extension = "html.j2"
 ignore = "H021"
