@@ -21,6 +21,7 @@ from typing import ClassVar
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
+from app.core.utils.lazy import LazyProxy
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
@@ -56,4 +57,4 @@ class TasksSettings(BaseYamlAppSettings):
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
 
 
-tasks_settings = TasksSettings()
+tasks_settings: TasksSettings = LazyProxy(TasksSettings)
