@@ -25,7 +25,6 @@ from fastapi import FastAPI, HTTPException, Request, status
 from nomad.api.exceptions import BaseNomadException
 
 from app.core.config import create_app, default_lifespan, settings
-from app.core.exceptions import HTTPGoneException
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import init_tasks_db
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
@@ -93,7 +92,7 @@ def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str
         detail["resource_id"] = exc.resource_id
     if exc.executor_name is not None:
         detail["executor"] = exc.executor_name
-    if exc.args:
+    if str(exc):
         detail["detail"] = str(exc)
     return detail
 
@@ -105,7 +104,9 @@ async def task_data_not_found_handler(
 ) -> None:
     """Handle exceptions raised when task data is not found in the executor."""
     logger.debug("Task data not found in executor: %s", exc)
-    raise HTTPGoneException(detail=task_data_not_found_detail(exc))
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE, detail=task_data_not_found_detail(exc)
+    )
 
 
 @tasks_app.exception_handler(BaseNomadException)

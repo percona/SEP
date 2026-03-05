@@ -338,7 +338,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return self.backend.job.get_job(job_id)
         except URLNotFoundNomadException as exc:
             raise JobNotFoundError(
-                exc.nomad_resp,
+                str(exc.nomad_resp),
                 executor_name="nomad",
                 resource_type="job",
                 resource_id=job_id,

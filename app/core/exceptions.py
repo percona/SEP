@@ -15,8 +15,6 @@
 
 """Define reusable exceptions."""
 
-from typing import Any
-
 from fastapi import HTTPException, status
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -74,12 +72,12 @@ class HTTPUnprocessableEntityException(HTTPException):
 class HTTPGoneException(HTTPException):
     """Define exception raised for resource gone (HTTP 410).
 
-    :param detail: A message or structured dict with additional details.
+    :param detail: A message providing additional details about the exception.
         Defaults to "Gone".
-    :type detail: str | dict[str, Any]
+    :type detail: str
     """
 
-    def __init__(self, detail: str | dict[str, Any] = "Gone") -> None:
+    def __init__(self, detail: str = "Gone") -> None:
         super().__init__(status_code=status.HTTP_410_GONE, detail=detail)
 
 
