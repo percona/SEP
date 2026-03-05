@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -36,9 +36,11 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    ValidationError,
 )
 from sqlalchemy import Column, Index, JSON
 from sqlalchemy import Enum as EnumField
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
@@ -241,6 +243,55 @@ class TaskExecutionRequest(BaseModel):
                 with payload_path.open() as payload_file:
                     return payload_file.read()
         return self.payload
+
+
+class TaskExecutionRequestJSON(TypeDecorator):
+    """Define JSON column type that deserializes values into `TaskExecutionRequest`.
+
+    Use this on columns that should store and return `TaskExecutionRequest` objects
+    instead of plain dicts. Other JSON columns are unaffected.
+
+    :cvar impl: The underlying SQLAlchemy column type.
+    :vartype impl: type[JSON]
+    :cvar cache_ok: Whether this type is safe to cache.
+    :vartype cache_ok: bool
+    """
+
+    impl = JSON
+    cache_ok = True
+
+    def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
+        """Deserialize a JSON value into a `TaskExecutionRequest`.
+
+        :param value: The raw value from the database.
+        :type value: Any
+        :param dialect: The SQLAlchemy dialect in use.
+        :type dialect: Any
+        :return: A `TaskExecutionRequest` if valid, otherwise the raw value.
+        :rtype: Any
+        """
+        if value is None:
+            return value
+        try:
+            return TaskExecutionRequest(**value)
+        except (ValidationError, TypeError):
+            return value
+
+    def process_bind_param(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
+        """Serialize a `TaskExecutionRequest` into a dict for storage.
+
+        :param value: The value to store in the database.
+        :type value: Any
+        :param dialect: The SQLAlchemy dialect in use.
+        :type dialect: Any
+        :return: A dict representation suitable for JSON storage.
+        :rtype: Any
+        """
+        if value is None:
+            return value
+        if isinstance(value, TaskExecutionRequest):
+            return value.model_dump(mode="json")
+        return value
 
 
 class TaskBase(SQLModel):
@@ -488,7 +539,7 @@ class TaskHistoryBase(SQLModel):
     """
 
     execution_request: TaskExecutionRequest = SQLField(
-        sa_column=Column(JSON, nullable=False),
+        sa_column=Column(TaskExecutionRequestJSON, nullable=False),
     )
     status: TaskHistoryStatusEnum = SQLField(
         default=TaskHistoryStatusEnum.PENDING,

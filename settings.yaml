@@ -31,6 +31,7 @@ default:
     ARTIFACT_DOWNLOAD_TTL: 600
     TEMPLATES_DIR: templates
     STATIC_DIR: static
+    ALERT_DEFINITIONS_DIR: null
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:
