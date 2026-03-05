@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator, validate_cal
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import utc_now
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,9 @@ class Alert(BaseModel):
     Extra fields can be added as needed.
 
     :param summary: A brief summary of the alert.
-    :type summary: RequiredStr
+    :type summary: NonEmptyStr
     :param source: The source of the alert, such as the task that generated it.
-    :type source: RequiredStr
+    :type source: NonEmptyStr
     :param severity: The severity level of the alert, indicating its importance or
         urgency.
     :type severity: AlertSeverity
@@ -58,8 +58,8 @@ class Alert(BaseModel):
     """
 
     model_config = ConfigDict(extra="allow")
-    summary: RequiredStr
-    source: RequiredStr
+    summary: NonEmptyStr
+    source: NonEmptyStr
     severity: AlertSeverity
     timestamp: datetime = Field(default_factory=utc_now)
 

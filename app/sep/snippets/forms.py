@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -52,7 +52,7 @@ from pydantic import (
 )
 
 from app.core.utils import ttl_cache
-from app.core.utils.fields import EnumFieldMixin, LenientStr, RequiredStr
+from app.core.utils.fields import EnumFieldMixin, LenientStr, NonEmptyStr
 
 HTMLClassName = Annotated[str, Field(pattern=r"^-?[_a-zA-Z]+[_a-zA-Z0-9-]*$")]
 ICON_CLASS = "material-symbols-outlined"
@@ -123,16 +123,16 @@ class FormFieldMixin(BaseModel):
     and selects.
 
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False.
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     """
 
-    name: RequiredStr
+    name: NonEmptyStr
     required: bool = False
-    label: RequiredStr | None = Field(None, exclude=True)
+    label: NonEmptyStr | None = Field(None, exclude=True)
 
     @model_validator(mode="after")
     def set_label_by_name(self) -> Self:
@@ -167,19 +167,19 @@ class TypeableFieldMixin(FormFieldMixin):
     """Define mixin for form fields that can have a placeholder attribute.
 
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
-    :type: placeholder: RequiredStr | None
+    :type: placeholder: NonEmptyStr | None
     :param: value: The default value of the form field, if any. Defaults to None.
     :type: value: str | None
     """
 
-    placeholder: RequiredStr | None = None
+    placeholder: NonEmptyStr | None = None
     value: LenientStr | None = Field(None, validation_alias="default")
 
 
@@ -187,14 +187,14 @@ class TextFieldMixin(TypeableFieldMixin):
     """Define mixin for text form fields with length validation.
 
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
-    :type: placeholder: RequiredStr | None
+    :type: placeholder: NonEmptyStr | None
     :param: value: The default value of the form field, if any. Defaults to None.
     :type: value: str | None
     :param: maxlength: The maximum length of the text input. If None, no maximum
@@ -224,11 +224,11 @@ class SetChildrenByLabelMixin(CreateFromStrMixin, BaseModel):
         assigned (`("label",)`).
     :vartype: POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]]
     :param: label: The label text to be used for the child TextContent element.
-    :type: label: RequiredStr
+    :type: label: NonEmptyStr
     """
 
     POPULATE_FIELDS_FROM_STR: ClassVar[tuple[str, ...]] = ("label",)
-    label: RequiredStr = Field(exclude=True)
+    label: NonEmptyStr = Field(exclude=True)
 
     @model_validator(mode="after")
     def _set_children_by_label(self) -> Self:
@@ -268,15 +268,15 @@ class BaseHTMLElement(BaseHTMLEntity, ABC):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     """
 
     TAG_NAME: ClassVar[str]
     classes: set[HTMLClassName] = Field(default_factory=set, exclude=True)
-    id: RequiredStr | None = Field(None, pattern=r"^\S+$")
-    title: RequiredStr | None = Field(None, validation_alias="description")
+    id: NonEmptyStr | None = Field(None, pattern=r"^\S+$")
+    title: NonEmptyStr | None = Field(None, validation_alias="description")
 
     @computed_field(alias="class")
     @property
@@ -369,9 +369,9 @@ class VoidHTMLElement(BaseHTMLElement, ABC):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     """
 
     def to_html(self) -> str:
@@ -394,9 +394,9 @@ class HTMLElement(BaseHTMLElement, ABC):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     """
@@ -480,19 +480,19 @@ class FieldsetElement(HTMLElement):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: legend: The text for the legend of the fieldset, if any. Defaults to None.
-    :type: legend: RequiredStr | None
+    :type: legend: NonEmptyStr | None
     :param: disabled: Whether the fieldset is disabled. Defaults to False.
     :type: disabled: bool
     """
 
     TAG_NAME: ClassVar[str] = "fieldset"
-    legend: RequiredStr | None = Field(None, exclude=True)
+    legend: NonEmptyStr | None = Field(None, exclude=True)
     disabled: bool = False
 
     @property
@@ -517,13 +517,13 @@ class SpanElement(SetChildrenByLabelMixin, HTMLElement):
     :cvar: TAG_NAME: The name of the HTML tag ('span').
     :vartype: TAG_NAME: ClassVar[str]
     :param: label: The label text to be used for the child TextContent element.
-    :type: label: RequiredStr
+    :type: label: NonEmptyStr
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     """
@@ -537,14 +537,14 @@ class TextareaElement(TextFieldMixin, HTMLElement):
     :cvar: TAG_NAME: The name of the HTML tag ('textarea').
     :vartype: TAG_NAME: ClassVar[str]
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
-    :type: placeholder: RequiredStr | None
+    :type: placeholder: NonEmptyStr | None
     :param: value: The default value of the form field, if any. Defaults to None.
     :type: value: str | None
     :param: maxlength: The maximum length of the text input. If None, no maximum
@@ -556,9 +556,9 @@ class TextareaElement(TextFieldMixin, HTMLElement):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: rows: The number of rows in the textarea. If None, no specific
@@ -583,13 +583,13 @@ class OptionElement(SetChildrenByLabelMixin, HTMLElement):
     :cvar: TAG_NAME: The name of the HTML tag ('option').
     :vartype: TAG_NAME: ClassVar[str]
     :param: label: The label text to be used for the child TextContent element.
-    :type: label: RequiredStr
+    :type: label: NonEmptyStr
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: value: The value of the option element, which is submitted with the form.
@@ -627,17 +627,17 @@ class SelectElement(FormFieldMixin, HTMLElement):
     :cvar: TAG_NAME: The name of the HTML tag ('select').
     :vartype: TAG_NAME: ClassVar[str]
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False.
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child options contained within this element.
     :type: children: list[OptionElement]
     :param: default: The default selected option value. If None (default), no option is
@@ -688,17 +688,17 @@ class BaseInputElement(FormFieldMixin, VoidHTMLElement, ABC):
     :cvar: TAG_NAME: The name of the HTML tag ('input').
     :vartype: TAG_NAME: ClassVar[str]
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False.
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     """
 
     TAG_NAME: ClassVar[str] = "input"
@@ -723,14 +723,14 @@ class TextInputElement(TextFieldMixin, BaseInputElement):
     :cvar: TAG_NAME: The name of the HTML tag ('input').
     :vartype: TAG_NAME: ClassVar[str]
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
-    :type: placeholder: RequiredStr | None
+    :type: placeholder: NonEmptyStr | None
     :param: value: The default value of the form field, if any. Defaults to None.
     :type: value: str | None
     :param: maxlength: The maximum length of the text input. If None, no maximum
@@ -742,15 +742,15 @@ class TextInputElement(TextFieldMixin, BaseInputElement):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: pattern: A regex pattern that the input value must match. If None, no
         pattern is enforced. Defaults to None.
-    :type: pattern: RequiredStr | None
+    :type: pattern: NonEmptyStr | None
     """
 
-    pattern: RequiredStr | None = None
+    pattern: NonEmptyStr | None = None
 
     @computed_field
     @property
@@ -769,22 +769,22 @@ class NumberInputElement(TypeableFieldMixin, BaseInputElement):
     :cvar: TAG_NAME: The name of the HTML tag ('input').
     :vartype: TAG_NAME: ClassVar[str]
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: placeholder: The placeholder text for the form field, if any. Defaults to
         None.
-    :type: placeholder: RequiredStr | None
+    :type: placeholder: NonEmptyStr | None
     :param: value: The default value of the form field, if any. Defaults to None.
     :type: value: str | None
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: max: The maximum value allowed for the number input. If None, no maximum
         is enforced. Defaults to None.
     :type: max: float | None
@@ -840,17 +840,17 @@ class CheckboxInputElement(BaseInputElement):
     :cvar: TAG_NAME: The name of the HTML tag ('input').
     :vartype: TAG_NAME: ClassVar[str]
     :param: name: The name attribute of the form field.
-    :type: name: RequiredStr
+    :type: name: NonEmptyStr
     :param: required: Whether the field is required. Defaults to False.
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
-    :type: label: RequiredStr | None
+    :type: label: NonEmptyStr | None
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: checked: Whether the checkbox is checked by default. Defaults to False.
     :type: checked: bool
     """
@@ -907,23 +907,23 @@ class SubmitButtonElement(HTMLElement):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: label: The label text for the button.
-    :type: label: RequiredStr
+    :type: label: NonEmptyStr
     :param: icon: The name of the icon to display on the button, if any. Defaults to
         None.
-    :type: icon: RequiredStr | None
+    :type: icon: NonEmptyStr | None
     :param: disabled: Whether the button is disabled. Defaults to False.
     :type: disabled: bool
     """
 
     TAG_NAME: ClassVar[str] = "button"
-    label: RequiredStr = Field(exclude=True, validation_alias="text")
-    icon: RequiredStr | None = Field(None, exclude=True)
+    label: NonEmptyStr = Field(exclude=True, validation_alias="text")
+    icon: NonEmptyStr | None = Field(None, exclude=True)
     disabled: bool = False
 
     @model_validator(mode="before")
@@ -977,9 +977,9 @@ class FormElement(HTMLElement):
     :param: classes: A set of CSS class names associated with the element.
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
-    :type: id: RequiredStr | None
+    :type: id: NonEmptyStr | None
     :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: RequiredStr | None
+    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: action: The URL to which the form data will be submitted. Defaults to an
