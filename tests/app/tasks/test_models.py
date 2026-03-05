@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define test cases for the tasks data models and validation."""
 
 import base64
@@ -10,8 +25,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
-from app.core.alerts.config import alert_service
-from app.core.alerts.models import AlertSeverity
+from app.core.alerts.models import AlertService, AlertSeverity
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     _encode_anonymize_mask,
@@ -499,7 +513,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mock_trigger = AsyncMock()
-        with patch.object(type(alert_service), "trigger", mock_trigger):
+        with patch.object(AlertService, "trigger", mock_trigger):
             await history.alert_for_status()
             mock_trigger.assert_called_once()
             alert_data = mock_trigger.call_args[0][0]
@@ -520,7 +534,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.LOST,
         )
         mock_trigger = AsyncMock()
-        with patch.object(type(alert_service), "trigger", mock_trigger):
+        with patch.object(AlertService, "trigger", mock_trigger):
             await history.alert_for_status()
             mock_trigger.assert_called_once()
             alert_data = mock_trigger.call_args[0][0]
@@ -540,7 +554,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.SUCCESS,
         )
         mock_trigger = AsyncMock()
-        with patch.object(type(alert_service), "trigger", mock_trigger):
+        with patch.object(AlertService, "trigger", mock_trigger):
             await history.alert_for_status()
             mock_trigger.assert_not_called()
 
