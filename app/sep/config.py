@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -16,7 +16,7 @@
 """Define SEP settings."""
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
 from string import Template
@@ -61,6 +61,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.core.utils.lazy import LazyProxy
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -278,6 +279,10 @@ class SEPSettings(BaseYamlAppSettings):
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
     :type STATIC_DIR: RelativeDirectoryPathField
+    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
+        definition files. When `None`, the bundled `alert_definitions/` directory
+        inside the alerts plugin is used.
+    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -319,6 +324,7 @@ class SEPSettings(BaseYamlAppSettings):
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
+    ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
@@ -354,6 +360,7 @@ class SEPSettings(BaseYamlAppSettings):
             extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
         )
         env.filters |= DEFAULT_FILTERS
+        env.globals["now"] = datetime.now
         env.globals["syntax_highlight_css"] = syntax_highlight_css
         env.globals["get_messages"] = messages.get_messages
         return env
@@ -490,4 +497,4 @@ class SEPSettings(BaseYamlAppSettings):
         return self
 
 
-sep_settings = SEPSettings()
+sep_settings: SEPSettings = LazyProxy(SEPSettings)

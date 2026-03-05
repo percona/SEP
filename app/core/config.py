@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -63,6 +63,7 @@ from app.core.utils.fields import (
     StrImportableAttribute,
     URL,
 )
+from app.core.utils.lazy import LazyProxy
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -360,8 +361,14 @@ class Settings(BaseYamlSettings):
         await self._CLIENT_REGISTRY.close_all()
 
 
-settings = Settings()
-logging.config.dictConfig(settings.LOGGING_CONFIG)
+def _create_settings() -> Settings:
+    """Create a :class:`Settings` instance and apply its logging configuration."""
+    s = Settings()
+    logging.config.dictConfig(s.LOGGING_CONFIG)
+    return s
+
+
+settings: Settings = LazyProxy(_create_settings)
 logger = logging.getLogger(__name__)
 
 
@@ -394,8 +401,12 @@ class BaseYamlAppSettings(BaseYamlSettings):
     UVICORN_PORT: int = 0
     SSL_KEYFILE: RelativeFilePathField | None = None
     SSL_CERTFILE: RelativeFilePathField | None = None
-    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = settings.BACKEND_CORS_ORIGINS
-    ALLOWED_HOSTS: list[str] = Field(settings.ALLOWED_HOSTS, min_length=1)
+    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = Field(
+        default_factory=lambda: settings.BACKEND_CORS_ORIGINS
+    )
+    ALLOWED_HOSTS: list[str] = Field(
+        default_factory=lambda: settings.ALLOWED_HOSTS, min_length=1
+    )
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
 
     @field_validator("ALLOWED_HOSTS")
