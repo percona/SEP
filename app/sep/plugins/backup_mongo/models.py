@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define models for the Backups plugin."""
 
 from enum import StrEnum
@@ -6,7 +21,7 @@ from typing import Annotated
 from pydantic import AliasChoices, ConfigDict, Field
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -71,7 +86,7 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
     :param oplogSpanMin: The PBM ...
     :type oplogSpanMin: int
     :param compression: Compression ... PBM.
-    :type compression: RequiredStr
+    :type compression: NonEmptyStr
     """
 
     model_config = ConfigDict(alias_generator=None)
@@ -85,7 +100,7 @@ class BackupConfigPITR(BaseCaseInsensitiveModel):
         serialization_alias="oplogSpanMin",
     )
     compression: Annotated[
-        RequiredStr, Field(validation_alias=AliasChoices("compression", "COMPRESSION"))
+        NonEmptyStr, Field(validation_alias=AliasChoices("compression", "COMPRESSION"))
     ]
 
 
@@ -158,7 +173,7 @@ class BackupConfigStorageFilesystem(BaseCaseInsensitiveModel):
 
     model_config = ConfigDict(alias_generator=None)
 
-    path: RequiredStr | EmptyStrToNone = Field(
+    path: NonEmptyStr | EmptyStrToNone = Field(
         None, validation_alias=AliasChoices("path", "PATH")
     )
 
@@ -168,16 +183,16 @@ class BackupConfigStorageS3(BaseCaseInsensitiveModel):
 
     model_config = ConfigDict(alias_generator=None)
 
-    region: RequiredStr | EmptyStrToNone = Field(
+    region: NonEmptyStr | EmptyStrToNone = Field(
         None, validation_alias=AliasChoices("region", "REGION")
     )
-    bucket: RequiredStr | EmptyStrToNone = Field(
+    bucket: NonEmptyStr | EmptyStrToNone = Field(
         None, validation_alias=AliasChoices("bucket", "BUCKET")
     )
-    prefix: RequiredStr | EmptyStrToNone = Field(
+    prefix: NonEmptyStr | EmptyStrToNone = Field(
         None, validation_alias=AliasChoices("prefix", "PREFIX")
     )
-    endpoint_url: RequiredStr | EmptyStrToNone = Field(
+    endpoint_url: NonEmptyStr | EmptyStrToNone = Field(
         None,
         validation_alias=AliasChoices("endpointUrl", "ENDPOINTURL"),
         serialization_alias="endpointUrl",
@@ -202,7 +217,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
     """Represent the overall backup configuration.
 
     :param pbm_config_yaml_payload: The PBM yaml payload to parse from CLI.
-    :type pbm_config_yaml_payload: RequiredStr | EmptyStrToNone
+    :type pbm_config_yaml_payload: NonEmptyStr | EmptyStrToNone
     """
 
     model_config = ConfigDict(alias_generator=None)
@@ -216,14 +231,14 @@ class BackupConfig(BaseCaseInsensitiveModel):
     backup: BackupConfigBackup | EmptyStrToNone = Field(
         None, validation_alias=AliasChoices("backup", "BACKUP")
     )
-    pbm_config_yaml_payload: RequiredStr | EmptyStrToNone = Field(
+    pbm_config_yaml_payload: NonEmptyStr | EmptyStrToNone = Field(
         None,
         validation_alias=AliasChoices(
             "pbm_config_yaml_payload", "PBM_CONFIG_YAML_PAYLOAD"
         ),
         serialization_alias="pbm_config_yaml_payload",
     )
-    credentials_path: RequiredStr | EmptyStrToNone = Field(
+    credentials_path: NonEmptyStr | EmptyStrToNone = Field(
         None,
         validation_alias=AliasChoices("credentials_path", "CREDENTIALS_PATH"),
     )
@@ -233,9 +248,9 @@ class BackupCreate(BaseCaseInsensitiveModel):
     """Represent a Backup creation form with proper case-insensitive fields.
 
     :param task_name: The PBM yaml payload to parse from CLI.
-    :type task_name: RequiredStr
+    :type task_name: NonEmptyStr
     :param hostname: The PBM yaml payload to parse from CLI.
-    :type hostname: RequiredStr
+    :type hostname: NonEmptyStr
     :param service_id: Service for executing PBM.
     :type service_id: int
     :param backup_type: Type of backup activity on PBM.
@@ -244,26 +259,26 @@ class BackupCreate(BaseCaseInsensitiveModel):
     :type alert_on_fail: bool
     """
 
-    task_name: RequiredStr
-    hostname: RequiredStr
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
     service_id: int
     backup_type: BackupType
     alert_on_fail: bool = False
     pitr_oplog_span_min: int | EmptyStrToNone = None
     pitr_enabled: bool = False
-    pitr_compression: RequiredStr | EmptyStrToNone = None
-    storage_type: RequiredStr | EmptyStrToNone = None
-    storage_s3_region: RequiredStr | EmptyStrToNone = None
-    storage_s3_bucket: RequiredStr | EmptyStrToNone = None
-    storage_s3_prefix: RequiredStr | EmptyStrToNone = None
-    storage_s3_endpoint_url: RequiredStr | EmptyStrToNone = None
-    storage_filesystem_path: RequiredStr | EmptyStrToNone = None
+    pitr_compression: NonEmptyStr | EmptyStrToNone = None
+    storage_type: NonEmptyStr | EmptyStrToNone = None
+    storage_s3_region: NonEmptyStr | EmptyStrToNone = None
+    storage_s3_bucket: NonEmptyStr | EmptyStrToNone = None
+    storage_s3_prefix: NonEmptyStr | EmptyStrToNone = None
+    storage_s3_endpoint_url: NonEmptyStr | EmptyStrToNone = None
+    storage_filesystem_path: NonEmptyStr | EmptyStrToNone = None
     # Backup options
-    backup_priority: RequiredStr | EmptyStrToNone = None
+    backup_priority: NonEmptyStr | EmptyStrToNone = None
     backup_compression: CompressionAlgorithm | EmptyStrToNone = None
     backup_compression_level: int | EmptyStrToNone = None
     backup_timeouts_starting_status: int | EmptyStrToNone = None
     backup_oplog_span_min: float | EmptyStrToNone = None
     backup_num_parallel_collections: int | EmptyStrToNone = None
     # Path to MongoDB URI credentials file on the Nomad node (passed as task meta, used by payloads).
-    credentials_path: RequiredStr | EmptyStrToNone = None
+    credentials_path: NonEmptyStr | EmptyStrToNone = None

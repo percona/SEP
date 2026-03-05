@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -19,7 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 from app.tasks.models import TaskBackendEnum, TaskOwner
 
 
@@ -27,9 +27,9 @@ class TaskCreateRequest(BaseModel):
     """Create a new task with the specified parameters.
 
     :param name: The unique name of the task.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param payload: The payload for the task.
-    :type payload: RequiredStr
+    :type payload: NonEmptyStr
     :param fmt: The format of the payload. Supported formats are "hcl", "json", and
         "yaml".
     :type fmt: Literal["hcl", "json", "yaml"]
@@ -41,8 +41,8 @@ class TaskCreateRequest(BaseModel):
     :type alert_on_fail: bool
     """
 
-    name: RequiredStr
-    payload: RequiredStr  # TODO: Validate trying to parse  # noqa: TD002, TD003
+    name: NonEmptyStr
+    payload: NonEmptyStr  # TODO: Validate trying to parse  # noqa: TD002, TD003
     fmt: Literal["hcl", "json", "yaml"]
     backend: TaskBackendEnum
     owner: TaskOwner

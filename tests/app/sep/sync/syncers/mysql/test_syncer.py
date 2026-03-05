@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Test the app.sep.sync.syncers.mysql.syncer module."""
 
 import gzip
@@ -45,7 +60,9 @@ def created_service() -> CreatedService:
     created_service = CreatedServiceFactory.build()
     created_service.node_id = MOCK_CREATED_NODE_ID
     created_service.type = ServiceTypeEnum.MYSQL
-    created_service.node = CreatedNode(address="localhost", id=MOCK_CREATED_NODE_ID)
+    created_service.node = CreatedNode(
+        address="localhost", id=MOCK_CREATED_NODE_ID, node_name="localhost"
+    )
     created_service.port = 8000
     return created_service
 
@@ -256,6 +273,7 @@ class TestPerformMethods:
                 node_id=created_node.services[0].node_id,
                 type=ServiceTypeEnum.MYSQL,
                 port=created_node.services[0].port,
+                name="extra-service",
             )
         )
         sync_service = mocker.patch.object(
@@ -475,8 +493,9 @@ class TestModelIteratorsAndGuards:
         """Test returning True only when node has a MySQL service."""
         node_with_mysql = Node(
             address="x",
+            name="x",
             services=[Service(type=ServiceTypeEnum.MYSQL, port=3306, name="s")],
         )
-        node_without_mysql = Node(address="y", services=[])
+        node_without_mysql = Node(address="y", name="y", services=[])
         assert mock_mysql_syncer.can_sync_node(node_with_mysql) is True
         assert mock_mysql_syncer.can_sync_node(node_without_mysql) is False

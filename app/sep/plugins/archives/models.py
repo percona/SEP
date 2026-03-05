@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define models for the Archives plugin."""
 
 from datetime import date
@@ -7,7 +22,7 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 
 
 class SwapDropEnum(IntEnum):
@@ -23,9 +38,9 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
 
     :param alias: The alias name for the task being created. This name is used for
         identifying the task in the backend.
-    :type alias: RequiredStr
+    :type alias: NonEmptyStr
     :param hostname: The source hostname where the task will be executed.
-    :type hostname: RequiredStr
+    :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the database service to connect to.
     :type service_id: int
     :param source_db_id: The source database schema ID from which data will be purged.
@@ -36,25 +51,25 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type source_table_id: int | None
     :param source_query: Optional; a query defining the source data to be purged.
         Must be None if both source_db_id and source_table_id are set.
-    :type source_query: RequiredStr | None
+    :type source_query: NonEmptyStr | None
     :param where: Optional; The WHERE condition that defines which data will be purged
         from the source table. Must be None when swap_drop is SWAP_DROP.
-    :type where: RequiredStr | None
+    :type where: NonEmptyStr | None
     :param dest_table_id: Optional; The destination table ID.
         Must be None if dest_file is set.
     :type dest_table_id: int | None
     :param dest_file: Optional; The destination file path.
         Must be None if dest_table_id is set.
-    :type dest_file: RequiredStr | None
+    :type dest_file: NonEmptyStr | None
     :param swap_drop: Integer field (0-2) indicating the drop behavior.
         If 1, both dest_table_id and dest_file must be None.
     :type swap_drop: int
     :param swp_table_suffix: Optional; Date suffix for the swap table.
     :type swp_table_suffix: date | None
     :param use_index: Optional; The index to be used for optimizing the query.
-    :type use_index: RequiredStr | None
+    :type use_index: NonEmptyStr | None
     :param extra_args: Optional; Additional arguments for the archive task.
-    :type extra_args: RequiredStr | None
+    :type extra_args: NonEmptyStr | None
     :param limit: Optional; The maximum number of records to be processed.
     :type limit: int | None
     :param sleep: Optional; Sleep duration between operations for rate limiting.
@@ -69,22 +84,22 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type alert_on_fail: bool
     """
 
-    alias: RequiredStr
-    hostname: RequiredStr
+    alias: NonEmptyStr
+    hostname: NonEmptyStr
     service_id: int
     source_db_id: int | None = None
     source_db_name: str = ""
     source_table_id: int | None = None
     source_table_name: str = ""
-    source_query: RequiredStr | None = None
-    where: RequiredStr | None = None
+    source_query: NonEmptyStr | None = None
+    where: NonEmptyStr | None = None
     dest_table_id: int | None = None
     dest_table_name: str = ""
-    dest_file: RequiredStr | None = None
+    dest_file: NonEmptyStr | None = None
     swap_drop: int = Field(..., ge=0, le=2)
     swp_table_suffix: date | None = None
-    use_index: RequiredStr | None = None
-    extra_args: RequiredStr | None = None
+    use_index: NonEmptyStr | None = None
+    extra_args: NonEmptyStr | None = None
     limit: int | None = None
     sleep: int | None = None
     disable_binlog: int | None = Field(
@@ -222,12 +237,12 @@ class PurgeConfigAll(BaseCaseInsensitiveModel):
 
     :param source_host: The hostname or IP address of the source where the data will
         be archived from.
-    :type source_host: RequiredStr
+    :type source_host: NonEmptyStr
     :param source_port: The port number used to connect to the source host.
     :type source_port: int
     """
 
-    source_host: RequiredStr
+    source_host: NonEmptyStr
     source_port: int
 
 
@@ -236,31 +251,31 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
 
     :param alias: A unique alias for the task being created, identifying it
         within the system.
-    :type alias: RequiredStr
+    :type alias: NonEmptyStr
     :param source_db: The name of the source database schema from which the data
         will be archived.
-    :type source_db: RequiredStr | None
+    :type source_db: NonEmptyStr | None
     :param source_table: The name of the source table within the specified schema.
-    :type source_table: RequiredStr | None
+    :type source_table: NonEmptyStr | None
     :param source_query: Optional; a query defining the source data to be purged.
-    :type source_query: RequiredStr | None
+    :type source_query: NonEmptyStr | None
     :param where: Optional; The WHERE condition that defines which data will be purged
         from the source table. Must be None when swap_drop is SWAP_DROP.
-    :type where: RequiredStr | None
+    :type where: NonEmptyStr | None
     :param dest_table: Optional; The name of the destination table where the purged data
         will be archived. Must be None if dest_file is set.
-    :type dest_table: RequiredStr | None
+    :type dest_table: NonEmptyStr | None
     :param dest_file: Optional; The destination file path.
         Must be None if dest_table_id is set.
-    :type dest_file: RequiredStr | None
+    :type dest_file: NonEmptyStr | None
     :param swp_table_suffix: Optional; Date suffix for the swap table.
     :type swap_drop: int
     :param swp_table_suffix: Optional; Date suffix for the swap table.
     :type swp_table_suffix: date | None
     :param use_index: Optional; The index to be used for optimizing the query.
-    :type use_index: RequiredStr | None
+    :type use_index: NonEmptyStr | None
     :param extra_args: Optional; Additional arguments for the archive task.
-    :type extra_args: RequiredStr | None
+    :type extra_args: NonEmptyStr | None
     :param limit: Optional; The maximum number of records to be processed.
     :type limit: int | None
     :param sleep: Optional; Sleep duration between operations for rate limiting.
@@ -273,17 +288,17 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :type delete_data: int | None
     """
 
-    alias: RequiredStr
-    source_db: RequiredStr | None = None
-    source_table: RequiredStr | None = None
-    source_query: RequiredStr | None = None
-    where: RequiredStr | None = None
-    dest_table: RequiredStr | None = None
-    dest_file: RequiredStr | None = None
+    alias: NonEmptyStr
+    source_db: NonEmptyStr | None = None
+    source_table: NonEmptyStr | None = None
+    source_query: NonEmptyStr | None = None
+    where: NonEmptyStr | None = None
+    dest_table: NonEmptyStr | None = None
+    dest_file: NonEmptyStr | None = None
     swap_drop: int = Field(..., ge=0, le=2)
     swp_table_suffix: date | None = None
-    use_index: RequiredStr | None = None
-    extra_args: RequiredStr | None = None
+    use_index: NonEmptyStr | None = None
+    extra_args: NonEmptyStr | None = None
     limit: int | None = None
     sleep: int | None = None
     disable_binlog: int | None = Field(
