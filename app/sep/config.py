@@ -278,6 +278,10 @@ class SEPSettings(BaseYamlAppSettings):
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
     :type STATIC_DIR: RelativeDirectoryPathField
+    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
+        definition files. When `None`, the bundled `alert_definitions/` directory
+        inside the alerts plugin is used.
+    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -316,6 +320,7 @@ class SEPSettings(BaseYamlAppSettings):
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
+    ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
