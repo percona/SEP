@@ -311,6 +311,9 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
+        `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
+    :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
