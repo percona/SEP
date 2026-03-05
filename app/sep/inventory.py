@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -22,7 +22,7 @@ from typing import Any, ClassVar, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.db import BaseSQLModel
-from app.core.utils.fields import EmptyStrToNone, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.models import SyncInventoryEntityTypeEnum
 
@@ -114,29 +114,29 @@ class Node(BaseInventoryModel):
     address, external identifier, name, and type.
 
     :param address: The network address of the node.
-    :type address: RequiredStr
+    :type address: NonEmptyStr
     :param name: The name of the node, aliased as "node_name".
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param external_id: The external identifier for the node, aliased as "node_id".
         Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
+    :type external_id: NonEmptyStr | EmptyStrToNone
     :param source: The source of the node information. Defaults to None.
     :type source: SourceEnum | EmptyStrToNone
     :param type: The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
-    :type type: RequiredStr
+    :type type: NonEmptyStr
     :param services: The services associated with the node.
     :type services: list[Service]
     """
 
-    address: RequiredStr
-    name: RequiredStr = Field(validation_alias="node_name")
-    external_id: RequiredStr | EmptyStrToNone = Field(
+    address: NonEmptyStr
+    name: NonEmptyStr = Field(validation_alias="node_name")
+    external_id: NonEmptyStr | EmptyStrToNone = Field(
         default=None,
         validation_alias="node_id",
     )
     source: SourceEnum | EmptyStrToNone = None
-    type: RequiredStr = Field(default="generic", validation_alias="node_type")
+    type: NonEmptyStr = Field(default="generic", validation_alias="node_type")
     services: list[Service] = []
 
     def __repr__(self) -> str:
@@ -164,15 +164,15 @@ class CreatedNode(CreatedEntityBase, Node):
     :param updated_at: The timestamp when the record was last updated.
     :type updated_at: UTCDatetime | None
     :param address: The network address of the node.
-    :type address: RequiredStr
+    :type address: NonEmptyStr
     :param external_id: The external identifier for the node, aliased as "node_id".
         Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
+    :type external_id: NonEmptyStr | EmptyStrToNone
     :param name: The name of the node, aliased as "node_name".
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param type: The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
-    :type type: RequiredStr
+    :type type: NonEmptyStr
     :param source: The source of the node information. Defaults to None.
     :type source: SourceEnum | EmptyStrToNone
     :param services: A list of existing services associated with the node.
@@ -200,9 +200,9 @@ class Service(BaseInventoryModel):
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
+    :type external_id: NonEmptyStr | EmptyStrToNone
     :param name: The name of the service, aliased as "service_name".
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param port: The port number on which the service is running. Defaults to None.
     :type port: int | EmptyStrToNone
     :param type: The type of the service (e.g., "service_type"), aliased as
@@ -216,11 +216,11 @@ class Service(BaseInventoryModel):
     cluster: str | None = None
     replication_set: str | None = None
     custom_labels: dict[str, Any] | None = None
-    external_id: RequiredStr | EmptyStrToNone = Field(
+    external_id: NonEmptyStr | EmptyStrToNone = Field(
         default=None,
         validation_alias="service_id",
     )
-    name: RequiredStr = Field(validation_alias="service_name")
+    name: NonEmptyStr = Field(validation_alias="service_name")
     port: int | EmptyStrToNone = None
     type: ServiceTypeEnum = Field(validation_alias="service_type")
     schemas: list[Schema] = []
@@ -260,9 +260,9 @@ class CreatedService(CreatedEntityBase, Service):
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
+    :type external_id: NonEmptyStr | EmptyStrToNone
     :param name: The name of the service, aliased as "service_name".
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param port: The port number on which the service is running. Defaults to None.
     :type port: int | EmptyStrToNone
     :param type: The type of the service (e.g., "service_type"), aliased as
@@ -314,12 +314,12 @@ class Schema(BaseInventoryModel):
     This model represents a schema within the Inventory API, including its name.
 
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param tables: The tables associated with the schema.
     :type tables: list[Table]
     """
 
-    name: RequiredStr
+    name: NonEmptyStr
     tables: list[Table] = []
 
     def __repr__(self) -> str:
@@ -344,7 +344,7 @@ class CreatedSchema(CreatedEntityBase, Schema):
     :param updated_at: The timestamp when the record was last updated.
     :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param service_id: The ID of the service to which the schema belongs.
     :type service_id: int
     :param service: The service to which the schema is associated. Defaults to None.
@@ -370,15 +370,15 @@ class Table(BaseInventoryModel):
     name and the SQL statement used to create the table, and details about its keys.
 
     :param name: The name of the table.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: RequiredStr
+    :type create: NonEmptyStr
     :param keys: A dictionary containing details about table keys (e.g., primary, unique).
     :type keys: dict[str, Any]
     """
 
-    name: RequiredStr
-    create: RequiredStr
+    name: NonEmptyStr
+    create: NonEmptyStr
     keys: dict[str, Any] = Field(default_factory=dict)
 
     def __repr__(self) -> str:
@@ -402,9 +402,9 @@ class CreatedTable(CreatedEntityBase, Table):
     :param updated_at: The timestamp when the record was last updated.
     :type updated_at: UTCDatetime | None
     :param name: The name of the table.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: RequiredStr
+    :type create: NonEmptyStr
     :param schema_id: The ID of the schema to which the table belongs.
     :type schema_id: int
     :param database: The schema to which the table is associated. Defaults to None.
