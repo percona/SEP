@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -28,7 +28,7 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db.models import BaseUUIDSQLModel
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 
 
 class SyncInventoryEntityTypeEnum(IntEnum):
@@ -80,10 +80,10 @@ class SyncInstanceBase(SQLModel):
 
     :param syncer: The name of the synchronizer responsible for this synchronization.
         Indexed for quick lookup.
-    :type syncer: RequiredStr
+    :type syncer: NonEmptyStr
     """
 
-    syncer: RequiredStr = SQLField(index=True)
+    syncer: NonEmptyStr = SQLField(index=True)
 
 
 class SyncInstance(BaseUUIDSQLModel, SyncInstanceBase, table=True):
@@ -102,7 +102,7 @@ class SyncInstance(BaseUUIDSQLModel, SyncInstanceBase, table=True):
     :type updated_at: UTCDatetime | None
     :param syncer: The name of the synchronizer responsible for this synchronization.
         Indexed for quick lookup.
-    :type syncer: RequiredStr
+    :type syncer: NonEmptyStr
     :param items: A list of synchronization items associated with this synchronization
         instance.
     :type items: list[SyncItem]
@@ -122,7 +122,7 @@ class SyncInstanceWrite(SyncInstanceBase):
 
     :param syncer: The name of the synchronizer responsible for this synchronization.
         Indexed for quick lookup.
-    :type syncer: RequiredStr
+    :type syncer: NonEmptyStr
     """
 
 

@@ -1,2 +1,4 @@
-# Apply pre-commit git hooks for code formatting
+# Apply pre-commit git hooks for code formatting:
 5bf54292ac021826012330afe74ef7ec70fd950f
+# Add license header to all source files:
+db66b2b1c064a7bc59cdf28cfa7f7b3496db9861

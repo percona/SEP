@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -16,7 +16,7 @@
 """Define SEP settings."""
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
 from string import Template
@@ -34,6 +34,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    PositiveInt,
     SecretStr,
     ValidationError,
 )
@@ -52,7 +53,7 @@ from app.core.utils import (
     slugify,
 )
 from app.core.utils.fields import (
-    RelativeDirectoryPath,
+    RelativeDirectoryPathField,
     StrHttpUrl,
     StrImportableAttribute,
     StrImportableModule,
@@ -60,6 +61,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.core.utils.lazy import LazyProxy
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -273,10 +275,14 @@ class SEPSettings(BaseYamlAppSettings):
     :type SESSION: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         `Path("templates")`.
-    :type TEMPLATES_DIR: RelativeDirectoryPath
+    :type TEMPLATES_DIR: RelativeDirectoryPathField
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
-    :type STATIC_DIR: RelativeDirectoryPath
+    :type STATIC_DIR: RelativeDirectoryPathField
+    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
+        definition files. When `None`, the bundled `alert_definitions/` directory
+        inside the alerts plugin is used.
+    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -305,13 +311,20 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
+        `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
+    :type FOOTER_TEMPLATE: Template
+    :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
+        tokens. Defaults to 600.
+    :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     SESSION: SessionOptions = SessionOptions()
-    TEMPLATES_DIR: RelativeDirectoryPath = Path("templates")
-    STATIC_DIR: RelativeDirectoryPath = Path("static")
+    TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
+    STATIC_DIR: RelativeDirectoryPathField = Path("static")
+    ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
@@ -325,6 +338,7 @@ class SEPSettings(BaseYamlAppSettings):
         deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
     )
     PMM: PMMSettings = PMMSettings()
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field
@@ -346,6 +360,7 @@ class SEPSettings(BaseYamlAppSettings):
             extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
         )
         env.filters |= DEFAULT_FILTERS
+        env.globals["now"] = datetime.now
         env.globals["syntax_highlight_css"] = syntax_highlight_css
         env.globals["get_messages"] = messages.get_messages
         return env
@@ -482,4 +497,4 @@ class SEPSettings(BaseYamlAppSettings):
         return self
 
 
-sep_settings = SEPSettings()
+sep_settings: SEPSettings = LazyProxy(SEPSettings)

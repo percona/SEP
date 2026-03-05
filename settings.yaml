@@ -28,8 +28,10 @@ default:
     SSL_KEYFILE: null
     SSL_CERTFILE: null
     PROXY_HEADERS: False
+    ARTIFACT_DOWNLOAD_TTL: 600
     TEMPLATES_DIR: templates
     STATIC_DIR: static
+    ALERT_DEFINITIONS_DIR: null
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:
