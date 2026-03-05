@@ -36,7 +36,7 @@ class TestSystemTasks:
         """Assert inventory-sync task data contains a callable path."""
         task = next(t for t in SYSTEM_TASKS if t.name == "inventory-sync")
         assert "callable" in task.data
-        assert task.data["callable"].endswith("run_inventory_sync")
+        assert task.data["callable"].endswith("run_scheduled_inventory_sync")
 
     def test_inventory_sync_task_has_target(self) -> None:
         """Assert inventory-sync task data contains a target."""

@@ -150,6 +150,9 @@ class TestCeleryExecutorDispatchTask:
             result = await executor.dispatch_task(session, celery_queue_item)
         assert result.status == TaskHistoryStatusEnum.FAILED
         assert result.finished_at is not None
+        stdout = result.execution_request.tracking["task_logs"]["execution"]["stdout"]
+        assert "boom" in stdout
+        assert "RuntimeError" in stdout
 
     @pytest.mark.asyncio
     async def test_dispatch_stores_logs(

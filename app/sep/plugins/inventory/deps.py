@@ -54,3 +54,22 @@ def get_syncers(
 
 
 SyncersDep = Annotated[list[BaseSyncer], Depends(get_syncers)]
+
+
+def get_syncers_standalone() -> list[BaseSyncer]:
+    """Initialize syncer instances without request-context API clients.
+
+    Construct syncers from SEP settings without requiring ``InventoryClient``
+    or ``TasksClient`` FastAPI dependencies. Used by scheduled tasks that run
+    outside of request context.
+
+    :return: A list of initialized `BaseSyncer` instances.
+    :rtype: list[BaseSyncer]
+    """
+    syncers = []
+    for sync_option in sep_settings.SYNCERS:
+        syncer_class = import_var(sync_option.syncer)
+        syncers.append(
+            syncer_class(**sync_option.model_dump(exclude={"syncer"})),
+        )
+    return syncers

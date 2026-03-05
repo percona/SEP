@@ -15,8 +15,32 @@
 
 """Provide synchronization functions for the SEP inventory."""
 
+import logging
+
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
+from app.sep.plugins.inventory.deps import get_syncers_standalone
 from app.sep.sync.models import BaseSyncer
+from app.tasks.config import tasks_settings
+
+logger = logging.getLogger(__name__)
+
+
+async def run_scheduled_inventory_sync() -> None:
+    """Execute scheduled inventory sync using configured API key and syncers.
+
+    Read the API key from ``tasks_settings.INVENTORY_SYNC_API_KEY`` and construct
+    syncers from application settings. This is a zero-argument entry point designed
+    for the CeleryExecutor.
+
+    :raises ValueError: If ``INVENTORY_SYNC_API_KEY`` is not configured.
+    """
+    api_key = tasks_settings.INVENTORY_SYNC_API_KEY
+    if not api_key:
+        raise ValueError(
+            "INVENTORY_SYNC_API_KEY must be configured for scheduled inventory sync"
+        )
+    syncers = get_syncers_standalone()
+    await run_inventory_sync(api_key, *syncers)
 
 
 async def run_inventory_sync(api_key: str, *syncers: BaseSyncer) -> None:

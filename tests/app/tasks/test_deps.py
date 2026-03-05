@@ -34,6 +34,7 @@ from app.tasks.deps import (
     get_task_history_with_task,
     prepare_task_history,
 )
+from app.tasks.execution.executors.celery.models import CeleryExecutor
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -81,8 +82,6 @@ class TestGetExecutor:
 
     def test_celery_backend_returns_executor(self) -> None:
         """Assert CELERY backend returns a CeleryExecutor instance."""
-        from app.tasks.execution.executors.celery.models import CeleryExecutor
-
         result = get_executor(TaskBackendEnum.CELERY)
         assert isinstance(result, CeleryExecutor)
 

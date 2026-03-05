@@ -18,6 +18,7 @@
 import importlib
 import io
 import logging
+import traceback
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -80,6 +81,7 @@ class CeleryExecutor(BaseExecutor):
             queue_item.status = TaskHistoryStatusEnum.SUCCESS
         except Exception:
             logger.exception("Celery task %s failed", task.name)
+            log_buffer.write(f"\nError:\n{traceback.format_exc()}")
             queue_item.status = TaskHistoryStatusEnum.FAILED
         finally:
             queue_item.finished_at = utc_now()

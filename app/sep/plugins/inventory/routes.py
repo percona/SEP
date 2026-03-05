@@ -70,12 +70,7 @@ async def node_list(
     context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
     periodic_tasks = await tasks_api.get("/periodic/")
     sync_schedule = next(
-        (
-            pt
-            for pt in periodic_tasks
-            if pt.get("task") == "app.tasks.celery.execute_task_by_name"
-            and "inventory-sync" in (pt.get("kwargs") or "")
-        ),
+        (pt for pt in periodic_tasks if pt.get("task") == "inventory-sync"),
         None,
     )
     context["sync_schedule"] = sync_schedule

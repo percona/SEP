@@ -396,7 +396,7 @@ SYSTEM_TASKS = [
     Task(
         name="inventory-sync",
         data={
-            "callable": "app.sep.plugins.inventory.sync.run_inventory_sync",
+            "callable": "app.sep.plugins.inventory.sync.run_scheduled_inventory_sync",
             "target": "local",
         },
         backend=TaskBackendEnum.CELERY,
