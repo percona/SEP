@@ -1,8 +1,0 @@
-{% macro info_icon(tooltip_text) %}
-    {% if tooltip_text %}
-        <span class="info-icon"
-              data-tooltip="{{ tooltip_text }}"
-              aria-label="{{ tooltip_text }}"
-              role="img"><span class="material-symbols-outlined">info</span></span>
-    {% endif %}
-{% endmacro %}

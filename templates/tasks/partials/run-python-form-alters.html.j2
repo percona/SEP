@@ -1,0 +1,163 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<form method="post"
+      action=""
+      id="{{ task.name }}-send"
+      class="send-form"
+      data-confirm-message='Are you sure you want to execute task "{{ task.name }}" now?'
+      style="padding: 20px;
+             flex-direction: column;
+             align-items: start">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <input type="hidden" name="eta" class="eta-value" disabled>
+    {% if task_data and task_data.get("ParameterizedJob") %}
+        <fieldset style="width: 90%;">
+            <legend style="font-size: 1.5em; font-weight: bold;">Configuration</legend>
+            {% if task_data.ParameterizedJob %}
+                {% set optional = task_data.ParameterizedJob.get("MetaOptional", []) %}
+                {% set required = task_data.ParameterizedJob.get("MetaRequired", []) %}
+            {% else %}
+                {% set optional = [] %}
+                {% set required = [] %}
+            {% endif %}
+            {% set meta_defaults = task_data.get("Meta",{}) %}
+            {% for item in required %}
+                <div style="margin-bottom: 15px;">
+                    <label for="meta_{{ item }}" class="form-label">
+                        {{ item.capitalize() }}
+                        (required)
+                    </label>
+                    {% if item == "target" %}
+                        {% include "tasks/partials/select-host.html.j2" %}
+                    {% else %}
+                        <input type="text"
+                               name="meta_{{ item }}"
+                               id="meta_{{ item }}"
+                               value="{{ meta_defaults[item] }}"
+                               required
+                               class="form-input">
+                    {% endif %}
+                </div>
+            {% endfor %}
+            {% for item in optional %}
+                <div style="margin-bottom: 15px;">
+                    <label for="meta_{{ item }}" class="form-label">{{ item.capitalize() }}</label>
+                    {% if item == "target" %}
+                        {% include "tasks/partials/select-host.html.j2" %}
+                    {% else %}
+                        <input type="text"
+                               name="meta_{{ item }}"
+                               id="meta_{{ item }}"
+                               value="{{ meta_defaults.get(item, '') }}"
+                               class="form-input">
+                    {% endif %}
+                </div>
+            {% endfor %}
+            {% set nomad_payload_rule = task_data["ParameterizedJob"].get("Payload", "optional") %}
+            {% if nomad_payload_rule in ["optional", "required"] %}
+                <div style="margin-bottom: 20px;">
+                    <label for="payload" class="form-label">
+                        Payload
+                        {% if nomad_payload_rule == "required" %}(required){% endif %}
+                    </label>
+                    <textarea name="payload" id="payload" cols="80" rows="30" {% if nomad_payload_rule=="required" %} required{%
+                endif %} class="form-input"></textarea>
+                </div>
+            {% endif %}
+        </fieldset>
+    {% endif %}
+    <div class="actions-cell flex">
+        <button type="button"
+                class="text medium submitButton triggerScheduleExec schedule-task-form"
+                data-task="{{ task.name }}"
+                aria-label="Schedule task for execution"
+                data-tooltip
+                data-modal="trigger"
+                data-modal-target="modalScheduleExec"
+                form="schedule-task-form">
+            <span class="material-symbols-outlined">schedule</span>
+            <span class="label">Schedule</span>
+        </button>
+        <button type="submit"
+                class="text medium send-button submitButton"
+                form="{{ task.name }}-pre-checks-send">
+            <span class="material-symbols-outlined">play_arrow</span>
+            <span class="label">Pre-checks run</span>
+        </button>
+        <button type="submit"
+                class="text medium send-button submitButton"
+                form="{{ task.name }}-dry-run-send">
+            <span class="material-symbols-outlined">play_arrow</span>
+            <span class="label">Dry run</span>
+        </button>
+        <button type="submit"
+                class="text medium send-button submitButton"
+                form="{{ task.name }}-send">
+            <span class="material-symbols-outlined">send</span>
+            <span class="label">Execute</span>
+        </button>
+        {% if not task.protected %}
+            <button type="button"
+                    class="text medium edit-button submitButton triggerEditTask edit-tasks-button"
+                    data-task="{{ task.name }}"
+                    aria-label="Edit task for modification"
+                    data-tooltip
+                    data-modal="trigger"
+                    data-modal-target="modalEditTask"
+                    form="edit-task-form">
+                <span class="material-symbols-outlined">edit</span>
+                <span class="label">Edit</span>
+            </button>
+            <button class="text medium delete-button submitButton delete-tasks-button"
+                    form="delete-task-form">
+                <span class="material-symbols-outlined">delete_forever</span>
+                <span class="label">Delete</span>
+            </button>
+        {% endif %}
+    </div>
+</form>
+<form class="send-form"
+      id="{{ task.name }}-pre-checks-send"
+      data-confirm-message='Are you sure you want to run pre-checks for "{{ task.name }}"?'
+      method="post"
+      action="{{ task.pre_checks_url }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+</form>
+<form class="send-form"
+      id="{{ task.name }}-dry-run-send"
+      data-confirm-message='Are you sure you want to dry run task "{{ task.name }}"?'
+      method="post"
+      action="{{ task.dry_run_url }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+</form>
+<form class="delete-task-form"
+      id="delete-task-form"
+      data-confirm-message='Are you sure you want to delete task "{{ task.name }}"?'
+      method="post"
+      action="{{ task.delete_url }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+</form>
+<form id="schedule-task-form"
+      class="schedule-task-form"
+      class="window"
+      method="post"
+      action=""
+      data-confirm-message='Are you sure you want to schedule task "{{ task.name }}"?'>
+    {% include "tasks/partials/scheduled-execution-dialog.html.j2" %}
+</form>
+<hr>
+<br>
