@@ -1,0 +1,7 @@
+name: PostgreSQL Lock Waits
+service_type: postgresql
+expression: pg_locks_count{mode="ExclusiveLock"} > 5
+default_threshold: 5.0
+severity: critical
+description: The number of PostgreSQL exclusive lock waits has exceeded the configured threshold.
+summary: High lock wait count on PostgreSQL instance {{ $labels.instance }}

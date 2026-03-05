@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define test cases for the task routes in the FastAPI application."""
 
 from unittest.mock import MagicMock, patch
@@ -433,3 +448,28 @@ async def test_transform_payload_nomad_backend(test_client, mock_executor):
             params={"backend": "nomad"},
         )
     assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.asyncio
+async def test_task_data_with_execution_request_keys_returned_as_dict(
+    test_client, session
+):
+    """Test that Task.data with TaskExecutionRequest-like keys is returned as a dict."""
+    conflicting_data = {
+        "task": "run-python",
+        "target": "mariadb",
+        "payload": "SELECT 1",
+        "meta": {"env": "staging"},
+    }
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="conflicting-task", data=conflicting_data),
+        ),
+    )
+
+    response = test_client.get("/conflicting-task")
+    assert response.status_code == status.HTTP_200_OK
+    task_json = response.json()
+    assert task_json["data"] == conflicting_data
+    assert isinstance(task_json["data"], dict)
