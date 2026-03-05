@@ -769,8 +769,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
             ).decode(),
         )
-<<<<<<< HEAD
-
         try:
             job = self.get_job(job_id)
         except JobNotFoundError:
@@ -792,8 +790,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
         if queue_item.status != TaskHistoryStatusEnum.RUNNING:
             await self._cleanup_nomad_variable(queue_item)
-=======
->>>>>>> main
         return queue_item
 
     def task_needs_job_register(self, task: Task) -> bool:
