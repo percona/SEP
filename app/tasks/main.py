@@ -80,10 +80,10 @@ def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str
     :param exc: The exception indicating task data was not found in the executor.
     :type exc: TaskDataNotFoundInExecutorError
     :return: A dictionary with message and optional resource_type, resource_id,
-        executor, and detail keys for use in an HTTP 410 response body.
+        executor_name, and detail keys for use in an HTTP 410 response body.
     :rtype: dict[str, Any]
     """
-    detail: dict[str, Any] = {
+    detail = {
         "message": "The requested task data is no longer available in the executor.",
     }
     if exc.resource_type is not None:
@@ -91,7 +91,7 @@ def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str
     if exc.resource_id is not None:
         detail["resource_id"] = exc.resource_id
     if exc.executor_name is not None:
-        detail["executor"] = exc.executor_name
+        detail["executor_name"] = exc.executor_name
     if str(exc):
         detail["detail"] = str(exc)
     return detail

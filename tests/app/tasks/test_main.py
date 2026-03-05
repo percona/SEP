@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define test cases for the Tasks API app and exception handlers."""
 
 import pytest
@@ -46,7 +61,7 @@ def test_task_data_not_found_detail_allocation_not_found_with_structured_fields(
     )
     assert detail["resource_type"] == "allocation"
     assert detail["resource_id"] == 'JobID == "my-job" and EvalID == "eval-1"'
-    assert detail["executor"] == "nomad"
+    assert detail["executor_name"] == "nomad"
     assert "No allocations found" in detail["detail"]
 
 
@@ -65,7 +80,7 @@ def test_task_data_not_found_detail_job_not_found_with_structured_fields():
     )
     assert detail["resource_type"] == "job"
     assert detail["resource_id"] == "job-abc-123"
-    assert detail["executor"] == "nomad"
+    assert detail["executor_name"] == "nomad"
     assert "Job not found in Nomad" in detail["detail"]
 
 
@@ -79,7 +94,7 @@ def test_task_data_not_found_detail_job_not_found_without_resource_id():
     detail = task_data_not_found_detail(exc)
     assert detail["resource_type"] == "job"
     assert "resource_id" not in detail
-    assert detail["executor"] == "nomad"
+    assert detail["executor_name"] == "nomad"
     assert "queue-42" in detail["detail"]
 
 
