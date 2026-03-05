@@ -1,0 +1,124 @@
+/* Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+/* Severity badges */
+
+.severity-badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--cornerExtraSmall);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.severity-info {
+    background: var(--infoSurface);
+    color: var(--infoContrast);
+}
+
+.severity-warning {
+    background: var(--warningSurface);
+    color: var(--warningContrast);
+}
+
+.severity-critical {
+    background: var(--errorSurface);
+    color: var(--errorContrast);
+}
+
+/* PMM presence badges */
+
+.pmm-badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--cornerExtraSmall);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.badge-present {
+    background: var(--successSurface);
+    color: var(--successContrast);
+}
+
+.badge-absent {
+    background: var(--surfaceElevation2);
+    color: var(--textSecondary);
+}
+
+.badge-unknown {
+    background: var(--warningSurface);
+    color: var(--warningContrast);
+}
+
+/* Alerts table */
+
+.alerts-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.alerts-table th,
+.alerts-table td {
+    padding: 0.75rem 0.5rem;
+    text-align: left;
+    border-bottom: 0.0625rem solid var(--lineDivider);
+}
+
+.alerts-table thead th {
+    font-weight: 600;
+    color: var(--textSecondary);
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.alerts-table tbody tr:hover {
+    background: var(--surfaceElevation1);
+}
+
+.col-checkbox {
+    width: 2.5rem;
+}
+
+/* Alert detail modal */
+
+.alert-detail-modal {
+    min-width: 30rem;
+    max-width: 50rem;
+}
+
+.alert-detail-list {
+    display: grid;
+    grid-template-columns: 10rem 1fr;
+    gap: 0.5rem 1rem;
+    align-items: baseline;
+}
+
+.alert-detail-list dt {
+    font-weight: 600;
+    color: var(--textSecondary);
+}
+
+.alert-detail-list dd {
+    margin: 0;
+}
+
+code.expression {
+    display: block;
+    padding: 0.5rem;
+    background: var(--surfaceElevation2);
+    border-radius: var(--cornerExtraSmall);
+    font-size: 0.8125rem;
+    word-break: break-all;
+    white-space: pre-wrap;
+}

@@ -77,6 +77,10 @@ default:
         MODULE_NAME: dipper
         URI_PATH: /dipper
         CSS_CLASS: dipper
+      - NAME: Alert Templates
+        MODULE_NAME: alerts
+        URI_PATH: /alerts
+        CSS_CLASS: alerts
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
