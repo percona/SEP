@@ -16,14 +16,13 @@
 """Define routes for the alerts plugin."""
 
 import logging
-from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated
-from app.sep.plugins.alerts.deps import get_alerts_index_context
+from app.sep.plugins.alerts.deps import AlertsIndexContext
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,7 +32,7 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def alerts_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_alerts_index_context)],
+    context: AlertsIndexContext,
 ) -> HTMLResponse:
     """Render the alert templates list page."""
     return templates.TemplateResponse(
