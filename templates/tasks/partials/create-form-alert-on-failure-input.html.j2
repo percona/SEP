@@ -1,0 +1,32 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<fieldset>
+    <label class="checkbox{% if not alert_on_fail_available %} disabled{% endif %}"
+           title="{%- if alert_on_fail_available -%}Enable to trigger an alert if the task fails{%- else -%}Configure an alert provider to use this feature{%- endif -%}">
+        {% set print_arg_title = "Enable to print SQL statements to STDOUT. Useful for reviewing executed statements, especially with --dry-run." %}
+        <input type="checkbox"
+               id="alert_on_fail"
+               name="alert_on_fail"
+               {% if alert_on_fail_default %}checked{% endif %}
+               {% if not alert_on_fail_available %}disabled{% endif %}>
+        <div class="checkmark">
+            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+            <span class="material-symbols-outlined checked">check_box</span>
+        </div>
+        <span class="label">Alert on failure</span>
+    </label>
+</fieldset>

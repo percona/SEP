@@ -1,0 +1,534 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<style>
+    fieldset {
+        width: 95%;
+        justify-content: flex-start;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        margin-bottom: 0.5em;
+    }
+
+    .field {
+        flex: 0 0 48%;
+        box-sizing: border-box;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+    }
+
+    fieldset:has(> .field:nth-of-type(1):nth-last-of-type(1))>.field {
+        flex: 0 0 48%;
+    }
+
+    .field label {
+        width: 135px;
+        margin-right: 10px;
+    }
+
+    .field input,
+    .field select {
+        flex: 1;
+    }
+
+
+    label+select,
+    label+input {
+        vertical-align: middle;
+        margin-right: 0px;
+    }
+
+    label:has(+ select),
+    label:has(+ input) {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0px !important;
+        width: 130px;
+    }
+
+    .selection-panel,
+    .result-panel {
+        background-color: #fff;
+        padding-left: 20px;
+        padding-right: 20px;
+        border-radius: 5px;
+    }
+
+    #toggleCreateTable {
+        padding: 10px 20px;
+    }
+
+    #createTableOutput {
+        background-color: #272822;
+        color: #f8f8f2;
+        padding: 15px;
+        border-radius: 5px;
+        overflow-x: auto;
+        max-height: 1000px;
+        font-family: monospace;
+        line-height: 1.4em;
+        white-space: pre-wrap;
+    }
+
+    #statusMessage {
+        margin-top: 20px;
+    }
+
+    #statusMessage.success {
+        color: green;
+    }
+
+    #statusMessage.error {
+        color: red;
+    }
+
+    #result-panel {
+        overflow: hidden;
+        transition: opacity 0.5s ease, max-height 0.5s ease;
+        opacity: 1;
+        max-height: 1000px;
+    }
+
+    #result-panel.fade {
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+    }
+
+    input[type="checkbox"] {
+        flex: none;
+        margin-right: 0.5em;
+    }
+
+    pre {
+        white-space: break-spaces;
+    }
+    fieldset + fieldset {
+        margin: 1em 0;
+    }
+    fieldset > * {
+        margin: 0.25em 0 1em;
+    }
+    select {
+        min-width: 200px;
+    }
+</style>
+<form id="create-checksum-form"
+      class="create-checksum-form window"
+      method="post"
+      action=""
+      data-confirm-message="Are you sure you want to create this checksum task?">
+    <dialog id="modalCreateTask"
+            aria-modal="true"
+            aria-labelledby="modalCreateTaskTitle"
+            data-modal="target"
+            class="large">
+        <header>
+            <h3 id="modalCreateTaskTitle" class="h5 title">Configure a table checksum</h3>
+        </header>
+        <section>
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+            <fieldset>
+                <legend style="margin-bottom: 0.8em;">Main options</legend>
+                <fieldset>
+                    <legend>Executor Host</legend>
+                    <div class="select">
+                        {% set hostname_title = "Select the hostname of the target system for task execution." %}
+                        <label for="hostname" title="{{ hostname_title }}">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Select host</span>
+                            {% if executor_hosts|length == 1 %}
+                                {% set single_service = executor_hosts[0] %}
+                                <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                                </select>
+                                <input type="hidden" name="hostname" value="{{ single_service }}">
+                            {% else %}
+                                <select id="hostname" name="hostname">
+                                    {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                                </select>
+                            {% endif %}
+                        </label>
+                    </div>
+                </fieldset>
+                <fieldset>
+                    <legend>Checksum details</legend>
+                    <div class="field">
+                        {% set task_name_title = "Type the name of task to be created." %}
+                        <label for="task_name" title="{{ task_name_title }}">Task name</label>
+                        <input type="text"
+                               id="task_name"
+                               name="task_name"
+                               class="validate"
+                               required
+                               title="{{ task_name_title }}"
+                               placeholder="Enter a unique task name"
+                               required>
+                    </div>
+                    <div class="select">
+                        {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                        <label for="service_id" title="{{ service_id_title }}">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Database host</span>
+                            {% if services|length == 1 %}
+                                {% set single_service = services[0] %}
+                                <select id="service_id"
+                                        name="service_id"
+                                        title="{{ service_id_title }}"
+                                        disabled>
+                                    <option value="{{ single_service.id }}" selected>{{ single_service.name }}</option>
+                                </select>
+                                <input type="hidden" name="service_id" value="{{ single_service.id }}">
+                            {% else %}
+                                <select id="service_id"
+                                        name="service_id"
+                                        title="{{ service_id_title }}"
+                                        required>
+                                    <option value="" selected>Select a database host</option>
+                                    {% for service in services %}
+                                        <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                                    {% endfor %}
+                                </select>
+                            {% endif %}
+                        </label>
+                    </div>
+                </fieldset>
+                <fieldset style="margin-bottom: 0;">
+                    <legend>Data</legend>
+                    <div class="select">
+                        {% set schema_id_title = "Select the database schema on which the task will operate." %}
+                        <label for="schema_id" title="{{ schema_id_title }}">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Schema</span>
+                            <select id="schema_id"
+                                    name="schema_id"
+                                    title="{{ schema_id_title }}"
+                                    disabled></select>
+                        </label>
+                    </div>
+                    <div class="select">
+                        {% set schema_id_title = "Select the table within the schema to be altered." %}
+                        <label for="table_id" title="{{ schema_id_title }}">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Table</span>
+                            <select id="table_id" name="table_id" title="{{ schema_id_title }}" disabled></select>
+                        </label>
+                    </div>
+                    {% set extra_args_title = "Type optional additional arguments for the checksum task." %}
+                    <label for="extra_args" title="{{ extra_args_title }}">
+                        Extra args
+                        <input type="text"
+                               id="extra_args"
+                               name="extra_args"
+                               class="validate"
+                               placeholder="--databases=db1,db2 --tables=db1.tb1,db1.tb2"
+                               style="width: 25em" />
+                    </label>
+                    <br>
+                </fieldset>
+                <br>
+            </fieldset>
+            <fieldset>
+                <legend>Flags</legend>
+                <label class="checkbox">
+                    <input type="checkbox"
+                           id="binary_index"
+                           name="binary_index"
+                           class="validate" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Binary Index</span>
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" id="explain_arg" name="explain_arg" class="validate" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Explain</span>
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox"
+                           id="fail_on_stopped_replication"
+                           name="fail_on_stopped_replication"
+                           class="validate" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Fail on stopped replication</span>
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox"
+                           id="truncate_replicate_table"
+                           name="truncate_replicate_table"
+                           class="validate" />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Truncate replicate table</span>
+                </label>
+            </fieldset>
+            <!--
+--chunk-index
+--chunk-index-columns
+
+--ignore-databases
+--ignore-tables
+
+--columns
+--ignore-columns
+
+--engines
+--ignore-engines
+
+--where
+-->
+            <fieldset>
+                <legend>Advanced options</legend>
+                <fieldset>
+                    <legend>Recursion Method</legend>
+                    <div class="select">
+                        <label for="recursion_method">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Recursion method</span>
+                            <select id="recursion_method" name="recursion_method">
+                                <option value="" selected>default</option>
+                                <option value="processlist">processlist</option>
+                                <option value="hosts">hosts</option>
+                                <option value="dsn">dsn</option>
+                                <option value="none">none</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label for="dsn_table">DSN Table</label>
+                        <input type="text"
+                               id="dsn_table"
+                               name="dsn_table"
+                               class="validate"
+                               placeholder="D=schema,t=table"
+                               disabled />
+                    </div>
+                </fieldset>
+                <fieldset>
+                    <legend>Customization</legend>
+                    <div class="field">
+                        <label for="pause_file">Pause file</label>
+                        <input type="text" id="pause_file" name="pause_file" class="validate" />
+                    </div>
+                    <div class="field">
+                        <label for="progress">Progress</label>
+                        <input type="text"
+                               id="progress"
+                               name="progress"
+                               class="validate"
+                               size="15"
+                               value="time,10" />
+                    </div>
+                    <div class="field">
+                        <label for="set_vars">Set Vars</label>
+                        <input type="text"
+                               id="set_vars"
+                               name="set_vars"
+                               class="validate"
+                               value="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5"
+                               size="50" />
+                    </div>
+                </fieldset>
+                <fieldset>
+                    <legend>Performance</legend>
+                    <div class="field">
+                        <label for="max_load">Max Load</label>
+                        <input type="text"
+                               id="max_load"
+                               name="max_load"
+                               class="validate"
+                               value="Threads_running=50"
+                               size="30" />
+                    </div>
+                    <div class="field">
+                        <label for="chunk_time">Chunk Time</label>
+                        <input type="text"
+                               id="chunk_time"
+                               name="chunk_time"
+                               class="validate"
+                               value="0.5"
+                               size="5" />
+                    </div>
+                    <div class="field">
+                        <label for="max_lag">Max Lag</label>
+                        <input type="text"
+                               id="max_lag"
+                               name="max_lag"
+                               class="validate"
+                               value="150"
+                               size="5" />
+                    </div>
+                </fieldset>
+            </fieldset>
+            {% include "tasks/partials/create-form-alert-on-failure-input.html.j2" %}
+        </section>
+        <footer>
+            <button type="button" class="text large" data-modal-close>
+                Cancel<sup>ESC</sup>
+            </button>
+            <button type="submit" class="contained large submitButton">Create</button>
+        </footer>
+    </dialog>
+</form>
+{% set serviceSchemas = {} %}
+{% for service in services %}
+    {% set schemas = {} %}
+    {% for schema in service.schemas %}
+        {% set tables = {} %}
+        {% for table in schema.tables %}
+            {% do tables.update({
+            table.id: {
+            "name": table.name,
+            "create": table.create,
+            "keys": table['keys']
+            }
+            }) %}
+        {% endfor %}
+        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
+    {% endfor %}
+    {% do serviceSchemas.update({service.id: schemas}) %}
+{% endfor %}
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    const serviceSchemas = {{ serviceSchemas|tojson }};
+    const connectToSelect = document.getElementById('service_id');
+    const schemaSelect = document.getElementById('schema_id');
+    const tableSelect = document.getElementById('table_id');
+    const extra_args = document.getElementById('extra_args');
+    const form = document.getElementById('create-checksum-form');
+    const createButton = form.querySelector('button[type="submit"]');
+
+    let selectedService = null;
+    let selectedSchema = null;
+    let selectedTable = null;
+
+    function populateSchemas(selectedService) {
+        const isDisabled = !(selectedService && serviceSchemas[selectedService]);
+        schemaSelect.disabled = isDisabled;
+        schemaSelect.innerHTML = `<option value="-1" selected>${isDisabled ? "No schema" : "Not selected"}</option>`;
+
+        tableSelect.disabled = true;
+        tableSelect.innerHTML = '<option value="-1" selected>No table</option>';
+        selectedSchema = null;
+        selectedTable = null;
+
+        if (!isDisabled) {
+            const schemas = Object.entries(serviceSchemas[selectedService]);
+            for (const [schemaId, schema] of schemas) {
+                const option = document.createElement('option');
+                option.value = schemaId;
+                option.textContent = schema.name;
+                schemaSelect.appendChild(option);
+            }
+        }
+    }
+
+    function populateTables(selectedService, selectedSchema) {
+        const hasTables = selectedSchema && serviceSchemas[selectedService] && serviceSchemas[selectedService][selectedSchema];
+        const isDisabled = !hasTables;
+        tableSelect.disabled = isDisabled;
+        tableSelect.innerHTML = `<option value="-1" selected>${isDisabled ? "No table" : "Not selected"}</option>`;
+        selectedTable = null;
+
+        if (hasTables) {
+            const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
+            for (const [tableId, table] of tables) {
+                const option = document.createElement('option');
+                option.value = tableId;
+                option.textContent = table.name;
+                tableSelect.appendChild(option);
+            }
+        }
+    }
+
+    function updateCreateButtonState() {
+        createButton.disabled = !form.checkValidity();
+    }
+
+    connectToSelect.addEventListener('change', function () {
+        const hiddenSchemaInput = document.getElementById("schema_id_hidden");
+        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
+        selectedService = this.value;
+        populateSchemas(selectedService);
+    });
+
+    schemaSelect.addEventListener('change', function() {
+        extra_args.value = ""
+        const hiddenTableInput = document.getElementById("table_id_hidden");
+        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
+        selectedSchema = this.value;
+        populateTables(selectedService, selectedSchema);
+    });
+
+    extra_args.addEventListener('change', function() {
+        schemaSelect.value = -1;
+        tableSelect.value = -1;
+    })
+
+    recursion_method.addEventListener('change', function () {
+        if (this.value === 'dsn') {
+            dsn_table.disabled = false;
+            dsn_table.required = true;
+        } else {
+            dsn_table.disabled = true;
+            dsn_table.required = false;
+        }
+    });
+
+    // Flags explain_arg and truncate_replicate_table are mutually exclusive
+    explain_arg.addEventListener('change', function () {
+        if (this.checked) {
+            truncate_replicate_table.checked = false;
+            truncate_replicate_table.disabled = true;
+        } else {
+            truncate_replicate_table.disabled = false;
+        }
+    });
+
+
+    // Flags explain_arg and truncate_replicate_table are mutually exclusive
+    truncate_replicate_table.addEventListener('change', function () {
+        if (this.checked) {
+            explain_arg.checked = false;
+            explain_arg.disabled = true;
+        } else {
+            explain_arg.disabled = false;
+        }
+    });
+
+    ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
+
+
+    window.addEventListener('DOMContentLoaded', function () {
+        if (connectToSelect.options.length === 1) {
+            const singleHost = connectToSelect.options[0].value;
+            selectedService = singleHost;
+            populateSchemas(singleHost);
+        }
+        updateCreateButtonState();
+    });
+
+</script>

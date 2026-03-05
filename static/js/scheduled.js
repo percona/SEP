@@ -1,3 +1,20 @@
+/**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 $(document).ready(function() {
     const cronstrue = window.cronstrue;
 
@@ -77,15 +94,17 @@ $(document).ready(function() {
 
     function togglePeriodMode($link) {
         const taskId = $link.data('task-id');
-        let $intervalDiv, $cronDiv;
+        let $intervalDiv, $cronDiv, $row;
 
         if (taskId) {
             const $editRow = $(`.edit-periodic-task-row[data-task-id="${taskId}"]`);
+            $row = $editRow;
             $intervalDiv = $editRow.find('.interval-inputs');
             $cronDiv = $editRow.find('.cron-inputs');
         } else {
-            $intervalDiv = $('.new-periodic-task-row .interval-inputs');
-            $cronDiv = $('.new-periodic-task-row .cron-inputs');
+            $row = $('.new-periodic-task-row');
+            $intervalDiv = $row.find('.interval-inputs');
+            $cronDiv = $row.find('.cron-inputs');
         }
 
         $intervalDiv.toggleClass('hidden');
@@ -95,6 +114,15 @@ $(document).ready(function() {
         $intervalDiv.children().attr('required', !cronIsActive).attr('disabled', cronIsActive);
         $cronDiv.find('div').first().children().attr('required', cronIsActive).attr('disabled', !cronIsActive);
         $link.text(cronIsActive ? 'change to interval mode' : 'change to cron mode');
+
+        const $startTimeContainer = $row.find('.start-time-container');
+        if (cronIsActive) {
+            $startTimeContainer.addClass('hidden');
+            $startTimeContainer.find('input[type="datetime-local"]').val('');
+            $startTimeContainer.find('.date-value').val('');
+        } else {
+            $startTimeContainer.removeClass('hidden');
+        }
     }
 
     function initializeSelect2($select, browserTimezone = null) {
@@ -198,6 +226,7 @@ $(document).ready(function() {
         $('.cron-description').text('');
         $('.interval-inputs').removeClass('hidden');
         $('.cron-inputs').addClass('hidden');
+        $('.new-periodic-task-row .start-time-container').removeClass('hidden');
         $('#scheduled-tasks-table').removeClass('create-mode');
     });
 

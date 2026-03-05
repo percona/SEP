@@ -1,0 +1,95 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<button type="button"
+        class="icon medium triggerScheduleExec"
+        data-task="{{ task.name }}"
+        aria-label="Schedule task for execution"
+        data-tooltip
+        data-modal="trigger"
+        data-modal-target="modalScheduleExec">
+    <span class="material-symbols-outlined">acute</span>
+</button>
+<div class="menu">
+    <button class="icon medium trigger"
+            aria-controls="menu-{{ task.name }}-content"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-label="More options"
+            data-tooltip>
+        <span class="material-symbols-outlined">more_horiz</span>
+    </button>
+    <div id="menu-{{ task.name }}-content" class="content" aria-hidden="true">
+        <ul role="menu">
+            <li role="none" class="info-delete-container">
+                <button type="submit"
+                        form="{{ task.name }}-info"
+                        role="menuitem"
+                        class="list-item"
+                        aria-label="Get information about this task">
+                    <span class="material-symbols-outlined">info</span>
+                    <span class="label">Information</span>
+                </button>
+                <form id="{{ task.name }}-info"
+                      method="get"
+                      action="{{ task.name }}"
+                      aria-hidden="true">
+                </form>
+            </li>
+            <li role="none">
+                <form id="{{ task.name }}-send"
+                      method="post"
+                      action="{{ task.name }}"
+                      data-confirm-message="Are you sure you want to execute the task {{ task.name }} now?">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                    <input type="hidden" name="eta" class="eta-value" disabled>
+                    <button type="submit"
+                            form="{{ task.name }}-send"
+                            role="menuitem"
+                            class="list-item submitButton"
+                            aria-label="Execute schema change">
+                        <span class="material-symbols-outlined">play_arrow</span>
+                        <span class="label">Execute now</span>
+                    </button>
+                </form>
+            </li>
+        </ul>
+        <ul role="menu" class="info-delete-container">
+            <li role="none">
+                <form id="{{ task.name }}-delete"
+                      method="post"
+                      data-confirm-message="Are you sure you want to delete the task {{ task.name }}?"
+                      action="{{ task.name }}/delete">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                    <button type="submit"
+                            form="{{ task.name }}-delete"
+                            role="menuitem"
+                            class="list-item submitButton"
+                            aria-label="Permanently delete this task">
+                        <span class="material-symbols-outlined">delete</span>
+                        <span class="label">Delete</span>
+                    </button>
+                </form>
+            </li>
+        </ul>
+    </div>
+    <form id="schedule-task-form"
+          class="window schedule-task-form"
+          method="post"
+          action="{{ task.name }}"
+          data-confirm-message='Are you sure you want to schedule task "{{ task.name }}"?'>
+    </form>
+</div>
