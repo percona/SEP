@@ -34,6 +34,7 @@ from app.sep.deps import (
     IsAuthenticated,
     IsCsrfValidated,
     SessionDep,
+    TaskAPI,
 )
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -57,6 +58,7 @@ async def node_list(
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """List Nodes."""
     context["inventory"] = await inventory_api.get("/")
@@ -66,6 +68,17 @@ async def node_list(
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
     context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
+    periodic_tasks = await tasks_api.get("/periodic/")
+    sync_schedule = next(
+        (
+            pt
+            for pt in periodic_tasks
+            if pt.get("task") == "app.tasks.celery.execute_task_by_name"
+            and "inventory-sync" in (pt.get("kwargs") or "")
+        ),
+        None,
+    )
+    context["sync_schedule"] = sync_schedule
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html.j2",

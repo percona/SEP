@@ -79,6 +79,13 @@ class TestGetExecutor:
         result = get_executor(TaskBackendEnum.NOMAD)
         assert result is tasks_settings.NOMAD
 
+    def test_celery_backend_returns_executor(self) -> None:
+        """Assert CELERY backend returns a CeleryExecutor instance."""
+        from app.tasks.execution.executors.celery.models import CeleryExecutor
+
+        result = get_executor(TaskBackendEnum.CELERY)
+        assert isinstance(result, CeleryExecutor)
+
     def test_non_nomad_backend_raises_value_error(self) -> None:
         """Assert non-NOMAD backend raises ValueError."""
         with pytest.raises(ValueError, match="Unsupported backend"):
@@ -276,6 +283,32 @@ class TestPrepareTaskHistory:
         )
         result = prepare_task_history(task, "user-1", execution_data)
         assert result.anonymize_mask == EXECUTION_ANONYMIZE_MASK
+
+    def test_celery_backend_uses_target_from_data(self) -> None:
+        """Assert CELERY backend gets target from task.data."""
+        task = Task(
+            id=7,
+            name="celery-task",
+            backend=TaskBackendEnum.CELERY,
+            data={
+                "callable": "some.module.func",
+                "target": "local",
+            },
+        )
+        result = prepare_task_history(task, "user-1")
+        assert result.execution_request.target == "local"
+        assert result.task_id == task.id
+
+    def test_celery_backend_missing_target_raises(self) -> None:
+        """Assert CELERY backend without target in data raises."""
+        task = Task(
+            id=8,
+            name="celery-no-target",
+            backend=TaskBackendEnum.CELERY,
+            data={"callable": "some.module.func"},
+        )
+        with pytest.raises(HTTPBadRequestException, match="target is required"):
+            prepare_task_history(task, "user-1")
 
     @patch("app.tasks.deps.anonymizer_settings")
     def test_anonymize_mask_falls_back_to_settings(

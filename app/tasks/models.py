@@ -95,10 +95,13 @@ class TaskBackendEnum(StrEnum):
     :vartype NOMAD: str
     :cvar PROXY: Enum value for Proxy backend.
     :vartype PROXY: str
+    :cvar CELERY: Enum value for Celery backend.
+    :vartype CELERY: str
     """
 
     NOMAD = auto()
     PROXY = auto()
+    CELERY = auto()
 
 
 class TaskHistoryStatusEnum(StrEnum):

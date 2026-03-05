@@ -29,7 +29,7 @@ from app.core.celery.utils import (
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.models import SYSTEM_USER, Task
+from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
 
 logger = logging.getLogger(__name__)
 
@@ -391,6 +391,16 @@ SYSTEM_TASKS = [
         protected=True,
         anonymize_mask=None,
         output_files_path="run-script/local/output_files",
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name="inventory-sync",
+        data={
+            "callable": "app.sep.plugins.inventory.sync.run_inventory_sync",
+            "target": "local",
+        },
+        backend=TaskBackendEnum.CELERY,
+        protected=True,
         created_by=SYSTEM_USER,
     ),
 ]

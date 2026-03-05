@@ -30,6 +30,7 @@ from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
+from app.tasks.execution.executors.celery.models import CeleryExecutor
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     Task,
@@ -61,14 +62,18 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecutor:
-    """Get the task executor.
+    """Get the task executor for the given backend.
 
+    :param backend: The backend type to get an executor for.
+    :type backend: TaskBackendEnum
     :return: The task executor.
     :rtype: BaseExecutor
+    :raises ValueError: If the backend is not supported.
     """
-    # TODO: Allow other executors  # noqa: TD002, TD003
     if backend == TaskBackendEnum.NOMAD:
         return tasks_settings.NOMAD
+    if backend == TaskBackendEnum.CELERY:
+        return CeleryExecutor()
     raise ValueError(f"Unsupported backend {backend}")
 
 
@@ -134,9 +139,12 @@ def prepare_task_history(
     if task.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
-    target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
-        0
-    ].get("RTarget")
+    if task.backend == TaskBackendEnum.CELERY:
+        target = task.data.get("target")
+    else:
+        target = execution_data.meta.get("target") or task.data.get(
+            "Constraints", [{}]
+        )[0].get("RTarget")
     if not target:
         raise HTTPBadRequestException(
             "Execution target is required in execution data meta."

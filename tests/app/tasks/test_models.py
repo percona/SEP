@@ -72,6 +72,10 @@ class TestTaskBackendEnum:
         """Assert PROXY has the expected auto-generated value."""
         assert TaskBackendEnum.PROXY == "proxy"
 
+    def test_celery_value(self) -> None:
+        """Assert CELERY has the expected auto-generated value."""
+        assert TaskBackendEnum.CELERY == "celery"
+
     def test_is_str_enum(self) -> None:
         """Assert values are strings."""
         assert isinstance(TaskBackendEnum.NOMAD, str)
@@ -208,6 +212,15 @@ class TestTaskBaseValidation:
             backend=TaskBackendEnum.NOMAD,
         )
         assert task.backend == TaskBackendEnum.NOMAD
+
+    def test_celery_backend_without_task_passes(self) -> None:
+        """Assert CELERY backend does not require 'task' in data."""
+        task = TaskBase(
+            name="test",
+            data={"callable": "some.module.func", "target": "local"},
+            backend=TaskBackendEnum.CELERY,
+        )
+        assert task.backend == TaskBackendEnum.CELERY
 
 
 class TestTask:
