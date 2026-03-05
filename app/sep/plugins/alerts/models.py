@@ -16,8 +16,9 @@
 """Define Pydantic models for alert templates."""
 
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, StringConstraints
 
 
 class ServiceType(StrEnum):
@@ -63,8 +64,8 @@ class AlertTemplate(BaseModel):
     :param service_type: The service category this alert applies to.
     :type service_type: ServiceType
     :param expression: The PromQL expression used to evaluate the alert condition.
-        Must be non-empty after stripping whitespace.
-    :type expression: str
+        Whitespace is stripped and the value must be non-empty.
+    :type expression: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     :param default_threshold: The default numeric threshold displayed and configured
         in the UI. This is independent of `expression` — the bundled PromQL expression
         may embed its own comparison value. `default_threshold` is UI metadata that
@@ -80,24 +81,8 @@ class AlertTemplate(BaseModel):
 
     name: str
     service_type: ServiceType
-    expression: str
+    expression: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     default_threshold: float
     severity: AlertSeverity
     description: str
     summary: str
-
-    @field_validator("expression", mode="after")
-    @classmethod
-    def validate_expression_non_empty(cls, v: str) -> str:
-        """Validate that the PromQL expression is non-empty after stripping whitespace.
-
-        :param v: The expression string to validate.
-        :type v: str
-        :return: The stripped expression string.
-        :rtype: str
-        :raises ValueError: If the expression is blank after stripping whitespace.
-        """
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("expression must not be blank")
-        return stripped
