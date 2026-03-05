@@ -22,13 +22,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.tasks.config import tasks_settings
-from app.tasks.db.utils import json_deserialize
 
 engine = create_async_engine(
     tasks_settings.DATABASE.URL,
     echo=False,
     json_serializer=json_serializer,
-    json_deserializer=json_deserialize,
 )
 
 
