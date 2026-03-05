@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define reusable model factories for tests."""
 
 from polyfactory.factories.pydantic_factory import ModelFactory
@@ -6,6 +21,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor import CasdoorSDK
+from app.inventory.models import NodeWrite, SchemaWrite, ServiceWrite, TableWrite
 from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
@@ -56,6 +72,32 @@ class AltersCreateFactory(ModelFactory[AltersCreate]):
 
 class ArchivesCreateFactory(ModelFactory[ArchivesCreate]):
     """Define factory for ArchivesCreate instances."""
+
+
+class NodeWriteFactory(ModelFactory[NodeWrite]):
+    """Define factory for NodeWrite instances."""
+
+    source = None
+    external_id = None
+
+
+class ServiceWriteFactory(ModelFactory[ServiceWrite]):
+    """Define factory for ServiceWrite instances."""
+
+    node_id = None
+    external_id = None
+
+
+class SchemaWriteFactory(ModelFactory[SchemaWrite]):
+    """Define factory for SchemaWrite instances."""
+
+    service_id = None
+
+
+class TableWriteFactory(ModelFactory[TableWrite]):
+    """Define factory for TableWrite instances."""
+
+    schema_id = None
 
 
 class CreatedNodeFactory(ModelFactory[CreatedNode]):

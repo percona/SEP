@@ -1,0 +1,76 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    Tasks
+{%- endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/tasks.css') }}">
+    {% if running_tasks %}<link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">{% endif %}
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+{% endblock behaviours_optimized_extra %}
+{% block main %}
+    <p>Manage the configuration, execution and reporting with the task manager.</p>
+    {% if running_tasks %}
+        <section id="running-tasks">
+            <h2>Running</h2>
+            {% include "tasks/partials/running-tasks.html.j2" %}
+        </section>
+    {% endif %}
+    <h2>Available tasks</h2>
+    <table data-table="available-tasks">
+        <caption>Tasks available for reuse</caption>
+        <thead>
+            <tr>
+                <th>Task</th>
+                <th>Engine</th>
+                <th>Created</th>
+                <th>Created by</th>
+                <th>Last updated by</th>
+            </tr>
+        </thead>
+        <tfoot>
+            <tr>
+                <td colspan="5"></td>
+            </tr>
+        </tfoot>
+        <tbody>
+            {% for task in tasks %}
+                <tr>
+                    <th>
+                        <a href="{{ url_for('tasks_detail', task_name=task['name']) }}">{{ task["name"] }}</a>
+                    </th>
+                    <td>{{ task["backend"].capitalize() }}</td>
+                    <td class="relativeTime">{{ task["created_at"] }}</td>
+                    <td>{{ user_id_to_username.get(task["created_by"], task["created_by"]) or '' }}</td>
+                    <td>{{ user_id_to_username.get(task["last_updated_by"], task["last_updated_by"]) or '' }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <br>
+    <br>
+    {% include "tasks/partials/create-form.html.j2" %}
+{% endblock main %}
