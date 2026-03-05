@@ -61,6 +61,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.core.utils.lazy import LazyProxy
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -493,4 +494,4 @@ class SEPSettings(BaseYamlAppSettings):
         return self
 
 
-sep_settings = SEPSettings()
+sep_settings: SEPSettings = LazyProxy(SEPSettings)
