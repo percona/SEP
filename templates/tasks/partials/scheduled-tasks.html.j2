@@ -36,6 +36,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
             <th id="period-header">Period</th>
             <th id="start-time-header">Start Time</th>
             <th id="last-run-at-header">Last Run At</th>
+            <th>Next Execution</th>
             <th>Runs</th>
             <th>Enabled</th>
             <th>Actions</th>
@@ -64,6 +65,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     </td>
                     <td class="relativeTime">{{ periodic_task.start_time or '' }}</td>
                     <td class="relativeTime">{{ periodic_task["last_run_at"] or '' }}</td>
+                    <td class="relativeTime">{{ periodic_task.next_run_at or '' }}</td>
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td>
                         <form method="post"
@@ -166,6 +168,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                title="Optional start time for the periodic task">
                     </td>
                     <td></td>
+                    <td></td>
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td style="padding-left: 0.5em">
                         <input type="hidden"
@@ -247,6 +250,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                            class="start-time-input"
                            title="Optional start time for the periodic task">
                 </td>
+                <td></td>
                 <td></td>
                 <td>0</td>
                 <td style="padding-left: 0.5em">
