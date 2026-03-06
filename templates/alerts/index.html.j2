@@ -79,15 +79,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <td>{{ template.name }}</td>
                         <td>{{ template.service_type.label }}</td>
                         <td>
-                            <span class="severity-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
+                            <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
                         </td>
                         <td>
                             {% if pmm_present_names is none %}
-                                <span class="pmm-badge badge-unknown">Unknown</span>
+                                <span class="alert-badge badge-unknown">Unknown</span>
                             {% elif template.name in pmm_present_names %}
-                                <span class="pmm-badge badge-present">Present</span>
+                                <span class="alert-badge badge-present">Present</span>
                             {% else %}
-                                <span class="pmm-badge badge-absent">Not Present</span>
+                                <span class="alert-badge badge-absent">Not Present</span>
                             {% endif %}
                         </td>
                         <td class="options">
@@ -120,7 +120,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </dd>
                             <dt>Severity</dt>
                             <dd>
-                                <span class="severity-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
+                                <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
                             </dd>
                             <dt>Default Threshold</dt>
                             <dd>

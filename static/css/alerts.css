@@ -6,9 +6,9 @@
  * (at your option) any later version.
  */
 
-/* Severity badges */
+/* Badges (shared base for severity and PMM presence) */
 
-.severity-badge {
+.alert-badge {
     display: inline-block;
     padding: 0.125rem 0.5rem;
     border-radius: var(--cornerExtraSmall);
@@ -17,6 +17,8 @@
     line-height: 1.5;
     white-space: nowrap;
 }
+
+/* Severity badges */
 
 .severity-info {
     background: var(--infoSurface);
@@ -34,16 +36,6 @@
 }
 
 /* PMM presence badges */
-
-.pmm-badge {
-    display: inline-block;
-    padding: 0.125rem 0.5rem;
-    border-radius: var(--cornerExtraSmall);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    line-height: 1.5;
-    white-space: nowrap;
-}
 
 .badge-present {
     background: var(--successSurface);

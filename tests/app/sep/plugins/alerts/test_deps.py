@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.exceptions import HTTPException
+from polyfactory.factories.pydantic_factory import ModelFactory
 
 from app.sep.clients.pmm import AlertTemplate as PMMAlertTemplate
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -28,24 +29,13 @@ from app.sep.plugins.alerts.deps import (
     get_pmm_present_names,
 )
 from app.sep.plugins.alerts.models import (
-    AlertSeverity,
     AlertTemplate,
     ServiceType,
 )
 
 
-def _make_alert_template(**overrides: object) -> AlertTemplate:
-    defaults = {
-        "name": "High CPU",
-        "service_type": ServiceType.GENERIC,
-        "expression": "cpu > 80",
-        "default_threshold": 80.0,
-        "severity": AlertSeverity.WARNING,
-        "description": "CPU usage is above threshold.",
-        "summary": "High CPU on {{ $labels.instance }}",
-    }
-    defaults.update(overrides)
-    return AlertTemplate(**defaults)
+class AlertTemplateFactory(ModelFactory[AlertTemplate]):
+    """Define factory for AlertTemplate instances."""
 
 
 class TestGetPmmApi:
@@ -146,11 +136,9 @@ class TestGetAlertsIndexContext:
         """Assert the context contains all expected keys."""
         base_context = {"user": "test-user", "plugins": []}
         templates_by_service = {
-            ServiceType.GENERIC: (_make_alert_template(),),
+            ServiceType.GENERIC: (AlertTemplateFactory.build(),),
             ServiceType.MYSQL: (
-                _make_alert_template(
-                    name="Slow Queries", service_type=ServiceType.MYSQL
-                ),
+                AlertTemplateFactory.build(service_type=ServiceType.MYSQL),
             ),
             ServiceType.MONGODB: (),
             ServiceType.POSTGRESQL: (),

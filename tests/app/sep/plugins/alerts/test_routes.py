@@ -69,3 +69,21 @@ def test_alerts_index_contains_filter_tabs(test_client):
     response = test_client.get("/alerts/")
     assert "Generic" in response.text
     assert "MySQL" in response.text
+
+
+def test_alerts_index_empty_state(test_client):
+    """Assert the empty state message renders when no templates exist."""
+    sep_app.dependency_overrides[get_alerts_index_context] = lambda: {
+        "user": "test-user",
+        "all_templates": [],
+        "service_types": list(ServiceType),
+        "pmm_present_names": None,
+        "alert_templates": {},
+    }
+    try:
+        response = test_client.get("/alerts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert "No alert templates found." in response.text
+        assert "alerts-table" not in response.text
+    finally:
+        sep_app.dependency_overrides = {}
