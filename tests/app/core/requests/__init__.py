@@ -12,6 +12,3 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-from app.core.middleware.log_context import LogContextMiddleware
-from app.core.middleware.security_headers import SecurityHeadersMiddleware

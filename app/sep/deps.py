@@ -35,6 +35,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPRedirectException,
 )
+from app.core.log import set_log_context
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
@@ -136,6 +137,7 @@ async def get_current_user(
         logger.debug("User %s is not active", user.username)
         # TODO: Message on inactive  # noqa: TD002, TD003
         raise LoginRedirectException(request)
+    set_log_context(user=user.username)
     return user
 
 

@@ -68,36 +68,45 @@ from app.core.utils.lazy import LazyProxy
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "context": {
+            "()": "app.core.log.ContextFilter",
+        },
+    },
     "formatters": {
         "default": {
-            "format": "%(name)s: %(message)s <%(process)d>",
+            "format": "%(name)s: [%(correlation_id)s] %(message)s <%(process)d>",
         },
         "uvicorn": {
-            "format": "uvicorn: %(message)s <%(process)d>",
+            "format": "uvicorn: [%(correlation_id)s] %(message)s <%(process)d>",
         },
     },
     "handlers": {
         "default": {
             "formatter": "default",
             "class": "rich.logging.RichHandler",
+            "filters": ["context"],
             "omit_repeated_times": False,
             "show_path": False,
         },
         "app": {
             "formatter": "default",
             "class": "rich.logging.RichHandler",
+            "filters": ["context"],
             "omit_repeated_times": False,
             "show_path": True,
         },
         "uvicorn": {
             "formatter": "uvicorn",
             "class": "rich.logging.RichHandler",
+            "filters": ["context"],
             "omit_repeated_times": False,
             "show_path": False,
         },
         "celery": {
             "formatter": "default",
             "class": "rich.logging.RichHandler",
+            "filters": ["context"],
             "omit_repeated_times": False,
             "show_path": False,
         },

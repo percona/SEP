@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from app.api.main import api_router
 from app.celery import celery as celery_app
 from app.core.config import create_app, settings
+from app.core.middleware.log_context import LogContextMiddleware
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app, sep_startup
@@ -57,6 +58,7 @@ app = create_app(
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
 )
+app.add_middleware(LogContextMiddleware)
 app.mount("/api/inventory", inventory_app)
 app.mount("/api/tasks", tasks_app)
 app.mount("/", sep_app)
