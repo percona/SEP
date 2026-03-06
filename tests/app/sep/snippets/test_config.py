@@ -17,6 +17,7 @@
 
 import json
 import re
+from typing import Any
 
 import pytest
 
@@ -26,18 +27,18 @@ from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
 EXECUTOR_HOSTS = frozenset({"host1"})
 
 
-def _make_params_json(*params):
-    """Serialize parameter dicts to a JSON string for _to_form."""
+def _make_params_json(*params: dict[str, Any]) -> str:
+    """Serialize parameter dicts to a JSON string for `_to_form`."""
     return json.dumps(list(params))
 
 
-def _extract_fieldset_legends(html):
+def _extract_fieldset_legends(html: str) -> list[str]:
     """Extract all fieldset legend texts from rendered HTML, in order."""
     return re.findall(r"<legend[^>]*>(.*?)</legend>", html)
 
 
-def _count_fieldsets(html):
-    """Count total <fieldset> elements in rendered HTML."""
+def _count_fieldsets(html: str) -> int:
+    """Count total fieldset elements in rendered HTML."""
     return html.count("<fieldset")
 
 
