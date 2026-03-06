@@ -181,6 +181,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         <section>
             <h3>Execute</h3>
             {{ script.to_form(executor_hosts, script_execution_url, form_defaults) | safe }}
+            <script nonce="{{ request.state.csp_nonce }}">
+                if (window.initInfoTooltips) {
+                    window.initInfoTooltips(document.getElementById('snippetExecuteForm'));
+                }
+            </script>
         </section>
         {% if running_tasks %}
             <section id="running-tasks">
