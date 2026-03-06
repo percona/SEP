@@ -524,7 +524,7 @@ class ExecutorHostsContext:
     def as_template_list(self) -> list[dict[str, str]]:
         """Return a sorted list of value/label dicts for template rendering.
 
-        :return: List of dicts with ``value`` and ``label`` keys, sorted by value.
+        :return: List of dicts with `value` and `label` keys, sorted by value.
         :rtype: list[dict[str, str]]
         """
         return sorted(
