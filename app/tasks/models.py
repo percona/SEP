@@ -290,12 +290,12 @@ class TaskBase(SQLModel):
     def validate_data_for_backend(self) -> Self:
         """Validate the data dictionary against the selected backend.
 
-        Enforce that Proxy tasks include a ``task`` key and that Celery tasks
+        Enforce that Proxy tasks include a `task` key and that Celery tasks
         are marked as protected to prevent arbitrary code execution.
 
         :return: The validated instance.
-        :rtype: TaskBase
-        :raises ValueError: If the backend is Proxy and ``task`` is not set in data,
+        :rtype: Self
+        :raises ValueError: If the backend is Proxy and `task` is not set in data,
             or if the backend is Celery and the task is not protected.
         """
         if self.backend == TaskBackendEnum.PROXY and not self.data.get("task"):

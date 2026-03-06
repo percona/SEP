@@ -26,7 +26,7 @@ from typing import Any
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.utils import async_run, utc_now
+from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
@@ -47,7 +47,7 @@ class CeleryExecutor(BaseExecutor):
 
     Unlike the NomadExecutor which dispatches jobs to a remote Nomad cluster,
     the CeleryExecutor imports and calls a Python callable synchronously within
-    ``dispatch_task``, updating the TaskHistory to SUCCESS or FAILED before
+    `dispatch_task`, updating the TaskHistory to SUCCESS or FAILED before
     returning.
 
     :param wait_interval: The interval in seconds between status checks.
@@ -108,10 +108,10 @@ class CeleryExecutor(BaseExecutor):
     ) -> Any:
         """Import and invoke the callable specified in the task data.
 
-        Redirect ``sys.stdout`` and ``sys.stderr`` into the provided buffers
+        Redirect `sys.stdout` and `sys.stderr` into the provided buffers
         so that output produced by the callable is captured in task logs.
         Support both async and sync callables: async callables are awaited
-        directly while sync callables are executed via :func:`async_run`.
+        directly while sync callables are executed via :func:`asyncio.to_thread`.
 
         :param task: The task containing the callable path in its data dict.
         :type task: Task
@@ -132,7 +132,7 @@ class CeleryExecutor(BaseExecutor):
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             if asyncio.iscoroutinefunction(func):
                 return await func()
-            return await async_run(func)
+            return await asyncio.to_thread(func)
 
     async def _sync_task_history(
         self,
@@ -140,7 +140,7 @@ class CeleryExecutor(BaseExecutor):
     ) -> TaskHistory:
         """Return the queue_item unchanged.
 
-        Celery tasks run synchronously within ``dispatch_task``, so no
+        Celery tasks run synchronously within `dispatch_task`, so no
         additional synchronization is needed.
 
         :param queue_item: The task history record.
@@ -165,11 +165,11 @@ class CeleryExecutor(BaseExecutor):
         Enforce that the callable path starts with the allowed namespace prefix
         to prevent arbitrary code execution.
 
-        :param job: The job specification containing a ``callable`` key.
+        :param job: The job specification containing a `callable` key.
         :type job: dict[str, Any]
         :return: The original job specification if validation is successful.
         :rtype: dict[str, Any]
-        :raises ValueError: If ``callable`` is missing, outside the allowed
+        :raises ValueError: If `callable` is missing, outside the allowed
             namespace, or not importable.
         """
         callable_path = job.get("callable")
@@ -193,7 +193,7 @@ class CeleryExecutor(BaseExecutor):
     def get_hosts(self) -> dict[str, str]:
         """Return the local host as the only available executor host.
 
-        :return: A dictionary with a single ``local`` entry.
+        :return: A dictionary with a single `local` entry.
         :rtype: dict[str, str]
         """
         return {"local": "localhost"}

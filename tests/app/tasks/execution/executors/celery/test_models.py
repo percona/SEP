@@ -15,6 +15,9 @@
 
 """Define tests for the CeleryExecutor."""
 
+import io
+import sys
+from types import ModuleType
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -189,6 +192,78 @@ class TestCeleryExecutorDispatchTask:
         assert task_logs
         assert "stdout" in task_logs["execution"]
         assert "stderr" in task_logs["execution"]
+
+
+class TestCeleryExecutorRunCallable:
+    """Test CeleryExecutor._run_callable."""
+
+    @pytest.fixture
+    def mock_module(self) -> ModuleType:
+        """Return a fake module with async and sync callables."""
+        mod = ModuleType("app.fake.module")
+
+        async def async_func() -> str:
+            sys.stdout.write("async stdout\n")
+            return "async result"
+
+        def sync_func() -> str:
+            sys.stdout.write("sync stdout\n")
+            return "sync result"
+
+        mod.async_func = async_func
+        mod.sync_func = sync_func
+        mod.NOT_CALLABLE = "a string"
+        return mod
+
+    def _make_task(self, callable_path: str) -> Task:
+        """Return a minimal Task with the given callable path."""
+        return Task(
+            name="test",
+            backend=TaskBackendEnum.CELERY,
+            protected=True,
+            data={"callable": callable_path, "target": "local"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_callable_captures_stdout(self, executor, mock_module) -> None:
+        """Assert async callable output is captured in stdout buffer."""
+        task = self._make_task("app.fake.module.async_func")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("importlib.import_module", return_value=mock_module):
+            result = await executor._run_callable(task, stdout, stderr)
+        assert result == "async result"
+        assert "async stdout" in stdout.getvalue()
+
+    @pytest.mark.asyncio
+    async def test_sync_callable_captures_stdout(self, executor, mock_module) -> None:
+        """Assert sync callable output is captured in stdout buffer."""
+        task = self._make_task("app.fake.module.sync_func")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("importlib.import_module", return_value=mock_module):
+            result = await executor._run_callable(task, stdout, stderr)
+        assert result == "sync result"
+        assert "sync stdout" in stdout.getvalue()
+
+    @pytest.mark.asyncio
+    async def test_non_callable_raises_type_error(self, executor, mock_module) -> None:
+        """Assert non-callable attribute raises TypeError."""
+        task = self._make_task("app.fake.module.NOT_CALLABLE")
+        with (
+            patch("importlib.import_module", return_value=mock_module),
+            pytest.raises(TypeError, match="not callable"),
+        ):
+            await executor._run_callable(task, io.StringIO(), io.StringIO())
+
+    @pytest.mark.asyncio
+    async def test_writes_executing_prefix(self, executor, mock_module) -> None:
+        """Assert stdout buffer starts with an 'Executing' line."""
+        task = self._make_task("app.fake.module.async_func")
+        stdout = io.StringIO()
+        with patch("importlib.import_module", return_value=mock_module):
+            await executor._run_callable(task, stdout, io.StringIO())
+        assert stdout.getvalue().startswith("Executing app.fake.module.async_func")
 
 
 class TestCeleryExecutorSyncTaskHistory:

@@ -60,6 +60,6 @@ def downgrade() -> None:
                 name="taskbackendenum",
                 native_enum=False,
             ),
-            type_=sa.VARCHAR(length=5),
+            type_=sa.VARCHAR(length=32),
             existing_nullable=False,
         )

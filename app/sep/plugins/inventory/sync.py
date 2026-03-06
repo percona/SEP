@@ -24,11 +24,11 @@ from app.tasks.config import tasks_settings
 async def run_scheduled_inventory_sync() -> None:
     """Execute scheduled inventory sync using configured API key and syncers.
 
-    Read the API key from ``tasks_settings.INVENTORY_SYNC_API_KEY`` and construct
+    Read the API key from `tasks_settings.INVENTORY_SYNC_API_KEY` and construct
     syncers from application settings. This is a zero-argument entry point designed
     for the CeleryExecutor.
 
-    :raises ValueError: If ``INVENTORY_SYNC_API_KEY`` is not configured.
+    :raises ValueError: If `INVENTORY_SYNC_API_KEY` is not configured.
     """
     api_key = tasks_settings.INVENTORY_SYNC_API_KEY
     if not api_key:

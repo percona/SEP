@@ -62,7 +62,7 @@ SyncersDep = Annotated[list[BaseSyncer], Depends(get_syncers)]
 async def get_syncers_standalone() -> list[BaseSyncer]:
     """Initialize syncer instances with API clients constructed from settings.
 
-    Construct ``RemoteAPI`` clients for the inventory and tasks services from
+    Construct `RemoteAPI` clients for the inventory and tasks services from
     application settings, then build syncers the same way the request-context
     dependency does. Used by scheduled tasks that run outside of request
     context.
