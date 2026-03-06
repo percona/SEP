@@ -32,7 +32,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
          aria-label="Filter by service type">
         <button class="toggle-btn active" data-filter="all">All</button>
         {% for svc in service_types %}
-            <button class="toggle-btn" data-filter="{{ svc.value }}">{{ svc.value | title }}</button>
+            <button class="toggle-btn" data-filter="{{ svc.value }}">{{ svc.label }}</button>
         {% endfor %}
     </div>
 {% endblock sticky %}
@@ -77,7 +77,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </label>
                         </td>
                         <td>{{ template.name }}</td>
-                        <td>{{ template.service_type.value | title }}</td>
+                        <td>{{ template.service_type.label }}</td>
                         <td>
                             <span class="severity-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
                         </td>
@@ -116,7 +116,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <dl class="alert-detail-list">
                             <dt>Service Type</dt>
                             <dd>
-                                {{ template.service_type.value | title }}
+                                {{ template.service_type.label }}
                             </dd>
                             <dt>Severity</dt>
                             <dd>

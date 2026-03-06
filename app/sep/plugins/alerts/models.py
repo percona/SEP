@@ -39,6 +39,21 @@ class ServiceType(StrEnum):
     MONGODB = "mongodb"
     POSTGRESQL = "postgresql"
 
+    @property
+    def label(self) -> str:
+        """Return the display label with correct product-name capitalization.
+
+        :return: The human-readable service type name.
+        :rtype: str
+        """
+        labels = {
+            "generic": "Generic",
+            "mysql": "MySQL",
+            "mongodb": "MongoDB",
+            "postgresql": "PostgreSQL",
+        }
+        return labels[self.value]
+
 
 class AlertSeverity(StrEnum):
     """Enumerate the supported severity levels for alert templates.

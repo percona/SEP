@@ -15,8 +15,6 @@
 
 """Define routes for the alerts plugin."""
 
-import logging
-
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
@@ -24,7 +22,6 @@ from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated
 from app.sep.plugins.alerts.deps import AlertsIndexContext
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 

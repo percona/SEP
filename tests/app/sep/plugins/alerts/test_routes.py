@@ -68,4 +68,4 @@ def test_alerts_index_contains_filter_tabs(test_client):
     """Assert the response includes service filter tabs."""
     response = test_client.get("/alerts/")
     assert "Generic" in response.text
-    assert "Mysql" in response.text or "MySQL" in response.text
+    assert "MySQL" in response.text

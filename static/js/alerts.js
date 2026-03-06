@@ -48,5 +48,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
+
+        function updateSelectAll() {
+            var visible = [];
+            rows.forEach(function(row) {
+                if (row.style.display !== 'none') {
+                    var cb = row.querySelector('.alert-checkbox');
+                    if (cb) visible.push(cb);
+                }
+            });
+            var allChecked = visible.length > 0 && visible.every(function(cb) {
+                return cb.checked;
+            });
+            var someChecked = visible.some(function(cb) {
+                return cb.checked;
+            });
+            selectAll.checked = allChecked;
+            selectAll.indeterminate = !allChecked && someChecked;
+        }
+
+        rows.forEach(function(row) {
+            var cb = row.querySelector('.alert-checkbox');
+            if (cb) cb.addEventListener('change', updateSelectAll);
+        });
     }
 });
