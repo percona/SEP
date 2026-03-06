@@ -1169,7 +1169,7 @@ class TestValidateJob:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = json.dumps({"ValidationErrors": []})
-        mock_async_run.return_value = (mock_response,)
+        mock_async_run.return_value = mock_response
 
         executor = _build_executor()
         job = {"ID": "test-job", "Type": "batch"}
@@ -1186,7 +1186,7 @@ class TestValidateJob:
         mock_response.text = json.dumps(
             {"ValidationErrors": ["missing required field"]}
         )
-        mock_async_run.return_value = (mock_response,)
+        mock_async_run.return_value = mock_response
 
         executor = _build_executor()
         with pytest.raises(HTTPBadRequestException):
@@ -1199,7 +1199,7 @@ class TestValidateJob:
         """Assert validate_job raises HTTPException on non-200 status."""
         mock_response = MagicMock()
         mock_response.status_code = 500
-        mock_async_run.return_value = (mock_response,)
+        mock_async_run.return_value = mock_response
 
         executor = _build_executor()
         with pytest.raises(HTTPException):

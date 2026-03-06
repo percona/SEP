@@ -21,7 +21,9 @@ import pytest
 import pytest_asyncio
 
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.execution.executors.celery.models import CeleryExecutor
+from app.tasks.execution.executors.celery.models import (
+    CeleryExecutor,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -48,8 +50,9 @@ async def celery_task(session) -> Task:
             TaskFactory.build(
                 name="celery-task",
                 backend=TaskBackendEnum.CELERY,
+                protected=True,
                 data={
-                    "callable": "tests.app.tasks.execution.executors.celery.test_models.sample_callable",
+                    "callable": "app.sep.plugins.inventory.sync.run_scheduled_inventory_sync",
                     "target": "local",
                 },
             )
@@ -98,9 +101,9 @@ class TestCeleryExecutorValidateJob:
 
     @pytest.mark.asyncio
     async def test_valid_callable_path(self, executor) -> None:
-        """Assert a valid callable path passes validation."""
+        """Assert a valid callable path within the allowed namespace passes."""
         job = {
-            "callable": "tests.app.tasks.execution.executors.celery.test_models.sample_callable"
+            "callable": "app.sep.plugins.inventory.sync.run_scheduled_inventory_sync"
         }
         result = await executor.validate_job(job)
         assert result == job
@@ -114,8 +117,24 @@ class TestCeleryExecutorValidateJob:
     @pytest.mark.asyncio
     async def test_non_importable_callable_raises(self, executor) -> None:
         """Assert a non-importable callable path raises ValueError."""
-        job = {"callable": "nonexistent.module.func"}
+        job = {"callable": "app.nonexistent.module.func"}
         with pytest.raises(ValueError, match="import"):
+            await executor.validate_job(job)
+
+    @pytest.mark.asyncio
+    async def test_outside_allowed_namespace_raises(self, executor) -> None:
+        """Assert a callable outside the allowed namespace raises ValueError."""
+        job = {"callable": "subprocess.call"}
+        with pytest.raises(ValueError, match="allowed namespace"):
+            await executor.validate_job(job)
+
+    @pytest.mark.asyncio
+    async def test_non_callable_attribute_raises(self, executor) -> None:
+        """Assert a non-callable attribute raises ValueError."""
+        job = {
+            "callable": "app.tasks.execution.executors.celery.models.CELERY_CALLABLE_ALLOWED_PREFIX"
+        }
+        with pytest.raises(TypeError, match="not callable"):
             await executor.validate_job(job)
 
 
@@ -150,9 +169,9 @@ class TestCeleryExecutorDispatchTask:
             result = await executor.dispatch_task(session, celery_queue_item)
         assert result.status == TaskHistoryStatusEnum.FAILED
         assert result.finished_at is not None
-        stdout = result.execution_request.tracking["task_logs"]["execution"]["stdout"]
-        assert "boom" in stdout
-        assert "RuntimeError" in stdout
+        stderr = result.execution_request.tracking["task_logs"]["execution"]["stderr"]
+        assert "boom" in stderr
+        assert "RuntimeError" in stderr
 
     @pytest.mark.asyncio
     async def test_dispatch_stores_logs(
@@ -168,6 +187,8 @@ class TestCeleryExecutorDispatchTask:
             result = await executor.dispatch_task(session, celery_queue_item)
         task_logs = result.execution_request.tracking.get("task_logs", {})
         assert task_logs
+        assert "stdout" in task_logs["execution"]
+        assert "stderr" in task_logs["execution"]
 
 
 class TestCeleryExecutorSyncTaskHistory:

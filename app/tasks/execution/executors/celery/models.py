@@ -15,16 +15,18 @@
 
 """Provide task execution management for Celery-based tasks."""
 
+import asyncio
 import importlib
 import io
 import logging
 import traceback
 from collections.abc import AsyncGenerator
+from contextlib import redirect_stderr, redirect_stdout
 from typing import Any
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.utils import utc_now
+from app.core.utils import async_run, utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
@@ -36,6 +38,8 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+CELERY_CALLABLE_ALLOWED_PREFIX = "app."
 
 
 class CeleryExecutor(BaseExecutor):
@@ -74,21 +78,22 @@ class CeleryExecutor(BaseExecutor):
         queue_item.started_at = utc_now()
         queue_item.status = TaskHistoryStatusEnum.RUNNING
 
-        log_buffer = io.StringIO()
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
         try:
-            result = await self._run_callable(task, log_buffer)
-            log_buffer.write(f"\nResult: {result}\n")
+            result = await self._run_callable(task, stdout_buffer, stderr_buffer)
+            stdout_buffer.write(f"\nResult: {result}\n")
             queue_item.status = TaskHistoryStatusEnum.SUCCESS
         except Exception:
             logger.exception("Celery task %s failed", task.name)
-            log_buffer.write(f"\nError:\n{traceback.format_exc()}")
+            stderr_buffer.write(f"\nError:\n{traceback.format_exc()}")
             queue_item.status = TaskHistoryStatusEnum.FAILED
         finally:
             queue_item.finished_at = utc_now()
             queue_item.execution_request.tracking["task_logs"] = {
                 "execution": {
-                    "stdout": log_buffer.getvalue(),
-                    "stderr": "",
+                    "stdout": stdout_buffer.getvalue(),
+                    "stderr": stderr_buffer.getvalue(),
                 }
             }
 
@@ -98,13 +103,22 @@ class CeleryExecutor(BaseExecutor):
             flag_modified_fields=["execution_request"],
         )
 
-    async def _run_callable(self, task: Task, log_buffer: io.StringIO) -> Any:
+    async def _run_callable(
+        self, task: Task, stdout_buffer: io.StringIO, stderr_buffer: io.StringIO
+    ) -> Any:
         """Import and invoke the callable specified in the task data.
+
+        Redirect ``sys.stdout`` and ``sys.stderr`` into the provided buffers
+        so that output produced by the callable is captured in task logs.
+        Support both async and sync callables: async callables are awaited
+        directly while sync callables are executed via :func:`async_run`.
 
         :param task: The task containing the callable path in its data dict.
         :type task: Task
-        :param log_buffer: A StringIO buffer for capturing log output.
-        :type log_buffer: io.StringIO
+        :param stdout_buffer: A StringIO buffer for capturing standard output.
+        :type stdout_buffer: io.StringIO
+        :param stderr_buffer: A StringIO buffer for capturing standard error.
+        :type stderr_buffer: io.StringIO
         :return: The return value of the callable.
         :rtype: Any
         """
@@ -112,8 +126,13 @@ class CeleryExecutor(BaseExecutor):
         module_path, func_name = callable_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
         func = getattr(module, func_name)
-        log_buffer.write(f"Executing {callable_path}\n")
-        return await func()
+        if not callable(func):
+            raise TypeError(f"'{callable_path}' is not callable")
+        stdout_buffer.write(f"Executing {callable_path}\n")
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+            if asyncio.iscoroutinefunction(func):
+                return await func()
+            return await async_run(func)
 
     async def _sync_task_history(
         self,
@@ -141,23 +160,34 @@ class CeleryExecutor(BaseExecutor):
         """
 
     async def validate_job(self, job: dict[str, Any]) -> dict[str, Any]:
-        """Validate that the job contains an importable callable path.
+        """Validate that the job contains a safe, importable callable path.
+
+        Enforce that the callable path starts with the allowed namespace prefix
+        to prevent arbitrary code execution.
 
         :param job: The job specification containing a ``callable`` key.
         :type job: dict[str, Any]
         :return: The original job specification if validation is successful.
         :rtype: dict[str, Any]
-        :raises ValueError: If ``callable`` is missing or not importable.
+        :raises ValueError: If ``callable`` is missing, outside the allowed
+            namespace, or not importable.
         """
         callable_path = job.get("callable")
         if not callable_path:
             raise ValueError("Job must contain a 'callable' key")
+        if not callable_path.startswith(CELERY_CALLABLE_ALLOWED_PREFIX):
+            raise ValueError(
+                f"Callable '{callable_path}' is not in the allowed namespace "
+                f"'{CELERY_CALLABLE_ALLOWED_PREFIX}'"
+            )
         try:
             module_path, func_name = callable_path.rsplit(".", 1)
             module = importlib.import_module(module_path)
-            getattr(module, func_name)
+            func = getattr(module, func_name)
         except (ImportError, AttributeError, ValueError) as exc:
             raise ValueError(f"Cannot import callable '{callable_path}'") from exc
+        if not callable(func):
+            raise TypeError(f"'{callable_path}' is not callable")
         return job
 
     def get_hosts(self) -> dict[str, str]:

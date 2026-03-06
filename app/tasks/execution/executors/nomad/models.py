@@ -722,9 +722,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             code.
         """
         valid = await async_run(self.backend.validate.validate_job, {"Job": job})
-        if valid[0].status_code != status.HTTP_200_OK:
-            raise HTTPException(status_code=valid[0].status_code)
-        resp = json.loads(valid[0].text)
+        if valid.status_code != status.HTTP_200_OK:
+            raise HTTPException(status_code=valid.status_code)
+        resp = json.loads(valid.text)
         if not resp.get("ValidationErrors", []):
             return job
         logger.error(valid[0].text)

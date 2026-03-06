@@ -19,10 +19,13 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from app.core.config import settings
 from app.core.utils import import_var
+from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
+from app.tasks.config import tasks_settings
 
 
 def get_syncers(
@@ -30,7 +33,7 @@ def get_syncers(
 ) -> list[BaseSyncer]:
     """Initialize and return a list of BaseSyncer instances based on configuration.
 
-    Imports and initializes syncer classes as specified in the SEP settings, providing
+    Import and initialize syncer classes as specified in the SEP settings, providing
     the necessary API clients and configuration parameters.
 
     :param inventory_api: The API client used to interact with the inventory service.
@@ -56,20 +59,39 @@ def get_syncers(
 SyncersDep = Annotated[list[BaseSyncer], Depends(get_syncers)]
 
 
-def get_syncers_standalone() -> list[BaseSyncer]:
-    """Initialize syncer instances without request-context API clients.
+async def get_syncers_standalone() -> list[BaseSyncer]:
+    """Initialize syncer instances with API clients constructed from settings.
 
-    Construct syncers from SEP settings without requiring ``InventoryClient``
-    or ``TasksClient`` FastAPI dependencies. Used by scheduled tasks that run
-    outside of request context.
+    Construct ``RemoteAPI`` clients for the inventory and tasks services from
+    application settings, then build syncers the same way the request-context
+    dependency does. Used by scheduled tasks that run outside of request
+    context.
 
     :return: A list of initialized `BaseSyncer` instances.
     :rtype: list[BaseSyncer]
     """
+    inventory_api = await settings.get_remote_api(
+        endpoint=sep_settings.INVENTORY_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=inventory_settings.SSL_KEYFILE,
+        ssl_certfile=inventory_settings.SSL_CERTFILE,
+        logger_name="inventory_api",
+    )
+    tasks_api = await settings.get_remote_api(
+        endpoint=sep_settings.TASKS_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=tasks_settings.SSL_KEYFILE,
+        ssl_certfile=tasks_settings.SSL_CERTFILE,
+        logger_name="tasks_api",
+    )
     syncers = []
     for sync_option in sep_settings.SYNCERS:
         syncer_class = import_var(sync_option.syncer)
         syncers.append(
-            syncer_class(**sync_option.model_dump(exclude={"syncer"})),
+            syncer_class(
+                inventory_api=inventory_api,
+                tasks_api=tasks_api,
+                **sync_option.model_dump(exclude={"syncer"}),
+            ),
         )
     return syncers

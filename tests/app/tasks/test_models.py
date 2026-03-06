@@ -213,14 +213,25 @@ class TestTaskBaseValidation:
         )
         assert task.backend == TaskBackendEnum.NOMAD
 
-    def test_celery_backend_without_task_passes(self) -> None:
-        """Assert CELERY backend does not require 'task' in data."""
+    def test_celery_backend_protected_passes(self) -> None:
+        """Assert CELERY backend passes validation when protected."""
         task = TaskBase(
             name="test",
             data={"callable": "some.module.func", "target": "local"},
             backend=TaskBackendEnum.CELERY,
+            protected=True,
         )
         assert task.backend == TaskBackendEnum.CELERY
+
+    def test_celery_backend_unprotected_raises(self) -> None:
+        """Assert CELERY backend raises when not protected."""
+        with pytest.raises(ValidationError, match="protected"):
+            TaskBase(
+                name="test",
+                data={"callable": "some.module.func", "target": "local"},
+                backend=TaskBackendEnum.CELERY,
+                protected=False,
+            )
 
 
 class TestTask:

@@ -15,14 +15,10 @@
 
 """Provide synchronization functions for the SEP inventory."""
 
-import logging
-
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.inventory.deps import get_syncers_standalone
 from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
-
-logger = logging.getLogger(__name__)
 
 
 async def run_scheduled_inventory_sync() -> None:
@@ -39,7 +35,7 @@ async def run_scheduled_inventory_sync() -> None:
         raise ValueError(
             "INVENTORY_SYNC_API_KEY must be configured for scheduled inventory sync"
         )
-    syncers = get_syncers_standalone()
+    syncers = await get_syncers_standalone()
     await run_inventory_sync(api_key, *syncers)
 
 
