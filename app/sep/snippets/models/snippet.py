@@ -119,7 +119,9 @@ def get_executor_hosts_fieldset(
     :return: A FieldsetElement containing the input fields for the executor hosts.
     :rtype: FieldsetElement
     """
-    options = [{"value": value, "label": label} for value, label in executor_hosts]
+    options = [
+        {"value": value, "label": label} for value, label in sorted(executor_hosts)
+    ]
     return FieldsetElement(
         legend="Executor Host",
         children=[
