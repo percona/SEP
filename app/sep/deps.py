@@ -540,6 +540,16 @@ class ExecutorHostsContext:
         """
         return frozenset((name, self.display_name(name)) for name in self._hosts)
 
+    def as_host_metrics(self) -> list[tuple[str, str]]:
+        """Return a sorted list of (display_name, address) tuples for host metrics.
+
+        :return: List of tuples with display name and address, sorted by display name.
+        :rtype: list[tuple[str, str]]
+        """
+        return sorted(
+            (self.display_name(name), address) for name, address in self._hosts.items()
+        )
+
     def with_host(self, hostname: str) -> "ExecutorHostsContext":
         """Return a new context with the additional host included.
 
@@ -741,7 +751,7 @@ async def get_tasks_index_context(
             "running_tasks": running_tasks,
             "pending_tasks": scheduled_tasks,
             "periodic_tasks": periodic_tasks,
-            "executor_hosts": executor_hosts_ctx.hosts.items(),
+            "executor_hosts": executor_hosts_ctx.as_host_metrics(),
             "is_task_manager_enabled": is_task_manager_enabled,
         },
     )

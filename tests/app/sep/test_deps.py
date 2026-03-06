@@ -629,6 +629,21 @@ class TestExecutorHostsContext:
         result = ctx.as_form_hosts()
         assert result == frozenset({("nomad-node", "My DB")})
 
+    def test_as_host_metrics_returns_sorted_display_name_address_tuples(self) -> None:
+        """Assert host metrics returns sorted (display_name, address) tuples."""
+        hosts = {"beta-node": "10.0.0.2", "alpha-node": "10.0.0.1"}
+        display_names = {"10.0.0.1": "Alpha DB", "10.0.0.2": "Beta DB"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        result = ctx.as_host_metrics()
+        assert result == [("Alpha DB", "10.0.0.1"), ("Beta DB", "10.0.0.2")]
+
+    def test_as_host_metrics_falls_back_to_nomad_name(self) -> None:
+        """Assert host metrics uses nomad name when no inventory match."""
+        hosts = {"nomad-node": "10.0.0.1"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names={})
+        result = ctx.as_host_metrics()
+        assert result == [("nomad-node", "10.0.0.1")]
+
     def test_with_host_adds_new_host(self) -> None:
         """Assert with_host returns new context with the additional host."""
         hosts = {"nomad-node": "10.0.0.1"}
