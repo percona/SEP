@@ -109,19 +109,22 @@ ExtraArgsField = Annotated[list[str], BeforeValidator(shlex.split)]
 
 @validate_call
 @ttl_cache(ttl=_SEVEN_DAYS, maxsize=4)
-def get_executor_hosts_fieldset(executor_hosts: frozenset[str]) -> FieldsetElement:
+def get_executor_hosts_fieldset(
+    executor_hosts: frozenset[tuple[str, str]],
+) -> FieldsetElement:
     """Create a fieldset for executor hosts with a legend and input fields.
 
-    :param executor_hosts: A set of executor host strings.
-    :type executor_hosts: frozenset[str]
+    :param executor_hosts: A set of (value, label) tuples for executor hosts.
+    :type executor_hosts: frozenset[tuple[str, str]]
     :return: A FieldsetElement containing the input fields for the executor hosts.
     :rtype: FieldsetElement
     """
+    options = [{"value": value, "label": label} for value, label in executor_hosts]
     return FieldsetElement(
         legend="Executor Host",
         children=[
             SelectElement(
-                children=executor_hosts,
+                children=options,
                 name=EXECUTOR_HOSTS_INPUT_NAME,
                 title="Select the hostname of the target system for snippet execution.",
                 label="Select host",
@@ -474,7 +477,7 @@ class BaseSnippet(BaseModel):
 
     def to_form(
         self,
-        executor_hosts: Iterable[str],
+        executor_hosts: Iterable[tuple[str, str]],
         form_action: str = "",
         defaults: dict[str, Any] | None = None,
     ) -> str:
@@ -484,9 +487,8 @@ class BaseSnippet(BaseModel):
         the provided executor hosts. It includes a select element for choosing the
         executor host and fields for snippet parameters.
 
-        :param executor_hosts: An iterable  of hostnames where the snippet can be
-            executed.
-        :type executor_hosts: Iterable[str]
+        :param executor_hosts: An iterable of (value, label) tuples for executor hosts.
+        :type executor_hosts: Iterable[tuple[str, str]]
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
@@ -613,7 +615,7 @@ class BaseSnippet(BaseModel):
     @ttl_cache(ttl=_ONE_HOUR, maxsize=8)
     def _to_form(
         parameters_json: str,
-        executor_hosts: frozenset[str],
+        executor_hosts: frozenset[tuple[str, str]],
         *,
         add_extra_args_field: bool = False,
         add_sudo_field: bool = False,
@@ -630,9 +632,8 @@ class BaseSnippet(BaseModel):
 
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
-        :param executor_hosts: A set of hostnames where the snippet can be
-            executed. This will be coerced to a frozenset for caching purposes.
-        :type executor_hosts: frozenset[str]
+        :param executor_hosts: A set of (value, label) tuples for executor hosts.
+        :type executor_hosts: frozenset[tuple[str, str]]
         :param add_extra_args_field: Whether to include an extra arguments field in the
             form. Defaults to `False`.
         :type add_extra_args_field: bool
