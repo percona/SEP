@@ -168,8 +168,14 @@ label:has(> input[type="checkbox"]:disabled)>.checkmark {
     transition: opacity 0.15s ease;
 }
 
-.info-icon:hover {
+.info-icon:hover,
+.info-icon:focus-visible {
     opacity: 1;
+}
+
+.info-icon:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
 }
 
 .info-icon .material-symbols-outlined {

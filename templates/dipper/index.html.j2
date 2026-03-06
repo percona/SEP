@@ -61,6 +61,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/info-tooltip.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     {% if history_tasks or running_tasks %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>

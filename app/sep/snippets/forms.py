@@ -156,8 +156,8 @@ class FormFieldMixin(BaseModel):
         """Return the HTML representation of the form field.
 
         Generate the HTML for the form field, wrapping it in a label if a label is
-        provided. When a description is set, append an info-icon tooltip span inside
-        the label.
+        provided. When a description is set, render an info-icon tooltip span adjacent
+        to the label text, before the field HTML.
 
         :return: The HTML representation of the form field, possibly wrapped in a label.
         :rtype: str
@@ -168,11 +168,14 @@ class FormFieldMixin(BaseModel):
             desc = html_escape(self.description)
             info_icon = (
                 f'<span class="info-icon" data-tooltip="{desc}"'
-                f' aria-label="{desc}" role="img">'
+                f' aria-label="{desc}" role="button" tabindex="0">'
                 f'<span class="{ICON_CLASS}">info</span></span>'
             )
         if self.label:
-            return f"<label><span>{html_escape(self.label)}</span>{html}{info_icon}</label>"
+            label_text = html_escape(self.label)
+            if info_icon:
+                label_text = f"{label_text}{info_icon}"
+            return f"<label><span>{label_text}</span>{html}</label>"
         return html + info_icon
 
 

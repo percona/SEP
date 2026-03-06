@@ -96,9 +96,13 @@ class TestFormFieldMixinDescription:
         assert 'data-tooltip="Select the target host"' in html
 
     def test_info_icon_inside_label(self):
-        """Assert info icon is rendered inside the label element."""
+        """Assert info icon is rendered inside the label element and before the field."""
         elem = TextInputElement(name="test", description="help", label="Field")
         html = elem.to_html()
         label_end = html.rfind("</label>")
         icon_pos = html.find('class="info-icon"')
+        input_pos = html.find("<input")
+        assert icon_pos != -1
+        assert input_pos != -1
         assert icon_pos < label_end
+        assert icon_pos < input_pos
