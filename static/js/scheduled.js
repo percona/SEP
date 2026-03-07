@@ -94,15 +94,17 @@ $(document).ready(function() {
 
     function togglePeriodMode($link) {
         const taskId = $link.data('task-id');
-        let $intervalDiv, $cronDiv;
+        let $intervalDiv, $cronDiv, $row;
 
         if (taskId) {
             const $editRow = $(`.edit-periodic-task-row[data-task-id="${taskId}"]`);
+            $row = $editRow;
             $intervalDiv = $editRow.find('.interval-inputs');
             $cronDiv = $editRow.find('.cron-inputs');
         } else {
-            $intervalDiv = $('.new-periodic-task-row .interval-inputs');
-            $cronDiv = $('.new-periodic-task-row .cron-inputs');
+            $row = $('.new-periodic-task-row');
+            $intervalDiv = $row.find('.interval-inputs');
+            $cronDiv = $row.find('.cron-inputs');
         }
 
         $intervalDiv.toggleClass('hidden');
@@ -112,6 +114,15 @@ $(document).ready(function() {
         $intervalDiv.children().attr('required', !cronIsActive).attr('disabled', cronIsActive);
         $cronDiv.find('div').first().children().attr('required', cronIsActive).attr('disabled', !cronIsActive);
         $link.text(cronIsActive ? 'change to interval mode' : 'change to cron mode');
+
+        const $startTimeContainer = $row.find('.start-time-container');
+        if (cronIsActive) {
+            $startTimeContainer.addClass('hidden');
+            $startTimeContainer.find('input[type="datetime-local"]').val('');
+            $startTimeContainer.find('.date-value').val('');
+        } else {
+            $startTimeContainer.removeClass('hidden');
+        }
     }
 
     function initializeSelect2($select, browserTimezone = null) {
@@ -215,6 +226,7 @@ $(document).ready(function() {
         $('.cron-description').text('');
         $('.interval-inputs').removeClass('hidden');
         $('.cron-inputs').addClass('hidden');
+        $('.new-periodic-task-row .start-time-container').removeClass('hidden');
         $('#scheduled-tasks-table').removeClass('create-mode');
     });
 

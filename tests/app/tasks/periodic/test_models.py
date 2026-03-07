@@ -16,7 +16,7 @@
 """Define test cases for periodic task models."""
 
 import json
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from pydantic import ValidationError
@@ -332,3 +332,82 @@ class TestPeriodicTaskCreate:
         assert task.start_time is None
         assert task.enabled is True
         assert task.description == ""
+
+
+class TestPeriodicTaskResponseNextRunAt:
+    """Test the next_run_at computed field on PeriodicTaskResponse."""
+
+    @pytest.fixture
+    def response_fields(self):
+        """Provide shared fields for building PeriodicTaskResponse instances."""
+        return {
+            "id": 1,
+            "name": "test",
+            "task": "original-task",
+            "start_time": None,
+            "enabled": True,
+            "description": "",
+            "last_run_at": None,
+            "total_run_count": 0,
+            "date_changed": None,
+            "args": json.dumps(["my-task"]),
+            "kwargs": "{}",
+        }
+
+    def test_crontab_next_run_is_future_utc(self, response_fields):
+        """Assert next_run_at returns a future UTC datetime for crontab tasks."""
+        response_fields["model_crontabschedule"] = CrontabSchedule(
+            minute="0", hour="*/1"
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.next_run_at is not None
+        assert response.next_run_at > datetime.now(UTC)
+        assert response.next_run_at.tzinfo is not None
+
+    def test_crontab_non_utc_timezone_returns_utc(self, response_fields):
+        """Assert next_run_at converts non-UTC crontab timezone to UTC."""
+        response_fields["model_crontabschedule"] = CrontabSchedule(
+            minute="0", hour="*/1", timezone="America/New_York"
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.next_run_at is not None
+        assert response.next_run_at.tzinfo == UTC
+
+    def test_interval_next_run_with_last_run_at(self, response_fields):
+        """Assert next_run_at equals last_run_at plus the interval."""
+        last_run = datetime(2026, 3, 3, 10, 0, 0, tzinfo=UTC)
+        response_fields["last_run_at"] = last_run
+        response_fields["model_intervalschedule"] = IntervalSchedule(
+            every=5, period=Period.HOURS
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.next_run_at == last_run + timedelta(hours=5)
+
+    def test_interval_next_run_falls_back_to_start_time(self, response_fields):
+        """Assert next_run_at uses start_time when last_run_at is None."""
+        start = datetime(2026, 3, 3, 8, 0, 0, tzinfo=UTC)
+        response_fields["start_time"] = start
+        response_fields["model_intervalschedule"] = IntervalSchedule(
+            every=30, period=Period.MINUTES
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.next_run_at == start + timedelta(minutes=30)
+
+    def test_interval_next_run_falls_back_to_now(self, response_fields):
+        """Assert next_run_at is close to now + interval when no base time exists."""
+        response_fields["model_intervalschedule"] = IntervalSchedule(
+            every=2, period=Period.DAYS
+        )
+        before = datetime.now(UTC)
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        expected = before + timedelta(days=2)
+        assert abs((response.next_run_at - expected).total_seconds()) < 1
+
+    def test_disabled_task_returns_none(self, response_fields):
+        """Assert next_run_at is None for disabled tasks."""
+        response_fields["enabled"] = False
+        response_fields["model_intervalschedule"] = IntervalSchedule(
+            every=1, period=Period.HOURS
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.next_run_at is None

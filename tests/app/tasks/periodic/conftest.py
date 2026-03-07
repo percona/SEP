@@ -32,7 +32,6 @@ from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
-from app.tasks.db.utils import json_deserialize
 from app.tasks.deps import get_session as get_tasks_session
 from app.tasks.main import tasks_app
 
@@ -46,7 +45,6 @@ async def celery_beat_session_fixture() -> AsyncSession:
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
         json_serializer=json_serializer,
-        json_deserializer=json_deserialize,
         poolclass=StaticPool,
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
@@ -65,7 +63,6 @@ async def tasks_session_fixture() -> AsyncSession:
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
         json_serializer=json_serializer,
-        json_deserializer=json_deserialize,
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:

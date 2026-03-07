@@ -28,6 +28,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                 <th>Owner</th>
                 <th>Period</th>
                 <th>Last Run At</th>
+                <th>Next Execution</th>
                 <th>Runs</th>
                 <th>Chain with</th>
                 <th>Actions</th>
@@ -51,6 +52,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 {{ periodic_task.period }}
                             </td>
                             <td class="relativeTime">{{ periodic_task.last_run_at or '' }}</td>
+                            <td class="relativeTime">{{ periodic_task.next_run_at or '' }}</td>
                             <td>{{ periodic_task.total_run_count }}</td>
                             <td>
                                 {% if periodic_task.execute_request and periodic_task.execute_request.chain_task_names %}
