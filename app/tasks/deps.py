@@ -175,7 +175,8 @@ async def prepare_task_history(
         await validate_chain_task_names(
             session, execution_data.chain_task_names, task.name
         )
-        execution_data.meta["chain_task_names"] = execution_data.chain_task_names
+        execution_data.meta["_chain_task_names"] = execution_data.chain_task_names
+        execution_data.meta["_chain_on_failure"] = execution_data.chain_on_failure
     target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
         0
     ].get("RTarget")

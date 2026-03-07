@@ -288,6 +288,7 @@ $(document).ready(function() {
 
         const $newForm = $('#new-periodic-task-form');
         $newForm.find('input[name="execute_request_chain_task_names"]').remove();
+        $newForm.find('input[name="execute_request_chain_on_failure"]').remove();
         const $newChainBuilder = $newTaskRow.find('.chain-builder');
         if ($newChainBuilder.length) {
             const instance = $newChainBuilder.data('chain-builder-instance');
@@ -298,6 +299,11 @@ $(document).ready(function() {
                         type: 'hidden',
                         name: 'execute_request_chain_task_names',
                         value: JSON.stringify(chain)
+                    }).appendTo($newForm);
+                    $('<input>', {
+                        type: 'hidden',
+                        name: 'execute_request_chain_on_failure',
+                        value: instance.getChainOnFailure() ? 'true' : 'false'
                     }).appendTo($newForm);
                 }
             }
@@ -385,6 +391,11 @@ $(document).ready(function() {
                         type: 'hidden',
                         name: 'execute_request_chain_task_names',
                         value: JSON.stringify(chain)
+                    }).appendTo($form);
+                    $('<input>', {
+                        type: 'hidden',
+                        name: 'execute_request_chain_on_failure',
+                        value: instance.getChainOnFailure() ? 'true' : 'false'
                     }).appendTo($form);
                 }
             }

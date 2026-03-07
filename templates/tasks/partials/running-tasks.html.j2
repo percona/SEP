@@ -34,7 +34,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <td>{{ task_name }}</td>
                         <td>{{ task['execution_request']['target'] }}</td>
                         <td>
-                            {% set chain = task.execution_request.meta.get('chain_task_names', []) if task.execution_request and task.execution_request.meta else [] %}
+                            {% set er = task.get('execution_request') or {} %}
+                            {% set chain = er.get('meta', {}).get('_chain_task_names', []) %}
                             {% if chain %}
                                 {% with chain_names=chain %}
                                     {% include "tasks/partials/chain-display.html" %}

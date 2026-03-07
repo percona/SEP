@@ -30,7 +30,7 @@ from celery.app.task import Context
 from celery.signals import task_revoked
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
-from sqlalchemy import func
+from sqlalchemy import cast, func, Text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -300,11 +300,18 @@ async def _raise_if_identical_task_conflict(
     engine_name = session.get_bind().name
     meta_where_clauses = []
     if queue_item.execution_request.meta:
-        meta_where_clauses = [
-            func_json_extract(engine_name, TaskHistory.execution_request, "meta", field)
-            == prepare_unsafe_value_for_json_comparison(engine_name, value)
-            for field, value in queue_item.execution_request.meta.items()
-        ]
+        for field, raw_value in queue_item.execution_request.meta.items():
+            extracted = func_json_extract(
+                engine_name, TaskHistory.execution_request, "meta", field
+            )
+            if isinstance(raw_value, list | dict):
+                comparable = json.dumps(raw_value, separators=(",", ":"))
+                extracted = cast(extracted, Text)
+            else:
+                comparable = prepare_unsafe_value_for_json_comparison(
+                    engine_name, raw_value
+                )
+            meta_where_clauses.append(extracted == comparable)
     if identical_task := (
         await TaskHistoryManager.first(
             session,
@@ -381,10 +388,17 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         saved = await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
         )
+    chain_on_failure = saved.execution_request.meta.get("_chain_on_failure", False)
+    is_terminal = (
+        saved.status.is_finished() or saved.status == TaskHistoryStatusEnum.LOST
+    )
+    should_chain = saved.status == TaskHistoryStatusEnum.SUCCESS or (
+        chain_on_failure and is_terminal
+    )
     if (
         was_running
-        and saved.status == TaskHistoryStatusEnum.SUCCESS
-        and (chain_task_names := saved.execution_request.meta.get("chain_task_names"))
+        and should_chain
+        and (chain_task_names := saved.execution_request.meta.get("_chain_task_names"))
     ):
         await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
     return saved
@@ -435,10 +449,13 @@ async def _dispatch_chained_task(
             )
             return
         chain_meta = dict(chain_task.data.get("meta", {}))
-        chain_meta.pop("chain_task_names", None)
+        chain_meta.pop("_chain_task_names", None)
         if remaining_chain:
-            chain_meta["chain_task_names"] = remaining_chain
+            chain_meta["_chain_task_names"] = remaining_chain
         chain_meta["target"] = parent.execution_request.target
+        chain_meta["_chain_on_failure"] = parent.execution_request.meta.get(
+            "_chain_on_failure", False
+        )
         chain_meta["chain_depth"] = (
             parent.execution_request.meta.get("chain_depth", 0) + 1
         )

@@ -443,6 +443,9 @@ class TaskExecuteRequest(BaseModel):
     :param chain_task_names: Ordered list of task names to execute sequentially after
         this one completes. Defaults to None.
     :type chain_task_names: list[str] | None
+    :param chain_on_failure: Whether the chain should continue when a task fails,
+        stops, or is lost. Defaults to False (chain only on success).
+    :type chain_on_failure: bool
     """
 
     meta: dict[str, Any] = {}
@@ -450,6 +453,21 @@ class TaskExecuteRequest(BaseModel):
     eta: datetime | EmptyStrToNone = None
     anonymize_mask: int | None = None
     chain_task_names: list[str] | None = None
+    chain_on_failure: bool = False
+
+    @field_validator("chain_on_failure", mode="before")
+    @classmethod
+    def normalize_chain_on_failure(cls, v: Any) -> bool:
+        """Normalize form string values to a boolean.
+
+        :param v: The raw chain_on_failure value.
+        :type v: Any
+        :return: The normalized boolean value.
+        :rtype: bool
+        """
+        if isinstance(v, str):
+            return v.lower() in ("true", "on", "1")
+        return bool(v)
 
     @field_validator("chain_task_names", mode="before")
     @classmethod
@@ -468,7 +486,10 @@ class TaskExecuteRequest(BaseModel):
             if not v:
                 return None
             if v.startswith("["):
-                parsed = json.loads(v)
+                try:
+                    parsed = json.loads(v)
+                except json.JSONDecodeError:
+                    return [v]
                 if isinstance(parsed, list):
                     filtered = [name for name in parsed if name]
                     return filtered or None

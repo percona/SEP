@@ -1,3 +1,20 @@
+/**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 $(document).ready(function() {
     window.ChainBuilder = function($container, options) {
         this.$container = $container;
@@ -5,9 +22,12 @@ $(document).ready(function() {
         this.taskName = options.taskName || $container.data('task-name');
         this.inputName = options.inputName || $container.data('input-name') || 'chain_task_names';
         this.chain = [];
+        this.chainOnFailure = $container.data('chain-on-failure') === true || $container.data('chain-on-failure') === 'true';
 
         this.$sequence = $container.find('.chain-sequence');
         this.$select = $container.find('.chain-task-select');
+        this.$chainOptions = $container.find('.chain-options');
+        this.$chainOnFailureCheckbox = $container.find('.chain-on-failure-checkbox');
 
         var initialChain = options.initialChain || $container.data('initial-chain');
         if (initialChain) {
@@ -58,7 +78,7 @@ $(document).ready(function() {
         this.$sequence.empty();
         for (var i = 0; i < this.chain.length; i++) {
             var name = this.chain[i];
-            var $item = $('<div class="chain-item" data-task-name="' + name + '">');
+            var $item = $('<div class="chain-item">').attr('data-task-name', name);
             var $chip = $('<span class="chain-chip">');
             $chip.append($('<span class="chain-chip-label">').text(name));
             var $removeBtn = $('<button type="button" class="chain-chip-remove">')
@@ -71,6 +91,7 @@ $(document).ready(function() {
         }
         this._updateSelect();
         this._updateHiddenInputs();
+        this.$chainOptions.toggle(this.chain.length > 0);
     };
 
     ChainBuilder.prototype._updateSelect = function() {
@@ -85,7 +106,9 @@ $(document).ready(function() {
 
     ChainBuilder.prototype._updateHiddenInputs = function() {
         var $form = $('#' + this.formId);
+        var failureName = this.inputName.replace('chain_task_names', 'chain_on_failure');
         $form.find('input[name="' + this.inputName + '"]').remove();
+        $form.find('input[name="' + failureName + '"]').remove();
 
         if (this.chain.length > 0) {
             for (var i = 0; i < this.chain.length; i++) {
@@ -95,6 +118,11 @@ $(document).ready(function() {
                     value: this.chain[i]
                 }).appendTo($form);
             }
+            $('<input>', {
+                type: 'hidden',
+                name: failureName,
+                value: this.chainOnFailure ? 'true' : 'false'
+            }).appendTo($form);
         }
     };
 
@@ -113,6 +141,15 @@ $(document).ready(function() {
             var name = $(this).closest('.chain-item').data('task-name');
             self.removeTask(name);
         });
+
+        this.$chainOnFailureCheckbox.on('change', function() {
+            self.chainOnFailure = $(this).is(':checked');
+            self._updateHiddenInputs();
+        });
+
+        if (this.chainOnFailure) {
+            this.$chainOnFailureCheckbox.prop('checked', true);
+        }
     };
 
     ChainBuilder.prototype.getChain = function() {
@@ -122,6 +159,10 @@ $(document).ready(function() {
     ChainBuilder.prototype.setTaskName = function(name) {
         this.taskName = name;
         this._updateSelect();
+    };
+
+    ChainBuilder.prototype.getChainOnFailure = function() {
+        return this.chainOnFailure;
     };
 
     ChainBuilder.prototype.getChainJSON = function() {
