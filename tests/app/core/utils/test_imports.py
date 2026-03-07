@@ -46,7 +46,7 @@ def test_import_var():
 
 
 class TestValidateAttributeIsImportable:
-    """Test ``validate_attribute_is_importable`` validator."""
+    """Test `validate_attribute_is_importable` validator."""
 
     def test_valid_attribute_path(self):
         """Assert a valid module.attribute path passes validation."""
@@ -54,12 +54,12 @@ class TestValidateAttributeIsImportable:
         assert result == "os.path"
 
     def test_invalid_module_raises(self):
-        """Assert a non-existent module raises ``ValueError``."""
+        """Assert a non-existent module raises `ValueError`."""
         with pytest.raises(ValueError, match="No module named"):
             validate_attribute_is_importable("nonexistent_module.SomeClass")
 
     def test_invalid_format_raises(self):
-        """Assert a path without a dot raises ``ValueError``."""
+        """Assert a path without a dot raises `ValueError`."""
         with pytest.raises(ValueError, match="Must follow the format"):
             validate_attribute_is_importable("nodots")
 
@@ -70,7 +70,7 @@ class TestValidateAttributeIsImportable:
 
 
 class TestValidateImportableSettings:
-    """Test ``validate_importable_settings`` startup validator."""
+    """Test `validate_importable_settings` startup validator."""
 
     def test_valid_paths(self):
         """Assert valid attribute paths pass without errors."""
@@ -82,7 +82,7 @@ class TestValidateImportableSettings:
             validate_importable_settings("os.nonexistent_attr")
 
     def test_invalid_module_raises(self):
-        """Assert a non-existent module raises ``ModuleNotFoundError``."""
+        """Assert a non-existent module raises `ModuleNotFoundError`."""
         with pytest.raises(ModuleNotFoundError):
             validate_importable_settings("nonexistent_module.SomeClass")
 
@@ -90,6 +90,10 @@ class TestValidateImportableSettings:
         """Assert validation stops at the first invalid path."""
         with pytest.raises(AttributeError):
             validate_importable_settings("os.path", "os.nonexistent_attr")
+
+    def test_empty_string_skipped(self):
+        """Assert empty strings are skipped without errors."""
+        validate_importable_settings("", "os.path", "")
 
     def test_no_args(self):
         """Assert calling with no arguments succeeds."""

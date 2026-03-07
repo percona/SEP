@@ -79,7 +79,7 @@ def validate_attribute_is_importable(attr_path: str) -> str:
             module_name, _ = attr_path.rsplit(".", 1)
         except ValueError as exc:
             raise ValueError(
-                "Must follow the format module.class",
+                "Must follow the format module.attribute",
             ) from exc
         else:
             validate_module_is_importable(module_name)
@@ -100,4 +100,5 @@ def validate_importable_settings(*attr_paths: str) -> None:
     :raises AttributeError: If an attribute does not exist in its module.
     """
     for path in attr_paths:
-        import_var(path)
+        if path:
+            import_var(path)
