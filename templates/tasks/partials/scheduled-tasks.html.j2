@@ -36,6 +36,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
             <th id="period-header">Period</th>
             <th id="start-time-header">Start Time</th>
             <th id="last-run-at-header">Last Run At</th>
+            <th>Next Execution</th>
             <th>Runs</th>
             <th>Enabled</th>
             <th>Actions</th>
@@ -64,6 +65,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     </td>
                     <td class="relativeTime">{{ periodic_task.start_time or '' }}</td>
                     <td class="relativeTime">{{ periodic_task["last_run_at"] or '' }}</td>
+                    <td class="relativeTime">{{ periodic_task.next_run_at or '' }}</td>
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td>
                         <form method="post"
@@ -156,15 +158,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </a>
                     </td>
                     <td>
-                        <input type="hidden"
-                               name="start_time"
-                               class="date-value"
-                               value="{{ periodic_task.start_time or '' }}">
-                        <input type="datetime-local"
-                               class="start-time-input"
-                               value="{%- if periodic_task.start_time -%}{{ periodic_task.start_time[:16] }}{%- endif -%}"
-                               title="Optional start time for the periodic task">
+                        <div class="start-time-container{% if periodic_task.crontab %} hidden{% endif %}">
+                            <input type="hidden"
+                                   name="start_time"
+                                   class="date-value"
+                                   value="{{ periodic_task.start_time or '' }}">
+                            <input type="datetime-local"
+                                   class="start-time-input"
+                                   value="{%- if periodic_task.start_time -%}{{ periodic_task.start_time[:16] }}{%- endif -%}"
+                                   title="Optional start time for the periodic task">
+                        </div>
                     </td>
+                    <td></td>
                     <td></td>
                     <td>{{ periodic_task.total_run_count }}</td>
                     <td style="padding-left: 0.5em">
@@ -239,14 +244,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     cron mode</a>
                 </td>
                 <td>
-                    <input type="hidden"
-                           form="new-periodic-task-form"
-                           name="start_time"
-                           class="date-value">
-                    <input type="datetime-local"
-                           class="start-time-input"
-                           title="Optional start time for the periodic task">
+                    <div class="start-time-container">
+                        <input type="hidden"
+                               form="new-periodic-task-form"
+                               name="start_time"
+                               class="date-value">
+                        <input type="datetime-local"
+                               class="start-time-input"
+                               title="Optional start time for the periodic task">
+                    </div>
                 </td>
+                <td></td>
                 <td></td>
                 <td>0</td>
                 <td style="padding-left: 0.5em">

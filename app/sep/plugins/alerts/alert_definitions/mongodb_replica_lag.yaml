@@ -1,0 +1,7 @@
+name: MongoDB Replica Lag
+service_type: mongodb
+expression: mongodb_rs_members_optimeDate{state="SECONDARY"} - on(set) group_left() mongodb_rs_members_optimeDate{state="PRIMARY"} < -30
+default_threshold: 30.0
+severity: critical
+description: A MongoDB replica member is lagging behind the primary by more than the configured threshold.
+summary: Replica lag detected on MongoDB set {{ $labels.set }}

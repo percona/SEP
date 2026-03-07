@@ -61,6 +61,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.core.utils.lazy import LazyProxy
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -278,6 +279,10 @@ class SEPSettings(BaseYamlAppSettings):
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
     :type STATIC_DIR: RelativeDirectoryPathField
+    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
+        definition files. When `None`, the bundled `alert_definitions/` directory
+        inside the alerts plugin is used.
+    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -306,6 +311,9 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
+        `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
+    :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
@@ -316,6 +324,7 @@ class SEPSettings(BaseYamlAppSettings):
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
+    ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
@@ -488,4 +497,4 @@ class SEPSettings(BaseYamlAppSettings):
         return self
 
 
-sep_settings = SEPSettings()
+sep_settings: SEPSettings = LazyProxy(SEPSettings)

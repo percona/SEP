@@ -20,6 +20,7 @@ from typing import ClassVar
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
+from app.core.utils.lazy import LazyProxy
 
 
 class InventorySettings(BaseYamlAppSettings):
@@ -47,4 +48,4 @@ class InventorySettings(BaseYamlAppSettings):
     )
 
 
-inventory_settings = InventorySettings()
+inventory_settings: InventorySettings = LazyProxy(InventorySettings)

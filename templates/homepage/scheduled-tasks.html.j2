@@ -28,6 +28,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                 <th>Owner</th>
                 <th>Period</th>
                 <th>Last Run At</th>
+                <th>Next Execution</th>
                 <th>Runs</th>
                 <th>Actions</th>
             </tr>
@@ -50,6 +51,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 {{ periodic_task.period }}
                             </td>
                             <td class="relativeTime">{{ periodic_task.last_run_at or '' }}</td>
+                            <td class="relativeTime">{{ periodic_task.next_run_at or '' }}</td>
                             <td>{{ periodic_task.total_run_count }}</td>
                             <td>
                                 {% if is_task_manager_enabled %}
@@ -66,7 +68,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="5" class="no-tasks">No periodic tasks</td>
+                        <td colspan="7" class="no-tasks">No periodic tasks</td>
                     </tr>
                 {% endif %}
             </tbody>

@@ -448,3 +448,28 @@ async def test_transform_payload_nomad_backend(test_client, mock_executor):
             params={"backend": "nomad"},
         )
     assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.asyncio
+async def test_task_data_with_execution_request_keys_returned_as_dict(
+    test_client, session
+):
+    """Test that Task.data with TaskExecutionRequest-like keys is returned as a dict."""
+    conflicting_data = {
+        "task": "run-python",
+        "target": "mariadb",
+        "payload": "SELECT 1",
+        "meta": {"env": "staging"},
+    }
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="conflicting-task", data=conflicting_data),
+        ),
+    )
+
+    response = test_client.get("/conflicting-task")
+    assert response.status_code == status.HTTP_200_OK
+    task_json = response.json()
+    assert task_json["data"] == conflicting_data
+    assert isinstance(task_json["data"], dict)
