@@ -39,6 +39,7 @@ from app.sep.inventory import (
     Table,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.sync.exceptions import ExecutorHostNotFoundError
 from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
 
 GZIP_WBITS = 16 + zlib.MAX_WBITS
@@ -340,7 +341,8 @@ class MySQLSyncer(BaseTaskSyncer):
 
         This method returns `self.force_executor_host` if set. Otherwise, it tries to
         find a target with the same address as `host`. If it can't, the first available
-        host is returned.
+        host is returned unless `strict_executor_matching` is enabled, in which case
+        `ExecutorHostNotFoundError` is raised.
 
         :param host: The target host.
         :type host: str
@@ -348,6 +350,8 @@ class MySQLSyncer(BaseTaskSyncer):
         :type name: str | None
         :return: The target host for the task.
         :rtype: str
+        :raises ExecutorHostNotFoundError: If `strict_executor_matching` is enabled and
+            no executor host matches the node's name or address.
         """
         if self.force_executor_host:
             return self.force_executor_host
@@ -357,6 +361,8 @@ class MySQLSyncer(BaseTaskSyncer):
         for target, address in available_hosts.items():
             if address == host:
                 return target
+        if self.strict_executor_matching:
+            raise ExecutorHostNotFoundError(name, host, available_hosts)
         return next(iter(available_hosts))
 
     def build_script_config(

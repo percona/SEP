@@ -32,6 +32,7 @@ from app.sep.inventory import (
     Service,
     Table,
 )
+from app.sep.sync.exceptions import ExecutorHostNotFoundError
 from app.sep.sync.models import TaskRunResult
 from app.sep.sync.syncers.mysql.syncer import (
     _MySQLSyncResultEntityTypeEnum,
@@ -125,6 +126,88 @@ class TestConfigAndTargets:
         """Test returning service address when only service is provided."""
         addr = MySQLSyncer._build_entity_address("host:3306")
         assert addr == "host:3306"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_strict_raises_on_no_match(
+        self, mock_remote_api, mocker
+    ):
+        """Test raising ExecutorHostNotFoundError when strict and no match."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "10.0.0.1", "executor-2": "10.0.0.2"}
+        with pytest.raises(ExecutorHostNotFoundError) as exc_info:
+            await syncer.get_task_target("192.168.1.99", name="unknown-node")
+        assert exc_info.value.node_name == "unknown-node"
+        assert exc_info.value.node_address == "192.168.1.99"
+        assert exc_info.value.available_hosts == {
+            "executor-1": "10.0.0.1",
+            "executor-2": "10.0.0.2",
+        }
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_strict_name_matches(self, mock_remote_api, mocker):
+        """Test returning matched name when strict and name is in hosts."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"my-node": "10.0.0.1", "executor-2": "10.0.0.2"}
+        target = await syncer.get_task_target("192.168.1.99", name="my-node")
+        assert target == "my-node"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_strict_address_matches(
+        self, mock_remote_api, mocker
+    ):
+        """Test returning matched target when strict and address matches."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "192.168.1.99", "executor-2": "10.0.0.2"}
+        target = await syncer.get_task_target("192.168.1.99", name="unknown")
+        assert target == "executor-1"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_non_strict_fallback(self, mock_remote_api, mocker):
+        """Test falling back to first host when non-strict and no match."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "10.0.0.1", "executor-2": "10.0.0.2"}
+        target = await syncer.get_task_target("192.168.1.99", name="unknown")
+        assert target == "executor-1"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_force_overrides_strict(
+        self, mock_remote_api, mocker
+    ):
+        """Test force_executor_host taking priority over strict matching."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+            force_executor_host="forced-host",
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "10.0.0.1"}
+        target = await syncer.get_task_target("192.168.1.99", name="unknown")
+        assert target == "forced-host"
 
 
 class TestFetchMethods:
