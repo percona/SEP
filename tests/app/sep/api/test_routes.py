@@ -89,10 +89,7 @@ class TestListTables:
         response = test_client.get("/inventory-api/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data == [
-            {"id": 1, "name": "users", "schema_id": 5},
-            {"id": 2, "name": "orders", "schema_id": 5},
-        ]
+        assert data == [{"id": 1, "name": "users"}, {"id": 2, "name": "orders"}]
 
     def test_list_tables_with_search(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock

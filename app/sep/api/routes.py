@@ -57,4 +57,4 @@ async def list_tables(
     if search:
         params["search"] = search
     tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
-    return JSONResponse(tables)
+    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables])
