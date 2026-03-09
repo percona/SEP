@@ -123,10 +123,6 @@ async def checksums_detail(
         services = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
-        for service in services:
-            service["schemas"] = await inventory_api.get(
-                f"/services/{service['id']}/schemas/",
-            )
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)

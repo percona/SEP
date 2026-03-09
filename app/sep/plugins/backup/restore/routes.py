@@ -134,19 +134,9 @@ async def restores_detail(
         services = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
-        for service in services:
-            service["schemas"] = await inventory_api.get(
-                f"/services/{service['id']}/schemas/",
-            )
         context["services"] = services
     except HTTPException:
         context["services"] = []
-
-    try:
-        schemas = await inventory_api.get("/schemas/")
-        context["schemas"] = schemas
-    except HTTPException:
-        context["schemas"] = []
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)

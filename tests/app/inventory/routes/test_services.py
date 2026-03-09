@@ -145,13 +145,37 @@ class TestListSchemasByService:
     def test_list_schemas_by_service(
         self, test_client: TestClient, service: Service, schema: Schema
     ) -> None:
-        """Return schemas with tables loaded for the given service."""
+        """Return compact schemas without tables for the given service."""
         response = test_client.get(f"/services/{service.id}/schemas/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data) == 1
         assert data[0]["id"] == schema.id
-        assert "tables" in data[0]
+        assert "tables" not in data[0]
+
+    def test_list_schemas_by_service_search(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Return only schemas whose name matches the search query."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"search": schema.name[:3]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["id"] == schema.id
+
+    def test_list_schemas_by_service_search_no_match(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Return empty list when search does not match any schema."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"search": "nonexistent_schema_xyz"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
 
     def test_list_schemas_by_service_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent service ID."""

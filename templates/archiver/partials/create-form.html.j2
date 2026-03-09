@@ -436,20 +436,10 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </footer>
     </dialog>
 </form>
-{% set serviceSchemas = {} %}
-{% for service in services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% set tables = {} %}
-        {% for table in schema.tables %}
-            {% do tables.update({table.id: table.name}) %}
-        {% endfor %}
-        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
+<script src="{{ url_for('static', path='/js/schema-selector.js') }}"
+        nonce="{{ request.state.csp_nonce }}"></script>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const serviceSchemas = {{ serviceSchemas | tojson }};
+    const serviceSchemas = {};
     const connectToSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('source_db_id');
     const schemaSelectContainer = schemaSelect ? schemaSelect.closest('.select') : null;
@@ -492,28 +482,28 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     let useManualInputSource = false;
     let useManualInputDest = false;
 
-    function populateSchemas(selectedService) {
-        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
-        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+    async function populateSchemas(selectedService) {
+        populateSelect(schemaSelect, [], {placeholder: 'Select a schema'});
+        populateSelect(sourceTableSelect, [], {placeholder: 'Select a table'});
+        populateSelect(destTableSelect, [], {placeholder: 'Select a table'});
 
-        if (selectedService && serviceSchemas[selectedService]) {
-            const schemas = Object.entries(serviceSchemas[selectedService]);
+        if (selectedService && selectedService !== '-1') {
+            var schemas = await fetchSchemas(selectedService);
+            var cache = {};
+            for (var i = 0; i < schemas.length; i++) {
+                cache[schemas[i].id] = {"name": schemas[i].name, "tables": {}};
+            }
+            serviceSchemas[selectedService] = cache;
+
             if (schemas.length > 0) {
                 setManualInputSource(false, true);
-                for (const [schemaId, schema] of schemas) {
-                    const option = document.createElement('option');
-                    option.value = schemaId;
-                    option.textContent = schema.name;
-                    schemaSelect.appendChild(option);
-                    if (srcQueryInput.value === '' && !useManualInputSource)
-                        schemaSelect.disabled = false;
-                }
+                populateSelect(schemaSelect, schemas, {placeholder: 'Select a schema'});
+                if (srcQueryInput.value === '' && !useManualInputSource)
+                    schemaSelect.disabled = false;
                 if (schemas.length === 1) {
-                    const [singleSchemaId, _] = schemas[0]
-                    schemaSelect.value = singleSchemaId;
+                    schemaSelect.value = schemas[0].id;
                     addHiddenInput(schemaSelect);
-                    populateSourceTables(selectedService, singleSchemaId);
+                    await populateSourceTables(selectedService, String(schemas[0].id));
                 }
             } else {
                 setManualInputSource(true, true);
@@ -523,50 +513,55 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     }
 
-    function populateTables(tableSelect, tables) {
+    function populateTableEntries(tableSelect, tables) {
         if (tables.length > 0) {
-            for (const [tableId, tableName] of tables) {
-                const option = document.createElement('option');
-                option.value = tableId;
-                option.textContent = tableName;
-                tableSelect.appendChild(option);
-                tableSelect.disabled = false;
-            }
+            populateSelect(tableSelect, tables, {placeholder: 'Select a table'});
+            tableSelect.disabled = false;
             if (tables.length === 1) {
-                const [singleTableId, _] = tables[0]
-                tableSelect.value = singleTableId;
+                tableSelect.value = tables[0].id;
             }
         }
     }
 
-    function populateSourceTables(selectedService, selectedSchema) {
-        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+    async function populateSourceTables(selectedService, selectedSchema) {
+        populateSelect(sourceTableSelect, [], {placeholder: 'Select a table'});
+        populateSelect(destTableSelect, [], {placeholder: 'Select a table'});
 
-        if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
-            const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
-            populateTables(sourceTableSelect, tables);
+        if (selectedSchema && selectedSchema !== '-1') {
+            var tables = await fetchTables(selectedSchema);
+            var tableCache = {};
+            for (var i = 0; i < tables.length; i++) {
+                tableCache[tables[i].id] = tables[i].name;
+            }
+            if (serviceSchemas[selectedService] && serviceSchemas[selectedService][selectedSchema]) {
+                serviceSchemas[selectedService][selectedSchema]["tables"] = tableCache;
+            }
+            populateTableEntries(sourceTableSelect, tables);
             if (tables.length === 1) {
-                const [singleTableId, _] = tables[0]
-                sourceTableSelect.value = singleTableId;
+                sourceTableSelect.value = tables[0].id;
                 addHiddenInput(sourceTableSelect);
-                populateDestTables(selectedService, selectedSchema, singleTableId);
+                populateDestTablesFromList(tables, String(tables[0].id));
             }
         }
     }
 
-    function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+    function populateDestTablesFromList(allTables, selectedSourceTable) {
+        var filtered = allTables.filter(function(t) { return String(t.id) !== selectedSourceTable; });
+        populateSelect(destTableSelect, filtered, {placeholder: 'Select a table'});
 
-        if (selectedSchema && selectedSourceTable && serviceSchemas[selectedService][selectedSchema]) {
-            let tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
-            tables = tables.filter(table => table[0] !== selectedSourceTable)
-            populateTables(destTableSelect, tables);
+        if (filtered.length === 1) {
+            destTableSelect.value = filtered[0].id;
+        }
+    }
 
-            if (tables.length === 1) {
-                const [singleTableId, _] = tables[0];
-                destTableSelect.value = singleTableId;
-            }
+    var _cachedTables = [];
+    async function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
+        populateSelect(destTableSelect, [], {placeholder: 'Select a table'});
+
+        if (selectedSchema && selectedSourceTable) {
+            var tables = await fetchTables(selectedSchema);
+            _cachedTables = tables;
+            populateDestTablesFromList(tables, selectedSourceTable);
         }
     }
 
@@ -641,35 +636,29 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     });
 
-    connectToSelect.addEventListener('change', function () {
-        const selectedService = this.value;
-        const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
-        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
-        populateSchemas(this.value);
+    connectToSelect.addEventListener('change', async function () {
+        var hiddenSchemaInput = document.getElementById("source_db_id_hidden");
+        if (hiddenSchemaInput && hiddenSchemaInput.parentNode) hiddenSchemaInput.parentNode.removeChild(hiddenSchemaInput);
+        await populateSchemas(this.value);
         toggleSourceQueryInput();
         toggleDstFileContainer();
         toggleDestTableSelect()
         updateDestinationFieldset();
     });
 
-    schemaSelect.addEventListener('change', function () {
-        const selectedService = connectToSelect.value;
-        const selectedSchema = this.value;
-        const hiddenTableInput = document.getElementById("source_table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateSourceTables(connectToSelect.value, this.value);
+    schemaSelect.addEventListener('change', async function () {
+        var hiddenTableInput = document.getElementById("source_table_id_hidden");
+        if (hiddenTableInput && hiddenTableInput.parentNode) hiddenTableInput.parentNode.removeChild(hiddenTableInput);
+        await populateSourceTables(connectToSelect.value, this.value);
         updateDestinationFieldset();
     });
 
 
 
-    sourceTableSelect.addEventListener('change', function () {
-        const selectedService = connectToSelect.value;
-        const selectedSchema = schemaSelect.value;
-        const selectedTable = this.value;
-        const hiddenTableInput = document.getElementById("dest_table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
+    sourceTableSelect.addEventListener('change', async function () {
+        var hiddenTableInput = document.getElementById("dest_table_id_hidden");
+        if (hiddenTableInput && hiddenTableInput.parentNode) hiddenTableInput.parentNode.removeChild(hiddenTableInput);
+        await populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
         toggleDstFileContainer();
         updateDestinationFieldset();
         toggleDestTableSelect()

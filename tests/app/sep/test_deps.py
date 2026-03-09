@@ -378,9 +378,7 @@ class TestGetTasksContext:
     """Test get_tasks_context dependency."""
 
     @pytest.mark.asyncio
-    async def test_basic_context(
-        self, created_service, created_schema, mock_remote_api
-    ) -> None:
+    async def test_basic_context(self, created_service, mock_remote_api) -> None:
         """Assert template context is assembled for task-dependent plugins."""
         task_data = {
             "name": "fakeTask",
@@ -392,7 +390,6 @@ class TestGetTasksContext:
         mock_remote_api.get = AsyncMock(
             side_effect=[
                 [created_service.model_dump()],
-                created_schema.model_dump(),
                 [task_data],
                 [],
                 [],

@@ -18,13 +18,14 @@
 import logging
 
 from fastapi import APIRouter, status
+from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
 from app.inventory.crud import SchemaManager, ServiceManager
 from app.inventory.deps import ServiceDep, SessionDep
 from app.inventory.models import (
     Schema,
-    SchemaResponse,
+    SchemaCompactResponse,
     SchemaWrite,
     Service,
     ServiceDetailResponse,
@@ -92,12 +93,16 @@ async def delete_service(session: SessionDep, service: ServiceDep) -> None:
 async def list_schemas_by_service(
     session: SessionDep,
     service: ServiceDep,
-) -> list[SchemaResponse]:
+    search: str | None = None,
+) -> list[SchemaCompactResponse]:
     """List Schemas by Service."""
     logger.debug("Listing schemas for service '%s'", service.id)
+    whereclause = []
+    if search:
+        whereclause.append(col(Schema.name).ilike(f"%{search}%"))
     return await SchemaManager.list(
         session,
-        select_related=[Schema.tables],
+        *whereclause,
         service_id=service.id,
     )
 
