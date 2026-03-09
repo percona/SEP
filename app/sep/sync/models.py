@@ -1182,9 +1182,9 @@ class BaseTaskSyncer(BaseSyncer):
     :type tasks_execution_wait_interval: int
     :param force_executor_host: The host to force for task execution, if any.
     :type force_executor_host: str | None
-    :param strict_executor_matching: Raise `ExecutorHostNotFoundError` instead of
+    :param strict_executor_matching: Raise ``ExecutorHostNotFoundError`` instead of
         falling back to an arbitrary host when no executor matches the node.
-        Defaults to `False`.
+        Defaults to ``False``.
     :type strict_executor_matching: bool
     """
 

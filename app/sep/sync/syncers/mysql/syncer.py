@@ -341,16 +341,16 @@ class MySQLSyncer(BaseTaskSyncer):
 
         This method returns `self.force_executor_host` if set. Otherwise, it tries to
         find a target with the same address as `host`. If it can't, the first available
-        host is returned unless `strict_executor_matching` is enabled, in which case
-        `ExecutorHostNotFoundError` is raised.
+        host is returned unless ``strict_executor_matching`` is enabled, in which case
+        ``ExecutorHostNotFoundError`` is raised.
 
         :param host: The target host.
         :type host: str
-        :param name: The target name. Defaults to `None`.
+        :param name: The target name. Defaults to ``None``.
         :type name: str | None
         :return: The target host for the task.
         :rtype: str
-        :raises ExecutorHostNotFoundError: If `strict_executor_matching` is enabled and
+        :raises ExecutorHostNotFoundError: If ``strict_executor_matching`` is enabled and
             no executor host matches the node's name or address.
         """
         if self.force_executor_host:

@@ -131,7 +131,7 @@ class TestConfigAndTargets:
     async def test_get_task_target_strict_raises_on_no_match(
         self, mock_remote_api, mocker
     ):
-        """Test raising ExecutorHostNotFoundError when strict and no match."""
+        """Assert ``ExecutorHostNotFoundError`` is raised when strict and no match."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
@@ -151,7 +151,7 @@ class TestConfigAndTargets:
 
     @pytest.mark.asyncio
     async def test_get_task_target_strict_name_matches(self, mock_remote_api, mocker):
-        """Test returning matched name when strict and name is in hosts."""
+        """Assert matched name is returned when strict and name is in hosts."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
@@ -167,7 +167,7 @@ class TestConfigAndTargets:
     async def test_get_task_target_strict_address_matches(
         self, mock_remote_api, mocker
     ):
-        """Test returning matched target when strict and address matches."""
+        """Assert matched target is returned when strict and address matches."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
@@ -181,7 +181,7 @@ class TestConfigAndTargets:
 
     @pytest.mark.asyncio
     async def test_get_task_target_non_strict_fallback(self, mock_remote_api, mocker):
-        """Test falling back to first host when non-strict and no match."""
+        """Assert first host is returned as fallback when non-strict and no match."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
@@ -196,7 +196,7 @@ class TestConfigAndTargets:
     async def test_get_task_target_force_overrides_strict(
         self, mock_remote_api, mocker
     ):
-        """Test force_executor_host taking priority over strict matching."""
+        """Assert ``force_executor_host`` takes priority over strict matching."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
