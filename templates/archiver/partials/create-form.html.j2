@@ -554,13 +554,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     }
 
-    var _cachedTables = [];
     async function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
         populateSelect(destTableSelect, [], {placeholder: 'Select a table'});
 
         if (selectedSchema && selectedSourceTable) {
             var tables = await fetchTables(selectedSchema);
-            _cachedTables = tables;
             populateDestTablesFromList(tables, selectedSourceTable);
         }
     }

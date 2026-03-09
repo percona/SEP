@@ -17,7 +17,7 @@
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.sep.deps import InventoryAPI, IsAuthenticated
@@ -40,7 +40,12 @@ async def list_schemas(
     params = {}
     if search:
         params["search"] = search
-    schemas = await inventory_api.get(f"/services/{service_id}/schemas/", params=params)
+    try:
+        schemas = await inventory_api.get(
+            f"/services/{service_id}/schemas/", params=params
+        )
+    except HTTPException:
+        return JSONResponse([])
     return JSONResponse([{"id": s["id"], "name": s["name"]} for s in schemas])
 
 
@@ -56,5 +61,8 @@ async def list_tables(
     params = {}
     if search:
         params["search"] = search
-    tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
+    try:
+        tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
+    except HTTPException:
+        return JSONResponse([])
     return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables])

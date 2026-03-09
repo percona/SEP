@@ -65,14 +65,13 @@ class TestListSchemas:
     def test_list_schemas_service_not_found(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Redirect when inventory API raises HTTPException for missing service."""
+        """Return empty list when inventory API raises HTTPException."""
         mock_inventory_api_dep.get.side_effect = HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
         )
-        response = test_client.get(
-            "/inventory-api/services/9999/schemas", follow_redirects=False
-        )
-        assert response.status_code == status.HTTP_303_SEE_OTHER
+        response = test_client.get("/inventory-api/services/9999/schemas")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
 
 
 class TestListTables:
@@ -109,11 +108,10 @@ class TestListTables:
     def test_list_tables_schema_not_found(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Redirect when inventory API raises HTTPException for missing schema."""
+        """Return empty list when inventory API raises HTTPException."""
         mock_inventory_api_dep.get.side_effect = HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
         )
-        response = test_client.get(
-            "/inventory-api/schemas/9999/tables", follow_redirects=False
-        )
-        assert response.status_code == status.HTTP_303_SEE_OTHER
+        response = test_client.get("/inventory-api/schemas/9999/tables")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []

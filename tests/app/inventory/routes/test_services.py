@@ -177,6 +177,20 @@ class TestListSchemasByService:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
+    def test_list_schemas_by_service_include_tables(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Return schemas with nested tables when include_tables is set."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"include_tables": "true"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["id"] == schema.id
+        assert "tables" in data[0]
+
     def test_list_schemas_by_service_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent service ID."""
         response = test_client.get("/services/9999/schemas/")

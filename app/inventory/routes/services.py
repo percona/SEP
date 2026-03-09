@@ -26,6 +26,7 @@ from app.inventory.deps import ServiceDep, SessionDep
 from app.inventory.models import (
     Schema,
     SchemaCompactResponse,
+    SchemaResponse,
     SchemaWrite,
     Service,
     ServiceDetailResponse,
@@ -94,15 +95,31 @@ async def list_schemas_by_service(
     session: SessionDep,
     service: ServiceDep,
     search: str | None = None,
-) -> list[SchemaCompactResponse]:
-    """List Schemas by Service."""
+    include_tables: str | None = None,
+) -> list[SchemaCompactResponse] | list[SchemaResponse]:
+    """List Schemas by Service.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param service: The resolved service dependency.
+    :type service: Service
+    :param search: Filter schemas by name using ILIKE matching.
+    :type search: str | None
+    :param include_tables: Include nested tables in the response when set to
+        any non-empty value. Defaults to compact mode (no tables).
+    :type include_tables: str | None
+    :return: A list of schema responses.
+    :rtype: list[SchemaCompactResponse] | list[SchemaResponse]
+    """
     logger.debug("Listing schemas for service '%s'", service.id)
     whereclause = []
     if search:
         whereclause.append(col(Schema.name).ilike(f"%{search}%"))
+    select_related = [Schema.tables] if include_tables else []
     return await SchemaManager.list(
         session,
         *whereclause,
+        select_related=select_related,
         service_id=service.id,
     )
 
