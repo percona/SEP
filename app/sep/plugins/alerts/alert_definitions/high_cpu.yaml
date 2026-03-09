@@ -1,0 +1,7 @@
+name: High CPU Usage
+service_type: generic
+expression: 100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+default_threshold: 80.0
+severity: warning
+description: CPU usage has exceeded the configured threshold on this instance.
+summary: High CPU usage on {{ $labels.instance }}

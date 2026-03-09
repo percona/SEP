@@ -1,0 +1,66 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<form action="" method="post">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    <fieldset>
+        <legend>Create New Node</legend>
+        <br>
+        <label for="address">Address:</label>
+        <input type="text" name="address" id="address" required>
+        <br>
+        <br>
+        <label for="name">Name:</label>
+        <input type="text" name="name" id="name" required>
+        <br>
+        <br>
+        <div class="select">
+            <label>
+                <span class="material-symbols-outlined">arrow_drop_down</span>
+                <span class="label">Source:</span>
+                <select id="source" name="source">
+                    <option value="" selected>Select a source</option>
+                    {% for source in source_enum %}<option value="{{ source }}">{{ source }}</option>{% endfor %}
+                </select>
+            </label>
+        </div>
+        <br>
+        <label for="external_id">External ID:</label>
+        <input type="text" name="external_id" id="external_id">
+        <br>
+        <br>
+        <label for="type">Type:</label>
+        <input type="text" name="type" id="type" value="generic">
+        <br>
+        <br>
+    </fieldset>
+    <br>
+    <button class="contained large" type="submit">Create Node</button>
+</form>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    const sourceSelect = document.getElementById('source');
+    const externalIdInput = document.getElementById('external_id');
+
+    function toggleExternalId() {
+        externalIdInput.disabled = !sourceSelect.value;
+    }
+
+    // Initialize the state on page load
+    toggleExternalId();
+
+    // Add event listener for changes in the select element
+    sourceSelect.addEventListener('change', toggleExternalId);
+</script>

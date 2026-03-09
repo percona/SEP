@@ -1,17 +1,32 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define models for the Checksums plugin."""
 
 from pydantic import BaseModel
 
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 
 
 class ChecksumsCreate(BaseModel):
     """Represent a Checksums creation form.
 
     :param task_name: The name of the task to be created.
-    :type task_name: RequiredStr
+    :type task_name: NonEmptyStr
     :param hostname: The target hostname for the task execution.
-    :type hostname: RequiredStr
+    :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the database service to connect to.
     :type service_id: int
     :param schema_id: The database schema IDs on which the task will operate.
@@ -23,7 +38,7 @@ class ChecksumsCreate(BaseModel):
     :param tables: The tables within the schema to be checksummed.
     :type tables: str
     :param recursion_method: The method for handling recursion.
-    :type recursion_method: RequiredStr
+    :type recursion_method: NonEmptyStr
     :param dsn_table: The DSN table for recursion method when using `dsn`. Defaults to
         an empty string.
     :type dsn_table: str
@@ -53,8 +68,8 @@ class ChecksumsCreate(BaseModel):
     :type alert_on_fail: bool
     """
 
-    task_name: RequiredStr
-    hostname: RequiredStr
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
     service_id: int
     schema_id: set[int] = None
     databases: str = ""

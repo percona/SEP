@@ -1,0 +1,196 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title %}
+    Dipper Data Collection
+{% endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/snippets-details.css') }}">
+    {% if history_tasks or running_tasks %}
+        <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    {% endif %}
+    {% if script_preview %}<style>{{ syntax_highlight_css(style="monokai") }}</style>{% endif %}
+    <style>
+    .dipper-selects {
+        display: flex;
+        gap: 1rem;
+        align-items: flex-end;
+        flex-wrap: wrap;
+    }
+
+    .dipper-selects .service-select-wrapper {
+        flex: 1;
+        min-width: 300px;
+        max-width: 900px;
+    }
+
+    .dipper-selects .collector-select-wrapper {
+        min-width: 150px;
+    }
+
+    #dipperServiceSelect {
+        width: 100%;
+    }
+
+    #dipperCollectorSelect {
+        width: 100%;
+    }
+
+    {% if resolved_executor_host is defined and resolved_executor_host %}
+    #snippetExecuteForm fieldset:first-of-type {
+        display: none;
+    }
+    {% endif %}
+    </style>
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+    {% if history_tasks or running_tasks %}
+        <script src="{{ url_for('static', path='/js/logs.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
+    <script nonce="{{ request.state.csp_nonce }}">
+        (function () {
+            const serviceSelect = document.getElementById('dipperServiceSelect');
+            const collectorSelect = document.getElementById('dipperCollectorSelect');
+
+            function navigateWithParams(serviceId, collectorType) {
+                const url = new URL(window.location.href);
+                if (serviceId) {
+                    url.searchParams.set('service_id', serviceId);
+                } else {
+                    url.searchParams.delete('service_id');
+                }
+                if (collectorType && collectorType !== 'environment') {
+                    url.searchParams.set('collector_type', collectorType);
+                } else {
+                    url.searchParams.delete('collector_type');
+                }
+                window.location.href = url.toString();
+            }
+
+            if (serviceSelect) {
+                serviceSelect.addEventListener('change', function () {
+                    // Reset collector to environment when service changes
+                    navigateWithParams(this.value, 'environment');
+                });
+            }
+
+            if (collectorSelect) {
+                collectorSelect.addEventListener('change', function () {
+                    const serviceId = serviceSelect ? serviceSelect.value : '';
+                    navigateWithParams(serviceId, this.value);
+                });
+            }
+
+            {% if default_executor_host is defined and default_executor_host %}
+            const executorHostSelector = '#snippetExecuteForm .executorHostSelect';
+
+            if ($(executorHostSelector + " option[value='{{ default_executor_host }}']").length > 0) {
+                $(executorHostSelector).val('{{ default_executor_host }}');
+            }
+            {% endif %}
+
+        })();
+    </script>
+{% endblock behaviours_optimized_extra %}
+{% block main %}
+    <section class="app-intro">
+        <h1>Dipper Data Collection</h1>
+        <p>Execute Percona-provided data collection scripts on the database host and download the generated artifacts.</p>
+        <br>
+        <fieldset class="window">
+            <legend>Service</legend>
+            <div class="dipper-selects">
+                <div class="service-select-wrapper">
+                    <label for="dipperServiceSelect">Select a database service</label>
+                    <select id="dipperServiceSelect" name="service_id" required>
+                        <option value="">Select a service</option>
+                        {% for service in services %}
+                            {% set selected = selected_service_id == service.id %}
+                            <option value="{{ service.id }}" {% if selected %}selected{% endif %}>
+                                {{ service.service_type|upper }} - {{ service.service_name }} ({{ service.node.name }} / {{ service.node.address }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if is_pmm_script_available %}
+                    <div class="collector-select-wrapper">
+                        <label for="dipperCollectorSelect">Collector</label>
+                        <select id="dipperCollectorSelect" name="collector_type">
+                            <option value="environment"
+                                    {% if collector_type == 'environment' %}selected{% endif %}>Environment</option>
+                            <option value="pmm" {% if collector_type == 'pmm' %}selected{% endif %}>PMM</option>
+                        </select>
+                    </div>
+                {% endif %}
+            </div>
+        </fieldset>
+    </section>
+    {% if selected_service and script %}
+        <section>
+            <h2>{{ script.title }}</h2>
+            {% if script.description %}<p>{{ script.description }}</p>{% endif %}
+            <dl>
+                <dt>Service</dt>
+                <dd>
+                    <pre>{{ selected_service.name }} ({{ selected_service.type.value }})</pre>
+                </dd>
+                <dt>Node</dt>
+                <dd>
+                    <pre>{{ selected_service.node.name }} / {{ selected_service.node.address }}</pre>
+                </dd>
+                {%- if resolved_executor_host is defined and resolved_executor_host %}
+                    <dt>Executor Host</dt>
+                    <dd>
+                        <pre>{{ resolved_executor_host }}</pre>
+                    </dd>
+                {%- endif %}
+                <dt>Script</dt>
+                <dd>
+                    <pre>{{ script.filename }}</pre>
+                </dd>
+            </dl>
+        </section>
+        <section id="snippetPreview">
+            <h3>Preview</h3>
+            {% if script_preview %}
+                {{ script_preview | safe }}
+            {% else %}
+                <p>No preview available.</p>
+            {% endif %}
+        </section>
+        <section>
+            <h3>Execute</h3>
+            {{ script.to_form(executor_hosts, script_execution_url, form_defaults) | safe }}
+        </section>
+        {% if running_tasks %}
+            <section id="running-tasks">
+                <h2>Running</h2>
+                {% include "tasks/partials/running-tasks.html.j2" %}
+            </section>
+        {% endif %}
+        {% if history_tasks %}
+            <section>
+                <h2>History</h2>
+                {% include "tasks/partials/completed-tasks.html.j2" %}
+            </section>
+        {% endif %}
+    {% endif %}
+{% endblock main %}
