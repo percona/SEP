@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # Check if timedatectl is reporting unsynchronized system clock and check for PMM admin time drift status
-echo "System NTP synchronization status: $(timedatectl show -P NTPSynchronized)"
+echo "System NTP synchronization status: $(timedatectl show -p NTPSynchronized)"
 echo "PMM time drift: $(pmm-admin status --json | jq -M '.pmm_agent_status.server_clock_drift / 1000')" "μs"
 
 # Report back on what NTP implementation the system is running
