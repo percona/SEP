@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define models for the Backups plugin."""
 
 from enum import auto, IntEnum, StrEnum
@@ -6,7 +21,7 @@ from typing import Literal, Self
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 
 
 class SwapDropEnum(IntEnum):
@@ -56,10 +71,10 @@ class DirEncryptConfig(BaseModel):
     """Represent the encryption configuration for the backup task.
 
     :param encryption_recipient: The recipient of the encryption key.
-    :type encryption_recipient: RequiredStr | None
+    :type encryption_recipient: NonEmptyStr | None
     """
 
-    encryption_recipient: RequiredStr | None = Field(
+    encryption_recipient: NonEmptyStr | None = Field(
         None, serialization_alias="encryption recipient"
     )
 
@@ -75,9 +90,9 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     post_run_encrypt: bool = False
     only_if_running_replica: bool = False
     only_if_read_only: bool = False
-    logging_dir: RequiredStr | EmptyStrToNone = None
-    backup_dir: RequiredStr | EmptyStrToNone = None
-    defaults_file: RequiredStr | EmptyStrToNone = None
+    logging_dir: NonEmptyStr | EmptyStrToNone = None
+    backup_dir: NonEmptyStr | EmptyStrToNone = None
+    defaults_file: NonEmptyStr | EmptyStrToNone = None
     compression_algorithm: CompressionAlgorithm | EmptyStrToNone = None
     mydumper_daily_purge: int | EmptyStrToNone = None
     mydumper_weekly_purge: int | EmptyStrToNone = None
@@ -92,36 +107,36 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_kill_query_type: Literal["select", "all"] | EmptyStrToNone = None
     xtrabackup_verify: bool = False
     xtrabackup_prepare: bool = False
-    xtrabackup_prepare_memory: RequiredStr | EmptyStrToNone = None
+    xtrabackup_prepare_memory: NonEmptyStr | EmptyStrToNone = None
     xtrabackup_desync_pxc: bool = False
     xtrabackup_rsync: bool = False
     xtrabackup_replica_info: bool = False
-    xtrabackup_defaults_file: RequiredStr | EmptyStrToNone = None
-    xtrabackup_extra_args: RequiredStr | EmptyStrToNone = None
+    xtrabackup_defaults_file: NonEmptyStr | EmptyStrToNone = None
+    xtrabackup_extra_args: NonEmptyStr | EmptyStrToNone = None
     xtrabackup_incremental_method: (
         Literal["less_space", "fast_restore"] | EmptyStrToNone
     ) = None
     xtrabackup_incremental_cycle: (
         Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
     ) = None
-    xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone = None
-    xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone = None
+    xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone = None
+    xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone = None
     xtrabackup_stop_replica: bool = False
     xtrabackup_lock_ddl: bool = False
     xtrabackup_bin_cmd: (
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     ) = None
-    binlog_prefix: RequiredStr | EmptyStrToNone = None
+    binlog_prefix: NonEmptyStr | EmptyStrToNone = None
     binlog_purge_days: int | EmptyStrToNone = None
-    binlog_extra_args: RequiredStr | EmptyStrToNone = None
-    binlog_compress_cmd: RequiredStr | EmptyStrToNone = None
-    binlog_cmd: RequiredStr | EmptyStrToNone = None
+    binlog_extra_args: NonEmptyStr | EmptyStrToNone = None
+    binlog_compress_cmd: NonEmptyStr | EmptyStrToNone = None
+    binlog_cmd: NonEmptyStr | EmptyStrToNone = None
     binlog_run_all: bool = True
-    s3_bucket: RequiredStr | EmptyStrToNone = None
-    s3_storage_class: RequiredStr | EmptyStrToNone = None
+    s3_bucket: NonEmptyStr | EmptyStrToNone = None
+    s3_storage_class: NonEmptyStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
-    awscli_s3_upload_extra_args: RequiredStr | EmptyStrToNone = None
-    rsync_path: RequiredStr | EmptyStrToNone = None
+    awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone = None
+    rsync_path: NonEmptyStr | EmptyStrToNone = None
 
 
 class BackupCreate(BackupConfigAll):
@@ -144,11 +159,11 @@ class BackupCreate(BackupConfigAll):
     :param only_if_read_only: Only perform backup if the server is in read-only mode.
     :type only_if_read_only: bool
     :param logging_dir: Directory where logs are stored.
-    :type logging_dir: RequiredStr | EmptyStrToNone
+    :type logging_dir: NonEmptyStr | EmptyStrToNone
     :param backup_dir: Directory where backups are stored.
-    :type backup_dir: RequiredStr | EmptyStrToNone
+    :type backup_dir: NonEmptyStr | EmptyStrToNone
     :param defaults_file: Path to the MySQL defaults file.
-    :type defaults_file: RequiredStr | EmptyStrToNone
+    :type defaults_file: NonEmptyStr | EmptyStrToNone
     :param compression_algorithm: Compression algorithm to use.
     :type compression_algorithm: CompressionAlgorithm | EmptyStrToNone
     :param mydumper_daily_purge: Number of days to keep daily mydumper backups.
@@ -178,7 +193,7 @@ class BackupCreate(BackupConfigAll):
     :param xtrabackup_prepare: Whether to prepare the backup for restore.
     :type xtrabackup_prepare: bool
     :param xtrabackup_prepare_memory: Amount of memory allocated during prepare phase.
-    :type xtrabackup_prepare_memory: RequiredStr | EmptyStrToNone
+    :type xtrabackup_prepare_memory: NonEmptyStr | EmptyStrToNone
     :param xtrabackup_desync_pxc: Whether to desynchronize PXC node during xtrabackup.
     :type xtrabackup_desync_pxc: bool
     :param xtrabackup_rsync: Whether to use rsync for file copying in xtrabackup.
@@ -186,17 +201,17 @@ class BackupCreate(BackupConfigAll):
     :param xtrabackup_replica_info: Whether to include replica info in xtrabackup.
     :type xtrabackup_replica_info: bool
     :param xtrabackup_defaults_file: Path to the defaults file for xtrabackup.
-    :type xtrabackup_defaults_file: RequiredStr | EmptyStrToNone
+    :type xtrabackup_defaults_file: NonEmptyStr | EmptyStrToNone
     :param xtrabackup_extra_args: Additional command-line arguments passed to xtrabackup.
-    :type xtrabackup_extra_args: RequiredStr | EmptyStrToNone
+    :type xtrabackup_extra_args: NonEmptyStr | EmptyStrToNone
     :param xtrabackup_incremental_method: Method used for incremental backup.
     :type xtrabackup_incremental_method: Literal["less_space", "fast_restore"] | EmptyStrToNone
     :param xtrabackup_incremental_cycle: Frequency of incremental backups.
     :type xtrabackup_incremental_cycle: Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
     :param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.
-    :type xtrabackup_local_ssh_destination: RequiredStr | EmptyStrToNone
+    :type xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone
     :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.
-    :type xtrabackup_aes256_keyfile: RequiredStr | EmptyStrToNone
+    :type xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone
     :param xtrabackup_stop_replica: Whether to stop the replica before xtrabackup.
     :type xtrabackup_stop_replica: bool
     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
@@ -204,53 +219,53 @@ class BackupCreate(BackupConfigAll):
     :param xtrabackup_bin_cmd: Backup tool to use.
     :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     :param binlog_prefix: Prefix used in binlog backup naming.
-    :type binlog_prefix: RequiredStr | EmptyStrToNone
+    :type binlog_prefix: NonEmptyStr | EmptyStrToNone
     :param binlog_purge_days: Number of days to retain binlogs before purging.
     :type binlog_purge_days: int | EmptyStrToNone
     :param binlog_extra_args: Extra arguments for binlog backup command.
-    :type binlog_extra_args: RequiredStr | EmptyStrToNone
+    :type binlog_extra_args: NonEmptyStr | EmptyStrToNone
     :param binlog_compress_cmd: Command used to compress binlog backups.
-    :type binlog_compress_cmd: RequiredStr | EmptyStrToNone
+    :type binlog_compress_cmd: NonEmptyStr | EmptyStrToNone
     :param binlog_cmd: Command used to create binlog backups.
-    :type binlog_cmd: RequiredStr | EmptyStrToNone
+    :type binlog_cmd: NonEmptyStr | EmptyStrToNone
     :param binlog_run_all: Whether to run all binlog backup types.
     :type binlog_run_all: bool
     :param s3_bucket: S3 bucket where backups will be stored.
-    :type s3_bucket: RequiredStr | EmptyStrToNone
+    :type s3_bucket: NonEmptyStr | EmptyStrToNone
     :param s3_storage_class: S3 storage class (e.g., STANDARD, GLACIER).
-    :type s3_storage_class: RequiredStr | EmptyStrToNone
+    :type s3_storage_class: NonEmptyStr | EmptyStrToNone
     :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
     :type skip_s3_safety_check: bool
     :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
         Example: "ChecksumAlgorithm=CRC32C".
-    :type awscli_s3_upload_extra_args: RequiredStr | EmptyStrToNone
+    :type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone
     :param rsync_path: Remote destination path for Rsync transfers.
-    :type rsync_path: RequiredStr | EmptyStrToNone
+    :type rsync_path: NonEmptyStr | EmptyStrToNone
     :param task_name: The name of the backup task.
-    :type task_name: RequiredStr
+    :type task_name: NonEmptyStr
     :param hostname: The hostname of the machine to back up.
-    :type hostname: RequiredStr
+    :type hostname: NonEmptyStr
     :param service_id: The identifier of the related service.
     :type service_id: int
     :param backup_type: The type of backup to perform.
     :type backup_type: BackupType
     :param encryption_recipient: The recipient used for encryption.
-    :type encryption_recipient: RequiredStr | EmptyStrToNone
+    :type encryption_recipient: NonEmptyStr | EmptyStrToNone
     :param binlog_alternative_host: Optional alternative host for binlog operations.
-    :type binlog_alternative_host: RequiredStr | EmptyStrToNone
+    :type binlog_alternative_host: NonEmptyStr | EmptyStrToNone
     :param alias: Optional alias for the server in the SERVERS_LIST section.
-    :type alias: RequiredStr | EmptyStrToNone
+    :type alias: NonEmptyStr | EmptyStrToNone
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
     :type alert_on_fail: bool
     """
 
-    task_name: RequiredStr
-    hostname: RequiredStr
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
     service_id: int
     backup_type: BackupType
-    encryption_recipient: RequiredStr | EmptyStrToNone = None
-    binlog_alternative_host: RequiredStr | EmptyStrToNone = None
-    alias: RequiredStr | EmptyStrToNone = None
+    encryption_recipient: NonEmptyStr | EmptyStrToNone = None
+    binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
+    alias: NonEmptyStr | EmptyStrToNone = None
     alert_on_fail: bool = False
 
     @model_validator(mode="after")
@@ -278,11 +293,11 @@ class BackupConfigServer(BaseCaseInsensitiveModel):
     """Represent an individual server configuration.
 
     :param alias: A unique alias for the server.
-    :type alias: RequiredStr
+    :type alias: NonEmptyStr
     :param backup_type: The type of the backup.
     :type backup_type: BackupType
     :param host: The hostname or address of the server.
-    :type host: RequiredStr
+    :type host: NonEmptyStr
     :param port: The port number used to connect to the host.
     :type port: int | None
     :param upload: A unique list of upload providers to use for the backup, if any.
@@ -291,9 +306,9 @@ class BackupConfigServer(BaseCaseInsensitiveModel):
     :type dir_encrypt_config: DirEncryptConfig | None
     """
 
-    alias: RequiredStr
+    alias: NonEmptyStr
     backup_type: str
-    host: RequiredStr
+    host: NonEmptyStr
     port: int | None
     upload: list[str] | None = None
     dir_encrypt_config: DirEncryptConfig | None = None

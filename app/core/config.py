@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -33,6 +33,7 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    SecretStr,
     validate_call,
 )
 from pydantic_settings import (
@@ -56,12 +57,13 @@ from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
     LogLevel,
-    RelativeFilePath,
-    RequiredStr,
+    NonEmptyStr,
+    RelativeFilePathField,
     StrHttpUrl,
     StrImportableAttribute,
     URL,
 )
+from app.core.utils.lazy import LazyProxy
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -159,10 +161,10 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
     :param yaml_file_encoding: The encoding of the YAML file. Defaults to `None`.
     :type yaml_file_encoding: str | None
     :param prefixes: A sequence of prefixes to navigate through the YAML data.
-    :type prefixes: Sequence[RequiredStr]
+    :type prefixes: Sequence[NonEmptyStr]
     :param base_prefix: The base prefix to start the configuration. Defaults to
         "default".
-    :type base_prefix: RequiredStr | None
+    :type base_prefix: NonEmptyStr | None
     """
 
     def __init__(
@@ -170,8 +172,8 @@ class YamlPrefixConfigSettingsSource(YamlConfigSettingsSource):
         settings_cls: type[BaseSettings],
         yaml_file: PathType | None = pre_env_settings.SETTINGS_FILE,
         yaml_file_encoding: str | None = None,
-        prefixes: Sequence[RequiredStr] = (),
-        base_prefix: RequiredStr | None = "default",
+        prefixes: Sequence[NonEmptyStr] = (),
+        base_prefix: NonEmptyStr | None = "default",
     ) -> None:
         super().__init__(settings_cls, yaml_file, yaml_file_encoding)
         if prefixes:
@@ -266,7 +268,7 @@ class Settings(BaseYamlSettings):
     :param LOGGING_CONFIG: dictConfig logging configuration.
     :type LOGGING_CONFIG: dict[str, Any]
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
-    :type SSL_CAFILE: RelativeFilePath | None
+    :type SSL_CAFILE: RelativeFilePathField | None
     :param BASE_URL: The application's base URL.
     :type BASE_URL: URL | None
     :param BACKEND_CORS_ORIGINS: A global list of allowed CORS origins, to be used as
@@ -284,10 +286,10 @@ class Settings(BaseYamlSettings):
     CELERY: CeleryOptions
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     ALLOW_CONCURRENT_SESSIONS: bool = False
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
-    SSL_CAFILE: RelativeFilePath | None = None
+    SSL_CAFILE: RelativeFilePathField | None = None
     BASE_URL: URL | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
@@ -359,8 +361,14 @@ class Settings(BaseYamlSettings):
         await self._CLIENT_REGISTRY.close_all()
 
 
-settings = Settings()
-logging.config.dictConfig(settings.LOGGING_CONFIG)
+def _create_settings() -> Settings:
+    """Create a :class:`Settings` instance and apply its logging configuration."""
+    s = Settings()
+    logging.config.dictConfig(s.LOGGING_CONFIG)
+    return s
+
+
+settings: Settings = LazyProxy(_create_settings)
 logger = logging.getLogger(__name__)
 
 
@@ -374,9 +382,9 @@ class BaseYamlAppSettings(BaseYamlSettings):
     :param UVICORN_PORT: The port for Uvicorn. Defaults to 0.
     :type UVICORN_PORT: int
     :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
-    :type SSL_KEYFILE: RelativeFilePath | None
+    :type SSL_KEYFILE: RelativeFilePathField | None
     :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
-    :type SSL_CERTFILE: RelativeFilePath | None
+    :type SSL_CERTFILE: RelativeFilePathField | None
     :param BACKEND_CORS_ORIGINS: A list of allowed CORS origins. Use None to disable the
         CORSMiddleware.
     :type BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None
@@ -391,10 +399,14 @@ class BaseYamlAppSettings(BaseYamlSettings):
 
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
-    SSL_KEYFILE: RelativeFilePath | None = None
-    SSL_CERTFILE: RelativeFilePath | None = None
-    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = settings.BACKEND_CORS_ORIGINS
-    ALLOWED_HOSTS: list[str] = Field(settings.ALLOWED_HOSTS, min_length=1)
+    SSL_KEYFILE: RelativeFilePathField | None = None
+    SSL_CERTFILE: RelativeFilePathField | None = None
+    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = Field(
+        default_factory=lambda: settings.BACKEND_CORS_ORIGINS
+    )
+    ALLOWED_HOSTS: list[str] = Field(
+        default_factory=lambda: settings.ALLOWED_HOSTS, min_length=1
+    )
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
 
     @field_validator("ALLOWED_HOSTS")

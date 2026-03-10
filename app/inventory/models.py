@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -25,7 +25,7 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 
 
 class SourceEnum(StrEnum):
@@ -67,27 +67,27 @@ class NodeBase(SQLModel):
     """Define the base structure for node-related operations.
 
     :param address: The network address of the node.
-    :type address: RequiredStr
+    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param external_id: An external identifier for the node, indexed for quick lookup.
         Defaults to None.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Indexed for
         quick lookup. Defaults to None.
     :type source: SourceEnum | None
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
-    :type type: RequiredStr
+    :type type: NonEmptyStr
     """
 
-    address: RequiredStr
-    name: RequiredStr
-    external_id: RequiredStr | None = SQLField(default=None, index=True)
+    address: NonEmptyStr
+    name: NonEmptyStr
+    external_id: NonEmptyStr | None = SQLField(default=None, index=True)
     source: SourceEnum | None = SQLField(
         default=None,
         sa_column=Column(EnumField(SourceEnum)),
     )
-    type: RequiredStr = SQLField(
+    type: NonEmptyStr = SQLField(
         default="generic"
     )  # TODO: Enum with allowed values  # noqa: TD002, TD003
 
@@ -113,17 +113,17 @@ class Node(NodeBase, BaseSQLModel, table=True):
     """Represent a node in the inventory.
 
     :param address: The network address of the node.
-    :type address: RequiredStr
+    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param external_id: An external identifier for the node. Must be unique for source,
         as defined by composite index ix_node_external_id_source.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Must be unique
         for external_id, as defined by composite index ix_node_external_id_source.
     :type source: SourceEnum | None
     :param type: The type of the node (e.g., remote, generic).
-    :type type: RequiredStr
+    :type type: NonEmptyStr
     :param services: A list of services associated with the node.
     :type services: list[Service]
     """
@@ -138,17 +138,17 @@ class NodeWrite(NodeBase):
     """Define the model for writing node data to the inventory.
 
     :param address: The network address of the node.
-    :type address: RequiredStr
+    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param external_id: An external identifier for the node, indexed for quick lookup.
         Defaults to None.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Indexed for
         quick lookup. Defaults to None.
     :type source: SourceEnum | None
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
-    :type type: RequiredStr
+    :type type: NonEmptyStr
     """
 
 
@@ -164,15 +164,15 @@ class NodeResponse(BaseSQLModel, NodeBase):
         updated on changes.
     :type updated_at: UTCDatetime | None
     :param address: The network address of the node.
-    :type address: RequiredStr
+    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param external_id: An external identifier for the node.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived.
     :type source: SourceEnum | None
     :param type: The type of the node (e.g., remote, generic).
-    :type type: RequiredStr
+    :type type: NonEmptyStr
     :param services: A list of services associated with the node.
     :type services: list[Service]
     """
@@ -185,9 +185,9 @@ class ServiceBase(SQLModel):
 
     :param external_id: An external identifier for the service, indexed for quick
         lookup. Defaults to None.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Defaults to None.
@@ -205,11 +205,11 @@ class ServiceBase(SQLModel):
     :type node_id: int
     """
 
-    external_id: RequiredStr | None = SQLField(
+    external_id: NonEmptyStr | None = SQLField(
         default=None,
         index=True,
     )  # TODO: validate external_id not null if node source is defined  # noqa: TD002, TD003
-    name: RequiredStr
+    name: NonEmptyStr
     type: ServiceTypeEnum = SQLField(
         sa_column=Column(EnumField(ServiceTypeEnum, native_enum=False), nullable=False),
     )
@@ -231,9 +231,9 @@ class ServiceWrite(ServiceBase):
 
     :param external_id: An external identifier for the service, indexed for quick
         lookup. Defaults to None.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Defaults to None.
@@ -273,9 +273,9 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service. Must be unique for
         node_id, as defined by composite index ix_service_external_id_node_id.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Must be unique for
@@ -324,9 +324,9 @@ class ServiceResponse(BaseSQLModel, ServiceBase):
         updated on changes.
     :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :type type: ServiceTypeEnum
     :param port: The port number on which the service is running.
@@ -363,9 +363,9 @@ class ServiceDetailResponse(ServiceResponse):
         updated on changes.
     :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service.
-    :type external_id: RequiredStr | None
+    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :type type: ServiceTypeEnum
     :param port: The port number on which the service is running.
@@ -393,13 +393,13 @@ class SchemaBase(SQLModel):
     """Define the base structure for schema-related operations.
 
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param service_id: The foreign key referencing the service to which the schema
         belongs.
     :type service_id: int
     """
 
-    name: RequiredStr
+    name: NonEmptyStr
     service_id: int = SQLField(foreign_key="service.id", index=True, ondelete="CASCADE")
 
 
@@ -416,7 +416,7 @@ class Schema(BaseSQLModel, SchemaBase, table=True):
     :type updated_at: UTCDatetime | None
     :param name: The name of the schema. Must be unique for service_id, as defined by
         composite index ix_schema_name_service_id.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param service_id: The unique identifier of the service to which the schema belongs.
         Must be unique for name, as defined by composite index
         ix_schema_name_service_id.
@@ -438,7 +438,7 @@ class SchemaWrite(SchemaBase):
     """Define the model for writing schema data to the inventory.
 
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param service_id: The foreign key referencing the service to which the schema
         belongs. Defaults to None.
     :type service_id: int | None
@@ -464,7 +464,7 @@ class SchemaResponse(BaseSQLModel, SchemaBase):
         updated on changes.
     :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param service_id: The unique identifier of the service to which the schema belongs.
     :type service_id: int
     :param tables: A list of tables within the schema.
@@ -486,7 +486,7 @@ class SchemaDetailResponse(SchemaResponse):
         updated on changes.
     :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param service_id: The unique identifier of the service to which the schema belongs.
     :type service_id: int
     :param service: The schema's service.
@@ -500,9 +500,9 @@ class TableBase(SQLModel):
     """Define the base structure for table-related operations.
 
     :param name: The name of the table.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: RequiredStr
+    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
     :param keys: A dictionary containing details about table keys (e.g., primary,
@@ -510,8 +510,8 @@ class TableBase(SQLModel):
     :type keys: Dict[str, Any]
     """
 
-    name: RequiredStr
-    create: RequiredStr = SQLField(sa_type=Text)
+    name: NonEmptyStr
+    create: NonEmptyStr = SQLField(sa_type=Text)
     schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
     # TODO(yan): Make keys a Pydantic model
     # SEP-203
@@ -533,9 +533,9 @@ class Table(BaseSQLModel, TableBase, table=True):
     :type updated_at: UTCDatetime | None
     :param name: The name of the table. Must be unique for schema_id, as defined by
         composite index ix_table_name_schema_id.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: RequiredStr
+    :type create: NonEmptyStr
     :param schema_id: The unique identifier of the schema to which the table belongs.
         Must be unique for name, as defined by composite index ix_table_name_schema_id.
     :type schema_id: int
@@ -553,9 +553,9 @@ class TableWrite(TableBase):
     """Define the model for writing table data to the inventory.
 
     :param name: The name of the table.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: RequiredStr
+    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int | None
     """
@@ -580,9 +580,9 @@ class TableResponse(BaseSQLModel, TableBase):
         updated on changes.
     :type updated_at: UTCDatetime | None
     :param name: The name of the table.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: RequiredStr
+    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
     """
@@ -600,9 +600,9 @@ class TableDetailResponse(TableResponse):
         updated on changes.
     :type updated_at: UTCDatetime | None
     :param name: The name of the table.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: RequiredStr
+    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :type schema_id: int
     :param database: The table's schema.

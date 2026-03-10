@@ -1,0 +1,166 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<style>
+
+    .dialog {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 9998;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .dialog-content {
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+        text-align: center;
+        max-width: 90%;
+        max-height: 90%;
+        overflow: auto;
+        transform: scale(0);
+        animation: none;
+        z-index: 9999;
+    }
+
+    .dialog-content.pop-up {
+        animation: popUp 0.3s ease forwards;
+    }
+
+    .dialog-content.pop-down {
+        animation: popDown 0.3s ease forwards;
+    }
+
+    .confirm-btn {
+        min-width: 4em;
+        margin: 0.8em 0.5em 0 .5em;
+        color: var(--stone900);
+    }
+
+    #confirmationMessage {
+        margin-bottom: .8em;
+        font-weight: 600;
+        color: var(--stone900);
+    }
+
+    @keyframes popUp {
+        from {
+            transform: scale(0);
+        }
+
+        to {
+            transform: scale(1);
+        }
+    }
+
+    @keyframes popDown {
+        from {
+            transform: scale(1);
+        }
+
+        to {
+            transform: scale(0);
+        }
+    }
+</style>
+<div id="confirmationDialog" class="dialog">
+    <div class="dialog-content">
+        <p id="confirmationMessage">Are you sure you want to submit?</p>
+        <button id="confirmYes" class="confirm-btn">Yes</button>
+        <button id="confirmNo" class="confirm-btn">No</button>
+    </div>
+</div>
+<script nonce="{{ request.state.csp_nonce }}">
+    document.addEventListener('DOMContentLoaded', function() {
+        const dialog = document.getElementById('confirmationDialog');
+        const dialogContent = document.querySelector('.dialog-content');
+        const confirmationMessage = document.getElementById('confirmationMessage');
+        const confirmYes = document.getElementById('confirmYes');
+        const confirmNo = document.getElementById('confirmNo');
+        const submitButtons = document.querySelectorAll('.submitButton');
+        const scheduleDialog = document.getElementById('modalScheduleExec');
+        const editDialog = document.getElementById('modalEditTask');
+        const createDialog = document.getElementById('modalCreateTask');
+
+        let currentForm = null;
+
+        function showModal() {
+            dialog.style.display = 'flex';
+            dialogContent.classList.remove('pop-down');
+            dialogContent.classList.add('pop-up');
+        }
+
+        function hideModal() {
+            dialogContent.classList.remove('pop-up');
+            dialogContent.classList.add('pop-down');
+
+            setTimeout(() => {
+                dialog.style.display = 'none';
+            }, 300);
+        }
+
+        submitButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault()
+                currentForm = button.form
+                if (!currentForm)
+                    currentForm = button.closest('form');
+                const message = currentForm.getAttribute('data-confirm-message');
+                confirmationMessage.textContent = message;
+                const requiredInputs = currentForm.querySelectorAll('[required]');
+                let allFieldsValid = true;
+
+                requiredInputs.forEach(input => {
+                    if (!input.checkValidity()) {
+                        allFieldsValid = false;
+                        input.reportValidity(); // Trigger the browser's built-in validation popup
+                        return; // Exit the loop as we only need to show one validation error at a time
+                    }
+                });
+                if (allFieldsValid) {
+                    if (scheduleDialog && scheduleDialog.open) {
+                        scheduleDialog.close();
+                    }
+                    if (editDialog && editDialog.open) {
+                        editDialog.close();
+                    }
+                    if (createDialog && createDialog.open) {
+                        createDialog.close();
+                    }
+                    showModal();
+                }
+            });
+        });
+
+        confirmYes.addEventListener('click', function() {
+            if (currentForm) {
+                currentForm.submit();
+                hideModal();
+            }
+        });
+
+        confirmNo.addEventListener('click', function() {
+            hideModal();
+        });
+    });
+</script>

@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -19,5 +19,7 @@ from itsdangerous import URLSafeSerializer, URLSafeTimedSerializer
 
 from app.core.config import settings
 
-crypto_serializer = URLSafeSerializer(settings.SECRET_KEY)
-crypto_timestamp_serializer = URLSafeTimedSerializer(settings.SECRET_KEY)
+crypto_serializer = URLSafeSerializer(settings.SECRET_KEY.get_secret_value())
+crypto_timestamp_serializer = URLSafeTimedSerializer(
+    settings.SECRET_KEY.get_secret_value()
+)
