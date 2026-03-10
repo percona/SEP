@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define tests for the app.core.alerts.providers.pagerduty module."""
 
 from unittest.mock import AsyncMock
@@ -64,6 +79,12 @@ async def test_send_alert_builds_correct_payload(mocker, mock_remote_api, sample
             },
         },
     )
+
+
+def test_pagerduty_routing_key_masked_in_repr():
+    """Test that routing_key is masked in repr output."""
+    prov = PagerDutyEventsAlertProvider(routing_key="secret-routing-key")
+    assert "secret-routing-key" not in repr(prov)
 
 
 def test_pagerduty_alert_extra_ignored_and_validation():

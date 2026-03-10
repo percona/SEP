@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -84,7 +84,7 @@ class CasdoorTokenPayload(BaseTokenPayload):
         :return: The validated audience list.
         :rtype: list[str]
         """
-        if settings.CASDOOR.client_id not in v:
+        if settings.CASDOOR.client_id.get_secret_value() not in v:
             raise ValueError(f"Client ID not part of audience: {v}")
         return v
 

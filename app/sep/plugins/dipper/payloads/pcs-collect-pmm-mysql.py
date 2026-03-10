@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 # ---
 # title: Collect PMM MySQL Graphs
@@ -8,12 +22,12 @@
 #   - urllib3
 # parameters:
 #   - name: pmmserver
-#     label: PMM server URL (override)
+#     label: PMM server URL
 #     description: Base URL of PMM server. Leave empty to use configured default (SEP.PMM.ENDPOINT).
 #     positional: true
 #     required: false
 #   - name: apikey
-#     label: API key (override)
+#     label: API key
 #     description: API key for PMM server. Leave empty to use configured default (SEP.PMM.API_KEY).
 #   - name: node
 #     label: Node name
@@ -93,6 +107,8 @@
 #     description: Collect Amazon RDS Aurora MySQL graphs.
 #     type: bool
 # ---
+
+from __future__ import annotations
 
 import argparse
 import datetime
@@ -264,14 +280,14 @@ class CollectPmmError(Exception):
 #
 def get_graph_window(startstr: str, endstr: str) -> tuple[datetime.datetime, datetime.datetime]:
     # Defaults to 24hrs ago
-    end = datetime.datetime.now(tz=datetime.UTC)
+    end = datetime.datetime.now(tz=datetime.timezone.utc)
     start = end - datetime.timedelta(seconds=86400)
 
     # If provided, try to parse starting timestamp
     if startstr is not None:
         try:
             start = datetime.datetime.strptime(startstr, "%Y-%m-%dT%H:%M:%S").replace(
-                tzinfo=datetime.UTC,
+                tzinfo=datetime.timezone.utc,
             )
         except ValueError:
             print(f"Unable to parse '{startstr}' starting timestamp")
@@ -281,7 +297,7 @@ def get_graph_window(startstr: str, endstr: str) -> tuple[datetime.datetime, dat
     if endstr is not None:
         try:
             end = datetime.datetime.strptime(endstr, "%Y-%m-%dT%H:%M:%S").replace(
-                tzinfo=datetime.UTC,
+                tzinfo=datetime.timezone.utc,
             )
         except ValueError:
             print(f"Unable to parse '{endstr}' ending timestamp")

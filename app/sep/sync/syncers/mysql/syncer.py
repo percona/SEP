@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -84,9 +84,9 @@ class MySQLService(Service):
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
+    :type external_id: NonEmptyStr | EmptyStrToNone
     :param name: The name of the service, aliased as "service_name".
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param port: The port number on which the service is running. Defaults to None.
     :type port: int | EmptyStrToNone
     :param type: The type of the service (e.g., "service_type"), aliased as
@@ -132,7 +132,7 @@ class MySQLSchema(Schema):
     for fetching table data and an `address` field.
 
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param tables: The tables associated with the schema.
     :type tables: list[Table]
     :param address: The unique address of the schema within the inventory system.

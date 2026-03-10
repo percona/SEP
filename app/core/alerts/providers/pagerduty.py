@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -21,13 +21,14 @@ from typing import Any, ClassVar
 from pydantic import (
     ConfigDict,
     Field,
+    SecretStr,
     validate_call,
 )
 
 from app.core.alerts.models import Alert, BaseAlertProvider
 from app.core.config import settings
 from app.core.requests import RemoteAPI
-from app.core.utils.fields import EnumFieldMixin, RequiredStr
+from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 
 
 class PagerDutyAlertSeverity(EnumFieldMixin, StrEnum):
@@ -50,16 +51,16 @@ class PagerDutyAlert(Alert):
     :param dedup_key: A unique key to deduplicate alerts. If provided, PagerDuty will
         not trigger a new incident if an alert with the same dedup_key is already
         active. Defaults to None.
-    :type dedup_key: RequiredStr | None
+    :type dedup_key: NonEmptyStr | None
     :param component: The component affected by the alert, such as a service or
         application. Defaults to None.
-    :type component: RequiredStr | None
+    :type component: NonEmptyStr | None
     :param group: The group associated with the alert, such as a team or department.
         Defaults to None.
-    :type group: RequiredStr | None
+    :type group: NonEmptyStr | None
     :param class_: The class of the alert, which can be used to categorize it.
         Defaults to None.
-    :type class_: RequiredStr | None
+    :type class_: NonEmptyStr | None
     :param custom_details: Additional custom details to include in the alert.
         Defaults to None.
     :type custom_details: dict[str, Any] | None
@@ -73,10 +74,10 @@ class PagerDutyAlert(Alert):
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
     severity: PagerDutyAlertSeverity
-    dedup_key: RequiredStr | None = None
-    component: RequiredStr | None = None
-    group: RequiredStr | None = None
-    class_: RequiredStr | None = Field(None, alias="class")
+    dedup_key: NonEmptyStr | None = None
+    component: NonEmptyStr | None = None
+    group: NonEmptyStr | None = None
+    class_: NonEmptyStr | None = Field(None, alias="class")
     custom_details: dict[str, Any] | None = None
     images: list[dict[str, str]] | None = None
     links: list[dict[str, str]] | None = None
@@ -90,14 +91,14 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
     :cvar API_ENDPOINT: The API endpoint for Events v2.
     :vartype API_ENDPOINT: str
     :param routing_key: The routing key used for API requests.
-    :type routing_key: str
+    :type routing_key: SecretStr
     """
 
     API_ENDPOINT: ClassVar[str] = "https://events.pagerduty.com/v2/"
-    routing_key: str
+    routing_key: SecretStr
 
     def __hash__(self) -> int:
-        return hash((self.__class__.__name__, self.routing_key))
+        return hash((self.__class__.__name__, self.routing_key.get_secret_value()))
 
     async def get_api(self) -> RemoteAPI:
         """Get the PagerDuty API client.
@@ -120,7 +121,7 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         await pagerduty_api.post(
             "enqueue",
             json={
-                "routing_key": self.routing_key,
+                "routing_key": self.routing_key.get_secret_value(),
                 "event_action": "trigger",
                 **alert.model_dump(
                     include={"dedup_key", "images", "links"}, exclude_none=True

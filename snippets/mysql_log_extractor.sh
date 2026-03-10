@@ -4,6 +4,7 @@
 # title: MySQL Log Extractor
 # description: This script extracts a portion of the MySQL error log
 # allow_extra_args: false
+# sudo: always
 # parameters:
 #  - name: time
 #    type: str

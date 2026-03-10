@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -26,7 +26,13 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
-from app.tasks.models import Task, TaskHistory, TaskHistoryStatusEnum, TaskLog
+from app.tasks.models import (
+    FileMetadata,
+    Task,
+    TaskHistory,
+    TaskHistoryStatusEnum,
+    TaskLog,
+)
 
 logger = logging.getLogger(__name__)
 _ONE_MEBIBYTE = 1024 * 1024
@@ -194,7 +200,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     @abstractmethod
     async def list_files(
         self, queue_item: TaskHistory, path: str
-    ) -> dict[str, dict[str, int | bool]]:
+    ) -> dict[str, FileMetadata]:
         """List files in a directory from a task history record.
 
         :param queue_item: The task history record for tracking the logs.
@@ -203,7 +209,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :type path: str
         :return: A dictionary with filenames as keys and their metadata as values.
             The metadata includes the file size and whether it is a directory.
-        :rtype: dict[str, dict[str, int | bool]]
+        :rtype: dict[str, FileMetadata]
         """
 
     async def sync_task_history(

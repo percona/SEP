@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -21,7 +21,7 @@ from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPBadRequestException
-from app.core.utils.fields import RequiredStr
+from app.core.utils.fields import NonEmptyStr
 from app.inventory.crud import NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
 from app.inventory.models import (
@@ -43,9 +43,9 @@ router = APIRouter(tags=["nodes"])
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_nodes(
     session: SessionDep,
-    external_id: RequiredStr | None = None,
+    external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
-    node_type: RequiredStr | None = None,
+    node_type: NonEmptyStr | None = None,
 ) -> list[NodeResponse]:
     """List Nodes from Inventory."""
     logger.debug(

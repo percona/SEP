@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -40,7 +40,7 @@ from pydantic import computed_field, Field, HttpUrl, PrivateAttr
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
-from app.core.utils.fields import RelativeFilePath, RequiredStr
+from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
 
 
 class BaseRemoteAPI(BaseCaseInsensitiveModel):
@@ -54,20 +54,20 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePath | None
+    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePath | None
+    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePath | None
+    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     """
 
     endpoint: HttpUrl = Field(..., frozen=True)
     verify_ssl: bool = Field(default=True, frozen=True)
-    ssl_cafile: RelativeFilePath | None = Field(None, frozen=True)
-    ssl_keyfile: RelativeFilePath | None = Field(None, frozen=True)
-    ssl_certfile: RelativeFilePath | None = Field(None, frozen=True)
+    ssl_cafile: RelativeFilePathField | None = Field(None, frozen=True)
+    ssl_keyfile: RelativeFilePathField | None = Field(None, frozen=True)
+    ssl_certfile: RelativeFilePathField | None = Field(None, frozen=True)
     logger_name: str = __name__
     _session: ClientSession | None = None
     _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
@@ -345,9 +345,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     @staticmethod
     @lru_cache(maxsize=8)
     def create_ssl_context(
-        cafile: RelativeFilePath | None = None,
-        certfile: RelativeFilePath | None = None,
-        keyfile: RelativeFilePath | None = None,
+        cafile: RelativeFilePathField | None = None,
+        certfile: RelativeFilePathField | None = None,
+        keyfile: RelativeFilePathField | None = None,
     ) -> SSLContext:
         """Initialize and return the SSL context for secure connections.
 
@@ -355,11 +355,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         parameters.
 
         :param cafile: The path to the CA certificate file.
-        :type cafile: RelativeFilePath | None
+        :type cafile: RelativeFilePathField | None
         :param certfile: The path to the certificate file.
-        :type certfile: RelativeFilePath | None
+        :type certfile: RelativeFilePathField | None
         :param keyfile: The path to the certificate key file.
-        :type keyfile: RelativeFilePath | None
+        :type keyfile: RelativeFilePathField | None
         :return: The configured SSL context for HTTPS connections.
         :rtype: SSLContext
         """
@@ -383,23 +383,23 @@ class RemoteAPI(BaseRemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePath | None
+    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePath | None
+    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePath | None
+    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param error_detail_key: The key to expect error details to be. Defaults to
         "detail".
-    :type error_detail_key: RequiredStr
+    :type error_detail_key: NonEmptyStr
     :param error_code_key: The key to expect error codes to be, or None if no error
         code is expected. Defaults to None.
-    :type error_code_key: RequiredStr | None
+    :type error_code_key: NonEmptyStr | None
     """
 
-    error_detail_key: RequiredStr = "detail"
-    error_code_key: RequiredStr | None = None
+    error_detail_key: NonEmptyStr = "detail"
+    error_code_key: NonEmptyStr | None = None
 
     @property
     def headers(self) -> dict[str, str]:

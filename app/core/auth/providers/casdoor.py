@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -24,14 +24,14 @@ from typing import Any, Literal, Self
 from aiohttp import ClientConnectionError
 from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import HTTPException, status
-from pydantic import computed_field, ConfigDict, model_validator
+from pydantic import computed_field, ConfigDict, model_validator, SecretStr
 
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPUnauthorizedException,
 )
 from app.core.requests import RemoteAPI
-from app.core.utils.fields import RelativeFilePath, RequiredStr, StrHttpUrl, URL
+from app.core.utils.fields import NonEmptyStr, RelativeFilePathField, StrHttpUrl, URL
 
 
 class CasdoorException(BaseAuthProviderException):
@@ -67,17 +67,17 @@ class CasdoorSDK(RemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePath | None
+    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePath | None
+    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePath | None
+    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param client_id: The client ID for Casdoor authentication.
-    :type client_id: str
+    :type client_id: SecretStr
     :param client_secret: The client secret for Casdoor authentication.
-    :type client_secret: str
+    :type client_secret: SecretStr
     :param organization_name: The organization name in Casdoor.
     :type organization_name: str
     :param organization_name: The name of the organization in Casdoor. Defaults to
@@ -89,29 +89,29 @@ class CasdoorSDK(RemoteAPI):
     :param front_endpoint: The front-end endpoint for the Casdoor integration.
     :type front_endpoint: URL
     :param certificate_path: The file path to the Casdoor certificate. Defaults to None.
-    :type certificate_path: RelativeFilePath | None
+    :type certificate_path: RelativeFilePathField | None
     :param allowed_issuers: The allowed token issuers (iss) for JWT validation.
         Defaults to an empty list.
     :type allowed_issuers: set[StrHttpUrl] | Literal["*"]
     :param error_detail_key: The key to expect errors details to be. Defaults to
         "message".
-    :type error_detail_key: RequiredStr
+    :type error_detail_key: NonEmptyStr
     :param error_code_key: The key to expect error codes to be, or None if no error
         code is expected. Defaults to "code".
-    :type error_code_key: RequiredStr | None
+    :type error_code_key: NonEmptyStr | None
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     logger_name: str = __name__
-    client_id: str
-    client_secret: str
+    client_id: SecretStr
+    client_secret: SecretStr
     organization_name: str = "built-in"
     application_name: str = "app-built-in"
     front_endpoint: URL = URL()
-    certificate_path: RelativeFilePath | None = None
+    certificate_path: RelativeFilePathField | None = None
     allowed_issuers: set[StrHttpUrl] | Literal["*"] = set()
-    error_detail_key: RequiredStr = "error_description"
-    error_code_key: RequiredStr | None = "error"
+    error_detail_key: NonEmptyStr = "error_description"
+    error_code_key: NonEmptyStr | None = "error"
 
     @computed_field
     @cached_property
@@ -151,7 +151,7 @@ class CasdoorSDK(RemoteAPI):
         :rtype: str
         """
         return b64encode(
-            f"{self.client_id}:{self.client_secret}".encode(),
+            f"{self.client_id.get_secret_value()}:{self.client_secret.get_secret_value()}".encode(),
         ).decode("utf-8")
 
     @model_validator(mode="after")
@@ -240,8 +240,8 @@ class CasdoorSDK(RemoteAPI):
         """
         data = {
             "grant_type": "refresh_token",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
+            "client_id": self.client_id.get_secret_value(),
+            "client_secret": self.client_secret.get_secret_value(),
             "scope": scope,
             "refresh_token": refresh_token,
         }
@@ -275,8 +275,8 @@ class CasdoorSDK(RemoteAPI):
         """
         data = {
             "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
+            "client_id": self.client_id.get_secret_value(),
+            "client_secret": self.client_secret.get_secret_value(),
         }
         invalid_grant_message = "Invalid credentials."
         if code:

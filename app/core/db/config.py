@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -15,7 +15,7 @@
 
 """Define database settings."""
 
-from pydantic import AnyUrl, BaseModel, computed_field
+from pydantic import AnyUrl, BaseModel, computed_field, SecretStr
 
 from app.core.utils.fields import AsyncDatabaseEngine
 
@@ -29,7 +29,7 @@ class DatabaseOptions(BaseModel):
     :param USER: The username for the database connection.
     :type USER: str | None
     :param PASSWORD: The password for the database connection.
-    :type PASSWORD: str | None
+    :type PASSWORD: SecretStr | None
     :param HOST: The hostname or IP address of the database server.
     :type HOST: str | None
     :param PORT: The port number on which the database is running.
@@ -40,12 +40,12 @@ class DatabaseOptions(BaseModel):
 
     ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE
     USER: str | None = None
-    PASSWORD: str | None = None
+    PASSWORD: SecretStr | None = None
     HOST: str | None = None
     PORT: int | None = None
     NAME: str
 
-    @computed_field
+    @computed_field(repr=False)
     @property
     def URL(self) -> str:
         """Construct the database connection URL.
@@ -63,7 +63,7 @@ class DatabaseOptions(BaseModel):
                 scheme=self.ENGINE,
                 host=host,
                 username=self.USER,
-                password=self.PASSWORD,
+                password=self.PASSWORD.get_secret_value() if self.PASSWORD else None,
                 port=self.PORT,
                 path=name,
             ),
