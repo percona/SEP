@@ -2386,7 +2386,7 @@ class Xtrabackup(Restore):
     def decompress_backup_zst(self, path):
         """decompress zst files in path"""
 
-        cmd = f"{XTRABACKUP_BIN_REAL} --decompress --parallel={self.xb_parallel} --target-dir={path}"
+        cmd = f"{XTRABACKUP_BIN_REAL} --decompress --remove-original --parallel={self.xb_parallel} --target-dir={path}"
         self.logger.info('Running: %s', cmd)
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         proc.communicate()
