@@ -25,6 +25,11 @@ if [ -z "${NO_CLEAR:-}" ]; then
 fi
 OVERWRITE_INSTALL_DIR=${OVERWRITE_INSTALL_DIR:-0}
 export TEXTUAL_THEME="${TEXTUAL_THEME:-gruvbox}"
+if [ -n "${NO_COLOR+set}" ]; then
+    NO_COLOR_ACTIVE=1
+else
+    NO_COLOR_ACTIVE=0
+fi
 
 ################################################################################
 # PYTHON & TEXTUAL BOOTSTRAP LOGIC
@@ -695,10 +700,10 @@ run_ui() {
 
 log_milestone() {
     local msg="$1"
-    if [ "${NO_UI}" -eq 0 ]; then
-        MILESTONE_LOGS+=$'\n[green]✓[/] '"$msg"
-    else
+    if [ "${NO_COLOR_ACTIVE}" -eq 1 ] || [ "${NO_UI}" -eq 1 ]; then
         MILESTONE_LOGS+=$'\n* '"$msg"
+    else
+        MILESTONE_LOGS+=$'\n[green]✓[/] '"$msg"
     fi
 
     log_info "$msg"
@@ -734,6 +739,7 @@ separator() {
 
 clear_screen() {
     [ "${NO_CLEAR}" -eq 1 ] || ! is_tty && separator && return 0
+    [ "${NO_COLOR_ACTIVE}" -eq 1 ] && separator && return 0
 
     if command -v tput > /dev/null 2>&1; then
         tput clear && return 0
@@ -891,6 +897,9 @@ OPTIONS
   --overwrite              Overwrite existing installation directory without prompting
   --no-interaction         Skip interactive wizard and use defaults/flags
   --help, -h               Show this help message
+
+ENVIRONMENT
+  NO_COLOR                 Suppress all color/styling output (see https://no-color.org/)
 
 EXAMPLES
   ./sep_installer.sh --http-port 9090
