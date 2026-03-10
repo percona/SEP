@@ -96,8 +96,11 @@ async def list_schemas_by_service(
     service: ServiceDep,
     search: str | None = None,
     include_tables: str | None = None,
-) -> list[SchemaCompactResponse] | list[SchemaResponse]:
+) -> list[SchemaResponse] | list[SchemaCompactResponse]:
     """List Schemas by Service.
+
+    Return ``SchemaResponse`` (with nested tables) when ``include_tables``
+    is set, otherwise return ``SchemaCompactResponse`` (without tables).
 
     :param session: The async database session.
     :type session: AsyncSession
@@ -109,19 +112,24 @@ async def list_schemas_by_service(
         any non-empty value. Defaults to compact mode (no tables).
     :type include_tables: str | None
     :return: A list of schema responses.
-    :rtype: list[SchemaCompactResponse] | list[SchemaResponse]
+    :rtype: list[SchemaResponse] | list[SchemaCompactResponse]
     """
     logger.debug("Listing schemas for service '%s'", service.id)
     whereclause = []
     if search:
         whereclause.append(col(Schema.name).ilike(f"%{search}%"))
     select_related = [Schema.tables] if include_tables else []
-    return await SchemaManager.list(
+    schemas = await SchemaManager.list(
         session,
         *whereclause,
         select_related=select_related,
         service_id=service.id,
     )
+    if include_tables:
+        return [SchemaResponse.model_validate(s, from_attributes=True) for s in schemas]
+    return [
+        SchemaCompactResponse.model_validate(s, from_attributes=True) for s in schemas
+    ]
 
 
 @router.post(

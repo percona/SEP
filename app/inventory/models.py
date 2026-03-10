@@ -455,7 +455,7 @@ class SchemaWrite(SchemaBase):
 class SchemaCompactResponse(BaseSQLModel, SchemaBase):
     """Define a compact schema response without nested tables.
 
-    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param id: The primary key for the schema. Auto-incremented and not nullable.
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
@@ -473,7 +473,7 @@ class SchemaCompactResponse(BaseSQLModel, SchemaBase):
 class SchemaResponse(BaseSQLModel, SchemaBase):
     """Define the schema API response.
 
-    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param id: The primary key for the schema. Auto-incremented and not nullable.
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
