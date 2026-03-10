@@ -653,10 +653,7 @@ class DirectoryEncryptor:
             cmd.insert(0, "nice")
         if home_dir:
             cmd.insert(-1, f"--homedir={home_dir}")
-        old_umask = os.umask(0o007)
-        proc = subprocess.Popen(cmd, stdin=stdin)
-        os.umask(old_umask)
-        return proc
+        return subprocess.Popen(cmd, stdin=stdin)
 
     def _prune_finished_procs(
         self, proc_dict: dict[str, subprocess.Popen], max_live_proc: int = 0
@@ -1393,9 +1390,7 @@ class Upload(Backup):
         self.last_to_upload_number = 0
         logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
         log_path = Path(logging_dir) / "upload.log"
-        old_umask = os.umask(0o007)
         self.log_stream = log_path.open("a")
-        os.umask(old_umask)
         self.backup_type = BACKUP_TYPES[self.backup_code]
         self.encrypt = settings.get("ENCRYPT", True)
         self.encrypt_using_tmpdir = settings.get("ENCRYPT_USING_TMPDIR", False)
