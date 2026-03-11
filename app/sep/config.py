@@ -41,6 +41,7 @@ from pydantic import (
 from pydantic_core.core_schema import ValidationInfo
 
 from app import __summary__, __version__
+from app.core.celery.models import IntervalSchedule
 from app.core.config import (
     BaseYamlAppSettings,
     settings,
@@ -203,6 +204,10 @@ class PMMSettings(BaseLowercaseModel):
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
     :type execution_target: str | None
+    :param backup_interval: Interval between alert configuration backups.
+    :type backup_interval: IntervalSchedule
+    :param backup_retention: Maximum number of alert backups to retain.
+    :type backup_retention: int
     """
 
     model_config = ConfigDict(extra="allow")
@@ -211,6 +216,8 @@ class PMMSettings(BaseLowercaseModel):
     api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
+    backup_interval: IntervalSchedule = "every 24 hours"
+    backup_retention: int = 10
 
     @cached_property
     def hostname(self) -> str | None:

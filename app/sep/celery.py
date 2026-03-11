@@ -124,3 +124,68 @@ def should_skip_snippet(snippet_path: Path) -> bool:
             )
             return True
     return False
+
+
+@celery.task
+def backup_alert_config() -> None:
+    """Define Celery task to back up PMM alert configuration."""
+    celery.loop.run_until_complete(_backup_alert_config())
+
+
+async def _backup_alert_config() -> None:
+    """Fetch alert configuration from PMM and store as a backup.
+
+    Import plugin models and PMM client inline to avoid triggering SQLModel
+    metadata side-effects at module load time.
+    """
+    from app.core.config import settings
+    from app.sep.clients.pmm import PMMRemoteAPI
+    from app.sep.config import sep_settings
+    from app.sep.plugins.alerts.backup import AlertBackup
+    from app.sep.plugins.alerts.crud import AlertBackupManager
+
+    if not sep_settings.PMM.endpoint or not sep_settings.PMM.api_key:
+        logger.warning("PMM not configured, skipping alert backup")
+        return
+
+    try:
+        pmm_api = await settings.get_remote_api(
+            PMMRemoteAPI,
+            endpoint=sep_settings.PMM.endpoint,
+            api_key=sep_settings.PMM.api_key,
+            verify_ssl=sep_settings.PMM.verify_ssl,
+        )
+
+        templates = await pmm_api.list_templates()
+        rules = await pmm_api.list_rules()
+        contact_points = await pmm_api.list_contact_points()
+        notification_policy = await pmm_api.get_notification_policy()
+        folders = await pmm_api.list_folders()
+    except Exception:
+        logger.exception("Failed to fetch alert configuration from PMM")
+        return
+
+    data = {
+        "templates": [t.model_dump() for t in templates],
+        "rules": [r.model_dump() for r in rules],
+        "contact_points": [cp.model_dump() for cp in contact_points],
+        "notification_policies": notification_policy.model_dump(),
+        "folders": [f.model_dump() for f in folders],
+    }
+    metadata = {
+        "template_count": len(templates),
+        "rule_count": len(rules),
+        "contact_point_count": len(contact_points),
+        "folder_count": len(folders),
+    }
+
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        backup = AlertBackup(data=data, metadata_=metadata)
+        await AlertBackupManager.save(session, backup)
+
+        retention = sep_settings.PMM.backup_retention
+        all_backups = await AlertBackupManager.list(session)
+        if len(all_backups) > retention:
+            for old_backup in all_backups[retention:]:
+                await AlertBackupManager.delete(session, old_backup)
