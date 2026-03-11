@@ -27,8 +27,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     row.style.display = '';
                 } else {
                     row.style.display = 'none';
-                    var cb = row.querySelector('.alert-checkbox');
-                    if (cb) cb.checked = false;
                 }
             });
 
@@ -81,10 +79,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function getSelectedNames() {
         var names = [];
         rows.forEach(function(row) {
-            if (row.style.display !== 'none') {
-                var cb = row.querySelector('.alert-checkbox');
-                if (cb && cb.checked) names.push(cb.value);
-            }
+            var cb = row.querySelector('.alert-checkbox');
+            if (cb && cb.checked) names.push(cb.value);
         });
         return names;
     }
