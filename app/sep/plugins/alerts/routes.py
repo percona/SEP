@@ -13,4 +13,27 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.plugins.alerts.routes import router
+"""Define routes for the alerts plugin."""
+
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse
+
+from app.sep.config import sep_settings
+from app.sep.deps import IsAuthenticated
+from app.sep.plugins.alerts.deps import AlertsIndexContext
+
+router = APIRouter()
+templates = sep_settings.TEMPLATES
+
+
+@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def alerts_index(
+    request: Request,
+    context: AlertsIndexContext,
+) -> HTMLResponse:
+    """Render the alert templates list page."""
+    return templates.TemplateResponse(
+        request=request,
+        name="alerts/index.html.j2",
+        context=context,
+    )
