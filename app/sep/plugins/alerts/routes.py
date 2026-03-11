@@ -15,6 +15,7 @@
 
 """Define routes for the alerts plugin."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, status
@@ -31,6 +32,8 @@ from app.sep.plugins.alerts.deps import (
     PMMPresentNamesDep,
 )
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 templates = sep_settings.TEMPLATES
@@ -107,21 +110,15 @@ async def alerts_push(
                     for_duration=DEFAULT_FOR_DURATION,
                     group=sep_settings.PMM.alert_folder_name,
                 )
-                results.append(
-                    {
-                        "name": name,
-                        "status": "skipped",
-                        "message": "Already present in PMM",
-                    }
-                )
             except (HTTPException, OSError):
-                results.append(
-                    {
-                        "name": name,
-                        "status": "skipped",
-                        "message": "Already present in PMM",
-                    }
-                )
+                logger.debug("Rule already exists for %s", name, exc_info=True)
+            results.append(
+                {
+                    "name": name,
+                    "status": "skipped",
+                    "message": "Already present in PMM",
+                }
+            )
             continue
 
         try:
