@@ -439,7 +439,7 @@ class TestBackupAlertConfig:
     async def test_backup_pmm_api_error(self, mocker) -> None:
         """Assert API errors are logged without crashing the task."""
         _patch_pmm_settings(mocker)
-        mock_api = AsyncMock()
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_templates = AsyncMock(
             side_effect=ConnectionError("PMM unreachable")
         )

@@ -52,7 +52,6 @@ if any(p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS):
 async def create_plugin_tables() -> None:
     """Create database tables for plugin-scoped models when the corresponding plugin is enabled.
 
-    Create tables that are only needed when specific plugins are enabled.
     Safe to call repeatedly as ``checkfirst=True`` is the default for
     ``create_all``.
     """
