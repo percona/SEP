@@ -30,6 +30,7 @@ jobs:
                   state: "open",
                 });
 
+                for (const pull of pulls) {
                   try {
                     const { data: pr } = await github.rest.pulls.get({
                       owner: context.repo.owner,
