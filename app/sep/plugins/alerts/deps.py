@@ -34,6 +34,20 @@ logger = logging.getLogger(__name__)
 PAGERDUTY_CONTACT_POINT_NAME = "SEP PagerDuty"
 PAGERDUTY_MIN_KEY_SUFFIX_LENGTH = 4
 
+
+def mask_pagerduty_key(key: str) -> str:
+    """Return a masked version of a PagerDuty integration key.
+
+    :param key: The full integration key.
+    :type key: str
+    :return: The key with all but the last few characters replaced by asterisks.
+    :rtype: str
+    """
+    if len(key) >= PAGERDUTY_MIN_KEY_SUFFIX_LENGTH:
+        return f"****{key[-PAGERDUTY_MIN_KEY_SUFFIX_LENGTH:]}"
+    return "****"
+
+
 AlertTemplatesDep = Annotated[
     Mapping[ServiceType, tuple[AlertTemplate, ...]], Depends(get_alert_templates)
 ]
@@ -106,16 +120,18 @@ async def get_pagerduty_status(pmm_api: PMMAPIDep) -> dict[str, Any] | None:
         logger.warning("Failed to fetch PagerDuty contact point status", exc_info=True)
         return None
 
-    pd_cp = next((cp for cp in contact_points if cp.type == "pagerduty"), None)
+    pd_cp = next(
+        (
+            cp
+            for cp in contact_points
+            if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
+        ),
+        None,
+    )
     if pd_cp is None:
         return {"configured": False}
     key = pd_cp.settings.get("integrationKey", "")
-    masked = (
-        f"****{key[-PAGERDUTY_MIN_KEY_SUFFIX_LENGTH:]}"
-        if len(key) >= PAGERDUTY_MIN_KEY_SUFFIX_LENGTH
-        else "****"
-    )
-    return {"configured": True, "masked_key": masked, "uid": pd_cp.uid}
+    return {"configured": True, "masked_key": mask_pagerduty_key(key), "uid": pd_cp.uid}
 
 
 PagerDutyStatusDep = Annotated[dict[str, Any] | None, Depends(get_pagerduty_status)]

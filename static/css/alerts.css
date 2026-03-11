@@ -212,3 +212,9 @@ code.expression {
     color: var(--textSecondary);
     font-size: 0.875rem;
 }
+
+@media (max-width: 768px) {
+    .alerts-layout {
+        grid-template-columns: 1fr;
+    }
+}

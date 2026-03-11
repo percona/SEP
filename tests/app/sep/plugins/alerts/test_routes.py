@@ -192,7 +192,7 @@ class TestPagerDutySave:
 
     def test_returns_502_on_api_error(self, test_client, mock_pmm_api):
         """Assert 502 is returned when PMM API raises an exception."""
-        mock_pmm_api.list_contact_points.side_effect = Exception("API failure")
+        mock_pmm_api.list_contact_points.side_effect = OSError("API failure")
 
         response = test_client.post(
             "/alerts/pagerduty",
@@ -202,7 +202,7 @@ class TestPagerDutySave:
 
 
 class TestPagerDutyToken:
-    """Test the GET /alerts/pagerduty/token endpoint."""
+    """Test the POST /alerts/pagerduty/token endpoint."""
 
     def test_returns_full_token(self, test_client, mock_pmm_api):
         """Assert the full integration key is returned."""
@@ -215,7 +215,7 @@ class TestPagerDutyToken:
             ),
         ]
 
-        response = test_client.get("/alerts/pagerduty/token")
+        response = test_client.post("/alerts/pagerduty/token")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["token"] == "full-secret-key-1234"
 
@@ -223,13 +223,13 @@ class TestPagerDutyToken:
         """Assert 404 is returned when no PD contact point exists."""
         mock_pmm_api.list_contact_points.return_value = []
 
-        response = test_client.get("/alerts/pagerduty/token")
+        response = test_client.post("/alerts/pagerduty/token")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.usefixtures("_mock_pmm_unavailable")
     def test_returns_503_when_pmm_unavailable(self, test_client):
         """Assert 503 is returned when PMM is not configured."""
-        response = test_client.get("/alerts/pagerduty/token")
+        response = test_client.post("/alerts/pagerduty/token")
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 

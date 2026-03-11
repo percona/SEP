@@ -99,6 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             var formData = new FormData();
             formData.append('integration_key', integrationKey);
+            formData.append('csrf-token', csrfToken);
 
             fetch('/alerts/pagerduty', {
                 method: 'POST',
@@ -144,7 +145,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            fetch('/alerts/pagerduty/token').then(function(response) {
+            var csrfToken = pdForm.querySelector('[name="csrf-token"]').value;
+            var formData = new FormData();
+            formData.append('csrf-token', csrfToken);
+
+            fetch('/alerts/pagerduty/token', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': csrfToken
+                },
+                body: formData
+            }).then(function(response) {
                 if (!response.ok) {
                     showFeedback('Failed to retrieve token.', true);
                     return null;
@@ -162,19 +173,22 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    if (pdDeleteBtn) {
+    if (pdDeleteBtn && pdForm) {
         pdDeleteBtn.addEventListener('click', function() {
             if (!confirm('Are you sure you want to delete the PagerDuty integration?')) {
                 return;
             }
 
             var csrfToken = pdForm.querySelector('[name="csrf-token"]').value;
+            var formData = new FormData();
+            formData.append('csrf-token', csrfToken);
 
             fetch('/alerts/pagerduty/delete', {
                 method: 'POST',
                 headers: {
                     'X-CSRF-Token': csrfToken
-                }
+                },
+                body: formData
             }).then(function(response) {
                 return response.json().then(function(data) {
                     return {
