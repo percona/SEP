@@ -16,32 +16,11 @@
 """Define tests for the app.sep.plugins.alerts.crud module."""
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel
 
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.utils import json_serializer
 from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.crud import AlertBackupManager
 
 _EXPECTED_BACKUP_COUNT = 2
-
-
-@pytest_asyncio.fixture
-async def session():
-    """Create an async db session for testing."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
 
 
 class TestAlertBackupManager:
