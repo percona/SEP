@@ -549,6 +549,36 @@ class TestListFolders:
         )
 
 
+class TestCreateFolder:
+    """Test the create_folder method."""
+
+    @pytest.mark.asyncio
+    async def test_create_folder_posts_and_returns_folder(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test create_folder sends POST and returns a Folder object."""
+        mock_request.return_value = {
+            "uid": "new-folder-uid",
+            "title": "SEP Alerts",
+            "id": 42,
+        }
+
+        expected_id = 42
+
+        result = await pmm_remote_api.create_folder("SEP Alerts")
+
+        assert isinstance(result, Folder)
+        assert result.uid == "new-folder-uid"
+        assert result.title == "SEP Alerts"
+        assert result.id == expected_id
+        mock_request.assert_awaited_once_with(
+            "POST",
+            "/graph/api/folders/",
+            json={"title": "SEP Alerts"},
+            headers=ALERTING_HEADERS,
+        )
+
+
 class TestListContactPoints:
     """Test the list_contact_points method."""
 

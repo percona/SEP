@@ -211,6 +211,7 @@ class PMMSettings(BaseLowercaseModel):
     api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
+    alert_folder_name: str = "SEP Alerts"
 
     @cached_property
     def hostname(self) -> str | None:

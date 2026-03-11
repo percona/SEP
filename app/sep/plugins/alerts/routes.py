@@ -15,12 +15,25 @@
 
 """Define routes for the alerts plugin."""
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+import logging
+from typing import Annotated
+
+from fastapi import APIRouter, Form, Request, status
+from fastapi.exceptions import HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import IsAuthenticated
-from app.sep.plugins.alerts.deps import AlertsIndexContext
+from app.sep.deps import IsAuthenticated, IsCsrfValidated
+from app.sep.plugins.alerts.deps import (
+    AlertsIndexContext,
+    AlertTemplatesDep,
+    get_or_create_alert_folder,
+    get_pmm_present_names,
+    PMMAPIDep,
+)
+from app.sep.plugins.alerts.models import to_pmm_template_yaml
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 templates = sep_settings.TEMPLATES
@@ -37,3 +50,69 @@ async def alerts_index(
         name="alerts/index.html.j2",
         context=context,
     )
+
+
+@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated])
+async def alerts_push(
+    pmm_api: PMMAPIDep,
+    alert_templates: AlertTemplatesDep,
+    selected: Annotated[list[str], Form(alias="selected_templates")],
+) -> JSONResponse:
+    """Push selected alert templates to PMM as rules.
+
+    :param pmm_api: The PMM API client, or ``None`` if PMM is not configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :param alert_templates: Alert templates grouped by service type.
+    :type alert_templates: AlertTemplatesDep
+    :param selected: List of template names selected by the user.
+    :type selected: list[str]
+    :return: JSON response with per-template push results.
+    :rtype: JSONResponse
+    """
+    if pmm_api is None:
+        return JSONResponse(
+            {"error": "PMM is not configured"},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    folder = await get_or_create_alert_folder(pmm_api)
+    all_templates = {t.name: t for ts in alert_templates.values() for t in ts}
+    present_names = await get_pmm_present_names(pmm_api)
+
+    results = []
+    for name in selected:
+        template = all_templates.get(name)
+        if template is None:
+            results.append(
+                {"name": name, "status": "error", "message": "Template not found"}
+            )
+            continue
+
+        if present_names is not None and name in present_names:
+            results.append(
+                {
+                    "name": name,
+                    "status": "skipped",
+                    "message": "Already present in PMM",
+                }
+            )
+            continue
+
+        try:
+            pmm_yaml = to_pmm_template_yaml(template)
+            await pmm_api.create_template(pmm_yaml)
+            await pmm_api.create_rule(
+                name=template.name,
+                template_name=template.name,
+                folder_uid=folder.uid,
+                for_duration="5m",
+                group="SEP Alerts",
+            )
+            results.append(
+                {"name": name, "status": "success", "message": "Pushed successfully"}
+            )
+        except (HTTPException, OSError) as exc:
+            detail = getattr(exc, "detail", str(exc))
+            results.append({"name": name, "status": "error", "message": detail})
+
+    return JSONResponse({"results": results})

@@ -646,6 +646,21 @@ class PMMRemoteAPI(RemoteAPI):
         data = await self.get("/graph/api/folders/", headers=self.alerting_headers)
         return [Folder.model_validate(f) for f in data]
 
+    async def create_folder(self, title: str) -> Folder:
+        """Create a new Grafana folder in PMM.
+
+        :param title: The display title for the new folder.
+        :type title: str
+        :return: The created folder object.
+        :rtype: Folder
+        """
+        data = await self.post(
+            "/graph/api/folders/",
+            json={"title": title},
+            headers=self.alerting_headers,
+        )
+        return Folder.model_validate(data)
+
     async def list_contact_points(self) -> list[ContactPoint]:
         """List all alert contact points configured in PMM.
 

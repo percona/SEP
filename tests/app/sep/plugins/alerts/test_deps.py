@@ -22,9 +22,10 @@ from fastapi.exceptions import HTTPException
 from polyfactory.factories.pydantic_factory import ModelFactory
 
 from app.sep.clients.pmm import AlertTemplate as PMMAlertTemplate
-from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.clients.pmm import Folder, PMMRemoteAPI
 from app.sep.plugins.alerts.deps import (
     get_alerts_index_context,
+    get_or_create_alert_folder,
     get_pmm_api,
     get_pmm_present_names,
 )
@@ -170,3 +171,51 @@ class TestGetAlertsIndexContext:
 
         assert result["pmm_present_names"] is None
         assert result["all_templates"] == []
+
+
+class TestGetOrCreateAlertFolder:
+    """Test the ``get_or_create_alert_folder`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_existing_folder(self):
+        """Assert the existing folder is returned when it matches."""
+        existing = Folder(uid="f-1", title="SEP Alerts", id=1)
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_folders.return_value = [existing]
+
+        with patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings:
+            mock_settings.PMM.alert_folder_name = "SEP Alerts"
+            result = await get_or_create_alert_folder(mock_api)
+
+        assert result is existing
+        mock_api.create_folder.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_creates_folder_when_missing(self):
+        """Assert a new folder is created when none matches."""
+        created = Folder(uid="f-new", title="SEP Alerts", id=42)
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_folders.return_value = []
+        mock_api.create_folder.return_value = created
+
+        with patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings:
+            mock_settings.PMM.alert_folder_name = "SEP Alerts"
+            result = await get_or_create_alert_folder(mock_api)
+
+        assert result is created
+        mock_api.create_folder.assert_awaited_once_with("SEP Alerts")
+
+    @pytest.mark.asyncio
+    async def test_ignores_non_matching_folders(self):
+        """Assert folders with different titles are ignored."""
+        other = Folder(uid="f-other", title="Other Folder", id=2)
+        created = Folder(uid="f-new", title="SEP Alerts", id=42)
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_folders.return_value = [other]
+        mock_api.create_folder.return_value = created
+
+        with patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings:
+            mock_settings.PMM.alert_folder_name = "SEP Alerts"
+            result = await get_or_create_alert_folder(mock_api)
+
+        assert result is created

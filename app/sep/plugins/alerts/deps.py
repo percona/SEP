@@ -23,7 +23,7 @@ from fastapi import Depends
 from fastapi.exceptions import HTTPException
 
 from app.core.config import settings
-from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.clients.pmm import Folder, PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
 from app.sep.plugins.alerts.loader import get_alert_templates
@@ -79,6 +79,22 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 
 
 PMMPresentNamesDep = Annotated[set[str] | None, Depends(get_pmm_present_names)]
+
+
+async def get_or_create_alert_folder(pmm_api: PMMRemoteAPI) -> Folder:
+    """Return the SEP alert folder in PMM, creating it if missing.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :return: The existing or newly created folder.
+    :rtype: Folder
+    """
+    folder_name = sep_settings.PMM.alert_folder_name
+    folders = await pmm_api.list_folders()
+    for folder in folders:
+        if folder.title == folder_name:
+            return folder
+    return await pmm_api.create_folder(folder_name)
 
 
 async def get_alerts_index_context(
