@@ -122,7 +122,7 @@ class TestListTemplates:
                 "GET",
                 "/v1/alerting/templates",
                 {
-                    "params": {"page_size": 0, "page_index": 0},
+                    "params": {},
                     "headers": ALERTING_HEADERS,
                 },
             ),
