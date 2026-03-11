@@ -106,7 +106,7 @@ class AlertTemplate(BaseModel):
     summary: str
 
 
-_DEFAULT_FOR_DURATION = "5m"
+DEFAULT_FOR_DURATION = "5m"
 
 
 def to_pmm_template_yaml(template: AlertTemplate) -> str:
@@ -124,7 +124,7 @@ def to_pmm_template_yaml(template: AlertTemplate) -> str:
                 "version": 1,
                 "summary": template.summary,
                 "expr": template.expression,
-                "for": _DEFAULT_FOR_DURATION,
+                "for": DEFAULT_FOR_DURATION,
                 "severity": template.severity.value,
                 "labels": {},
                 "annotations": {
