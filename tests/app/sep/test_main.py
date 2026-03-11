@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define tests for the app.sep.main module."""
 
 from unittest.mock import Mock
@@ -68,7 +83,7 @@ class TestLogin:
         assert response.status_code == status.HTTP_200_OK
         template_patch.assert_called_once()
         _, kwargs = template_patch.call_args
-        assert kwargs.get("name") == "login.html"
+        assert kwargs.get("name") == "login.html.j2"
         context = kwargs.get("context", {})
         assert "csrf_token" in context
 
@@ -225,7 +240,7 @@ def test_read_root_renders_homepage(mocker, dummy_context, test_client):
     assert response.status_code == status.HTTP_200_OK
     template_patch.assert_called_once()
     _, kwargs = template_patch.call_args
-    assert kwargs.get("name") == "homepage.html"
+    assert kwargs.get("name") == "homepage.html.j2"
     assert kwargs.get("context") == dummy_context
 
 
@@ -332,7 +347,7 @@ class TestExceptionHandlers:
         template_patch.assert_called_with(
             request=mocker.ANY,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            name="error.html",
+            name="error.html.j2",
             context={"exception": formatted_exception, **dummy_context},
         )
 
@@ -347,7 +362,7 @@ class TestExceptionHandlers:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         template_spy.assert_called_once()
         _, kwargs = template_spy.call_args
-        assert kwargs.get("name") == "404.html"
+        assert kwargs.get("name") == "404.html.j2"
 
         sep_app.dependency_overrides = {}
 

@@ -16,10 +16,10 @@
 #    description: Output format (json, full_string, number)
 #    default: "full_string"
 #  - name: help
-#    type: int
+#    type: bool
 #    label: Show help message
 #    description: Show help message
-#    default: 0
+#    default: false
 # ---
 
 # Usage: ./mysql_version.sh [--basedir=path] [--output-format=format] [--help]
