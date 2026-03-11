@@ -1,0 +1,45 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% if tasks %}
+    <table data-table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Host</th>
+                <th>Type</th>
+                <th>Upload</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in tasks %}
+                <tr id="{{ task.name }}">
+                    <td>
+                        <a href="{{ url_for('pg_backups_detail', task_name=task.name) }}">{{ task.name }}</a>
+                    </td>
+                    <td>{{ task.host }} ({{ task.port }})</td>
+                    <td>{{ task.backup_type }}</td>
+                    <td>{{ task.upload }}</td>
+                    <td class="options">{% include "tasks/partials/saved-tasks-actions-column.html.j2" %}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% include "tasks/partials/scheduled-execution-dialog.html.j2" %}
+{% else %}
+    <p>No data</p>
+{% endif %}
