@@ -15,7 +15,6 @@
 
 """Define routes for the alerts plugin."""
 
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, status
@@ -25,15 +24,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.plugins.alerts.deps import (
+    AlertFolderDep,
     AlertsIndexContext,
     AlertTemplatesDep,
-    get_or_create_alert_folder,
-    get_pmm_present_names,
     PMMAPIDep,
+    PMMPresentNamesDep,
 )
-from app.sep.plugins.alerts.models import to_pmm_template_yaml
-
-logger = logging.getLogger(__name__)
+from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
 
 router = APIRouter()
 templates = sep_settings.TEMPLATES
@@ -56,6 +53,8 @@ async def alerts_index(
 async def alerts_push(
     pmm_api: PMMAPIDep,
     alert_templates: AlertTemplatesDep,
+    folder: AlertFolderDep,
+    present_names: PMMPresentNamesDep,
     selected: Annotated[list[str], Form(alias="selected_templates")],
 ) -> JSONResponse:
     """Push selected alert templates to PMM as rules.
@@ -64,6 +63,11 @@ async def alerts_push(
     :type pmm_api: PMMRemoteAPI | None
     :param alert_templates: Alert templates grouped by service type.
     :type alert_templates: AlertTemplatesDep
+    :param folder: The PMM alert folder, or ``None`` when PMM is unreachable.
+    :type folder: Folder | None
+    :param present_names: Set of template names present in PMM, or ``None``
+        when PMM is unreachable.
+    :type present_names: set[str] | None
     :param selected: List of template names selected by the user.
     :type selected: list[str]
     :return: JSON response with per-template push results.
@@ -75,9 +79,13 @@ async def alerts_push(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
-    folder = await get_or_create_alert_folder(pmm_api)
+    if folder is None:
+        return JSONResponse(
+            {"error": "Failed to access PMM alert folder"},
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
+
     all_templates = {t.name: t for ts in alert_templates.values() for t in ts}
-    present_names = await get_pmm_present_names(pmm_api)
 
     results = []
     for name in selected:
@@ -88,31 +96,61 @@ async def alerts_push(
             )
             continue
 
-        if present_names is not None and name in present_names:
-            results.append(
-                {
-                    "name": name,
-                    "status": "skipped",
-                    "message": "Already present in PMM",
-                }
-            )
+        template_exists = present_names is not None and name in present_names
+
+        if template_exists:
+            try:
+                await pmm_api.create_rule(
+                    name=template.name,
+                    template_name=template.name,
+                    folder_uid=folder.uid,
+                    for_duration=DEFAULT_FOR_DURATION,
+                    group=sep_settings.PMM.alert_folder_name,
+                )
+                results.append(
+                    {
+                        "name": name,
+                        "status": "skipped",
+                        "message": "Already present in PMM",
+                    }
+                )
+            except (HTTPException, OSError):
+                results.append(
+                    {
+                        "name": name,
+                        "status": "skipped",
+                        "message": "Already present in PMM",
+                    }
+                )
             continue
 
         try:
             pmm_yaml = to_pmm_template_yaml(template)
             await pmm_api.create_template(pmm_yaml)
+        except (HTTPException, OSError) as exc:
+            detail = getattr(exc, "detail", str(exc))
+            results.append({"name": name, "status": "error", "message": detail})
+            continue
+
+        try:
             await pmm_api.create_rule(
                 name=template.name,
                 template_name=template.name,
                 folder_uid=folder.uid,
-                for_duration="5m",
-                group="SEP Alerts",
+                for_duration=DEFAULT_FOR_DURATION,
+                group=sep_settings.PMM.alert_folder_name,
             )
             results.append(
                 {"name": name, "status": "success", "message": "Pushed successfully"}
             )
         except (HTTPException, OSError) as exc:
             detail = getattr(exc, "detail", str(exc))
-            results.append({"name": name, "status": "error", "message": detail})
+            results.append(
+                {
+                    "name": name,
+                    "status": "error",
+                    "message": f"Template created but rule failed: {detail}",
+                }
+            )
 
     return JSONResponse({"results": results})

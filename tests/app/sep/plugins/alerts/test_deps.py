@@ -177,6 +177,12 @@ class TestGetOrCreateAlertFolder:
     """Test the ``get_or_create_alert_folder`` dependency."""
 
     @pytest.mark.asyncio
+    async def test_returns_none_when_no_pmm_api(self):
+        """Assert ``None`` is returned when the PMM API is not available."""
+        result = await get_or_create_alert_folder(None)
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_returns_existing_folder(self):
         """Assert the existing folder is returned when it matches."""
         existing = Folder(uid="f-1", title="SEP Alerts", id=1)
@@ -219,3 +225,29 @@ class TestGetOrCreateAlertFolder:
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is created
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_connection_error(self):
+        """Assert ``None`` is returned when PMM is unreachable."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_folders.side_effect = OSError("unreachable")
+
+        with patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings:
+            mock_settings.PMM.alert_folder_name = "SEP Alerts"
+            result = await get_or_create_alert_folder(mock_api)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_http_exception(self):
+        """Assert ``None`` is returned on HTTP error from PMM."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_folders.side_effect = HTTPException(
+            status_code=502, detail="Bad Gateway"
+        )
+
+        with patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings:
+            mock_settings.PMM.alert_folder_name = "SEP Alerts"
+            result = await get_or_create_alert_folder(mock_api)
+
+        assert result is None

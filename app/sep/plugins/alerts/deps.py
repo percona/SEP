@@ -81,20 +81,33 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 PMMPresentNamesDep = Annotated[set[str] | None, Depends(get_pmm_present_names)]
 
 
-async def get_or_create_alert_folder(pmm_api: PMMRemoteAPI) -> Folder:
+async def get_or_create_alert_folder(pmm_api: PMMAPIDep) -> Folder | None:
     """Return the SEP alert folder in PMM, creating it if missing.
 
-    :param pmm_api: The PMM API client.
-    :type pmm_api: PMMRemoteAPI
-    :return: The existing or newly created folder.
-    :rtype: Folder
+    Return ``None`` when the PMM client is unavailable or when the API call
+    fails, enabling graceful degradation in the push route.
+
+    :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
+        configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :return: The existing or newly created folder, or ``None`` on failure.
+    :rtype: Folder | None
     """
-    folder_name = sep_settings.PMM.alert_folder_name
-    folders = await pmm_api.list_folders()
-    for folder in folders:
-        if folder.title == folder_name:
-            return folder
-    return await pmm_api.create_folder(folder_name)
+    if pmm_api is None:
+        return None
+    try:
+        folder_name = sep_settings.PMM.alert_folder_name
+        folders = await pmm_api.list_folders()
+        for folder in folders:
+            if folder.title == folder_name:
+                return folder
+        return await pmm_api.create_folder(folder_name)
+    except (HTTPException, OSError):
+        logger.warning("Failed to get or create alert folder in PMM", exc_info=True)
+        return None
+
+
+AlertFolderDep = Annotated[Folder | None, Depends(get_or_create_alert_folder)]
 
 
 async def get_alerts_index_context(

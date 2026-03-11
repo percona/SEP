@@ -27,7 +27,9 @@ from app.sep.main import sep_app
 from app.sep.plugins.alerts.deps import (
     get_alert_templates,
     get_alerts_index_context,
+    get_or_create_alert_folder,
     get_pmm_api,
+    get_pmm_present_names,
 )
 from app.sep.plugins.alerts.models import AlertSeverity, AlertTemplate, ServiceType
 
@@ -103,6 +105,8 @@ def mock_pmm_api():
     mock.create_rule.return_value = AsyncMock()
     sep_app.dependency_overrides[get_pmm_api] = lambda: mock
     sep_app.dependency_overrides[get_alert_templates] = lambda: _ALERT_TEMPLATES
+    sep_app.dependency_overrides[get_or_create_alert_folder] = lambda: _FOLDER
+    sep_app.dependency_overrides[get_pmm_present_names] = lambda: set()
     yield mock
     sep_app.dependency_overrides = {}
 
@@ -112,6 +116,8 @@ def _mock_pmm_not_configured():
     """Mock PMM as not configured (returns None)."""
     sep_app.dependency_overrides[get_pmm_api] = lambda: None
     sep_app.dependency_overrides[get_alert_templates] = lambda: _ALERT_TEMPLATES
+    sep_app.dependency_overrides[get_or_create_alert_folder] = lambda: None
+    sep_app.dependency_overrides[get_pmm_present_names] = lambda: None
     yield
     sep_app.dependency_overrides = {}
 
@@ -179,11 +185,7 @@ class TestAlertsPush:
 
     def test_push_already_present(self, test_client, mock_pmm_api):
         """Assert templates already in PMM are skipped."""
-        from app.sep.clients.pmm import AlertTemplate as PMMTemplate
-
-        mock_pmm_api.list_templates.return_value = [
-            PMMTemplate(name="High CPU", summary="s", template="t"),
-        ]
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
 
         response = test_client.post(
             "/alerts/push",
@@ -221,14 +223,30 @@ class TestAlertsPush:
         assert result["status"] == "error"
         assert "Bad Gateway" in result["message"]
 
-    def test_push_creates_folder_when_missing(self, test_client, mock_pmm_api):
-        """Assert the folder is created when it does not exist in PMM."""
-        mock_pmm_api.list_folders.return_value = []
-        mock_pmm_api.create_folder.return_value = _FOLDER
+    def test_push_returns_502_when_folder_unavailable(self, test_client, mock_pmm_api):
+        """Assert 502 is returned when the alert folder cannot be resolved."""
+        sep_app.dependency_overrides[get_or_create_alert_folder] = lambda: None
+
+        response = test_client.post(
+            "/alerts/push",
+            data={"selected_templates": ["High CPU"]},
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json()["error"] == "Failed to access PMM alert folder"
+
+    def test_push_rule_failure_reports_orphaned_template(
+        self, test_client, mock_pmm_api
+    ):
+        """Assert error message indicates template was created when rule fails."""
+        mock_pmm_api.create_rule.side_effect = HTTPException(
+            status_code=502, detail="Rule creation failed"
+        )
 
         response = test_client.post(
             "/alerts/push",
             data={"selected_templates": ["High CPU"]},
         )
         assert response.status_code == status.HTTP_200_OK
-        mock_pmm_api.create_folder.assert_awaited_once()
+        result = response.json()["results"][0]
+        assert result["status"] == "error"
+        assert "Template created but rule failed" in result["message"]
