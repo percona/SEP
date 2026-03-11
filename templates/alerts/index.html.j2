@@ -1,0 +1,154 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    Alert Templates
+{%- endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/alerts.css') }}">
+{% endblock style %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/alerts.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock behaviours_optimized_extra %}
+{% block sticky %}
+    <div class="toggle-btn-group"
+         role="group"
+         aria-label="Filter by service type">
+        <button class="toggle-btn active" data-filter="all">All</button>
+        {% for svc in service_types %}
+            <button class="toggle-btn" data-filter="{{ svc.value }}">{{ svc.label }}</button>
+        {% endfor %}
+    </div>
+{% endblock sticky %}
+{% block main %}
+    <p>
+        View and manage alert templates. Templates define alerting rules that
+        can be pushed to PMM for monitoring.
+    </p>
+    {% if all_templates %}
+        <table class="alerts-table">
+            <thead>
+                <tr>
+                    <th class="col-checkbox">
+                        <label class="checkbox">
+                            <input type="checkbox" id="select-all-alerts">
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                        </label>
+                    </th>
+                    <th>Name</th>
+                    <th>Service</th>
+                    <th>Severity</th>
+                    <th>Present in PMM</th>
+                    <th class="options">Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for template in all_templates %}
+                    <tr data-service-type="{{ template.service_type.value }}">
+                        <td class="col-checkbox">
+                            <label class="checkbox">
+                                <input type="checkbox"
+                                       class="alert-checkbox"
+                                       name="selected_templates"
+                                       value="{{ template.name }}">
+                                <div class="checkmark">
+                                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                    <span class="material-symbols-outlined checked">check_box</span>
+                                </div>
+                            </label>
+                        </td>
+                        <td>{{ template.name }}</td>
+                        <td>{{ template.service_type.label }}</td>
+                        <td>
+                            <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
+                        </td>
+                        <td>
+                            {% if pmm_present_names is none %}
+                                <span class="alert-badge badge-unknown">Unknown</span>
+                            {% elif template.name in pmm_present_names %}
+                                <span class="alert-badge badge-present">Present</span>
+                            {% else %}
+                                <span class="alert-badge badge-absent">Not Present</span>
+                            {% endif %}
+                        </td>
+                        <td class="options">
+                            <button type="button"
+                                    class="icon medium"
+                                    aria-label="View details for {{ template.name }}"
+                                    data-modal="trigger"
+                                    data-modal-target="modal-template-{{ loop.index }}">
+                                <span class="material-symbols-outlined">visibility</span>
+                            </button>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% for template in all_templates %}
+            <dialog id="modal-template-{{ loop.index }}"
+                    aria-modal="true"
+                    aria-labelledby="modal-title-{{ loop.index }}"
+                    data-modal="target">
+                <div class="window alert-detail-modal">
+                    <header>
+                        <h3 id="modal-title-{{ loop.index }}" class="h5 title">{{ template.name }}</h3>
+                    </header>
+                    <section>
+                        <dl class="alert-detail-list">
+                            <dt>Service Type</dt>
+                            <dd>
+                                {{ template.service_type.label }}
+                            </dd>
+                            <dt>Severity</dt>
+                            <dd>
+                                <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
+                            </dd>
+                            <dt>Default Threshold</dt>
+                            <dd>
+                                {{ template.default_threshold }}
+                            </dd>
+                            <dt>Description</dt>
+                            <dd>
+                                {{ template.description }}
+                            </dd>
+                            <dt>Summary</dt>
+                            <dd>
+                                {{ template.summary }}
+                            </dd>
+                            <dt>Expression</dt>
+                            <dd>
+                                <code class="expression">{{ template.expression }}</code>
+                            </dd>
+                        </dl>
+                    </section>
+                    <footer>
+                        <button type="button" class="text large" data-modal-close>
+                            Close<sup>ESC</sup>
+                        </button>
+                    </footer>
+                </div>
+            </dialog>
+        {% endfor %}
+    {% else %}
+        <p>No alert templates found.</p>
+    {% endif %}
+{% endblock main %}
