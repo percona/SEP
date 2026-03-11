@@ -47,6 +47,21 @@ class TestServiceType:
         assert ServiceType.MONGODB == "mongodb"
         assert ServiceType.POSTGRESQL == "postgresql"
 
+    @pytest.mark.parametrize(
+        ("member", "expected"),
+        [
+            (ServiceType.GENERIC, "Generic"),
+            (ServiceType.MYSQL, "MySQL"),
+            (ServiceType.MONGODB, "MongoDB"),
+            (ServiceType.POSTGRESQL, "PostgreSQL"),
+        ],
+    )
+    def test_label_returns_correct_product_name(
+        self, member: ServiceType, expected: str
+    ) -> None:
+        """Assert `label` returns the correctly capitalized product name."""
+        assert member.label == expected
+
 
 class TestAlertSeverity:
     """Test the AlertSeverity enum."""
