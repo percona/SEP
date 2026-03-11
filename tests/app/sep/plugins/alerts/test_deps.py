@@ -215,6 +215,21 @@ class TestGetPagerdutyStatus:
         result = await get_pagerduty_status(mock_api)
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_ignores_pagerduty_contact_point_with_different_name(self):
+        """Assert not-configured status when PD contact point has a different name."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-other",
+                name="Other PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "some-key-1234"},
+            ),
+        ]
+        result = await get_pagerduty_status(mock_api)
+        assert result == {"configured": False}
+
 
 class TestEnsurePagerdutyNotificationRoute:
     """Test the ``ensure_pagerduty_notification_route`` helper."""

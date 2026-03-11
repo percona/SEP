@@ -232,6 +232,13 @@ class TestPagerDutyToken:
         response = test_client.post("/alerts/pagerduty/token")
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
+    def test_returns_502_on_api_error(self, test_client, mock_pmm_api):
+        """Assert 502 is returned when PMM API raises an exception."""
+        mock_pmm_api.list_contact_points.side_effect = OSError("API failure")
+
+        response = test_client.post("/alerts/pagerduty/token")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+
 
 class TestPagerDutyDelete:
     """Test the POST /alerts/pagerduty/delete endpoint."""
@@ -274,3 +281,10 @@ class TestPagerDutyDelete:
         """Assert 503 is returned when PMM is not configured."""
         response = test_client.post("/alerts/pagerduty/delete")
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def test_returns_502_on_api_error(self, test_client, mock_pmm_api):
+        """Assert 502 is returned when PMM API raises an exception."""
+        mock_pmm_api.list_contact_points.side_effect = OSError("API failure")
+
+        response = test_client.post("/alerts/pagerduty/delete")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
