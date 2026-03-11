@@ -641,6 +641,16 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                    value="{{ task.use_sql_file or '' }}"
                                    placeholder="" />
                         </label>
+                        {% set binlog_restore_extra_args_title = "Specify additional mysqlbinlog command-line arguments (e.g., --stop-datetime=\"YYYY-MM-DD HH:MM:SS\")." %}
+                        <label for="binlog_restore_extra_args"
+                               title="{{ binlog_restore_extra_args_title }}">
+                            Extra Arguments (optional):
+                            <input type="text"
+                                   id="binlog_restore_extra_args"
+                                   name="binlog_restore_extra_args"
+                                   value="{{ task.binlog_restore_extra_args or '' }}"
+                                   placeholder="--stop-datetime='YYYY-MM-DD HH:MM:SS'" />
+                        </label>
                     </fieldset>
                 </fieldset>
                 <br>
