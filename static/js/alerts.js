@@ -72,4 +72,128 @@ document.addEventListener('DOMContentLoaded', function() {
             if (cb) cb.addEventListener('change', updateSelectAll);
         });
     }
+
+    // PagerDuty widget
+    var pdForm = document.getElementById('pd-form');
+    var pdFeedback = document.getElementById('pd-feedback');
+    var pdRevealBtn = document.getElementById('pd-reveal-btn');
+    var pdMaskedKey = document.getElementById('pd-masked-key');
+    var pdDeleteBtn = document.getElementById('pd-delete-btn');
+
+    function showFeedback(message, isError) {
+        if (!pdFeedback) return;
+        pdFeedback.textContent = message;
+        pdFeedback.className = 'pd-feedback ' + (isError ? 'error' : 'success');
+    }
+
+    if (pdForm) {
+        pdForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var csrfToken = pdForm.querySelector('[name="csrf-token"]').value;
+            var integrationKey = pdForm.querySelector('[name="integration_key"]').value;
+
+            if (!integrationKey) {
+                showFeedback('Integration key is required.', true);
+                return;
+            }
+
+            var formData = new FormData();
+            formData.append('integration_key', integrationKey);
+
+            fetch('/alerts/pagerduty', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': csrfToken
+                },
+                body: formData
+            }).then(function(response) {
+                return response.json().then(function(data) {
+                    return {
+                        ok: response.ok,
+                        data: data
+                    };
+                });
+            }).then(function(result) {
+                if (result.ok) {
+                    showFeedback('PagerDuty integration ' + result.data.status + ' successfully.', false);
+                    if (pdMaskedKey) {
+                        pdMaskedKey.textContent = result.data.masked_key;
+                    }
+                    pdForm.querySelector('[name="integration_key"]').value = '';
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1500);
+                } else {
+                    showFeedback(result.data.error || 'An error occurred.', true);
+                }
+            }).catch(function() {
+                showFeedback('Network error. Please try again.', true);
+            });
+        });
+    }
+
+    if (pdRevealBtn && pdMaskedKey) {
+        var revealed = false;
+        var originalText = pdMaskedKey.textContent;
+
+        pdRevealBtn.addEventListener('click', function() {
+            if (revealed) {
+                pdMaskedKey.textContent = originalText;
+                pdRevealBtn.querySelector('.material-symbols-outlined').textContent = 'visibility';
+                revealed = false;
+                return;
+            }
+
+            fetch('/alerts/pagerduty/token').then(function(response) {
+                if (!response.ok) {
+                    showFeedback('Failed to retrieve token.', true);
+                    return null;
+                }
+                return response.json();
+            }).then(function(data) {
+                if (data && data.token) {
+                    pdMaskedKey.textContent = data.token;
+                    pdRevealBtn.querySelector('.material-symbols-outlined').textContent = 'visibility_off';
+                    revealed = true;
+                }
+            }).catch(function() {
+                showFeedback('Network error. Please try again.', true);
+            });
+        });
+    }
+
+    if (pdDeleteBtn) {
+        pdDeleteBtn.addEventListener('click', function() {
+            if (!confirm('Are you sure you want to delete the PagerDuty integration?')) {
+                return;
+            }
+
+            var csrfToken = pdForm.querySelector('[name="csrf-token"]').value;
+
+            fetch('/alerts/pagerduty/delete', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': csrfToken
+                }
+            }).then(function(response) {
+                return response.json().then(function(data) {
+                    return {
+                        ok: response.ok,
+                        data: data
+                    };
+                });
+            }).then(function(result) {
+                if (result.ok) {
+                    showFeedback('PagerDuty integration deleted.', false);
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1500);
+                } else {
+                    showFeedback(result.data.error || 'An error occurred.', true);
+                }
+            }).catch(function() {
+                showFeedback('Network error. Please try again.', true);
+            });
+        });
+    }
 });

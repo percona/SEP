@@ -22,11 +22,14 @@ from fastapi.exceptions import HTTPException
 from polyfactory.factories.pydantic_factory import ModelFactory
 
 from app.sep.clients.pmm import AlertTemplate as PMMAlertTemplate
-from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.clients.pmm import ContactPoint, NotificationPolicy, PMMRemoteAPI
 from app.sep.plugins.alerts.deps import (
+    ensure_pagerduty_notification_route,
     get_alerts_index_context,
+    get_pagerduty_status,
     get_pmm_api,
     get_pmm_present_names,
+    PAGERDUTY_CONTACT_POINT_NAME,
 )
 from app.sep.plugins.alerts.models import (
     AlertTemplate,
@@ -39,11 +42,11 @@ class AlertTemplateFactory(ModelFactory[AlertTemplate]):
 
 
 class TestGetPmmApi:
-    """Test the `get_pmm_api` dependency."""
+    """Test the ``get_pmm_api`` dependency."""
 
     @pytest.mark.asyncio
     async def test_returns_none_when_endpoint_not_configured(self):
-        """Assert `None` is returned when PMM endpoint is not set."""
+        """Assert ``None`` is returned when PMM endpoint is not set."""
         with patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings:
             mock_settings.PMM.endpoint = None
             mock_settings.PMM.api_key = None
@@ -52,7 +55,7 @@ class TestGetPmmApi:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_api_key_not_configured(self):
-        """Assert `None` is returned when PMM API key is not set."""
+        """Assert ``None`` is returned when PMM API key is not set."""
         with patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings:
             mock_settings.PMM.endpoint = "https://pmm.example.com"
             mock_settings.PMM.api_key = None
@@ -61,7 +64,7 @@ class TestGetPmmApi:
 
     @pytest.mark.asyncio
     async def test_returns_client_when_configured(self):
-        """Assert a `PMMRemoteAPI` is returned when PMM is configured."""
+        """Assert a ``PMMRemoteAPI`` is returned when PMM is configured."""
         mock_client = AsyncMock(spec=PMMRemoteAPI)
         with (
             patch("app.sep.plugins.alerts.deps.sep_settings") as mock_settings,
@@ -82,11 +85,11 @@ class TestGetPmmApi:
 
 
 class TestGetPmmPresentNames:
-    """Test the `get_pmm_present_names` dependency."""
+    """Test the ``get_pmm_present_names`` dependency."""
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_pmm_api(self):
-        """Assert `None` is returned when the PMM API is not available."""
+        """Assert ``None`` is returned when the PMM API is not available."""
         result = await get_pmm_present_names(None)
         assert result is None
 
@@ -111,7 +114,7 @@ class TestGetPmmPresentNames:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_connection_error(self):
-        """Assert `None` is returned when PMM is unreachable."""
+        """Assert ``None`` is returned when PMM is unreachable."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_templates.side_effect = OSError("unreachable")
         result = await get_pmm_present_names(mock_api)
@@ -119,7 +122,7 @@ class TestGetPmmPresentNames:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_http_exception(self):
-        """Assert `None` is returned on HTTP error from PMM."""
+        """Assert ``None`` is returned on HTTP error from PMM."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_templates.side_effect = HTTPException(
             status_code=502, detail="Bad Gateway"
@@ -128,8 +131,143 @@ class TestGetPmmPresentNames:
         assert result is None
 
 
+class TestGetPagerdutyStatus:
+    """Test the ``get_pagerduty_status`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_pmm_unavailable(self):
+        """Assert ``None`` is returned when PMM API is not available."""
+        result = await get_pagerduty_status(None)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_configured_with_masked_key(self):
+        """Assert configured status with masked key when PD contact point exists."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-1",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "abcdefghij1234"},
+            ),
+        ]
+        result = await get_pagerduty_status(mock_api)
+        assert result == {
+            "configured": True,
+            "masked_key": "****1234",
+            "uid": "cp-1",
+        }
+
+    @pytest.mark.asyncio
+    async def test_returns_not_configured_when_no_pd_contact_point(self):
+        """Assert not-configured status when no PD contact point exists."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-slack",
+                name="Slack",
+                type="slack",
+                settings={},
+            ),
+        ]
+        result = await get_pagerduty_status(mock_api)
+        assert result == {"configured": False}
+
+    @pytest.mark.asyncio
+    async def test_returns_not_configured_when_empty_contact_points(self):
+        """Assert not-configured status when contact points list is empty."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_contact_points.return_value = []
+        result = await get_pagerduty_status(mock_api)
+        assert result == {"configured": False}
+
+    @pytest.mark.asyncio
+    async def test_masks_short_key(self):
+        """Assert short integration keys are masked as just stars."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-1",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "ab"},
+            ),
+        ]
+        result = await get_pagerduty_status(mock_api)
+        assert result["masked_key"] == "****"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_api_error(self):
+        """Assert ``None`` is returned on HTTP error from PMM."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_contact_points.side_effect = HTTPException(
+            status_code=502, detail="Bad Gateway"
+        )
+        result = await get_pagerduty_status(mock_api)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_connection_error(self):
+        """Assert ``None`` is returned when PMM is unreachable."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_contact_points.side_effect = OSError("unreachable")
+        result = await get_pagerduty_status(mock_api)
+        assert result is None
+
+
+class TestEnsurePagerdutyNotificationRoute:
+    """Test the ``ensure_pagerduty_notification_route`` helper."""
+
+    @pytest.mark.asyncio
+    async def test_creates_route_when_not_present(self):
+        """Assert a notification route is appended when none exists."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default",
+            routes=[],
+        )
+        await ensure_pagerduty_notification_route(
+            mock_api, PAGERDUTY_CONTACT_POINT_NAME
+        )
+        mock_api.update_notification_policy.assert_awaited_once()
+        updated_policy = mock_api.update_notification_policy.call_args[0][0]
+        assert len(updated_policy.routes) == 1
+        assert updated_policy.routes[0]["receiver"] == PAGERDUTY_CONTACT_POINT_NAME
+
+    @pytest.mark.asyncio
+    async def test_does_not_duplicate_existing_route(self):
+        """Assert no route is added when one already exists."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default",
+            routes=[{"receiver": PAGERDUTY_CONTACT_POINT_NAME}],
+        )
+        await ensure_pagerduty_notification_route(
+            mock_api, PAGERDUTY_CONTACT_POINT_NAME
+        )
+        mock_api.update_notification_policy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_preserves_existing_routes(self):
+        """Assert existing routes are preserved when appending a new one."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        existing_route = {"receiver": "slack-channel"}
+        mock_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default",
+            routes=[existing_route],
+        )
+        await ensure_pagerduty_notification_route(
+            mock_api, PAGERDUTY_CONTACT_POINT_NAME
+        )
+        updated_policy = mock_api.update_notification_policy.call_args[0][0]
+        expected_route_count = 2
+        assert len(updated_policy.routes) == expected_route_count
+        assert updated_policy.routes[0] == existing_route
+
+
 class TestGetAlertsIndexContext:
-    """Test the `get_alerts_index_context` dependency."""
+    """Test the ``get_alerts_index_context`` dependency."""
 
     @pytest.mark.asyncio
     async def test_assembles_context_with_all_fields(self):
@@ -144,18 +282,21 @@ class TestGetAlertsIndexContext:
             ServiceType.POSTGRESQL: (),
         }
         pmm_names = {"High CPU"}
+        pd_status = {"configured": False}
 
         result = await get_alerts_index_context(
-            base_context, templates_by_service, pmm_names
+            base_context, templates_by_service, pmm_names, pd_status
         )
 
         assert "all_templates" in result
         assert "service_types" in result
         assert "pmm_present_names" in result
+        assert "pagerduty_status" in result
         expected_template_count = sum(len(ts) for ts in templates_by_service.values())
         assert len(result["all_templates"]) == expected_template_count
         assert result["service_types"] == list(ServiceType)
         assert result["pmm_present_names"] is pmm_names
+        assert result["pagerduty_status"] is pd_status
         assert result["user"] == "test-user"
 
     @pytest.mark.asyncio
@@ -165,8 +306,9 @@ class TestGetAlertsIndexContext:
         templates_by_service = {svc: () for svc in ServiceType}
 
         result = await get_alerts_index_context(
-            base_context, templates_by_service, None
+            base_context, templates_by_service, None, None
         )
 
         assert result["pmm_present_names"] is None
+        assert result["pagerduty_status"] is None
         assert result["all_templates"] == []

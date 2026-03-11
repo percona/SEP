@@ -31,6 +31,9 @@ from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
 
 logger = logging.getLogger(__name__)
 
+PAGERDUTY_CONTACT_POINT_NAME = "SEP PagerDuty"
+PAGERDUTY_MIN_KEY_SUFFIX_LENGTH = 4
+
 AlertTemplatesDep = Annotated[
     Mapping[ServiceType, tuple[AlertTemplate, ...]], Depends(get_alert_templates)
 ]
@@ -81,10 +84,74 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 PMMPresentNamesDep = Annotated[set[str] | None, Depends(get_pmm_present_names)]
 
 
+async def get_pagerduty_status(pmm_api: PMMAPIDep) -> dict[str, Any] | None:
+    """Return PagerDuty contact point status for the sidebar widget.
+
+    Fetch all contact points from PMM and find the PagerDuty one.
+    Return ``None`` when PMM is unavailable or the API call fails.
+
+    :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
+        configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :return: A dictionary with ``configured``, ``masked_key``, and ``uid`` keys
+        when a PagerDuty contact point exists; ``{"configured": False}`` when
+        none exists; or ``None`` when PMM is unreachable.
+    :rtype: dict[str, Any] | None
+    """
+    if pmm_api is None:
+        return None
+    try:
+        contact_points = await pmm_api.list_contact_points()
+    except (HTTPException, OSError):
+        logger.warning("Failed to fetch PagerDuty contact point status", exc_info=True)
+        return None
+
+    pd_cp = next((cp for cp in contact_points if cp.type == "pagerduty"), None)
+    if pd_cp is None:
+        return {"configured": False}
+    key = pd_cp.settings.get("integrationKey", "")
+    masked = (
+        f"****{key[-PAGERDUTY_MIN_KEY_SUFFIX_LENGTH:]}"
+        if len(key) >= PAGERDUTY_MIN_KEY_SUFFIX_LENGTH
+        else "****"
+    )
+    return {"configured": True, "masked_key": masked, "uid": pd_cp.uid}
+
+
+PagerDutyStatusDep = Annotated[dict[str, Any] | None, Depends(get_pagerduty_status)]
+
+
+async def ensure_pagerduty_notification_route(
+    pmm_api: PMMRemoteAPI, contact_point_name: str
+) -> None:
+    """Append a notification policy route for PagerDuty if not already present.
+
+    Fetch the current notification policy tree from PMM, check if a route
+    targeting ``contact_point_name`` already exists, and append one if it does
+    not.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :param contact_point_name: The receiver name to match on.
+    :type contact_point_name: str
+    """
+    policy = await pmm_api.get_notification_policy()
+    if any(r.get("receiver") == contact_point_name for r in policy.routes):
+        return
+    policy.routes.append(
+        {
+            "receiver": contact_point_name,
+            "matchers": [{"name": "service", "value": "sep", "type": "="}],
+        }
+    )
+    await pmm_api.update_notification_policy(policy)
+
+
 async def get_alerts_index_context(
     context: DefaultContext,
     alert_templates: AlertTemplatesDep,
     pmm_present_names: PMMPresentNamesDep,
+    pagerduty_status: PagerDutyStatusDep,
 ) -> dict[str, Any]:
     """Assemble the template context for the alerts plugin index view.
 
@@ -95,6 +162,9 @@ async def get_alerts_index_context(
     :param pmm_present_names: Set of template names present in PMM, or ``None``
         when PMM is unreachable.
     :type pmm_present_names: PMMPresentNamesDep
+    :param pagerduty_status: PagerDuty contact point status for the sidebar
+        widget, or ``None`` when PMM is unreachable.
+    :type pagerduty_status: PagerDutyStatusDep
     :return: The updated context dictionary with alerts data.
     :rtype: dict[str, Any]
     """
@@ -105,6 +175,7 @@ async def get_alerts_index_context(
             "all_templates": all_templates,
             "service_types": list(ServiceType),
             "pmm_present_names": pmm_present_names,
+            "pagerduty_status": pagerduty_status,
         }
     )
     return context
