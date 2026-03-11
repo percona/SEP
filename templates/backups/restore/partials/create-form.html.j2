@@ -537,6 +537,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         Use SQL File:
                         <input type="text" id="use_sql_file" name="use_sql_file" placeholder="" />
                     </label>
+                    {% set binlog_restore_extra_args_title = "Specify additional mysqlbinlog command-line arguments (e.g.,--stop-datetime=\"YYYY-MM-DD HH:MM:SS\")." %}
+                    <label for="binlog_restore_extra_args"
+                           title="{{ binlog_restore_extra_args_title }}">
+                        Extra Arguments (optional):
+                        <input type="text"
+                               id="binlog_restore_extra_args"
+                               name="binlog_restore_extra_args"
+                               placeholder="--stop-datetime='YYYY-MM-DD HH:MM:SS'" />
+                    </label>
                 </fieldset>
             </fieldset>
         </section>
