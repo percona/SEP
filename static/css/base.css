@@ -1232,6 +1232,10 @@ button.list-item:focus-visible {
     content: "science";
 }
 
+.list-item.alerts .icon::before {
+    content: "notifications";
+}
+
 /*=============================================*/
 /* Foundations for the sidebar type of layout */
 /*=============================================*/
