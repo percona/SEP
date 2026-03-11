@@ -22,6 +22,7 @@ from fastapi import APIRouter, Form, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from app.core.utils.fields import NonEmptyStr
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.plugins.alerts.deps import (
@@ -53,14 +54,14 @@ async def alerts_index(
 @router.post("/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def pagerduty_save(
     pmm_api: PMMAPIDep,
-    integration_key: Annotated[str, Form()],
+    integration_key: Annotated[NonEmptyStr, Form()],
 ) -> JSONResponse:
     """Create or update the PagerDuty contact point and notification policy.
 
     :param pmm_api: The PMM API client dependency.
     :type pmm_api: PMMRemoteAPI | None
     :param integration_key: The PagerDuty integration key from the form.
-    :type integration_key: str
+    :type integration_key: NonEmptyStr
     :return: JSON with ``status`` and ``masked_key``.
     :rtype: JSONResponse
     """
