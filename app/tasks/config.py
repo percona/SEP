@@ -21,6 +21,7 @@ from typing import ClassVar
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
+from app.core.utils.lazy import LazyProxy
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
@@ -60,4 +61,4 @@ class TasksSettings(BaseYamlAppSettings):
     INVENTORY_SYNC_API_KEY: str | None = None
 
 
-tasks_settings = TasksSettings()
+tasks_settings: TasksSettings = LazyProxy(TasksSettings)
