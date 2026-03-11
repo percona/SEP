@@ -358,8 +358,18 @@ class MySQLSyncer(BaseTaskSyncer):
         for target, address in available_hosts.items():
             if address == host:
                 return target
-        if self.default_executor_host:
+        if not available_hosts:
+            raise ValueError(
+                "No executor hosts available from /hosts/; cannot determine task target."
+            )
+        if self.default_executor_host and self.default_executor_host in available_hosts:
             return self.default_executor_host
+        if self.default_executor_host:
+            logger.warning(
+                "default_executor_host %r not in available hosts %s; using first available",
+                self.default_executor_host,
+                list(available_hosts),
+            )
         return next(iter(available_hosts))
 
     def build_script_config(

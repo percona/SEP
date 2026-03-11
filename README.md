@@ -439,7 +439,7 @@ and optionally `VERIFY_SSL`, `SSL_CAFILE`, `SSL_KEYFILE`, and `SSL_CERTFILE`.
 Sync MySQL/MariaDB inventory (schemas and tables). Optional configuration under each `MySQLSyncer` entry in `SEP.SYNCERS`:
 
 - **`IGNORE_SCHEMAS`**: List of schema names to skip during sync (defaults typically include `sys`, `performance_schema`, `mysql`, `information_schema`).
-- **`DEFAULT_EXECUTOR_HOST`**: Nomad client hostname to use when the MySQL service host does not match any Nomad node. Set this when syncing **RDS**, **DBaaS**, or other remote MySQL instances: the sync payload runs on a Nomad client, so you must choose which client can reach the database. If unset, the first available Nomad host is used when there is no match.
+- **`DEFAULT_EXECUTOR_HOST`**: Nomad node name to use when the MySQL service host does not match any Nomad node. Set this when syncing **RDS**, **DBaaS**, or other remote MySQL instances: the sync payload runs on a Nomad client, so you must choose which client can reach the database. The value must match a **node name** (key) returned by **`/api/tasks/hosts/`**—not the node IP or address—otherwise task execution will fail. If unset, the first available Nomad host is used when there is no match.
 
 Credentials are read on the Nomad client from **`~/.my.cnf`** and **`~/.mylogin.cnf`** (client login path).
 
@@ -454,7 +454,7 @@ SEP:
         - performance_schema
         - mysql
         - information_schema
-      DEFAULT_EXECUTOR_HOST: "ip-10-0-1-5.region.compute.internal"  # Nomad client that can reach RDS
+      DEFAULT_EXECUTOR_HOST: "ip-10-0-1-5.region.compute.internal"  # Nomad node name from /api/tasks/hosts/ that can reach RDS
 ```
 
 ### SSL Configuration
