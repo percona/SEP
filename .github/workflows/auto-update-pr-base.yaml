@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
 
 jobs:
   auto-update-pr-base:
@@ -12,7 +11,6 @@ jobs:
     steps:
       - uses: actions/github-script@v8
         with:
-          #github-token: ${{ secrets.ROBOT_TOKEN }}
           script: |
             let retriesNeeded = true;
             let attemptCount = 0;
