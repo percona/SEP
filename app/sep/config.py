@@ -203,6 +203,9 @@ class PMMSettings(BaseLowercaseModel):
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
     :type execution_target: str | None
+    :param alert_folder_name: Display name of the PMM folder used for SEP-managed
+        alert rules. Defaults to ``"SEP Alerts"``.
+    :type alert_folder_name: str
     """
 
     model_config = ConfigDict(extra="allow")
