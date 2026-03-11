@@ -115,6 +115,60 @@ class TestConfigAndTargets:
         target = await mock_mysql_syncer.get_task_target("127.0.0.1")
         assert target == "some_executor_host"
 
+    @pytest.mark.asyncio
+    async def test_get_task_target_default_executor_fallback(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test fallback to default_executor_host when no name/address match (e.g. RDS)."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {
+            "on-prem-host": "192.168.1.10:3306",
+            "monitor-host": "10.0.0.5:3306",
+        }
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = "monitor-host"
+        target = await mock_mysql_syncer.get_task_target(
+            "rds-cluster.region.rds.amazonaws.com"
+        )
+        assert target == "monitor-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_first_available_when_no_default(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test first available host when no match and default_executor_host not set."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"first-host": "1.2.3.4:3306", "second-host": "5.6.7.8:3306"}
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = None
+        target = await mock_mysql_syncer.get_task_target("unknown-rds.endpoint.com")
+        assert target == "first-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_force_takes_precedence_over_default(
+        self, mock_mysql_syncer
+    ):
+        """Test force_executor_host overrides default_executor_host."""
+        mock_mysql_syncer.force_executor_host = "forced-host"
+        mock_mysql_syncer.default_executor_host = "default-host"
+        target = await mock_mysql_syncer.get_task_target("any-host")
+        assert target == "forced-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_fallback_when_default_not_in_available_hosts(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test fallback to first available when default_executor_host is stale."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"live-host": "10.0.0.1:3306", "other-host": "10.0.0.2:3306"}
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = "stale-host"
+        target = await mock_mysql_syncer.get_task_target("rds.example.com")
+        assert target == "live-host"
+
     def test_payload_path_points_to_payload_py(self, mock_mysql_syncer):
         """Test payload_path returns payload.py path."""
         p = mock_mysql_syncer.payload_path
