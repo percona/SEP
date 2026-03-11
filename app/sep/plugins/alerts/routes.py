@@ -24,11 +24,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, IsAuthenticated, IsCsrfValidated, SessionDep
 from app.sep.plugins.alerts.crud import AlertBackupManager
-from app.sep.plugins.alerts.deps import (
-    AlertsIndexContext,
-    PMMAPIDep,
-    restore_from_backup,
-)
+from app.sep.plugins.alerts.deps import AlertsIndexContext, PMMAPIDep
+from app.sep.plugins.alerts.restore import restore_from_backup
 
 router = APIRouter()
 templates = sep_settings.TEMPLATES

@@ -31,7 +31,7 @@ from app.sep.clients.pmm import (
     AlertTemplate as PMMAlertTemplate,
 )
 from app.sep.plugins.alerts.backup import AlertBackup
-from app.sep.plugins.alerts.deps import restore_from_backup
+from app.sep.plugins.alerts.restore import restore_from_backup
 
 _SAMPLE_TEMPLATE_COUNT = 2
 _SAMPLE_CONTACT_POINT_COUNT = 2
