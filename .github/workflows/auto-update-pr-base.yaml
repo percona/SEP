@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.ROBOT_TOKEN }}
+          #github-token: ${{ secrets.ROBOT_TOKEN }}
           script: |
             let retriesNeeded = true;
             let attemptCount = 0;
