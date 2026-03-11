@@ -22,6 +22,7 @@ import os
 import socket
 import string
 import sys
+from configparser import Error as ConfigParserError, RawConfigParser
 from collections import defaultdict
 from collections.abc import Generator, Iterable
 from gzip import GzipFile
@@ -234,6 +235,71 @@ def parse_host_port(host_entry: str) -> tuple[str, int]:
     return host, port
 
 
+def _strip_quotes(value: str) -> str:
+    """Remove surrounding double quotes and unescape interior quotes (same as myloginpath)."""
+    if not isinstance(value, str):
+        return str(value)
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        return value[1:-1].replace('\\"', '"')
+    return value
+
+
+def _section_to_creds(parser: RawConfigParser, section: str) -> dict[str, Any] | None:
+    """Return a credentials dict for a section, or None if invalid."""
+    try:
+        data = {k: _strip_quotes(v) for k, v in parser.items(section)}
+        data["port"] = int(data["port"]) if "port" in data else 3306
+        return data
+    except (ValueError, KeyError):
+        return None
+
+
+def get_creds_for_host(host_entry: str) -> dict[str, Any]:
+    """Return credentials from ~/.mylogin.cnf by matching host and port, not section name.
+
+    Reads the login path file and finds a section whose `host` (and `port`) match
+    host_entry. So you can use any section name (e.g. `[rds-0]`) as long as
+    `host = rds-sync-peter....rds.amazonaws.com` and `port = 3306` match.
+    If no section matches, falls back to the `[client]` section when present.
+    """
+    try:
+        content = myloginpath.read()
+    except OSError as err:
+        print(f"Cannot read login path file: {err}", file=sys.stderr)
+        return {}
+    except TypeError as err:
+        # myloginpath can raise TypeError when .mylogin.cnf is corrupted or decrypt fails
+        print(f"Cannot read login path file: {err}", file=sys.stderr)
+        return {}
+    if not isinstance(content, str):
+        print("Login path file did not return a string", file=sys.stderr)
+        return {}
+    parser = RawConfigParser(dict_type=dict, allow_no_value=True)
+    try:
+        parser.read_string(content, source=".mylogin.cnf")
+    except ConfigParserError as err:
+        print(f"Failed to parse login path file: {err}", file=sys.stderr)
+        return {}
+    target_host, target_port = parse_host_port(host_entry)
+    for section in parser.sections():
+        data = _section_to_creds(parser, section)
+        if data is None:
+            print(f"Login path section {section!r} skipped: invalid data", file=sys.stderr)
+            continue
+        if "host" not in data:
+            continue
+        section_host = data["host"]
+        section_port = data["port"]
+        if section_host == target_host and section_port == target_port:
+            return data
+    # Fallback to [client] if present
+    if parser.has_section("client"):
+        data = _section_to_creds(parser, "client")
+        if data is not None:
+            return data
+    return {}
+
+
 def main() -> None:
     """Define main function to parse arguments and initiate the retrieval of data."""
     parser = argparse.ArgumentParser(
@@ -260,12 +326,6 @@ def main() -> None:
     if schema and len(hosts) > 1:
         sys.exit("Only one host allowed if schema is specified")
 
-    # Try to read creds from .mylogin.cnf
-    try:
-        creds = myloginpath.parse("client")
-    except Exception:
-        creds = {}
-
     result = defaultdict(dict)
 
     local_ip = socket.gethostbyname(socket.gethostname())
@@ -275,6 +335,7 @@ def main() -> None:
         host, port = parse_host_port(host_entry)
         if config.get("resolve_localhost") and host == local_ip:
             host = "127.0.0.1"
+        creds = get_creds_for_host(host_entry)
         try:
             with (
                 pymysql.connect(
@@ -310,7 +371,7 @@ def main() -> None:
         host, port = parse_host_port(host_entry)
         if config.get("resolve_localhost") and host == local_ip:
             host = "127.0.0.1"
-
+        creds = get_creds_for_host(host_entry)
         try:
             with (
                 pymysql.connect(
