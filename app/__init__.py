@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -14,7 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 __all__ = ["BASE_DIR", "__summary__", "__version__"]
-__version__ = "v0.10.2"
+__version__ = "v0.10.3"
 __summary__ = "Percona Services Enablement Platform"
 
 from pathlib import Path

@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -62,6 +62,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import minify_file_content
 from app.tasks.models import (
+    FileMetadata,
     Task,
     TaskHistory,
     TaskHistoryStatusEnum,
@@ -112,11 +113,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePath | None
+    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePath | None
+    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePath | None
+    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
@@ -708,6 +709,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return queue_item
 
         task_states = alloc["TaskStates"]
+
+        try:
+            job = self.get_job(job_id)
+        except JobNotFoundError:
+            queue_item.status = TaskHistoryStatusEnum.LOST
+        else:
+            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
+                last_modified_timestamp = alloc.get("ModifyTime")
+                if last_modified_timestamp:
+                    queue_item.finished_at = self.timestamp_to_datetime(
+                        last_modified_timestamp
+                    )
+                else:
+                    queue_item.finished_at = utc_now()
+
+                queue_item.status = self.get_task_history_status_from_alloc_status(
+                    alloc["ClientStatus"],
+                    queue_item.status,
+                    stopped=job.get("Stop", False),
+                )
+
         task_logs = self.get_logs_for_allocation(
             alloc,
             queue_item.task_logs,
@@ -736,26 +758,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
             ).decode(),
         )
-
-        try:
-            job = self.get_job(job_id)
-        except JobNotFoundError:
-            queue_item.status = TaskHistoryStatusEnum.LOST
-        else:
-            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
-                last_modified_timestamp = alloc.get("ModifyTime")
-                if last_modified_timestamp:
-                    queue_item.finished_at = self.timestamp_to_datetime(
-                        last_modified_timestamp
-                    )
-                else:
-                    queue_item.finished_at = utc_now()
-
-                queue_item.status = self.get_task_history_status_from_alloc_status(
-                    alloc["ClientStatus"],
-                    queue_item.status,
-                    stopped=job.get("Stop", False),
-                )
         return queue_item
 
     def task_needs_job_register(self, task: Task) -> bool:
@@ -1178,7 +1180,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     async def list_files(
         self, queue_item: TaskHistory, path: str
-    ) -> dict[str, dict[str, int | bool]]:
+    ) -> dict[str, FileMetadata]:
         """List files in a directory on the allocation's filesystem.
 
         :param queue_item: The task history record for tracking the logs.
@@ -1187,7 +1189,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type path: str
         :return: A dictionary with filenames as keys and their metadata as values.
             The metadata includes the file size and whether it is a directory.
-        :rtype: dict[str, dict[str, int | bool]]
+        :rtype: dict[str, FileMetadata]
         """
         alloc = self.get_allocation_for_task_history(queue_item)
         alloc_id = alloc["ID"]
@@ -1197,14 +1199,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             response.raise_for_status()
             files = await response.json()
         return {
-            filename: {
-                "size": file.get("Size", 0),
-                "is_dir": bool(
+            filename: FileMetadata(
+                size=file.get("Size", 0),
+                is_dir=bool(
                     file.get("IsDir")
                     or file.get("Directory")
                     or file.get("Type") in {"directory", "dir"}
                 ),
-            }
+            )
             for file in files
             if not (filename := file["Name"]).startswith(".")
         }

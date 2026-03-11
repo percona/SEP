@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Routes for the Dipper plugin."""
 
 import logging
@@ -24,6 +39,7 @@ from app.sep.plugins.dipper.deps import (
     DipperScriptWithMetaDep,
     get_dipper_execution_meta,
     get_dipper_script_filename,
+    get_pmm_form_defaults,
     has_pmm_script,
     resolve_executor_host_for_service,
     resolve_pmm_executor_host,
@@ -61,7 +77,7 @@ async def dipper_index(
 
     if service_id is None:
         return templates.TemplateResponse(
-            request=request, name="dipper/index.html", context=context
+            request=request, name="dipper/index.html.j2", context=context
         )
 
     try:
@@ -69,13 +85,13 @@ async def dipper_index(
     except HTTPException as exc:
         messages.error(request, f"Could not load service {service_id}: {exc.detail}")
         return templates.TemplateResponse(
-            request=request, name="dipper/index.html", context=context
+            request=request, name="dipper/index.html.j2", context=context
         )
 
     if service_data.get("type") not in {t.value for t in DIPPER_SCRIPT_BY_SERVICE_TYPE}:
         messages.error(request, "Selected service type is not supported by Dipper")
         return templates.TemplateResponse(
-            request=request, name="dipper/index.html", context=context
+            request=request, name="dipper/index.html.j2", context=context
         )
 
     selected_service = CreatedService.model_validate(service_data)
@@ -111,6 +127,16 @@ async def dipper_index(
                 "Could not map selected service to an execution target; please select manually.",
             )
 
+    form_defaults = (
+        get_pmm_form_defaults(
+            resolved_executor_host,
+            selected_service.name,
+            selected_service.node.name,
+        )
+        if collector_type == CollectorTypeEnum.PMM
+        else None
+    )
+
     snippet_filename = f"dipper/{selected_service.id}/{script.filename}"
     history_tasks = await tasks_api.get(
         f"/{script.execution_task_name}/history/",
@@ -138,6 +164,7 @@ async def dipper_index(
         else set(executor_hosts),
         "resolved_executor_host": resolved_executor_host,
         "default_executor_host": default_executor_host,
+        "form_defaults": form_defaults,
         "history_tasks": history_tasks,
         "running_tasks": await tasks_api.get(
             f"/{script.execution_task_name}/history/",
@@ -151,7 +178,7 @@ async def dipper_index(
 
     return templates.TemplateResponse(
         request=request,
-        name="dipper/index.html",
+        name="dipper/index.html.j2",
         context=context,
     )
 

@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -84,9 +84,9 @@ class MySQLService(Service):
     :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
-    :type external_id: RequiredStr | EmptyStrToNone
+    :type external_id: NonEmptyStr | EmptyStrToNone
     :param name: The name of the service, aliased as "service_name".
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param port: The port number on which the service is running. Defaults to None.
     :type port: int | EmptyStrToNone
     :param type: The type of the service (e.g., "service_type"), aliased as
@@ -132,7 +132,7 @@ class MySQLSchema(Schema):
     for fetching table data and an `address` field.
 
     :param name: The name of the schema.
-    :type name: RequiredStr
+    :type name: NonEmptyStr
     :param tables: The tables associated with the schema.
     :type tables: list[Table]
     :param address: The unique address of the schema within the inventory system.
@@ -339,8 +339,9 @@ class MySQLSyncer(BaseTaskSyncer):
         """Return the target host for the task from the host.
 
         This method returns `self.force_executor_host` if set. Otherwise, it tries to
-        find a target with the same address as `host`. If it can't, the first available
-        host is returned.
+        find a target with the same address as `host` or the same name. If no match is
+        found, it returns `self.default_executor_host` if set, otherwise the first
+        available host.
 
         :param host: The target host.
         :type host: str
@@ -357,6 +358,18 @@ class MySQLSyncer(BaseTaskSyncer):
         for target, address in available_hosts.items():
             if address == host:
                 return target
+        if not available_hosts:
+            raise ValueError(
+                "No executor hosts available from /hosts/; cannot determine task target."
+            )
+        if self.default_executor_host and self.default_executor_host in available_hosts:
+            return self.default_executor_host
+        if self.default_executor_host:
+            logger.warning(
+                "default_executor_host %r not in available hosts %s; using first available",
+                self.default_executor_host,
+                list(available_hosts),
+            )
         return next(iter(available_hosts))
 
     def build_script_config(

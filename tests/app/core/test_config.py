@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define tests for the app.core.config module."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,6 +25,7 @@ from app.core.config import (
     BaseYamlAppSettings,
     default_lifespan,
     Settings,
+    settings,
     YamlPrefixConfigSettingsSource,
 )
 
@@ -176,3 +192,13 @@ async def test_default_lifespan():
     mock_casdoor.__aenter__.assert_called_once()
     mock_casdoor.__aexit__.assert_called_once()
     mock_close_registry.assert_called_once()
+
+
+def test_settings_secret_key_is_secretstr():
+    """Test that SECRET_KEY is a SecretStr instance and masked in repr."""
+    from pydantic import SecretStr
+
+    assert isinstance(settings.SECRET_KEY, SecretStr)
+    secret_value = settings.SECRET_KEY.get_secret_value()
+    if secret_value:
+        assert secret_value not in repr(settings.SECRET_KEY)

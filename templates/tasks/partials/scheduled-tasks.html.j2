@@ -1,0 +1,297 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+#}
+<form id="new-periodic-task-form"
+      method="post"
+      action="{{ url_for('periodic_task_create') }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+</form>
+{% for periodic_task in periodic_tasks %}
+    <form id="edit-periodic-task-form-{{ periodic_task.id }}"
+          method="post"
+          action="{{ url_for('periodic_task_update', periodic_task_id=periodic_task.id) }}"
+          class="confirmable-form"
+          data-confirm-message="Are you sure you want to update the periodic task for &quot;{{ periodic_task.task }}&quot;?"
+          style="display: none">
+        <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    </form>
+{% endfor %}
+<table id="scheduled-tasks-table" data-table>
+    <thead>
+        <tr>
+            <th>Task</th>
+            <th id="period-header">Period</th>
+            <th id="start-time-header">Start Time</th>
+            <th id="last-run-at-header">Last Run At</th>
+            <th>Next Execution</th>
+            <th>Runs</th>
+            <th>Enabled</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for periodic_task in periodic_tasks %}
+            <tr>
+                <td>
+                    {%- if detail_route -%}
+                        <a href="{{ url_for(detail_route, task_name=periodic_task.task) }}"
+                           class="task-link">{{ periodic_task.task }}</a>
+                    {%- else -%}
+                        {{ periodic_task.task }}
+                    {%- endif -%}
+                </td>
+                {% if periodic_task.crontab %}
+                    {# djlint:off H025 #}
+                    <td class="period-cell period-crontab"
+                        {# djlint:on #}
+                        data-timezone="{{ periodic_task.crontab.timezone }}">
+                    {% else %}
+                        <td class="period-cell">
+                        {% endif %}
+                        {{ periodic_task.period }}
+                    </td>
+                    <td class="relativeTime">{{ periodic_task.start_time or '' }}</td>
+                    <td class="relativeTime">{{ periodic_task["last_run_at"] or '' }}</td>
+                    <td class="relativeTime">{{ periodic_task.next_run_at or '' }}</td>
+                    <td>{{ periodic_task.total_run_count }}</td>
+                    <td>
+                        <form method="post"
+                              action="{{ url_for('periodic_task_update', periodic_task_id=periodic_task.id) }}"
+                              class="enable-form confirmable-form">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                            <input type="hidden"
+                                   name="enabled"
+                                   value="{{ 'true' if periodic_task.enabled else 'false' }}">
+                            <label class="switch">
+                                <input type="checkbox"
+                                       class="enable-checkbox"
+                                       data-task-id="{{ periodic_task.id }}"
+                                       {% if periodic_task.enabled %}checked{% endif %}>
+                                <span class="slider round"></span>
+                            </label>
+                        </form>
+                    </td>
+                    <td class="actions-cell flex">
+                        <button type="button"
+                                class="edit-button icon"
+                                data-task-id="{{ periodic_task.id }}"
+                                title="Edit">
+                            <span class="material-symbols-outlined">edit</span>
+                        </button>
+                        <form method="post"
+                              action="{{ url_for('periodic_task_delete', periodic_task_id=periodic_task.id) }}"
+                              class="delete-form">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                            <button type="submit" class="delete-button icon submitButton" title="Delete">
+                                <span class="material-symbols-outlined">delete_forever</span>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                <!-- Edit row for this periodic task -->
+                <tr class="edit-periodic-task-row"
+                    data-task-id="{{ periodic_task.id }}"
+                    style="display: none">
+                    <td>
+                        <span>{{ periodic_task.task }}</span>
+                    </td>
+                    <td>
+                        <div class="interval-inputs period-inputs {% if periodic_task.crontab %}hidden{% endif %}">
+                            <input type="number"
+                                   name="interval_every"
+                                   min="1"
+                                   placeholder="every n"
+                                   value="{{ periodic_task.interval.every if periodic_task.interval else '' }}"
+                                   {%- if not periodic_task.interval %}disabled{%- endif %}
+                                   {%- if periodic_task.interval %}required{%- endif %}>
+                            <select name="interval_period"
+                                    style="padding: 0.2em"
+                                    {%- if not periodic_task.interval %}disabled{%- endif %}>
+                                <option value="days"
+                                        {%- if periodic_task.interval and periodic_task.interval.period == 'days' %}selected{%- endif %}>days</option>
+                                <option value="hours"
+                                        {%- if periodic_task.interval and periodic_task.interval.period == 'hours' %}selected{%- endif %}>hours</option>
+                                <option value="minutes"
+                                        {%- if periodic_task.interval and periodic_task.interval.period == 'minutes' %}selected{%- endif %}>minutes</option>
+                            </select>
+                        </div>
+                        <div class="cron-inputs period-inputs{%- if not periodic_task.crontab %} hidden{%- endif %}">
+                            <div style="display: flex">
+                                <input type="text"
+                                       name="cron_expression"
+                                       placeholder="*/5 * * * *"
+                                       value="{%- if periodic_task.crontab -%}{{ periodic_task.crontab.minute }} {{ periodic_task.crontab.hour }} {{ periodic_task.crontab.day_of_month }} {{ periodic_task.crontab.month_of_year }} {{ periodic_task.crontab.day_of_week }}{%- endif -%}"
+                                       {%- if not periodic_task.crontab %}disabled{%- endif %}
+                                       {%- if periodic_task.crontab %}required{%- endif %}>
+                                <select name="cron_timezone"
+                                        {%- if not periodic_task.crontab %}disabled{%- endif %}>
+                                    {% for timezone in AVAILABLE_TIMEZONES %}
+                                        <option value="{{ timezone }}"
+                                                {%- if periodic_task.crontab and periodic_task.crontab.timezone == timezone %}selected{%- endif %}>{{ timezone }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="cron-description"></div>
+                        </div>
+                        <a href="#"
+                           class="change-period-mode"
+                           data-task-id="{{ periodic_task.id }}"
+                           style="font-size: 11px">
+                            {%- if periodic_task.interval -%}
+                                change to cron mode
+                            {%- else -%}
+                                change to interval mode
+                            {%- endif -%}
+                        </a>
+                    </td>
+                    <td>
+                        <div class="start-time-container{% if periodic_task.crontab %} hidden{% endif %}">
+                            <input type="hidden"
+                                   name="start_time"
+                                   class="date-value"
+                                   value="{{ periodic_task.start_time or '' }}">
+                            <input type="datetime-local"
+                                   class="start-time-input"
+                                   value="{%- if periodic_task.start_time -%}{{ periodic_task.start_time[:16] }}{%- endif -%}"
+                                   title="Optional start time for the periodic task">
+                        </div>
+                    </td>
+                    <td></td>
+                    <td></td>
+                    <td>{{ periodic_task.total_run_count }}</td>
+                    <td style="padding-left: 0.5em">
+                        <input type="hidden"
+                               name="enabled"
+                               value="{{ 'true' if periodic_task.enabled else 'false' }}">
+                        <label class="switch">
+                            <input type="checkbox"
+                                   class="edit-periodic-task-enable-checkbox"
+                                   {%- if periodic_task.enabled %}checked{%- endif %}>
+                            <span class="slider round"></span>
+                        </label>
+                    </td>
+                    <td class="actions-cell flex">
+                        <button type="submit"
+                                class="save-edit-button text medium submitButton"
+                                title="Save"
+                                data-task-id="{{ periodic_task.id }}"
+                                form="edit-periodic-task-form-{{ periodic_task.id }}">
+                            <span class="material-symbols-outlined">save</span>
+                            <span class="label">Save</span>
+                        </button>
+                        <button type="button"
+                                class="cancel-edit-button text medium"
+                                data-task-id="{{ periodic_task.id }}"
+                                title="Cancel">
+                            <span class="material-symbols-outlined">close</span>
+                            <span class="label">Cancel</span>
+                        </button>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <!-- Row for new periodic task -->
+            <tr class="new-periodic-task-row show-on-create-mode">
+                <td>
+                    <select name="task" form="new-periodic-task-form">
+                        {% for task in tasks %}<option value="{{ task.name }}">{{ task.name }}</option>{% endfor %}
+                    </select>
+                </td>
+                <td>
+                    <div class="interval-inputs period-inputs">
+                        <input type="number"
+                               name="interval_every"
+                               min="1"
+                               placeholder="every n"
+                               form="new-periodic-task-form"
+                               required>
+                        <select name="interval_period"
+                                form="new-periodic-task-form"
+                                style="padding: 0.2em">
+                            <option value="days">days</option>
+                            <option value="hours">hours</option>
+                            <option value="minutes">minutes</option>
+                        </select>
+                    </div>
+                    <div class="cron-inputs hidden period-inputs">
+                        <div style="display: flex">
+                            <input type="text"
+                                   name="cron_expression"
+                                   placeholder="*/5 * * * *"
+                                   form="new-periodic-task-form"
+                                   disabled>
+                            <select name="cron_timezone" form="new-periodic-task-form" disabled>
+                                {% for timezone in AVAILABLE_TIMEZONES %}<option value="{{ timezone }}">{{ timezone }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="cron-description"></div>
+                    </div>
+                    <a href="#" class="change-period-mode" style="font-size: 11px;">change to
+                    cron mode</a>
+                </td>
+                <td>
+                    <div class="start-time-container">
+                        <input type="hidden"
+                               form="new-periodic-task-form"
+                               name="start_time"
+                               class="date-value">
+                        <input type="datetime-local"
+                               class="start-time-input"
+                               title="Optional start time for the periodic task">
+                    </div>
+                </td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td style="padding-left: 0.5em">
+                    <input type="hidden"
+                           form="new-periodic-task-form"
+                           name="enabled"
+                           value="true">
+                    <label class="switch">
+                        <input type="checkbox" class="new-periodic-task-enable-checkbox" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </td>
+                <td class="actions-cell flex">
+                    <button type="submit"
+                            id="save-button"
+                            class="text medium"
+                            title="Save"
+                            form="new-periodic-task-form">
+                        <span class="material-symbols-outlined">save</span>
+                        <span class="label">Save</span>
+                    </button>
+                    <button type="button" class="discard-button text medium" title="Discard">
+                        <span class="material-symbols-outlined">remove</span>
+                        <span class="label">Remove</span>
+                    </button>
+                </td>
+            </tr>
+            <tr id="add-periodic-task-row" class="hide-on-create-mode">
+                <td colspan="7"></td>
+                <td class="actions-cell flex">
+                    <button id="add-periodic-task-button"
+                            title="Create new periodic task"
+                            class="text large">
+                        <span class="material-symbols-outlined">add</span>
+                        <span class="label">Add new</span>
+                    </button>
+                </td>
+            </tr>
+        </tfoot>
+    </table>

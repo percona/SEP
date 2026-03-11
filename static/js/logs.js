@@ -1,3 +1,20 @@
+/**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 $(document).ready(function() {
     function formatBytes(bytes) {
         if (!Number.isFinite(bytes) || bytes < 0) return String(bytes || 0);
@@ -166,6 +183,18 @@ $(document).ready(function() {
         document.body.appendChild(a);
         a.click();
         a.remove();
+
+        // Reset button after download has been triggered (no reliable "download started" event)
+        const ariaLabel = $btn.attr('aria-label') || `Download ${filename}`;
+        setTimeout(function() {
+            $btn.data('loading', false)
+                .attr('aria-disabled', 'false')
+                .prop('disabled', false)
+                .removeClass('loading')
+                .attr('aria-label', ariaLabel)
+                .html('<span class="material-symbols-outlined">file_download</span>');
+            $row.removeAttr('aria-busy');
+        }, 1500);
     });
 
     $(document).on('click', '.view-files-button', function() {
@@ -246,6 +275,12 @@ $(document).ready(function() {
 
                 const stdoutPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stdout" style="display: none;"></pre>');
                 const stderrPre = $('<pre class="log-output" data-soft-wrap="container" data-log-type="stderr" style="display: none;"></pre>');
+
+                const $checkbox = $logConsole.find('.word-wrap-checkbox');
+                if ($checkbox.is(':checked')) {
+                    stdoutPre.addClass('soft-wrap');
+                    stderrPre.addClass('soft-wrap');
+                }
 
                 const selectedTab = $logConsole.find('[role="log-tab"][aria-selected="true"]');
                 const selectedLogType = selectedTab.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
@@ -407,7 +442,7 @@ $(document).ready(function() {
         }
     });
 
-    $('.word-wrap-checkbox').change(function() {
+    $(document).on('change', '.word-wrap-checkbox', function() {
         const $this = $(this);
         const $logConsole = $this.closest('.log-console');
         if ($this.is(':checked')) {
@@ -416,6 +451,7 @@ $(document).ready(function() {
             $logConsole.find('.log-output').removeClass('soft-wrap');
         }
     });
+    // Initialize state for checkboxes that exist at page load
     $('.word-wrap-checkbox').trigger("change");
 
     $('.toggle-label').click(function(e) {

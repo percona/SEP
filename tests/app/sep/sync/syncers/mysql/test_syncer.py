@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Test the app.sep.sync.syncers.mysql.syncer module."""
 
 import gzip
@@ -45,7 +60,9 @@ def created_service() -> CreatedService:
     created_service = CreatedServiceFactory.build()
     created_service.node_id = MOCK_CREATED_NODE_ID
     created_service.type = ServiceTypeEnum.MYSQL
-    created_service.node = CreatedNode(address="localhost", id=MOCK_CREATED_NODE_ID)
+    created_service.node = CreatedNode(
+        address="localhost", id=MOCK_CREATED_NODE_ID, node_name="localhost"
+    )
     created_service.port = 8000
     return created_service
 
@@ -97,6 +114,60 @@ class TestConfigAndTargets:
         mock_mysql_syncer.force_executor_host = "some_executor_host"
         target = await mock_mysql_syncer.get_task_target("127.0.0.1")
         assert target == "some_executor_host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_default_executor_fallback(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test fallback to default_executor_host when no name/address match (e.g. RDS)."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {
+            "on-prem-host": "192.168.1.10:3306",
+            "monitor-host": "10.0.0.5:3306",
+        }
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = "monitor-host"
+        target = await mock_mysql_syncer.get_task_target(
+            "rds-cluster.region.rds.amazonaws.com"
+        )
+        assert target == "monitor-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_first_available_when_no_default(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test first available host when no match and default_executor_host not set."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"first-host": "1.2.3.4:3306", "second-host": "5.6.7.8:3306"}
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = None
+        target = await mock_mysql_syncer.get_task_target("unknown-rds.endpoint.com")
+        assert target == "first-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_force_takes_precedence_over_default(
+        self, mock_mysql_syncer
+    ):
+        """Test force_executor_host overrides default_executor_host."""
+        mock_mysql_syncer.force_executor_host = "forced-host"
+        mock_mysql_syncer.default_executor_host = "default-host"
+        target = await mock_mysql_syncer.get_task_target("any-host")
+        assert target == "forced-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_fallback_when_default_not_in_available_hosts(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test fallback to first available when default_executor_host is stale."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"live-host": "10.0.0.1:3306", "other-host": "10.0.0.2:3306"}
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = "stale-host"
+        target = await mock_mysql_syncer.get_task_target("rds.example.com")
+        assert target == "live-host"
 
     def test_payload_path_points_to_payload_py(self, mock_mysql_syncer):
         """Test payload_path returns payload.py path."""
@@ -256,6 +327,7 @@ class TestPerformMethods:
                 node_id=created_node.services[0].node_id,
                 type=ServiceTypeEnum.MYSQL,
                 port=created_node.services[0].port,
+                name="extra-service",
             )
         )
         sync_service = mocker.patch.object(
@@ -475,8 +547,9 @@ class TestModelIteratorsAndGuards:
         """Test returning True only when node has a MySQL service."""
         node_with_mysql = Node(
             address="x",
+            name="x",
             services=[Service(type=ServiceTypeEnum.MYSQL, port=3306, name="s")],
         )
-        node_without_mysql = Node(address="y", services=[])
+        node_without_mysql = Node(address="y", name="y", services=[])
         assert mock_mysql_syncer.can_sync_node(node_with_mysql) is True
         assert mock_mysql_syncer.can_sync_node(node_without_mysql) is False

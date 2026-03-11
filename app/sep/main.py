@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -145,6 +145,11 @@ if {
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
 
+if {"snippets", "dipper"} & imported_plugins:
+    from app.sep.routes.artifacts import router as artifacts_router
+
+    sep_app.include_router(artifacts_router, prefix="/artifacts")
+
 if "snippets" in imported_plugins:
     sep_app.mount(
         "/static/snippets",
@@ -180,7 +185,7 @@ async def internal_error_handler(
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        name="error.html",
+        name="error.html.j2",
         context={
             "exception": "".join(format_exception(exc, limit=-1, chain=False)),
             **await get_default_context(request, user, base_url),
@@ -205,7 +210,7 @@ async def custom_404_handler(
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
-        name="404.html",
+        name="404.html.j2",
         context={
             "exception": exc,
             **await get_default_context(request, user, base_url),
@@ -256,7 +261,7 @@ async def login_form(
     """Display login form."""
     return templates.TemplateResponse(
         request=request,
-        name="login.html",
+        name="login.html.j2",
         context={
             "csrf_token": request.state.csrf_token,
             "messages": messages.get_messages(request),
@@ -313,7 +318,7 @@ async def read_root(
     """Homepage route."""
     return templates.TemplateResponse(
         request=request,
-        name="homepage.html",
+        name="homepage.html.j2",
         context=context,
     )
 
@@ -324,11 +329,15 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        sep_app,
+        "app.sep.main:sep_app",
         host=sep_settings.UVICORN_HOST,
         port=sep_settings.UVICORN_PORT,
         proxy_headers=sep_settings.PROXY_HEADERS,
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
+        reload=True,
+        reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
+        reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
+        reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
     )
