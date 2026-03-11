@@ -13,7 +13,7 @@ x-api-db-environment:
     DATABASE__HOST: sep-db
     DATABASE__PORT: 5432
     DATABASE__NAME: sep
-    CELERY__BROKER_URL: redis://redis:6379/0
+    CELERY__BROKER_URL: redis://:${SEP_REDIS_PASSWORD}@redis:6379/0
     CELERY__BEAT_DBURI: postgresql://postgres:postgres@sep-db:5432
     CELERY__BEAT_SCHEMA: sep
 
@@ -39,6 +39,9 @@ services:
 
   redis:
     image: docker.io/library/redis:7-alpine
+    command: redis-server --port 6379 --bind 127.0.0.1 --requirepass "${SEP_REDIS_PASSWORD}"
+    environment:
+      SEP_REDIS_PASSWORD: "${SEP_REDIS_PASSWORD}"
     expose:
       - 6379
 
