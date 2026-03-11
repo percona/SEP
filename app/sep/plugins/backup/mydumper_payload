@@ -1311,7 +1311,7 @@ class Upload(Backup):
         self.upload_provider = upload_provider(settings, logger)
         self.last_uploaded_number = 0
         self.last_to_upload_number = 0
-        log_path = self.logging_dir / "upload.log"
+        log_path = self.logging_dir / "upload-mydumper.log"
         self.log_stream = log_path.open("a")
         self.backup_type = BACKUP_TYPE
         self.encrypt = settings.get("ENCRYPT", True)
@@ -1437,7 +1437,7 @@ class Upload(Backup):
 
         :return: Status message of the upload process.
         """
-        logging_set_host(self.alias, "upload.log")
+        logging_set_host(self.alias, "upload-mydumper.log")
 
         if self.full_backup_path.is_dir():
             self._collect_paths()
