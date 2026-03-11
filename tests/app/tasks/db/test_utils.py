@@ -1,64 +1,105 @@
-"""Define tests for the app.tasks.db.utils module."""
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import json
+"""Define tests for the TaskExecutionRequestJSON type decorator."""
 
 import pytest
 
-from app.tasks.db.utils import json_deserialize
-from app.tasks.models import TaskExecutionRequest
+from app.tasks.models import TaskExecutionRequest, TaskExecutionRequestJSON
 
 
-class TestJsonDeserialize:
-    """Test the json_deserialize function."""
+@pytest.fixture(name="type_decorator")
+def type_decorator_fixture() -> TaskExecutionRequestJSON:
+    """Return a TaskExecutionRequestJSON instance for testing."""
+    return TaskExecutionRequestJSON()
 
-    def test_valid_task_execution_request(self):
-        """Assert valid TaskExecutionRequest JSON returns a model instance."""
+
+class TestProcessResultValue:
+    """Test the process_result_value method."""
+
+    def test_valid_task_execution_request(self, type_decorator):
+        """Assert valid dict returns a TaskExecutionRequest instance."""
         data = {"task": "backup", "target": "node-1"}
-        result = json_deserialize(json.dumps(data))
+        result = type_decorator.process_result_value(data, dialect=None)
         assert isinstance(result, TaskExecutionRequest)
         assert result.task == "backup"
         assert result.target == "node-1"
 
-    def test_valid_request_with_optional_fields(self):
-        """Assert valid JSON with optional fields returns a populated model."""
+    def test_valid_request_with_optional_fields(self, type_decorator):
+        """Assert dict with optional fields returns a populated model."""
         data = {
             "task": "backup",
             "target": "node-1",
             "meta": {"key": "value"},
             "payload": "some-payload",
         }
-        result = json_deserialize(json.dumps(data))
+        result = type_decorator.process_result_value(data, dialect=None)
         assert isinstance(result, TaskExecutionRequest)
         assert result.meta == {"key": "value"}
         assert result.payload == "some-payload"
 
-    def test_invalid_json_returns_dict(self):
-        """Assert JSON missing required fields returns a raw dict."""
+    def test_invalid_dict_returns_raw_value(self, type_decorator):
+        """Assert dict missing required fields returns the raw dict."""
         data = {"not_a_task": "value"}
-        result = json_deserialize(json.dumps(data))
+        result = type_decorator.process_result_value(data, dialect=None)
         assert isinstance(result, dict)
         assert result == data
 
-    def test_array_json_raises_type_error(self):
-        """Assert JSON array raises TypeError since it cannot be unpacked."""
+    def test_none_returns_none(self, type_decorator):
+        """Assert None input returns None."""
+        result = type_decorator.process_result_value(None, dialect=None)
+        assert result is None
+
+    def test_list_returns_raw_value(self, type_decorator):
+        """Assert list input returns the raw value."""
         data = [1, 2, 3]
-        with pytest.raises(TypeError):
-            json_deserialize(json.dumps(data))
+        result = type_decorator.process_result_value(data, dialect=None)
+        assert result == data
 
-    def test_nested_json_without_required_fields(self):
-        """Assert nested JSON without required fields returns a dict."""
+    def test_nested_dict_without_required_fields(self, type_decorator):
+        """Assert nested dict without required fields returns the raw dict."""
         data = {"nested": {"key": "value"}, "other": 42}
-        result = json_deserialize(json.dumps(data))
+        result = type_decorator.process_result_value(data, dialect=None)
         assert isinstance(result, dict)
         assert result == data
 
-    def test_partial_fields_returns_dict(self):
-        """Assert JSON with only one required field returns a dict."""
+    def test_partial_fields_returns_dict(self, type_decorator):
+        """Assert dict with only one required field returns the raw dict."""
         data = {"task": "backup"}
-        result = json_deserialize(json.dumps(data))
+        result = type_decorator.process_result_value(data, dialect=None)
         assert isinstance(result, dict)
 
-    def test_invalid_json_raises_error(self):
-        """Assert malformed JSON raises a json.JSONDecodeError."""
-        with pytest.raises(json.JSONDecodeError):
-            json_deserialize("not valid json")
+
+class TestProcessBindParam:
+    """Test the process_bind_param method."""
+
+    def test_none_returns_none(self, type_decorator):
+        """Assert None input returns None."""
+        result = type_decorator.process_bind_param(None, dialect=None)
+        assert result is None
+
+    def test_task_execution_request_returns_dict(self, type_decorator):
+        """Assert TaskExecutionRequest is serialized to a dict."""
+        request = TaskExecutionRequest(task="backup", target="node-1")
+        result = type_decorator.process_bind_param(request, dialect=None)
+        assert isinstance(result, dict)
+        assert result["task"] == "backup"
+        assert result["target"] == "node-1"
+
+    def test_dict_returns_dict(self, type_decorator):
+        """Assert plain dict passes through unchanged."""
+        data = {"key": "value"}
+        result = type_decorator.process_bind_param(data, dialect=None)
+        assert result == data

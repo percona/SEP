@@ -1,0 +1,7 @@
+name: MySQL Slow Queries
+service_type: mysql
+expression: rate(mysql_global_status_slow_queries[5m]) > 10
+default_threshold: 10.0
+severity: warning
+description: The rate of MySQL slow queries has exceeded the configured threshold.
+summary: High rate of slow queries on MySQL instance {{ $labels.instance }}
