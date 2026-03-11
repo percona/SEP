@@ -23,6 +23,7 @@ from pydantic import field_validator, ValidationError
 from app.core.alerts.models import AlertService, BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
 from app.core.config import BaseYamlSettings
+from app.core.utils.lazy import LazyProxy
 
 
 class AlertProviderEnum(Enum):
@@ -76,9 +77,16 @@ class AlertSettings(BaseYamlSettings):
         return providers
 
 
-alert_settings = AlertSettings()
-alert_service = AlertService(
-    providers=alert_settings.PROVIDERS,
-    source_prefix=alert_settings.SOURCE_PREFIX,
-    source_suffix=alert_settings.SOURCE_SUFFIX,
-)
+alert_settings: AlertSettings = LazyProxy(AlertSettings)
+
+
+def _create_alert_service() -> AlertService:
+    """Create an :class:`AlertService` from the current alert settings."""
+    return AlertService(
+        providers=alert_settings.PROVIDERS,
+        source_prefix=alert_settings.SOURCE_PREFIX,
+        source_suffix=alert_settings.SOURCE_SUFFIX,
+    )
+
+
+alert_service: AlertService = LazyProxy(_create_alert_service)

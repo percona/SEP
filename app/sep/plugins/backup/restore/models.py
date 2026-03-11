@@ -149,6 +149,8 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     :type stop_position: int | EmptyStrToNone
     :param use_sql_file: Path to SQL file to use for restore instead of backup files.
     :type use_sql_file: NonEmptyStr | EmptyStrToNone
+    :param binlog_restore_extra_args: Additional arguments for mysqlbinlog restore command.
+    :type binlog_restore_extra_args: NonEmptyStr | EmptyStrToNone
     """
 
     backup_type: BackupType
@@ -183,6 +185,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     stop_file: NonEmptyStr | EmptyStrToNone = None
     stop_position: int | EmptyStrToNone = None
     use_sql_file: NonEmptyStr | EmptyStrToNone = None
+    binlog_restore_extra_args: NonEmptyStr | EmptyStrToNone = None
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):
