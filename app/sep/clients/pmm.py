@@ -49,7 +49,7 @@ class AlertTemplate(BaseModel):
 
     name: str
     summary: str
-    template: str
+    template: str = ""
 
 
 class AlertRule(BaseModel):
@@ -474,9 +474,14 @@ class PMMRemoteAPI(RemoteAPI):
                 headers=self.alerting_headers,
             )
         else:
+            params = {}
+            if page_size:
+                params["page_size"] = page_size
+            if page_index:
+                params["page_index"] = page_index
             data = await self.get(
                 "/v1/alerting/templates",
-                params={"page_size": page_size, "page_index": page_index},
+                params=params,
                 headers=self.alerting_headers,
             )
         return [AlertTemplate.model_validate(t) for t in data.get("templates", [])]
