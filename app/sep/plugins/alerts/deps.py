@@ -89,12 +89,12 @@ async def get_alerts_index_context(
     """Assemble the template context for the alerts plugin index view.
 
     :param context: The default template context with user, plugins, etc.
-    :type context: dict[str, Any]
+    :type context: DefaultContext
     :param alert_templates: Alert templates grouped by service type.
-    :type alert_templates: Mapping[ServiceType, tuple[AlertTemplate, ...]]
-    :param pmm_present_names: Set of template names present in PMM, or `None`
+    :type alert_templates: AlertTemplatesDep
+    :param pmm_present_names: Set of template names present in PMM, or ``None``
         when PMM is unreachable.
-    :type pmm_present_names: set[str] | None
+    :type pmm_present_names: PMMPresentNamesDep
     :return: The updated context dictionary with alerts data.
     :rtype: dict[str, Any]
     """

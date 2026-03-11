@@ -46,13 +46,15 @@ class ServiceType(StrEnum):
         :return: The human-readable service type name.
         :rtype: str
         """
-        labels = {
-            "generic": "Generic",
-            "mysql": "MySQL",
-            "mongodb": "MongoDB",
-            "postgresql": "PostgreSQL",
-        }
-        return labels[self.value]
+        return _SERVICE_TYPE_LABELS[self.value]
+
+
+_SERVICE_TYPE_LABELS = {
+    "generic": "Generic",
+    "mysql": "MySQL",
+    "mongodb": "MongoDB",
+    "postgresql": "PostgreSQL",
+}
 
 
 class AlertSeverity(StrEnum):
