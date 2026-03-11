@@ -72,4 +72,74 @@ document.addEventListener('DOMContentLoaded', function() {
             if (cb) cb.addEventListener('change', updateSelectAll);
         });
     }
+
+    // Backup restore functionality
+    var restoreForm = document.getElementById('restore-form');
+    var restoreBtn = document.getElementById('restore-btn');
+    var feedback = document.getElementById('restore-feedback');
+    var radios = document.querySelectorAll('#restore-form input[type="radio"]');
+
+    radios.forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            if (restoreBtn) restoreBtn.disabled = false;
+        });
+    });
+
+    if (restoreForm) {
+        restoreForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            var selected = restoreForm.querySelector('input[name="backup_id"]:checked');
+            if (!selected) return;
+
+            if (!confirm('This will delete all existing alert rules and recreate them from the selected backup. Continue?')) {
+                return;
+            }
+
+            restoreBtn.disabled = true;
+            restoreBtn.textContent = 'Restoring\u2026';
+            feedback.textContent = '';
+            feedback.className = 'restore-feedback';
+
+            var formData = new FormData();
+            formData.append('backup_id', selected.value);
+
+            var csrfInput = restoreForm.querySelector('input[name="csrf-token"]');
+            var headers = {};
+            if (csrfInput) {
+                headers['X-CSRF-Token'] = csrfInput.value;
+            }
+
+            fetch('/alerts/restore', {
+                    method: 'POST',
+                    body: formData,
+                    headers: headers,
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data.status === 'success') {
+                        var d = data.details;
+                        feedback.className = 'restore-feedback feedback-success';
+                        feedback.textContent = 'Restore complete: ' +
+                            d.rules_deleted + ' rules deleted, ' +
+                            d.rules_created + ' created. ' +
+                            d.templates.created + ' templates created, ' +
+                            d.templates.skipped + ' skipped.';
+                    } else {
+                        feedback.className = 'restore-feedback feedback-error';
+                        feedback.textContent = 'Restore failed: ' + (data.message || 'Unknown error');
+                    }
+                })
+                .catch(function(err) {
+                    feedback.className = 'restore-feedback feedback-error';
+                    feedback.textContent = 'Restore failed: ' + err.message;
+                })
+                .finally(function() {
+                    restoreBtn.disabled = false;
+                    restoreBtn.textContent = 'Restore';
+                });
+        });
+    }
 });

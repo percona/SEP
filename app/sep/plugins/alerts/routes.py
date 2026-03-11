@@ -15,12 +15,20 @@
 
 """Define routes for the alerts plugin."""
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from typing import Annotated
+
+from fastapi import APIRouter, Form, Request, status
+from fastapi.exceptions import HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import IsAuthenticated
-from app.sep.plugins.alerts.deps import AlertsIndexContext
+from app.sep.deps import DefaultContext, IsAuthenticated, IsCsrfValidated, SessionDep
+from app.sep.plugins.alerts.crud import AlertBackupManager
+from app.sep.plugins.alerts.deps import (
+    AlertsIndexContext,
+    PMMAPIDep,
+    restore_from_backup,
+)
 
 router = APIRouter()
 templates = sep_settings.TEMPLATES
@@ -35,5 +43,45 @@ async def alerts_index(
     return templates.TemplateResponse(
         request=request,
         name="alerts/index.html.j2",
+        context=context,
+    )
+
+
+@router.post("/restore", dependencies=[IsAuthenticated, IsCsrfValidated])
+async def alerts_restore(
+    pmm_api: PMMAPIDep,
+    session: SessionDep,
+    backup_id: Annotated[int, Form()],
+) -> JSONResponse:
+    """Restore alert configuration from a selected backup."""
+    if pmm_api is None:
+        return JSONResponse(
+            {"error": "PMM is not configured"},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    backup = await AlertBackupManager.get_or_404(session, id=backup_id)
+    try:
+        results = await restore_from_backup(pmm_api, backup)
+    except (HTTPException, OSError) as exc:
+        detail = getattr(exc, "detail", str(exc))
+        return JSONResponse(
+            {"status": "error", "message": detail},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return JSONResponse({"status": "success", "details": results})
+
+
+@router.get("/backups", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def alerts_backup_list(
+    request: Request,
+    context: DefaultContext,
+    session: SessionDep,
+) -> HTMLResponse:
+    """Render the full backup history page."""
+    backups = await AlertBackupManager.list(session)
+    context["backups"] = backups
+    return templates.TemplateResponse(
+        request=request,
+        name="alerts/backup_history.html.j2",
         context=context,
     )

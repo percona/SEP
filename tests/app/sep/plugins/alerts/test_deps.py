@@ -146,12 +146,13 @@ class TestGetAlertsIndexContext:
         pmm_names = {"High CPU"}
 
         result = await get_alerts_index_context(
-            base_context, templates_by_service, pmm_names
+            base_context, templates_by_service, pmm_names, []
         )
 
         assert "all_templates" in result
         assert "service_types" in result
         assert "pmm_present_names" in result
+        assert "recent_backups" in result
         expected_template_count = sum(len(ts) for ts in templates_by_service.values())
         assert len(result["all_templates"]) == expected_template_count
         assert result["service_types"] == list(ServiceType)
@@ -165,7 +166,7 @@ class TestGetAlertsIndexContext:
         templates_by_service = {svc: () for svc in ServiceType}
 
         result = await get_alerts_index_context(
-            base_context, templates_by_service, None
+            base_context, templates_by_service, None, []
         )
 
         assert result["pmm_present_names"] is None

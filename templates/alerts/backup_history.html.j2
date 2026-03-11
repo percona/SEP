@@ -1,0 +1,59 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    Alert Backup History
+{%- endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/alerts.css') }}">
+{% endblock style %}
+{% block main %}
+    <p>
+        Browse all available alert configuration backups. Select one to
+        restore alert rules, templates, contact points, and notification
+        policies.
+    </p>
+    {% if backups %}
+        <table class="alerts-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Templates</th>
+                    <th>Rules</th>
+                    <th>Contact Points</th>
+                    <th>Folders</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for backup in backups %}
+                    <tr>
+                        <td>
+                            <time>{{ backup.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</time>
+                        </td>
+                        <td>{{ backup.metadata_.get('template_count', 0) }}</td>
+                        <td>{{ backup.metadata_.get('rule_count', 0) }}</td>
+                        <td>{{ backup.metadata_.get('contact_point_count', 0) }}</td>
+                        <td>{{ backup.metadata_.get('folder_count', 0) }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No backups available.</p>
+    {% endif %}
+{% endblock main %}
