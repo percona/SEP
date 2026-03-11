@@ -246,7 +246,7 @@ class TestMain:
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
         monkeypatch.chdir(tmp_path)
 
-        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_myloginpath.parse.side_effect = OSError(2, "No such file or directory")
         mock_socket.gethostbyname.return_value = "10.0.0.1"
         mock_socket.gethostname.return_value = "testhost"
         self._make_mock_connection(mock_pymysql.connect)
@@ -322,7 +322,7 @@ class TestMain:
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
         monkeypatch.chdir(tmp_path)
 
-        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_myloginpath.parse.side_effect = OSError(2, "No such file or directory")
         mock_socket.gethostbyname.return_value = "10.0.0.1"
         mock_socket.gethostname.return_value = "testhost"
         self._make_mock_connection(mock_pymysql.connect)
@@ -376,7 +376,7 @@ class TestMain:
         )
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
 
-        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_myloginpath.parse.side_effect = OSError(2, "No such file or directory")
         mock_socket.gethostbyname.return_value = "10.0.0.1"
         mock_socket.gethostname.return_value = "testhost"
         mock_pymysql.connect.side_effect = pymysql.MySQLError("Connection refused")
@@ -400,7 +400,7 @@ class TestMain:
         config_path = self._write_config(tmp_path, {"hosts": ["host1:3306"]})
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
 
-        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_myloginpath.parse.side_effect = OSError(2, "No such file or directory")
         mock_socket.gethostbyname.return_value = "10.0.0.1"
         mock_socket.gethostname.return_value = "testhost"
         mock_pymysql.connect.side_effect = pymysql.MySQLError("Connection refused")
@@ -440,7 +440,7 @@ class TestMain:
         )
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config_path)])
 
-        mock_myloginpath.parse.side_effect = Exception("no .mylogin.cnf")
+        mock_myloginpath.parse.side_effect = OSError(2, "No such file or directory")
         mock_socket.gethostbyname.return_value = local_ip
         mock_socket.gethostname.return_value = "testhost"
         self._make_mock_connection(mock_pymysql.connect)

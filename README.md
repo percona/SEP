@@ -441,7 +441,7 @@ Sync MySQL/MariaDB inventory (schemas and tables). Optional configuration under 
 - **`IGNORE_SCHEMAS`**: List of schema names to skip during sync (defaults typically include `sys`, `performance_schema`, `mysql`, `information_schema`).
 - **`DEFAULT_EXECUTOR_HOST`**: Nomad node name to use when the MySQL service host does not match any Nomad node. Set this when syncing **RDS**, **DBaaS**, or other remote MySQL instances: the sync payload runs on a Nomad client, so you must choose which client can reach the database. The value must match a **node name** (key) returned by **`/api/tasks/hosts/`**—not the node IP or address—otherwise task execution will fail. If unset, the first available Nomad host is used when there is no match.
 
-Credentials are read on the Nomad client from **`~/.my.cnf`** and **`~/.mylogin.cnf`** (client login path).
+Credentials are read on the Nomad client from **`~/.my.cnf`** and **`~/.mylogin.cnf`**. For each host the payload connects to, it looks up a login path **by matching the RDS host**: it tries a login path named like the host (e.g. **`host:port`** or **`host_port`** with colon replaced by underscore), then falls back to **`client`**. So for multiple RDS instances with different credentials, create a login path per host in **`~/.mylogin.cnf`** (e.g. **`mysql_config_editor set --login-path=rds-a.region.rds.amazonaws.com:3306 --user=... --password --host=rds-a.region.rds.amazonaws.com --port=3306`**); the payload will use the matching path automatically.
 
 Example for RDS/DBaaS:
 
