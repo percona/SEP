@@ -39,5 +39,5 @@ tail -50 /var/lib/proxysql/proxysql.log 2> /dev/null \
 
 echo ""
 echo "********* ProxySQL admin connectivity and runtime servers *********"
-mysql -u admin -h 127.0.0.1 -P 6032 $DEFAULTS_FILE -e "SELECT * FROM runtime_mysql_servers;" 2> /dev/null \
+mysql $DEFAULTS_FILE -u admin -h 127.0.0.1 -P 6032 -e "SELECT * FROM runtime_mysql_servers;" 2> /dev/null \
     || echo "Cannot connect to ProxySQL admin interface on port 6032."
