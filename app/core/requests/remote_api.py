@@ -338,9 +338,21 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :yield: Lines of response content as bytes.
         :rtype: AsyncGenerator[bytes, None]
         """
-        async with self._request(method, path, **kwargs) as response:
-            async for line in response.content:
-                yield line
+        self.logger.debug("Stream started path=%s method=%s", path, method)
+        try:
+            async with self._request(method, path, **kwargs) as response:
+                async for line in response.content:
+                    yield line
+            self.logger.debug("Stream ended normally path=%s", path)
+        except Exception as exc:
+            self.logger.warning(
+                "Stream error path=%s method=%s: %s",
+                path,
+                method,
+                exc,
+                exc_info=True,
+            )
+            raise
 
     @staticmethod
     @lru_cache(maxsize=8)
