@@ -324,6 +324,7 @@ def logging_setup(
     :param tostdout: If True, also log to stdout.
     :return: Configured logger instance.
     """
+    os.umask(0o007)
     real_logging_dir = Path(logging_dir).expanduser().resolve()
 
     if not real_logging_dir.is_dir():
