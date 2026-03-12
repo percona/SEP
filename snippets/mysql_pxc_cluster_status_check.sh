@@ -28,7 +28,6 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Cluster status *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_status';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_connected';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_size';"
@@ -36,31 +35,26 @@ $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_ready';"
 
 echo ""
 echo "********* Local node state *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_local_state_comment';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_local_state';"
 
 echo ""
 echo "********* Cluster member UUIDs *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_state_uuid';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_local_state_uuid';"
 
 echo ""
 echo "********* Incoming addresses (visible cluster members) *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_incoming_addresses';"
 
 echo ""
 echo "********* MySQL service status *********"
-echo ""
 systemctl status mysql --no-pager 2> /dev/null \
     || systemctl status mysqld --no-pager 2> /dev/null \
     || echo "MySQL service status not available."
 
 echo ""
 echo "********* Recent MySQL error log (wsrep entries) *********"
-echo ""
 ERROR_LOG=$($MYSQL -N -e "SELECT @@log_error;" 2> /dev/null) || true
 if [ -n "${ERROR_LOG:-}" ] && [ -f "$ERROR_LOG" ]; then
     grep -i "wsrep\|quorum\|non-primary\|split.brain" "$ERROR_LOG" | tail -30

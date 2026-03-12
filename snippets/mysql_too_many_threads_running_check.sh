@@ -28,20 +28,16 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Thread status *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Threads_%';"
 
 echo ""
 echo "********* Active (non-sleeping) processlist *********"
-echo ""
 $MYSQL -e "SELECT * FROM information_schema.processlist WHERE command != 'Sleep' ORDER BY time DESC;"
 
 echo ""
 echo "********* InnoDB status *********"
-echo ""
 $MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | head -150 || echo "Cannot retrieve InnoDB status."
 
 echo ""
 echo "********* System load *********"
-echo ""
 uptime

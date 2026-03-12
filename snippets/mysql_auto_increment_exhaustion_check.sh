@@ -28,7 +28,6 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Auto-increment usage by table (sorted by ratio) *********"
-echo ""
 $MYSQL -e "
 SELECT
     TABLE_SCHEMA AS db_name,

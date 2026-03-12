@@ -28,10 +28,8 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Wsrep local state *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_local_state_comment';"
 
 echo ""
 echo "********* Wsrep desync variable *********"
-echo ""
 $MYSQL -e "SELECT @@global.wsrep_desync;"

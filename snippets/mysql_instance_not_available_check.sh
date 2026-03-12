@@ -28,24 +28,20 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* MySQL service status *********"
-echo ""
 systemctl status mysqld --no-pager 2> /dev/null \
     || systemctl status mysql --no-pager 2> /dev/null \
     || echo "MySQL service not found."
 
 echo ""
 echo "********* MySQL processes *********"
-echo ""
 ps -ef | grep "[m]ysqld" || echo "No mysqld processes found."
 
 echo ""
 echo "********* MySQL uptime (if accessible) *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Uptime';" 2> /dev/null || echo "Cannot connect to MySQL."
 
 echo ""
 echo "********* MySQL error log (last 50 lines) *********"
-echo ""
 ERROR_LOG=$($MYSQL -N -e "SELECT @@log_error;" 2> /dev/null) || true
 if [ -n "${ERROR_LOG:-}" ] && [ -f "$ERROR_LOG" ]; then
     tail -50 "$ERROR_LOG"
@@ -61,13 +57,11 @@ fi
 
 echo ""
 echo "********* OOM killer events (dmesg) *********"
-echo ""
 dmesg -T 2> /dev/null | grep -i "oom\|out of memory\|killed process" | tail -10 \
     || echo "No OOM events found or dmesg not accessible."
 
 echo ""
 echo "********* System log errors *********"
-echo ""
 tail -30 /var/log/syslog 2> /dev/null | grep -i "mysql\|oom\|kill" \
     || tail -30 /var/log/messages 2> /dev/null | grep -i "mysql\|oom\|kill" \
     || echo "No relevant entries in system logs."

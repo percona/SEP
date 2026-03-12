@@ -28,6 +28,5 @@ fi
 PROXYSQL="mysql -u admin -h 127.0.0.1 -P 6032 $DEFAULTS_FILE"
 
 echo "********* ProxySQL runtime server status *********"
-echo ""
 $PROXYSQL -e "SELECT * FROM runtime_mysql_servers;" 2> /dev/null \
     || echo "Cannot connect to ProxySQL admin interface."

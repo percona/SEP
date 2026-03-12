@@ -28,5 +28,4 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* InnoDB status (LATEST DETECTED DEADLOCK section) *********"
-echo ""
 $MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null || echo "Cannot retrieve InnoDB status."

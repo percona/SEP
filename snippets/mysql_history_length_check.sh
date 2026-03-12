@@ -28,22 +28,18 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* InnoDB History List Length *********"
-echo ""
 $MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | grep -i "history list length" \
     || echo "Cannot retrieve InnoDB status."
 
 echo ""
 echo "********* Purge thread configuration *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL VARIABLES LIKE 'innodb_purge_threads';"
 
 echo ""
 echo "********* Long-running active queries *********"
-echo ""
 $MYSQL -e "SELECT * FROM information_schema.processlist WHERE command != 'Sleep' ORDER BY time DESC LIMIT 20;"
 
 echo ""
 echo "********* Open transactions (including sleeping) *********"
-echo ""
 $MYSQL -e "SELECT * FROM information_schema.innodb_trx ORDER BY trx_started;" 2> /dev/null \
     || echo "Cannot query innodb_trx."

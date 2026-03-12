@@ -28,7 +28,6 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Replica status *********"
-echo ""
 if ! $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
     $MYSQL -e 'SHOW REPLICA STATUS\G'
 else
@@ -37,5 +36,4 @@ fi
 
 echo ""
 echo "********* Processlist *********"
-echo ""
 $MYSQL -e "SHOW PROCESSLIST;" 2> /dev/null || echo "Cannot show processlist."

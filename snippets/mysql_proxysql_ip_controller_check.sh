@@ -12,12 +12,10 @@
 set -euo pipefail
 
 echo "********* ProxySQL IP controller process *********"
-echo ""
 ps -ef | grep -i "[p]roxysql_ip_con" || echo "No proxysql_ip_controller processes found."
 
 echo ""
 echo "********* ProxySQL IP controller logs *********"
-echo ""
 for logfile in ~/.local/percona/proxysql_ip_controller_*.log; do
     if [ -f "$logfile" ]; then
         echo "--- $(basename "$logfile") (last 50 lines) ---"
@@ -28,7 +26,6 @@ done || echo "No proxysql_ip_controller logs found in ~/.local/percona/"
 
 echo ""
 echo "********* GAS tools version *********"
-echo ""
 if [ -f /home/percona/bin/gas-tools ]; then
     /home/percona/bin/gas-tools 2> /dev/null | head -1 || true
 else
@@ -36,6 +33,5 @@ else
 fi
 
 echo ""
-echo "********* Crontab entries for proxysql_ip_controller *********"
-echo ""
+echo "********* crontab entries for proxysql_ip_controller *********"
 crontab -l 2> /dev/null | grep -i "proxysql_ip_con" || echo "No proxysql_ip_controller crontab entries found."

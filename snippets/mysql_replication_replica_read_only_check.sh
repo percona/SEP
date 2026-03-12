@@ -28,7 +28,6 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Replica status *********"
-echo ""
 if ! $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
     $MYSQL -e 'SHOW REPLICA STATUS\G'
 else
@@ -37,12 +36,10 @@ fi
 
 echo ""
 echo "********* Server UUID and GTID info *********"
-echo ""
 $MYSQL -e "SELECT @@server_uuid;" 2> /dev/null || true
 $MYSQL -e "SELECT @@gtid_mode;" 2> /dev/null || true
 $MYSQL -e "SELECT @@global.gtid_executed\G" 2> /dev/null || true
 
 echo ""
 echo "********* Read-only status *********"
-echo ""
 $MYSQL -e "SELECT @@global.read_only, @@global.super_read_only;" 2> /dev/null || true

@@ -28,28 +28,23 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Connection limits *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL VARIABLES LIKE 'max_connections';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Threads_connected';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Max_used_connections';"
 
 echo ""
 echo "********* Active (non-sleeping) processlist *********"
-echo ""
 $MYSQL -e "SELECT * FROM information_schema.processlist WHERE command != 'Sleep' ORDER BY time DESC;"
 
 echo ""
 echo "********* Connection sources summary *********"
-echo ""
 $MYSQL -e "SELECT user, host, db, command, COUNT(*) AS cnt FROM information_schema.processlist GROUP BY user, host, db, command ORDER BY cnt DESC;"
 
 echo ""
 echo "********* InnoDB status (transactions section) *********"
-echo ""
 $MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | head -100 || echo "Cannot retrieve InnoDB status."
 
 echo ""
 echo "********* Threads waiting for locks *********"
-echo ""
 $MYSQL -e "SELECT * FROM information_schema.processlist WHERE state LIKE '%lock%' ORDER BY time DESC;" 2> /dev/null \
     || echo "No threads waiting for locks."

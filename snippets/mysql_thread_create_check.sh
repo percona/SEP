@@ -28,21 +28,17 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Thread cache configuration *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL VARIABLES LIKE 'thread_cache_size';"
 
 echo ""
 echo "********* Thread status *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Threads_%';"
 
 echo ""
 echo "********* Connection count *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Connections';"
 
 echo ""
 echo "********* Aborted clients (connection drops) *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Aborted_clients';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Aborted_connects';"

@@ -28,18 +28,15 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Read-only settings *********"
-echo ""
 $MYSQL -e "SELECT @@global.read_only AS read_only, @@global.super_read_only AS super_read_only;"
 
 echo ""
 echo "********* Server identity and uptime *********"
-echo ""
 $MYSQL -e '\s' 2> /dev/null | head -10 || true
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Uptime';"
 
 echo ""
 echo "********* Replication status (verify this is a primary) *********"
-echo ""
 if ! $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
     REPL=$($MYSQL -N -e 'SHOW REPLICA STATUS\G' 2> /dev/null) || true
 else
@@ -54,6 +51,5 @@ fi
 
 echo ""
 echo "********* my.cnf read_only setting *********"
-echo ""
 grep -i "read_only" /etc/mysql/my.cnf /etc/my.cnf /etc/mysql/mysql.conf.d/*.cnf 2> /dev/null \
     || echo "read_only not found in common config files."

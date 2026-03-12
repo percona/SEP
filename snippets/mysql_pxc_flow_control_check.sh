@@ -28,7 +28,6 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* Flow control status *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_flow_control_paused';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_flow_control_paused_ns';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_flow_control_sent';"
@@ -36,23 +35,19 @@ $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_flow_control_recv';"
 
 echo ""
 echo "********* Receive queue status *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_local_recv_queue%';"
 
 echo ""
 echo "********* Applier thread configuration *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL VARIABLES LIKE 'wsrep_slave_threads';"
 
 echo ""
 echo "********* Cluster state *********"
-echo ""
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_local_state_comment';"
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_size';"
 
 echo ""
-echo "********* System IO and CPU *********"
-echo ""
+echo "********* System I/O and CPU *********"
 uptime
 echo ""
 if command -v iostat &> /dev/null; then
