@@ -21,6 +21,7 @@ import io
 import json
 import logging
 import tarfile
+import time
 from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
@@ -127,14 +128,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Jobs. Defaults to True.
     :type minify_payload: bool
     :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
-            Defaults to 10.
+        Defaults to 60 to avoid premature termination on large log files.
     :type log_socket_read_timeout: int
     """
 
     secure: bool = False
     timeout: int = 10
     minify_payload: bool = True
-    log_socket_read_timeout: int = 10
+    log_socket_read_timeout: int = 60
 
     @cached_property
     def backend(self) -> Nomad:
@@ -730,6 +731,53 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         logger.error(valid[0].text)
         raise HTTPBadRequestException("Invalid job specification")
 
+    def _log_stream_exception(
+        self,
+        kind: str,
+        alloc_id: str,
+        step: str,
+        log_type: TaskLogType,
+        stream_start: float | None,
+        params: dict[str, Any],
+        start_offset: int,
+    ) -> None:
+        """Log stream exception with context. kind is 'timeout', 'cancelled', or 'client'."""
+        elapsed = time.monotonic() - stream_start if stream_start is not None else 0
+        offset = params.get("offset", start_offset)
+        if kind == "timeout":
+            logger.warning(
+                "Nomad log stream sock_read timeout alloc_id=%s step=%s log_type=%s "
+                "offset=%s elapsed=%.2fs timeout=%ss. "
+                "Consider increasing TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT (current: %s)",
+                alloc_id,
+                step,
+                log_type,
+                offset,
+                elapsed,
+                self.log_socket_read_timeout,
+                self.log_socket_read_timeout,
+            )
+        elif kind == "cancelled":
+            logger.info(
+                "Nomad log stream cancelled alloc_id=%s step=%s log_type=%s "
+                "offset=%s elapsed=%.2fs",
+                alloc_id,
+                step,
+                log_type,
+                offset,
+                elapsed,
+            )
+        else:
+            logger.exception(
+                "Error fetching Nomad logs (ClientError) alloc_id=%s step=%s "
+                "log_type=%s offset=%s elapsed=%.2fs",
+                alloc_id,
+                step,
+                log_type,
+                offset,
+                elapsed,
+            )
+
     async def _push_logs_to_queue(
         self,
         # TODO(yan): Use Pydantic model for alloc
@@ -755,7 +803,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type start_offset: int
         """
         timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
-        params = {
+        params: dict[str, Any] = {
             "task": step,
             "type": log_type,
             "follow": "true",
@@ -764,75 +812,146 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         state = "running"
         while state == "running":
             alloc_id = alloc["ID"]
+            stream_start_ref: list[float | None] = [None]
             try:
-                logger.debug("Requesting logs for %s with params %s", alloc_id, params)
-                async with self._request(
-                    "GET",
-                    f"/v1/client/fs/logs/{alloc_id}",
+                state, alloc = await self._consume_nomad_log_stream(
+                    alloc=alloc,
+                    step=step,
+                    log_type=log_type,
+                    queue=queue,
                     params=params,
-                    timeout=timeout,
-                ) as response:
-                    logger.debug("Log response status: %s", response.status)
-
-                    if (
-                        response.status == status.HTTP_404_NOT_FOUND
-                        and alloc["TaskStates"][step]["StartedAt"] is None
-                    ):
-                        logger.debug(
-                            "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
-                            step,
-                            alloc_id,
-                            self.wait_interval,
-                        )
-                        await asyncio.sleep(self.wait_interval)
-                        continue
-                    response.raise_for_status()
-                    empty_data_count = 0
-                    raw_data = b""
-                    async for chunk, _ in response.content.iter_chunks():
-                        raw_data += chunk
-                        if b"}" in chunk:
-                            data = json.loads(raw_data)
-                            raw_data = b""
-                            params["offset"] = offset = data.get(
-                                "Offset", params["offset"]
-                            )
-                            if data and (msg := data.get("Data")):
-                                empty_data_count = 0
-                                decoded_msg = b64decode_str(msg)
-                                if step in ("run-script", "step1"):
-                                    decoded_msg = anonymize_text(
-                                        decoded_msg, anonymize_entities or set()
-                                    )
-                                await queue.put(
-                                    TaskLog(
-                                        step=step,
-                                        type=log_type,
-                                        msg=decoded_msg,
-                                        offset=offset,
-                                    )
-                                )
-                            elif empty_data_count >= self.log_socket_read_timeout:
-                                logger.debug(
-                                    "No data received for %s seconds, rechecking job status...",
-                                    self.log_socket_read_timeout,
-                                )
-                                alloc = self.get_last_allocation(
-                                    alloc["JobID"], alloc["EvalID"]
-                                )
-                                state = alloc["TaskStates"][step]["State"]
-                                break
-                            else:
-                                empty_data_count += 1
-            except ClientError:
-                logger.exception(
-                    "An error occurred while fetching %s logs for %s (%s)",
-                    log_type,
-                    step,
+                    client_timeout=timeout,
+                    anonymize_entities=anonymize_entities,
+                    stream_start_ref=stream_start_ref,
+                    first_chunk_ref=[False],
+                )
+            except TimeoutError:
+                self._log_stream_exception(
+                    "timeout",
                     alloc_id,
+                    step,
+                    log_type,
+                    stream_start_ref[0],
+                    params,
+                    start_offset,
+                )
+                break
+            except asyncio.CancelledError:
+                self._log_stream_exception(
+                    "cancelled",
+                    alloc_id,
+                    step,
+                    log_type,
+                    stream_start_ref[0],
+                    params,
+                    start_offset,
+                )
+                raise
+            except ClientError:
+                self._log_stream_exception(
+                    "client",
+                    alloc_id,
+                    step,
+                    log_type,
+                    stream_start_ref[0],
+                    params,
+                    start_offset,
                 )
                 break
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
+
+    async def _consume_nomad_log_stream(
+        self,
+        alloc: dict[str, Any],
+        step: str,
+        log_type: TaskLogType,
+        queue: asyncio.Queue,
+        params: dict[str, Any],
+        client_timeout: ClientTimeout,
+        anonymize_entities: set[PIIEntity] | None,
+        stream_start_ref: list[float | None],
+        first_chunk_ref: list[bool],
+    ) -> tuple[str, dict[str, Any]]:
+        """Run one Nomad log stream request; return (state, alloc)."""
+        alloc_id = alloc["ID"]
+        logger.debug("Requesting logs for %s with params %s", alloc_id, params)
+        async with self._request(
+            "GET",
+            f"/v1/client/fs/logs/{alloc_id}",
+            params=params,
+            timeout=client_timeout,
+        ) as response:
+            logger.debug("Log response status: %s", response.status)
+            if (
+                response.status == status.HTTP_404_NOT_FOUND
+                and alloc["TaskStates"][step]["StartedAt"] is None
+            ):
+                logger.debug(
+                    "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
+                    step,
+                    alloc_id,
+                    self.wait_interval,
+                )
+                await asyncio.sleep(self.wait_interval)
+                return ("running", alloc)
+            response.raise_for_status()
+            stream_start_ref[0] = time.monotonic()
+            logger.info(
+                "Nomad log stream started alloc_id=%s step=%s log_type=%s "
+                "sock_read_timeout=%ss offset=%s",
+                alloc_id,
+                step,
+                log_type,
+                self.log_socket_read_timeout,
+                params["offset"],
+            )
+            empty_data_count = 0
+            raw_data = b""
+            async for chunk, _ in response.content.iter_chunks():
+                raw_data += chunk
+                if b"}" not in chunk:
+                    continue
+                data = json.loads(raw_data)
+                raw_data = b""
+                params["offset"] = offset = data.get("Offset", params["offset"])
+                if data and (msg := data.get("Data")):
+                    empty_data_count = 0
+                    if not first_chunk_ref[0]:
+                        first_chunk_ref[0] = True
+                        elapsed = (
+                            time.monotonic() - stream_start_ref[0]
+                            if stream_start_ref[0] is not None
+                            else 0
+                        )
+                        logger.debug(
+                            "First log chunk received alloc_id=%s step=%s "
+                            "log_type=%s offset=%s elapsed=%.2fs",
+                            alloc_id,
+                            step,
+                            log_type,
+                            offset,
+                            elapsed,
+                        )
+                    decoded_msg = b64decode_str(msg)
+                    if step in ("run-script", "step1"):
+                        decoded_msg = anonymize_text(
+                            decoded_msg, anonymize_entities or set()
+                        )
+                    await queue.put(
+                        TaskLog(
+                            step=step, type=log_type, msg=decoded_msg, offset=offset
+                        )
+                    )
+                elif empty_data_count >= self.log_socket_read_timeout:
+                    logger.debug(
+                        "No data received for %s seconds, rechecking job status...",
+                        self.log_socket_read_timeout,
+                    )
+                    alloc = self.get_last_allocation(alloc["JobID"], alloc["EvalID"])
+                    return (alloc["TaskStates"][step]["State"], alloc)
+                else:
+                    empty_data_count += 1
+        return ("running", alloc)
 
     async def stream_logs(
         self,
