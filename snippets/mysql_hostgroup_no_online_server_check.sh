@@ -25,7 +25,7 @@ elif [[ "${1:-}" == --defaults-file ]]; then
     shift 2
 fi
 
-PROXYSQL="mysql -u admin -h 127.0.0.1 -P 6032 $DEFAULTS_FILE"
+PROXYSQL="mysql $DEFAULTS_FILE -u admin -h 127.0.0.1 -P 6032"
 
 echo "********* ProxySQL runtime server status *********"
 $PROXYSQL -e "SELECT * FROM runtime_mysql_servers;" 2> /dev/null \
