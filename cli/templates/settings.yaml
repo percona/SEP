@@ -1,0 +1,102 @@
+production_docker:
+  ALLOW_CONCURRENT_SESSIONS: true
+  ALLOWED_HOSTS:
+    - "*"
+  AUTH_USER_MODEL: app.models.CasdoorUser
+  BACKEND_CORS_ORIGINS:
+    - https://127.0.0.1:8444
+  CASDOOR:
+    ALLOWED_ISSUERS: '*'
+    APPLICATION_NAME: sep-app
+    CERTIFICATE_PATH: /app/jwt.pem
+    CLIENT_ID: ${CASDOOR_SEP_CLIENT_ID}
+    CLIENT_SECRET: ${CASDOOR_SEP_CLIENT_SECRET}
+    ENDPOINT: http://casdoor:8000
+    FRONT_ENDPOINT: //:9999
+    ORGANIZATION_NAME: sep
+  CELERY:
+    BEAT_DBURI: postgresql://postgres:${SEP_BACKEND_DB_PASSWORD}@db:5432
+    BEAT_SCHEMA: sep
+    BROKER_URL: redis://:${SEP_REDIS_PASSWORD}@redis:6379/0
+    WORKER_STATE_DB: celery_worker_state
+  DATABASE:
+    ENGINE: postgresql
+    HOST: db
+    NAME: sep
+    PASSWORD: ${SEP_BACKEND_DB_PASSWORD}
+    PORT: 5432
+    USER: postgres
+  INVENTORY:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: db
+      NAME: sep
+      PASSWORD: ${SEP_BACKEND_DB_PASSWORD}
+      PORT: 5432
+      USER: postgres
+    SSL_CERTFILE: /app/cert.pem
+    SSL_KEYFILE: /app/key.pem
+  SEP:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: db
+      NAME: sep
+      PASSWORD: ${SEP_BACKEND_DB_PASSWORD}
+      PORT: 5432
+      USER: postgres
+    INVENTORY_ENDPOINT: https://inventory_api:9001
+    OAUTH:
+      REDIRECT_URI: /oauth/callback
+    SNIPPETS:
+      FILTER_EXTENSIONS:
+        - .sh
+      SYNC_INTERVAL: 60 seconds
+    PLUGINS:
+      - {'NAME': 'Inventory', 'MODULE_NAME': 'inventory', 'URI_PATH': '/inventory', 'CSS_CLASS': 'inventory'}
+${SEP_PLUGINS_SCHEMA_CHANGE_DISABLE}      - {'NAME': 'Schema Change', 'MODULE_NAME': 'alters', 'URI_PATH': '/alters', 'CSS_CLASS': 'alters'}
+${SEP_PLUGINS_ARCHIVE_DISABLE}      - {'NAME': 'Archive', 'MODULE_NAME': 'archives', 'URI_PATH': '/archives', 'CSS_CLASS': 'archive'}
+${SEP_PLUGINS_BACKUPS_DISABLE}      - {'NAME': 'Backups', 'MODULE_NAME': 'backup', 'URI_PATH': '/backups', 'CSS_CLASS': 'backups'}
+${SEP_PLUGINS_MONGODB_BACKUPS_DISABLE}      - {'NAME': 'MongoDB Backups', 'MODULE_NAME': 'backup_mongo', 'URI_PATH': '/backup_mongo', 'CSS_CLASS': 'backup_mongo'}
+${SEP_PLUGINS_CHECKSUMS_DISABLE}      - {'NAME': 'Checksums', 'MODULE_NAME': 'checksums', 'URI_PATH': '/checksums', 'CSS_CLASS': 'checksums'}
+${SEP_PLUGINS_SNIPPETS_DISABLE}      - {'NAME': 'Snippet Manager', 'MODULE_NAME': 'snippets', 'URI_PATH': '/snippets', 'CSS_CLASS': 'snippets'}
+${SEP_PLUGINS_SNIPPETS_DISABLE}      - {'NAME': 'Collect Diagnostic Data', 'MODULE_NAME': 'atw', 'URI_PATH': '/atw', 'CSS_CLASS': 'atw'}
+${SEP_PLUGINS_TASK_MANAGER_DISABLE}      - {'NAME': 'Task Manager', 'MODULE_NAME': 'tasks', 'URI_PATH': '/tasks', 'CSS_CLASS': 'tasks'}
+    PROXY_HEADERS: true
+    SSL_CERTFILE: /app/cert.pem
+    SSL_KEYFILE: /app/key.pem
+    SECURITY_HEADERS:
+      CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+        - /api/inventory/docs
+        - /api/tasks/docs
+    SESSION:
+      COOKIE_NAME: casdoorToken
+      SECURE: true
+    PMM:
+      ENDPOINT: https://server.global.nomad:${SEP_PMM_PORT}
+      VERIFY_SSL: false
+      FRONTEND: ${SEP_PMM_FRONTEND}
+      API_KEY: ${SEP_PMM_URL_AUTH_TOKEN}
+    SYNCERS:
+      - SYNCER: PMMSyncer
+      - SYNCER: MySQLSyncer
+        IGNORE_SCHEMAS:
+          - sys
+          - performance_schema
+          - mysql
+          - information_schema
+    TASKS_ENDPOINT: https://tasks_api:9002
+  SSL_CAFILE: /app/ca.pem
+  TASKS:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: db
+      NAME: sep
+      PASSWORD: ${SEP_BACKEND_DB_PASSWORD}
+      PORT: 5432
+      USER: postgres
+    NOMAD:
+      ENDPOINT: https://${SEP_PMM_URL_AUTH_ACCOUNT}@server.global.nomad:${SEP_PMM_PORT}/nomad
+      SECURE: true
+      VERIFY_SSL: false
+    SSL_CERTFILE: /app/cert.pem
+    SSL_KEYFILE: /app/key.pem

@@ -1,0 +1,258 @@
+---
+# vim: noai:noet
+
+x-api-environment:
+  environment: &api-environment
+    FASTAPI_ENV: production_docker
+    ENV_FILE: /dev/null
+    SETTINGS_FILE: /tmp/settings.yaml
+
+x-api-db-environment:
+  environment: &api-db-environment
+    <<: *api-environment
+    DATABASE__ENGINE: postgresql
+
+x-dns-extra-hosts:
+  extra_hosts: &dns-extra-hosts
+    - "server.global.nomad:${HOST_IP:-host-gateway}"
+    - "host.docker.internal:${HOST_IP:-host-gateway}"
+
+x-sep-volumes:
+  volumes: &sep-secrets
+    - ${INSTALL_DIR:-.}/certs/sep_token_jwt_key.pem:/app/jwt.pem:ro,z
+    - ${INSTALL_DIR:-.}/certs/sep-ca.pem:/app/ca.pem:ro,z
+    - ${INSTALL_DIR:-.}/certs/all-in-one-cert.pem:/app/cert.pem:ro,z
+    - ${INSTALL_DIR:-.}/certs/all-in-one-cert-key.pem:/app/key.pem:ro,z
+    - ${INSTALL_DIR:-.}/settings.yaml:/tmp/settings.yaml:ro,z
+
+networks:
+  pmm:
+    enable_ipv6: false
+    enable_ipv4: true
+
+  app:
+    enable_ipv6: false
+    enable_ipv4: true
+    attachable: false
+
+services:
+#---PMM---#
+  pmm:
+    image: docker.io/percona/pmm-server:3
+    volumes:
+      - pmm-data:/srv
+    ports:
+      - ${SEP_PMM_PORT}:8443
+      - 4647:4647
+    environment:
+      PMM_DEBUG: 0
+      PMM_ENABLE_ALERTING: 1
+      PMM_ENABLE_BACKUP_MANAGEMENT: 0
+      PMM_ENABLE_NOMAD: 1
+      PMM_ENABLE_TELEMETRY: 0
+      PMM_ENABLE_UPDATES: 0
+      PMM_PUBLIC_ADDRESS: ${SEP_PMM_PUBLIC_ADDRESS}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+    extra_hosts: *dns-extra-hosts
+    restart: always
+    networks:
+      - pmm
+
+#---PMM---#
+  casdoor:
+    image: docker.io/casbin/casdoor-all-in-one
+    volumes:
+      - casdoor-data:/var/lib/mysql:z,rw
+      - ${INSTALL_DIR:-.}/casdoor_init.json:/init_data.json:ro,z
+    expose:
+      - 8000
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+
+  db:
+    image: docker.io/library/postgres:16
+    environment:
+      POSTGRES_DB: sep
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${SEP_BACKEND_DB_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    volumes:
+      - sep-data:/var/lib/postgresql/data:z,rw
+    expose:
+      - 5432
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres", "-d", "sep" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    command: redis-server --port 6379 --requirepass "${SEP_REDIS_PASSWORD}"
+    expose:
+      - 6379
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 ping | grep -q 'NOAUTH Authentication required'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment:
+      SEP_REDIS_PASSWORD: "${SEP_REDIS_PASSWORD}"
+
+  celery_worker:
+    image: ${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}
+    user: "1001:1001"
+    entrypoint: celery
+    command: -A app.celery worker --loglevel=info
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      casdoor:
+        condition: service_started
+    environment: *api-db-environment
+    volumes: *sep-secrets
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+    healthcheck:
+      test: [ "CMD", "celery", "-A", "app.celery", "inspect", "ping", "-t", "3" ]
+      interval: 15s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  celery_beat:
+    image: ${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}
+    user: "1001:1001"
+    entrypoint: celery
+    command: -A app.celery beat --loglevel=info --scheduler=sqlalchemy
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      casdoor:
+        condition: service_started
+    environment: *api-db-environment
+    volumes: *sep-secrets
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+    healthcheck:
+      test: [ "CMD", "celery", "-A", "app.celery", "status", "-t", "3" ]
+      interval: 15s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  inventory_api:
+    image: ${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}
+    user: "1001:1001"
+    entrypoint: /bin/sh
+    command: -c "alembic --name=inventory upgrade head && python -m app.inventory.main"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *api-db-environment
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: 9001
+    expose:
+      - 9001
+    volumes: *sep-secrets
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+
+  tasks_api:
+    image: ${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}
+    user: "1001:1001"
+    entrypoint: /bin/sh
+    command: -c "alembic --name=tasks upgrade head && python -m app.tasks.main"
+    depends_on:
+      celery_worker:
+        condition: service_healthy
+      celery_beat:
+        condition: service_healthy
+    environment:
+      <<: *api-db-environment
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: 9002
+    expose:
+      - 9002
+    volumes: *sep-secrets
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+
+  app:
+    image: ${SEP_IMAGE_NAME}:${SEP_IMAGE_TAG}
+    user: "1001:1001"
+    entrypoint: /bin/sh
+    command: -c "alembic --name=sep upgrade head && python -m app.sep.main"
+    depends_on:
+      casdoor:
+        condition: service_started
+      celery_worker:
+        condition: service_healthy
+      celery_beat:
+        condition: service_healthy
+      inventory_api:
+        condition: service_started
+      tasks_api:
+        condition: service_started
+    environment:
+      <<: *api-db-environment
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: 9000
+    expose:
+      - 9000
+    volumes: *sep-secrets
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+
+  nginx:
+    image: docker.io/library/nginx:1.27-alpine
+    ports:
+      - "${NGINX_HTTP_PORT:-${SEP_HTTP_PORT}}:8080"
+      - "${NGINX_HTTPS_PORT:-${SEP_HTTPS_PORT}}:8444"
+      - "${CASDOOR_PORT:-9999}:9999"
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - ${INSTALL_DIR:-.}/nginx.conf:/etc/nginx/conf.d/00-sep.conf:ro,z
+      - ${INSTALL_DIR:-.}/certs/sep-ca.pem:/etc/nginx/sep-ca.pem:ro,z
+      - ${INSTALL_DIR:-.}/certs/all-in-one-cert.pem:/etc/nginx/sep-cert.pem:ro,z
+      - ${INSTALL_DIR:-.}/certs/all-in-one-cert-key.pem:/etc/nginx/sep-key.pem:ro,z
+    extra_hosts: *dns-extra-hosts
+    networks:
+      - app
+    restart: always
+
+volumes:
+  casdoor-data:
+  celery-beat-data:
+  pmm-data:
+  sep-data:
+...
