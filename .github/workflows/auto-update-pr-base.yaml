@@ -1,0 +1,21 @@
+name: Auto update PR base
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  auto-update-pr-base:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Merge main into PR branch
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit
+          git push origin ${{ github.event.pull_request.head.ref }}
+        # Only run if a pull request exists
+        if: ${{ github.event_name == 'push' && github.event.ref == 'refs/heads/main' }}
