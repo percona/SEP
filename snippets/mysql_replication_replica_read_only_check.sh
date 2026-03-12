@@ -12,7 +12,7 @@
 #    description: Path to defaults-file
 # ---
 
-# Usage: ./mysql_replication_check.sh [--defaults-file=path]
+# Usage: ./mysql_replication_replica_read_only_check.sh [--defaults-file=path]
 
 set -euo pipefail
 
