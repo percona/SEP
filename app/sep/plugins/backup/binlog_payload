@@ -1557,7 +1557,7 @@ class Upload(Backup):
         self.last_uploaded_number = 0
         self.last_to_upload_number = 0
         logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
-        log_path = Path(logging_dir) / "upload.log"
+        log_path = Path(logging_dir) / "upload-binlog.log"
         self.log_stream = log_path.open("a")
         self.backup_type = BACKUP_TYPES[self.backup_code]
         self.encrypt = settings.get("ENCRYPT", True)
@@ -1677,7 +1677,7 @@ class Upload(Backup):
                 self.logger.info("Removed tmpdir %s", tmpdir)
 
     def run(self) -> str:
-        logging_set_host(self.alias, "upload.log")
+        logging_set_host(self.alias, "upload-binlog.log")
 
         if self.full_backup_path.is_dir():
             self._collect_paths()
