@@ -181,6 +181,25 @@ def test_wrong_session_token(test_client: TestClient):
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
+def test_fresh_token_after_session_change(test_client: TestClient):
+    """Test that clearing the CSRF cookie forces a fresh session-bound token."""
+    response = test_client.get("/gen-token")
+    unauth_token = response.json()["csrf_token"]
+
+    test_client.cookies[SESSION_COOKIE_NAME] = "new-session"
+    del test_client.cookies[CSRF_COOKIE_NAME]
+
+    response = test_client.get("/gen-token")
+    auth_token = response.json()["csrf_token"]
+    assert auth_token != unauth_token
+
+    response = test_client.post(
+        "/protected",
+        data={"csrf-token": auth_token},
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+
 def test_multi_tab_stability(test_client: TestClient):
     """Test two GETs share same token and both POSTs succeed."""
     session_value = "signed-session-token"

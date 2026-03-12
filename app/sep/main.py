@@ -50,6 +50,7 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.snippets.config import snippets_settings
 from app.sep.utils.static import AuthenticatedStaticFiles
@@ -277,6 +278,7 @@ async def login(
         value=crypto_timestamp_serializer.dumps(oauth_token.access_token),
         httponly=True,
     )
+    response.delete_cookie(CSRF_COOKIE_NAME)
     return response
 
 
@@ -285,6 +287,7 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
+    response.delete_cookie(CSRF_COOKIE_NAME)
     try:
         await User.invalidate_oauth_token(access_token)
     except (KeyError, ValidationError):
