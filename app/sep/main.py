@@ -24,8 +24,6 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_csrf_protect import CsrfProtect
-from fastapi_csrf_protect.exceptions import CsrfProtectError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
@@ -38,7 +36,7 @@ from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.celery import sync_snippets
-from app.sep.config import CsrfSettings, sep_settings
+from app.sep.config import sep_settings
 from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
@@ -109,16 +107,6 @@ sep_app = create_app(
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
-
-
-@CsrfProtect.load_config
-def get_csrf_config() -> CsrfSettings:
-    """Load and return the CSRF configuration settings.
-
-    :return: An instance of `CsrfSettings` containing CSRF protection configuration.
-    :rtype: CsrfSettings
-    """
-    return CsrfSettings(TOKEN_TIME_LIMIT=sep_settings.SESSION.MAX_AGE)
 
 
 imported_plugins = set()
@@ -216,12 +204,6 @@ async def custom_404_handler(
             **await get_default_context(request, user, base_url),
         },
     )
-
-
-@sep_app.exception_handler(CsrfProtectError)
-async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> None:
-    """Handle exceptions raised by CSRF protection."""
-    raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 @sep_app.exception_handler(BaseAuthProviderException)

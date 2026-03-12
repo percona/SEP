@@ -1538,27 +1538,6 @@ standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.8)", "htt
 standard-no-fastapi-cloud-cli = ["email-validator (>=2.0.0)", "fastapi-cli[standard-no-fastapi-cloud-cli] (>=0.0.8)", "httpx (>=0.23.0,<1.0.0)", "jinja2 (>=3.1.5)", "python-multipart (>=0.0.18)", "uvicorn[standard] (>=0.12.0)"]
 
 [[package]]
-name = "fastapi-csrf-protect"
-version = "0.3.7"
-description = "Stateless implementation of Cross-Site Request Forgery (XSRF) Protection by using Double Submit Cookie mitigation pattern"
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "fastapi_csrf_protect-0.3.7-py3-none-any.whl", hash = "sha256:75f6f30ebeafd832b7f52f0d0bc347cb3aa42add6b986b4555f213b26c72bc9e"},
-    {file = "fastapi_csrf_protect-0.3.7.tar.gz", hash = "sha256:ee1b4979ca20b7558668ee971d96431b8530483a21ca10dc476031f8f28c7930"},
-]
-
-[package.dependencies]
-fastapi = ">=0"
-itsdangerous = ">=2.0.1,<3.0.0"
-pydantic = ">=2.0.0"
-pydantic-settings = ">=2.0.0"
-
-[package.extras]
-examples = ["jinja2 (>=3.0.1)", "pydantic[email] (>=1.7.2,<3.0.0)", "python-multipart (>=0.0.6)", "uvicorn (>=0.15.0)"]
-
-[[package]]
 name = "filelock"
 version = "3.20.3"
 description = "A platform independent file lock."
@@ -5100,4 +5079,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11.9,!=3.12.0,!=3.12.1,!=3.12.2,<3.14"
-content-hash = "3b2142c5a2c2c80aab4d27e7db1e2b0545e284a2e5ff7dbfa8b83243a201f2f7"
+content-hash = "98791a974d038958d7a33865f488a9dc7b120c2b497fdfbce5fd714b77fcdff8"
