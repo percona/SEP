@@ -22,7 +22,7 @@ from typing import Annotated, Any
 from zoneinfo import available_timezones
 
 from fastapi import Depends, HTTPException, Request, status
-from itsdangerous import BadSignature
+from itsdangerous import BadSignature, SignatureExpired
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -37,7 +37,7 @@ from app.core.exceptions import (
     HTTPRedirectException,
 )
 from app.core.requests import RemoteAPI
-from app.core.security import crypto_serializer, crypto_timestamp_serializer
+from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
@@ -201,18 +201,22 @@ async def validate_csrf(request: Request) -> None:
 
     session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
 
+    max_age = sep_settings.SESSION.MAX_AGE.total_seconds()
+
     if session_cookie:
         try:
-            crypto_serializer.loads(form_token, salt=session_cookie)
-        except BadSignature:
+            crypto_timestamp_serializer.loads(
+                form_token, salt=session_cookie, max_age=max_age
+            )
+        except (BadSignature, SignatureExpired):
             raise HTTPForbiddenException(detail="CSRF validation failed.") from None
     else:
         csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
         if not csrf_cookie or not hmac.compare_digest(form_token, csrf_cookie):
             raise HTTPForbiddenException(detail="CSRF validation failed.")
         try:
-            crypto_serializer.loads(form_token)
-        except BadSignature:
+            crypto_timestamp_serializer.loads(form_token, max_age=max_age)
+        except (BadSignature, SignatureExpired):
             raise HTTPForbiddenException(detail="CSRF validation failed.") from None
 
 

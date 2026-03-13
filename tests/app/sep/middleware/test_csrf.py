@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
-from app.core.security import crypto_serializer
+from app.core.security import crypto_timestamp_serializer
 from app.sep.config import sep_settings
 from app.sep.deps import IsCsrfValidated
 from app.sep.middleware import CSRFMiddleware
@@ -78,7 +78,11 @@ def test_authenticated_csrf_token_generation(test_client: TestClient):
     assert csrf_cookie is not None
     assert csrf_cookie == csrf_token
 
-    nonce = crypto_serializer.loads(csrf_token, salt=session_value)
+    nonce = crypto_timestamp_serializer.loads(
+        csrf_token,
+        salt=session_value,
+        max_age=sep_settings.SESSION.MAX_AGE.total_seconds(),
+    )
     assert isinstance(nonce, str)
     assert len(nonce) == NONCE_HEX_LENGTH
 
@@ -94,7 +98,9 @@ def test_unauthenticated_csrf_token_generation(test_client: TestClient):
     csrf_cookie = response.cookies.get(CSRF_COOKIE_NAME)
     assert csrf_cookie is not None
 
-    nonce = crypto_serializer.loads(csrf_token)
+    nonce = crypto_timestamp_serializer.loads(
+        csrf_token, max_age=sep_settings.SESSION.MAX_AGE.total_seconds()
+    )
     assert isinstance(nonce, str)
     assert len(nonce) == NONCE_HEX_LENGTH
 
@@ -258,3 +264,32 @@ def test_cookie_attributes(test_client: TestClient):
 
     if sep_settings.SESSION.SECURE:
         assert "secure" in cookie_header.lower()
+    else:
+        assert "secure" not in cookie_header.lower()
+
+
+def test_stale_csrf_cookie_regenerated(test_client: TestClient):
+    """Test that a CSRF cookie with wrong salt is replaced on GET."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    stale_token = crypto_timestamp_serializer.dumps("old-nonce", salt="wrong-session")
+    test_client.cookies[CSRF_COOKIE_NAME] = stale_token
+
+    response = test_client.get("/gen-token")
+    assert response.status_code == status.HTTP_200_OK
+
+    new_token = response.json()["csrf_token"]
+    assert new_token != stale_token
+
+    new_cookie = response.cookies.get(CSRF_COOKIE_NAME)
+    assert new_cookie is not None
+    assert new_cookie == new_token
+
+    nonce = crypto_timestamp_serializer.loads(
+        new_token,
+        salt=session_value,
+        max_age=sep_settings.SESSION.MAX_AGE.total_seconds(),
+    )
+    assert isinstance(nonce, str)
+    assert len(nonce) == NONCE_HEX_LENGTH

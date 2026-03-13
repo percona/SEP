@@ -16,9 +16,10 @@
 """Define middleware to handle CSRF protection.
 
 Implement the OWASP Signed Double-Submit Cookie pattern using
-``itsdangerous.URLSafeSerializer``.  When an ``authToken`` session cookie is
-present the CSRF token is HMAC-bound to it (``salt=session_cookie``); otherwise
-a plain signed token is used for unauthenticated pages such as the login form.
+``itsdangerous.URLSafeTimedSerializer``.  When an ``authToken`` session cookie
+is present the CSRF token is HMAC-bound to it (``salt=session_cookie``);
+otherwise a plain signed token is used for unauthenticated pages such as the
+login form.
 """
 
 from __future__ import annotations
@@ -27,9 +28,10 @@ import secrets
 from typing import TYPE_CHECKING
 
 from fastapi.staticfiles import StaticFiles
+from itsdangerous import BadSignature, SignatureExpired
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from app.core.security import crypto_serializer
+from app.core.security import crypto_timestamp_serializer
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -89,15 +91,30 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if method == "GET":
             session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
             existing_csrf = request.cookies.get(CSRF_COOKIE_NAME)
+            max_age = sep_settings.SESSION.MAX_AGE.total_seconds()
 
             if existing_csrf:
-                request.state.csrf_token = existing_csrf
-            else:
+                try:
+                    if session_cookie:
+                        crypto_timestamp_serializer.loads(
+                            existing_csrf, salt=session_cookie, max_age=max_age
+                        )
+                    else:
+                        crypto_timestamp_serializer.loads(
+                            existing_csrf, max_age=max_age
+                        )
+                    request.state.csrf_token = existing_csrf
+                except (BadSignature, SignatureExpired):
+                    existing_csrf = None
+
+            if not existing_csrf:
                 nonce = secrets.token_hex(32)
                 if session_cookie:
-                    token = crypto_serializer.dumps(nonce, salt=session_cookie)
+                    token = crypto_timestamp_serializer.dumps(
+                        nonce, salt=session_cookie
+                    )
                 else:
-                    token = crypto_serializer.dumps(nonce)
+                    token = crypto_timestamp_serializer.dumps(nonce)
                 request.state.csrf_token = token
                 needs_cookie = True
 
