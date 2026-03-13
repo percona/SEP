@@ -28,7 +28,7 @@ import secrets
 from typing import TYPE_CHECKING
 
 from fastapi.staticfiles import StaticFiles
-from itsdangerous import BadSignature, SignatureExpired
+from itsdangerous import BadSignature
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from app.core.security import crypto_timestamp_serializer
@@ -104,7 +104,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                             existing_csrf, max_age=max_age
                         )
                     request.state.csrf_token = existing_csrf
-                except (BadSignature, SignatureExpired):
+                except BadSignature:
                     existing_csrf = None
 
             if not existing_csrf:

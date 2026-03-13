@@ -22,7 +22,7 @@ from typing import Annotated, Any
 from zoneinfo import available_timezones
 
 from fastapi import Depends, HTTPException, Request, status
-from itsdangerous import BadSignature, SignatureExpired
+from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -208,7 +208,7 @@ async def validate_csrf(request: Request) -> None:
             crypto_timestamp_serializer.loads(
                 form_token, salt=session_cookie, max_age=max_age
             )
-        except (BadSignature, SignatureExpired):
+        except BadSignature:
             raise HTTPForbiddenException(detail="CSRF validation failed.") from None
     else:
         csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
@@ -216,7 +216,7 @@ async def validate_csrf(request: Request) -> None:
             raise HTTPForbiddenException(detail="CSRF validation failed.")
         try:
             crypto_timestamp_serializer.loads(form_token, max_age=max_age)
-        except (BadSignature, SignatureExpired):
+        except BadSignature:
             raise HTTPForbiddenException(detail="CSRF validation failed.") from None
 
 
