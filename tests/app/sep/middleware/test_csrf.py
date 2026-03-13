@@ -15,6 +15,7 @@
 
 """Define tests for the CSRF protection for app.sep module."""
 
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -293,3 +294,37 @@ def test_stale_csrf_cookie_regenerated(test_client: TestClient):
     )
     assert isinstance(nonce, str)
     assert len(nonce) == NONCE_HEX_LENGTH
+
+
+def test_expired_csrf_token_rejected_on_post(test_client: TestClient):
+    """Test POST with an expired CSRF token returns 403."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    response = test_client.get("/gen-token")
+    csrf_token = response.json()["csrf_token"]
+
+    expired_time = time.time() + sep_settings.SESSION.MAX_AGE.total_seconds() + 1
+    with patch("itsdangerous.timed.time.time", return_value=expired_time):
+        response = test_client.post(
+            "/protected",
+            data={"csrf-token": csrf_token},
+        )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_expired_csrf_cookie_regenerated_on_get(test_client: TestClient):
+    """Test GET with an expired CSRF cookie generates a fresh token."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    response = test_client.get("/gen-token")
+    original_token = response.json()["csrf_token"]
+
+    expired_time = time.time() + sep_settings.SESSION.MAX_AGE.total_seconds() + 1
+    with patch("itsdangerous.timed.time.time", return_value=expired_time):
+        response = test_client.get("/gen-token")
+
+    new_token = response.json()["csrf_token"]
+    assert new_token != original_token
+    assert response.cookies.get(CSRF_COOKIE_NAME) is not None
