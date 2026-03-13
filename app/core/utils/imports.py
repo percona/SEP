@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -22,6 +22,7 @@ from typing import Any
 __all__ = [
     "import_var",
     "validate_attribute_is_importable",
+    "validate_importable_settings",
     "validate_module_is_importable",
 ]
 
@@ -60,7 +61,12 @@ def validate_module_is_importable(module: str) -> str:
 
 
 def validate_attribute_is_importable(attr_path: str) -> str:
-    """Validate importable module.attribute as string.
+    """Validate that a module.attribute path has a valid module.
+
+    Only the module component is validated at construction time. Full attribute
+    validation (module + attribute) is deferred to startup via
+    `validate_importable_settings` to avoid circular imports during settings
+    construction.
 
     :param attr_path: The module.attribute string to validate.
     :type attr_path: str
@@ -68,14 +74,31 @@ def validate_attribute_is_importable(attr_path: str) -> str:
     :rtype: str
     :raises ValueError: If the format is incorrect or the module cannot be found.
     """
-    # TODO: Find a way to validate attribute without circular import  # noqa: TD002, TD003
     if attr_path:
         try:
             module_name, _ = attr_path.rsplit(".", 1)
         except ValueError as exc:
             raise ValueError(
-                "Must follow the format module.class",
+                "Must follow the format module.attribute",
             ) from exc
         else:
             validate_module_is_importable(module_name)
     return attr_path
+
+
+def validate_importable_settings(*attr_paths: str) -> None:
+    """Validate that attribute paths resolve to real attributes.
+
+    Call `import_var` on each path to verify that both the module and the
+    attribute exist. Intended to be called at startup after all modules are
+    loaded, avoiding the circular imports that prevent full validation during
+    settings construction.
+
+    :param attr_paths: Dot-separated module.attribute paths to validate.
+    :type attr_paths: str
+    :raises ImportError: If a module cannot be imported.
+    :raises AttributeError: If an attribute does not exist in its module.
+    """
+    for path in attr_paths:
+        if path:
+            import_var(path)

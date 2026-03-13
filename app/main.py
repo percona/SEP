@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from app.api.main import api_router
 from app.celery import celery as celery_app
 from app.core.config import create_app, settings
+from app.core.utils import validate_importable_settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app, sep_startup
@@ -45,6 +46,10 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
+    validate_importable_settings(
+        settings.AUTH_USER_MODEL,
+        *(s.syncer for s in sep_settings.SYNCERS),
+    )
     await sep_startup()
     async with tasks_lifespan(app):
         yield

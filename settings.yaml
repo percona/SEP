@@ -31,6 +31,7 @@ default:
     ARTIFACT_DOWNLOAD_TTL: 600
     TEMPLATES_DIR: templates
     STATIC_DIR: static
+    ALERT_DEFINITIONS_DIR: null
     OAUTH:
       REDIRECT_URI: /oauth/callback
     SESSION:
@@ -76,6 +77,10 @@ default:
         MODULE_NAME: dipper
         URI_PATH: /dipper
         CSS_CLASS: dipper
+      - NAME: Alert Templates
+        MODULE_NAME: alerts
+        URI_PATH: /alerts
+        CSS_CLASS: alerts
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
@@ -96,6 +101,7 @@ default:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     SYNC_REFRESH_TIME: 5  # Browser refresh interval during sync (seconds)
   INVENTORY:
     SSL_KEYFILE: null
@@ -158,6 +164,7 @@ development:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
   CASDOOR:
     ORGANIZATION_NAME: built-in
   CELERY:
@@ -243,6 +250,7 @@ production_docker:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     TASKS_ENDPOINT: https://127.0.0.1:9002
   SSL_CAFILE: /data/certs/sep-ca.pem
   TASKS:
