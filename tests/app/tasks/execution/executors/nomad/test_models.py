@@ -22,6 +22,7 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import zstandard
 from fastapi import HTTPException
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 
@@ -37,7 +38,7 @@ from app.tasks.execution.executors.nomad.models import (
     NomadAllocStatusEnum,
     NomadExecutor,
 )
-from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.execution.utils import minify_file_content
 from app.tasks.models import (
     FileMetadata,
     Task,
@@ -426,9 +427,10 @@ class TestDispatchJob:
         executor.dispatch_job(queue_item, task)
 
         sent_payload = mock_backend.job.dispatch_job.call_args[1]["payload"]
-        expected = b2a_base64(gzip_compress(minify_file_content(raw_payload))).decode(
-            "utf-8"
-        )
+        minified_payload = minify_file_content(raw_payload)
+        cctx = zstandard.ZstdCompressor(level=22)
+        compressed = cctx.compress(minified_payload.encode("utf-8"))
+        expected = b2a_base64(compressed).decode("utf-8").strip()
         assert sent_payload == expected
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
