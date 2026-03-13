@@ -120,6 +120,7 @@ def preflight_check():
 
 def logging_setup(logging_dir, log_name, level=LOGGING_LEVEL):
     """ Logger setup """
+    os.umask(0o007)
 
     # Tilde expand logging path if needed and resolve its real path
     real_logging_dir = os.path.realpath(os.path.expanduser(logging_dir))
