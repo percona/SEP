@@ -201,7 +201,7 @@ async def validate_csrf(request: Request) -> None:
 
     session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
 
-    max_age = sep_settings.SESSION.MAX_AGE.total_seconds()
+    max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
 
     if session_cookie:
         try:

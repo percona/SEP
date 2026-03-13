@@ -91,7 +91,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if method == "GET":
             session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
             existing_csrf = request.cookies.get(CSRF_COOKIE_NAME)
-            max_age = sep_settings.SESSION.MAX_AGE.total_seconds()
+            max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
 
             if existing_csrf:
                 try:
