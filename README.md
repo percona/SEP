@@ -146,7 +146,7 @@ These are some, but not all, the possible settings you can have, per app:
 | TASKS__NOMAD__VERIFY_SSL   | tasks     | no       | False                                               | True                                             |
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | 10                                               |
 | TASKS__NOMAD__MINIFY_PAYLOAD | tasks   | no       | True                                                | True                                             |
-| TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT | tasks | no       | 10                                        | 10                                               |
+| TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT | tasks | no | 10                                        | 10                                               |
 | TASKS__SYNC_LOCK_TTL       | tasks     | no       | 300                                                 | 300                                              |
 | TASKS__ANONYMIZER__DEFAULT_ENTITIES | tasks | no | "*"                                         | "*"                                              |
 | TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                              |
