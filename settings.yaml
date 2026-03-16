@@ -133,6 +133,7 @@ default:
       SSL_CAFILE: null
       TIMEOUT: 10  # Request timeout in seconds
       MINIFY_PAYLOAD: True  # Minify payloads before dispatch
+      LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
     ANONYMIZER:
       DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
 

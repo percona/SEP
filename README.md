@@ -146,6 +146,7 @@ These are some, but not all, the possible settings you can have, per app:
 | TASKS__NOMAD__VERIFY_SSL   | tasks     | no       | False                                               | True                                             |
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | 10                                               |
 | TASKS__NOMAD__MINIFY_PAYLOAD | tasks   | no       | True                                                | True                                             |
+| TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT | tasks | no       | 10                                        | 10                                               |
 | TASKS__SYNC_LOCK_TTL       | tasks     | no       | 300                                                 | 300                                              |
 | TASKS__ANONYMIZER__DEFAULT_ENTITIES | tasks | no | "*"                                         | "*"                                              |
 | TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                              |
@@ -252,6 +253,7 @@ SEP provides several sync-related configuration options:
 Additional Nomad configuration options are available:
 
 - `TASKS__NOMAD__MINIFY_PAYLOAD`: Whether to minify payloads before dispatch
+- `TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT`: Socket read timeout for logs (in seconds)
 
 > [!CAUTION]
 > *Do not store secrets in settings.yaml, as the file is shared in the git repository.
