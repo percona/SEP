@@ -130,9 +130,21 @@ async def alters_create(
     pre_checks_task.data["task"] = "run-python"
     del pre_checks_task.data["meta"]["command"]
     del pre_checks_task.data["meta"]["args"]
-    pre_checks_task.data["meta"]["config"] = (
-        f"schema: {task.data['meta']['_schema_name']}\ntable: {task.data['meta']['_table_name']}"
-    )
+    meta = pre_checks_task.data["meta"]
+    executor_host = meta.get("target", "")
+    db_host = meta.get("_service_host", "")
+    db_port = meta.get("_service_port")
+    skip_fs_checks = bool(executor_host and db_host and executor_host != db_host)
+    pre_checks_config_lines = [
+        f"schema: {meta['_schema_name']}",
+        f"table: {meta['_table_name']}",
+        f"host: {db_host or '127.0.0.1'}",
+    ]
+    if db_port is not None:
+        pre_checks_config_lines.append(f"port: {db_port}")
+    if skip_fs_checks:
+        pre_checks_config_lines.append("skip_filesystem_checks: true")
+    pre_checks_task.data["meta"]["config"] = "\n".join(pre_checks_config_lines)
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
@@ -233,6 +245,9 @@ async def alters_detail(
         logger.warning("Failed to get services: %s", exc)
 
     context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
+    context["has_matching_executor"] = (
+        task_data.get("service_host", "") in context["executor_hosts"]
+    )
     context["services"] = services
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
@@ -299,9 +314,21 @@ async def alters_update(
     pre_checks_task.data["task"] = "run-python"
     del pre_checks_task.data["meta"]["command"]
     del pre_checks_task.data["meta"]["args"]
-    pre_checks_task.data["meta"]["config"] = (
-        f"schema: {updated_task.data['meta']['_schema_name']}\ntable: {updated_task.data['meta']['_table_name']}"
-    )
+    meta = pre_checks_task.data["meta"]
+    executor_host = meta.get("target", "")
+    db_host = meta.get("_service_host", "")
+    db_port = meta.get("_service_port")
+    skip_fs_checks = bool(executor_host and db_host and executor_host != db_host)
+    pre_checks_config_lines = [
+        f"schema: {meta['_schema_name']}",
+        f"table: {meta['_table_name']}",
+        f"host: {db_host or '127.0.0.1'}",
+    ]
+    if db_port is not None:
+        pre_checks_config_lines.append(f"port: {db_port}")
+    if skip_fs_checks:
+        pre_checks_config_lines.append("skip_filesystem_checks: true")
+    pre_checks_task.data["meta"]["config"] = "\n".join(pre_checks_config_lines)
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
