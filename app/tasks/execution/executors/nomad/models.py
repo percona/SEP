@@ -128,14 +128,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Jobs. Defaults to True.
     :type minify_payload: bool
     :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
-        Defaults to 60 to avoid premature termination on large log files.
+        Defaults to 10.
     :type log_socket_read_timeout: int
     """
 
     secure: bool = False
     timeout: int = 10
     minify_payload: bool = True
-    log_socket_read_timeout: int = 60
+    log_socket_read_timeout: int = 10
 
     @cached_property
     def backend(self) -> Nomad:
@@ -546,6 +546,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         max_lines = 100000
         if task_states := alloc["TaskStates"]:
             for step, log_type in product(task_states, TaskLogType):
+                if task_states[step].get("StartedAt") is None:
+                    continue
                 task_logs[step][log_type] = task_logs[step].get(log_type) or ""
                 last_offset_key = f"{log_type}_last_offset"
                 task_logs[step][last_offset_key] = (

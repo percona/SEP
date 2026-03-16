@@ -1221,7 +1221,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"step1": {}},
+            "TaskStates": {"step1": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
 
         executor = _build_executor()
@@ -1250,7 +1250,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"step1": {}},
+            "TaskStates": {"step1": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
 
         executor = _build_executor()
@@ -1276,7 +1276,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"run-script": {}},
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
 
         executor = _build_executor()
@@ -1296,7 +1296,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"step1": {}},
+            "TaskStates": {"step1": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
         initial_logs = {
             "step1": {
