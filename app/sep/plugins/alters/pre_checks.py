@@ -51,6 +51,8 @@ class MySQLPreChecks:
         schema: str = "",
         table: str = "",
         config_file: str = "~/.my.cnf",
+        *,
+        skip_filesystem_checks: bool = False,
     ) -> None:
         """Initialize the pre-checks class.
 
@@ -60,6 +62,8 @@ class MySQLPreChecks:
             schema: Database name
             table: Table name
             config_file: Path to .my.cnf file
+            skip_filesystem_checks: If True, skip disk space check (e.g. when executor
+                host is not the DB node, e.g. RDS).
 
         """
         # Use .my.cnf values as defaults, but allow command line to override
@@ -69,6 +73,7 @@ class MySQLPreChecks:
         self.table = table
         self.connection = None
         self.config_file = config_file
+        self.skip_filesystem_checks = skip_filesystem_checks
         # Setup logging
         self.setup_logging()
 
@@ -410,8 +415,12 @@ class MySQLPreChecks:
 
         all_passed = True
 
-        # Check disk space
-        if not self.check_disk_space():
+        # Check disk space (only when running on the same host as the DB)
+        if self.skip_filesystem_checks:
+            self.logger.info(
+                "=== Skipping disk space check (executor host is not the database node) ==="
+            )
+        elif not self.check_disk_space():
             all_passed = False
 
         # Check for foreign key references
@@ -496,6 +505,22 @@ def load_yaml_config(config_file: str) -> dict[str, Any]:
         raise PreCheckError(f"Error reading configuration file: {err}") from err
 
 
+def _apply_config_to_args(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    """Override parsed args with values from YAML config (when not set on CLI)."""
+    if "schema" in config and args.schema is None:
+        args.schema = config["schema"]
+    if "table" in config and args.table is None:
+        args.table = config["table"]
+    if "host" in config:
+        args.host = config["host"]
+    if "port" in config:
+        args.port = config["port"]
+    if "mysql_config_file" in config:
+        args.mysql_config_file = config["mysql_config_file"]
+    if "skip_filesystem_checks" in config:
+        args.skip_filesystem_checks = bool(config["skip_filesystem_checks"])
+
+
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments with support for YAML config file.
 
@@ -522,17 +547,15 @@ Examples:
   # host: 192.168.1.100
   # port: 3306
   # mysql_config_file: ~/.my.cnf
+  # skip_filesystem_checks: true  # skip disk check when executor != DB node
         """,
     )
 
-    # Add config file argument
     parser.add_argument(
         "--config",
         type=str,
         help="Path to YAML configuration file (alternative to command line arguments)",
     )
-
-    # Add individual arguments (these can be overridden by config file)
     parser.add_argument("--schema", help="Database name")
     parser.add_argument("--table", help="Table name")
     parser.add_argument(
@@ -547,31 +570,20 @@ Examples:
         type=str,
         help="Path to .my.cnf file (default: ~/.my.cnf)",
     )
+    parser.add_argument(
+        "--skip-filesystem-checks",
+        action="store_true",
+        help="Skip disk space check (e.g. when executor host is not the DB node)",
+    )
 
     args = parser.parse_args()
 
-    # If config file is provided, load configuration from it
     if args.config:
         try:
-            config = load_yaml_config(args.config)
-
-            # Override command line arguments with config file values
-            # Command line arguments still take precedence if provided
-            if "schema" in config and args.schema is None:
-                args.schema = config["schema"]
-            if "table" in config and args.table is None:
-                args.table = config["table"]
-            if "host" in config:
-                args.host = config["host"]
-            if "port" in config:
-                args.port = config["port"]
-            if "mysql_config_file" in config:
-                args.mysql_config_file = config["mysql_config_file"]
-
+            _apply_config_to_args(args, load_yaml_config(args.config))
         except PreCheckError as e:
             parser.error(str(e))
 
-    # Validate required arguments
     if not args.schema:
         parser.error("--schema is required (either via command line or config file)")
     if not args.table:
@@ -591,6 +603,7 @@ def main() -> None:
         schema=args.schema,
         table=args.table,
         config_file=args.mysql_config_file,
+        skip_filesystem_checks=args.skip_filesystem_checks,
     )
 
     try:
