@@ -15,13 +15,13 @@
 
 """Define SEP dependencies."""
 
+import hmac
 import logging
 from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
 from fastapi import Depends, HTTPException, Request, status
-from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -31,6 +31,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
+    HTTPBadRequestException,
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPRedirectException,
@@ -52,6 +53,7 @@ from app.sep.inventory import (
     ENTITY_MAPPING,
 )
 from app.sep.middleware import messages
+from app.sep.middleware.csrf import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
@@ -177,22 +179,45 @@ async def redirect_if_user_is_authenticated(request: Request) -> None:
 
 IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 
-CsrfProtectDep = Annotated[CsrfProtect, Depends()]
 
+async def validate_csrf(request: Request) -> None:
+    """Validate the CSRF token submitted in the request form data.
 
-async def validate_csrf(
-    request: Request,
-    csrf_protect: CsrfProtectDep,
-) -> None:
-    """Validate the CSRF token from the request.
+    For authenticated requests (session cookie present), verify the HMAC
+    signature using the session cookie as salt.  For unauthenticated requests
+    (login page), verify using a double-submit cookie comparison plus
+    signature verification.
 
     :param request: The HTTP request object.
     :type request: Request
-    :param csrf_protect: The CSRF protection mechanism dependency.
-    :type csrf_protect: CsrfProtect
+    :raises HTTPBadRequestException: If the CSRF token is missing from the
+        form data.
+    :raises HTTPForbiddenException: If the CSRF token fails validation.
     """
-    time_limit = int(sep_settings.SESSION.MAX_AGE.total_seconds())
-    await csrf_protect.validate_csrf(request, time_limit=time_limit)
+    form_data = await request.form()
+    form_token = str(form_data.get(CSRF_FORM_FIELD, ""))
+    if not form_token:
+        raise HTTPBadRequestException(detail="Missing CSRF token.")
+
+    session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
+
+    max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
+
+    if session_cookie:
+        try:
+            crypto_timestamp_serializer.loads(
+                form_token, salt=session_cookie, max_age=max_age
+            )
+        except BadSignature:
+            raise HTTPForbiddenException(detail="CSRF validation failed.") from None
+    else:
+        csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+        if not csrf_cookie or not hmac.compare_digest(form_token, csrf_cookie):
+            raise HTTPForbiddenException(detail="CSRF validation failed.")
+        try:
+            crypto_timestamp_serializer.loads(form_token, max_age=max_age)
+        except BadSignature:
+            raise HTTPForbiddenException(detail="CSRF validation failed.") from None
 
 
 IsCsrfValidated = Depends(validate_csrf)

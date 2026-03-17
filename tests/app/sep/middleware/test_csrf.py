@@ -15,6 +15,7 @@
 
 """Define tests for the CSRF protection for app.sep module."""
 
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -22,35 +23,33 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
-from fastapi_csrf_protect import CsrfProtect
-from fastapi_csrf_protect.exceptions import CsrfProtectError
 
-from app.sep.config import CsrfSettings
+from app.core.security import crypto_timestamp_serializer
+from app.sep.config import sep_settings
 from app.sep.deps import IsCsrfValidated
-from app.sep.main import csrf_protect_exception_handler
 from app.sep.middleware import CSRFMiddleware
+from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.utils.decorators import csrf_exempt
+
+SESSION_COOKIE_NAME = sep_settings.SESSION.COOKIE_NAME
+NONCE_HEX_LENGTH = 64
 
 
 @pytest.fixture
 def test_client() -> TestClient:
-    """Provides a TestClient with CSRF protection and routes configured."""
+    """Provide a TestClient with CSRF protection and routes configured."""
     app = FastAPI()
 
     @app.get("/gen-token", response_class=JSONResponse)
     def generate(request: Request):
-        response: JSONResponse = JSONResponse(
+        return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"detail": "OK", "csrf_token": request.state.csrf_token},
         )
-        return response
 
     @app.post("/protected", dependencies=[IsCsrfValidated], response_class=JSONResponse)
     def protected(request: Request):
-        response: JSONResponse = JSONResponse(
-            status_code=status.HTTP_200_OK, content={"detail": "OK"}
-        )
-        return response
+        return JSONResponse(status_code=status.HTTP_200_OK, content={"detail": "OK"})
 
     @app.get("/stream-logs/data", response_class=JSONResponse)
     @csrf_exempt
@@ -62,28 +61,73 @@ def test_client() -> TestClient:
     app.mount("/static", StaticFiles(directory="static"), name="static")
     app.add_middleware(CSRFMiddleware)
 
-    app.add_exception_handler(CsrfProtectError, csrf_protect_exception_handler)
-
     return TestClient(app)
 
 
-def test_valid_csrf_token(test_client: TestClient):
-    """Test the CSRF token generation and validation process."""
-
-    @CsrfProtect.load_config
-    def get_configs():
-        return CsrfSettings()
+def test_authenticated_csrf_token_generation(test_client: TestClient):
+    """Test GET with authToken produces a session-bound token in state and cookie."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
 
     response = test_client.get("/gen-token")
     assert response.status_code == status.HTTP_200_OK
 
-    csrf_token = response.json().get("csrf_token", None)
-    assert csrf_token is not None
+    csrf_token = response.json()["csrf_token"]
+    assert csrf_token
 
-    csrf_cookie = test_client.cookies.get("fastapi-csrf-token", None)
+    csrf_cookie = response.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_cookie is not None
+    assert csrf_cookie == csrf_token
+
+    nonce = crypto_timestamp_serializer.loads(
+        csrf_token,
+        salt=session_value,
+        max_age=sep_settings.SESSION.MAX_AGE.total_seconds(),
+    )
+    assert isinstance(nonce, str)
+    assert len(nonce) == NONCE_HEX_LENGTH
+
+
+def test_unauthenticated_csrf_token_generation(test_client: TestClient):
+    """Test GET without authToken produces a signed token for the login page."""
+    response = test_client.get("/gen-token")
+    assert response.status_code == status.HTTP_200_OK
+
+    csrf_token = response.json()["csrf_token"]
+    assert csrf_token
+
+    csrf_cookie = response.cookies.get(CSRF_COOKIE_NAME)
     assert csrf_cookie is not None
 
-    test_client.cookies["fastapi-csrf-token"] = csrf_cookie
+    nonce = crypto_timestamp_serializer.loads(
+        csrf_token, max_age=sep_settings.SESSION.MAX_AGE.total_seconds()
+    )
+    assert isinstance(nonce, str)
+    assert len(nonce) == NONCE_HEX_LENGTH
+
+
+def test_token_reuse_across_gets(test_client: TestClient):
+    """Test that second GET reuses the token from the cookie."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    response1 = test_client.get("/gen-token")
+    token1 = response1.json()["csrf_token"]
+
+    response2 = test_client.get("/gen-token")
+    token2 = response2.json()["csrf_token"]
+
+    assert token1 == token2
+
+
+def test_valid_authenticated_submission(test_client: TestClient):
+    """Test POST with correct token and session cookie returns 200."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    response = test_client.get("/gen-token")
+    csrf_token = response.json()["csrf_token"]
+
     response = test_client.post(
         "/protected",
         data={"csrf-token": csrf_token},
@@ -92,85 +136,105 @@ def test_valid_csrf_token(test_client: TestClient):
     assert response.json() == {"detail": "OK"}
 
 
-def test_csrf_token_reuse_across_multiple_posts(test_client: TestClient):
-    """Test that the same CSRF token can be used for multiple sequential POSTs."""
-
-    @CsrfProtect.load_config
-    def get_configs():
-        return CsrfSettings()
-
+def test_valid_unauthenticated_submission(test_client: TestClient):
+    """Test POST with matching form and cookie token on login returns 200."""
     response = test_client.get("/gen-token")
-    assert response.status_code == status.HTTP_200_OK
-    csrf_token = response.json().get("csrf_token")
-    assert csrf_token is not None
-    csrf_cookie = test_client.cookies.get("fastapi-csrf-token")
-    assert csrf_cookie is not None
-    test_client.cookies["fastapi-csrf-token"] = csrf_cookie
+    csrf_token = response.json()["csrf_token"]
 
-    # First POST
-    response1 = test_client.post(
+    response = test_client.post(
         "/protected",
         data={"csrf-token": csrf_token},
     )
-    assert response1.status_code == status.HTTP_200_OK
-    assert response1.json() == {"detail": "OK"}
-
-    # Second POST with the same token, no GET in between (token is reusable)
-    response2 = test_client.post(
-        "/protected",
-        data={"csrf-token": csrf_token},
-    )
-    assert response2.status_code == status.HTTP_200_OK
-    assert response2.json() == {"detail": "OK"}
-
-
-def test_invalid_csrf_token(test_client: TestClient):
-    """Test handling of invalid CSRF tokens and missing cookies."""
-
-    @CsrfProtect.load_config
-    def get_configs():
-        return CsrfSettings()
-
-    response = test_client.get("/gen-token")
     assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"detail": "OK"}
 
-    csrf_token = response.json().get("csrf_token", None)
-    assert csrf_token is not None
 
-    csrf_cookie = test_client.cookies.get("fastapi-csrf-token", None)
-    assert csrf_cookie is not None
-
-    test_client.cookies = None
+def test_missing_form_token(test_client: TestClient):
+    """Test POST without token returns 400."""
+    response = test_client.get("/gen-token")
 
     response = test_client.post("/protected")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json() == {"detail": "Missing Cookie: `fastapi-csrf-token`."}
 
-    test_client.cookies["fastapi-csrf-token"] = csrf_cookie
+
+def test_invalid_form_token(test_client: TestClient):
+    """Test POST with tampered token returns 403."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    response = test_client.get("/gen-token")
+
     response = test_client.post(
         "/protected",
-        data={"csrf-token": "invalid token"},
+        data={"csrf-token": "tampered-token"},
     )
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    assert response.json() == {"detail": "The CSRF signatures submitted do not match."}
+    assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    test_client.cookies["fastapi-csrf-token"] = "invalid cookie"
+
+def test_wrong_session_token(test_client: TestClient):
+    """Test token from different session returns 403."""
+    test_client.cookies[SESSION_COOKIE_NAME] = "session-A"
+
+    response = test_client.get("/gen-token")
+    csrf_token = response.json()["csrf_token"]
+
+    test_client.cookies[SESSION_COOKIE_NAME] = "session-B"
+    test_client.cookies[CSRF_COOKIE_NAME] = csrf_token
+
     response = test_client.post(
         "/protected",
         data={"csrf-token": csrf_token},
     )
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    assert response.json() == {"detail": "The CSRF token is invalid."}
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_fresh_token_after_session_change(test_client: TestClient):
+    """Test that clearing the CSRF cookie forces a fresh session-bound token."""
+    response = test_client.get("/gen-token")
+    unauth_token = response.json()["csrf_token"]
+
+    test_client.cookies[SESSION_COOKIE_NAME] = "new-session"
+    del test_client.cookies[CSRF_COOKIE_NAME]
+
+    response = test_client.get("/gen-token")
+    auth_token = response.json()["csrf_token"]
+    assert auth_token != unauth_token
+
+    response = test_client.post(
+        "/protected",
+        data={"csrf-token": auth_token},
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_multi_tab_stability(test_client: TestClient):
+    """Test two GETs share same token and both POSTs succeed."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    resp1 = test_client.get("/gen-token")
+    token1 = resp1.json()["csrf_token"]
+
+    resp2 = test_client.get("/gen-token")
+    token2 = resp2.json()["csrf_token"]
+    assert token1 == token2
+
+    resp_post1 = test_client.post(
+        "/protected",
+        data={"csrf-token": token1},
+    )
+    assert resp_post1.status_code == status.HTTP_200_OK
+
+    resp_post2 = test_client.post(
+        "/protected",
+        data={"csrf-token": token2},
+    )
+    assert resp_post2.status_code == status.HTTP_200_OK
 
 
 @patch("fastapi.staticfiles.StaticFiles.get_response", new_callable=AsyncMock)
-def test_excluded_paths(mock_get_response, test_client: TestClient):
-    """Test that excluded paths do not involve CSRF protection."""
-
-    @CsrfProtect.load_config
-    def get_configs():
-        return CsrfSettings()
-
+def test_static_files_excluded(mock_get_response, test_client: TestClient):
+    """Test that static GET does not set a CSRF cookie."""
     mock_response = JSONResponse(
         content="Static file content", status_code=status.HTTP_200_OK
     )
@@ -178,9 +242,89 @@ def test_excluded_paths(mock_get_response, test_client: TestClient):
 
     response = test_client.get("/static/example.txt")
     assert response.status_code == status.HTTP_200_OK
-    assert test_client.cookies.get("fastapi-csrf-token") is None
+    assert response.cookies.get(CSRF_COOKIE_NAME) is None
 
+
+def test_csrf_exempt_endpoint(test_client: TestClient):
+    """Test that exempt GET does not set a CSRF cookie."""
     response = test_client.get("/stream-logs/data")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"detail": "Stream OK"}
-    assert test_client.cookies.get("fastapi-csrf-token") is None
+    assert response.cookies.get(CSRF_COOKIE_NAME) is None
+
+
+def test_cookie_attributes(test_client: TestClient):
+    """Test CSRF cookie has httponly, samesite=lax, and correct secure setting."""
+    response = test_client.get("/gen-token")
+    assert response.status_code == status.HTTP_200_OK
+
+    cookie_header = response.headers.get("set-cookie", "")
+    assert CSRF_COOKIE_NAME in cookie_header
+    assert "httponly" in cookie_header.lower()
+    assert "samesite=lax" in cookie_header.lower()
+
+    if sep_settings.SESSION.SECURE:
+        assert "secure" in cookie_header.lower()
+    else:
+        assert "secure" not in cookie_header.lower()
+
+
+def test_stale_csrf_cookie_regenerated(test_client: TestClient):
+    """Test that a CSRF cookie with wrong salt is replaced on GET."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    stale_token = crypto_timestamp_serializer.dumps("old-nonce", salt="wrong-session")
+    test_client.cookies[CSRF_COOKIE_NAME] = stale_token
+
+    response = test_client.get("/gen-token")
+    assert response.status_code == status.HTTP_200_OK
+
+    new_token = response.json()["csrf_token"]
+    assert new_token != stale_token
+
+    new_cookie = response.cookies.get(CSRF_COOKIE_NAME)
+    assert new_cookie is not None
+    assert new_cookie == new_token
+
+    nonce = crypto_timestamp_serializer.loads(
+        new_token,
+        salt=session_value,
+        max_age=sep_settings.SESSION.MAX_AGE.total_seconds(),
+    )
+    assert isinstance(nonce, str)
+    assert len(nonce) == NONCE_HEX_LENGTH
+
+
+def test_expired_csrf_token_rejected_on_post(test_client: TestClient):
+    """Test POST with an expired CSRF token returns 403."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    response = test_client.get("/gen-token")
+    csrf_token = response.json()["csrf_token"]
+
+    expired_time = time.time() + sep_settings.SESSION.MAX_AGE.total_seconds() + 1
+    with patch("itsdangerous.timed.time.time", return_value=expired_time):
+        response = test_client.post(
+            "/protected",
+            data={"csrf-token": csrf_token},
+        )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_expired_csrf_cookie_regenerated_on_get(test_client: TestClient):
+    """Test GET with an expired CSRF cookie generates a fresh token."""
+    session_value = "signed-session-token"
+    test_client.cookies[SESSION_COOKIE_NAME] = session_value
+
+    response = test_client.get("/gen-token")
+    original_token = response.json()["csrf_token"]
+
+    expired_time = time.time() + sep_settings.SESSION.MAX_AGE.total_seconds() + 1
+    with patch("itsdangerous.timed.time.time", return_value=expired_time):
+        response = test_client.get("/gen-token")
+
+    new_token = response.json()["csrf_token"]
+    assert new_token != original_token
+    assert response.cookies.get(CSRF_COOKIE_NAME) is not None
