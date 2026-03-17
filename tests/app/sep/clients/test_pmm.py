@@ -103,6 +103,22 @@ class TestCreateTemplate:
         )
         pmm_remote_api.is_older_than_v3.cache_clear()
 
+    @pytest.mark.asyncio
+    async def test_create_template_returns_none_on_empty_response(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test create_template returns ``None`` when PMM v3 returns an empty dict."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.create_template("name: cpu-high\n")
+
+        assert result is None
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
 
 class TestListTemplates:
     """Test the list_templates method."""

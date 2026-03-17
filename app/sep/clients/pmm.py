@@ -433,13 +433,14 @@ class PMMRemoteAPI(RemoteAPI):
         """
         return {"X-Disable-Provenance": "true"}
 
-    async def create_template(self, yaml: str) -> AlertTemplate:
+    async def create_template(self, yaml: str) -> AlertTemplate | None:
         """Create a PMM alert template from a YAML definition.
 
         :param yaml: The YAML content of the alert template.
         :type yaml: str
-        :return: The created alert template.
-        :rtype: AlertTemplate
+        :return: The created alert template, or ``None`` if the API returns no data
+            (PMM v3).
+        :rtype: AlertTemplate | None
         """
         if await self.is_older_than_v3():
             data = await self.post(
@@ -453,6 +454,8 @@ class PMMRemoteAPI(RemoteAPI):
                 json={"yaml": yaml},
                 headers=self.alerting_headers,
             )
+        if not data:
+            return None
         return AlertTemplate.model_validate(data)
 
     async def list_templates(
