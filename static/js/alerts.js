@@ -167,11 +167,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             updateBadge(r.name, 'success');
                         }
                     });
-                } else if (data.error) {
+                } else if (data.error || data.detail) {
                     showResults([{
                         name: 'Error',
                         status: 'error',
-                        message: data.error
+                        message: data.error || data.detail
                     }]);
                 }
             }).catch(function(err) {

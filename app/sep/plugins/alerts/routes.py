@@ -18,18 +18,18 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Request, status
+from fastapi import APIRouter, Form, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.plugins.alerts.deps import (
-    AlertFolderDep,
     AlertsIndexContext,
     AlertTemplatesDep,
-    PMMAPIDep,
     PMMPresentNamesDep,
+    RequiredAlertFolderDep,
+    RequiredPMMAPIDep,
 )
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
 
@@ -54,20 +54,20 @@ async def alerts_index(
 
 @router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def alerts_push(
-    pmm_api: PMMAPIDep,
+    pmm_api: RequiredPMMAPIDep,
     alert_templates: AlertTemplatesDep,
-    folder: AlertFolderDep,
+    folder: RequiredAlertFolderDep,
     present_names: PMMPresentNamesDep,
     selected: Annotated[list[str], Form(alias="selected_templates")],
 ) -> JSONResponse:
     """Push selected alert templates to PMM as rules.
 
-    :param pmm_api: The PMM API client, or ``None`` if PMM is not configured.
-    :type pmm_api: PMMRemoteAPI | None
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
     :param alert_templates: Alert templates grouped by service type.
     :type alert_templates: AlertTemplatesDep
-    :param folder: The PMM alert folder, or ``None`` when PMM is unreachable.
-    :type folder: Folder | None
+    :param folder: The PMM alert folder.
+    :type folder: Folder
     :param present_names: Set of template names present in PMM, or ``None``
         when PMM is unreachable.
     :type present_names: set[str] | None
@@ -76,18 +76,6 @@ async def alerts_push(
     :return: JSON response with per-template push results.
     :rtype: JSONResponse
     """
-    if pmm_api is None:
-        return JSONResponse(
-            {"error": "PMM is not configured"},
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
-
-    if folder is None:
-        return JSONResponse(
-            {"error": "Failed to access PMM alert folder"},
-            status_code=status.HTTP_502_BAD_GATEWAY,
-        )
-
     all_templates = {t.name: t for ts in alert_templates.values() for t in ts}
 
     results = []

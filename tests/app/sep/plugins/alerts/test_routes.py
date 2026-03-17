@@ -181,7 +181,7 @@ class TestAlertsPush:
             data={"selected_templates": ["High CPU"]},
         )
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert response.json()["error"] == "PMM is not configured"
+        assert response.json()["detail"] == "PMM is not configured"
 
     def test_push_already_present(self, test_client, mock_pmm_api):
         """Assert templates already in PMM are skipped."""
@@ -232,7 +232,7 @@ class TestAlertsPush:
             data={"selected_templates": ["High CPU"]},
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
-        assert response.json()["error"] == "Failed to access PMM alert folder"
+        assert response.json()["detail"] == "Failed to access PMM alert folder"
 
     def test_push_rule_failure_reports_orphaned_template(
         self, test_client, mock_pmm_api

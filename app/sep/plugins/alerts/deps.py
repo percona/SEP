@@ -23,6 +23,10 @@ from fastapi import Depends
 from fastapi.exceptions import HTTPException
 
 from app.core.config import settings
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPServiceUnavailableException,
+)
 from app.sep.clients.pmm import Folder, PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
@@ -108,6 +112,42 @@ async def get_or_create_alert_folder(pmm_api: PMMAPIDep) -> Folder | None:
 
 
 AlertFolderDep = Annotated[Folder | None, Depends(get_or_create_alert_folder)]
+
+
+async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:
+    """Return the PMM API client or raise if PMM is not configured.
+
+    :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
+        configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :return: The PMM API client.
+    :rtype: PMMRemoteAPI
+    :raises HTTPServiceUnavailableException: If PMM is not configured.
+    """
+    if pmm_api is None:
+        raise HTTPServiceUnavailableException(detail="PMM is not configured")
+    return pmm_api
+
+
+RequiredPMMAPIDep = Annotated[PMMRemoteAPI, Depends(require_pmm_api)]
+
+
+async def require_alert_folder(folder: AlertFolderDep) -> Folder:
+    """Return the PMM alert folder or raise if unavailable.
+
+    :param folder: The alert folder dependency, or ``None`` when PMM is
+        unreachable.
+    :type folder: Folder | None
+    :return: The PMM alert folder.
+    :rtype: Folder
+    :raises HTTPBadGatewayException: If the alert folder cannot be accessed.
+    """
+    if folder is None:
+        raise HTTPBadGatewayException(detail="Failed to access PMM alert folder")
+    return folder
+
+
+RequiredAlertFolderDep = Annotated[Folder, Depends(require_alert_folder)]
 
 
 async def get_alerts_index_context(
