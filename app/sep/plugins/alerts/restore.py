@@ -18,7 +18,9 @@
 from typing import Any
 
 from app.sep.clients.pmm import NotificationPolicy, PMMRemoteAPI
+from app.sep.config import sep_settings
 from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION
 
 
 async def restore_from_backup(
@@ -63,8 +65,8 @@ async def restore_from_backup(
                 "template_name", r_data["title"]
             ),
             folder_uid=r_data.get("folder_uid", ""),
-            for_duration=r_data.get("for", "5m"),
-            group=r_data.get("group", "SEP Alerts"),
+            for_duration=r_data.get("for", DEFAULT_FOR_DURATION),
+            group=r_data.get("group", sep_settings.PMM.alert_folder_name),
         )
         created_rules += 1
     results["rules_created"] = created_rules

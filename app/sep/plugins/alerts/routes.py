@@ -90,7 +90,17 @@ async def alerts_restore(
     session: SessionDep,
     backup_id: Annotated[int, Form()],
 ) -> JSONResponse:
-    """Restore alert configuration from a selected backup."""
+    """Restore alert configuration from a selected backup.
+
+    :param pmm_api: The PMM API client, or ``None`` when PMM is not configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param backup_id: The ID of the backup to restore from.
+    :type backup_id: int
+    :return: JSON with restore results on success or an error envelope on failure.
+    :rtype: JSONResponse
+    """
     if pmm_api is None:
         return JSONResponse(
             {"status": "error", "message": "PMM is not configured"},
@@ -99,11 +109,16 @@ async def alerts_restore(
     try:
         backup = await AlertBackupManager.get_or_404(session, id=backup_id)
         results = await restore_from_backup(pmm_api, backup)
-    except (HTTPException, OSError) as exc:
+    except HTTPException as exc:
         logger.exception("Failed to restore alert configuration from backup")
-        detail = getattr(exc, "detail", str(exc))
         return JSONResponse(
-            {"status": "error", "message": detail},
+            {"status": "error", "message": exc.detail},
+            status_code=exc.status_code,
+        )
+    except OSError as exc:
+        logger.exception("Failed to restore alert configuration from backup")
+        return JSONResponse(
+            {"status": "error", "message": str(exc)},
             status_code=status.HTTP_502_BAD_GATEWAY,
         )
     return JSONResponse({"status": "success", "details": results})
@@ -115,7 +130,17 @@ async def alerts_backup_list(
     context: DefaultContext,
     session: SessionDep,
 ) -> HTMLResponse:
-    """Render the full backup history page."""
+    """Render the full backup history page.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :param context: The shared template context dictionary.
+    :type context: DefaultContext
+    :param session: The async database session.
+    :type session: AsyncSession
+    :return: The rendered backup history HTML page.
+    :rtype: HTMLResponse
+    """
     backups = await AlertBackupManager.list(session)
     context["backups"] = backups
     return templates.TemplateResponse(
