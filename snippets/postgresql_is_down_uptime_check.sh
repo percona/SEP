@@ -14,33 +14,30 @@ set -euo pipefail
 PSQL="psql"
 
 echo "********* Server uptime *********"
-echo ""
 uptime
 
-echo "********* PostgreSQL service status *********"
 echo ""
+echo "********* PostgreSQL service status *********"
 systemctl status postgres* --no-pager 2> /dev/null || echo "No PostgreSQL systemd service found."
 
 echo ""
 echo "********* PostgreSQL processes *********"
-echo ""
 ps -ef | grep -E "[p]ostgres|[p]ostmaster" || echo "No PostgreSQL processes found."
 
 echo ""
 echo "********* PostgreSQL listening ports *********"
-echo ""
 sudo ss -lntp | grep postgres 2> /dev/null || echo "Could not check PostgreSQL listening ports."
 
 echo ""
 echo "********* PostgreSQL uptime *********"
-echo ""
-echo ""
 $PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_time() AS uptime;" 2> /dev/null \
   || echo "Could not connect to PostgreSQL via psql."
 
 echo ""
 echo "********* Recent PostgreSQL log entries *********"
-echo ""
+tail -50 /var/log/postgresql/postgresql-*.log 2> /dev/null \
+    || tail -50 /var/log/postgresql/postgresql*.log 2> /dev/null \
+    || echo "No PostgreSQL logs found in /var/log/postgresql/."
 tail -50 $(
     $PSQL -tA -c "
         SELECT CASE
@@ -55,12 +52,10 @@ tail -50 $(
 
 echo ""
 echo "********* Last logins to the server *********"
-echo ""
 last | head -10
 
 echo ""
 echo "********* pg_hba.conf (if accessible) *********"
-echo ""
 for hba in /etc/postgresql/*/main/pg_hba.conf /var/lib/pgsql/*/data/pg_hba.conf; do
     if [ -f "$hba" ]; then
         echo "Found: $hba"
