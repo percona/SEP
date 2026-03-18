@@ -187,4 +187,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+
+    updatePushButton();
 });
