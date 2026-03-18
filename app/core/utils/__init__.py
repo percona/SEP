@@ -26,6 +26,7 @@ from app.core.utils.dict import (
 from app.core.utils.imports import (
     import_var,
     validate_attribute_is_importable,
+    validate_importable_settings,
     validate_module_is_importable,
 )
 from app.core.utils.iterators import unique_everseen

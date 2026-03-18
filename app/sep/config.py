@@ -44,7 +44,6 @@ from app import __summary__, __version__
 from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
-    settings,
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
@@ -164,33 +163,6 @@ class SessionOptions(BaseModel):
     SECURE: bool = True
 
 
-class CsrfSettings(BaseModel):
-    """Configuration for CSRF protection settings.
-
-    :param SECRET_KEY: Secret key used for CSRF token generation.
-    :type SECRET_KEY: str
-    :param COOKIE_SECURE: Whether the CSRF cookie should be accessible
-        only via HTTPS (except on localhost).
-    :type COOKIE_SECURE: bool
-    :param COOKIE_SAMESITE: SameSite policy for the CSRF cookie.
-    :type COOKIE_SAMESITE: str
-    :param TOKEN_KEY: Key name for the CSRF token.
-    :type TOKEN_KEY: str
-    :param TOKEN_LOCATION: Location where the CSRF token is expected.
-    :type TOKEN_LOCATION: str
-    :param TOKEN_TIME_LIMIT: Maximum age of the CSRF token; should match
-        session MAX_AGE so the token expires with the session.
-    :type TOKEN_TIME_LIMIT: TimedeltaSeconds
-    """
-
-    SECRET_KEY: str = settings.SECRET_KEY.get_secret_value()
-    COOKIE_SECURE: bool = True
-    COOKIE_SAMESITE: str = "none"
-    TOKEN_KEY: str = "csrf-token"  # noqa: S105
-    TOKEN_LOCATION: str = "body"  # noqa: S105
-    TOKEN_TIME_LIMIT: TimedeltaSeconds = timedelta(days=7)
-
-
 class PMMSettings(BaseLowercaseModel):
     """Define centralized PMM configuration.
 
@@ -208,6 +180,9 @@ class PMMSettings(BaseLowercaseModel):
     :type backup_interval: IntervalSchedule
     :param backup_retention: Maximum number of alert backups to retain.
     :type backup_retention: PositiveInt
+    :param alert_folder_name: Display name of the PMM folder used for SEP-managed
+        alert rules. Defaults to ``"SEP Alerts"``.
+    :type alert_folder_name: str
     """
 
     model_config = ConfigDict(extra="allow")
@@ -218,6 +193,7 @@ class PMMSettings(BaseLowercaseModel):
     execution_target: str | None = None
     backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
     backup_retention: PositiveInt = 10
+    alert_folder_name: str = "SEP Alerts"
 
     @cached_property
     def hostname(self) -> str | None:

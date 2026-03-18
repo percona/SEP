@@ -27,13 +27,20 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
 {% block sticky %}
-    <div class="toggle-btn-group"
-         role="group"
-         aria-label="Filter by service type">
-        <button class="toggle-btn active" data-filter="all">All</button>
-        {% for svc in service_types %}
-            <button class="toggle-btn" data-filter="{{ svc.value }}">{{ svc.label }}</button>
-        {% endfor %}
+    <div class="sticky-bar">
+        <div class="toggle-btn-group"
+             role="group"
+             aria-label="Filter by service type">
+            <button class="toggle-btn active" data-filter="all">All</button>
+            {% for svc in service_types %}
+                <button class="toggle-btn" data-filter="{{ svc.value }}">{{ svc.label }}</button>
+            {% endfor %}
+        </div>
+        <button type="button"
+                id="push-to-pmm"
+                class="btn primary push-btn"
+                disabled
+                style="display: none">Push to PMM</button>
     </div>
 {% endblock sticky %}
 {% block main %}
@@ -150,6 +157,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </div>
                     </dialog>
                 {% endfor %}
+                <div id="push-results" class="push-results" style="display: none;"></div>
             {% else %}
                 <p>No alert templates found.</p>
             {% endif %}
@@ -183,6 +191,41 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     <p class="text-muted">No backups available</p>
                 {% endif %}
                 <div id="restore-feedback" class="restore-feedback"></div>
+            </div>
+            <div class="sidebar-widget" id="pagerduty-widget">
+                <h4>PagerDuty Integration</h4>
+                {% if pagerduty_status is none %}
+                    <p class="text-muted">PMM not configured</p>
+                {% elif pagerduty_status.configured %}
+                    <div class="pd-status">
+                        <span class="alert-badge badge-present">Configured</span>
+                    </div>
+                    <form id="pd-form" class="pd-form">
+                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                        <label for="pd-integration-key">Update Integration Key</label>
+                        <input type="password"
+                               id="pd-integration-key"
+                               name="integration_key"
+                               placeholder="Enter new PagerDuty key">
+                        <div class="pd-form-actions">
+                            <button type="submit" class="contained small">Update</button>
+                            <button type="button" class="text small pd-delete-btn" id="pd-delete-btn">Delete</button>
+                        </div>
+                    </form>
+                {% else %}
+                    <span class="alert-badge badge-absent">Not Configured</span>
+                    <form id="pd-form" class="pd-form">
+                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                        <label for="pd-integration-key">Integration Key</label>
+                        <input type="password"
+                               id="pd-integration-key"
+                               name="integration_key"
+                               placeholder="Enter PagerDuty integration key"
+                               required>
+                        <button type="submit" class="contained small">Create</button>
+                    </form>
+                {% endif %}
+                <div id="pd-feedback" class="pd-feedback"></div>
             </div>
         </aside>
     </div>
