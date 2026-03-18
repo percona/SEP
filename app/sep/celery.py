@@ -21,7 +21,12 @@ from pathlib import Path
 from sqlmodel import col
 
 from app.celery import celery
+from app.core.config import settings
+from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
+from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
@@ -133,17 +138,7 @@ def backup_alert_config() -> None:
 
 
 async def _backup_alert_config() -> None:
-    """Fetch alert configuration from PMM and store as a backup.
-
-    Import plugin models and PMM client inline to avoid triggering SQLModel
-    metadata side-effects at module load time.
-    """
-    from app.core.config import settings
-    from app.sep.clients.pmm import PMMRemoteAPI
-    from app.sep.config import sep_settings
-    from app.sep.plugins.alerts.backup import AlertBackup
-    from app.sep.plugins.alerts.crud import AlertBackupManager
-
+    """Fetch alert configuration from PMM and store as a backup."""
     if not sep_settings.PMM.endpoint or not sep_settings.PMM.api_key:
         logger.warning("PMM not configured, skipping alert backup")
         return
@@ -169,7 +164,7 @@ async def _backup_alert_config() -> None:
         "templates": [t.model_dump() for t in templates],
         "rules": [r.model_dump() for r in rules],
         "contact_points": [cp.model_dump() for cp in contact_points],
-        "notification_policies": notification_policy.model_dump(),
+        "notification_policy": notification_policy.model_dump(),
         "folders": [f.model_dump() for f in folders],
     }
     metadata = {
