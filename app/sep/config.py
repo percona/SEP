@@ -41,10 +41,7 @@ from pydantic import (
 from pydantic_core.core_schema import ValidationInfo
 
 from app import __summary__, __version__
-from app.core.config import (
-    BaseYamlAppSettings,
-    settings,
-)
+from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.utils import (
@@ -161,33 +158,6 @@ class SessionOptions(BaseModel):
     MAX_AGE: TimedeltaSeconds = timedelta(days=7)
     SAMESITE: Literal["lax", "strict", "none"] = "lax"
     SECURE: bool = True
-
-
-class CsrfSettings(BaseModel):
-    """Configuration for CSRF protection settings.
-
-    :param SECRET_KEY: Secret key used for CSRF token generation.
-    :type SECRET_KEY: str
-    :param COOKIE_SECURE: Whether the CSRF cookie should be accessible
-        only via HTTPS (except on localhost).
-    :type COOKIE_SECURE: bool
-    :param COOKIE_SAMESITE: SameSite policy for the CSRF cookie.
-    :type COOKIE_SAMESITE: str
-    :param TOKEN_KEY: Key name for the CSRF token.
-    :type TOKEN_KEY: str
-    :param TOKEN_LOCATION: Location where the CSRF token is expected.
-    :type TOKEN_LOCATION: str
-    :param TOKEN_TIME_LIMIT: Maximum age of the CSRF token; should match
-        session MAX_AGE so the token expires with the session.
-    :type TOKEN_TIME_LIMIT: TimedeltaSeconds
-    """
-
-    SECRET_KEY: str = settings.SECRET_KEY.get_secret_value()
-    COOKIE_SECURE: bool = True
-    COOKIE_SAMESITE: str = "none"
-    TOKEN_KEY: str = "csrf-token"  # noqa: S105
-    TOKEN_LOCATION: str = "body"  # noqa: S105
-    TOKEN_TIME_LIMIT: TimedeltaSeconds = timedelta(days=7)
 
 
 class PMMSettings(BaseLowercaseModel):
