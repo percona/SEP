@@ -305,12 +305,12 @@ class TestRestoreRoute:
 
     @pytest.mark.usefixtures("_mock_pmm_api_dep", "_mock_backup_not_found")
     def test_restore_backup_not_found(self, test_client):
-        """Assert 502 JSON error when backup_id does not exist."""
+        """Assert 404 JSON error when backup_id does not exist."""
         response = test_client.post(
             "/alerts/restore",
             data={"backup_id": "999"},
         )
-        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         body = response.json()
         assert body["status"] == "error"
 
