@@ -22,7 +22,7 @@ import pytest
 from fastapi import status
 from fastapi.exceptions import HTTPException
 
-from app.sep.clients.pmm import Folder, PMMRemoteAPI
+from app.sep.clients.pmm import ContactPoint, Folder, NotificationPolicy, PMMRemoteAPI
 from app.sep.main import sep_app
 from app.sep.plugins.alerts.deps import (
     get_alert_templates,
@@ -66,6 +66,7 @@ _POPULATED_CONTEXT = {
     "service_types": list(ServiceType),
     "pmm_present_names": {"High CPU"},
     "alert_templates": {},
+    "pagerduty_status": {"configured": False},
 }
 
 _EMPTY_CONTEXT = {
@@ -74,6 +75,7 @@ _EMPTY_CONTEXT = {
     "service_types": list(ServiceType),
     "pmm_present_names": None,
     "alert_templates": {},
+    "pagerduty_status": None,
 }
 
 _FOLDER = Folder(uid="folder-1", title="SEP Alerts", id=1)
@@ -108,6 +110,14 @@ def mock_pmm_api():
     sep_app.dependency_overrides[get_or_create_alert_folder] = lambda: _FOLDER
     sep_app.dependency_overrides[get_pmm_present_names] = lambda: set()
     yield mock
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def _mock_pmm_unavailable():
+    """Override PMM API dependency to return None."""
+    sep_app.dependency_overrides[get_pmm_api] = lambda: None
+    yield
     sep_app.dependency_overrides = {}
 
 
@@ -153,6 +163,138 @@ def test_alerts_index_empty_state(test_client):
     assert response.status_code == status.HTTP_200_OK
     assert "No alert templates found." in response.text
     assert "alerts-table" not in response.text
+
+
+@pytest.mark.usefixtures("_mock_alerts_index_context")
+def test_alerts_index_contains_pagerduty_widget(test_client):
+    """Assert the PagerDuty widget renders in the sidebar."""
+    response = test_client.get("/alerts/")
+    assert "pagerduty-widget" in response.text
+    assert "PagerDuty Integration" in response.text
+
+
+class TestPagerDutySave:
+    """Test the POST /alerts/pagerduty endpoint."""
+
+    def test_create_new_contact_point(self, test_client, mock_pmm_api):
+        """Assert a new contact point is created when none exists."""
+        mock_pmm_api.list_contact_points.return_value = []
+        mock_pmm_api.create_contact_point.return_value = ContactPoint(
+            uid="new-cp", name="SEP PagerDuty", type="pagerduty", settings={}
+        )
+        mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default", routes=[]
+        )
+
+        response = test_client.post(
+            "/alerts/pagerduty",
+            data={"integration_key": "test-key-abcd1234"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "created"
+        assert "masked_key" not in data
+        mock_pmm_api.create_contact_point.assert_awaited_once()
+
+    def test_update_existing_contact_point(self, test_client, mock_pmm_api):
+        """Assert an existing contact point is updated."""
+        mock_pmm_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="existing-cp",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "old-key"},
+            ),
+        ]
+        mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default",
+            routes=[{"receiver": "SEP PagerDuty"}],
+        )
+
+        response = test_client.post(
+            "/alerts/pagerduty",
+            data={"integration_key": "new-key-efgh5678"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "updated"
+        assert "masked_key" not in data
+        mock_pmm_api.update_contact_point.assert_awaited_once()
+
+    @pytest.mark.usefixtures("_mock_pmm_unavailable")
+    def test_returns_503_when_pmm_unavailable(self, test_client):
+        """Assert 503 is returned when PMM is not configured."""
+        response = test_client.post(
+            "/alerts/pagerduty",
+            data={"integration_key": "some-key"},
+        )
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def test_returns_502_on_api_error(self, test_client, mock_pmm_api):
+        """Assert 502 is returned when PMM API raises an exception."""
+        mock_pmm_api.list_contact_points.side_effect = OSError("API failure")
+
+        response = test_client.post(
+            "/alerts/pagerduty",
+            data={"integration_key": "some-key"},
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+
+
+class TestPagerDutyDelete:
+    """Test the POST /alerts/pagerduty/delete endpoint."""
+
+    def test_deletes_contact_point_and_route(self, test_client, mock_pmm_api):
+        """Assert the contact point and route are deleted."""
+        mock_pmm_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-1",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "key"},
+            ),
+        ]
+        mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default",
+            routes=[
+                {"receiver": "SEP PagerDuty"},
+                {"receiver": "other"},
+            ],
+        )
+
+        response = test_client.post("/alerts/pagerduty/delete")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "deleted"
+        updated_policy = mock_pmm_api.update_notification_policy.call_args[0][0]
+        assert len(updated_policy.routes) == 1
+        assert updated_policy.routes[0]["receiver"] == "other"
+        mock_pmm_api.delete_contact_point.assert_awaited_once_with("cp-1")
+        call_names = [c[0] for c in mock_pmm_api.method_calls]
+        assert call_names.index("update_notification_policy") < call_names.index(
+            "delete_contact_point"
+        )
+
+    def test_returns_404_when_not_configured(self, test_client, mock_pmm_api):
+        """Assert 404 is returned when no PD contact point exists."""
+        mock_pmm_api.list_contact_points.return_value = []
+
+        response = test_client.post("/alerts/pagerduty/delete")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.usefixtures("_mock_pmm_unavailable")
+    def test_returns_503_when_pmm_unavailable(self, test_client):
+        """Assert 503 is returned when PMM is not configured."""
+        response = test_client.post("/alerts/pagerduty/delete")
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def test_returns_502_on_api_error(self, test_client, mock_pmm_api):
+        """Assert 502 is returned when PMM API raises an exception."""
+        mock_pmm_api.list_contact_points.side_effect = OSError("API failure")
+
+        response = test_client.post("/alerts/pagerduty/delete")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
 
 
 class TestAlertsPush:

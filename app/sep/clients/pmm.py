@@ -732,6 +732,28 @@ class PMMRemoteAPI(RemoteAPI):
                     detail=err.message,
                 ) from None
 
+    async def delete_contact_point(self, uid: str) -> None:
+        """Delete an alert contact point by its UID.
+
+        Use the raw ``_request`` context manager directly because the DELETE
+        endpoint returns a 204 No Content response with no JSON body.
+
+        :param uid: The UID of the contact point to delete.
+        :type uid: str
+        """
+        async with self._request(
+            "DELETE",
+            f"/graph/api/v1/provisioning/contact-points/{uid}",
+            headers=self.alerting_headers,
+        ) as response:
+            try:
+                response.raise_for_status()
+            except ClientResponseError as err:
+                raise HTTPException(
+                    status_code=err.status,
+                    detail=err.message,
+                ) from None
+
     async def get_notification_policy(self) -> NotificationPolicy:
         """Fetch the current notification policy tree from PMM.
 
@@ -744,22 +766,17 @@ class PMMRemoteAPI(RemoteAPI):
         )
         return NotificationPolicy.model_validate(data)
 
-    async def update_notification_policy(
-        self, policy: NotificationPolicy
-    ) -> NotificationPolicy:
+    async def update_notification_policy(self, policy: NotificationPolicy) -> None:
         """Replace the notification policy tree in PMM.
 
         :param policy: The new notification policy to apply.
         :type policy: NotificationPolicy
-        :return: The updated notification policy as returned by the API.
-        :rtype: NotificationPolicy
         """
-        data = await self.put(
+        await self.put(
             "/graph/api/v1/provisioning/policies",
             json=policy.model_dump(exclude_none=True),
             headers=self.alerting_headers,
         )
-        return NotificationPolicy.model_validate(data)
 
     async def get_services_by_node_external_id(
         self,

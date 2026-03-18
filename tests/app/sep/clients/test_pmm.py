@@ -701,6 +701,55 @@ class TestUpdateContactPoint:
         mock_response.raise_for_status.assert_called_once()
 
 
+class TestDeleteContactPoint:
+    """Test the delete_contact_point method."""
+
+    @pytest.mark.asyncio
+    async def test_delete_contact_point_sends_delete_request(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test delete_contact_point sends a DELETE with uid and alerting headers."""
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.raise_for_status = MagicMock()
+        captured = []
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            captured.append({"method": method, "path": path, "kwargs": kwargs})
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        await pmm_remote_api.delete_contact_point("cp-uid-456")
+
+        assert len(captured) == 1
+        assert captured[0]["method"] == "DELETE"
+        assert (
+            captured[0]["path"]
+            == "/graph/api/v1/provisioning/contact-points/cp-uid-456"
+        )
+        assert captured[0]["kwargs"].get("headers") == ALERTING_HEADERS
+        mock_response.raise_for_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_contact_point_returns_none(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test delete_contact_point returns None on success."""
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.raise_for_status = MagicMock()
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        result = await pmm_remote_api.delete_contact_point("cp-uid-456")
+
+        assert result is None
+
+
 class TestGetNotificationPolicy:
     """Test the get_notification_policy method."""
 
@@ -739,16 +788,8 @@ class TestUpdateNotificationPolicy:
             group_by=["alertname", "cluster"],
             routes=[{"receiver": "pagerduty", "match": {"severity": "critical"}}],
         )
-        mock_request.return_value = {
-            "receiver": "slack",
-            "group_by": ["alertname", "cluster"],
-            "routes": [{"receiver": "pagerduty", "match": {"severity": "critical"}}],
-        }
+        await pmm_remote_api.update_notification_policy(policy)
 
-        result = await pmm_remote_api.update_notification_policy(policy)
-
-        assert isinstance(result, NotificationPolicy)
-        assert result.receiver == "slack"
         mock_request.assert_awaited_once_with(
             "PUT",
             "/graph/api/v1/provisioning/policies",

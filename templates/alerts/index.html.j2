@@ -44,119 +44,160 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </div>
 {% endblock sticky %}
 {% block main %}
-    <p>
-        View and manage alert templates. Templates define alerting rules that
-        can be pushed to PMM for monitoring.
-    </p>
-    {% if all_templates %}
-        <table class="alerts-table">
-            <thead>
-                <tr>
-                    <th class="col-checkbox">
-                        <label class="checkbox">
-                            <input type="checkbox" id="select-all-alerts">
-                            <div class="checkmark">
-                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                                <span class="material-symbols-outlined checked">check_box</span>
-                            </div>
-                        </label>
-                    </th>
-                    <th>Name</th>
-                    <th>Service</th>
-                    <th>Severity</th>
-                    <th>Present in PMM</th>
-                    <th class="options">Details</th>
-                </tr>
-            </thead>
-            <tbody>
+    <div class="alerts-layout">
+        <div class="alerts-main">
+            <p>
+                View and manage alert templates. Templates define alerting rules that
+                can be pushed to PMM for monitoring.
+            </p>
+            {% if all_templates %}
+                <table class="alerts-table">
+                    <thead>
+                        <tr>
+                            <th class="col-checkbox">
+                                <label class="checkbox">
+                                    <input type="checkbox" id="select-all-alerts">
+                                    <div class="checkmark">
+                                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                        <span class="material-symbols-outlined checked">check_box</span>
+                                    </div>
+                                </label>
+                            </th>
+                            <th>Name</th>
+                            <th>Service</th>
+                            <th>Severity</th>
+                            <th>Present in PMM</th>
+                            <th class="options">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for template in all_templates %}
+                            <tr data-service-type="{{ template.service_type.value }}">
+                                <td class="col-checkbox">
+                                    <label class="checkbox">
+                                        <input type="checkbox"
+                                               class="alert-checkbox"
+                                               name="selected_templates"
+                                               value="{{ template.name }}">
+                                        <div class="checkmark">
+                                            <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                            <span class="material-symbols-outlined checked">check_box</span>
+                                        </div>
+                                    </label>
+                                </td>
+                                <td>{{ template.name }}</td>
+                                <td>{{ template.service_type.label }}</td>
+                                <td>
+                                    <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
+                                </td>
+                                <td>
+                                    {% if pmm_present_names is none %}
+                                        <span class="alert-badge badge-unknown">Unknown</span>
+                                    {% elif template.name in pmm_present_names %}
+                                        <span class="alert-badge badge-present">Present</span>
+                                    {% else %}
+                                        <span class="alert-badge badge-absent">Not Present</span>
+                                    {% endif %}
+                                </td>
+                                <td class="options">
+                                    <button type="button"
+                                            class="icon medium"
+                                            aria-label="View details for {{ template.name }}"
+                                            data-modal="trigger"
+                                            data-modal-target="modal-template-{{ loop.index }}">
+                                        <span class="material-symbols-outlined">visibility</span>
+                                    </button>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
                 {% for template in all_templates %}
-                    <tr data-service-type="{{ template.service_type.value }}">
-                        <td class="col-checkbox">
-                            <label class="checkbox">
-                                <input type="checkbox"
-                                       class="alert-checkbox"
-                                       name="selected_templates"
-                                       value="{{ template.name }}">
-                                <div class="checkmark">
-                                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                                    <span class="material-symbols-outlined checked">check_box</span>
-                                </div>
-                            </label>
-                        </td>
-                        <td>{{ template.name }}</td>
-                        <td>{{ template.service_type.label }}</td>
-                        <td>
-                            <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
-                        </td>
-                        <td>
-                            {% if pmm_present_names is none %}
-                                <span class="alert-badge badge-unknown">Unknown</span>
-                            {% elif template.name in pmm_present_names %}
-                                <span class="alert-badge badge-present">Present</span>
-                            {% else %}
-                                <span class="alert-badge badge-absent">Not Present</span>
-                            {% endif %}
-                        </td>
-                        <td class="options">
-                            <button type="button"
-                                    class="icon medium"
-                                    aria-label="View details for {{ template.name }}"
-                                    data-modal="trigger"
-                                    data-modal-target="modal-template-{{ loop.index }}">
-                                <span class="material-symbols-outlined">visibility</span>
-                            </button>
-                        </td>
-                    </tr>
+                    <dialog id="modal-template-{{ loop.index }}"
+                            aria-modal="true"
+                            aria-labelledby="modal-title-{{ loop.index }}"
+                            data-modal="target">
+                        <div class="window alert-detail-modal">
+                            <header>
+                                <h3 id="modal-title-{{ loop.index }}" class="h5 title">{{ template.name }}</h3>
+                            </header>
+                            <section>
+                                <dl class="alert-detail-list">
+                                    <dt>Service Type</dt>
+                                    <dd>
+                                        {{ template.service_type.label }}
+                                    </dd>
+                                    <dt>Severity</dt>
+                                    <dd>
+                                        <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
+                                    </dd>
+                                    <dt>Default Threshold</dt>
+                                    <dd>
+                                        {{ template.default_threshold }}
+                                    </dd>
+                                    <dt>Description</dt>
+                                    <dd>
+                                        {{ template.description }}
+                                    </dd>
+                                    <dt>Summary</dt>
+                                    <dd>
+                                        {{ template.summary }}
+                                    </dd>
+                                    <dt>Expression</dt>
+                                    <dd>
+                                        <code class="expression">{{ template.expression }}</code>
+                                    </dd>
+                                </dl>
+                            </section>
+                            <footer>
+                                <button type="button" class="text large" data-modal-close>
+                                    Close<sup>ESC</sup>
+                                </button>
+                            </footer>
+                        </div>
+                    </dialog>
                 {% endfor %}
-            </tbody>
-        </table>
-        {% for template in all_templates %}
-            <dialog id="modal-template-{{ loop.index }}"
-                    aria-modal="true"
-                    aria-labelledby="modal-title-{{ loop.index }}"
-                    data-modal="target">
-                <div class="window alert-detail-modal">
-                    <header>
-                        <h3 id="modal-title-{{ loop.index }}" class="h5 title">{{ template.name }}</h3>
-                    </header>
-                    <section>
-                        <dl class="alert-detail-list">
-                            <dt>Service Type</dt>
-                            <dd>
-                                {{ template.service_type.label }}
-                            </dd>
-                            <dt>Severity</dt>
-                            <dd>
-                                <span class="alert-badge severity-{{ template.severity.value }}">{{ template.severity.value | title }}</span>
-                            </dd>
-                            <dt>Default Threshold</dt>
-                            <dd>
-                                {{ template.default_threshold }}
-                            </dd>
-                            <dt>Description</dt>
-                            <dd>
-                                {{ template.description }}
-                            </dd>
-                            <dt>Summary</dt>
-                            <dd>
-                                {{ template.summary }}
-                            </dd>
-                            <dt>Expression</dt>
-                            <dd>
-                                <code class="expression">{{ template.expression }}</code>
-                            </dd>
-                        </dl>
-                    </section>
-                    <footer>
-                        <button type="button" class="text large" data-modal-close>
-                            Close<sup>ESC</sup>
-                        </button>
-                    </footer>
-                </div>
-            </dialog>
-        {% endfor %}
-        <div id="push-results" class="push-results" style="display: none;"></div>
-    {% else %}
-        <p>No alert templates found.</p>
-    {% endif %}
+                <div id="push-results" class="push-results" style="display: none;"></div>
+            {% else %}
+                <p>No alert templates found.</p>
+            {% endif %}
+        </div>
+        <aside class="alerts-sidebar">
+            <div class="sidebar-widget" id="pagerduty-widget">
+                <h4>PagerDuty Integration</h4>
+                {% if pagerduty_status is none %}
+                    <p class="text-muted">PMM not configured</p>
+                {% elif pagerduty_status.configured %}
+                    <div class="pd-status">
+                        <span class="alert-badge badge-present">Configured</span>
+                    </div>
+                    <form id="pd-form" class="pd-form">
+                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                        <label for="pd-integration-key">Update Integration Key</label>
+                        <input type="password"
+                               id="pd-integration-key"
+                               name="integration_key"
+                               placeholder="Enter new PagerDuty key">
+                        <div class="pd-form-actions">
+                            <button type="submit" class="contained small">Update</button>
+                            <button type="button" class="text small pd-delete-btn" id="pd-delete-btn">Delete</button>
+                        </div>
+                    </form>
+                {% else %}
+                    <span class="alert-badge badge-absent">Not Configured</span>
+                    <form id="pd-form" class="pd-form">
+                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                        <label for="pd-integration-key">Integration Key</label>
+                        <input type="password"
+                               id="pd-integration-key"
+                               name="integration_key"
+                               placeholder="Enter PagerDuty integration key"
+                               required>
+                        <button type="submit" class="contained small">Create</button>
+                    </form>
+                {% endif %}
+                <div id="pd-feedback" class="pd-feedback"></div>
+            </div>
+        </aside>
+    </div>
 {% endblock main %}
