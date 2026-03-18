@@ -23,7 +23,7 @@ ORDER BY rollback_percent;
 SQL
 
 echo ""
-echo "********* Rollback statements in `pg_stat_activity` *********"
+echo "********* Rollback statements in pg_stat_activity *********"
 echo ""
 $PSQL <<SQL
 SELECT * FROM pg_stat_activity WHERE query ilike '%rollback%';
