@@ -164,11 +164,15 @@ async def _backup_alert_config() -> None:
         return
 
     data = {
-        "templates": [t.model_dump() for t in templates],
-        "rules": [r.model_dump() for r in rules],
-        "contact_points": [cp.model_dump() for cp in contact_points],
+        "templates": sorted(
+            (t.model_dump() for t in templates), key=lambda t: t["name"]
+        ),
+        "rules": sorted((r.model_dump() for r in rules), key=lambda r: r["uid"]),
+        "contact_points": sorted(
+            (cp.model_dump() for cp in contact_points), key=lambda cp: cp["uid"]
+        ),
         "notification_policy": notification_policy.model_dump(),
-        "folders": [f.model_dump() for f in folders],
+        "folders": sorted((f.model_dump() for f in folders), key=lambda f: f["uid"]),
     }
     metadata = {
         "template_count": len(templates),
@@ -179,6 +183,11 @@ async def _backup_alert_config() -> None:
 
     async_session = get_async_session_maker()
     async with async_session() as session:
+        recent = await AlertBackupManager.list_recent(session, limit=1)
+        if recent and recent[0].data == data:
+            logger.debug("Alert config unchanged, skipping backup")
+            return
+
         backup = AlertBackup(data=data, metadata_=metadata)
         await AlertBackupManager.save(session, backup)
 

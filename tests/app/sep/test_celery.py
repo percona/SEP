@@ -43,6 +43,7 @@ from app.sep.snippets.config import SnippetFilter, SnippetFilterType
 
 MODULE = "app.sep.celery"
 EXPECTED_DELETE_WHERE_CALLS = 2
+EXPECTED_BACKUP_COUNT_AFTER_DIFF = 2
 
 
 def _make_async_session_maker():
@@ -502,3 +503,81 @@ class TestBackupAlertConfig:
 
         results = await AlertBackupManager.list(session)
         assert len(results) == retention
+
+    @pytest.mark.asyncio
+    async def test_backup_skips_duplicate(self, session, mocker) -> None:
+        """Assert no new backup is created when data is unchanged."""
+        mock_api = _mock_pmm_api()
+        _patch_pmm_settings(mocker)
+        mocker.patch(
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
+        )
+        _patch_session(mocker, session)
+
+        await _backup_alert_config()
+        results_after_first = await AlertBackupManager.list(session)
+        assert len(results_after_first) == 1
+
+        await _backup_alert_config()
+        results_after_second = await AlertBackupManager.list(session)
+        assert len(results_after_second) == 1
+
+    @pytest.mark.asyncio
+    async def test_backup_skips_duplicate_despite_reordered_api_response(
+        self, session, mocker
+    ) -> None:
+        """Assert dedup works even when the API returns items in different order."""
+        mock_api = _mock_pmm_api()
+        _patch_pmm_settings(mocker)
+        mocker.patch(
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
+        )
+        _patch_session(mocker, session)
+
+        await _backup_alert_config()
+
+        mock_api.list_contact_points = AsyncMock(
+            return_value=[
+                ContactPoint(uid="cp2", name="CP 2", type="slack"),
+                ContactPoint(uid="cp1", name="CP 1", type="email"),
+            ]
+        )
+
+        await _backup_alert_config()
+        results = await AlertBackupManager.list(session)
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_backup_saves_when_data_differs(self, session, mocker) -> None:
+        """Assert a new backup is created when data changes."""
+        mock_api = _mock_pmm_api()
+        _patch_pmm_settings(mocker)
+        mocker.patch(
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
+        )
+        _patch_session(mocker, session)
+
+        existing = AlertBackup(
+            data={
+                "templates": [],
+                "rules": [],
+                "contact_points": [],
+                "notification_policy": {},
+                "folders": [],
+            },
+            metadata_={
+                "template_count": 0,
+                "rule_count": 0,
+                "contact_point_count": 0,
+                "folder_count": 0,
+            },
+        )
+        await AlertBackupManager.save(session, existing)
+
+        await _backup_alert_config()
+
+        results = await AlertBackupManager.list(session)
+        assert len(results) == EXPECTED_BACKUP_COUNT_AFTER_DIFF
