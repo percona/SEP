@@ -25,17 +25,20 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.core.utils.fields import NonEmptyStr
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
-from app.sep.deps import IsAuthenticated, IsCsrfValidated
+from app.sep.deps import DefaultContext, IsAuthenticated, IsCsrfValidated, SessionDep
+from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
     AlertsIndexContext,
     AlertTemplatesDep,
     ensure_pagerduty_notification_route,
     PAGERDUTY_CONTACT_POINT_NAME,
+    PMMAPIDep,
     PMMPresentNamesDep,
     RequiredAlertFolderDep,
     RequiredPMMAPIDep,
 )
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
+from app.sep.plugins.alerts.restore import restore_from_backup
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -77,6 +80,72 @@ async def alerts_index(
     return templates.TemplateResponse(
         request=request,
         name="alerts/index.html.j2",
+        context=context,
+    )
+
+
+@router.post("/restore", dependencies=[IsAuthenticated, IsCsrfValidated])
+async def alerts_restore(
+    pmm_api: PMMAPIDep,
+    session: SessionDep,
+    backup_id: Annotated[int, Form()],
+) -> JSONResponse:
+    """Restore alert configuration from a selected backup.
+
+    :param pmm_api: The PMM API client, or ``None`` when PMM is not configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param backup_id: The ID of the backup to restore from.
+    :type backup_id: int
+    :return: JSON with restore results on success or an error envelope on failure.
+    :rtype: JSONResponse
+    """
+    if pmm_api is None:
+        return JSONResponse(
+            {"status": "error", "message": "PMM is not configured"},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    try:
+        backup = await AlertBackupManager.get_or_404(session, id=backup_id)
+        results = await restore_from_backup(pmm_api, backup)
+    except HTTPException as exc:
+        logger.exception("Failed to restore alert configuration from backup")
+        return JSONResponse(
+            {"status": "error", "message": exc.detail},
+            status_code=exc.status_code,
+        )
+    except OSError as exc:
+        logger.exception("Failed to restore alert configuration from backup")
+        return JSONResponse(
+            {"status": "error", "message": str(exc)},
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
+    return JSONResponse({"status": "success", "details": results})
+
+
+@router.get("/backups", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def alerts_backup_list(
+    request: Request,
+    context: DefaultContext,
+    session: SessionDep,
+) -> HTMLResponse:
+    """Render the full backup history page.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :param context: The shared template context dictionary.
+    :type context: DefaultContext
+    :param session: The async database session.
+    :type session: AsyncSession
+    :return: The rendered backup history HTML page.
+    :rtype: HTMLResponse
+    """
+    backups = await AlertBackupManager.list(session)
+    context["backups"] = backups
+    return templates.TemplateResponse(
+        request=request,
+        name="alerts/backup_history.html.j2",
         context=context,
     )
 

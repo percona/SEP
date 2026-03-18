@@ -29,7 +29,9 @@ from app.core.exceptions import (
 )
 from app.sep.clients.pmm import Folder, PMMRemoteAPI
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext
+from app.sep.deps import DefaultContext, SessionDep
+from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.loader import get_alert_templates
 from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
 
@@ -104,6 +106,20 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 
 
 PMMPresentNamesDep = Annotated[set[str] | None, Depends(get_pmm_present_names)]
+
+
+async def get_recent_backups(session: SessionDep) -> list[AlertBackup]:
+    """Return the most recent alert backups for the sidebar widget.
+
+    :param session: The async database session.
+    :type session: SessionDep
+    :return: A list of recent alert backups, ordered by creation date descending.
+    :rtype: list[AlertBackup]
+    """
+    return await AlertBackupManager.list(session)
+
+
+RecentBackupsDep = Annotated[list[AlertBackup], Depends(get_recent_backups)]
 
 
 async def get_or_create_alert_folder(pmm_api: PMMAPIDep) -> Folder | None:
@@ -221,6 +237,7 @@ async def get_alerts_index_context(
     context: DefaultContext,
     alert_templates: AlertTemplatesDep,
     pmm_present_names: PMMPresentNamesDep,
+    recent_backups: RecentBackupsDep,
     pagerduty_status: PagerDutyStatusDep,
 ) -> dict[str, Any]:
     """Assemble the template context for the alerts plugin index view.
@@ -232,6 +249,8 @@ async def get_alerts_index_context(
     :param pmm_present_names: Set of template names present in PMM, or ``None``
         when PMM is unreachable.
     :type pmm_present_names: PMMPresentNamesDep
+    :param recent_backups: The most recent alert backups for the sidebar widget.
+    :type recent_backups: RecentBackupsDep
     :param pagerduty_status: PagerDuty contact point status for the sidebar
         widget, or ``None`` when PMM is unreachable.
     :type pagerduty_status: PagerDutyStatusDep
@@ -245,6 +264,7 @@ async def get_alerts_index_context(
             "all_templates": all_templates,
             "service_types": list(ServiceType),
             "pmm_present_names": pmm_present_names,
+            "recent_backups": recent_backups,
             "pagerduty_status": pagerduty_status,
         }
     )

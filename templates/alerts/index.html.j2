@@ -163,6 +163,35 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             {% endif %}
         </div>
         <aside class="alerts-sidebar">
+            <div class="sidebar-widget" id="backup-widget">
+                <h4>Backups</h4>
+                {% if recent_backups %}
+                    <form id="restore-form">
+                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                        <ul class="backup-list">
+                            {% for backup in recent_backups[:5] %}
+                                <li>
+                                    <label class="backup-option">
+                                        <input type="radio" name="backup_id" value="{{ backup.id }}">
+                                        <span class="backup-info">
+                                            <time>{{ backup.created_at.strftime("%Y-%m-%d %H:%M") }}</time>
+                                            <small>{{ backup.metadata_.get('template_count', 0) }} templates,
+                                            {{ backup.metadata_.get('rule_count', 0) }} rules</small>
+                                        </span>
+                                    </label>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                        <div class="backup-actions">
+                            <button type="submit" id="restore-btn" class="contained small" disabled>Restore</button>
+                            <a href="{{ url_for('alerts_backup_list') }}" class="text small">View all</a>
+                        </div>
+                    </form>
+                {% else %}
+                    <p class="text-muted">No backups available</p>
+                {% endif %}
+                <div id="restore-feedback" class="restore-feedback"></div>
+            </div>
             <div class="sidebar-widget" id="pagerduty-widget">
                 <h4>PagerDuty Integration</h4>
                 {% if pagerduty_status is none %}
