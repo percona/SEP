@@ -70,7 +70,7 @@ def _sample_backup_data():
                 "settings": {"url": "https://hooks.slack.com/x"},
             },
         ],
-        "notification_policies": {
+        "notification_policy": {
             "receiver": "Email",
             "group_by": ["alertname"],
             "routes": [],
@@ -124,8 +124,8 @@ class TestRestoreFromBackup:
 
         mock_api.delete_rule.assert_awaited_once_with("existing1")
         mock_api.create_rule.assert_awaited_once()
-        mock_api.update_contact_point.assert_awaited_once()
-        mock_api.create_contact_point.assert_awaited_once()
+        mock_api.delete_contact_point.assert_awaited_once_with("existing-cp")
+        assert mock_api.create_contact_point.await_count == _SAMPLE_CONTACT_POINT_COUNT
         mock_api.update_notification_policy.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -152,8 +152,8 @@ class TestRestoreFromBackup:
         mock_api.create_template.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_contact_points_upserted(self):
-        """Assert existing contact points are updated and new ones created."""
+    async def test_contact_points_replaced(self):
+        """Assert existing contact points are deleted and recreated."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
@@ -175,6 +175,8 @@ class TestRestoreFromBackup:
 
         assert results["contact_points"]["updated"] == _SAMPLE_CONTACT_POINT_COUNT
         assert results["contact_points"]["created"] == 0
+        assert mock_api.delete_contact_point.await_count == _SAMPLE_CONTACT_POINT_COUNT
+        assert mock_api.create_contact_point.await_count == _SAMPLE_CONTACT_POINT_COUNT
 
     @pytest.mark.asyncio
     async def test_empty_backup_data(self):

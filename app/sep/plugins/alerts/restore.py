@@ -84,23 +84,18 @@ async def restore_from_backup(
     for cp_data in data.get("contact_points", []):
         if cp_data["name"] in existing_cp_map:
             existing = existing_cp_map[cp_data["name"]]
-            await pmm_api.update_contact_point(
-                existing.uid,
-                cp_data["name"],
-                cp_data["type"],
-                cp_data.get("settings", {}),
-            )
+            await pmm_api.delete_contact_point(existing.uid)
             cp_updated += 1
         else:
-            await pmm_api.create_contact_point(
-                cp_data["name"],
-                cp_data["type"],
-                cp_data.get("settings", {}),
-            )
             cp_created += 1
+        await pmm_api.create_contact_point(
+            cp_data["name"],
+            cp_data["type"],
+            cp_data.get("settings", {}),
+        )
     results["contact_points"] = {"created": cp_created, "updated": cp_updated}
 
-    policy_data = data.get("notification_policies", {})
+    policy_data = data.get("notification_policy", {})
     if policy_data:
         policy = NotificationPolicy.model_validate(policy_data)
         await pmm_api.update_notification_policy(policy)

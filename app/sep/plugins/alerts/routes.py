@@ -156,7 +156,7 @@ async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONRespo
                 for cp in data.get("contact_points", [])
             ],
             "folders": [{"title": f.get("title", "")} for f in data.get("folders", [])],
-            "notification_policy_receiver": data.get("notification_policies", {}).get(
+            "notification_policy_receiver": data.get("notification_policy", {}).get(
                 "receiver", ""
             ),
         }
