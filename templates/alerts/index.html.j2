@@ -162,15 +162,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 {% elif pagerduty_status.configured %}
                     <div class="pd-status">
                         <span class="alert-badge badge-present">Configured</span>
-                        <div class="pd-token-display">
-                            <code id="pd-masked-key">{{ pagerduty_status.masked_key }}</code>
-                            <button type="button"
-                                    class="icon small"
-                                    id="pd-reveal-btn"
-                                    aria-label="Reveal integration key">
-                                <span class="material-symbols-outlined">visibility</span>
-                            </button>
-                        </div>
                     </div>
                     <form id="pd-form" class="pd-form">
                         <input type="hidden" name="csrf-token" value="{{ csrf_token }}">

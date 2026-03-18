@@ -744,22 +744,17 @@ class PMMRemoteAPI(RemoteAPI):
         )
         return NotificationPolicy.model_validate(data)
 
-    async def update_notification_policy(
-        self, policy: NotificationPolicy
-    ) -> NotificationPolicy:
+    async def update_notification_policy(self, policy: NotificationPolicy) -> None:
         """Replace the notification policy tree in PMM.
 
         :param policy: The new notification policy to apply.
         :type policy: NotificationPolicy
-        :return: The updated notification policy as returned by the API.
-        :rtype: NotificationPolicy
         """
-        data = await self.put(
+        await self.put(
             "/graph/api/v1/provisioning/policies",
             json=policy.model_dump(exclude_none=True),
             headers=self.alerting_headers,
         )
-        return NotificationPolicy.model_validate(data)
 
     async def get_services_by_node_external_id(
         self,

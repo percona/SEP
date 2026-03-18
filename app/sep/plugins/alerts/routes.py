@@ -28,7 +28,6 @@ from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.plugins.alerts.deps import (
     AlertsIndexContext,
     ensure_pagerduty_notification_route,
-    mask_pagerduty_key,
     PAGERDUTY_CONTACT_POINT_NAME,
     RequiredPMMAPIDep,
 )
@@ -62,7 +61,7 @@ async def pagerduty_save(
     :type pmm_api: PMMRemoteAPI
     :param integration_key: The PagerDuty integration key from the form.
     :type integration_key: NonEmptyStr
-    :return: JSON with ``status`` and ``masked_key``.
+    :return: JSON with ``status``.
     :rtype: JSONResponse
     """
     try:
@@ -95,50 +94,13 @@ async def pagerduty_save(
 
         await ensure_pagerduty_notification_route(pmm_api, PAGERDUTY_CONTACT_POINT_NAME)
 
-        return JSONResponse(
-            {"status": result_status, "masked_key": mask_pagerduty_key(integration_key)}
-        )
+        return JSONResponse({"status": result_status})
     except (HTTPException, OSError):
         logger.exception("Failed to save PagerDuty contact point")
         return JSONResponse(
             {"error": "Failed to save PagerDuty configuration"},
             status_code=status.HTTP_502_BAD_GATEWAY,
         )
-
-
-@router.post("/pagerduty/token", dependencies=[IsAuthenticated, IsCsrfValidated])
-async def pagerduty_token(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
-    """Return the full PagerDuty integration key for the reveal toggle.
-
-    :param pmm_api: The PMM API client dependency.
-    :type pmm_api: PMMRemoteAPI
-    :return: JSON with ``token`` containing the full integration key.
-    :rtype: JSONResponse
-    """
-    try:
-        contact_points = await pmm_api.list_contact_points()
-    except (HTTPException, OSError):
-        logger.exception("Failed to fetch PagerDuty token")
-        return JSONResponse(
-            {"error": "Failed to fetch PagerDuty token"},
-            status_code=status.HTTP_502_BAD_GATEWAY,
-        )
-
-    pd_cp = next(
-        (
-            cp
-            for cp in contact_points
-            if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
-        ),
-        None,
-    )
-    if pd_cp is None:
-        return JSONResponse(
-            {"error": "PagerDuty contact point not found"},
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    return JSONResponse({"token": pd_cp.settings.get("integrationKey", "")})
 
 
 @router.post("/pagerduty/delete", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -166,8 +128,6 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        await pmm_api.delete_contact_point(pd_cp.uid)
-
         policy = await pmm_api.get_notification_policy()
         policy.routes = [
             r
@@ -175,6 +135,8 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
             if r.get("receiver") != PAGERDUTY_CONTACT_POINT_NAME
         ]
         await pmm_api.update_notification_policy(policy)
+
+        await pmm_api.delete_contact_point(pd_cp.uid)
 
         return JSONResponse({"status": "deleted"})
     except (HTTPException, OSError):

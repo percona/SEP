@@ -33,20 +33,6 @@ from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
 logger = logging.getLogger(__name__)
 
 PAGERDUTY_CONTACT_POINT_NAME = "SEP PagerDuty"
-PAGERDUTY_MIN_KEY_SUFFIX_LENGTH = 4
-
-
-def mask_pagerduty_key(key: str) -> str:
-    """Return a masked version of a PagerDuty integration key.
-
-    :param key: The full integration key.
-    :type key: str
-    :return: The key with all but the last few characters replaced by asterisks.
-    :rtype: str
-    """
-    if len(key) >= PAGERDUTY_MIN_KEY_SUFFIX_LENGTH:
-        return f"****{key[-PAGERDUTY_MIN_KEY_SUFFIX_LENGTH:]}"
-    return "****"
 
 
 AlertTemplatesDep = Annotated[
@@ -126,9 +112,9 @@ async def get_pagerduty_status(pmm_api: PMMAPIDep) -> dict[str, Any] | None:
     :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
         configured.
     :type pmm_api: PMMRemoteAPI | None
-    :return: A dictionary with ``configured``, ``masked_key``, and ``uid`` keys
-        when a PagerDuty contact point exists; ``{"configured": False}`` when
-        none exists; or ``None`` when PMM is unreachable.
+    :return: A dictionary with ``configured`` and ``uid`` keys when a PagerDuty
+        contact point exists; ``{"configured": False}`` when none exists; or
+        ``None`` when PMM is unreachable.
     :rtype: dict[str, Any] | None
     """
     if pmm_api is None:
@@ -149,8 +135,7 @@ async def get_pagerduty_status(pmm_api: PMMAPIDep) -> dict[str, Any] | None:
     )
     if pd_cp is None:
         return {"configured": False}
-    key = pd_cp.settings.get("integrationKey", "")
-    return {"configured": True, "masked_key": mask_pagerduty_key(key), "uid": pd_cp.uid}
+    return {"configured": True, "uid": pd_cp.uid}
 
 
 PagerDutyStatusDep = Annotated[dict[str, Any] | None, Depends(get_pagerduty_status)]
@@ -176,7 +161,7 @@ async def ensure_pagerduty_notification_route(
     policy.routes.append(
         {
             "receiver": contact_point_name,
-            "matchers": [{"name": "service", "value": "sep", "type": "="}],
+            "object_matchers": [["service", "=", "sep"]],
         }
     )
     await pmm_api.update_notification_policy(policy)

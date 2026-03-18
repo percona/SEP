@@ -141,8 +141,8 @@ class TestGetPagerdutyStatus:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_returns_configured_with_masked_key(self):
-        """Assert configured status with masked key when PD contact point exists."""
+    async def test_returns_configured_when_pd_contact_point_exists(self):
+        """Assert configured status when PD contact point exists."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_contact_points.return_value = [
             ContactPoint(
@@ -155,7 +155,6 @@ class TestGetPagerdutyStatus:
         result = await get_pagerduty_status(mock_api)
         assert result == {
             "configured": True,
-            "masked_key": "****1234",
             "uid": "cp-1",
         }
 
@@ -181,21 +180,6 @@ class TestGetPagerdutyStatus:
         mock_api.list_contact_points.return_value = []
         result = await get_pagerduty_status(mock_api)
         assert result == {"configured": False}
-
-    @pytest.mark.asyncio
-    async def test_masks_short_key(self):
-        """Assert short integration keys are masked as just stars."""
-        mock_api = AsyncMock(spec=PMMRemoteAPI)
-        mock_api.list_contact_points.return_value = [
-            ContactPoint(
-                uid="cp-1",
-                name="SEP PagerDuty",
-                type="pagerduty",
-                settings={"integrationKey": "ab"},
-            ),
-        ]
-        result = await get_pagerduty_status(mock_api)
-        assert result["masked_key"] == "****"
 
     @pytest.mark.asyncio
     async def test_returns_none_on_api_error(self):
