@@ -17,10 +17,50 @@
 
 from typing import Any
 
+from fastapi import status
+from fastapi.exceptions import HTTPException
+
 from app.sep.clients.pmm import NotificationPolicy, PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION
+
+
+async def _restore_contact_point(
+    pmm_api: PMMRemoteAPI, uid: str, name: str, type_: str, settings: dict[str, Any]
+) -> None:
+    """Update a contact point, falling back to delete+create on 404.
+
+    Grafana's provisioning PUT endpoint returns 404 for contact points
+    that were not originally provisioned. In that case, delete the
+    existing contact point and recreate it from the backup data. If
+    delete also returns 404 (the provisioning API cannot manage this
+    contact point at all), skip silently — the contact point already
+    exists with the correct name.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :param uid: The UID of the existing contact point.
+    :type uid: str
+    :param name: The contact point display name.
+    :type name: str
+    :param type_: The contact point type (e.g. ``"email"``, ``"slack"``).
+    :type type_: str
+    :param settings: Type-specific configuration settings.
+    :type settings: dict[str, Any]
+    """
+    try:
+        await pmm_api.update_contact_point(uid, name, type_, settings)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        try:
+            await pmm_api.delete_contact_point(uid)
+        except HTTPException as del_exc:
+            if del_exc.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+            return
+        await pmm_api.create_contact_point(name, type_, settings)
 
 
 async def restore_from_backup(
@@ -82,17 +122,17 @@ async def restore_from_backup(
     cp_created = 0
     cp_updated = 0
     for cp_data in data.get("contact_points", []):
-        if cp_data["name"] in existing_cp_map:
-            existing = existing_cp_map[cp_data["name"]]
-            await pmm_api.delete_contact_point(existing.uid)
+        name = cp_data["name"]
+        type_ = cp_data["type"]
+        settings = cp_data.get("settings", {})
+        if name in existing_cp_map:
+            await _restore_contact_point(
+                pmm_api, existing_cp_map[name].uid, name, type_, settings
+            )
             cp_updated += 1
         else:
+            await pmm_api.create_contact_point(name, type_, settings)
             cp_created += 1
-        await pmm_api.create_contact_point(
-            cp_data["name"],
-            cp_data["type"],
-            cp_data.get("settings", {}),
-        )
     results["contact_points"] = {"created": cp_created, "updated": cp_updated}
 
     policy_data = data.get("notification_policy", {})

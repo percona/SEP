@@ -124,8 +124,8 @@ class TestRestoreFromBackup:
 
         mock_api.delete_rule.assert_awaited_once_with("existing1")
         mock_api.create_rule.assert_awaited_once()
-        mock_api.delete_contact_point.assert_awaited_once_with("existing-cp")
-        assert mock_api.create_contact_point.await_count == _SAMPLE_CONTACT_POINT_COUNT
+        mock_api.update_contact_point.assert_awaited_once()
+        mock_api.create_contact_point.assert_awaited_once()
         mock_api.update_notification_policy.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -152,8 +152,8 @@ class TestRestoreFromBackup:
         mock_api.create_template.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_contact_points_replaced(self):
-        """Assert existing contact points are deleted and recreated."""
+    async def test_contact_points_updated(self):
+        """Assert existing contact points are updated via the provisioning API."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
@@ -175,8 +175,68 @@ class TestRestoreFromBackup:
 
         assert results["contact_points"]["updated"] == _SAMPLE_CONTACT_POINT_COUNT
         assert results["contact_points"]["created"] == 0
-        assert mock_api.delete_contact_point.await_count == _SAMPLE_CONTACT_POINT_COUNT
+        assert mock_api.update_contact_point.await_count == _SAMPLE_CONTACT_POINT_COUNT
+        mock_api.delete_contact_point.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_contact_points_fallback_delete_create_on_404(self):
+        """Assert update 404 triggers delete+create fallback."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
+        mock_api.template_exists.return_value = True
+        mock_api.list_contact_points.return_value = [
+            ContactPoint(uid="existing-cp", name="Email", type="email"),
+        ]
+        mock_api.update_contact_point.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
+        )
+
+        backup = AlertBackup(
+            id=1,
+            data=_sample_backup_data(),
+            metadata_={},
+        )
+
+        results = await restore_from_backup(mock_api, backup)
+
+        assert results["contact_points"]["updated"] == 1
+        assert results["contact_points"]["created"] == 1
+        mock_api.delete_contact_point.assert_awaited_once_with("existing-cp")
         assert mock_api.create_contact_point.await_count == _SAMPLE_CONTACT_POINT_COUNT
+
+    @pytest.mark.asyncio
+    async def test_contact_points_skipped_when_unmanageable(self):
+        """Assert contact points are skipped when both update and delete return 404."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
+        mock_api.template_exists.return_value = True
+        mock_api.list_contact_points.return_value = [
+            ContactPoint(uid="existing-cp", name="Email", type="email"),
+        ]
+        mock_api.update_contact_point.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
+        )
+        mock_api.delete_contact_point.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
+        )
+
+        backup = AlertBackup(
+            id=1,
+            data=_sample_backup_data(),
+            metadata_={},
+        )
+
+        results = await restore_from_backup(mock_api, backup)
+
+        assert results["contact_points"]["updated"] == 1
+        assert results["contact_points"]["created"] == 1
+        mock_api.create_contact_point.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_empty_backup_data(self):
