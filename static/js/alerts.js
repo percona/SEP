@@ -458,6 +458,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var csrfInput = restoreForm.querySelector('input[name="csrf-token"]');
             var headers = {};
             if (csrfInput) {
+                formData.append('csrf-token', csrfInput.value);
                 headers['X-CSRF-Token'] = csrfInput.value;
             }
 
@@ -467,6 +468,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     headers: headers,
                 })
                 .then(function(response) {
+                    if (!response.ok) {
+                        return response.json().catch(function() {
+                            return {
+                                status: 'error',
+                                message: 'Request failed with status ' + response.status
+                            };
+                        }).then(function(data) {
+                            if (data.status === 'error') return data;
+                            return {
+                                status: 'error',
+                                message: data.message || data.error || 'Request failed'
+                            };
+                        });
+                    }
                     return response.json();
                 })
                 .then(function(data) {
@@ -480,7 +495,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             d.templates.skipped + ' skipped.';
                     } else {
                         feedback.className = 'restore-feedback feedback-error';
-                        feedback.textContent = 'Restore failed: ' + (data.message || 'Unknown error');
+                        feedback.textContent = 'Restore failed: ' + (data.message || data.error || 'Unknown error');
                     }
                 })
                 .catch(function(err) {

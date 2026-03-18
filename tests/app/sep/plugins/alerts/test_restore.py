@@ -246,7 +246,7 @@ class TestRestoreRoute:
         )
         sep_app.dependency_overrides[get_pmm_api] = lambda: mock_api
         yield mock_api
-        sep_app.dependency_overrides.pop(get_pmm_api, None)
+        sep_app.dependency_overrides = {}
 
     @pytest.fixture
     def _mock_pmm_api_none_dep(self):
@@ -256,7 +256,7 @@ class TestRestoreRoute:
 
         sep_app.dependency_overrides[get_pmm_api] = lambda: None
         yield
-        sep_app.dependency_overrides.pop(get_pmm_api, None)
+        sep_app.dependency_overrides = {}
 
     @pytest.fixture
     def _mock_backup_get(self, mocker):
@@ -301,21 +301,22 @@ class TestRestoreRoute:
             data={"backup_id": "1"},
         )
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert "PMM is not configured" in response.json()["error"]
+        assert "PMM is not configured" in response.json()["message"]
 
     @pytest.mark.usefixtures("_mock_pmm_api_dep", "_mock_backup_not_found")
     def test_restore_backup_not_found(self, test_client):
-        """Assert redirect when backup_id does not exist (404 triggers app handler)."""
+        """Assert 502 JSON error when backup_id does not exist."""
         response = test_client.post(
             "/alerts/restore",
             data={"backup_id": "999"},
-            follow_redirects=False,
         )
-        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        body = response.json()
+        assert body["status"] == "error"
 
     @pytest.mark.usefixtures("_mock_pmm_api_dep", "_mock_backup_get")
     def test_restore_pmm_api_error(self, test_client, mocker):
-        """Assert 500 when PMM API fails during restore."""
+        """Assert 502 when PMM API fails during restore."""
         mocker.patch(
             "app.sep.plugins.alerts.routes.restore_from_backup",
             new=AsyncMock(
@@ -326,7 +327,7 @@ class TestRestoreRoute:
             "/alerts/restore",
             data={"backup_id": "1"},
         )
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
         body = response.json()
         assert body["status"] == "error"
 
@@ -345,7 +346,7 @@ class TestBackupListRoute:
 
         sep_app.dependency_overrides[get_session] = _mock_session
         yield
-        sep_app.dependency_overrides.pop(get_session, None)
+        sep_app.dependency_overrides = {}
 
     @pytest.fixture
     def _mock_backup_list(self, mocker):

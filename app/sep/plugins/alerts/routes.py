@@ -93,17 +93,18 @@ async def alerts_restore(
     """Restore alert configuration from a selected backup."""
     if pmm_api is None:
         return JSONResponse(
-            {"error": "PMM is not configured"},
+            {"status": "error", "message": "PMM is not configured"},
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-    backup = await AlertBackupManager.get_or_404(session, id=backup_id)
     try:
+        backup = await AlertBackupManager.get_or_404(session, id=backup_id)
         results = await restore_from_backup(pmm_api, backup)
     except (HTTPException, OSError) as exc:
+        logger.exception("Failed to restore alert configuration from backup")
         detail = getattr(exc, "detail", str(exc))
         return JSONResponse(
             {"status": "error", "message": detail},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_502_BAD_GATEWAY,
         )
     return JSONResponse({"status": "success", "details": results})
 
