@@ -433,13 +433,14 @@ class PMMRemoteAPI(RemoteAPI):
         """
         return {"X-Disable-Provenance": "true"}
 
-    async def create_template(self, yaml: str) -> AlertTemplate:
+    async def create_template(self, yaml: str) -> AlertTemplate | None:
         """Create a PMM alert template from a YAML definition.
 
         :param yaml: The YAML content of the alert template.
         :type yaml: str
-        :return: The created alert template.
-        :rtype: AlertTemplate
+        :return: The created alert template, or ``None`` if the API returns no data
+            (PMM v3).
+        :rtype: AlertTemplate | None
         """
         if await self.is_older_than_v3():
             data = await self.post(
@@ -453,6 +454,8 @@ class PMMRemoteAPI(RemoteAPI):
                 json={"yaml": yaml},
                 headers=self.alerting_headers,
             )
+        if not data:
+            return None
         return AlertTemplate.model_validate(data)
 
     async def list_templates(
@@ -506,7 +509,7 @@ class PMMRemoteAPI(RemoteAPI):
         group: str,
         labels: dict[str, str] | None = None,
         params: list[dict[str, Any]] | None = None,
-    ) -> AlertRule:
+    ) -> AlertRule | None:
         """Create a PMM alert rule from an existing template.
 
         :param name: The display name of the alert rule.
@@ -523,8 +526,9 @@ class PMMRemoteAPI(RemoteAPI):
         :type labels: dict[str, str] | None
         :param params: Optional template parameters for the rule.
         :type params: list[dict[str, Any]] | None
-        :return: The created alert rule.
-        :rtype: AlertRule
+        :return: The created alert rule, or ``None`` if the API returns no
+            data (PMM v3).
+        :rtype: AlertRule | None
         """
         body = {
             "name": name,
@@ -550,6 +554,8 @@ class PMMRemoteAPI(RemoteAPI):
                 json=body,
                 headers=self.alerting_headers,
             )
+        if not data:
+            return None
         return AlertRule.model_validate(data)
 
     async def list_rules(self) -> list[AlertRule]:
@@ -601,7 +607,7 @@ class PMMRemoteAPI(RemoteAPI):
         group: str,
         labels: dict[str, str] | None = None,
         params: list[dict[str, Any]] | None = None,
-    ) -> AlertRule:
+    ) -> AlertRule | None:
         """Update an existing PMM alert rule by deleting and recreating it.
 
         The PMM API has no native update endpoint for alert rules; the only
@@ -623,8 +629,9 @@ class PMMRemoteAPI(RemoteAPI):
         :type labels: dict[str, str] | None
         :param params: Optional template parameters for the new rule.
         :type params: list[dict[str, Any]] | None
-        :return: The newly created alert rule.
-        :rtype: AlertRule
+        :return: The newly created alert rule, or ``None`` if the API returns
+            no data (PMM v3).
+        :rtype: AlertRule | None
         """
         await self.delete_rule(uid)
         return await self.create_rule(
@@ -645,6 +652,21 @@ class PMMRemoteAPI(RemoteAPI):
         """
         data = await self.get("/graph/api/folders/", headers=self.alerting_headers)
         return [Folder.model_validate(f) for f in data]
+
+    async def create_folder(self, title: str) -> Folder:
+        """Create a new Grafana folder in PMM.
+
+        :param title: The display title for the new folder.
+        :type title: str
+        :return: The created folder object.
+        :rtype: Folder
+        """
+        data = await self.post(
+            "/graph/api/folders/",
+            json={"title": title},
+            headers=self.alerting_headers,
+        )
+        return Folder.model_validate(data)
 
     async def list_contact_points(self) -> list[ContactPoint]:
         """List all alert contact points configured in PMM.
@@ -710,6 +732,28 @@ class PMMRemoteAPI(RemoteAPI):
                     detail=err.message,
                 ) from None
 
+    async def delete_contact_point(self, uid: str) -> None:
+        """Delete an alert contact point by its UID.
+
+        Use the raw ``_request`` context manager directly because the DELETE
+        endpoint returns a 204 No Content response with no JSON body.
+
+        :param uid: The UID of the contact point to delete.
+        :type uid: str
+        """
+        async with self._request(
+            "DELETE",
+            f"/graph/api/v1/provisioning/contact-points/{uid}",
+            headers=self.alerting_headers,
+        ) as response:
+            try:
+                response.raise_for_status()
+            except ClientResponseError as err:
+                raise HTTPException(
+                    status_code=err.status,
+                    detail=err.message,
+                ) from None
+
     async def get_notification_policy(self) -> NotificationPolicy:
         """Fetch the current notification policy tree from PMM.
 
@@ -722,22 +766,17 @@ class PMMRemoteAPI(RemoteAPI):
         )
         return NotificationPolicy.model_validate(data)
 
-    async def update_notification_policy(
-        self, policy: NotificationPolicy
-    ) -> NotificationPolicy:
+    async def update_notification_policy(self, policy: NotificationPolicy) -> None:
         """Replace the notification policy tree in PMM.
 
         :param policy: The new notification policy to apply.
         :type policy: NotificationPolicy
-        :return: The updated notification policy as returned by the API.
-        :rtype: NotificationPolicy
         """
-        data = await self.put(
+        await self.put(
             "/graph/api/v1/provisioning/policies",
             json=policy.model_dump(exclude_none=True),
             headers=self.alerting_headers,
         )
-        return NotificationPolicy.model_validate(data)
 
     async def get_services_by_node_external_id(
         self,
