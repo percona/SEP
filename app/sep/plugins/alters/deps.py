@@ -127,11 +127,20 @@ async def build_alters_task_payload(
         )
         form.recursion_method = f"dsn={dsn_table}"
 
-    args = [
-        f"--alter={form.alter}",
-        dsn,
-        f"--recursion-method={form.recursion_method}",
-    ]
+    mysql_defaults_path = (
+        form.pre_checks_mysql_config_file or ""
+    ).strip() or "~/.my.cnf"
+    args: list[str] = []
+    if mysql_defaults_path != "~/.my.cnf":
+        args.append(f"--defaults-file={mysql_defaults_path}")
+
+    args.extend(
+        [
+            f"--alter={form.alter}",
+            dsn,
+            f"--recursion-method={form.recursion_method}",
+        ]
+    )
 
     # Mapping form fields to their respective arguments
     optional_args = {
@@ -183,6 +192,9 @@ async def build_alters_task_payload(
                 "_table_name": table_name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
+                "_pre_checks_mysql_config_file": (
+                    (form.pre_checks_mysql_config_file or "").strip() or "~/.my.cnf"
+                ),
             },
         },
         name=form.task_name,
@@ -273,6 +285,25 @@ def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
         "schema_name": schema_name,
         "table_name": table_name,
     }
+
+
+def alters_executor_matches_service_host(
+    meta: dict[str, Any],
+    executor_hosts: Any,
+) -> bool:
+    """Return whether the task executor is the same host as the MySQL service.
+
+    Same rule as the alters detail page (pre-checks confirm dialog): resolve
+    `target` via Nomad `/hosts/` (node name → address) and compare to
+    `extract_service_info` host (inventory and/or DSN in `args`).
+    """
+    service_host = extract_service_info(meta)["service_host"]
+    executor_target = meta.get("target") or ""
+    if isinstance(executor_hosts, dict):
+        executor_address = executor_hosts.get(executor_target, executor_target)
+    else:
+        executor_address = executor_target
+    return executor_address == service_host
 
 
 def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:

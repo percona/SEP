@@ -29,10 +29,15 @@ from app.sep.plugins.alters.deps import (
 )
 from app.sep.plugins.alters.models import AltersCreate
 from app.tasks.models import (
+    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
 )
-from tests.app.factories import AltersCreateFactory, TaskFactory
+from tests.app.factories import (
+    AltersCreateFactory,
+    GeneratedTaskFactory,
+    TaskFactory,
+)
 
 
 @pytest.fixture
@@ -99,6 +104,57 @@ def test_alters_create(
         response.headers["location"]
         == f"{test_client.base_url}/alters/{generated_task.name}"
     )
+
+
+@pytest.mark.parametrize(
+    ("nomad_hosts", "expect_skip_in_pre_checks_yaml"),
+    [
+        ({"db1": "10.0.0.5"}, False),
+        ({"db1": "10.0.0.99"}, True),
+    ],
+)
+def test_alters_create_pre_checks_filesystem_skip_flag(
+    test_client,
+    mock_task_api_dep,
+    created_alters,
+    nomad_hosts,
+    expect_skip_in_pre_checks_yaml,
+):
+    """SEP-764: pre-checks YAML skip_filesystem_checks follows executor vs DB host (Nomad /hosts/)."""
+    task = GeneratedTaskFactory.build(
+        name="sep764-alter",
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--alter=ADD COLUMN c INT --execute",
+                "target": "db1",
+                "_schema_name": "db",
+                "_table_name": "t",
+                "_service_host": "10.0.0.5",
+                "_service_port": 3306,
+            },
+        },
+        backend=TaskBackendEnum.PROXY,
+    )
+    sep_app.dependency_overrides[build_alters_task_payload] = lambda: task
+    try:
+        mock_task_api_dep.post.return_value = AsyncMock()
+        mock_task_api_dep.get = AsyncMock(return_value=nomad_hosts)
+        response = test_client.post(
+            "/alters/", data=created_alters.model_dump(), follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        mock_task_api_dep.get.assert_awaited_once_with("/hosts/")
+        pre_checks_cfg = mock_task_api_dep.post.call_args_list[2].kwargs["json"][
+            "data"
+        ]["meta"]["config"]
+        if expect_skip_in_pre_checks_yaml:
+            assert "skip_filesystem_checks: true" in pre_checks_cfg
+        else:
+            assert "skip_filesystem_checks" not in pre_checks_cfg
+    finally:
+        sep_app.dependency_overrides.pop(build_alters_task_payload, None)
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")

@@ -15,6 +15,7 @@
 
 """Define routes for the alters plugin."""
 
+import json
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -35,6 +36,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.alters.deps import (
+    alters_executor_matches_service_host,
     AltersGeneratedTask,
     AltersTask,
     extract_service_info,
@@ -131,10 +133,12 @@ async def alters_create(
     del pre_checks_task.data["meta"]["command"]
     del pre_checks_task.data["meta"]["args"]
     meta = pre_checks_task.data["meta"]
-    executor_host = meta.get("target", "")
     db_host = meta.get("_service_host", "")
     db_port = meta.get("_service_port")
-    skip_fs_checks = bool(executor_host and db_host and executor_host != db_host)
+    executor_hosts = await task_api.get("/hosts/")
+    skip_fs_checks = not alters_executor_matches_service_host(
+        task.data["meta"], executor_hosts
+    )
     pre_checks_config_lines = [
         f"schema: {meta['_schema_name']}",
         f"table: {meta['_table_name']}",
@@ -144,6 +148,8 @@ async def alters_create(
         pre_checks_config_lines.append(f"port: {db_port}")
     if skip_fs_checks:
         pre_checks_config_lines.append("skip_filesystem_checks: true")
+    mysql_cnf = meta.get("_pre_checks_mysql_config_file") or "~/.my.cnf"
+    pre_checks_config_lines.append(f"mysql_config_file: {json.dumps(mysql_cnf)}")
     pre_checks_task.data["meta"]["config"] = "\n".join(pre_checks_config_lines)
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
@@ -204,6 +210,9 @@ async def alters_detail(
         "alert_on_fail": task.alert_on_fail,
     }
     task_data.update(extract_service_info(meta))
+    task_data["pre_checks_mysql_config_file"] = meta.get(
+        "_pre_checks_mysql_config_file", "~/.my.cnf"
+    )
 
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
@@ -245,8 +254,8 @@ async def alters_detail(
         logger.warning("Failed to get services: %s", exc)
 
     context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
-    context["has_matching_executor"] = (
-        task_data.get("service_host", "") in context["executor_hosts"]
+    context["has_matching_executor"] = alters_executor_matches_service_host(
+        meta, executor_hosts
     )
     context["services"] = services
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
@@ -315,10 +324,12 @@ async def alters_update(
     del pre_checks_task.data["meta"]["command"]
     del pre_checks_task.data["meta"]["args"]
     meta = pre_checks_task.data["meta"]
-    executor_host = meta.get("target", "")
     db_host = meta.get("_service_host", "")
     db_port = meta.get("_service_port")
-    skip_fs_checks = bool(executor_host and db_host and executor_host != db_host)
+    executor_hosts = await tasks_api.get("/hosts/")
+    skip_fs_checks = not alters_executor_matches_service_host(
+        updated_task.data["meta"], executor_hosts
+    )
     pre_checks_config_lines = [
         f"schema: {meta['_schema_name']}",
         f"table: {meta['_table_name']}",
@@ -328,6 +339,8 @@ async def alters_update(
         pre_checks_config_lines.append(f"port: {db_port}")
     if skip_fs_checks:
         pre_checks_config_lines.append("skip_filesystem_checks: true")
+    mysql_cnf = meta.get("_pre_checks_mysql_config_file") or "~/.my.cnf"
+    pre_checks_config_lines.append(f"mysql_config_file: {json.dumps(mysql_cnf)}")
     pre_checks_task.data["meta"]["config"] = "\n".join(pre_checks_config_lines)
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"

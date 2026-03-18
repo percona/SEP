@@ -182,6 +182,18 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                placeholder="Enter a unique task name">
                     </div>
                     <br>
+                    <div class="field">
+                        {% set pre_cnf_title = "Path on executor with [client] user/password. Pre-checks use this path. Execute/dry-run use the same path only if not ~/.my.cnf (then --defaults-file is passed to pt-online-schema-change)." %}
+                        <label for="pre_checks_mysql_config_file" title="{{ pre_cnf_title }}">MySQL defaults file</label>
+                        <input type="text"
+                               id="pre_checks_mysql_config_file"
+                               name="pre_checks_mysql_config_file"
+                               class="validate"
+                               value="{{ task.pre_checks_mysql_config_file | e }}"
+                               title="{{ pre_cnf_title }}"
+                               placeholder="~/.my.cnf" />
+                    </div>
+                    <br>
                     <div class="select">
                         {% set service_id_title = "Select the database host from the inventory to connect to." %}
                         <label for="service_id" title="{{ service_id_title }}">

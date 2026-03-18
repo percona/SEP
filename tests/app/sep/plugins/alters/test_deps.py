@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.sep.plugins.alters.deps import (
+    alters_executor_matches_service_host,
     build_alters_task_payload,
     extract_service_info,
     get_alters_task,
@@ -168,3 +169,29 @@ def test_parse_alters_task_args():
         "max_flow_ctl": "",
         "extra_args": "",
     }
+
+
+def test_alters_executor_matches_service_host():
+    """Nomad node → address vs inventory host; used for pre-checks filesystem skip."""
+    meta = {
+        "target": "db-node",
+        "_service_host": "10.30.50.130",
+        "_service_port": 3306,
+    }
+    assert (
+        alters_executor_matches_service_host(meta, {"db-node": "10.30.50.130"}) is True
+    )
+    assert (
+        alters_executor_matches_service_host(meta, {"db-node": "10.30.50.131"}) is False
+    )
+    assert (
+        alters_executor_matches_service_host(meta, {"db-node": "10.30.50.130:4648"})
+        is False
+    )
+    meta_ip = {
+        "target": "10.30.50.130",
+        "_service_host": "10.30.50.130",
+        "_service_port": 3306,
+    }
+    assert alters_executor_matches_service_host(meta_ip, {}) is True
+    assert alters_executor_matches_service_host(meta_ip, None) is True
