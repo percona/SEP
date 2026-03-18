@@ -20,12 +20,15 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.sep.plugins.alters.deps import (
+    _build_dsn_with_service,
     alters_executor_matches_service_host,
     build_alters_task_payload,
     extract_service_info,
+    get_alters_index_context,
     get_alters_task,
     get_alters_task_info,
     parse_alters_task_args,
+    parse_single_arg,
 )
 from app.sep.plugins.alters.models import AltersCreate
 from app.tasks.models import Task, TaskOwner, TaskWrite
@@ -195,3 +198,114 @@ def test_alters_executor_matches_service_host():
     }
     assert alters_executor_matches_service_host(meta_ip, {}) is True
     assert alters_executor_matches_service_host(meta_ip, None) is True
+
+
+def test_build_dsn_with_service_branches():
+    """DSN prefix passthrough, remote h+P, localhost P-only, and unchanged DSN."""
+    assert _build_dsn_with_service("h=x,D=y", "10.0.0.1", 3306) == "h=x,D=y"
+    assert _build_dsn_with_service("P=3307,D=y", "10.0.0.1", 3306) == "P=3307,D=y"
+    assert (
+        _build_dsn_with_service("D=a,t=b", "10.0.0.5", 3306)
+        == "h=10.0.0.5,P=3306,D=a,t=b"
+    )
+    assert _build_dsn_with_service("D=a,t=b", "localhost", 3306) == "P=3306,D=a,t=b"
+    assert _build_dsn_with_service("D=a,t=b", "localhost", None) == "D=a,t=b"
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_payload_schema_name_table_name(
+    created_alters, created_service, mock_remote_api
+):
+    """Build payload using schema_name/table_name when schema/table IDs are omitted."""
+    created_alters.schema_id = None
+    created_alters.table_id = None
+    created_alters.schema_name = "manual_schema"
+    created_alters.table_name = "manual_table"
+    mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
+    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    assert task.data["meta"]["_schema_name"] == "manual_schema"
+    assert task.data["meta"]["_table_name"] == "manual_table"
+    assert "D=manual_schema,t=manual_table" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_payload_requires_schema_and_table(
+    created_alters, created_service, mock_remote_api
+):
+    """Raise when neither IDs nor schema/table names are set."""
+    created_alters.schema_id = None
+    created_alters.table_id = None
+    created_alters.schema_name = ""
+    created_alters.table_name = ""
+    mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
+    with pytest.raises(ValueError, match="schema/table"):
+        await build_alters_task_payload(created_alters, mock_remote_api)
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_payload_print_arg_adds_progress(
+    created_alters, created_service, created_schema, created_table, mock_remote_api
+):
+    """--progress is appended when print_arg is enabled."""
+    created_alters.print_arg = True
+    created_alters.progress = "time,5"
+    mock_remote_api.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    assert "--progress=time,5" in task.data["meta"]["args"]
+
+
+def test_parse_alters_task_args_missing_or_empty_args():
+    """Default form values when args are missing or empty."""
+    defaults = parse_alters_task_args({})
+    assert defaults["recursion_method"] == "processlist"
+    assert parse_alters_task_args({"args": ""}) == defaults
+
+
+def test_parse_alters_task_args_recursion_dsn_strips_h_p():
+    """dsn= recursion strips h=/P= from embedded DSN for the dsn_table field."""
+    meta = {
+        "args": (
+            "--recursion-method=dsn=h=127.0.0.1,P=3306,D=dbx,t=tbl "
+            "--alter=ADD COLUMN x INT --execute"
+        ),
+    }
+    out = parse_alters_task_args(meta)
+    assert out["recursion_method"] == "dsn"
+    assert out["dsn_table"] == "D=dbx,t=tbl"
+
+
+def test_parse_single_arg_recursion_dsn_only_host_port():
+    """dsn= value with only h=/P= keeps full string as dsn_table."""
+    fv = parse_alters_task_args({"args": "--execute"})
+    parse_single_arg("--recursion-method=dsn=h=1,P=2", fv)
+    assert fv["recursion_method"] == "dsn"
+    assert fv["dsn_table"] == "h=1,P=2"
+
+
+@pytest.mark.asyncio
+async def test_get_alters_index_context(mocker):
+    """Index view context is built via get_tasks_context."""
+    merged = {"ok": True}
+    mock_ctx = mocker.patch(
+        "app.sep.plugins.alters.deps.get_tasks_context",
+        new_callable=AsyncMock,
+        return_value=merged,
+    )
+    inv, tasks, ctx, hosts = AsyncMock(), AsyncMock(), {"user": "u"}, {}
+    result = await get_alters_index_context(inv, tasks, ctx, hosts)
+    assert result is merged
+    mock_ctx.assert_awaited_once_with(
+        inv,
+        tasks,
+        get_alters_task_info,
+        hosts,
+        ctx,
+        TaskOwner.ALTERS,
+        alert_on_fail_default=True,
+    )
