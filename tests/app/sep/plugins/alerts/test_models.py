@@ -171,7 +171,7 @@ class TestToPmmTemplateYaml:
         assert pmm_tmpl["version"] == 1
         assert pmm_tmpl["summary"] == template.summary
         assert pmm_tmpl["expr"] == template.expression
-        assert pmm_tmpl["for"] == "5m"
+        assert pmm_tmpl["for"] == "300s"
         assert pmm_tmpl["severity"] == "warning"
         assert pmm_tmpl["labels"] == {}
         assert pmm_tmpl["annotations"]["summary"] == template.summary

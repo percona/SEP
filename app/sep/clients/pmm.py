@@ -509,7 +509,7 @@ class PMMRemoteAPI(RemoteAPI):
         group: str,
         labels: dict[str, str] | None = None,
         params: list[dict[str, Any]] | None = None,
-    ) -> AlertRule:
+    ) -> AlertRule | None:
         """Create a PMM alert rule from an existing template.
 
         :param name: The display name of the alert rule.
@@ -526,8 +526,9 @@ class PMMRemoteAPI(RemoteAPI):
         :type labels: dict[str, str] | None
         :param params: Optional template parameters for the rule.
         :type params: list[dict[str, Any]] | None
-        :return: The created alert rule.
-        :rtype: AlertRule
+        :return: The created alert rule, or ``None`` if the API returns no
+            data (PMM v3).
+        :rtype: AlertRule | None
         """
         body = {
             "name": name,
@@ -553,6 +554,8 @@ class PMMRemoteAPI(RemoteAPI):
                 json=body,
                 headers=self.alerting_headers,
             )
+        if not data:
+            return None
         return AlertRule.model_validate(data)
 
     async def list_rules(self) -> list[AlertRule]:
@@ -604,7 +607,7 @@ class PMMRemoteAPI(RemoteAPI):
         group: str,
         labels: dict[str, str] | None = None,
         params: list[dict[str, Any]] | None = None,
-    ) -> AlertRule:
+    ) -> AlertRule | None:
         """Update an existing PMM alert rule by deleting and recreating it.
 
         The PMM API has no native update endpoint for alert rules; the only
@@ -626,8 +629,9 @@ class PMMRemoteAPI(RemoteAPI):
         :type labels: dict[str, str] | None
         :param params: Optional template parameters for the new rule.
         :type params: list[dict[str, Any]] | None
-        :return: The newly created alert rule.
-        :rtype: AlertRule
+        :return: The newly created alert rule, or ``None`` if the API returns
+            no data (PMM v3).
+        :rtype: AlertRule | None
         """
         await self.delete_rule(uid)
         return await self.create_rule(

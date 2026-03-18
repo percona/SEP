@@ -284,7 +284,7 @@ class TestCreateRule:
             name="High CPU",
             template_name="cpu-high",
             folder_uid="folder-1",
-            for_duration="5m",
+            for_duration="300s",
             group="infra-alerts",
             labels={"severity": "critical"},
         )
@@ -299,7 +299,7 @@ class TestCreateRule:
                 "name": "High CPU",
                 "template_name": "cpu-high",
                 "folder_uid": "folder-1",
-                "for": "5m",
+                "for": "300s",
                 "group": "infra-alerts",
                 "labels": {"severity": "critical"},
             },

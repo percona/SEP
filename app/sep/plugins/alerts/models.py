@@ -106,7 +106,7 @@ class AlertTemplate(BaseModel):
     summary: str
 
 
-DEFAULT_FOR_DURATION = "5m"
+DEFAULT_FOR_DURATION = "300s"
 
 
 def to_pmm_template_yaml(template: AlertTemplate) -> str:

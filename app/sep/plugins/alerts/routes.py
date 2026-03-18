@@ -22,6 +22,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.plugins.alerts.deps import (
@@ -37,6 +38,32 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 templates = sep_settings.TEMPLATES
+
+
+async def _delete_conflicting_rules(
+    pmm_api: PMMRemoteAPI, rule_name: str, folder_uid: str
+) -> None:
+    """Delete rules that conflict with the given name in the folder.
+
+    Remove any existing rule whose title matches ``rule_name`` as well as
+    ghost rules (empty title) within the same folder so that a subsequent
+    ``create_rule`` call can succeed.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :param rule_name: The rule title that triggered the conflict.
+    :type rule_name: str
+    :param folder_uid: The folder UID where the conflict occurred.
+    :type folder_uid: str
+    """
+    rules = await pmm_api.list_rules()
+    for rule in rules:
+        namespace = getattr(rule, "namespace_uid", "")
+        if namespace != folder_uid:
+            continue
+        if rule.title in (rule_name, ""):
+            logger.info("Deleting conflicting rule %s (title=%r)", rule.uid, rule.title)
+            await pmm_api.delete_rule(rule.uid)
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -130,12 +157,39 @@ async def alerts_push(
             )
         except (HTTPException, OSError) as exc:
             detail = getattr(exc, "detail", str(exc))
-            results.append(
-                {
-                    "name": name,
-                    "status": "error",
-                    "message": f"Template created but rule failed: {detail}",
-                }
-            )
+            if "conflicts with existing" not in detail:
+                results.append(
+                    {
+                        "name": name,
+                        "status": "error",
+                        "message": f"Template created but rule failed: {detail}",
+                    }
+                )
+                continue
+            try:
+                await _delete_conflicting_rules(pmm_api, template.name, folder.uid)
+                await pmm_api.create_rule(
+                    name=template.name,
+                    template_name=template.name,
+                    folder_uid=folder.uid,
+                    for_duration=DEFAULT_FOR_DURATION,
+                    group=sep_settings.PMM.alert_folder_name,
+                )
+                results.append(
+                    {
+                        "name": name,
+                        "status": "success",
+                        "message": "Pushed successfully (replaced conflicting rule)",
+                    }
+                )
+            except (HTTPException, OSError) as retry_exc:
+                retry_detail = getattr(retry_exc, "detail", str(retry_exc))
+                results.append(
+                    {
+                        "name": name,
+                        "status": "error",
+                        "message": f"Template created but rule failed: {retry_detail}",
+                    }
+                )
 
     return JSONResponse({"results": results})
