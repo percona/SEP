@@ -203,3 +203,51 @@ code.expression {
         grid-template-columns: 1fr;
     }
 }
+
+/* Sticky bar layout */
+
+.sticky-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+/* Push to PMM button */
+
+.push-btn {
+    white-space: nowrap;
+}
+
+.push-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Push results */
+
+.push-results {
+    margin-top: 1rem;
+}
+
+.push-result {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.25rem;
+    border-radius: var(--cornerExtraSmall);
+    font-size: 0.875rem;
+}
+
+.push-result-success {
+    background: var(--successSurface);
+    color: var(--successContrast);
+}
+
+.push-result-error {
+    background: var(--errorSurface);
+    color: var(--errorContrast);
+}
+
+.push-result-skipped {
+    background: var(--surfaceElevation2);
+    color: var(--textSecondary);
+}

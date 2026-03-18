@@ -103,6 +103,22 @@ class TestCreateTemplate:
         )
         pmm_remote_api.is_older_than_v3.cache_clear()
 
+    @pytest.mark.asyncio
+    async def test_create_template_returns_none_on_empty_response(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test create_template returns ``None`` when PMM v3 returns an empty dict."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.create_template("name: cpu-high\n")
+
+        assert result is None
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
 
 class TestListTemplates:
     """Test the list_templates method."""
@@ -268,7 +284,7 @@ class TestCreateRule:
             name="High CPU",
             template_name="cpu-high",
             folder_uid="folder-1",
-            for_duration="5m",
+            for_duration="300s",
             group="infra-alerts",
             labels={"severity": "critical"},
         )
@@ -283,7 +299,7 @@ class TestCreateRule:
                 "name": "High CPU",
                 "template_name": "cpu-high",
                 "folder_uid": "folder-1",
-                "for": "5m",
+                "for": "300s",
                 "group": "infra-alerts",
                 "labels": {"severity": "critical"},
             },
@@ -546,6 +562,36 @@ class TestListFolders:
         assert result[0].id == 1
         mock_request.assert_awaited_once_with(
             "GET", "/graph/api/folders/", headers=ALERTING_HEADERS
+        )
+
+
+class TestCreateFolder:
+    """Test the create_folder method."""
+
+    @pytest.mark.asyncio
+    async def test_create_folder_posts_and_returns_folder(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test create_folder sends POST and returns a Folder object."""
+        mock_request.return_value = {
+            "uid": "new-folder-uid",
+            "title": "SEP Alerts",
+            "id": 42,
+        }
+
+        expected_id = 42
+
+        result = await pmm_remote_api.create_folder("SEP Alerts")
+
+        assert isinstance(result, Folder)
+        assert result.uid == "new-folder-uid"
+        assert result.title == "SEP Alerts"
+        assert result.id == expected_id
+        mock_request.assert_awaited_once_with(
+            "POST",
+            "/graph/api/folders/",
+            json={"title": "SEP Alerts"},
+            headers=ALERTING_HEADERS,
         )
 
 

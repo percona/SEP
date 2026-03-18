@@ -23,8 +23,11 @@ from fastapi import Depends
 from fastapi.exceptions import HTTPException
 
 from app.core.config import settings
-from app.core.exceptions import HTTPServiceUnavailableException
-from app.sep.clients.pmm import PMMRemoteAPI
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPServiceUnavailableException,
+)
+from app.sep.clients.pmm import Folder, PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
 from app.sep.plugins.alerts.loader import get_alert_templates
@@ -101,6 +104,53 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 
 
 PMMPresentNamesDep = Annotated[set[str] | None, Depends(get_pmm_present_names)]
+
+
+async def get_or_create_alert_folder(pmm_api: PMMAPIDep) -> Folder | None:
+    """Return the SEP alert folder in PMM, creating it if missing.
+
+    Return ``None`` when the PMM client is unavailable or when the API call
+    fails, enabling graceful degradation in the push route.
+
+    :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
+        configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :return: The existing or newly created folder, or ``None`` on failure.
+    :rtype: Folder | None
+    """
+    if pmm_api is None:
+        return None
+    try:
+        folder_name = sep_settings.PMM.alert_folder_name
+        folders = await pmm_api.list_folders()
+        for folder in folders:
+            if folder.title == folder_name:
+                return folder
+        return await pmm_api.create_folder(folder_name)
+    except (HTTPException, OSError):
+        logger.warning("Failed to get or create alert folder in PMM", exc_info=True)
+        return None
+
+
+AlertFolderDep = Annotated[Folder | None, Depends(get_or_create_alert_folder)]
+
+
+async def require_alert_folder(folder: AlertFolderDep) -> Folder:
+    """Return the PMM alert folder or raise if unavailable.
+
+    :param folder: The alert folder dependency, or ``None`` when PMM is
+        unreachable.
+    :type folder: Folder | None
+    :return: The PMM alert folder.
+    :rtype: Folder
+    :raises HTTPBadGatewayException: If the alert folder cannot be accessed.
+    """
+    if folder is None:
+        raise HTTPBadGatewayException(detail="Failed to access PMM alert folder")
+    return folder
+
+
+RequiredAlertFolderDep = Annotated[Folder, Depends(require_alert_folder)]
 
 
 async def get_pagerduty_status(pmm_api: PMMAPIDep) -> dict[str, Any] | None:

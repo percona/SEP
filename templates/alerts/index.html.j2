@@ -27,13 +27,20 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
 {% block sticky %}
-    <div class="toggle-btn-group"
-         role="group"
-         aria-label="Filter by service type">
-        <button class="toggle-btn active" data-filter="all">All</button>
-        {% for svc in service_types %}
-            <button class="toggle-btn" data-filter="{{ svc.value }}">{{ svc.label }}</button>
-        {% endfor %}
+    <div class="sticky-bar">
+        <div class="toggle-btn-group"
+             role="group"
+             aria-label="Filter by service type">
+            <button class="toggle-btn active" data-filter="all">All</button>
+            {% for svc in service_types %}
+                <button class="toggle-btn" data-filter="{{ svc.value }}">{{ svc.label }}</button>
+            {% endfor %}
+        </div>
+        <button type="button"
+                id="push-to-pmm"
+                class="btn primary push-btn"
+                disabled
+                style="display: none">Push to PMM</button>
     </div>
 {% endblock sticky %}
 {% block main %}
@@ -150,6 +157,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </div>
                     </dialog>
                 {% endfor %}
+                <div id="push-results" class="push-results" style="display: none;"></div>
             {% else %}
                 <p>No alert templates found.</p>
             {% endif %}
