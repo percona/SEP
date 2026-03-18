@@ -1,0 +1,153 @@
+""" PBM Restore Config Payload """
+
+import subprocess
+import os
+import sys
+import yaml
+
+
+def _creds_path_from_config(config):
+    """ Path to MongoDB URI credentials file from config dict """
+    if config:
+        path = config.get('credentials_path')
+        if path:
+            return path
+    envhome = os.environ.get('HOME')
+    if not envhome:
+        print('PBM credentials path not set (credentials_path in restore config) and HOME is unset', file=sys.stderr)
+        sys.exit(1)
+    return f'{envhome}/.mongodb_uri'
+
+
+def pbm_creds(config):
+    """ PBM Credentials """
+    creds_path = _creds_path_from_config(config)
+    try:
+        with open(creds_path, 'r', encoding='utf-8') as fpt:
+            return fpt.read().strip()
+    except FileNotFoundError as err:
+        print(f'Credentials file not found: {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+    except PermissionError as err:
+        print(f'Permission denied reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+    except OSError as err:
+        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+    except Exception as err:
+        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
+        sys.exit(1)
+
+
+def pbm():
+    """ PBM Restore Config Payload """
+
+    taskdir = os.environ['NOMAD_TASK_DIR']
+    config_file = f'{taskdir}/script_config'
+    merged_config_file = f'{taskdir}/merged_config.yaml'
+
+    # Load restore configuration from script_config for credentials_path
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            script_config = yaml.safe_load(f)
+        if script_config is None:
+            script_config = {}
+    except Exception as err:
+        print(f"Error reading script_config: {err}", file=sys.stderr)
+        sys.exit(1)
+
+    os.environ['PBM_MONGODB_URI'] = pbm_creds(script_config)
+
+    # First, get the current PBM config to preserve existing settings
+    pbm_config_cmd = ['pbm', 'config']
+    try:
+        proc = subprocess.Popen(pbm_config_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate()
+        if proc.returncode != 0:
+            print(f"Error getting current PBM config: {stderr.decode()}")
+            sys.exit(1)
+
+        # Parse current PBM config
+        current_pbm_config = yaml.safe_load(stdout.decode())
+        if current_pbm_config is None:
+            current_pbm_config = {}
+
+        # Verify storage is configured before proceeding
+        storage = current_pbm_config.get('storage', {})
+        if not storage:
+            print("Error: Storage is not configured in PBM")
+            sys.exit(1)
+
+        storage_type = storage.get('type')
+        if not storage_type:
+            print("Error: Storage type is not configured")
+            sys.exit(1)
+
+        # Verify storage-specific configuration exists
+        if storage_type == 'filesystem':
+            if not storage.get('filesystem', {}).get('path'):
+                print("Error: Filesystem storage path is not configured")
+                sys.exit(1)
+        elif storage_type == 's3':
+            s3_config = storage.get('s3', {})
+            if not s3_config.get('bucket'):
+                print("Error: S3 bucket is not configured")
+                sys.exit(1)
+
+        print(f"Current storage configured: {storage_type}")
+
+    except Exception as err:
+        print(f"Error getting/parsing current PBM config: {err}")
+        sys.exit(1)
+
+    # Get restore configuration - PBM format (lowercase key); script_config already loaded above
+    restore_config = script_config.get('restore', {})
+
+    # Merge current PBM config with new restore options
+    if restore_config:
+        # Ensure restore section exists in merged config
+        if 'restore' not in current_pbm_config:
+            current_pbm_config['restore'] = {}
+
+        # Update restore options in merged config
+        if restore_config.get('batchSize'):
+            current_pbm_config['restore']['batchSize'] = restore_config['batchSize']
+        if restore_config.get('numInsertionWorkers'):
+            current_pbm_config['restore']['numInsertionWorkers'] = restore_config['numInsertionWorkers']
+        if restore_config.get('numParallelCollections'):
+            current_pbm_config['restore']['numParallelCollections'] = restore_config['numParallelCollections']
+        if restore_config.get('numDownloadWorkers'):
+            current_pbm_config['restore']['numDownloadWorkers'] = restore_config['numDownloadWorkers']
+        if restore_config.get('maxDownloadBufferMb'):
+            current_pbm_config['restore']['maxDownloadBufferMb'] = restore_config['maxDownloadBufferMb']
+        if restore_config.get('downloadChunkMb'):
+            current_pbm_config['restore']['downloadChunkMb'] = restore_config['downloadChunkMb']
+        if restore_config.get('mongodLocation'):
+            current_pbm_config['restore']['mongodLocation'] = restore_config['mongodLocation']
+        if restore_config.get('mongodLocationMap'):
+            current_pbm_config['restore']['mongodLocationMap'] = restore_config['mongodLocationMap']
+
+        # Write merged config to temporary file
+        try:
+            with open(merged_config_file, 'w', encoding='utf-8') as f:
+                yaml.dump(current_pbm_config, f, default_flow_style=False)
+        except Exception as err:
+            print(f"Error writing merged config: {err}")
+            sys.exit(1)
+
+        # Apply merged config using pbm config command
+        config_cmd = ['pbm', 'config', '--file', merged_config_file]
+        try:
+            proc = subprocess.Popen(config_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = proc.communicate()
+            if proc.returncode != 0:
+                print(f"Error applying merged config: {stderr.decode()}")
+                sys.exit(1)
+            print("Restore configuration updated successfully")
+        except Exception as err:
+            print(f"Error applying config: {err}")
+            sys.exit(1)
+    else:
+        print("No restore configuration provided, skipping update")
+
+pbm()

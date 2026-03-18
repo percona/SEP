@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -67,6 +67,30 @@ class HTTPUnprocessableEntityException(HTTPException):
         super().__init__(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail
         )
+
+
+class HTTPBadGatewayException(HTTPException):
+    """Define exception raised for bad gateway (HTTP 502).
+
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Bad Gateway".
+    :type detail: str
+    """
+
+    def __init__(self, detail: str = "Bad Gateway") -> None:
+        super().__init__(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+
+class HTTPServiceUnavailableException(HTTPException):
+    """Define exception raised for service unavailable (HTTP 503).
+
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Service Unavailable".
+    :type detail: str
+    """
+
+    def __init__(self, detail: str = "Service Unavailable") -> None:
+        super().__init__(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
 
 
 class HTTPGoneException(HTTPException):

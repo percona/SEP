@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -1182,12 +1182,17 @@ class BaseTaskSyncer(BaseSyncer):
     :type tasks_execution_wait_interval: int
     :param force_executor_host: The host to force for task execution, if any.
     :type force_executor_host: str | None
+    :param default_executor_host: The Nomad client host to use when no matching host
+        is found for a service (e.g. RDS instances). If set, takes precedence over
+        the first available host in the fallback path.
+    :type default_executor_host: str | None
     """
 
     tasks_api: RemoteAPI
     task_execution_timeout: int = 300
     tasks_execution_wait_interval: int = 5
     force_executor_host: str | None = None
+    default_executor_host: str | None = None
 
     @asynccontextmanager
     async def api_auth(

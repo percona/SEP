@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -50,10 +50,11 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     FilenameExtension,
     MimeType,
-    RelativeDirectoryPath,
-    RequiredStr,
+    NonEmptyStr,
+    RelativeDirectoryPathField,
     URL,
 )
+from app.core.utils.lazy import LazyProxy
 
 DEFAULT_SNIPPETS_TASK = "exec-artifact"
 
@@ -304,7 +305,7 @@ class SnippetsMetaOptions(BaseModel):
     :type LINE_PATTERN: re.Pattern[str]
     :param DELIMITER: The delimiter indicating the start/end of metadata in a snippet.
         Defaults to `"---"`.
-    :type DELIMITER: RequiredStr
+    :type DELIMITER: NonEmptyStr
     :param STOP_SEARCH_PATTERN: Regular expression to stop searching for metadata lines.
         Defaults to `r"r"^[^#].+$"`.
     :type STOP_SEARCH_PATTERN: re.Pattern[str]
@@ -316,7 +317,7 @@ class SnippetsMetaOptions(BaseModel):
     :type DEFAULT_SUDO_OPTION: SnippetSudoOption
     :param DEFAULT_ARG_FORMAT: The default format for arguments. Use `${name}` and
         `${value}` as placeholders. Defaults to `"--$name $value"`.
-    :type DEFAULT_ARG_FORMAT: RequiredStr
+    :type DEFAULT_ARG_FORMAT: NonEmptyStr
     :param IGNORE_INVALID_PARAMETERS: Whether to ignore parameters with errors. If
         `True`, such parameters are skipped in execution validation and a warning is
         logged. If `False`, an error is logged and the snippet execution is blocked.
@@ -325,11 +326,11 @@ class SnippetsMetaOptions(BaseModel):
     """
 
     LINE_PATTERN: re.Pattern[str] = re.compile(r"^# (?P<line>.+)$")
-    DELIMITER: RequiredStr = "---"
+    DELIMITER: NonEmptyStr = "---"
     STOP_SEARCH_PATTERN: re.Pattern[str] = re.compile(r"^[^#].+$")
     DEFAULT_ALLOW_EXTRA_ARGS: bool = False
     DEFAULT_SUDO_OPTION: SnippetSudoOption = SnippetSudoOption.NEVER
-    DEFAULT_ARG_FORMAT: RequiredStr = "--$name $value"
+    DEFAULT_ARG_FORMAT: NonEmptyStr = "--$name $value"
     IGNORE_INVALID_PARAMETERS: bool = False
 
     @field_validator("DEFAULT_ARG_FORMAT")
@@ -359,7 +360,7 @@ class SnippetsSettings(BaseYamlSettings):
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
         `Path("snippets")`.
-    :type SNIPPETS_DIR: RelativeDirectoryPath
+    :type SNIPPETS_DIR: RelativeDirectoryPathField
     :param SNIPPETS_BASE_URL: The base URL for accessing snippets. If `None`, the URL
         is dynamically built on execution. Defaults to `None`.
     :type SNIPPETS_BASE_URL: URL | None
@@ -394,7 +395,7 @@ class SnippetsSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "SNIPPETS"]
-    SNIPPETS_DIR: RelativeDirectoryPath = Path("snippets")
+    SNIPPETS_DIR: RelativeDirectoryPathField = Path("snippets")
     SNIPPETS_BASE_URL: URL | None = None
     META: SnippetsMetaOptions = SnippetsMetaOptions()
     SYNC_FILTER: set[SnippetFilter] | None = None
@@ -465,4 +466,4 @@ class SnippetsSettings(BaseYamlSettings):
         return v
 
 
-snippets_settings = SnippetsSettings()
+snippets_settings: SnippetsSettings = LazyProxy(SnippetsSettings)

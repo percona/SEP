@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define tests for the app.sep.main module."""
 
 from unittest.mock import Mock
@@ -8,6 +23,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
 from app.core.auth.exceptions import BaseAuthProviderException
+from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.config import sep_settings
 from app.sep.deps import get_access_token_from_cookie
 from app.sep.main import get_tasks_index_context, sep_app, templates
@@ -68,7 +84,7 @@ class TestLogin:
         assert response.status_code == status.HTTP_200_OK
         template_patch.assert_called_once()
         _, kwargs = template_patch.call_args
-        assert kwargs.get("name") == "login.html"
+        assert kwargs.get("name") == "login.html.j2"
         context = kwargs.get("context", {})
         assert "csrf_token" in context
 
@@ -225,7 +241,7 @@ def test_read_root_renders_homepage(mocker, dummy_context, test_client):
     assert response.status_code == status.HTTP_200_OK
     template_patch.assert_called_once()
     _, kwargs = template_patch.call_args
-    assert kwargs.get("name") == "homepage.html"
+    assert kwargs.get("name") == "homepage.html.j2"
     assert kwargs.get("context") == dummy_context
 
 
@@ -332,7 +348,7 @@ class TestExceptionHandlers:
         template_patch.assert_called_with(
             request=mocker.ANY,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            name="error.html",
+            name="error.html.j2",
             context={"exception": formatted_exception, **dummy_context},
         )
 
@@ -347,9 +363,46 @@ class TestExceptionHandlers:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         template_spy.assert_called_once()
         _, kwargs = template_spy.call_args
-        assert kwargs.get("name") == "404.html"
+        assert kwargs.get("name") == "404.html.j2"
 
         sep_app.dependency_overrides = {}
+
+    @pytest.mark.parametrize(
+        ("exception_cls", "expected_status", "expected_detail"),
+        [
+            pytest.param(
+                HTTPServiceUnavailableException,
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Service Unavailable",
+                id="503",
+            ),
+            pytest.param(
+                HTTPBadGatewayException,
+                status.HTTP_502_BAD_GATEWAY,
+                "Bad Gateway",
+                id="502",
+            ),
+        ],
+    )
+    def test_json_exception_handler(
+        self,
+        mocker,
+        dummy_context,
+        test_client,
+        exception_cls,
+        expected_status,
+        expected_detail,
+    ):
+        """Assert gateway exceptions return JSON instead of redirecting."""
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=exception_cls(),
+        )
+
+        response = test_client.get("/", follow_redirects=False)
+
+        assert response.status_code == expected_status
+        assert response.json()["detail"] == expected_detail
 
     def test_404_error_unauthenticated(self, regular_user, test_client):
         """Test 404 errors redirects to the login page for unauthenticated users."""
