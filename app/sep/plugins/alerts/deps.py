@@ -23,6 +23,7 @@ from fastapi import Depends
 from fastapi.exceptions import HTTPException
 
 from app.core.config import settings
+from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
@@ -70,6 +71,24 @@ async def get_pmm_api() -> PMMRemoteAPI | None:
 
 
 PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
+
+
+async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:
+    """Return the PMM API client or raise if PMM is not configured.
+
+    :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
+        configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :return: The PMM API client.
+    :rtype: PMMRemoteAPI
+    :raises HTTPServiceUnavailableException: If PMM is not configured.
+    """
+    if pmm_api is None:
+        raise HTTPServiceUnavailableException(detail="PMM is not configured")
+    return pmm_api
+
+
+RequiredPMMAPIDep = Annotated[PMMRemoteAPI, Depends(require_pmm_api)]
 
 
 async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
