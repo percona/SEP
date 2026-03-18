@@ -108,6 +108,9 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 PMMPresentNamesDep = Annotated[set[str] | None, Depends(get_pmm_present_names)]
 
 
+_MAX_SIDEBAR_BACKUPS = 10
+
+
 async def get_recent_backups(session: SessionDep) -> list[AlertBackup]:
     """Return the most recent alert backups for the sidebar widget.
 
@@ -116,7 +119,8 @@ async def get_recent_backups(session: SessionDep) -> list[AlertBackup]:
     :return: A list of recent alert backups, ordered by creation date descending.
     :rtype: list[AlertBackup]
     """
-    return await AlertBackupManager.list(session)
+    backups = await AlertBackupManager.list(session)
+    return backups[:_MAX_SIDEBAR_BACKUPS]
 
 
 RecentBackupsDep = Annotated[list[AlertBackup], Depends(get_recent_backups)]

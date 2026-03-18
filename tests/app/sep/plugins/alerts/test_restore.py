@@ -15,6 +15,7 @@
 
 """Define tests for restore from backup functionality."""
 
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock
 
 import pytest
@@ -24,6 +25,7 @@ from fastapi.exceptions import HTTPException
 from app.sep.clients.pmm import (
     AlertRule,
     ContactPoint,
+    Folder,
     NotificationPolicy,
     PMMRemoteAPI,
 )
@@ -89,6 +91,9 @@ class TestRestoreFromBackup:
         mock_api.list_rules.return_value = [
             AlertRule(uid="existing1", title="Old Rule"),
         ]
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
         mock_api.template_exists.side_effect = [False, True]
         mock_api.create_template.return_value = PMMAlertTemplate(
             name="t1", summary="Template 1", template="yaml1"
@@ -128,6 +133,9 @@ class TestRestoreFromBackup:
         """Assert existing templates are skipped and not recreated."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = []
 
@@ -148,6 +156,9 @@ class TestRestoreFromBackup:
         """Assert existing contact points are updated and new ones created."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = [
             ContactPoint(uid="existing-cp", name="Email", type="email"),
@@ -170,6 +181,9 @@ class TestRestoreFromBackup:
         """Assert an empty backup produces zero counts without errors."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
         mock_api.list_contact_points.return_value = []
 
         backup = AlertBackup(
@@ -193,6 +207,9 @@ class TestRestoreFromBackup:
         """Assert restore skips notification policies when not in backup."""
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
         mock_api.list_contact_points.return_value = []
 
         backup = AlertBackup(
@@ -223,6 +240,35 @@ class TestRestoreFromBackup:
         with pytest.raises(HTTPException):
             await restore_from_backup(mock_api, backup)
 
+    @pytest.mark.asyncio
+    async def test_restore_creates_folder_when_missing(self):
+        """Assert a new folder is created when no matching folder exists."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = []
+        mock_api.create_folder.return_value = Folder(
+            uid="new-f1", title="SEP Alerts", id=2
+        )
+        mock_api.template_exists.return_value = False
+        mock_api.create_template.return_value = PMMAlertTemplate(
+            name="t1", summary="Template 1", template="yaml1"
+        )
+        mock_api.create_rule.return_value = AlertRule(uid="r1", title="Rule 1")
+        mock_api.list_contact_points.return_value = []
+
+        backup = AlertBackup(
+            id=1,
+            data=_sample_backup_data(),
+            metadata_={},
+        )
+
+        await restore_from_backup(mock_api, backup)
+
+        mock_api.create_folder.assert_awaited_once_with("SEP Alerts")
+        mock_api.create_rule.assert_awaited_once()
+        call_kwargs = mock_api.create_rule.call_args.kwargs
+        assert call_kwargs["folder_uid"] == "new-f1"
+
 
 class TestRestoreRoute:
     """Test the POST /alerts/restore route."""
@@ -235,6 +281,9 @@ class TestRestoreRoute:
 
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
         mock_api.template_exists.return_value = False
         mock_api.create_template.return_value = PMMAlertTemplate(
             name="t1", summary="s", template="y"
@@ -332,44 +381,54 @@ class TestRestoreRoute:
         assert body["status"] == "error"
 
 
-class TestBackupListRoute:
-    """Test the GET /alerts/backups route."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_session_dep(self):
-        """Override the session dependency to avoid needing a real DB."""
-        from app.sep.deps import get_session
-        from app.sep.main import sep_app
-
-        async def _mock_session():
-            return AsyncMock()
-
-        sep_app.dependency_overrides[get_session] = _mock_session
-        yield
-        sep_app.dependency_overrides = {}
+class TestBackupDetailRoute:
+    """Test the GET /alerts/backups/{backup_id} route."""
 
     @pytest.fixture
-    def _mock_backup_list(self, mocker):
-        """Mock AlertBackupManager.list to return sample backups."""
-        backups = [
-            AlertBackup(
-                id=i,
-                data={},
-                metadata_={"template_count": i, "rule_count": i},
-            )
-            for i in range(1, 4)
-        ]
+    def _mock_backup_get(self, mocker):
+        """Mock AlertBackupManager.get to return a sample backup."""
+        backup = AlertBackup(
+            id=1,
+            data=_sample_backup_data(),
+            metadata_={"template_count": 2, "rule_count": 1},
+            created_at=datetime(2026, 3, 17, 22, 0, tzinfo=UTC),
+        )
         mocker.patch(
-            "app.sep.plugins.alerts.routes.AlertBackupManager.list",
-            new=AsyncMock(return_value=backups),
+            "app.sep.plugins.alerts.routes.AlertBackupManager.get",
+            new=AsyncMock(return_value=backup),
         )
 
-    @pytest.mark.usefixtures("_mock_backup_list", "mock_get_username_mapping")
-    def test_backup_list_endpoint(self, test_client):
-        """Assert GET /alerts/backups returns 200 with backup data."""
-        response = test_client.get("/alerts/backups")
+    @pytest.fixture
+    def _mock_backup_not_found(self, mocker):
+        """Mock AlertBackupManager.get to return None."""
+        mocker.patch(
+            "app.sep.plugins.alerts.routes.AlertBackupManager.get",
+            new=AsyncMock(return_value=None),
+        )
+
+    @pytest.mark.usefixtures("_mock_backup_get")
+    def test_backup_detail_success(self, test_client):
+        """Assert GET /alerts/backups/1 returns 200 with backup summary."""
+        response = test_client.get("/alerts/backups/1")
         assert response.status_code == status.HTTP_200_OK
-        assert response.headers["content-type"] == "text/html; charset=utf-8"
+        body = response.json()
+        assert body["id"] == 1
+        assert body["created_at"] == "2026-03-17 22:00 UTC"
+        assert len(body["templates"]) == _SAMPLE_TEMPLATE_COUNT
+        assert body["templates"][0]["name"] == "t1"
+        assert len(body["rules"]) == 1
+        assert body["rules"][0]["title"] == "Rule 1"
+        assert len(body["contact_points"]) == _SAMPLE_CONTACT_POINT_COUNT
+        assert len(body["folders"]) == 1
+        assert body["notification_policy_receiver"] == "Email"
+
+    @pytest.mark.usefixtures("_mock_backup_not_found")
+    def test_backup_detail_not_found(self, test_client):
+        """Assert GET /alerts/backups/999 returns 404 JSON."""
+        response = test_client.get("/alerts/backups/999")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        body = response.json()
+        assert body["status"] == "error"
 
 
 class TestGetRecentBackups:

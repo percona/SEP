@@ -166,27 +166,35 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <div class="sidebar-widget" id="backup-widget">
                 <h4>Backups</h4>
                 {% if recent_backups %}
-                    <form id="restore-form">
-                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
-                        <ul class="backup-list">
-                            {% for backup in recent_backups[:5] %}
-                                <li>
-                                    <label class="backup-option">
-                                        <input type="radio" name="backup_id" value="{{ backup.id }}">
-                                        <span class="backup-info">
-                                            <time>{{ backup.created_at.strftime("%Y-%m-%d %H:%M") }}</time>
-                                            <small>{{ backup.metadata_.get('template_count', 0) }} templates,
-                                            {{ backup.metadata_.get('rule_count', 0) }} rules</small>
-                                        </span>
-                                    </label>
-                                </li>
-                            {% endfor %}
-                        </ul>
-                        <div class="backup-actions">
-                            <button type="submit" id="restore-btn" class="contained small" disabled>Restore</button>
-                            <a href="{{ url_for('alerts_backup_list') }}" class="text small">View all</a>
-                        </div>
-                    </form>
+                    <input type="hidden" id="backup-csrf-token" value="{{ csrf_token }}">
+                    <ul class="backup-list">
+                        {% for backup in recent_backups %}
+                            <li class="backup-item">
+                                <span class="backup-info">
+                                    <time>{{ backup.created_at.strftime("%Y-%m-%d %H:%M") }}</time>
+                                    <small>{{ backup.metadata_.get('template_count', 0) }} templates,
+                                    {{ backup.metadata_.get('rule_count', 0) }} rules</small>
+                                </span>
+                                <span class="backup-item-actions">
+                                    <button type="button"
+                                            class="icon small backup-detail-btn"
+                                            aria-label="View details"
+                                            data-backup-id="{{ backup.id }}"
+                                            data-backup-date="{{ backup.created_at.strftime('%Y-%m-%d %H:%M UTC') }}">
+                                        <span class="material-symbols-outlined">info</span>
+                                    </button>
+                                    <button type="button"
+                                            class="icon small backup-restore-btn"
+                                            aria-label="Restore from backup"
+                                            title="Restore from backup"
+                                            data-backup-id="{{ backup.id }}"
+                                            data-backup-date="{{ backup.created_at.strftime('%Y-%m-%d %H:%M UTC') }}">
+                                        <span class="material-symbols-outlined">settings_backup_restore</span>
+                                    </button>
+                                </span>
+                            </li>
+                        {% endfor %}
+                    </ul>
                 {% else %}
                     <p class="text-muted">No backups available</p>
                 {% endif %}
@@ -229,4 +237,42 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             </div>
         </aside>
     </div>
+    <dialog id="dialog-restore-confirm" aria-modal="true" data-modal="target">
+        <div class="window">
+            <header>
+                <h3 class="h5 title">Confirm Restore</h3>
+            </header>
+            <section>
+                <p>
+                    This will <strong>delete all existing alert rules</strong>
+                    and recreate them from the backup taken on
+                    <strong id="restore-confirm-date"></strong>.
+                </p>
+                <p>This action cannot be undone. Continue?</p>
+            </section>
+            <footer>
+                <button type="button" class="text large" data-modal-close>
+                    Cancel<sup>ESC</sup>
+                </button>
+                <button type="button" id="restore-confirm-btn" class="contained large">Restore</button>
+            </footer>
+        </div>
+    </dialog>
+    <dialog id="dialog-backup-detail" aria-modal="true" data-modal="target">
+        <div class="window alert-detail-modal">
+            <header>
+                <h3 class="h5 title">
+                    Backup — <span id="detail-date"></span>
+                </h3>
+            </header>
+            <section id="detail-content">
+                <p class="text-muted">Loading…</p>
+            </section>
+            <footer>
+                <button type="button" class="text large" data-modal-close>
+                    Close<sup>ESC</sup>
+                </button>
+            </footer>
+        </div>
+    </dialog>
 {% endblock main %}

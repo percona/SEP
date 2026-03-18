@@ -25,7 +25,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.core.utils.fields import NonEmptyStr
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext, IsAuthenticated, IsCsrfValidated, SessionDep
+from app.sep.deps import IsAuthenticated, IsCsrfValidated, SessionDep
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
     AlertsIndexContext,
@@ -124,29 +124,42 @@ async def alerts_restore(
     return JSONResponse({"status": "success", "details": results})
 
 
-@router.get("/backups", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def alerts_backup_list(
-    request: Request,
-    context: DefaultContext,
-    session: SessionDep,
-) -> HTMLResponse:
-    """Render the full backup history page.
+@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated])
+async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONResponse:
+    """Return a summary of a single backup's contents.
 
-    :param request: The incoming HTTP request.
-    :type request: Request
-    :param context: The shared template context dictionary.
-    :type context: DefaultContext
     :param session: The async database session.
     :type session: AsyncSession
-    :return: The rendered backup history HTML page.
-    :rtype: HTMLResponse
+    :param backup_id: The ID of the backup to retrieve.
+    :type backup_id: int
+    :return: JSON with categorized backup contents.
+    :rtype: JSONResponse
     """
-    backups = await AlertBackupManager.list(session)
-    context["backups"] = backups
-    return templates.TemplateResponse(
-        request=request,
-        name="alerts/backup_history.html.j2",
-        context=context,
+    backup = await AlertBackupManager.get(session, id=backup_id)
+    if backup is None:
+        return JSONResponse(
+            {"status": "error", "message": "Backup not found"},
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    data = backup.data
+    return JSONResponse(
+        {
+            "id": backup.id,
+            "created_at": backup.created_at.strftime("%Y-%m-%d %H:%M UTC"),
+            "templates": [
+                {"name": t.get("name", ""), "summary": t.get("summary", "")}
+                for t in data.get("templates", [])
+            ],
+            "rules": [{"title": r.get("title", "")} for r in data.get("rules", [])],
+            "contact_points": [
+                {"name": cp.get("name", ""), "type": cp.get("type", "")}
+                for cp in data.get("contact_points", [])
+            ],
+            "folders": [{"title": f.get("title", "")} for f in data.get("folders", [])],
+            "notification_policy_receiver": data.get("notification_policies", {}).get(
+                "receiver", ""
+            ),
+        }
     )
 
 

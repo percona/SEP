@@ -47,6 +47,12 @@ async def restore_from_backup(
         await pmm_api.delete_rule(rule.uid)
     results["rules_deleted"] = len(existing_rules)
 
+    folders = await pmm_api.list_folders()
+    folder_name = sep_settings.PMM.alert_folder_name
+    folder = next((f for f in folders if f.title == folder_name), None)
+    if folder is None:
+        folder = await pmm_api.create_folder(folder_name)
+
     created_templates = 0
     skipped_templates = 0
     for t_data in data.get("templates", []):
@@ -64,7 +70,7 @@ async def restore_from_backup(
             template_name=r_data.get("labels", {}).get(
                 "template_name", r_data["title"]
             ),
-            folder_uid=r_data.get("folder_uid", ""),
+            folder_uid=folder.uid,
             for_duration=r_data.get("for", DEFAULT_FOR_DURATION),
             group=r_data.get("group", sep_settings.PMM.alert_folder_name),
         )
