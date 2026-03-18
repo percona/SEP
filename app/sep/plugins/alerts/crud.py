@@ -15,7 +15,8 @@
 
 """Define database operations for AlertBackup."""
 
-from sqlmodel import col
+from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
 from app.sep.plugins.alerts.backup import AlertBackup
@@ -33,3 +34,18 @@ class AlertBackupManager(BaseSQLModelManager):
 
     Model = AlertBackup
     ordering = [col(AlertBackup.created_at).desc(), col(AlertBackup.id).desc()]
+
+    @classmethod
+    async def list_recent(cls, session: AsyncSession, limit: int) -> list[AlertBackup]:
+        """Return the most recent backups, limited to ``limit`` rows.
+
+        :param session: The async database session.
+        :type session: AsyncSession
+        :param limit: Maximum number of backups to return.
+        :type limit: int
+        :return: A list of the most recent backups.
+        :rtype: list[AlertBackup]
+        """
+        stmt = select(AlertBackup).order_by(*cls.ordering).limit(limit)
+        result = await session.exec(stmt)
+        return list(result.all())

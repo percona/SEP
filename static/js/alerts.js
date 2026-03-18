@@ -121,11 +121,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function clearChildren(node) {
+        while (node.firstChild) node.removeChild(node.firstChild);
+    }
+
     function clearResults() {
         if (!resultsContainer) return;
-        while (resultsContainer.firstChild) {
-            resultsContainer.removeChild(resultsContainer.firstChild);
-        }
+        clearChildren(resultsContainer);
     }
 
     function showResults(results) {
@@ -240,9 +242,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderConfigured(csrfToken) {
-        while (pdWidget.firstChild) {
-            pdWidget.removeChild(pdWidget.firstChild);
-        }
+        clearChildren(pdWidget);
 
         pdWidget.appendChild(el('h4', {
             textContent: 'PagerDuty Integration'
@@ -294,9 +294,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderNotConfigured(csrfToken) {
-        while (pdWidget.firstChild) {
-            pdWidget.removeChild(pdWidget.firstChild);
-        }
+        clearChildren(pdWidget);
 
         pdWidget.appendChild(el('h4', {
             textContent: 'PagerDuty Integration'
@@ -433,10 +431,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function getBackupCsrfToken() {
         var input = document.getElementById('backup-csrf-token');
         return input ? input.value : '';
-    }
-
-    function clearChildren(node) {
-        while (node.firstChild) node.removeChild(node.firstChild);
     }
 
     function buildDetailSection(title, items, renderItem) {

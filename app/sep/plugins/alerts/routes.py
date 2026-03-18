@@ -31,6 +31,7 @@ from app.sep.plugins.alerts.deps import (
     AlertsIndexContext,
     AlertTemplatesDep,
     ensure_pagerduty_notification_route,
+    find_pagerduty_contact_point,
     PAGERDUTY_CONTACT_POINT_NAME,
     PMMAPIDep,
     PMMPresentNamesDep,
@@ -179,14 +180,7 @@ async def pagerduty_save(
     """
     try:
         contact_points = await pmm_api.list_contact_points()
-        pd_cp = next(
-            (
-                cp
-                for cp in contact_points
-                if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
-            ),
-            None,
-        )
+        pd_cp = find_pagerduty_contact_point(contact_points)
         pd_settings = {"integrationKey": integration_key}
 
         if pd_cp is not None:
@@ -227,14 +221,7 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
     """
     try:
         contact_points = await pmm_api.list_contact_points()
-        pd_cp = next(
-            (
-                cp
-                for cp in contact_points
-                if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
-            ),
-            None,
-        )
+        pd_cp = find_pagerduty_contact_point(contact_points)
         if pd_cp is None:
             return JSONResponse(
                 {"error": "PagerDuty contact point not found"},

@@ -15,17 +15,15 @@
 
 """Define Celery tasks and utilities for the SEP app."""
 
+import asyncio
 import logging
 from pathlib import Path
 
 from sqlmodel import col
 
 from app.celery import celery
-from app.core.config import settings
-from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
-from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
@@ -139,23 +137,28 @@ def backup_alert_config() -> None:
 
 async def _backup_alert_config() -> None:
     """Fetch alert configuration from PMM and store as a backup."""
-    if not sep_settings.PMM.endpoint or not sep_settings.PMM.api_key:
+    from app.sep.plugins.alerts.backup import AlertBackup
+    from app.sep.plugins.alerts.deps import get_pmm_api
+
+    pmm_api = await get_pmm_api()
+    if pmm_api is None:
         logger.warning("PMM not configured, skipping alert backup")
         return
 
     try:
-        pmm_api = await settings.get_remote_api(
-            PMMRemoteAPI,
-            endpoint=sep_settings.PMM.endpoint,
-            api_key=sep_settings.PMM.api_key,
-            verify_ssl=sep_settings.PMM.verify_ssl,
+        (
+            templates,
+            rules,
+            contact_points,
+            notification_policy,
+            folders,
+        ) = await asyncio.gather(
+            pmm_api.list_templates(),
+            pmm_api.list_rules(),
+            pmm_api.list_contact_points(),
+            pmm_api.get_notification_policy(),
+            pmm_api.list_folders(),
         )
-
-        templates = await pmm_api.list_templates()
-        rules = await pmm_api.list_rules()
-        contact_points = await pmm_api.list_contact_points()
-        notification_policy = await pmm_api.get_notification_policy()
-        folders = await pmm_api.list_folders()
     except Exception:
         logger.exception("Failed to fetch alert configuration from PMM")
         return
@@ -182,5 +185,7 @@ async def _backup_alert_config() -> None:
         retention = sep_settings.PMM.backup_retention
         all_backups = await AlertBackupManager.list(session)
         if len(all_backups) > retention:
-            for old_backup in all_backups[retention:]:
-                await AlertBackupManager.delete(session, old_backup)
+            ids_to_delete = [b.id for b in all_backups[retention:]]
+            await AlertBackupManager.delete_where(
+                session, col(AlertBackup.id).in_(ids_to_delete)
+            )

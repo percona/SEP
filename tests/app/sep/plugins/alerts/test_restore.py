@@ -357,7 +357,7 @@ class TestRestoreRoute:
         )
         sep_app.dependency_overrides[get_pmm_api] = lambda: mock_api
         yield mock_api
-        sep_app.dependency_overrides = {}
+        sep_app.dependency_overrides.pop(get_pmm_api, None)
 
     @pytest.fixture
     def _mock_pmm_api_none_dep(self):
@@ -367,7 +367,7 @@ class TestRestoreRoute:
 
         sep_app.dependency_overrides[get_pmm_api] = lambda: None
         yield
-        sep_app.dependency_overrides = {}
+        sep_app.dependency_overrides.pop(get_pmm_api, None)
 
     @pytest.fixture
     def _mock_backup_get(self, mocker):
@@ -498,34 +498,39 @@ class TestGetRecentBackups:
 
     @pytest.mark.asyncio
     async def test_returns_backups_from_manager(self, mocker):
-        """Assert recent backups are fetched via AlertBackupManager.list."""
-        from app.sep.plugins.alerts.deps import get_recent_backups
+        """Assert recent backups are fetched via AlertBackupManager.list_recent."""
+        from app.sep.plugins.alerts.deps import _MAX_SIDEBAR_BACKUPS, get_recent_backups
 
         backups = [AlertBackup(id=i, data={}, metadata_={}) for i in range(1, 6)]
-        mock_list = AsyncMock(return_value=backups)
+        mock_list_recent = AsyncMock(return_value=backups)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.AlertBackupManager.list",
-            new=mock_list,
+            "app.sep.plugins.alerts.deps.AlertBackupManager.list_recent",
+            new=mock_list_recent,
         )
         mock_session = AsyncMock()
 
         result = await get_recent_backups(mock_session)
 
         assert result == backups
-        mock_list.assert_awaited_once_with(mock_session)
+        mock_list_recent.assert_awaited_once_with(
+            mock_session, limit=_MAX_SIDEBAR_BACKUPS
+        )
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_backups(self, mocker):
         """Assert an empty list is returned when no backups exist."""
-        from app.sep.plugins.alerts.deps import get_recent_backups
+        from app.sep.plugins.alerts.deps import _MAX_SIDEBAR_BACKUPS, get_recent_backups
 
-        mock_list = AsyncMock(return_value=[])
+        mock_list_recent = AsyncMock(return_value=[])
         mocker.patch(
-            "app.sep.plugins.alerts.deps.AlertBackupManager.list",
-            new=mock_list,
+            "app.sep.plugins.alerts.deps.AlertBackupManager.list_recent",
+            new=mock_list_recent,
         )
         mock_session = AsyncMock()
 
         result = await get_recent_backups(mock_session)
 
         assert result == []
+        mock_list_recent.assert_awaited_once_with(
+            mock_session, limit=_MAX_SIDEBAR_BACKUPS
+        )

@@ -23,11 +23,16 @@ from fastapi.exceptions import HTTPException
 from app.sep.clients.pmm import NotificationPolicy, PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.deps import find_or_create_alert_folder
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION
 
 
 async def _restore_contact_point(
-    pmm_api: PMMRemoteAPI, uid: str, name: str, type_: str, settings: dict[str, Any]
+    pmm_api: PMMRemoteAPI,
+    uid: str,
+    name: str,
+    type_: str,
+    cp_settings: dict[str, Any],
 ) -> None:
     """Update a contact point, falling back to delete+create on 404.
 
@@ -46,11 +51,11 @@ async def _restore_contact_point(
     :type name: str
     :param type_: The contact point type (e.g. ``"email"``, ``"slack"``).
     :type type_: str
-    :param settings: Type-specific configuration settings.
-    :type settings: dict[str, Any]
+    :param cp_settings: Type-specific configuration settings.
+    :type cp_settings: dict[str, Any]
     """
     try:
-        await pmm_api.update_contact_point(uid, name, type_, settings)
+        await pmm_api.update_contact_point(uid, name, type_, cp_settings)
     except HTTPException as exc:
         if exc.status_code != status.HTTP_404_NOT_FOUND:
             raise
@@ -60,7 +65,7 @@ async def _restore_contact_point(
             if del_exc.status_code != status.HTTP_404_NOT_FOUND:
                 raise
             return
-        await pmm_api.create_contact_point(name, type_, settings)
+        await pmm_api.create_contact_point(name, type_, cp_settings)
 
 
 async def restore_from_backup(
@@ -87,11 +92,7 @@ async def restore_from_backup(
         await pmm_api.delete_rule(rule.uid)
     results["rules_deleted"] = len(existing_rules)
 
-    folders = await pmm_api.list_folders()
-    folder_name = sep_settings.PMM.alert_folder_name
-    folder = next((f for f in folders if f.title == folder_name), None)
-    if folder is None:
-        folder = await pmm_api.create_folder(folder_name)
+    folder = await find_or_create_alert_folder(pmm_api)
 
     created_templates = 0
     skipped_templates = 0
@@ -124,14 +125,14 @@ async def restore_from_backup(
     for cp_data in data.get("contact_points", []):
         name = cp_data["name"]
         type_ = cp_data["type"]
-        settings = cp_data.get("settings", {})
+        cp_settings = cp_data.get("settings", {})
         if name in existing_cp_map:
             await _restore_contact_point(
-                pmm_api, existing_cp_map[name].uid, name, type_, settings
+                pmm_api, existing_cp_map[name].uid, name, type_, cp_settings
             )
             cp_updated += 1
         else:
-            await pmm_api.create_contact_point(name, type_, settings)
+            await pmm_api.create_contact_point(name, type_, cp_settings)
             cp_created += 1
     results["contact_points"] = {"created": cp_created, "updated": cp_updated}
 

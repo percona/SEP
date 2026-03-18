@@ -23,6 +23,10 @@ from app.core.celery.utils import (
 from app.sep.config import sep_settings
 from app.sep.snippets.config import snippets_settings
 
+_alerts_plugin_enabled = any(
+    p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS
+)
+
 SYSTEM_PERIODIC_TASKS = [
     SystemPeriodicTaskSchedule(
         schedule=snippets_settings.SYNC_INTERVAL,
@@ -35,7 +39,7 @@ SYSTEM_PERIODIC_TASKS = [
     ),
 ]
 
-if any(p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS):
+if _alerts_plugin_enabled:
     SYSTEM_PERIODIC_TASKS.append(
         SystemPeriodicTaskSchedule(
             schedule=sep_settings.PMM.backup_interval,
@@ -55,7 +59,7 @@ async def create_plugin_tables() -> None:
     Safe to call repeatedly as ``checkfirst=True`` is the default for
     ``create_all``.
     """
-    if not any(p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS):
+    if not _alerts_plugin_enabled:
         return
 
     from sqlmodel import SQLModel

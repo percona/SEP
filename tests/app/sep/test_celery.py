@@ -406,8 +406,8 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker)
         mocker.patch(
-            "app.sep.celery.settings",
-            get_remote_api=AsyncMock(return_value=mock_api),
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
 
@@ -428,7 +428,10 @@ class TestBackupAlertConfig:
     @pytest.mark.asyncio
     async def test_backup_pmm_not_configured(self, mocker) -> None:
         """Assert no backup is created when PMM is not configured."""
-        _patch_pmm_settings(mocker, endpoint=None)
+        mocker.patch(
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=None),
+        )
         mock_session_maker = mocker.patch("app.sep.celery.get_async_session_maker")
 
         await _backup_alert_config()
@@ -438,14 +441,13 @@ class TestBackupAlertConfig:
     @pytest.mark.asyncio
     async def test_backup_pmm_api_error(self, mocker) -> None:
         """Assert API errors are logged without crashing the task."""
-        _patch_pmm_settings(mocker)
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_templates = AsyncMock(
             side_effect=ConnectionError("PMM unreachable")
         )
         mocker.patch(
-            "app.sep.celery.settings",
-            get_remote_api=AsyncMock(return_value=mock_api),
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
         )
         mock_session_maker = mocker.patch("app.sep.celery.get_async_session_maker")
 
@@ -467,8 +469,8 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker, retention=retention)
         mocker.patch(
-            "app.sep.celery.settings",
-            get_remote_api=AsyncMock(return_value=mock_api),
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
 
@@ -491,8 +493,8 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker, retention=retention)
         mocker.patch(
-            "app.sep.celery.settings",
-            get_remote_api=AsyncMock(return_value=mock_api),
+            "app.sep.plugins.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
 
