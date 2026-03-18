@@ -742,16 +742,8 @@ class TestUpdateNotificationPolicy:
             group_by=["alertname", "cluster"],
             routes=[{"receiver": "pagerduty", "match": {"severity": "critical"}}],
         )
-        mock_request.return_value = {
-            "receiver": "slack",
-            "group_by": ["alertname", "cluster"],
-            "routes": [{"receiver": "pagerduty", "match": {"severity": "critical"}}],
-        }
+        await pmm_remote_api.update_notification_policy(policy)
 
-        result = await pmm_remote_api.update_notification_policy(policy)
-
-        assert isinstance(result, NotificationPolicy)
-        assert result.receiver == "slack"
         mock_request.assert_awaited_once_with(
             "PUT",
             "/graph/api/v1/provisioning/policies",
