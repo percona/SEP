@@ -1186,6 +1186,10 @@ class BaseTaskSyncer(BaseSyncer):
         falling back to an arbitrary host when no executor matches the node.
         Defaults to ``False``.
     :type strict_executor_matching: bool
+    :param default_executor_host: The Nomad client host to use when no matching host
+        is found for a service (e.g. RDS instances). If set, takes precedence over
+        the first available host in the fallback path.
+    :type default_executor_host: str | None
     """
 
     tasks_api: RemoteAPI
@@ -1193,6 +1197,8 @@ class BaseTaskSyncer(BaseSyncer):
     tasks_execution_wait_interval: int = 5
     force_executor_host: str | None = None
     strict_executor_matching: bool = False
+
+    default_executor_host: str | None = None
 
     @asynccontextmanager
     async def api_auth(

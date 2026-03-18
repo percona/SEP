@@ -13,11 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define Pydantic models for alert templates."""
+"""Define Pydantic models and conversion helpers for alert templates."""
 
 from enum import StrEnum
 from typing import Annotated
 
+import yaml
 from pydantic import BaseModel, StringConstraints
 
 
@@ -38,6 +39,23 @@ class ServiceType(StrEnum):
     MYSQL = "mysql"
     MONGODB = "mongodb"
     POSTGRESQL = "postgresql"
+
+    @property
+    def label(self) -> str:
+        """Return the display label with correct product-name capitalization.
+
+        :return: The human-readable service type name.
+        :rtype: str
+        """
+        return _SERVICE_TYPE_LABELS[self.value]
+
+
+_SERVICE_TYPE_LABELS = {
+    "generic": "Generic",
+    "mysql": "MySQL",
+    "mongodb": "MongoDB",
+    "postgresql": "PostgreSQL",
+}
 
 
 class AlertSeverity(StrEnum):
@@ -86,3 +104,34 @@ class AlertTemplate(BaseModel):
     severity: AlertSeverity
     description: str
     summary: str
+
+
+DEFAULT_FOR_DURATION = "300s"
+
+
+def to_pmm_template_yaml(template: AlertTemplate) -> str:
+    """Convert a SEP alert template to PMM template YAML format.
+
+    :param template: The SEP alert template to convert.
+    :type template: AlertTemplate
+    :return: A YAML string in the PMM template format.
+    :rtype: str
+    """
+    pmm_template = {
+        "templates": [
+            {
+                "name": template.name,
+                "version": 1,
+                "summary": template.summary,
+                "expr": template.expression,
+                "for": DEFAULT_FOR_DURATION,
+                "severity": template.severity.value,
+                "labels": {},
+                "annotations": {
+                    "summary": template.summary,
+                    "description": template.description,
+                },
+            }
+        ]
+    }
+    return yaml.dump(pmm_template, default_flow_style=False)
