@@ -1,0 +1,138 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "inventory/base-inventory.html.j2" %}
+{% block title -%}
+    Schema {{ schema.name }} ({{ schema.service_id }})
+{%- endblock title %}
+{% block style %}
+    {{ super() }}
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            text-align: left;
+        }
+
+        .create_statement,
+        .keys {
+            width: 35%;
+            word-wrap: break-word;
+        }
+
+        td,
+        th {
+            width: auto;
+        }
+
+        .ellipse {
+            display: -webkit-box;
+            overflow: hidden;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 4;
+        }
+
+        .ellipse-btn {
+            color: black;
+            background: none;
+            text-decoration: underline;
+            font-weight: 200;
+            font-size: .9em;
+        }
+
+        .ellipse-btn:hover {
+            background: none !important;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        pre {
+            white-space: break-spaces;
+        }
+
+        {{ syntax_highlight_css(style="sas") }}
+    </style>
+{% endblock style %}
+{% block inventory_entity_details %}
+    {% with inventory_table_title = "Schema Details", inventory_sync_route = "/inventory/schemas/" ~ schema.id ~ "/sync/" %}
+        {% include "inventory/partials/sync-button.html.j2" %}
+    {% endwith %}
+    <dl>
+        <dt>Name</dt>
+        <dd>
+            {{ schema.name }}
+        </dd>
+    </dl>
+{% endblock inventory_entity_details %}
+<hr>
+{% block inventory_table %}
+    <h3>Tables in this Schema</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th class="create_statement">Create Statement</th>
+                <th class="keys">Keys</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for table in schema.tables %}
+                <tr>
+                    <td>{{ table.name }}</td>
+                    <td class="create_statement">
+                        <div class="ellipse" id="create-{{ table.id }}">{{ table.create|syntax_highlight("sql", style="sas") |safe }}</div>
+                        <button class="toggle-btn ellipse-btn hidden"
+                                id="create-btn-{{ table.id }}"
+                                data-target="create-{{ table.id }}">&gt;&gt;More</button>
+                    </td>
+                    <td>
+                        {% if table.keys %}
+                            <div class="ellipse" id="keys-{{ table.id }}">
+                                {{ table.keys|tojson(2) |syntax_highlight("json", style="sas")|safe }}
+                            </div>
+                            <button class="toggle-btn ellipse-btn hidden"
+                                    id="keys-btn-{{ table.id }}"
+                                    data-target="keys-{{ table.id }}">&gt;&gt;More</button>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form action="{{ url_for('table_delete', table_id=table.id) }}"
+                              method="post"
+                              style="display:inline"
+                              class="confirmable-form"
+                              data-confirm-message="Are you sure you want to delete table '{{ schema.name }}.{{ table.name }}' (#{{ table.id }})?">
+                            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                            <button name="location" class="icons submitButton">delete forever</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <script src="{{ url_for('static', path='/js/schemaDetail.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock inventory_table %}
+{% block inventory_create %}
+    <h3>Add a New Table</h3>
+    {% include "inventory/partials/table-create-form.html.j2" %}
+{% endblock inventory_create %}

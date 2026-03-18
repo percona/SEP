@@ -120,6 +120,7 @@ def preflight_check():
 
 def logging_setup(logging_dir, log_name, level=LOGGING_LEVEL):
     """ Logger setup """
+    os.umask(0o007)
 
     # Tilde expand logging path if needed and resolve its real path
     real_logging_dir = os.path.realpath(os.path.expanduser(logging_dir))
@@ -2385,7 +2386,7 @@ class Xtrabackup(Restore):
     def decompress_backup_zst(self, path):
         """decompress zst files in path"""
 
-        cmd = f"{XTRABACKUP_BIN_REAL} --decompress --parallel={self.xb_parallel} --target-dir={path}"
+        cmd = f"{XTRABACKUP_BIN_REAL} --decompress --remove-original --parallel={self.xb_parallel} --target-dir={path}"
         self.logger.info('Running: %s', cmd)
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         proc.communicate()

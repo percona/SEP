@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -26,6 +26,7 @@ from app.core.utils.dict import (
 from app.core.utils.imports import (
     import_var,
     validate_attribute_is_importable,
+    validate_importable_settings,
     validate_module_is_importable,
 )
 from app.core.utils.iterators import unique_everseen

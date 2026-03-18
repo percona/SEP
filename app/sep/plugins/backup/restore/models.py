@@ -1,3 +1,18 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """Define models for the Restore plugin."""
 
 from enum import StrEnum
@@ -134,6 +149,8 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     :type stop_position: int | EmptyStrToNone
     :param use_sql_file: Path to SQL file to use for restore instead of backup files.
     :type use_sql_file: NonEmptyStr | EmptyStrToNone
+    :param binlog_restore_extra_args: Additional arguments for mysqlbinlog restore command.
+    :type binlog_restore_extra_args: NonEmptyStr | EmptyStrToNone
     """
 
     backup_type: BackupType
@@ -168,6 +185,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     stop_file: NonEmptyStr | EmptyStrToNone = None
     stop_position: int | EmptyStrToNone = None
     use_sql_file: NonEmptyStr | EmptyStrToNone = None
+    binlog_restore_extra_args: NonEmptyStr | EmptyStrToNone = None
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):

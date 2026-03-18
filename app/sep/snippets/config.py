@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -54,6 +54,7 @@ from app.core.utils.fields import (
     RelativeDirectoryPathField,
     URL,
 )
+from app.core.utils.lazy import LazyProxy
 
 DEFAULT_SNIPPETS_TASK = "exec-artifact"
 
@@ -465,4 +466,4 @@ class SnippetsSettings(BaseYamlSettings):
         return v
 
 
-snippets_settings = SnippetsSettings()
+snippets_settings: SnippetsSettings = LazyProxy(SnippetsSettings)

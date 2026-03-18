@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Percona LLC
+# Copyright (C) 2026 Percona LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -20,8 +20,10 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
+from aiohttp import ClientResponseError
 from async_lru import _LRUCacheWrapper, alru_cache
-from pydantic import ConfigDict, SecretStr, ValidationError
+from fastapi import HTTPException
+from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
 from app.core.utils.dict import remove_falsy_values_from_dict
@@ -30,6 +32,105 @@ from app.inventory.models import SourceEnum
 from app.sep.inventory import Node, Service
 
 logger = logging.getLogger(__name__)
+
+
+class AlertTemplate(BaseModel):
+    """Represent a PMM alert template.
+
+    :param name: The unique name of the template.
+    :type name: str
+    :param summary: A short human-readable description of the template.
+    :type summary: str
+    :param template: The raw YAML content of the template.
+    :type template: str
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    summary: str
+    template: str = ""
+
+
+class AlertRule(BaseModel):
+    """Represent a PMM alert rule.
+
+    :param uid: The unique identifier of the rule.
+    :type uid: str
+    :param title: The display title of the rule.
+    :type title: str
+    :param labels: Labels attached to the rule.
+    :type labels: dict[str, str]
+    :param annotations: Annotations attached to the rule.
+    :type annotations: dict[str, str]
+    :param data: Query data for the rule.
+    :type data: list[dict[str, Any]]
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    uid: str
+    title: str
+    labels: dict[str, str] = {}
+    annotations: dict[str, str] = {}
+    data: list[dict[str, Any]] = []
+
+
+class Folder(BaseModel):
+    """Represent a Grafana folder in PMM.
+
+    :param uid: The unique identifier of the folder.
+    :type uid: str
+    :param title: The display title of the folder.
+    :type title: str
+    :param id: The numeric identifier of the folder.
+    :type id: int
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    uid: str
+    title: str
+    id: int
+
+
+class ContactPoint(BaseModel):
+    """Represent a Grafana alert contact point.
+
+    :param uid: The unique identifier of the contact point.
+    :type uid: str
+    :param name: The display name of the contact point.
+    :type name: str
+    :param type: The type of the contact point (e.g., "slack", "email").
+    :type type: str
+    :param settings: Type-specific configuration settings.
+    :type settings: dict[str, Any]
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    uid: str
+    name: str
+    type: str
+    settings: dict[str, Any] = {}
+
+
+class NotificationPolicy(BaseModel):
+    """Represent a Grafana notification policy tree.
+
+    :param receiver: The name of the default receiver.
+    :type receiver: str
+    :param group_by: Labels used to group alerts.
+    :type group_by: list[str]
+    :param routes: Nested routing rules.
+    :type routes: list[dict[str, Any]]
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    receiver: str
+    group_by: list[str] = []
+    routes: list[dict[str, Any]] = []
 
 
 class PMMService(Service):
@@ -319,6 +420,324 @@ class PMMRemoteAPI(RemoteAPI):
                     else:
                         raise
         return services
+
+    @property
+    def alerting_headers(self) -> dict[str, str]:
+        """Return headers required for all PMM alerting API requests.
+
+        The `X-Disable-Provenance` header ensures that items created through
+        the API remain editable in the PMM UI.
+
+        :return: A dictionary containing the alerting-specific request headers.
+        :rtype: dict[str, str]
+        """
+        return {"X-Disable-Provenance": "true"}
+
+    async def create_template(self, yaml: str) -> AlertTemplate:
+        """Create a PMM alert template from a YAML definition.
+
+        :param yaml: The YAML content of the alert template.
+        :type yaml: str
+        :return: The created alert template.
+        :rtype: AlertTemplate
+        """
+        if await self.is_older_than_v3():
+            data = await self.post(
+                "/v1/management/alerting/Templates/Create",
+                json={"yaml": yaml},
+                headers=self.alerting_headers,
+            )
+        else:
+            data = await self.post(
+                "/v1/alerting/templates",
+                json={"yaml": yaml},
+                headers=self.alerting_headers,
+            )
+        return AlertTemplate.model_validate(data)
+
+    async def list_templates(
+        self, page_size: int = 0, page_index: int = 0
+    ) -> list[AlertTemplate]:
+        """List all PMM alert templates.
+
+        :param page_size: Number of templates per page. Defaults to 0 (no limit).
+        :type page_size: int
+        :param page_index: Page index for pagination. Defaults to 0.
+        :type page_index: int
+        :return: A list of alert templates.
+        :rtype: list[AlertTemplate]
+        """
+        if await self.is_older_than_v3():
+            data = await self.post(
+                "/v1/management/alerting/Templates/List",
+                json={},
+                headers=self.alerting_headers,
+            )
+        else:
+            params = {}
+            if page_size:
+                params["page_size"] = page_size
+            if page_index:
+                params["page_index"] = page_index
+            data = await self.get(
+                "/v1/alerting/templates",
+                params=params,
+                headers=self.alerting_headers,
+            )
+        return [AlertTemplate.model_validate(t) for t in data.get("templates", [])]
+
+    async def template_exists(self, name: str) -> bool:
+        """Check whether a PMM alert template with the given name exists.
+
+        :param name: The template name to look up.
+        :type name: str
+        :return: True if a template with the given name exists, False otherwise.
+        :rtype: bool
+        """
+        templates = await self.list_templates()
+        return any(t.name == name for t in templates)
+
+    async def create_rule(
+        self,
+        name: str,
+        template_name: str,
+        folder_uid: str,
+        for_duration: str,
+        group: str,
+        labels: dict[str, str] | None = None,
+        params: list[dict[str, Any]] | None = None,
+    ) -> AlertRule:
+        """Create a PMM alert rule from an existing template.
+
+        :param name: The display name of the alert rule.
+        :type name: str
+        :param template_name: The name of the template to base the rule on.
+        :type template_name: str
+        :param folder_uid: The UID of the folder to place the rule in.
+        :type folder_uid: str
+        :param for_duration: How long the condition must be true before firing.
+        :type for_duration: str
+        :param group: The rule group name.
+        :type group: str
+        :param labels: Optional labels to attach to the rule.
+        :type labels: dict[str, str] | None
+        :param params: Optional template parameters for the rule.
+        :type params: list[dict[str, Any]] | None
+        :return: The created alert rule.
+        :rtype: AlertRule
+        """
+        body = {
+            "name": name,
+            "template_name": template_name,
+            "folder_uid": folder_uid,
+            "for": for_duration,
+            "group": group,
+        }
+        if labels is not None:
+            body["labels"] = labels
+        if params is not None:
+            body["params"] = params
+
+        if await self.is_older_than_v3():
+            data = await self.post(
+                "/v1/management/alerting/Rules/Create",
+                json=body,
+                headers=self.alerting_headers,
+            )
+        else:
+            data = await self.post(
+                "/v1/alerting/rules",
+                json=body,
+                headers=self.alerting_headers,
+            )
+        return AlertRule.model_validate(data)
+
+    async def list_rules(self) -> list[AlertRule]:
+        """List all PMM alert rules, flattening the nested folder/group structure.
+
+        :return: A flat list of alert rules.
+        :rtype: list[AlertRule]
+        """
+        data = await self.get(
+            "/graph/api/ruler/grafana/api/v1/rules/",
+            headers=self.alerting_headers,
+        )
+        return [
+            AlertRule.model_validate(rule["grafana_alert"])
+            for groups in data.values()
+            for group in groups
+            for rule in group.get("rules", [])
+        ]
+
+    async def delete_rule(self, uid: str) -> None:
+        """Delete a PMM alert rule by its UID.
+
+        Uses the raw `_request` context manager directly because the DELETE
+        endpoint returns a 204 No Content response with no JSON body.
+
+        :param uid: The UID of the rule to delete.
+        :type uid: str
+        """
+        async with self._request(
+            "DELETE",
+            f"/graph/api/v1/provisioning/alert-rules/{uid}",
+            headers=self.alerting_headers,
+        ) as response:
+            try:
+                response.raise_for_status()
+            except ClientResponseError as err:
+                raise HTTPException(
+                    status_code=err.status,
+                    detail=err.message,
+                ) from None
+
+    async def update_rule(
+        self,
+        uid: str,
+        name: str,
+        template_name: str,
+        folder_uid: str,
+        for_duration: str,
+        group: str,
+        labels: dict[str, str] | None = None,
+        params: list[dict[str, Any]] | None = None,
+    ) -> AlertRule:
+        """Update an existing PMM alert rule by deleting and recreating it.
+
+        The PMM API has no native update endpoint for alert rules; the only
+        supported pattern is to delete the existing rule and create a new one.
+
+        :param uid: The UID of the existing rule to replace.
+        :type uid: str
+        :param name: The display name of the new rule.
+        :type name: str
+        :param template_name: The template to base the new rule on.
+        :type template_name: str
+        :param folder_uid: The folder UID to place the new rule in.
+        :type folder_uid: str
+        :param for_duration: How long the condition must hold before firing.
+        :type for_duration: str
+        :param group: The rule group name.
+        :type group: str
+        :param labels: Optional labels to attach to the new rule.
+        :type labels: dict[str, str] | None
+        :param params: Optional template parameters for the new rule.
+        :type params: list[dict[str, Any]] | None
+        :return: The newly created alert rule.
+        :rtype: AlertRule
+        """
+        await self.delete_rule(uid)
+        return await self.create_rule(
+            name=name,
+            template_name=template_name,
+            folder_uid=folder_uid,
+            for_duration=for_duration,
+            group=group,
+            labels=labels,
+            params=params,
+        )
+
+    async def list_folders(self) -> list[Folder]:
+        """List all Grafana folders available in PMM.
+
+        :return: A list of Grafana folder objects.
+        :rtype: list[Folder]
+        """
+        data = await self.get("/graph/api/folders/", headers=self.alerting_headers)
+        return [Folder.model_validate(f) for f in data]
+
+    async def list_contact_points(self) -> list[ContactPoint]:
+        """List all alert contact points configured in PMM.
+
+        :return: A list of contact point objects.
+        :rtype: list[ContactPoint]
+        """
+        data = await self.get(
+            "/graph/api/v1/provisioning/contact-points/",
+            headers=self.alerting_headers,
+        )
+        return [ContactPoint.model_validate(cp) for cp in data]
+
+    async def create_contact_point(
+        self, name: str, type_: str, settings: dict[str, Any]
+    ) -> ContactPoint:
+        """Create a new alert contact point in PMM.
+
+        :param name: The display name of the contact point.
+        :type name: str
+        :param type_: The contact point type (e.g., "slack", "email").
+        :type type_: str
+        :param settings: Type-specific configuration settings.
+        :type settings: dict[str, Any]
+        :return: The created contact point.
+        :rtype: ContactPoint
+        """
+        data = await self.post(
+            "/graph/api/v1/provisioning/contact-points/",
+            json={"name": name, "type": type_, "settings": settings},
+            headers=self.alerting_headers,
+        )
+        return ContactPoint.model_validate(data)
+
+    async def update_contact_point(
+        self, uid: str, name: str, type_: str, settings: dict[str, Any]
+    ) -> None:
+        """Update an existing alert contact point in PMM.
+
+        Use the raw `_request` context manager directly because the PUT
+        endpoint returns a 202 Accepted response with no JSON body.
+
+        :param uid: The UID of the contact point to update.
+        :type uid: str
+        :param name: The new display name.
+        :type name: str
+        :param type_: The contact point type.
+        :type type_: str
+        :param settings: Updated type-specific configuration settings.
+        :type settings: dict[str, Any]
+        """
+        async with self._request(
+            "PUT",
+            f"/graph/api/v1/provisioning/contact-points/{uid}",
+            json={"uid": uid, "name": name, "type": type_, "settings": settings},
+            headers=self.alerting_headers,
+        ) as response:
+            try:
+                response.raise_for_status()
+            except ClientResponseError as err:
+                raise HTTPException(
+                    status_code=err.status,
+                    detail=err.message,
+                ) from None
+
+    async def get_notification_policy(self) -> NotificationPolicy:
+        """Fetch the current notification policy tree from PMM.
+
+        :return: The root notification policy.
+        :rtype: NotificationPolicy
+        """
+        data = await self.get(
+            "/graph/api/v1/provisioning/policies",
+            headers=self.alerting_headers,
+        )
+        return NotificationPolicy.model_validate(data)
+
+    async def update_notification_policy(
+        self, policy: NotificationPolicy
+    ) -> NotificationPolicy:
+        """Replace the notification policy tree in PMM.
+
+        :param policy: The new notification policy to apply.
+        :type policy: NotificationPolicy
+        :return: The updated notification policy as returned by the API.
+        :rtype: NotificationPolicy
+        """
+        data = await self.put(
+            "/graph/api/v1/provisioning/policies",
+            json=policy.model_dump(exclude_none=True),
+            headers=self.alerting_headers,
+        )
+        return NotificationPolicy.model_validate(data)
 
     async def get_services_by_node_external_id(
         self,
