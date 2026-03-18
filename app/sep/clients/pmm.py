@@ -433,13 +433,14 @@ class PMMRemoteAPI(RemoteAPI):
         """
         return {"X-Disable-Provenance": "true"}
 
-    async def create_template(self, yaml: str) -> AlertTemplate:
+    async def create_template(self, yaml: str) -> AlertTemplate | None:
         """Create a PMM alert template from a YAML definition.
 
         :param yaml: The YAML content of the alert template.
         :type yaml: str
-        :return: The created alert template.
-        :rtype: AlertTemplate
+        :return: The created alert template, or ``None`` if the API returns no data
+            (PMM v3).
+        :rtype: AlertTemplate | None
         """
         if await self.is_older_than_v3():
             data = await self.post(
@@ -453,6 +454,8 @@ class PMMRemoteAPI(RemoteAPI):
                 json={"yaml": yaml},
                 headers=self.alerting_headers,
             )
+        if not data:
+            return None
         return AlertTemplate.model_validate(data)
 
     async def list_templates(
@@ -506,7 +509,7 @@ class PMMRemoteAPI(RemoteAPI):
         group: str,
         labels: dict[str, str] | None = None,
         params: list[dict[str, Any]] | None = None,
-    ) -> AlertRule:
+    ) -> AlertRule | None:
         """Create a PMM alert rule from an existing template.
 
         :param name: The display name of the alert rule.
@@ -523,8 +526,9 @@ class PMMRemoteAPI(RemoteAPI):
         :type labels: dict[str, str] | None
         :param params: Optional template parameters for the rule.
         :type params: list[dict[str, Any]] | None
-        :return: The created alert rule.
-        :rtype: AlertRule
+        :return: The created alert rule, or ``None`` if the API returns no
+            data (PMM v3).
+        :rtype: AlertRule | None
         """
         body = {
             "name": name,
@@ -550,6 +554,8 @@ class PMMRemoteAPI(RemoteAPI):
                 json=body,
                 headers=self.alerting_headers,
             )
+        if not data:
+            return None
         return AlertRule.model_validate(data)
 
     async def list_rules(self) -> list[AlertRule]:
@@ -601,7 +607,7 @@ class PMMRemoteAPI(RemoteAPI):
         group: str,
         labels: dict[str, str] | None = None,
         params: list[dict[str, Any]] | None = None,
-    ) -> AlertRule:
+    ) -> AlertRule | None:
         """Update an existing PMM alert rule by deleting and recreating it.
 
         The PMM API has no native update endpoint for alert rules; the only
@@ -623,8 +629,9 @@ class PMMRemoteAPI(RemoteAPI):
         :type labels: dict[str, str] | None
         :param params: Optional template parameters for the new rule.
         :type params: list[dict[str, Any]] | None
-        :return: The newly created alert rule.
-        :rtype: AlertRule
+        :return: The newly created alert rule, or ``None`` if the API returns
+            no data (PMM v3).
+        :rtype: AlertRule | None
         """
         await self.delete_rule(uid)
         return await self.create_rule(
@@ -645,6 +652,21 @@ class PMMRemoteAPI(RemoteAPI):
         """
         data = await self.get("/graph/api/folders/", headers=self.alerting_headers)
         return [Folder.model_validate(f) for f in data]
+
+    async def create_folder(self, title: str) -> Folder:
+        """Create a new Grafana folder in PMM.
+
+        :param title: The display title for the new folder.
+        :type title: str
+        :return: The created folder object.
+        :rtype: Folder
+        """
+        data = await self.post(
+            "/graph/api/folders/",
+            json={"title": title},
+            headers=self.alerting_headers,
+        )
+        return Folder.model_validate(data)
 
     async def list_contact_points(self) -> list[ContactPoint]:
         """List all alert contact points configured in PMM.

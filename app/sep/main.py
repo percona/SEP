@@ -22,7 +22,7 @@ from traceback import format_exception
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
@@ -30,6 +30,7 @@ from starlette.staticfiles import StaticFiles
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
+from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
@@ -223,6 +224,24 @@ async def auth_provider_exception_handler(
     )
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
     return response
+
+
+@sep_app.exception_handler(HTTPServiceUnavailableException)
+@sep_app.exception_handler(HTTPBadGatewayException)
+async def json_exception_handler(
+    request: Request,  # noqa: ARG001
+    exc: HTTPException,
+) -> JSONResponse:
+    """Return a JSON error response for server-side gateway exceptions.
+
+    :param request: The incoming request.
+    :type request: Request
+    :param exc: The HTTP exception to handle.
+    :type exc: HTTPException
+    :return: A JSON response with the error detail and status code.
+    :rtype: JSONResponse
+    """
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
 @sep_app.exception_handler(HTTPException)
