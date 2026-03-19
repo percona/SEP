@@ -668,15 +668,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </dialog>
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
-{% set serviceSchemas = {} %}
-{% for service in services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% do schemas.update({schema.id: schema.name}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
 {% set source_data = { "host": task.host, "port": task.port, "database": task.database } %}
+<script src="{{ url_for('static', path='/js/schema-selector.js') }}"
+        nonce="{{ request.state.csp_nonce }}"></script>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const backupTypeSelect = document.getElementById('backup_type');
     const myloaderContainer = document.getElementById('myloader_container');
@@ -687,7 +681,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const serviceSelect = document.getElementById('service_id');
     const schemaSelect = document.getElementById('schema_id');
 
-    const serviceSchemas = {{ serviceSchemas | tojson }};
     const source_data = {{ source_data | tojson }};
     const matched = {
         serviceId: null,
@@ -724,28 +717,28 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     }
 
-    function populateSchemas(selectedService) {
-        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
-
-        if (selectedService && serviceSchemas[selectedService]) {
-            const schemas = Object.entries(serviceSchemas[selectedService]);
-            if (schemas.length > 0) {
-                for (const [schemaId, schemaName] of schemas) {
-                    const option = document.createElement('option');
-                    option.value = schemaId;
-                    option.textContent = schemaName;
-                    schemaSelect.appendChild(option);
-                    schemaSelect.disabled = false;
-                }
-                if (selectedService === matched.serviceId && matched.schemaId) {
-                    schemaSelect.value = matched.schemaId;
-                    return;
-                }
-                if (schemas.length === 1) {
-                    const [singleSchemaId, _] = schemas[0];
-                    schemaSelect.value = singleSchemaId;
-                }
-            }
+    async function populateSchemasForService(selectedService) {
+        if (!selectedService || selectedService === '-1') {
+            populateSelect(schemaSelect, [], {emptyPlaceholder: 'No schema'});
+            return;
+        }
+        var schemas = await fetchSchemas(selectedService);
+        var preselectId = (selectedService === matched.serviceId && matched.schemaId !== '-1')
+            ? matched.schemaId : null;
+        populateSelect(schemaSelect, schemas, {
+            placeholder: 'Select a schema',
+            emptyPlaceholder: 'No schema',
+            preselectValue: preselectId
+        });
+        if (selectedService === matched.serviceId && matched.schemaId === '-1') {
+            var unknownOpt = document.createElement('option');
+            unknownOpt.value = '-1';
+            unknownOpt.textContent = 'Unknown schema: ' + source_data.database;
+            unknownOpt.selected = true;
+            schemaSelect.appendChild(unknownOpt);
+        }
+        if (!preselectId && schemas.length === 1) {
+            schemaSelect.value = schemas[0].id;
         }
     }
 
@@ -792,62 +785,35 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         editButton.disabled = !form.checkValidity() || hasInvalidValue;
     }
 
-    // Initialize source data for unknown service/schema handling
-    function initSource() {
-        const selectedServiceId = serviceSelect.value;
-        if (selectedServiceId === "-1") {
-            // No matched service selected — completely unknown
-            const unknownSchemas = {
-                "-1": "Unknown schema: " + source_data.database
-            };
-
-            serviceSchemas["-1"] = unknownSchemas;
-
-            matched.serviceId = "-1";
-            matched.schemaId = "-1";
+    async function initSource() {
+        var selectedServiceId = serviceSelect.value;
+        if (selectedServiceId === '-1') {
+            matched.serviceId = '-1';
+            matched.schemaId = '-1';
         } else {
             matched.serviceId = selectedServiceId;
-
-            const schemas = serviceSchemas[selectedServiceId] || {};
-            let matchedSchema = null;
-            let matchedSchemaKey = null;
-
-            for (const schemaId in schemas) {
-                const schemaName = schemas[schemaId];
-                if (schemaName === source_data.database) {
-                    matchedSchema = schemaName;
-                    matchedSchemaKey = schemaId;
-                    break;
-                }
-            }
-
-            if (matchedSchema) {
-                matched.schemaId = matchedSchemaKey;
-            } else {
-                // No schema matched → insert unknown schema inside selected service
-                schemas["-1"] = "Unknown schema: " + source_data.database;
-                matched.schemaId = "-1";
-                serviceSchemas[selectedServiceId] = schemas;
-            }
+            var schemas = await fetchSchemas(selectedServiceId);
+            var foundSchema = schemas.find(function(s) { return s.name === source_data.database; });
+            matched.schemaId = foundSchema ? String(foundSchema.id) : '-1';
         }
     }
 
-    serviceSelect.addEventListener('change', function() {
-        const selectedService = this.value;
-        const hiddenSchemaInput = document.getElementById("schema_id_hidden");
-        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
-        populateSchemas(this.value);
+    serviceSelect.addEventListener('change', async function() {
+        var hiddenSchemaInput = document.getElementById("schema_id_hidden");
+        if (hiddenSchemaInput && hiddenSchemaInput.parentNode) {
+            hiddenSchemaInput.parentNode.removeChild(hiddenSchemaInput);
+        }
+        await populateSchemasForService(this.value);
         updateEditButtonState();
     });
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
-    window.addEventListener('DOMContentLoaded', function() {
-        initSource();
+    window.addEventListener('DOMContentLoaded', async function() {
+        await initSource();
         if (serviceSelect.options.length != 0) {
-            const selectedService = serviceSelect.value;
-            populateSchemas(selectedService);
+            await populateSchemasForService(serviceSelect.value);
         }
         updateBackupTypeUI();
         updateEditButtonState();

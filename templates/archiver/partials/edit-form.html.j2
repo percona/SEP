@@ -453,21 +453,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </dialog>
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
-{% set serviceSchemas = {} %}
-{% for service in services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% set tables = {} %}
-        {% for table in schema.tables %}
-            {% do tables.update({table.id: table.name}) %}
-        {% endfor %}
-        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
 {% set source_data = { "schema": task["source_db"], "table": task["source_table"], "dest_table": task["dest_table"]} %}
+<script src="{{ url_for('static', path='/js/schema-selector.js') }}"
+        nonce="{{ request.state.csp_nonce }}"></script>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const serviceSchemas = {{ serviceSchemas | tojson }};
+    const serviceSchemas = {};
     const source_data = {{ source_data | tojson }};
     const matched = {
         serviceId: null,
@@ -585,126 +575,114 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         setManualInputDest(this.checked, false);
     });
 
-    function populateSchemas(selectedService) {
-        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
-        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
+    async function populateSchemas(selectedService) {
+        populateSelect(schemaSelect, [], {placeholder: 'Select a schema'});
+        populateSelect(sourceTableSelect, [], {placeholder: 'Select a table'});
+        populateSelect(destTableSelect, [], {placeholder: 'Select a table'});
 
-        if (selectedService && serviceSchemas[selectedService]) {
-            const schemas = Object.entries(serviceSchemas[selectedService]);
+        if (selectedService && selectedService !== '-1') {
+            var schemas = await fetchSchemas(selectedService);
+            var cache = {};
+            for (var i = 0; i < schemas.length; i++) {
+                cache[schemas[i].id] = {"name": schemas[i].name, "tables": {}};
+            }
+            serviceSchemas[selectedService] = cache;
+
             if (schemas.length > 0) {
-                for (const [schemaId, schema] of schemas) {
-                    const option = document.createElement('option');
-                    option.value = schemaId;
-                    option.textContent = schema.name;
-                    schemaSelect.appendChild(option);
-                    if (srcQueryInput.value === '')
-                        schemaSelect.disabled = false;
-                }
-                if (selectedService === matched.serviceId &&  matched.schemaId) {
+                populateSelect(schemaSelect, schemas, {placeholder: 'Select a schema'});
+                if (srcQueryInput.value === '')
+                    schemaSelect.disabled = false;
+                if (selectedService === matched.serviceId && matched.schemaId && matched.schemaId !== '-1') {
                     schemaSelect.value = matched.schemaId;
-                    populateSourceTables(selectedService, matched.schemaId);
+                    await populateSourceTables(selectedService, matched.schemaId);
                     return;
+                }
+                if (selectedService === matched.serviceId && matched.schemaId === '-1') {
+                    var unknownOpt = document.createElement('option');
+                    unknownOpt.value = '-1';
+                    unknownOpt.textContent = 'Unknown schema: ' + source_data.schema;
+                    unknownOpt.selected = true;
+                    schemaSelect.appendChild(unknownOpt);
                 }
                 if (schemas.length === 1) {
-                    const [singleSchemaId, _] = schemas[0]
-                    schemaSelect.value = singleSchemaId;
-                    populateSourceTables(selectedService, singleSchemaId);
+                    schemaSelect.value = schemas[0].id;
+                    await populateSourceTables(selectedService, String(schemas[0].id));
                 }
             }
         }
     }
 
-    function populateTables(tableSelect, tables) {
-        if (tables.length > 0) {
-            for (const [tableId, tableName] of tables) {
-                const option = document.createElement('option');
-                option.value = tableId;
-                option.textContent = tableName;
-                tableSelect.appendChild(option);
-                tableSelect.disabled = false;
-            }
-            if (tables.length === 1) {
-                const [singleTableId, _] = tables[0]
-                tableSelect.value = singleTableId;
-            }
-        }
-    }
+    async function populateSourceTables(selectedService, selectedSchema) {
+        populateSelect(sourceTableSelect, [], {placeholder: 'Select a table'});
+        populateSelect(destTableSelect, [], {placeholder: 'Select a table'});
 
-    function populateSourceTables(selectedService, selectedSchema) {
-        sourceTableSelect.innerHTML = '<option value="">Select a table</option>';
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
-
-        if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
-            const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
+        if (selectedSchema && selectedSchema !== '-1') {
+            var tables = await fetchTables(selectedSchema);
             if (tables.length > 0) {
-                for (const [tableId, tableName] of tables) {
-                    const option = document.createElement('option');
-                    option.value = tableId;
-                    option.textContent = tableName;
-                    sourceTableSelect.appendChild(option);
-                    sourceTableSelect.disabled = false;
-                }
-                if (selectedSchema == matched.schemaId && matched.tableId) {
+                populateSelect(sourceTableSelect, tables, {placeholder: 'Select a table'});
+                sourceTableSelect.disabled = false;
+                if (selectedSchema == matched.schemaId && matched.tableId && matched.tableId !== '-1') {
                     sourceTableSelect.value = matched.tableId;
-                    populateDestTables(selectedService, selectedSchema, matched.tableId);
+                    populateDestTablesFromList(tables, matched.tableId);
                     return;
                 }
+                if (selectedSchema == matched.schemaId && matched.tableId === '-1') {
+                    var unknownOpt = document.createElement('option');
+                    unknownOpt.value = '-1';
+                    unknownOpt.textContent = 'Unknown table: ' + source_data.table;
+                    unknownOpt.selected = true;
+                    sourceTableSelect.appendChild(unknownOpt);
+                }
                 if (tables.length === 1) {
-                    const [singleTableId, _] = tables[0]
-                    sourceTableSelect.value = singleTableId;
-                    populateDestTables(selectedService, selectedSchema, singleTableId);
+                    sourceTableSelect.value = tables[0].id;
+                    populateDestTablesFromList(tables, String(tables[0].id));
                 }
             }
         }
     }
 
-    function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
-        destTableSelect.innerHTML = '<option value="">Select a table</option>';
-
-        if (selectedSchema && selectedSourceTable && serviceSchemas[selectedService][selectedSchema]) {
-            let tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
-            tables = tables.filter(table => table[0] !== selectedSourceTable)
-            populateTables(destTableSelect, tables);
-            if (selectedSchema == matched.schemaId && matched.destTableId) {
-                destTableSelect.value = matched.destTableId;
-            }
-            if (tables.length === 1) {
-                const [singleTableId, _] = tables[0];
-                destTableSelect.value = singleTableId;
-            }
+    function populateDestTablesFromList(allTables, selectedSourceTable) {
+        var filtered = allTables.filter(function(t) { return String(t.id) !== String(selectedSourceTable); });
+        populateSelect(destTableSelect, filtered, {placeholder: 'Select a table'});
+        if (matched.destTableId) {
+            destTableSelect.value = matched.destTableId;
+        }
+        if (filtered.length === 1) {
+            destTableSelect.value = filtered[0].id;
         }
     }
 
-    connectToSelect.addEventListener('change', function() {
-        const selectedService = this.value;
-        const hiddenSchemaInput = document.getElementById("source_db_id_hidden");
-        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
-        populateSchemas(this.value);
+    async function populateDestTables(selectedService, selectedSchema, selectedSourceTable) {
+        populateSelect(destTableSelect, [], {placeholder: 'Select a table'});
+        if (selectedSchema && selectedSourceTable) {
+            var tables = await fetchTables(selectedSchema);
+            populateDestTablesFromList(tables, selectedSourceTable);
+        }
+    }
+
+    connectToSelect.addEventListener('change', async function() {
+        var hiddenSchemaInput = document.getElementById("source_db_id_hidden");
+        if (hiddenSchemaInput && hiddenSchemaInput.parentNode) hiddenSchemaInput.parentNode.removeChild(hiddenSchemaInput);
+        await populateSchemas(this.value);
         toggleSourceQueryInput();
         toggleDstFileContainer();
         toggleDestTableSelect()
         updateDestinationFieldset();
     });
 
-    schemaSelect.addEventListener('change', function() {
-        const selectedService = connectToSelect.value;
-        const selectedSchema = this.value;
-        const hiddenTableInput = document.getElementById("source_table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateSourceTables(connectToSelect.value, this.value);
+    schemaSelect.addEventListener('change', async function() {
+        var hiddenTableInput = document.getElementById("source_table_id_hidden");
+        if (hiddenTableInput && hiddenTableInput.parentNode) hiddenTableInput.parentNode.removeChild(hiddenTableInput);
+        await populateSourceTables(connectToSelect.value, this.value);
         updateDestinationFieldset();
     });
 
 
 
-    sourceTableSelect.addEventListener('change', function() {
-        const selectedService = connectToSelect.value;
-        const selectedSchema = schemaSelect.value;
-        const selectedTable = this.value;
-        const hiddenTableInput = document.getElementById("dest_table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
-        populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
+    sourceTableSelect.addEventListener('change', async function() {
+        var hiddenTableInput = document.getElementById("dest_table_id_hidden");
+        if (hiddenTableInput && hiddenTableInput.parentNode) hiddenTableInput.parentNode.removeChild(hiddenTableInput);
+        await populateDestTables(connectToSelect.value, schemaSelect.value, this.value);
         toggleDstFileContainer();
         updateDestinationFieldset();
         toggleDestTableSelect()
@@ -1083,105 +1061,44 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     // Initializing the source shcmea, table, and destination table
     // ==============================
     // If there is unkown service
-    function initSource() {
-        const selectedServiceId = connectToSelect.value;
-        if (selectedServiceId === "-1") {
-          // No matched service selected — completely unknown
-          const unknownTables = {
-            "-1": "Unknow table: " + source_data.table
-          };
-
+    async function initSource() {
+        var selectedServiceId = connectToSelect.value;
+        if (selectedServiceId === '-1') {
+          matched.serviceId = '-1';
+          matched.schemaId = '-1';
+          matched.tableId = '-1';
           if (source_data.dest_table) {
-            unknownTables["-2"] = "Unknow table: " + source_data.dest_table;
-          }
-
-          serviceSchemas["-1"] = {
-            "-1": {
-              name: "Unknown schema: " + source_data.schema,
-              tables: unknownTables
-            }
-          };
-
-          matched.serviceId = "-1";
-          matched.schemaId = "-1";
-          matched.tableId = "-1";
-          if (source_data.dest_table) {
-            matched.destTableId = "-2";
+            matched.destTableId = '-2';
           }
         } else {
           matched.serviceId = selectedServiceId;
+          var schemas = await fetchSchemas(selectedServiceId);
+          var foundSchema = schemas.find(function(s) { return s.name === source_data.schema; });
 
-          const schemas = serviceSchemas[selectedServiceId] || {};
-          let matchedSchema = null;
-          let matchedSchemaKey = null;
+          if (foundSchema) {
+            matched.schemaId = String(foundSchema.id);
+            var tables = await fetchTables(foundSchema.id);
+            var foundTable = tables.find(function(t) { return t.name === source_data.table; });
+            matched.tableId = foundTable ? String(foundTable.id) : '-1';
 
-          for (const schemaId in schemas) {
-            const schema = schemas[schemaId];
-            if (schema.name === source_data.schema) {
-              matchedSchema = schema;
-              matchedSchemaKey = schemaId;
-              break;
-            }
-          }
-
-          if (matchedSchema) {
-            matched.schemaId = matchedSchemaKey;
-
-            const tableNames = Object.values(matchedSchema.tables);
-            const tableIds = Object.keys(matchedSchema.tables);
-
-            // Match source_data.table
-            if (tableNames.includes(source_data.table)) {
-              matched.tableId = tableIds.find(
-                id => matchedSchema.tables[id] === source_data.table
-              );
-            } else {
-              matchedSchema.tables["-1"] = "Unknow table: " + source_data.table;
-              matched.tableId = "-1";
-            }
-
-            // Match source_data.dest_table
             if (source_data.dest_table) {
-              if (tableNames.includes(source_data.dest_table)) {
-                matched.destTableId = tableIds.find(
-                  id => matchedSchema.tables[id] === source_data.dest_table
-                );
-              } else {
-                matchedSchema.tables["-2"] = "Unknow table: " + source_data.dest_table;
-                matched.destTableId = "-2";
-              }
+              var foundDest = tables.find(function(t) { return t.name === source_data.dest_table; });
+              matched.destTableId = foundDest ? String(foundDest.id) : '-2';
             }
           } else {
-            // No schema matched → insert unknown schema inside selected service
-            const unknownTables = {
-              "-1": "Unknow table: " + source_data.table
-            };
-
+            matched.schemaId = '-1';
+            matched.tableId = '-1';
             if (source_data.dest_table) {
-              unknownTables["-2"] = "Unknow table: " + source_data.dest_table;
+              matched.destTableId = '-2';
             }
-
-            schemas["-1"] = {
-              name: "Unknown schema: " + source_data.schema,
-              tables: unknownTables
-            };
-
-            matched.schemaId = "-1";
-            matched.tableId = "-1";
-            if (source_data.dest_table) {
-              matched.destTableId = "-2";
-            }
-
-            serviceSchemas[selectedServiceId] = schemas;
           }
         }
       }
 
-    window.addEventListener('DOMContentLoaded', function() {
-        initSource();
+    window.addEventListener('DOMContentLoaded', async function() {
+        await initSource();
         if (connectToSelect.options.length != 0) {
-            const singleHost = connectToSelect.value;
-            populateSchemas(singleHost);
+            await populateSchemas(connectToSelect.value);
         }
         // Enable manual input if schema or table is unknown
         if (matched.schemaId === "-1" || matched.tableId === "-1") {

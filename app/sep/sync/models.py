@@ -521,6 +521,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             CreatedSchema.model_validate(schema_data)
             for schema_data in await self.inventory_api.get(
                 f"/services/{service_id}/schemas/",
+                params={"include_tables": "true"},
             )
         ]
 

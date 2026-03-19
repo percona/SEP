@@ -682,10 +682,6 @@ async def get_tasks_context(
         "/services/", params={"service_type": service_type}
     )
 
-    for service in services:
-        service["schemas"] = await inventory_api.get(
-            f"/services/{service['id']}/schemas/",
-        )
     tasks = []
     history_tasks = []
     scheduled_tasks = []

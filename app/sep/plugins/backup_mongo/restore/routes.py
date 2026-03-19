@@ -290,10 +290,6 @@ async def restores_detail(
         services = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MONGODB}
         )
-        for service in services:
-            service["schemas"] = await inventory_api.get(
-                f"/services/{service['id']}/schemas/",
-            )
         context["services"] = services
     except HTTPException:
         context["services"] = []

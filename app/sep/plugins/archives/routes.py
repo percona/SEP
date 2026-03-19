@@ -141,10 +141,6 @@ async def archives_detail(
     services = await inventory_api.get(
         "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
     )
-    for service in services:
-        service["schemas"] = await inventory_api.get(
-            f"/services/{service['id']}/schemas/",
-        )
     context["services"] = services
 
     context["executor_hosts"] = executor_hosts_ctx.with_host(
