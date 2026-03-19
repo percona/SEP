@@ -686,7 +686,7 @@ class TestGetExecutorHostsContext:
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
-        mock_inventory_api.get.assert_called_once_with("/nodes/")
+        mock_inventory_api.get.assert_called_once_with("/")
 
     @pytest.mark.asyncio
     async def test_returns_fallback_when_inventory_raises(self) -> None:

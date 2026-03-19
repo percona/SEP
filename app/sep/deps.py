@@ -603,7 +603,7 @@ async def get_executor_hosts_context(
     :rtype: ExecutorHostsContext
     """
     try:
-        nodes = await inventory_api.get("/nodes/")
+        nodes = await inventory_api.get("/")
         display_names = {node["address"]: node["name"] for node in nodes}
     except (HTTPException, TypeError, KeyError, OSError):
         logger.warning(
