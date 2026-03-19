@@ -65,5 +65,5 @@ for hba in /etc/postgresql/*/main/pg_hba.conf /var/lib/pgsql/*/data/pg_hba.conf;
 done || echo "Could not locate pg_hba.conf."
 
 echo ""
-echo "******** Reminder: check `.pgpass` permissions (0600) and entries to ensure that they are correct. *********"
+echo "******** Reminder: check .pgpass permissions (0600) and entries to ensure that they are correct. *********"
 echo ""
