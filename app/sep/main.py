@@ -38,7 +38,7 @@ from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings
-from app.sep.db.seed import init_sep_db
+from app.sep.db.seed import create_plugin_tables, init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -63,10 +63,11 @@ logger = logging.getLogger(__name__)
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
-    Initializes the SEP periodic task database and triggers the initial synchronization
-    of snippets if configured to do so.
+    Initialize the SEP periodic task database, create plugin-scoped tables, and trigger
+    the initial synchronization of snippets if configured to do so.
     """
     await init_sep_db()
+    await create_plugin_tables()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
 
@@ -125,11 +126,13 @@ if {
     "backup_mongo",
     "checksums",
 } & imported_plugins:
+    from app.sep.api.routes import router as inventory_api_router
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
+    sep_app.include_router(inventory_api_router, prefix="/inventory-api")
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")

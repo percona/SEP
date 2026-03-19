@@ -29,7 +29,7 @@ from app.core.requests import RemoteAPI
 from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import SourceEnum
-from app.sep.inventory import Node, Service
+from app.sep.inventory import Node, Schema, Service
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,9 @@ class PMMService(Service):
     """
 
     node_id: str
+
+
+PMMService.model_rebuild(_types_namespace={"Schema": Schema})
 
 
 class PMMRemoteAPI(RemoteAPI):

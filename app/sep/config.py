@@ -41,7 +41,10 @@ from pydantic import (
 from pydantic_core.core_schema import ValidationInfo
 
 from app import __summary__, __version__
-from app.core.config import BaseYamlAppSettings
+from app.core.celery.models import IntervalSchedule, Period
+from app.core.config import (
+    BaseYamlAppSettings,
+)
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.utils import (
@@ -173,6 +176,10 @@ class PMMSettings(BaseLowercaseModel):
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
     :type execution_target: str | None
+    :param backup_interval: Interval between alert configuration backups.
+    :type backup_interval: IntervalSchedule
+    :param backup_retention: Maximum number of alert backups to retain.
+    :type backup_retention: PositiveInt
     :param alert_folder_name: Display name of the PMM folder used for SEP-managed
         alert rules. Defaults to ``"SEP Alerts"``.
     :type alert_folder_name: str
@@ -184,6 +191,8 @@ class PMMSettings(BaseLowercaseModel):
     api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
+    backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
+    backup_retention: PositiveInt = 10
     alert_folder_name: str = "SEP Alerts"
 
     @cached_property

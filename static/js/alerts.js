@@ -121,11 +121,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function clearChildren(node) {
+        while (node.firstChild) node.removeChild(node.firstChild);
+    }
+
     function clearResults() {
         if (!resultsContainer) return;
-        while (resultsContainer.firstChild) {
-            resultsContainer.removeChild(resultsContainer.firstChild);
-        }
+        clearChildren(resultsContainer);
     }
 
     function showResults(results) {
@@ -240,9 +242,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderConfigured(csrfToken) {
-        while (pdWidget.firstChild) {
-            pdWidget.removeChild(pdWidget.firstChild);
-        }
+        clearChildren(pdWidget);
 
         pdWidget.appendChild(el('h4', {
             textContent: 'PagerDuty Integration'
@@ -294,9 +294,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderNotConfigured(csrfToken) {
-        while (pdWidget.firstChild) {
-            pdWidget.removeChild(pdWidget.firstChild);
-        }
+        clearChildren(pdWidget);
 
         pdWidget.appendChild(el('h4', {
             textContent: 'PagerDuty Integration'
@@ -422,5 +420,206 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (pdWidget) {
         bindPdEvents();
+    }
+
+    // Backup detail & restore functionality
+    var restoreDialog = document.getElementById('dialog-restore-confirm');
+    var detailDialog = document.getElementById('dialog-backup-detail');
+    var feedback = document.getElementById('restore-feedback');
+    var pendingRestoreId = null;
+
+    function getBackupCsrfToken() {
+        var input = document.getElementById('backup-csrf-token');
+        return input ? input.value : '';
+    }
+
+    function buildDetailSection(title, items, renderItem) {
+        var section = el('div', {
+            className: 'backup-detail-section'
+        }, [
+            el('h4', {
+                textContent: title + ' (' + items.length + ')'
+            })
+        ]);
+        var list = el('ul');
+        items.forEach(function(item) {
+            list.appendChild(renderItem(item));
+        });
+        section.appendChild(list);
+        return section;
+    }
+
+    document.querySelectorAll('.backup-detail-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var backupId = btn.getAttribute('data-backup-id');
+            var backupDate = btn.getAttribute('data-backup-date');
+            var dateSpan = document.getElementById('detail-date');
+            var content = document.getElementById('detail-content');
+
+            dateSpan.textContent = backupDate;
+            clearChildren(content);
+            content.appendChild(el('p', {
+                className: 'text-muted',
+                textContent: 'Loading\u2026'
+            }));
+            detailDialog.showModal();
+
+            fetch('/alerts/backups/' + backupId).then(function(response) {
+                if (!response.ok) throw new Error('Failed to load backup details');
+                return response.json();
+            }).then(function(data) {
+                clearChildren(content);
+
+                if (data.templates.length) {
+                    content.appendChild(buildDetailSection('Templates', data.templates, function(t) {
+                        var li = el('li', {
+                            textContent: t.name
+                        });
+                        if (t.summary) {
+                            li.appendChild(el('span', {
+                                className: 'detail-type',
+                                textContent: ' \u2014 ' + t.summary
+                            }));
+                        }
+                        return li;
+                    }));
+                }
+
+                if (data.rules.length) {
+                    content.appendChild(buildDetailSection('Rules', data.rules, function(r) {
+                        return el('li', {
+                            textContent: r.title
+                        });
+                    }));
+                }
+
+                if (data.contact_points.length) {
+                    content.appendChild(buildDetailSection('Contact Points', data.contact_points, function(cp) {
+                        var li = el('li', {
+                            textContent: cp.name
+                        });
+                        if (cp.type) {
+                            li.appendChild(el('span', {
+                                className: 'detail-type',
+                                textContent: ' (' + cp.type + ')'
+                            }));
+                        }
+                        return li;
+                    }));
+                }
+
+                if (data.folders.length) {
+                    content.appendChild(buildDetailSection('Folders', data.folders, function(f) {
+                        return el('li', {
+                            textContent: f.title
+                        });
+                    }));
+                }
+
+                if (data.notification_policy_receiver) {
+                    var policySection = el('div', {
+                        className: 'backup-detail-section'
+                    }, [
+                        el('h4', {
+                            textContent: 'Notification Policy'
+                        })
+                    ]);
+                    var policyList = el('ul');
+                    var policyItem = el('li');
+                    policyItem.appendChild(document.createTextNode('Receiver: '));
+                    policyItem.appendChild(el('strong', {
+                        textContent: data.notification_policy_receiver
+                    }));
+                    policyList.appendChild(policyItem);
+                    policySection.appendChild(policyList);
+                    content.appendChild(policySection);
+                }
+
+                if (!content.hasChildNodes()) {
+                    content.appendChild(el('p', {
+                        className: 'text-muted',
+                        textContent: 'This backup is empty.'
+                    }));
+                }
+            }).catch(function(err) {
+                clearChildren(content);
+                content.appendChild(el('p', {
+                    className: 'text-muted',
+                    textContent: 'Error: ' + err.message
+                }));
+            });
+        });
+    });
+
+    document.querySelectorAll('.backup-restore-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            pendingRestoreId = btn.getAttribute('data-backup-id');
+            var backupDate = btn.getAttribute('data-backup-date');
+            document.getElementById('restore-confirm-date').textContent = backupDate;
+            restoreDialog.showModal();
+        });
+    });
+
+    var confirmBtn = document.getElementById('restore-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function() {
+            if (!pendingRestoreId) return;
+            restoreDialog.close();
+
+            feedback.textContent = 'Restoring\u2026';
+            feedback.className = 'restore-feedback';
+
+            var csrfToken = getBackupCsrfToken();
+            var formData = new FormData();
+            formData.append('backup_id', pendingRestoreId);
+            formData.append('csrf-token', csrfToken);
+
+            fetch('/alerts/restore', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRF-Token': csrfToken
+                },
+            }).then(function(response) {
+                if (!response.ok) {
+                    return response.json().catch(function() {
+                        return {
+                            status: 'error',
+                            message: 'Request failed with status ' + response.status
+                        };
+                    }).then(function(data) {
+                        if (data.status === 'error') return data;
+                        return {
+                            status: 'error',
+                            message: data.message || data.error || 'Request failed'
+                        };
+                    });
+                }
+                return response.json();
+            }).then(function(data) {
+                if (data.status === 'success') {
+                    var d = data.details;
+                    feedback.className = 'restore-feedback feedback-success';
+                    var msg = 'Restore complete: ' +
+                        d.rules_deleted + ' rules deleted, ' +
+                        d.rules_created + ' created';
+                    if (d.rules_skipped > 0) {
+                        msg += ', ' + d.rules_skipped + ' skipped';
+                    }
+                    msg += '. ' +
+                        d.templates.created + ' templates created, ' +
+                        d.templates.skipped + ' skipped.';
+                    feedback.textContent = msg;
+                } else {
+                    feedback.className = 'restore-feedback feedback-error';
+                    feedback.textContent = 'Restore failed: ' + (data.message || data.error || 'Unknown error');
+                }
+            }).catch(function(err) {
+                feedback.className = 'restore-feedback feedback-error';
+                feedback.textContent = 'Restore failed: ' + err.message;
+            }).finally(function() {
+                pendingRestoreId = null;
+            });
+        });
     }
 });
