@@ -285,12 +285,13 @@ class TestGetAlertsIndexContext:
         pd_status = {"configured": False}
 
         result = await get_alerts_index_context(
-            base_context, templates_by_service, pmm_names, pd_status
+            base_context, templates_by_service, pmm_names, [], pd_status
         )
 
         assert "all_templates" in result
         assert "service_types" in result
         assert "pmm_present_names" in result
+        assert "recent_backups" in result
         assert "pagerduty_status" in result
         expected_template_count = sum(len(ts) for ts in templates_by_service.values())
         assert len(result["all_templates"]) == expected_template_count
@@ -306,7 +307,7 @@ class TestGetAlertsIndexContext:
         templates_by_service = {svc: () for svc in ServiceType}
 
         result = await get_alerts_index_context(
-            base_context, templates_by_service, None, None
+            base_context, templates_by_service, None, [], None
         )
 
         assert result["pmm_present_names"] is None

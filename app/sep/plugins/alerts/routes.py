@@ -25,17 +25,21 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.core.utils.fields import NonEmptyStr
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
-from app.sep.deps import IsAuthenticated, IsCsrfValidated
+from app.sep.deps import IsAuthenticated, IsCsrfValidated, SessionDep
+from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
     AlertsIndexContext,
     AlertTemplatesDep,
     ensure_pagerduty_notification_route,
+    find_pagerduty_contact_point,
     PAGERDUTY_CONTACT_POINT_NAME,
+    PMMAPIDep,
     PMMPresentNamesDep,
     RequiredAlertFolderDep,
     RequiredPMMAPIDep,
 )
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
+from app.sep.plugins.alerts.restore import restore_from_backup
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -81,6 +85,85 @@ async def alerts_index(
     )
 
 
+@router.post("/restore", dependencies=[IsAuthenticated, IsCsrfValidated])
+async def alerts_restore(
+    pmm_api: PMMAPIDep,
+    session: SessionDep,
+    backup_id: Annotated[int, Form()],
+) -> JSONResponse:
+    """Restore alert configuration from a selected backup.
+
+    :param pmm_api: The PMM API client, or ``None`` when PMM is not configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param backup_id: The ID of the backup to restore from.
+    :type backup_id: int
+    :return: JSON with restore results on success or an error envelope on failure.
+    :rtype: JSONResponse
+    """
+    if pmm_api is None:
+        return JSONResponse(
+            {"status": "error", "message": "PMM is not configured"},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    try:
+        backup = await AlertBackupManager.get_or_404(session, id=backup_id)
+        results = await restore_from_backup(pmm_api, backup)
+    except HTTPException as exc:
+        logger.exception("Failed to restore alert configuration from backup")
+        return JSONResponse(
+            {"status": "error", "message": exc.detail},
+            status_code=exc.status_code,
+        )
+    except OSError as exc:
+        logger.exception("Failed to restore alert configuration from backup")
+        return JSONResponse(
+            {"status": "error", "message": str(exc)},
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
+    return JSONResponse({"status": "success", "details": results})
+
+
+@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated])
+async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONResponse:
+    """Return a summary of a single backup's contents.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param backup_id: The ID of the backup to retrieve.
+    :type backup_id: int
+    :return: JSON with categorized backup contents.
+    :rtype: JSONResponse
+    """
+    backup = await AlertBackupManager.get(session, id=backup_id)
+    if backup is None:
+        return JSONResponse(
+            {"status": "error", "message": "Backup not found"},
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    data = backup.data
+    return JSONResponse(
+        {
+            "id": backup.id,
+            "created_at": backup.created_at.strftime("%Y-%m-%d %H:%M UTC"),
+            "templates": [
+                {"name": t.get("name", ""), "summary": t.get("summary", "")}
+                for t in data.get("templates", [])
+            ],
+            "rules": [{"title": r.get("title", "")} for r in data.get("rules", [])],
+            "contact_points": [
+                {"name": cp.get("name", ""), "type": cp.get("type", "")}
+                for cp in data.get("contact_points", [])
+            ],
+            "folders": [{"title": f.get("title", "")} for f in data.get("folders", [])],
+            "notification_policy_receiver": data.get("notification_policy", {}).get(
+                "receiver", ""
+            ),
+        }
+    )
+
+
 @router.post("/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def pagerduty_save(
     pmm_api: RequiredPMMAPIDep,
@@ -97,14 +180,7 @@ async def pagerduty_save(
     """
     try:
         contact_points = await pmm_api.list_contact_points()
-        pd_cp = next(
-            (
-                cp
-                for cp in contact_points
-                if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
-            ),
-            None,
-        )
+        pd_cp = find_pagerduty_contact_point(contact_points)
         pd_settings = {"integrationKey": integration_key}
 
         if pd_cp is not None:
@@ -145,14 +221,7 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
     """
     try:
         contact_points = await pmm_api.list_contact_points()
-        pd_cp = next(
-            (
-                cp
-                for cp in contact_points
-                if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
-            ),
-            None,
-        )
+        pd_cp = find_pagerduty_contact_point(contact_points)
         if pd_cp is None:
             return JSONResponse(
                 {"error": "PagerDuty contact point not found"},
