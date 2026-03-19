@@ -53,7 +53,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
 
-lifespan = tasks_lifespan if __name__ == "__main__" else None
+lifespan = tasks_lifespan
 tasks_app = create_app(
     tasks_router,
     periodic_router,
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
-        reload=True,
+        reload=tasks_settings.UVICORN_RELOAD,
         reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
         reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
         reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
