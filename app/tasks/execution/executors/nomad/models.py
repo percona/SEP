@@ -74,6 +74,9 @@ logger = logging.getLogger(__name__)
 
 _ONE_MEBIBYTE = 1024 * 1024
 NOMAD_DEAD_JOB_STATUS = "dead"
+# Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
+_NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
+_NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
 
 
 class NomadAllocStatusEnum(StrEnum):
@@ -733,9 +736,32 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         logger.error(valid[0].text)
         raise HTTPBadRequestException("Invalid job specification")
 
-    def _log_stream_exception(
+    def _stream_log_timing(
         self,
-        kind: str,
+        stream_start: float | None,
+        params: dict[str, Any],
+        start_offset: int,
+    ) -> tuple[float, Any]:
+        """Compute elapsed time and offset for Nomad log stream log messages.
+
+        :param stream_start: Monotonic time when the HTTP body read started, or
+            ``None`` if the stream had not reached that phase yet.
+        :type stream_start: float | None
+        :param params: Query parameters for the log request (may include updated
+            ``offset`` from framed chunks).
+        :type params: dict[str, Any]
+        :param start_offset: Initial offset passed into the stream request.
+        :type start_offset: int
+        :return: Elapsed seconds since ``stream_start`` (0 if unknown) and the
+            offset value to include in logs.
+        :rtype: tuple[float, Any]
+        """
+        elapsed = time.monotonic() - stream_start if stream_start is not None else 0
+        offset = params.get("offset", start_offset)
+        return elapsed, offset
+
+    def _log_stream_timeout(
+        self,
         alloc_id: str,
         step: str,
         log_type: TaskLogType,
@@ -743,42 +769,104 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params: dict[str, Any],
         start_offset: int,
     ) -> None:
-        """Log stream exception with context. kind is 'timeout', 'cancelled', or 'client'."""
-        elapsed = time.monotonic() - stream_start if stream_start is not None else 0
-        offset = params.get("offset", start_offset)
-        if kind == "timeout":
-            logger.warning(
-                "Nomad log stream sock_read timeout alloc_id=%s step=%s log_type=%s "
-                "offset=%s elapsed=%.2fs timeout=%ss. "
-                "Consider increasing TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT (current: %s)",
-                alloc_id,
-                step,
-                log_type,
-                offset,
-                elapsed,
-                self.log_socket_read_timeout,
-                self.log_socket_read_timeout,
-            )
-        elif kind == "cancelled":
-            logger.info(
-                "Nomad log stream cancelled alloc_id=%s step=%s log_type=%s "
-                "offset=%s elapsed=%.2fs",
-                alloc_id,
-                step,
-                log_type,
-                offset,
-                elapsed,
-            )
-        else:
-            logger.exception(
-                "Error fetching Nomad logs (ClientError) alloc_id=%s step=%s "
-                "log_type=%s offset=%s elapsed=%.2fs",
-                alloc_id,
-                step,
-                log_type,
-                offset,
-                elapsed,
-            )
+        """Log a socket read timeout while streaming Nomad task logs.
+
+        :param alloc_id: Nomad allocation ID.
+        :type alloc_id: str
+        :param step: Task step name.
+        :type step: str
+        :param log_type: Log stream type (stdout/stderr).
+        :type log_type: TaskLogType
+        :param stream_start: Monotonic time when body read started, or ``None``.
+        :type stream_start: float | None
+        :param params: Request query parameters.
+        :type params: dict[str, Any]
+        :param start_offset: Initial stream offset.
+        :type start_offset: int
+        """
+        elapsed, offset = self._stream_log_timing(stream_start, params, start_offset)
+        logger.warning(
+            "Nomad log stream sock_read timeout alloc_id=%s step=%s log_type=%s "
+            "offset=%s elapsed=%.2fs timeout=%ss. "
+            "Consider increasing TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT (current: %s)",
+            alloc_id,
+            step,
+            log_type,
+            offset,
+            elapsed,
+            self.log_socket_read_timeout,
+            self.log_socket_read_timeout,
+        )
+
+    def _log_stream_cancelled(
+        self,
+        alloc_id: str,
+        step: str,
+        log_type: TaskLogType,
+        stream_start: float | None,
+        params: dict[str, Any],
+        start_offset: int,
+    ) -> None:
+        """Log that a Nomad log stream was cancelled.
+
+        :param alloc_id: Nomad allocation ID.
+        :type alloc_id: str
+        :param step: Task step name.
+        :type step: str
+        :param log_type: Log stream type (stdout/stderr).
+        :type log_type: TaskLogType
+        :param stream_start: Monotonic time when body read started, or ``None``.
+        :type stream_start: float | None
+        :param params: Request query parameters.
+        :type params: dict[str, Any]
+        :param start_offset: Initial stream offset.
+        :type start_offset: int
+        """
+        elapsed, offset = self._stream_log_timing(stream_start, params, start_offset)
+        logger.info(
+            "Nomad log stream cancelled alloc_id=%s step=%s log_type=%s "
+            "offset=%s elapsed=%.2fs",
+            alloc_id,
+            step,
+            log_type,
+            offset,
+            elapsed,
+        )
+
+    def _log_stream_client_error(
+        self,
+        alloc_id: str,
+        step: str,
+        log_type: TaskLogType,
+        stream_start: float | None,
+        params: dict[str, Any],
+        start_offset: int,
+    ) -> None:
+        """Log an aiohttp :exc:`~aiohttp.ClientError` while streaming Nomad logs.
+
+        :param alloc_id: Nomad allocation ID.
+        :type alloc_id: str
+        :param step: Task step name.
+        :type step: str
+        :param log_type: Log stream type (stdout/stderr).
+        :type log_type: TaskLogType
+        :param stream_start: Monotonic time when body read started, or ``None``.
+        :type stream_start: float | None
+        :param params: Request query parameters.
+        :type params: dict[str, Any]
+        :param start_offset: Initial stream offset.
+        :type start_offset: int
+        """
+        elapsed, offset = self._stream_log_timing(stream_start, params, start_offset)
+        logger.exception(
+            "Error fetching Nomad logs (ClientError) alloc_id=%s step=%s "
+            "log_type=%s offset=%s elapsed=%.2fs",
+            alloc_id,
+            step,
+            log_type,
+            offset,
+            elapsed,
+        )
 
     async def _push_logs_to_queue(
         self,
@@ -805,7 +893,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type start_offset: int
         """
         timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
-        params: dict[str, Any] = {
+        params = {
             "task": step,
             "type": log_type,
             "follow": "true",
@@ -814,9 +902,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         state = "running"
         while state == "running":
             alloc_id = alloc["ID"]
-            stream_start_ref: list[float | None] = [None]
+            stream_start = None
             try:
-                state, alloc = await self._consume_nomad_log_stream(
+                state, alloc, stream_start = await self._consume_nomad_log_stream(
                     alloc=alloc,
                     step=step,
                     log_type=log_type,
@@ -824,38 +912,34 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     params=params,
                     client_timeout=timeout,
                     anonymize_entities=anonymize_entities,
-                    stream_start_ref=stream_start_ref,
-                    first_chunk_ref=[False],
                 )
-            except TimeoutError:
-                self._log_stream_exception(
-                    "timeout",
-                    alloc_id,
-                    step,
-                    log_type,
-                    stream_start_ref[0],
-                    params,
-                    start_offset,
-                )
-                break
             except asyncio.CancelledError:
-                self._log_stream_exception(
-                    "cancelled",
+                self._log_stream_cancelled(
                     alloc_id,
                     step,
                     log_type,
-                    stream_start_ref[0],
+                    stream_start,
                     params,
                     start_offset,
                 )
                 raise
-            except ClientError:
-                self._log_stream_exception(
-                    "client",
+
+            if state == _NOMAD_LOG_STREAM_SOCK_TIMEOUT:
+                self._log_stream_timeout(
                     alloc_id,
                     step,
                     log_type,
-                    stream_start_ref[0],
+                    stream_start,
+                    params,
+                    start_offset,
+                )
+                break
+            if state == _NOMAD_LOG_STREAM_CLIENT_ERROR:
+                self._log_stream_client_error(
+                    alloc_id,
+                    step,
+                    log_type,
+                    stream_start,
                     params,
                     start_offset,
                 )
@@ -871,89 +955,130 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params: dict[str, Any],
         client_timeout: ClientTimeout,
         anonymize_entities: set[PIIEntity] | None,
-        stream_start_ref: list[float | None],
-        first_chunk_ref: list[bool],
-    ) -> tuple[str, dict[str, Any]]:
-        """Run one Nomad log stream request; return (state, alloc)."""
+    ) -> tuple[str, dict[str, Any], float | None]:
+        """Perform a single Nomad log streaming HTTP request and consume chunks.
+
+        Opens ``/v1/client/fs/logs/{alloc_id}``, handles 404 while the task has not
+        started, streams framed JSON log lines into ``queue``, and returns when the
+        stream ends or the allocation task state should be rechecked.
+
+        On socket read timeout or :exc:`~aiohttp.ClientError`, returns internal state
+        constants ``_NOMAD_LOG_STREAM_SOCK_TIMEOUT`` or ``_NOMAD_LOG_STREAM_CLIENT_ERROR``
+        so the caller can log and stop without misclassifying cancellations.
+
+        :param alloc: Nomad allocation dictionary (must include ``ID``, ``JobID``,
+            ``EvalID``, and ``TaskStates``).
+        :type alloc: dict[str, Any]
+        :param step: Task step name for the ``task`` query parameter.
+        :type step: str
+        :param log_type: ``stdout`` or ``stderr``.
+        :type log_type: TaskLogType
+        :param queue: Queue to push :class:`~app.tasks.models.TaskLog` records into.
+        :type queue: asyncio.Queue
+        :param params: Mutable request query parameters (``offset`` is updated).
+        :type params: dict[str, Any]
+        :param client_timeout: aiohttp client timeout (e.g. socket read timeout).
+        :type client_timeout: ClientTimeout
+        :param anonymize_entities: Optional PII entities to redact for specific steps.
+        :type anonymize_entities: set[PIIEntity] | None
+        :return: Nomad task ``State`` string, ``running`` to continue the outer
+            loop, or a ``_NOMAD_LOG_STREAM_*`` sentinel; the allocation dict (possibly
+            refreshed); and monotonic time when response body reads began, or
+            ``None`` if that phase was not reached.
+        :rtype: tuple[str, dict[str, Any], float | None]
+        """
         alloc_id = alloc["ID"]
+        stream_start = None
         logger.debug("Requesting logs for %s with params %s", alloc_id, params)
-        async with self._request(
-            "GET",
-            f"/v1/client/fs/logs/{alloc_id}",
-            params=params,
-            timeout=client_timeout,
-        ) as response:
-            logger.debug("Log response status: %s", response.status)
-            if (
-                response.status == status.HTTP_404_NOT_FOUND
-                and alloc["TaskStates"][step]["StartedAt"] is None
-            ):
-                logger.debug(
-                    "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
-                    step,
-                    alloc_id,
-                    self.wait_interval,
-                )
-                await asyncio.sleep(self.wait_interval)
-                return ("running", alloc)
-            response.raise_for_status()
-            stream_start_ref[0] = time.monotonic()
-            logger.info(
-                "Nomad log stream started alloc_id=%s step=%s log_type=%s "
-                "sock_read_timeout=%ss offset=%s",
-                alloc_id,
-                step,
-                log_type,
-                self.log_socket_read_timeout,
-                params["offset"],
-            )
-            empty_data_count = 0
-            raw_data = b""
-            async for chunk, _ in response.content.iter_chunks():
-                raw_data += chunk
-                if b"}" not in chunk:
-                    continue
-                data = json.loads(raw_data)
-                raw_data = b""
-                params["offset"] = offset = data.get("Offset", params["offset"])
-                if data and (msg := data.get("Data")):
-                    empty_data_count = 0
-                    if not first_chunk_ref[0]:
-                        first_chunk_ref[0] = True
-                        elapsed = (
-                            time.monotonic() - stream_start_ref[0]
-                            if stream_start_ref[0] is not None
-                            else 0
-                        )
-                        logger.debug(
-                            "First log chunk received alloc_id=%s step=%s "
-                            "log_type=%s offset=%s elapsed=%.2fs",
-                            alloc_id,
-                            step,
-                            log_type,
-                            offset,
-                            elapsed,
-                        )
-                    decoded_msg = b64decode_str(msg)
-                    if step in ("run-script", "step1"):
-                        decoded_msg = anonymize_text(
-                            decoded_msg, anonymize_entities or set()
-                        )
-                    await queue.put(
-                        TaskLog(
-                            step=step, type=log_type, msg=decoded_msg, offset=offset
-                        )
-                    )
-                elif empty_data_count >= self.log_socket_read_timeout:
+        try:
+            async with self._request(
+                "GET",
+                f"/v1/client/fs/logs/{alloc_id}",
+                params=params,
+                timeout=client_timeout,
+            ) as response:
+                logger.debug("Log response status: %s", response.status)
+                if (
+                    response.status == status.HTTP_404_NOT_FOUND
+                    and alloc["TaskStates"][step]["StartedAt"] is None
+                ):
                     logger.debug(
-                        "No data received for %s seconds, rechecking job status...",
-                        self.log_socket_read_timeout,
+                        "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
+                        step,
+                        alloc_id,
+                        self.wait_interval,
                     )
-                    alloc = self.get_last_allocation(alloc["JobID"], alloc["EvalID"])
-                    return (alloc["TaskStates"][step]["State"], alloc)
-                else:
-                    empty_data_count += 1
-        return ("running", alloc)
+                    await asyncio.sleep(self.wait_interval)
+                    return ("running", alloc, stream_start)
+                response.raise_for_status()
+                stream_start = time.monotonic()
+                logger.info(
+                    "Nomad log stream started alloc_id=%s step=%s log_type=%s "
+                    "sock_read_timeout=%ss offset=%s",
+                    alloc_id,
+                    step,
+                    log_type,
+                    self.log_socket_read_timeout,
+                    params["offset"],
+                )
+                empty_data_count = 0
+                raw_data = b""
+                first_chunk_seen = False
+                async for chunk, _ in response.content.iter_chunks():
+                    raw_data += chunk
+                    if b"}" not in chunk:
+                        continue
+                    data = json.loads(raw_data)
+                    raw_data = b""
+                    params["offset"] = offset = data.get("Offset", params["offset"])
+                    if data and (msg := data.get("Data")):
+                        empty_data_count = 0
+                        if not first_chunk_seen:
+                            first_chunk_seen = True
+                            elapsed = (
+                                time.monotonic() - stream_start
+                                if stream_start is not None
+                                else 0
+                            )
+                            logger.debug(
+                                "First log chunk received alloc_id=%s step=%s "
+                                "log_type=%s offset=%s elapsed=%.2fs",
+                                alloc_id,
+                                step,
+                                log_type,
+                                offset,
+                                elapsed,
+                            )
+                        decoded_msg = b64decode_str(msg)
+                        if step in ("run-script", "step1"):
+                            decoded_msg = anonymize_text(
+                                decoded_msg, anonymize_entities or set()
+                            )
+                        await queue.put(
+                            TaskLog(
+                                step=step, type=log_type, msg=decoded_msg, offset=offset
+                            )
+                        )
+                    elif empty_data_count >= self.log_socket_read_timeout:
+                        logger.debug(
+                            "No data received for %s seconds, rechecking job status...",
+                            self.log_socket_read_timeout,
+                        )
+                        alloc = self.get_last_allocation(
+                            alloc["JobID"], alloc["EvalID"]
+                        )
+                        return (
+                            alloc["TaskStates"][step]["State"],
+                            alloc,
+                            stream_start,
+                        )
+                    else:
+                        empty_data_count += 1
+                return ("running", alloc, stream_start)
+        except TimeoutError:
+            return (_NOMAD_LOG_STREAM_SOCK_TIMEOUT, alloc, stream_start)
+        except ClientError:
+            return (_NOMAD_LOG_STREAM_CLIENT_ERROR, alloc, stream_start)
 
     async def stream_logs(
         self,
