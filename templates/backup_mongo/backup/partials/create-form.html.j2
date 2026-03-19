@@ -81,61 +81,58 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 {% set hostname_title = "Select the hostname of the target system for task execution." %}
                 <label for="hostname" title="{{ hostname_title }}">Select Executor Host:</label>
                 {% if executor_hosts|length == 1 %}
-                    {% set single_service = executor_hosts[0] %}
+                    {% set single_host = executor_hosts[0] %}
                     <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                        <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
                     </select>
-                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                    <input type="hidden" name="hostname" value="{{ single_host.value }}">
                 {% else %}
                     <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
                         <option value="" selected>Select a host</option>
-                        {% for executor_host in executor_hosts %}
-                            <option value="{{ executor_host }}">{{ executor_host }}</option>
-                            {%
-                            endfor %}
-                        </select>
-                    {% endif %}
-                </fieldset>
-                <fieldset>
-                    <legend>Basic Task Information</legend>
-                    <br>
-                    {% set task_name_title = "Type the name of task to be created." %}
-                    <label for="task_name" title="{{ task_name_title }}">
-                        Task Name:
-                        <input type="text"
-                               id="task_name"
-                               name="task_name"
-                               class="validate"
-                               required
-                               placeholder="Enter a unique task name" />
-                    </label>
-                    <br>
-                    <br>
-                    {% set service_id_title = "Select the database host from the inventory to connect to." %}
-                    <label for="service_id" title="{{ service_id_title }}">
-                        Select a Database Service:
-                        <select id="service_id" name="service_id" required>
-                            <option value="" selected>Select a database host</option>
-                            {% for service in services %}
-                                <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <br>
-                    <br>
-                    {% set credentials_path_title = "Optional: path to MongoDB URI credentials file on the Nomad node (e.g. /opt/sep/.mongodb_uri). Stored in backup config and used by the task." %}
-                    <label for="credentials_path" title="{{ credentials_path_title }}">
-                        Credentials path (optional):
-                        <input type="text"
-                               id="credentials_path"
-                               name="credentials_path"
-                               class="validate"
-                               placeholder="e.g. /opt/sep/.mongodb_uri" />
-                    </label>
-                    <br>
-                    <br>
-                    <input type="hidden" name="backup_type" value="pbm_config">
-                    <!--
+                        {% for host in executor_hosts %}<option value="{{ host.value }}">{{ host.label }}</option>{% endfor %}
+                    </select>
+                {% endif %}
+            </fieldset>
+            <fieldset>
+                <legend>Basic Task Information</legend>
+                <br>
+                {% set task_name_title = "Type the name of task to be created." %}
+                <label for="task_name" title="{{ task_name_title }}">
+                    Task Name:
+                    <input type="text"
+                           id="task_name"
+                           name="task_name"
+                           class="validate"
+                           required
+                           placeholder="Enter a unique task name" />
+                </label>
+                <br>
+                <br>
+                {% set service_id_title = "Select the database host from the inventory to connect to." %}
+                <label for="service_id" title="{{ service_id_title }}">
+                    Select a Database Service:
+                    <select id="service_id" name="service_id" required>
+                        <option value="" selected>Select a database host</option>
+                        {% for service in services %}
+                            <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <br>
+                <br>
+                {% set credentials_path_title = "Optional: path to MongoDB URI credentials file on the Nomad node (e.g. /opt/sep/.mongodb_uri). Stored in backup config and used by the task." %}
+                <label for="credentials_path" title="{{ credentials_path_title }}">
+                    Credentials path (optional):
+                    <input type="text"
+                           id="credentials_path"
+                           name="credentials_path"
+                           class="validate"
+                           placeholder="e.g. /opt/sep/.mongodb_uri" />
+                </label>
+                <br>
+                <br>
+                <input type="hidden" name="backup_type" value="pbm_config">
+                <!--
             {% set backup_type_title = "Select the type of backup type: Logical/Physical/Config" %}
             <label for="backup_type" title="{{ backup_type_title }}">
                 Backup Type:
@@ -147,19 +144,19 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 </select>
             </label>
             -->
-                </fieldset>
-                {% include "backup_mongo/backup/partials/pbm-config.html.j2" %}
-                {% include "tasks/partials/create-form-alert-on-failure-input.html.j2" %}
-            </section>
-            <footer>
-                <button type="button" class="text large" data-modal-close>
-                    Cancel<sup>ESC</sup>
-                </button>
-                <button type="submit" class="contained large submitButton">Create</button>
-            </footer>
-        </dialog>
-    </form>
-    <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+            </fieldset>
+            {% include "backup_mongo/backup/partials/pbm-config.html.j2" %}
+            {% include "tasks/partials/create-form-alert-on-failure-input.html.j2" %}
+        </section>
+        <footer>
+            <button type="button" class="text large" data-modal-close>
+                Cancel<sup>ESC</sup>
+            </button>
+            <button type="submit" class="contained large submitButton">Create</button>
+        </footer>
+    </dialog>
+</form>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     const storageTypeSelect = document.getElementById('storage_type');
     const s3Options = document.getElementById('s3_options');
     const filesystemOptions = document.getElementById('filesystem_options');
@@ -340,4 +337,4 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         form.addEventListener('change', updateCreateButtonState);
     }
 
-    </script>
+</script>
