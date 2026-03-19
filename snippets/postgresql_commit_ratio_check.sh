@@ -4,7 +4,7 @@
 # title: "PostgreSQL commit ratio check"
 # description: "This script checks for databases with a low transaction commit ratio, indicating frequent rollbacks or aborted operations."
 # allow_extra_args: false
-# sudo: required
+# sudo: always
 # ---
 
 # Usage: ./postgresql_commit_ratio.sh
