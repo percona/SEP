@@ -106,26 +106,27 @@ def test_task_detail(
     test_client,
     created_task,
     mock_task_api_dep,
+    mock_inventory_api_dep,
 ):
     """Test retrieving a task's detail page."""
     mock_task_api_dep.get.return_value = []
     mock_task_api_dep.get.side_effect = [
+        {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
         [],  # for /{task_name}/periodic/
         [],  # for /{task_name}/history/
         [],  # for /{task_name}/history/?status=RUNNING
-        {"address1": "host1", "address2": "host2"},  # for /hosts/
     ]
 
     response = test_client.get(f"/tasks/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
+    mock_task_api_dep.get.assert_any_await("/hosts/")
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/periodic/")
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
-    mock_task_api_dep.get.assert_awaited_with("/hosts/")
 
 
 @pytest.mark.usefixtures("_mock_task_dep")
