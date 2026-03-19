@@ -15,9 +15,7 @@
 
 """Define routes for the alters plugin."""
 
-import json
 import logging
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -38,6 +36,7 @@ from app.sep.deps import (
 from app.sep.plugins.alters.deps import (
     alters_executor_matches_service_host,
     AltersGeneratedTask,
+    AltersPreChecksTask,
     AltersTask,
     extract_service_info,
     get_alters_index_context,
@@ -101,6 +100,7 @@ async def alters_create(
     request: Request,
     task: AltersGeneratedTask,
     task_api: TaskAPI,
+    pre_checks_task: AltersPreChecksTask,
 ) -> RedirectResponse:
     """Create alter tasks - one for execution and one for dry run."""
     logger.debug("Create alters tasks: %s", task)
@@ -112,7 +112,7 @@ async def alters_create(
     )
 
     # Create the dry-run task
-    dry_run_task = task.model_copy()
+    dry_run_task = task.model_copy(deep=True)
     dry_run_task.name = f"{task.name}-dry-run"
     # Replace --execute with --dry-run in the task arguments and add parent reference
     if "meta" in dry_run_task.data:
@@ -125,38 +125,6 @@ async def alters_create(
         "/",
         json=dry_run_task.model_dump(),
     )
-
-    # Create the pre-checks task
-    pre_checks_task = task.model_copy()
-    pre_checks_task.name = f"{task.name}-pre-checks"
-    pre_checks_task.data["task"] = "run-python"
-    del pre_checks_task.data["meta"]["command"]
-    del pre_checks_task.data["meta"]["args"]
-    meta = pre_checks_task.data["meta"]
-    db_host = meta.get("_service_host", "")
-    db_port = meta.get("_service_port")
-    executor_hosts = await task_api.get("/hosts/")
-    skip_fs_checks = not alters_executor_matches_service_host(
-        task.data["meta"], executor_hosts
-    )
-    pre_checks_config_lines = [
-        f"schema: {meta['_schema_name']}",
-        f"table: {meta['_table_name']}",
-        f"host: {db_host or '127.0.0.1'}",
-    ]
-    if db_port is not None:
-        pre_checks_config_lines.append(f"port: {db_port}")
-    if skip_fs_checks:
-        pre_checks_config_lines.append("skip_filesystem_checks: true")
-    mysql_cnf = meta.get("_pre_checks_mysql_config_file") or "~/.my.cnf"
-    pre_checks_config_lines.append(f"mysql_config_file: {json.dumps(mysql_cnf)}")
-    pre_checks_task.data["meta"]["config"] = "\n".join(pre_checks_config_lines)
-    pre_checks_task.data["meta"]["requirements"] = (
-        "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
-    )
-    payload_path = Path(__file__).parent / "pre_checks.py"
-    pre_checks_task.data["payload"] = f"file://{payload_path}"
-    pre_checks_task.data["parent"] = task.name
 
     await task_api.post(
         "/",
@@ -298,6 +266,7 @@ async def alters_update(
     task_name: str,
     updated_task: AltersGeneratedTask,
     tasks_api: TaskAPI,
+    pre_checks_task: AltersPreChecksTask,
 ) -> RedirectResponse:
     """Update alters task."""
     logger.debug("Updating alters task: %s", updated_task)
@@ -305,7 +274,7 @@ async def alters_update(
         f"/{task_name}",
         json=updated_task.model_dump(),
     )
-    dry_run_task = updated_task.model_copy()
+    dry_run_task = updated_task.model_copy(deep=True)
     dry_run_task.name = f"{updated_task.name}-dry-run"
     if "meta" in dry_run_task.data:
         dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
@@ -316,38 +285,6 @@ async def alters_update(
         f"/{task_name}-dry-run",
         json=dry_run_task.model_dump(),
     )
-
-    # Create the pre-checks task
-    pre_checks_task = updated_task.model_copy()
-    pre_checks_task.name = f"{updated_task.name}-pre-checks"
-    pre_checks_task.data["task"] = "run-python"
-    del pre_checks_task.data["meta"]["command"]
-    del pre_checks_task.data["meta"]["args"]
-    meta = pre_checks_task.data["meta"]
-    db_host = meta.get("_service_host", "")
-    db_port = meta.get("_service_port")
-    executor_hosts = await tasks_api.get("/hosts/")
-    skip_fs_checks = not alters_executor_matches_service_host(
-        updated_task.data["meta"], executor_hosts
-    )
-    pre_checks_config_lines = [
-        f"schema: {meta['_schema_name']}",
-        f"table: {meta['_table_name']}",
-        f"host: {db_host or '127.0.0.1'}",
-    ]
-    if db_port is not None:
-        pre_checks_config_lines.append(f"port: {db_port}")
-    if skip_fs_checks:
-        pre_checks_config_lines.append("skip_filesystem_checks: true")
-    mysql_cnf = meta.get("_pre_checks_mysql_config_file") or "~/.my.cnf"
-    pre_checks_config_lines.append(f"mysql_config_file: {json.dumps(mysql_cnf)}")
-    pre_checks_task.data["meta"]["config"] = "\n".join(pre_checks_config_lines)
-    pre_checks_task.data["meta"]["requirements"] = (
-        "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
-    )
-    payload_path = Path(__file__).parent / "pre_checks.py"
-    pre_checks_task.data["payload"] = f"file://{payload_path}"
-    pre_checks_task.data["parent"] = updated_task.name
 
     await tasks_api.put(
         f"/{task_name}-pre-checks",

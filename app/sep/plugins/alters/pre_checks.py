@@ -506,7 +506,13 @@ def load_yaml_config(config_file: str) -> dict[str, Any]:
 
 
 def _apply_config_to_args(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    """Override parsed args with values from YAML config (when not set on CLI)."""
+    """Override parsed args with values from YAML config.
+
+    Schema/table only apply when unset on the CLI (no argparse defaults).
+    Host, port, and mysql_config_file always come from YAML when present: the
+    Alters router generates that YAML, so those keys supersede CLI defaults
+    (127.0.0.1, 3306, ~/.my.cnf), which are not user-provided values.
+    """
     if "schema" in config and args.schema is None:
         args.schema = config["schema"]
     if "table" in config and args.table is None:
@@ -518,7 +524,8 @@ def _apply_config_to_args(args: argparse.Namespace, config: dict[str, Any]) -> N
     if "mysql_config_file" in config:
         args.mysql_config_file = config["mysql_config_file"]
     if "skip_filesystem_checks" in config:
-        args.skip_filesystem_checks = bool(config["skip_filesystem_checks"])
+        # Router writes unquoted YAML booleans; PyYAML loads them as Python bool.
+        args.skip_filesystem_checks = config["skip_filesystem_checks"]
 
 
 def parse_arguments() -> argparse.Namespace:

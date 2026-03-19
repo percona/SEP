@@ -415,6 +415,13 @@ def test_alters_detail_when_services_api_fails(
     assert response.status_code == status.HTTP_200_OK
 
 
+@pytest.mark.parametrize(
+    ("nomad_hosts", "executor_hostname", "expect_skip_in_pre_checks_yaml"),
+    [
+        ({}, "localhost", False),
+        ({"db1": "10.0.0.99"}, "db1", True),
+    ],
+)
 def test_alters_update_refreshes_pre_checks_task(
     test_client,
     mock_task_api_dep,
@@ -423,18 +430,22 @@ def test_alters_update_refreshes_pre_checks_task(
     created_service,
     created_schema,
     created_table,
+    nomad_hosts,
+    executor_hostname,
+    expect_skip_in_pre_checks_yaml,
 ):
     """Update main/dry-run/pre-checks tasks; pre-checks YAML reflects executor vs DB."""
     created_alters.service_id = created_service.id
     created_alters.schema_id = created_schema.id
     created_alters.table_id = created_table.id
+    created_alters.hostname = executor_hostname
     mock_inventory_api_dep.get.side_effect = [
         created_service.model_dump(),
         created_schema.model_dump(),
         created_table.model_dump(),
     ]
     mock_task_api_dep.put.return_value = AsyncMock()
-    mock_task_api_dep.get = AsyncMock(return_value={"host1": "10.0.0.5"})
+    mock_task_api_dep.get = AsyncMock(return_value=nomad_hosts)
     name = created_alters.task_name
     response = test_client.post(
         f"/alters/{name}/update",
@@ -442,6 +453,7 @@ def test_alters_update_refreshes_pre_checks_task(
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.get.assert_awaited_once_with("/hosts/")
     update_puts = mock_task_api_dep.put.call_args_list
     assert len(update_puts) == len(["main", "dry_run", "pre_checks"])
     pre_checks_put = [c for c in update_puts if "pre-checks" in c.args[0]]
@@ -449,3 +461,7 @@ def test_alters_update_refreshes_pre_checks_task(
     cfg = pre_checks_put[0].kwargs["json"]["data"]["meta"]["config"]
     assert "schema:" in cfg
     assert "table:" in cfg
+    if expect_skip_in_pre_checks_yaml:
+        assert "skip_filesystem_checks: true" in cfg
+    else:
+        assert "skip_filesystem_checks" not in cfg

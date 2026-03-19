@@ -23,6 +23,7 @@ from app.sep.plugins.alters.deps import (
     _build_dsn_with_service,
     alters_executor_matches_service_host,
     build_alters_task_payload,
+    build_pre_checks_task,
     extract_service_info,
     get_alters_index_context,
     get_alters_task,
@@ -31,9 +32,10 @@ from app.sep.plugins.alters.deps import (
     parse_single_arg,
 )
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import Task, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import (
     AltersCreateFactory,
+    GeneratedTaskFactory,
     TaskFactory,
 )
 
@@ -172,6 +174,78 @@ def test_parse_alters_task_args():
         "max_flow_ctl": "",
         "extra_args": "",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("nomad_hosts", "expect_skip_in_config"),
+    [
+        ({"db1": "10.0.0.5"}, False),
+        ({"db1": "10.0.0.99"}, True),
+    ],
+)
+async def test_build_pre_checks_task_filesystem_skip_flag(
+    mock_remote_api, nomad_hosts, expect_skip_in_config
+):
+    """Pre-checks YAML skip_filesystem_checks follows executor vs DB host (Nomad /hosts/)."""
+    task = GeneratedTaskFactory.build(
+        name="prechk-alter",
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--alter=x --execute",
+                "target": "db1",
+                "_schema_name": "db",
+                "_table_name": "t",
+                "_service_host": "10.0.0.5",
+                "_service_port": 3306,
+            },
+        },
+        backend=TaskBackendEnum.PROXY,
+    )
+    mock_remote_api.get = AsyncMock(return_value=nomad_hosts)
+    pre = await build_pre_checks_task(task, mock_remote_api)
+    mock_remote_api.get.assert_awaited_once_with("/hosts/")
+    assert pre.name == "prechk-alter-pre-checks"
+    assert pre.data["parent"] == "prechk-alter"
+    assert pre.data["task"] == "run-python"
+    assert "command" not in pre.data["meta"]
+    assert task.data["meta"]["command"] == "pt-online-schema-change"
+    cfg = pre.data["meta"]["config"]
+    if expect_skip_in_config:
+        assert "skip_filesystem_checks: true" in cfg
+    else:
+        assert "skip_filesystem_checks" not in cfg
+    assert "schema: db" in cfg
+    assert "table: t" in cfg
+    assert "host: 10.0.0.5" in cfg
+    assert "port: 3306" in cfg
+
+
+@pytest.mark.asyncio
+async def test_build_pre_checks_task_mysql_config_file_in_yaml(mock_remote_api):
+    """Generated config quotes mysql_config_file for YAML safety."""
+    task = GeneratedTaskFactory.build(
+        name="cnf-alter",
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--execute",
+                "target": "db1",
+                "_schema_name": "s",
+                "_table_name": "tbl",
+                "_service_host": "10.0.0.5",
+                "_service_port": 3306,
+                "_pre_checks_mysql_config_file": "/path/with space/my.cnf",
+            },
+        },
+        backend=TaskBackendEnum.PROXY,
+    )
+    mock_remote_api.get = AsyncMock(return_value={"db1": "10.0.0.5"})
+    pre = await build_pre_checks_task(task, mock_remote_api)
+    assert 'mysql_config_file: "/path/with space/my.cnf"' in pre.data["meta"]["config"]
 
 
 def test_alters_executor_matches_service_host():
