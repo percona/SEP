@@ -24,7 +24,7 @@ from fastapi import Depends, Form
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
-    ExecutorHosts,
+    ExecutorHostsCtx,
     get_created_entity,
     get_task_by_name,
     get_tasks_context,
@@ -349,7 +349,7 @@ async def get_checksums_index_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
-    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> dict[str, Any]:
     """Assemble the context for the Checksums plugin index view.
 
@@ -363,8 +363,8 @@ async def get_checksums_index_context(
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Checksums-specific information.
     :type context: DefaultContext
-    :param executor_hosts: The executor hosts for the Checksums tasks.
-    :type executor_hosts: ExecutorHosts
+    :param executor_hosts_ctx: The executor hosts context for the Checksums tasks.
+    :type executor_hosts_ctx: ExecutorHostsCtx
     :return: An updated context dictionary containing Checksums-related data.
     :rtype: dict[str, Any]
     """
@@ -372,7 +372,7 @@ async def get_checksums_index_context(
         inventory_api,
         tasks_api,
         get_checksums_task_info,
-        executor_hosts,
+        executor_hosts_ctx,
         context,
         TaskOwner.CHECKSUMS,
         alert_on_fail_default=True,
