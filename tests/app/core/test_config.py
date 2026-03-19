@@ -194,9 +194,9 @@ async def test_default_lifespan():
     mock_close_registry.assert_called_once()
 
 
-def test_uvicorn_reload_defaults_to_true():
-    """Assert ``UVICORN_RELOAD`` defaults to ``True`` on ``BaseYamlAppSettings``."""
-    assert BaseYamlAppSettings.model_fields["UVICORN_RELOAD"].default is True
+def test_uvicorn_reload_defaults_to_false():
+    """Assert ``UVICORN_RELOAD`` defaults to ``False`` on ``BaseYamlAppSettings``."""
+    assert BaseYamlAppSettings.model_fields["UVICORN_RELOAD"].default is False
 
 
 def test_settings_secret_key_is_secretstr():

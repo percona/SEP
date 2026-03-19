@@ -139,6 +139,7 @@ default:
 
 development:
   SEP:
+    UVICORN_RELOAD: true
     SNIPPETS:
       SYNC_INTERVAL: 60 seconds
       ENABLE_MANUAL_SYNC: true
@@ -218,7 +219,6 @@ production_docker:
       USER: postgres
     SSL_CERTFILE: /data/certs/sep/inventory_api-cert.pem
     SSL_KEYFILE: /data/certs/sep/inventory_api-cert-key.pem
-    UVICORN_RELOAD: false
   SEP:
     DATABASE:
       ENGINE: postgresql
@@ -253,7 +253,6 @@ production_docker:
           - information_schema
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     TASKS_ENDPOINT: https://127.0.0.1:9002
-    UVICORN_RELOAD: false
   SSL_CAFILE: /data/certs/sep-ca.pem
   TASKS:
     DATABASE:
@@ -271,4 +270,3 @@ production_docker:
       SSL_KEYFILE: /data/certs/nomad/global-client-nomad-key.pem
     SSL_KEYFILE: /data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: /data/certs/sep/tasks_api-cert.pem
-    UVICORN_RELOAD: false
