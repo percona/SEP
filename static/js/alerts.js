@@ -600,11 +600,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.status === 'success') {
                     var d = data.details;
                     feedback.className = 'restore-feedback feedback-success';
-                    feedback.textContent = 'Restore complete: ' +
+                    var msg = 'Restore complete: ' +
                         d.rules_deleted + ' rules deleted, ' +
-                        d.rules_created + ' created. ' +
+                        d.rules_created + ' created';
+                    if (d.rules_skipped > 0) {
+                        msg += ', ' + d.rules_skipped + ' skipped';
+                    }
+                    msg += '. ' +
                         d.templates.created + ' templates created, ' +
                         d.templates.skipped + ' skipped.';
+                    feedback.textContent = msg;
                 } else {
                     feedback.className = 'restore-feedback feedback-error';
                     feedback.textContent = 'Restore failed: ' + (data.message || data.error || 'Unknown error');

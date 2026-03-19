@@ -33,10 +33,12 @@ from app.sep.clients.pmm import (
     AlertTemplate as PMMAlertTemplate,
 )
 from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.models import AlertSeverity, AlertTemplate, ServiceType
 from app.sep.plugins.alerts.restore import restore_from_backup
 
 _SAMPLE_TEMPLATE_COUNT = 2
 _SAMPLE_CONTACT_POINT_COUNT = 2
+_MISSING_TEMPLATE_RULE_COUNT = 2
 
 
 def _sample_backup_data():
@@ -94,7 +96,7 @@ class TestRestoreFromBackup:
         mock_api.list_folders.return_value = [
             Folder(uid="f1", title="SEP Alerts", id=1),
         ]
-        mock_api.template_exists.side_effect = [False, True]
+        mock_api.template_exists.side_effect = [False, True, True]
         mock_api.create_template.return_value = PMMAlertTemplate(
             name="t1", summary="Template 1", template="yaml1"
         )
@@ -118,6 +120,7 @@ class TestRestoreFromBackup:
         assert results["templates"]["created"] == 1
         assert results["templates"]["skipped"] == 1
         assert results["rules_created"] == 1
+        assert results["rules_skipped"] == 0
         assert results["contact_points"]["created"] == 1
         assert results["contact_points"]["updated"] == 1
         assert results["notification_policies"] == "restored"
@@ -260,6 +263,7 @@ class TestRestoreFromBackup:
         assert results["templates"]["created"] == 0
         assert results["templates"]["skipped"] == 0
         assert results["rules_created"] == 0
+        assert results["rules_skipped"] == 0
         assert results["contact_points"]["created"] == 0
         assert results["contact_points"]["updated"] == 0
         assert results["notification_policies"] == "skipped"
@@ -284,6 +288,132 @@ class TestRestoreFromBackup:
 
         assert results["notification_policies"] == "skipped"
         mock_api.update_notification_policy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_idempotent_restore_skips_existing_rules(self):
+        """Assert a second restore of the same backup skips existing rules."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = [
+            AlertRule(uid="r1", title="Rule 1"),
+        ]
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
+        mock_api.template_exists.return_value = True
+        mock_api.list_contact_points.return_value = []
+
+        backup = AlertBackup(id=1, data=_sample_backup_data(), metadata_={})
+
+        results = await restore_from_backup(mock_api, backup)
+
+        assert results["rules_deleted"] == 0
+        assert results["rules_created"] == 0
+        assert results["rules_skipped"] == 1
+        mock_api.delete_rule.assert_not_awaited()
+        mock_api.create_rule.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_missing_template_auto_pushed_from_local(self, mocker):
+        """Assert a missing PMM template is auto-pushed from local definitions."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
+        mock_api.template_exists.side_effect = [True, True, False]
+        mock_api.create_rule.return_value = AlertRule(uid="new1", title="Rule 1")
+        mock_api.list_contact_points.return_value = []
+
+        local_tmpl = AlertTemplate(
+            name="t1",
+            service_type=ServiceType.MYSQL,
+            expression="up == 0",
+            default_threshold=0,
+            severity=AlertSeverity.CRITICAL,
+            description="Test",
+            summary="Test summary",
+        )
+        mocker.patch(
+            "app.sep.plugins.alerts.restore.get_alert_templates",
+            return_value={ServiceType.MYSQL: (local_tmpl,)},
+        )
+        mocker.patch(
+            "app.sep.plugins.alerts.restore.to_pmm_template_yaml",
+            return_value="yaml-from-local",
+        )
+
+        backup = AlertBackup(id=1, data=_sample_backup_data(), metadata_={})
+
+        results = await restore_from_backup(mock_api, backup)
+
+        assert results["rules_created"] == 1
+        mock_api.create_template.assert_awaited_once_with("yaml-from-local")
+        mock_api.create_rule.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_missing_template_no_local_definition_skips(self, mocker):
+        """Assert a rule is skipped when template is missing from PMM and locally."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
+        mock_api.template_exists.side_effect = [True, True, False]
+        mock_api.list_contact_points.return_value = []
+
+        mocker.patch(
+            "app.sep.plugins.alerts.restore.get_alert_templates",
+            return_value={},
+        )
+
+        backup = AlertBackup(id=1, data=_sample_backup_data(), metadata_={})
+
+        results = await restore_from_backup(mock_api, backup)
+
+        assert results["rules_created"] == 0
+        assert results["rules_skipped"] == 1
+        mock_api.create_rule.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rules_skipped_when_template_not_found(self):
+        """Assert rules are skipped when PMM returns 404 for unknown template."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
+        mock_api.template_exists.return_value = True
+        mock_api.list_contact_points.return_value = []
+        mock_api.create_rule.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Unknown template nonexistent",
+        )
+
+        data = _sample_backup_data()
+        data["rules"] = [
+            {
+                "uid": "r1",
+                "title": "Rule With Bad Template",
+                "labels": {"template_name": "nonexistent"},
+                "for": "5m",
+                "group": "SEP Alerts",
+            },
+            {
+                "uid": "r2",
+                "title": "Rule With Missing Label",
+                "labels": {},
+                "for": "5m",
+                "group": "SEP Alerts",
+            },
+        ]
+
+        backup = AlertBackup(id=1, data=data, metadata_={})
+
+        results = await restore_from_backup(mock_api, backup)
+
+        assert results["rules_created"] == 0
+        assert results["rules_skipped"] == _MISSING_TEMPLATE_RULE_COUNT
+        assert mock_api.create_rule.await_count == _MISSING_TEMPLATE_RULE_COUNT
 
     @pytest.mark.asyncio
     async def test_api_error_propagates(self):
@@ -311,7 +441,7 @@ class TestRestoreFromBackup:
         mock_api.create_folder.return_value = Folder(
             uid="new-f1", title="SEP Alerts", id=2
         )
-        mock_api.template_exists.return_value = False
+        mock_api.template_exists.side_effect = [False, False, True]
         mock_api.create_template.return_value = PMMAlertTemplate(
             name="t1", summary="Template 1", template="yaml1"
         )

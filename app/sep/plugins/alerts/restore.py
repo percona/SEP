@@ -15,16 +15,24 @@
 
 """Define the alert restore-from-backup logic."""
 
+import logging
 from typing import Any
 
 from fastapi import status
 from fastapi.exceptions import HTTPException
 
-from app.sep.clients.pmm import NotificationPolicy, PMMRemoteAPI
+from app.sep.clients.pmm import AlertRule, Folder, NotificationPolicy, PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.deps import find_or_create_alert_folder
-from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION
+from app.sep.plugins.alerts.loader import get_alert_templates
+from app.sep.plugins.alerts.models import (
+    AlertTemplate,
+    DEFAULT_FOR_DURATION,
+    to_pmm_template_yaml,
+)
+
+logger = logging.getLogger(__name__)
 
 
 async def _restore_contact_point(
@@ -68,13 +76,122 @@ async def _restore_contact_point(
         await pmm_api.create_contact_point(name, type_, cp_settings)
 
 
+async def _restore_rules(
+    pmm_api: PMMRemoteAPI,
+    backup_rules: list[dict[str, Any]],
+    existing_rules: list[AlertRule],
+    folder: Folder,
+) -> dict[str, int]:
+    """Restore alert rules idempotently, auto-pushing missing templates.
+
+    Skip rules that already exist (by title). For new rules, ensure the
+    required template exists in PMM — if not, push it from local SEP
+    definitions. Skip the rule if neither PMM nor local definitions have
+    the template.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :param backup_rules: Rule data from the backup snapshot.
+    :type backup_rules: list[dict[str, Any]]
+    :param existing_rules: Currently existing rules in PMM.
+    :type existing_rules: list[AlertRule]
+    :param folder: The alert folder to create rules in.
+    :type folder: Folder
+    :return: Counts of deleted, created, and skipped rules.
+    :rtype: dict[str, int]
+    """
+    existing_by_title = {r.title: r for r in existing_rules}
+    backup_titles = {r["title"] for r in backup_rules}
+    local_templates: dict[str, AlertTemplate] = {
+        t.name: t for ts in get_alert_templates().values() for t in ts
+    }
+
+    rules_to_delete = [r for r in existing_rules if r.title not in backup_titles]
+    for rule in rules_to_delete:
+        await pmm_api.delete_rule(rule.uid)
+
+    created = 0
+    skipped = 0
+    for r_data in backup_rules:
+        if r_data["title"] in existing_by_title:
+            skipped += 1
+            continue
+        template_name = r_data.get("labels", {}).get("template_name", r_data["title"])
+        if not await pmm_api.template_exists(template_name):
+            local_tmpl = local_templates.get(template_name)
+            if local_tmpl:
+                await pmm_api.create_template(to_pmm_template_yaml(local_tmpl))
+            else:
+                logger.warning(
+                    "Skipping rule %r: template %r not found in PMM or locally",
+                    r_data["title"],
+                    template_name,
+                )
+                skipped += 1
+                continue
+        try:
+            await pmm_api.create_rule(
+                name=r_data["title"],
+                template_name=template_name,
+                folder_uid=folder.uid,
+                for_duration=r_data.get("for", DEFAULT_FOR_DURATION),
+                group=r_data.get("group", sep_settings.PMM.alert_folder_name),
+            )
+            created += 1
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+            logger.warning(
+                "Skipping rule %r: template %r not found in PMM",
+                r_data["title"],
+                template_name,
+            )
+            skipped += 1
+    return {"deleted": len(rules_to_delete), "created": created, "skipped": skipped}
+
+
+async def _restore_contact_points(
+    pmm_api: PMMRemoteAPI,
+    backup_cps: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Restore contact points idempotently.
+
+    Update existing contact points and create new ones.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :param backup_cps: Contact point data from the backup snapshot.
+    :type backup_cps: list[dict[str, Any]]
+    :return: Counts of created and updated contact points.
+    :rtype: dict[str, int]
+    """
+    existing_cps = await pmm_api.list_contact_points()
+    existing_cp_map = {cp.name: cp for cp in existing_cps}
+    created = 0
+    updated = 0
+    for cp_data in backup_cps:
+        name = cp_data["name"]
+        type_ = cp_data["type"]
+        cp_settings = cp_data.get("settings", {})
+        if name in existing_cp_map:
+            await _restore_contact_point(
+                pmm_api, existing_cp_map[name].uid, name, type_, cp_settings
+            )
+            updated += 1
+        else:
+            await pmm_api.create_contact_point(name, type_, cp_settings)
+            created += 1
+    return {"created": created, "updated": updated}
+
+
 async def restore_from_backup(
     pmm_api: PMMRemoteAPI, backup: AlertBackup
 ) -> dict[str, Any]:
     """Restore alert configuration from a backup snapshot.
 
-    Delete existing alert rules, then recreate templates, rules, contact
-    points, and notification policies from the backup data.
+    Reconcile existing alert rules against the backup (delete stale,
+    skip matching, create missing), then restore templates, contact
+    points, and notification policies.
 
     :param pmm_api: The PMM API client for making alerting API calls.
     :type pmm_api: PMMRemoteAPI
@@ -85,13 +202,9 @@ async def restore_from_backup(
     :rtype: dict[str, Any]
     """
     data = backup.data
-    results = {}
+    results: dict[str, Any] = {}
 
     existing_rules = await pmm_api.list_rules()
-    for rule in existing_rules:
-        await pmm_api.delete_rule(rule.uid)
-    results["rules_deleted"] = len(existing_rules)
-
     folder = await find_or_create_alert_folder(pmm_api)
 
     created_templates = 0
@@ -104,37 +217,16 @@ async def restore_from_backup(
             created_templates += 1
     results["templates"] = {"created": created_templates, "skipped": skipped_templates}
 
-    created_rules = 0
-    for r_data in data.get("rules", []):
-        await pmm_api.create_rule(
-            name=r_data["title"],
-            template_name=r_data.get("labels", {}).get(
-                "template_name", r_data["title"]
-            ),
-            folder_uid=folder.uid,
-            for_duration=r_data.get("for", DEFAULT_FOR_DURATION),
-            group=r_data.get("group", sep_settings.PMM.alert_folder_name),
-        )
-        created_rules += 1
-    results["rules_created"] = created_rules
+    rule_results = await _restore_rules(
+        pmm_api, data.get("rules", []), existing_rules, folder
+    )
+    results["rules_deleted"] = rule_results["deleted"]
+    results["rules_created"] = rule_results["created"]
+    results["rules_skipped"] = rule_results["skipped"]
 
-    existing_cps = await pmm_api.list_contact_points()
-    existing_cp_map = {cp.name: cp for cp in existing_cps}
-    cp_created = 0
-    cp_updated = 0
-    for cp_data in data.get("contact_points", []):
-        name = cp_data["name"]
-        type_ = cp_data["type"]
-        cp_settings = cp_data.get("settings", {})
-        if name in existing_cp_map:
-            await _restore_contact_point(
-                pmm_api, existing_cp_map[name].uid, name, type_, cp_settings
-            )
-            cp_updated += 1
-        else:
-            await pmm_api.create_contact_point(name, type_, cp_settings)
-            cp_created += 1
-    results["contact_points"] = {"created": cp_created, "updated": cp_updated}
+    results["contact_points"] = await _restore_contact_points(
+        pmm_api, data.get("contact_points", [])
+    )
 
     policy_data = data.get("notification_policy", {})
     if policy_data:
