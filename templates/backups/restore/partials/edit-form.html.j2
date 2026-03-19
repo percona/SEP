@@ -109,20 +109,19 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <label for="hostname" title="{{ hostname_title }}">
                                 <span class="material-symbols-outlined">arrow_drop_down</span>
                                 <span class="label">Select Executor Host:</span>
-                                {% set executor_hosts = executor_hosts | list %}
                                 {% if executor_hosts|length == 1 %}
-                                    {% set single_service = executor_hosts[0] %}
+                                    {% set single_host = executor_hosts[0] %}
                                     <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                                        <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                                        <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
                                     </select>
-                                    <input type="hidden" name="hostname" value="{{ single_service }}">
+                                    <input type="hidden" name="hostname" value="{{ single_host.value }}">
                                 {% else %}
                                     <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
                                         <option value="" selected>Select a host</option>
-                                        {% for executor_host in executor_hosts %}
-                                            <option value="{{ executor_host }}"
-                                                    {% if executor_host == task['hostname'] %}selected{% endif %}>
-                                                {{ executor_host }}
+                                        {% for host in executor_hosts %}
+                                            <option value="{{ host.value }}"
+                                                    {% if host.value == task['hostname'] %}selected{% endif %}>
+                                                {{ host.label }}
                                             </option>
                                         {% endfor %}
                                     </select>

@@ -109,15 +109,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <span class="material-symbols-outlined">arrow_drop_down</span>
                             <span class="label">Select Executor Host:</span>
                             {% if executor_hosts|length == 1 %}
-                                {% set single_service = executor_hosts[0] %}
+                                {% set single_host = executor_hosts[0] %}
                                 <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                                    <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
                                 </select>
-                                <input type="hidden" name="hostname" value="{{ single_service }}">
+                                <input type="hidden" name="hostname" value="{{ single_host.value }}">
                             {% else %}
                                 <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
                                     <option value="" selected>Select a host</option>
-                                    {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                                    {% for host in executor_hosts %}<option value="{{ host.value }}">{{ host.label }}</option>{% endfor %}
                                 </select>
                             {% endif %}
                         </label>
