@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Release type
+        required: true
+        type: choice
+        options:
+          - rc
+          - stable
+      version:
+        description: "Version number (e.g. 0.11.0)"
+        required: true
+        type: string
+      rc_number:
+        description: "RC number (e.g. 1) — required for RC releases"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Validate inputs
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          RC_NUMBER: ${{ inputs.rc_number }}
+        run: |
+          if [ "$RELEASE_TYPE" = "rc" ] && [ -z "$RC_NUMBER" ]; then
+            echo "::error::rc_number is required when release_type is 'rc'"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release_type == 'stable' && format('release/v{0}', inputs.version) || 'main' }}
+          fetch-depth: 0
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          VERSION: ${{ inputs.version }}
+          RC_NUMBER: ${{ inputs.rc_number }}
+        run: |
+          if [ "$RELEASE_TYPE" = "rc" ]; then
+            make release-rc VERSION="$VERSION" RC="$RC_NUMBER"
+          else
+            make release-stable VERSION="$VERSION"
+          fi
