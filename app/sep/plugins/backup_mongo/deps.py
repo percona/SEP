@@ -24,7 +24,7 @@ from fastapi import Depends, Form
 
 from app.sep.deps import (
     DefaultContext,
-    ExecutorHosts,
+    ExecutorHostsCtx,
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
@@ -259,7 +259,7 @@ async def get_backups_index_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
-    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> dict[str, Any]:
     """Assemble the context for the Backups plugin index view.
 
@@ -273,8 +273,8 @@ async def get_backups_index_context(
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Backups-specific information.
     :type context: DefaultContext
-    :param executor_hosts: The executor hosts for the Backups tasks.
-    :type executor_hosts: ExecutorHosts
+    :param executor_hosts_ctx: The executor hosts context for the Backups tasks.
+    :type executor_hosts_ctx: ExecutorHostsCtx
     :return: An updated context dictionary containing Backups-related data.
     :rtype: dict[str, Any]
     """
@@ -282,7 +282,7 @@ async def get_backups_index_context(
         inventory_api,
         tasks_api,
         get_backups_task_info,
-        executor_hosts,
+        executor_hosts_ctx,
         context,
         TaskOwner.BACKUP_MONGO,
         alert_on_fail_default=True,
