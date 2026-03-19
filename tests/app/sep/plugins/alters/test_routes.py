@@ -327,8 +327,12 @@ def test_get_table_details_inventory_error(
 def test_alters_detail_redirects_to_parent_task(
     test_client,
     created_task,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
 ):
     """Child task (dry-run / pre-checks) redirects to parent detail."""
+    mock_task_api_dep.get = AsyncMock(return_value={})
+    mock_inventory_api_dep.get = AsyncMock(return_value=[])
     created_task.name = "child-alter"
     created_task.data = {
         "parent": "parent-alter",
