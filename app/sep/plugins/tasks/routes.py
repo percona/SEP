@@ -26,6 +26,7 @@ from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHostsCtx,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
@@ -96,6 +97,7 @@ async def tasks_detail(
     request: Request,
     context: DefaultContext,
     tasks_api: TaskAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve task."""
     context["task"] = task
@@ -107,8 +109,7 @@ async def tasks_detail(
         )
     context["available_owners"] = TaskOwner
     context["task_data"] = task.data
-    executor_hosts = await tasks_api.get("/hosts/")
-    context["executor_hosts"] = list(executor_hosts)
+    context["executor_hosts"] = executor_hosts_ctx.as_template_list()
     context["AVAILABLE_TIMEZONES"] = list(available_timezones())
     return templates.TemplateResponse(
         request=request,
