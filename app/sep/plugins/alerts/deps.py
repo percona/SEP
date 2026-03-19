@@ -27,9 +27,11 @@ from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPServiceUnavailableException,
 )
-from app.sep.clients.pmm import Folder, PMMRemoteAPI
+from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext
+from app.sep.deps import DefaultContext, SessionDep
+from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.loader import get_alert_templates
 from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
 
@@ -38,15 +40,35 @@ logger = logging.getLogger(__name__)
 PAGERDUTY_CONTACT_POINT_NAME = "SEP PagerDuty"
 
 
+def find_pagerduty_contact_point(
+    contact_points: list[ContactPoint],
+) -> ContactPoint | None:
+    """Find the SEP PagerDuty contact point in a list of contact points.
+
+    :param contact_points: The list of contact points to search.
+    :type contact_points: list[ContactPoint]
+    :return: The matching contact point, or ``None`` if not found.
+    :rtype: ContactPoint | None
+    """
+    return next(
+        (
+            cp
+            for cp in contact_points
+            if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
+        ),
+        None,
+    )
+
+
 AlertTemplatesDep = Annotated[
     Mapping[ServiceType, tuple[AlertTemplate, ...]], Depends(get_alert_templates)
 ]
 
 
 async def get_pmm_api() -> PMMRemoteAPI | None:
-    """Return a `PMMRemoteAPI` client, or `None` when PMM is not configured.
+    """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
 
-    :return: The PMM API client, or `None` if endpoint or API key is missing.
+    :return: The PMM API client, or ``None`` if endpoint or API key is missing.
     :rtype: PMMRemoteAPI | None
     """
     if not sep_settings.PMM.endpoint or not sep_settings.PMM.api_key:
@@ -84,13 +106,13 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
     """Return names of alert templates present in PMM.
 
     Fetch all templates from the PMM API in a single batch call and extract
-    their names into a set. Return `None` when the PMM client is unavailable
+    their names into a set. Return ``None`` when the PMM client is unavailable
     or when the API call fails, enabling graceful degradation in the UI.
 
-    :param pmm_api: The PMM API client dependency, or `None` if PMM is not
+    :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
         configured.
     :type pmm_api: PMMRemoteAPI | None
-    :return: A set of template names present in PMM, or `None` on failure.
+    :return: A set of template names present in PMM, or ``None`` on failure.
     :rtype: set[str] | None
     """
     if pmm_api is None:
@@ -104,6 +126,39 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 
 
 PMMPresentNamesDep = Annotated[set[str] | None, Depends(get_pmm_present_names)]
+
+
+_MAX_SIDEBAR_BACKUPS = 10
+
+
+async def get_recent_backups(session: SessionDep) -> list[AlertBackup]:
+    """Return the most recent alert backups for the sidebar widget.
+
+    :param session: The async database session.
+    :type session: SessionDep
+    :return: A list of recent alert backups, ordered by creation date descending.
+    :rtype: list[AlertBackup]
+    """
+    return await AlertBackupManager.list_recent(session, limit=_MAX_SIDEBAR_BACKUPS)
+
+
+RecentBackupsDep = Annotated[list[AlertBackup], Depends(get_recent_backups)]
+
+
+async def find_or_create_alert_folder(pmm_api: PMMRemoteAPI) -> Folder:
+    """Return the SEP alert folder in PMM, creating it if it does not exist.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :return: The existing or newly created folder.
+    :rtype: Folder
+    """
+    folder_name = sep_settings.PMM.alert_folder_name
+    folders = await pmm_api.list_folders()
+    for folder in folders:
+        if folder.title == folder_name:
+            return folder
+    return await pmm_api.create_folder(folder_name)
 
 
 async def get_or_create_alert_folder(pmm_api: PMMAPIDep) -> Folder | None:
@@ -121,12 +176,7 @@ async def get_or_create_alert_folder(pmm_api: PMMAPIDep) -> Folder | None:
     if pmm_api is None:
         return None
     try:
-        folder_name = sep_settings.PMM.alert_folder_name
-        folders = await pmm_api.list_folders()
-        for folder in folders:
-            if folder.title == folder_name:
-                return folder
-        return await pmm_api.create_folder(folder_name)
+        return await find_or_create_alert_folder(pmm_api)
     except (HTTPException, OSError):
         logger.warning("Failed to get or create alert folder in PMM", exc_info=True)
         return None
@@ -175,14 +225,7 @@ async def get_pagerduty_status(pmm_api: PMMAPIDep) -> dict[str, Any] | None:
         logger.warning("Failed to fetch PagerDuty contact point status", exc_info=True)
         return None
 
-    pd_cp = next(
-        (
-            cp
-            for cp in contact_points
-            if cp.type == "pagerduty" and cp.name == PAGERDUTY_CONTACT_POINT_NAME
-        ),
-        None,
-    )
+    pd_cp = find_pagerduty_contact_point(contact_points)
     if pd_cp is None:
         return {"configured": False}
     return {"configured": True, "uid": pd_cp.uid}
@@ -221,6 +264,7 @@ async def get_alerts_index_context(
     context: DefaultContext,
     alert_templates: AlertTemplatesDep,
     pmm_present_names: PMMPresentNamesDep,
+    recent_backups: RecentBackupsDep,
     pagerduty_status: PagerDutyStatusDep,
 ) -> dict[str, Any]:
     """Assemble the template context for the alerts plugin index view.
@@ -232,6 +276,8 @@ async def get_alerts_index_context(
     :param pmm_present_names: Set of template names present in PMM, or ``None``
         when PMM is unreachable.
     :type pmm_present_names: PMMPresentNamesDep
+    :param recent_backups: The most recent alert backups for the sidebar widget.
+    :type recent_backups: RecentBackupsDep
     :param pagerduty_status: PagerDuty contact point status for the sidebar
         widget, or ``None`` when PMM is unreachable.
     :type pagerduty_status: PagerDutyStatusDep
@@ -245,6 +291,7 @@ async def get_alerts_index_context(
             "all_templates": all_templates,
             "service_types": list(ServiceType),
             "pmm_present_names": pmm_present_names,
+            "recent_backups": recent_backups,
             "pagerduty_status": pagerduty_status,
         }
     )

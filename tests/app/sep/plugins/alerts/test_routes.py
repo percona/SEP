@@ -66,6 +66,7 @@ _POPULATED_CONTEXT = {
     "service_types": list(ServiceType),
     "pmm_present_names": {"High CPU"},
     "alert_templates": {},
+    "recent_backups": [],
     "pagerduty_status": {"configured": False},
 }
 
@@ -75,6 +76,7 @@ _EMPTY_CONTEXT = {
     "service_types": list(ServiceType),
     "pmm_present_names": None,
     "alert_templates": {},
+    "recent_backups": [],
     "pagerduty_status": None,
 }
 
