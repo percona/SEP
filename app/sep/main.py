@@ -22,23 +22,22 @@ from traceback import format_exception
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_csrf_protect import CsrfProtect
-from fastapi_csrf_protect.exceptions import CsrfProtectError
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
+from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.celery import sync_snippets
-from app.sep.config import CsrfSettings, sep_settings
+from app.sep.config import sep_settings
 from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
@@ -52,6 +51,7 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
+from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.snippets.config import snippets_settings
 from app.sep.utils.static import AuthenticatedStaticFiles
@@ -109,16 +109,6 @@ sep_app = create_app(
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
-
-
-@CsrfProtect.load_config
-def get_csrf_config() -> CsrfSettings:
-    """Load and return the CSRF configuration settings.
-
-    :return: An instance of `CsrfSettings` containing CSRF protection configuration.
-    :rtype: CsrfSettings
-    """
-    return CsrfSettings(TOKEN_TIME_LIMIT=sep_settings.SESSION.MAX_AGE)
 
 
 imported_plugins = set()
@@ -218,12 +208,6 @@ async def custom_404_handler(
     )
 
 
-@sep_app.exception_handler(CsrfProtectError)
-async def csrf_protect_exception_handler(_: Request, exc: CsrfProtectError) -> None:
-    """Handle exceptions raised by CSRF protection."""
-    raise HTTPException(status_code=exc.status_code, detail=exc.message)
-
-
 @sep_app.exception_handler(BaseAuthProviderException)
 async def auth_provider_exception_handler(
     request: Request, exc: BaseAuthProviderException
@@ -240,6 +224,24 @@ async def auth_provider_exception_handler(
     )
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
     return response
+
+
+@sep_app.exception_handler(HTTPServiceUnavailableException)
+@sep_app.exception_handler(HTTPBadGatewayException)
+async def json_exception_handler(
+    request: Request,  # noqa: ARG001
+    exc: HTTPException,
+) -> JSONResponse:
+    """Return a JSON error response for server-side gateway exceptions.
+
+    :param request: The incoming request.
+    :type request: Request
+    :param exc: The HTTP exception to handle.
+    :type exc: HTTPException
+    :return: A JSON response with the error detail and status code.
+    :rtype: JSONResponse
+    """
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
 @sep_app.exception_handler(HTTPException)
@@ -295,6 +297,7 @@ async def login(
         value=crypto_timestamp_serializer.dumps(oauth_token.access_token),
         httponly=True,
     )
+    response.delete_cookie(CSRF_COOKIE_NAME)
     return response
 
 
@@ -303,6 +306,7 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(sep_settings.SESSION.COOKIE_NAME)
+    response.delete_cookie(CSRF_COOKIE_NAME)
     try:
         await User.invalidate_oauth_token(access_token)
     except (KeyError, ValidationError):
