@@ -377,10 +377,13 @@ class BaseYamlAppSettings(BaseYamlSettings):
 
     :cvar SETTINGS_PREFIXES: Tuple of settings prefixes.
     :vartype SETTINGS_PREFIXES: list[str]
-    :param UVICORN_HOST: The host for Uvicorn. Defaults to "127.0.0.1"
+    :param UVICORN_HOST: The host for Uvicorn. Defaults to "127.0.0.1".
     :type UVICORN_HOST: str
     :param UVICORN_PORT: The port for Uvicorn. Defaults to 0.
     :type UVICORN_PORT: int
+    :param UVICORN_RELOAD: Enable auto-reload on file changes. Defaults to ``True``.
+        Set to ``False`` in production deployments.
+    :type UVICORN_RELOAD: bool
     :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
     :type SSL_KEYFILE: RelativeFilePathField | None
     :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
@@ -399,6 +402,7 @@ class BaseYamlAppSettings(BaseYamlSettings):
 
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
+    UVICORN_RELOAD: bool = True
     SSL_KEYFILE: RelativeFilePathField | None = None
     SSL_CERTFILE: RelativeFilePathField | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = Field(
