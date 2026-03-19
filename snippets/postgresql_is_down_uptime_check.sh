@@ -4,7 +4,7 @@
 # title: "PostgreSQL Down/Uptime Check"
 # description: "This script checks PostgreSQL availability by verifying uptime, service status, processes, network ports, and pg_hba configuration."
 # allow_extra_args: false
-# sudo: required
+# sudo: always
 # ---
 
 # Usage: ./postgresql_is_down_check.sh
