@@ -19,7 +19,7 @@ import logging
 from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
@@ -28,13 +28,13 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHostsCtx,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.middleware import messages
 from app.sep.plugins.archives.deps import (
     ArchivesGeneratedTask,
     ArchivesTask,
@@ -89,6 +89,7 @@ async def archives_detail(
     context: DefaultContext,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve archives task."""
     data = task.data
@@ -137,18 +138,14 @@ async def archives_detail(
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    try:
-        executor_hosts = await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        executor_hosts = {}
-        messages.error(request, exc.detail)
-
     services = await inventory_api.get(
         "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
     )
     context["services"] = services
 
-    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
+    context["executor_hosts"] = executor_hosts_ctx.with_host(
+        task_data["hostname"]
+    ).as_template_list()
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
 
