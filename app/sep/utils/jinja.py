@@ -18,6 +18,7 @@
 from datetime import datetime
 from typing import Any
 
+from markupsafe import Markup
 from pygments import highlight
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name, guess_lexer, TextLexer
@@ -32,7 +33,7 @@ def syntax_highlight_css(
     light_style: str = "sas",
     dark_style: str = "monokai",
     **fmt_options: Any,
-) -> str:
+) -> Markup:
     """Generate dual-theme CSS for syntax highlighting using Pygments.
 
     Produce CSS rules scoped to ``[data-theme="light"]`` and
@@ -48,8 +49,9 @@ def syntax_highlight_css(
     :param fmt_options: Additional keyword arguments forwarded to
         :class:`pygments.formatters.HtmlFormatter`.
     :type fmt_options: Any
-    :return: CSS style definitions containing both light-theme and dark-theme rules.
-    :rtype: str
+    :return: CSS style definitions containing both light-theme and dark-theme rules,
+        marked safe for Jinja2 autoescape.
+    :rtype: Markup
     """
     light_formatter = HtmlFormatter(style=light_style, cssclass=cssclass, **fmt_options)
     dark_formatter = HtmlFormatter(style=dark_style, cssclass=cssclass, **fmt_options)
@@ -60,7 +62,7 @@ def syntax_highlight_css(
     light_css = light_formatter.get_style_defs(light_prefix)
     dark_css = dark_formatter.get_style_defs(dark_prefix)
 
-    return f"{light_css}\n{dark_css}"
+    return Markup(f"{light_css}\n{dark_css}")
 
 
 def syntax_highlight(code: str, language: str | None = None, **fmt_options: Any) -> str:
