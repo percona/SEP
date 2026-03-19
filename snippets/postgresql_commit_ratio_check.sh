@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 # ---
-# title: "PostgreSQL Commit ratio check"
+# title: "PostgreSQL commit ratio check"
 # description: "This script checks for databases with a low transaction commit ratio, indicating frequent rollbacks or aborted operations."
 # allow_extra_args: false
-# sudo: optional
+# sudo: required
 # ---
 
 # Usage: ./postgresql_commit_ratio.sh
@@ -42,5 +42,5 @@ SQL
 echo ""
 echo "********* Errors/rollbacks in PostgreSQL logs *********"
 echo ""
-grep -i "ERROR" /var/log/postgresql/postgresql-*.log*
-grep -i "rollback" /var/log/postgresql/postgresql-*.log*
+grep -i "ERROR" /var/log/postgresql/postgresql-*.log* || true
+grep -i "rollback" /var/log/postgresql/postgresql-*.log* || true
