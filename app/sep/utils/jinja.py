@@ -26,25 +26,41 @@ from pygments.util import ClassNotFound
 from app.core.utils import make_datetime_utc
 
 
-def syntax_highlight_css(cssclass: str = "highlight", **fmt_options: Any) -> str:
-    """Generate CSS style definitions for syntax highlighting using Pygments.
+def syntax_highlight_css(
+    cssclass: str = "highlight",
+    *,
+    light_style: str = "sas",
+    dark_style: str = "monokai",
+    **fmt_options: Any,
+) -> str:
+    """Generate dual-theme CSS for syntax highlighting using Pygments.
 
-    This function creates an instance of the Pygments HTML formatter with the
-    specified CSS class and formatting options, then returns the CSS style
-    definitions required for highlighting.
+    Produce CSS rules scoped to ``[data-theme="light"]`` and
+    ``[data-theme="dark"]`` selectors so that code blocks render correctly
+    in both light and dark UI themes.
 
-    :param cssclass: The CSS class name to be applied to highlighted code blocks.
-        Defaults to "highlight".
+    :param cssclass: The CSS class name applied to highlighted code blocks.
     :type cssclass: str
-    :param fmt_options: Additional keyword arguments passed to the
+    :param light_style: Pygments style name for the light theme.
+    :type light_style: str
+    :param dark_style: Pygments style name for the dark theme.
+    :type dark_style: str
+    :param fmt_options: Additional keyword arguments forwarded to
         :class:`pygments.formatters.HtmlFormatter`.
     :type fmt_options: Any
-    :return: A string containing the CSS style definitions for syntax highlighting.
+    :return: CSS style definitions containing both light-theme and dark-theme rules.
     :rtype: str
     """
-    fmt_options["cssclass"] = cssclass
-    formatter = HtmlFormatter(**fmt_options)
-    return formatter.get_style_defs()
+    light_formatter = HtmlFormatter(style=light_style, cssclass=cssclass, **fmt_options)
+    dark_formatter = HtmlFormatter(style=dark_style, cssclass=cssclass, **fmt_options)
+
+    light_prefix = f'[data-theme="light"] .{cssclass}'
+    dark_prefix = f'[data-theme="dark"] .{cssclass}'
+
+    light_css = light_formatter.get_style_defs(light_prefix)
+    dark_css = dark_formatter.get_style_defs(dark_prefix)
+
+    return f"{light_css}\n{dark_css}"
 
 
 def syntax_highlight(code: str, language: str | None = None, **fmt_options: Any) -> str:
