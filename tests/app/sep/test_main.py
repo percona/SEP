@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
 from app.core.auth.exceptions import BaseAuthProviderException
+from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.config import sep_settings
 from app.sep.deps import get_access_token_from_cookie
 from app.sep.main import get_tasks_index_context, sep_app, templates
@@ -365,6 +366,43 @@ class TestExceptionHandlers:
         assert kwargs.get("name") == "404.html.j2"
 
         sep_app.dependency_overrides = {}
+
+    @pytest.mark.parametrize(
+        ("exception_cls", "expected_status", "expected_detail"),
+        [
+            pytest.param(
+                HTTPServiceUnavailableException,
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Service Unavailable",
+                id="503",
+            ),
+            pytest.param(
+                HTTPBadGatewayException,
+                status.HTTP_502_BAD_GATEWAY,
+                "Bad Gateway",
+                id="502",
+            ),
+        ],
+    )
+    def test_json_exception_handler(
+        self,
+        mocker,
+        dummy_context,
+        test_client,
+        exception_cls,
+        expected_status,
+        expected_detail,
+    ):
+        """Assert gateway exceptions return JSON instead of redirecting."""
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=exception_cls(),
+        )
+
+        response = test_client.get("/", follow_redirects=False)
+
+        assert response.status_code == expected_status
+        assert response.json()["detail"] == expected_detail
 
     def test_404_error_unauthenticated(self, regular_user, test_client):
         """Test 404 errors redirects to the login page for unauthenticated users."""

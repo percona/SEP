@@ -253,6 +253,20 @@
     --successContrast: var(--successDark);
     --successSurface: var(--green50);
 
+    /* Warning */
+    --warningMain: var(--sunset600);
+    --warningLight: var(--sunset500);
+    --warningDark: var(--sunset700);
+    --warningContrast: var(--warningDark);
+    --warningSurface: var(--sunset50);
+
+    /* Info */
+    --infoMain: var(--sky600);
+    --infoLight: var(--sky500);
+    --infoDark: var(--sky700);
+    --infoContrast: var(--infoDark);
+    --infoSurface: var(--sky50);
+
     /* Error */
     --errorMain: var(--red600);
     --errorLight: var(--red500);
@@ -307,6 +321,20 @@
     --successDark: var(--green500);
     --successContrast: var(--white);
     --successSurface: var(--successDark);
+
+    /* Warning */
+    --warningMain: var(--sunset400);
+    --warningLight: var(--sunset300);
+    --warningDark: var(--sunset500);
+    --warningContrast: var(--white);
+    --warningSurface: var(--warningDark);
+
+    /* Info */
+    --infoMain: var(--sky400);
+    --infoLight: var(--sky300);
+    --infoDark: var(--sky500);
+    --infoContrast: var(--white);
+    --infoSurface: var(--infoDark);
 
     /* Error */
     --errorMain: var(--red300);
