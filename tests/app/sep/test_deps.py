@@ -28,6 +28,7 @@ from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.models import CasdoorUser
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
+    ExecutorHostsContext,
     get_base_url,
     get_created_entity,
     get_created_node,
@@ -35,6 +36,7 @@ from app.sep.deps import (
     get_current_admin,
     get_current_user,
     get_executor_hosts,
+    get_executor_hosts_context,
     get_inventory_api,
     get_task_by_name,
     get_task_history,
@@ -378,9 +380,7 @@ class TestGetTasksContext:
     """Test get_tasks_context dependency."""
 
     @pytest.mark.asyncio
-    async def test_basic_context(
-        self, created_service, created_schema, mock_remote_api
-    ) -> None:
+    async def test_basic_context(self, created_service, mock_remote_api) -> None:
         """Assert template context is assembled for task-dependent plugins."""
         task_data = {
             "name": "fakeTask",
@@ -392,7 +392,6 @@ class TestGetTasksContext:
         mock_remote_api.get = AsyncMock(
             side_effect=[
                 [created_service.model_dump()],
-                created_schema.model_dump(),
                 [task_data],
                 [],
                 [],
@@ -402,14 +401,21 @@ class TestGetTasksContext:
         def get_task_info(_task):
             return extra_data
 
+        executor_hosts_ctx = ExecutorHostsContext(
+            hosts={"host1": "address1", "host2": "address2"},
+            display_names={"address1": "DB Primary", "address2": "DB Replica"},
+        )
         context = await get_tasks_context(
             mock_remote_api,
             mock_remote_api,
             get_task_info,
-            {"host1": "address1", "host2": "address2"},
+            executor_hosts_ctx,
         )
         assert context["services"][0]["id"] == created_service.id
-        assert context["executor_hosts"] == ["host1", "host2"]
+        assert context["executor_hosts"] == [
+            {"value": "host1", "label": "DB Primary"},
+            {"value": "host2", "label": "DB Replica"},
+        ]
         assert len(context["tasks"]) == 1
         task = context["tasks"][0]
         assert task == task_data | extra_data
@@ -446,11 +452,12 @@ class TestGetTasksContext:
             ]
         )
 
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
         context = await get_tasks_context(
             mock_api,
             mock_api,
             lambda _: {},
-            {},
+            executor_hosts_ctx,
         )
         assert len(context["pending_tasks"]) == 1
         assert context["pending_tasks"][0]["id"] == PENDING_HISTORY_ID
@@ -481,12 +488,14 @@ class TestGetTasksIndexContext:
         )
 
         default_context = {"user": "test"}
-        executor_hosts = {"host1": "addr1"}
+        executor_hosts_ctx = ExecutorHostsContext(
+            hosts={"host1": "addr1"}, display_names={}
+        )
 
         with patch("app.sep.deps.sep_settings") as mock_sep:
             mock_sep.PLUGINS = []
             context = await get_tasks_index_context(
-                mock_inv_api, mock_tasks_api, default_context, executor_hosts
+                mock_inv_api, mock_tasks_api, default_context, executor_hosts_ctx
             )
 
         assert "running_tasks" in context
@@ -516,10 +525,11 @@ class TestGetTasksIndexContext:
         mock_plugin.name = "Task Manager"
         mock_plugin.sidebar = True
 
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
         with patch("app.sep.deps.sep_settings") as mock_sep:
             mock_sep.PLUGINS = [mock_plugin]
             context = await get_tasks_index_context(
-                mock_inv_api, mock_tasks_api, {}, {}
+                mock_inv_api, mock_tasks_api, {}, executor_hosts_ctx
             )
 
         assert context["is_task_manager_enabled"] is True
@@ -565,3 +575,139 @@ class TestCheckForConflictedRunningTasks:
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
+
+
+class TestExecutorHostsContext:
+    """Test ExecutorHostsContext class."""
+
+    def test_display_name_returns_inventory_name_when_match_exists(self) -> None:
+        """Assert inventory name is returned when address matches."""
+        hosts = {"nomad-node-1": "10.0.0.1", "nomad-node-2": "10.0.0.2"}
+        display_names = {"10.0.0.1": "db-primary", "10.0.0.2": "db-replica"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        assert ctx.display_name("nomad-node-1") == "db-primary"
+
+    def test_display_name_falls_back_to_nomad_name(self) -> None:
+        """Assert nomad name is returned when no inventory match exists."""
+        hosts = {"nomad-node-1": "10.0.0.1"}
+        display_names = {}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        assert ctx.display_name("nomad-node-1") == "nomad-node-1"
+
+    def test_display_name_falls_back_for_unknown_host(self) -> None:
+        """Assert unknown host returns itself as display name."""
+        ctx = ExecutorHostsContext(hosts={}, display_names={})
+        assert ctx.display_name("unknown-host") == "unknown-host"
+
+    def test_as_template_list_returns_sorted_dicts(self) -> None:
+        """Assert template list is sorted by value with value/label keys."""
+        hosts = {"beta-node": "10.0.0.2", "alpha-node": "10.0.0.1"}
+        display_names = {"10.0.0.1": "Alpha DB", "10.0.0.2": "Beta DB"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        result = ctx.as_template_list()
+        assert result == [
+            {"value": "alpha-node", "label": "Alpha DB"},
+            {"value": "beta-node", "label": "Beta DB"},
+        ]
+
+    def test_as_template_list_uses_nomad_name_as_fallback_label(self) -> None:
+        """Assert nomad name is used as label when no inventory match."""
+        hosts = {"nomad-node": "10.0.0.1"}
+        display_names = {}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        result = ctx.as_template_list()
+        assert result == [{"value": "nomad-node", "label": "nomad-node"}]
+
+    def test_as_form_hosts_returns_frozenset_of_tuples(self) -> None:
+        """Assert form hosts returns frozenset of (value, label) tuples."""
+        hosts = {"nomad-node": "10.0.0.1"}
+        display_names = {"10.0.0.1": "My DB"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        result = ctx.as_form_hosts()
+        assert result == frozenset({("nomad-node", "My DB")})
+
+    def test_as_host_metrics_returns_sorted_display_name_address_tuples(self) -> None:
+        """Assert host metrics returns sorted (display_name, address) tuples."""
+        hosts = {"beta-node": "10.0.0.2", "alpha-node": "10.0.0.1"}
+        display_names = {"10.0.0.1": "Alpha DB", "10.0.0.2": "Beta DB"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        result = ctx.as_host_metrics()
+        assert result == [("Alpha DB", "10.0.0.1"), ("Beta DB", "10.0.0.2")]
+
+    def test_as_host_metrics_falls_back_to_nomad_name(self) -> None:
+        """Assert host metrics uses nomad name when no inventory match."""
+        hosts = {"nomad-node": "10.0.0.1"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names={})
+        result = ctx.as_host_metrics()
+        assert result == [("nomad-node", "10.0.0.1")]
+
+    def test_with_host_adds_new_host(self) -> None:
+        """Assert with_host returns new context with the additional host."""
+        hosts = {"nomad-node": "10.0.0.1"}
+        display_names = {"10.0.0.1": "My DB"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
+        new_ctx = ctx.with_host("extra-host")
+        result = new_ctx.as_template_list()
+        values = [item["value"] for item in result]
+        assert "extra-host" in values
+        assert "nomad-node" in values
+
+    def test_with_host_returns_same_when_host_exists(self) -> None:
+        """Assert with_host returns same context when host already present."""
+        hosts = {"nomad-node": "10.0.0.1"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names={})
+        new_ctx = ctx.with_host("nomad-node")
+        assert new_ctx is ctx
+
+    def test_hosts_property_returns_raw_dict(self) -> None:
+        """Assert hosts property returns the raw hosts dictionary."""
+        hosts = {"node-1": "10.0.0.1"}
+        ctx = ExecutorHostsContext(hosts=hosts, display_names={})
+        assert ctx.hosts == hosts
+
+
+class TestGetExecutorHostsContext:
+    """Test get_executor_hosts_context dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_enriched_context_when_inventory_succeeds(self) -> None:
+        """Assert inventory node names are used as display names."""
+        executor_hosts = {"nomad-1": "10.0.0.1", "nomad-2": "10.0.0.2"}
+        inventory_nodes = [
+            {"name": "db-primary", "address": "10.0.0.1"},
+            {"name": "db-replica", "address": "10.0.0.2"},
+        ]
+        mock_inventory_api = AsyncMock()
+        mock_inventory_api.get = AsyncMock(return_value=inventory_nodes)
+
+        ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
+        assert ctx.display_name("nomad-1") == "db-primary"
+        assert ctx.display_name("nomad-2") == "db-replica"
+        mock_inventory_api.get.assert_called_once_with("/")
+
+    @pytest.mark.asyncio
+    async def test_returns_fallback_when_inventory_raises(self) -> None:
+        """Assert fallback to nomad names when inventory API fails."""
+        executor_hosts = {"nomad-1": "10.0.0.1"}
+        mock_inventory_api = AsyncMock()
+        mock_inventory_api.get = AsyncMock(
+            side_effect=HTTPException(status_code=500, detail="unavailable")
+        )
+
+        ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
+        assert ctx.display_name("nomad-1") == "nomad-1"
+        assert ctx.hosts == executor_hosts
+
+    @pytest.mark.asyncio
+    async def test_matches_by_address(self) -> None:
+        """Assert matching is done by address, not by node name."""
+        executor_hosts = {"nomad-1": "10.0.0.1", "nomad-2": "10.0.0.2"}
+        inventory_nodes = [
+            {"name": "db-primary", "address": "10.0.0.1"},
+        ]
+        mock_inventory_api = AsyncMock()
+        mock_inventory_api.get = AsyncMock(return_value=inventory_nodes)
+
+        ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
+        assert ctx.display_name("nomad-1") == "db-primary"
+        assert ctx.display_name("nomad-2") == "nomad-2"
