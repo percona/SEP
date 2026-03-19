@@ -17,6 +17,7 @@
 
 import pytest
 from faker import Faker
+from markupsafe import Markup
 from pygments.lexers import TextLexer
 from pygments.util import ClassNotFound
 
@@ -32,6 +33,7 @@ def random_json(faker: Faker) -> str:
 def test_syntax_highlight_css_default_generates_dual_theme():
     """Test that syntax_highlight_css generates both light and dark theme CSS."""
     css = syntax_highlight_css()
+    assert isinstance(css, Markup)
     assert '[data-theme="light"] .highlight' in css
     assert '[data-theme="dark"] .highlight' in css
 
