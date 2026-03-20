@@ -62,7 +62,7 @@ def syntax_highlight_css(
     light_css = light_formatter.get_style_defs(light_prefix)
     dark_css = dark_formatter.get_style_defs(dark_prefix)
 
-    return Markup(f"{light_css}\n{dark_css}")
+    return Markup(f"{light_css}\n{dark_css}")  # nosec B704
 
 
 def syntax_highlight(code: str, language: str | None = None, **fmt_options: Any) -> str:
