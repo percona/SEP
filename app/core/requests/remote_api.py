@@ -35,9 +35,10 @@ from aiohttp import (
     ContentTypeError,
     TCPConnector,
 )
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from pydantic import computed_field, Field, HttpUrl, PrivateAttr
 
+from app.core.exceptions import HTTPGoneException
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
 from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
@@ -337,8 +338,43 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :type kwargs: Any
         :yield: Lines of response content as bytes.
         :rtype: AsyncGenerator[bytes, None]
+        :raises HTTPGoneException: If the upstream API returns HTTP 410 (e.g. task data
+            gone from the Nomad executor). Callers may use ``isinstance(..., HTTPGoneException)``
+            or ``exc.status_code == 410`` without inspecting the status from a generic
+            :class:`fastapi.HTTPException`.
+        :raises HTTPException: For other error responses (same pattern as
+            :meth:`RemoteAPI.request`). Without handling non-success statuses, error JSON
+            bodies would be yielded as stream chunks; the caller would then continue (e.g.
+            poll ``GET /history/{id}``), and later aiohttp requests could surface unrelated
+            ``Connection timeout to host`` errors.
         """
         async with self._request(method, path, **kwargs) as response:
+            if response.status >= status.HTTP_400_BAD_REQUEST:
+                detail_key = getattr(self, "error_detail_key", "detail")
+                code_key = getattr(self, "error_code_key", None)
+                try:
+                    response_data = await response.json()
+                except (ContentTypeError, ValueError):
+                    text = await response.text()
+                    fallback = text or "An unexpected error occurred on the server."
+                    if response.status == status.HTTP_410_GONE:
+                        raise HTTPGoneException(fallback) from None
+                    raise HTTPException(
+                        status_code=response.status, detail=fallback
+                    ) from None
+                error_detail = response_data.get(
+                    detail_key, "An unexpected error occurred on the server."
+                )
+                error_headers = None
+                if code_key and (error_code := response_data.get(code_key)):
+                    error_headers = {"X-Error-Code": error_code}
+                if response.status == status.HTTP_410_GONE:
+                    raise HTTPGoneException(error_detail, headers=error_headers)
+                raise HTTPException(
+                    status_code=response.status,
+                    detail=error_detail,
+                    headers=error_headers,
+                )
             async for line in response.content:
                 yield line
 

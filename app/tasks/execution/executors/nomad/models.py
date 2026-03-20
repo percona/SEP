@@ -446,6 +446,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 executor_name="nomad",
                 resource_type="allocation",
                 resource_id=allocation_filter,
+                job_id=job_id,
+                evaluation_id=eval_id,
             )
         logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
         alloc = allocations[0]
@@ -844,6 +846,18 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 break
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
 
+    def preflight_stream_logs(self, queue_item: TaskHistory) -> None:
+        """Resolve allocation for live log streaming before HTTP response headers are sent."""
+        job_id, eval_id = self.job_eval_ids_for_stream_logs(queue_item)
+        self.get_last_allocation(job_id, eval_id)
+
+    def job_eval_ids_for_stream_logs(self, queue_item: TaskHistory) -> tuple[str, str]:
+        """Return job_id and evaluation_id from task history tracking for log streaming."""
+        return (
+            queue_item.execution_request.tracking["job_id"],
+            queue_item.execution_request.tracking["evaluation_id"],
+        )
+
     async def stream_logs(
         self,
         queue_item: TaskHistory,
@@ -862,8 +876,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog | None
         """
-        job_id = queue_item.execution_request.tracking["job_id"]
-        eval_id = queue_item.execution_request.tracking["evaluation_id"]
+        job_id, eval_id = self.job_eval_ids_for_stream_logs(queue_item)
         alloc = self.get_last_allocation(job_id, eval_id)
         active_streams = set()
         queue = asyncio.Queue()

@@ -63,6 +63,23 @@ def test_task_data_not_found_detail_allocation_not_found_with_structured_fields(
     assert detail["resource_id"] == 'JobID == "my-job" and EvalID == "eval-1"'
     assert detail["executor_name"] == "nomad"
     assert "No allocations found" in detail["detail"]
+    assert "job_id" not in detail
+    assert "evaluation_id" not in detail
+
+
+def test_task_data_not_found_detail_allocation_includes_job_and_eval_ids():
+    """Assert allocation errors can expose job_id and evaluation_id alongside resource fields."""
+    exc = AllocationNotFoundError(
+        "No allocations",
+        executor_name="nomad",
+        resource_type="allocation",
+        resource_id='JobID == "j1" and EvalID == "e1"',
+        job_id="j1",
+        evaluation_id="e1",
+    )
+    detail = task_data_not_found_detail(exc)
+    assert detail["job_id"] == "j1"
+    assert detail["evaluation_id"] == "e1"
 
 
 def test_task_data_not_found_detail_job_not_found_with_structured_fields():

@@ -1700,6 +1700,53 @@ td.errors ul {
     width: 100%;
 }
 
+.sep-stream-error {
+    box-sizing: border-box;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    border-radius: var(--cornerExtraSmall, 0.25rem);
+    border: 0.0625rem solid var(--lineDivider, #ccc);
+    background: var(--surfaceElevation1, #f5f5f5);
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.45;
+}
+
+.sep-stream-error--gone {
+    border-color: var(--errorMain, #c62828);
+    background: color-mix(in srgb, var(--errorMain, #c62828) 8%, var(--surfaceElevation0, #fff));
+}
+
+.sep-stream-error__summary {
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+    color: var(--textPrimary, #1a1a1a);
+}
+
+.sep-stream-error__meta {
+    margin: 0.25rem 0 0;
+    padding-left: 1.25rem;
+    color: var(--textSecondary, #444);
+}
+
+.sep-stream-error__meta li {
+    margin: 0.2em 0;
+}
+
+.sep-stream-error__nomad,
+.sep-stream-error__raw {
+    margin: 0.5rem 0 0;
+    font-size: 0.8125rem;
+    color: var(--textSecondary, #555);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.sep-stream-error__raw {
+    margin: 0;
+    font-family: ui-monospace, monospace;
+}
+
 .log-tabs {
     display: flex;
     flex-wrap: wrap;

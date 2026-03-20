@@ -15,6 +15,7 @@
 
 """Define routes for the Tasks API."""
 
+import json
 import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -80,7 +81,8 @@ def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str
     :param exc: The exception indicating task data was not found in the executor.
     :type exc: TaskDataNotFoundInExecutorError
     :return: A dictionary with message and optional resource_type, resource_id,
-        executor_name, and detail keys for use in an HTTP 410 response body.
+        executor_name, job_id, evaluation_id, and detail keys for use in an HTTP 410
+        response body.
     :rtype: dict[str, Any]
     """
     detail = {
@@ -92,6 +94,10 @@ def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str
         detail["resource_id"] = exc.resource_id
     if exc.executor_name is not None:
         detail["executor_name"] = exc.executor_name
+    if exc.job_id is not None:
+        detail["job_id"] = exc.job_id
+    if exc.evaluation_id is not None:
+        detail["evaluation_id"] = exc.evaluation_id
     if str(exc):
         detail["detail"] = str(exc)
     return detail
@@ -103,10 +109,13 @@ async def task_data_not_found_handler(
     exc: TaskDataNotFoundInExecutorError,
 ) -> None:
     """Handle exceptions raised when task data is not found in the executor."""
-    logger.debug("Task data not found in executor: %s", exc)
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE, detail=task_data_not_found_detail(exc)
+    payload = task_data_not_found_detail(exc)
+    logger.debug(
+        "Task data not found in executor; HTTP %s body: %s",
+        status.HTTP_410_GONE,
+        json.dumps(payload, default=str),
     )
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail=payload)
 
 
 @tasks_app.exception_handler(BaseNomadException)

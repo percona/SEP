@@ -28,6 +28,9 @@ class TaskDataNotFoundInExecutorError(Exception):
         `"allocation"`).
     :param resource_id: Identifier for the missing resource when available
         (job ID, allocation ID, filter expression, etc.).
+    :param job_id: Nomad job ID related to the failure (e.g. when no allocation
+        matches the job/eval filter).
+    :param evaluation_id: Nomad evaluation ID related to the failure.
     """
 
     def __init__(
@@ -38,8 +41,12 @@ class TaskDataNotFoundInExecutorError(Exception):
         executor_name: str | None = None,
         resource_type: str | None = None,
         resource_id: str | None = None,
+        job_id: str | None = None,
+        evaluation_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.executor_name = executor_name
         self.resource_type = resource_type
         self.resource_id = resource_id
+        self.job_id = job_id
+        self.evaluation_id = evaluation_id
