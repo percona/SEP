@@ -23,7 +23,7 @@ body {
 }
 
 #login-form fieldset {
-    border: 0.2em solid #F0F1F4;
+    border: 0.2em solid var(--lineDivider);
     border-radius: 1em;
     padding: 1em;
 }
@@ -45,14 +45,14 @@ body {
     width: 200px;
     padding: 0.5em;
     margin-bottom: 1em;
-    border: 0.2em solid #F0F1F4;
+    border: 0.2em solid var(--lineDivider);
     border-radius: 0.4em;
     font-size: 1em;
 }
 
 #login-form button {
-    background-color: #2C323E;
-    color: #93C7FF;
+    background-color: var(--primaryMain);
+    color: var(--primaryContrast);
     border: none;
     border-radius: 2em;
     font-weight: bolder;
@@ -63,6 +63,6 @@ body {
 }
 
 #login-form button:not([disabled]):hover {
-    background-color: #93C7FF;
-    color: #2C323E;
+    background-color: var(--primaryLight);
+    color: var(--primaryContrast);
 }

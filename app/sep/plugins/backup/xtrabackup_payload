@@ -324,6 +324,7 @@ def logging_setup(
     :param tostdout: If True, also log to stdout.
     :return: Configured logger instance.
     """
+    os.umask(0o007)
     real_logging_dir = Path(logging_dir).expanduser().resolve()
 
     if not real_logging_dir.is_dir():
@@ -1388,7 +1389,7 @@ class Upload(Backup):
         self.last_uploaded_number = 0
         self.last_to_upload_number = 0
         logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
-        log_path = Path(logging_dir) / "upload.log"
+        log_path = Path(logging_dir) / "upload-xtrabackup.log"
         self.log_stream = log_path.open("a")
         self.backup_type = BACKUP_TYPES[self.backup_code]
         self.encrypt = settings.get("ENCRYPT", True)
@@ -1563,7 +1564,7 @@ class Upload(Backup):
 
         :return: Status message of the upload process.
         """
-        logging_set_host(self.alias, "upload.log")
+        logging_set_host(self.alias, "upload-xtrabackup.log")
 
         if self.full_backup_path.is_dir():
             self._collect_paths()

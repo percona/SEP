@@ -452,10 +452,28 @@ class SchemaWrite(SchemaBase):
     )
 
 
+class SchemaCompactResponse(BaseSQLModel, SchemaBase):
+    """Define a compact schema response without nested tables.
+
+    :param id: The primary key for the schema. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: UTCDatetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: UTCDatetime | None
+    :param name: The name of the schema.
+    :type name: NonEmptyStr
+    :param service_id: The unique identifier of the service to which the schema belongs.
+    :type service_id: int
+    """
+
+
 class SchemaResponse(BaseSQLModel, SchemaBase):
     """Define the schema API response.
 
-    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param id: The primary key for the schema. Auto-incremented and not nullable.
     :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
