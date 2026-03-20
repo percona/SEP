@@ -24,7 +24,7 @@ from fastapi.responses import HTMLResponse
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
-    ExecutorHosts,
+    ExecutorHostsCtx,
     IsAuthenticated,
     SessionDep,
 )
@@ -42,14 +42,13 @@ async def app_index(
     request: Request,
     session: SessionDep,
     context: DefaultContext,
-    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Homepage of plugin."""
     snippets = await SnippetManager.list(session)
+    form_hosts = executor_hosts_ctx.as_form_hosts()
     context["snippets"] = {
-        snippet.filename: snippet.to_form(
-            list(executor_hosts), f"/snippets/{snippet.filename}"
-        )
+        snippet.filename: snippet.to_form(form_hosts, f"/snippets/{snippet.filename}")
         for snippet in snippets
     }
     # arrumar linenos
@@ -62,7 +61,7 @@ async def app_index(
         )
         for snippet in snippets
     }
-    context["executor_hosts"] = list(executor_hosts)
+    context["executor_hosts"] = executor_hosts_ctx.as_template_list()
     context["atw_categories"] = defaultdict(dict)
     for category in ATWCategory:
         context["atw_categories"][category.parent][category] = [

@@ -25,6 +25,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     ExecutorHosts,
+    ExecutorHostsCtx,
     InventoryAPI,
     IsAuthenticated,
     TaskAPI,
@@ -65,6 +66,7 @@ async def dipper_index(
     supported_services: SupportedDipperServices,
     tasks_api: TaskAPI,
     executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
     service_id: int | None = None,
     collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
 ) -> HTMLResponse:
@@ -159,9 +161,16 @@ async def dipper_index(
                 service_id=selected_service.id, collector_type=collector_type.value
             )
         ),
-        "executor_hosts": {resolved_executor_host}
+        "executor_hosts": frozenset(
+            {
+                (
+                    resolved_executor_host,
+                    executor_hosts_ctx.display_name(resolved_executor_host),
+                )
+            }
+        )
         if resolved_executor_host
-        else set(executor_hosts),
+        else executor_hosts_ctx.as_form_hosts(),
         "resolved_executor_host": resolved_executor_host,
         "default_executor_host": default_executor_host,
         "form_defaults": form_defaults,
