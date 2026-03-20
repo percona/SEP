@@ -217,9 +217,12 @@
 /* Light theme is set by default on <body> */
 
 [data-theme="light"] {
+    color-scheme: light;
+
     /* Basis */
     --surfaceElevation0: var(--stone50);
     --surfaceElevation1: var(--white);
+    --surfaceElevation2: var(--stone100);
     --surfaceBackdrop: rgba(44, 50, 62, 0.72);
     --textPrimary: #2C323E;
     --textSecondary: rgba(44, 50, 62, 0.72);
@@ -286,9 +289,12 @@
 /* Dark theme is set up to switch using <x> element and JS to swap the theme name on [data-theme] attribute */
 
 [data-theme="dark"] {
+    color-scheme: dark;
+
     /* Basis */
     --surfaceElevation0: var(--stone900);
     --surfaceElevation1: var(--stone800);
+    --surfaceElevation2: var(--stone700);
     --surfaceBackdrop: rgba(0, 0, 0, 0.72);
     --textPrimary: #FBFBFB;
     --textSecondary: rgba(251, 251, 251, 0.72);
@@ -1763,7 +1769,7 @@ td.errors ul {
     border-radius: var(--cornerExtraSmall);
     overflow: hidden;
     margin-bottom: 1.5rem;
-    background-color: white;
+    background-color: var(--surfaceElevation0);
 }
 
 .toggle-btn {
