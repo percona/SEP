@@ -28,6 +28,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHostsCtx,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -89,6 +90,7 @@ async def pg_backups_detail(
     context: DefaultContext,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve backups task."""
     data = task.data
@@ -124,12 +126,9 @@ async def pg_backups_detail(
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    try:
-        executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
-    except HTTPException:
-        executor_hosts = {}
-        context["executor_hosts"] = {task_data["hostname"]}
+    context["executor_hosts"] = executor_hosts_ctx.with_host(
+        task_data["hostname"]
+    ).as_template_list()
 
     try:
         services = await inventory_api.get(
