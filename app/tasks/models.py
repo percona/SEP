@@ -786,7 +786,7 @@ class TaskStats(BaseModel):
         :rtype: dict[str, int]
         """
         status = {
-            "pass": 0,
+            "pass": 0,  # nosec B105
             "fail": 0,
         }
         for task in self.tasks:

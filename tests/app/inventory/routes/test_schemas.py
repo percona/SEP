@@ -140,6 +140,30 @@ class TestListTablesBySchema:
         assert len(data) == 1
         assert data[0]["id"] == table.id
 
+    def test_list_tables_by_schema_search(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """Return only tables whose name matches the search query."""
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"search": table.name[:3]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["id"] == table.id
+
+    def test_list_tables_by_schema_search_no_match(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """Return empty list when search does not match any table."""
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"search": "nonexistent_table_xyz"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
     def test_list_tables_by_schema_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent schema."""
         response = test_client.get("/schemas/99999/tables/")
