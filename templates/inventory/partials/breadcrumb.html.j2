@@ -41,7 +41,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
 .breadcrumb li a:hover {
     background: none;
-    color: #007bff;
+    color: var(--primaryMain);
 }
 
 .breadcrumb li a i {
@@ -51,7 +51,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 .breadcrumb li:not(:last-child)::after {
     content: " > ";
     padding: 0 6px;
-    color: #888;
+    color: var(--textDisabled);
 }
 </style>
 {% if schema is defined or service is defined or node is defined %}
