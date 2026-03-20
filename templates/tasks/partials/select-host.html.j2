@@ -17,11 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 {% if executor_hosts|length == 1 %}
     {% set single_host = executor_hosts[0] %}
     <select id="meta_{{ item }}" name="meta_{{ item }}" disabled>
-        <option value="{{ single_host }}" selected>{{ single_host }}</option>
+        <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
     </select>
-    <input type="hidden" name="meta_{{ item }}" value="{{ single_host }}">
+    <input type="hidden" name="meta_{{ item }}" value="{{ single_host.value }}">
 {% else %}
     <select id="meta_{{ item }}" name="meta_{{ item }}">
-        {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+        {% for host in executor_hosts %}<option value="{{ host.value }}">{{ host.label }}</option>{% endfor %}
     </select>
 {% endif %}
