@@ -20,7 +20,7 @@
 #    type: str
 #    label: Log file path
 #    description: Optional override of the ProxySQL log file
-#    placeholder: /var/log/mysql/error.log
+#    placeholder: /var/lib/proxysql/proxysql.log
 #  - name: output
 #    type: str
 #    description: Where to send the output
