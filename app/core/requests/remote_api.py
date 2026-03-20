@@ -343,7 +343,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             async with self._request(method, path, **kwargs) as response:
                 async for line in response.content:
                     yield line
-            self.logger.debug("Stream ended normally path=%s", path)
+            self.logger.debug("Stream ended normally path=%s method=%s", path, method)
         except Exception as exc:
             self.logger.warning(
                 "Stream error path=%s method=%s: %s",
