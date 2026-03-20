@@ -73,8 +73,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
 
     #createTableOutput {
-        background-color: #272822;
-        color: #f8f8f2;
+        background-color: var(--surfaceElevation1);
+        color: var(--textPrimary);
         padding: 15px;
         border-radius: 5px;
         overflow-x: auto;
@@ -118,7 +118,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         white-space: pre;
     }
 
-    {{ syntax_highlight_css(style="monokai") }}
+    {{ syntax_highlight_css() }}
 </style>
 {% set form_class = "modal" if modal_required else "" %}
 <form action=""
