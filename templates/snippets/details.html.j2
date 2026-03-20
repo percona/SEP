@@ -24,7 +24,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     {% if history_tasks or running_tasks %}
         <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}
-    {% if snippet_preview %}<style>{{ syntax_highlight_css(style="monokai") }}</style>{% endif %}
+    {% if snippet_preview %}<style>{{ syntax_highlight_css() }}</style>{% endif %}
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
