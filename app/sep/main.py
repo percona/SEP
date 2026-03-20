@@ -269,7 +269,6 @@ async def login_form(
         name="login.html.j2",
         context={
             "csrf_token": request.state.csrf_token,
-            "messages": messages.get_messages(request),
             "next_path": next_path,
         },
     )
