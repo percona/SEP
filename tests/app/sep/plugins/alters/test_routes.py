@@ -121,6 +121,7 @@ def test_alters_detail(
     }
     created_task.data = mock_data
     mock_task_api_dep.get.side_effect = [
+        {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
         {},
         {},
         [],
@@ -128,9 +129,9 @@ def test_alters_detail(
         {},
         {},
         {},
-        {"address1": "host1", "address2": "host2"},  # for /hosts/
     ]
     expected_awaits = [
+        call("/hosts/"),
         call(f"/{created_task.name}/history/"),
         call(f"/{created_task.name}-dry-run/history/"),
         call(f"/{created_task.name}-pre-checks/history/"),
@@ -147,7 +148,6 @@ def test_alters_detail(
             params={"status": TaskHistoryStatusEnum.RUNNING},
         ),
         call(f"/stats/{created_task.name}"),
-        call("/hosts/"),
     ]
 
     response = test_client.get(f"/alters/{created_task.name}")

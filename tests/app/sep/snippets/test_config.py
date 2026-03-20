@@ -96,7 +96,7 @@ class TestSudoFormGeneration:
         """Verify sudo checkbox is unchecked when sudo_default is False."""
         html = BaseSnippet._to_form(
             "[]",
-            frozenset({"host1"}),
+            frozenset({("host1", "host1")}),
             add_sudo_field=True,
             sudo_default=False,
         )
@@ -109,7 +109,7 @@ class TestSudoFormGeneration:
         """Verify sudo checkbox is checked when sudo_default is True."""
         html = BaseSnippet._to_form(
             "[]",
-            frozenset({"host1"}),
+            frozenset({("host1", "host1")}),
             add_sudo_field=True,
             sudo_default=True,
         )
@@ -121,7 +121,7 @@ class TestSudoFormGeneration:
         """Verify no sudo field is rendered when add_sudo_field is False."""
         html = BaseSnippet._to_form(
             "[]",
-            frozenset({"host1"}),
+            frozenset({("host1", "host1")}),
             add_sudo_field=False,
         )
         assert SUDO_INPUT_NAME not in html

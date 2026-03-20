@@ -217,9 +217,12 @@
 /* Light theme is set by default on <body> */
 
 [data-theme="light"] {
+    color-scheme: light;
+
     /* Basis */
     --surfaceElevation0: var(--stone50);
     --surfaceElevation1: var(--white);
+    --surfaceElevation2: var(--stone100);
     --surfaceBackdrop: rgba(44, 50, 62, 0.72);
     --textPrimary: #2C323E;
     --textSecondary: rgba(44, 50, 62, 0.72);
@@ -253,6 +256,20 @@
     --successContrast: var(--successDark);
     --successSurface: var(--green50);
 
+    /* Warning */
+    --warningMain: var(--sunset600);
+    --warningLight: var(--sunset500);
+    --warningDark: var(--sunset700);
+    --warningContrast: var(--warningDark);
+    --warningSurface: var(--sunset50);
+
+    /* Info */
+    --infoMain: var(--sky600);
+    --infoLight: var(--sky500);
+    --infoDark: var(--sky700);
+    --infoContrast: var(--infoDark);
+    --infoSurface: var(--sky50);
+
     /* Error */
     --errorMain: var(--red600);
     --errorLight: var(--red500);
@@ -272,9 +289,12 @@
 /* Dark theme is set up to switch using <x> element and JS to swap the theme name on [data-theme] attribute */
 
 [data-theme="dark"] {
+    color-scheme: dark;
+
     /* Basis */
     --surfaceElevation0: var(--stone900);
     --surfaceElevation1: var(--stone800);
+    --surfaceElevation2: var(--stone700);
     --surfaceBackdrop: rgba(0, 0, 0, 0.72);
     --textPrimary: #FBFBFB;
     --textSecondary: rgba(251, 251, 251, 0.72);
@@ -307,6 +327,20 @@
     --successDark: var(--green500);
     --successContrast: var(--white);
     --successSurface: var(--successDark);
+
+    /* Warning */
+    --warningMain: var(--sunset400);
+    --warningLight: var(--sunset300);
+    --warningDark: var(--sunset500);
+    --warningContrast: var(--white);
+    --warningSurface: var(--warningDark);
+
+    /* Info */
+    --infoMain: var(--sky400);
+    --infoLight: var(--sky300);
+    --infoDark: var(--sky500);
+    --infoContrast: var(--white);
+    --infoSurface: var(--infoDark);
 
     /* Error */
     --errorMain: var(--red300);
@@ -1688,7 +1722,7 @@ td.errors ul {
     border-radius: var(--cornerExtraSmall);
     overflow: hidden;
     margin-bottom: 1.5rem;
-    background-color: white;
+    background-color: var(--surfaceElevation0);
 }
 
 .toggle-btn {
