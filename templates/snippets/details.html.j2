@@ -85,12 +85,14 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <dd class="iconTextLine relativeTime"
                 data-relative-date-value="{{ snippet.approved_at|utc_isoformat }}"
                 data-relative-date-title-prefix="Approved ">
-                <span>Approved at {{ snippet.approved_at|utc_isoformat }}</span> <i class="material-symbols-outlined unselectable" style="color: #8ACE00">check_circle</i>
+                <span>Approved at {{ snippet.approved_at|utc_isoformat }}</span> <i class="material-symbols-outlined unselectable"
+    style="color: var(--successMain)">check_circle</i>
             </dd>
         {%- else -%}
             {%- set download_before_approval = snippet_preview.is_truncated or not snippet_preview.content -%}
             <dd class="iconTextLine">
-                <span>Not approved</span> <i class="material-symbols-outlined unselectable" style="color: gray;">unpublished</i>
+                <span>Not approved</span> <i class="material-symbols-outlined unselectable"
+    style="color: var(--textDisabled)">unpublished</i>
             </dd>
         {%- endif -%}
         <dt>Reason</dt>
@@ -112,14 +114,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             Preview
             {% if snippet_preview and snippet_preview.is_truncated %}
                 <span title="File is too large to preview. Please download the snippet to inspect its full contents."
-                      style="border-bottom: 1px dotted black">(partial)</span>
+                      style="border-bottom: 1px dotted var(--lineDividerStrong)">(partial)</span>
             {% endif %}
         </h3>
         {% if snippet_preview -%}
             {{ snippet_preview.content|syntax_highlight(style="monokai", linenos=True, wrapcode=True) |safe }}
             {% if snippet_preview.is_truncated -%}
                 <p class="iconTextLine">
-                    <i class="material-symbols-outlined unselectable" style="color: #e0b731">warning</i> <span>File is too large to preview. Please <a class="downloadSnippet"
+                    <i class="material-symbols-outlined unselectable"
+                       style="color: var(--warningMain)">warning</i> <span>File is too large to preview. Please <a class="downloadSnippet"
     href="{{ url_for('snippets_files', path=snippet.filename) }}"
     data-snippet-filename="{{ snippet.filename }}"
     download>download the snippet</a> to inspect its full contents.</span>
