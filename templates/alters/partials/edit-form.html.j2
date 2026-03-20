@@ -72,8 +72,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
 
     #createTableOutput {
-        background-color: #272822;
-        color: #f8f8f2;
+        background-color: var(--surfaceElevation1);
+        color: var(--textPrimary);
         padding: 15px;
         border-radius: 5px;
         overflow-x: auto;
@@ -117,7 +117,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         white-space: break-spaces;
     }
 
-    {{ syntax_highlight_css(style="monokai") }}
+    {{ syntax_highlight_css() }}
 </style>
 <form id="edit-task-form"
       class="edit-task-form window"
