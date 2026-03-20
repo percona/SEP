@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - SEP-790: Xtrabackup S3 upload fails for incremental backups — `BACKUP_DIR_REGEX` was missing the "I" key for incremental backup directories
-- SEP-789: Mydumper and Binlog backup metrics use wrong names — `Enum.__format__` produced malformed metric names, breaking PMM alerting
+- SEP-789: MyDumper and Binlog backup metrics use wrong names — `Enum.__format__` produced malformed metric names, breaking PMM alerting
 
 ### Security
 
@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- SEP-762: Mydumper backup fails on first execution — textfile collector attempted to stat the backup directory before it existed
+- SEP-762: MyDumper backup fails on first execution — textfile collector attempted to stat the backup directory before it existed
 - SEP-763: Xtrabackup post-run encryption fails — backup directory passed as string instead of `Path` object to GPG encryption routine
 
 ## [v0.10.1] - 2026-02-13
@@ -85,5 +85,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [Unreleased]: https://github.com/percona/SEP/compare/v0.10.3...HEAD
 [v0.10.3]: https://github.com/percona/SEP/compare/v0.10.2...v0.10.3
 [v0.10.2]: https://github.com/percona/SEP/compare/v0.10.1...v0.10.2
-[v0.10.1]: https://github.com/percona/SEP/compare/v0.9.6...v0.10.1
+[v0.10.1]: https://github.com/percona/SEP/compare/v0.10.0...v0.10.1
 [v0.10.0]: https://github.com/percona/SEP/compare/v0.9.6...v0.10.0
