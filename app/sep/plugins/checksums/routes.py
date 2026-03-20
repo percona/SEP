@@ -27,6 +27,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHostsCtx,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -90,6 +91,7 @@ async def checksums_detail(
     context: DefaultContext,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve checksums task."""
     data = task.data
@@ -115,23 +117,16 @@ async def checksums_detail(
     context["task"] = task_data
 
     try:
-        executor_hosts = await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        executor_hosts = {}
-        logger.warning("Failed to get executor hosts: %s", exc)
-    try:
         services = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
-        for service in services:
-            service["schemas"] = await inventory_api.get(
-                f"/services/{service['id']}/schemas/",
-            )
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)
 
-    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
+    context["executor_hosts"] = executor_hosts_ctx.with_host(
+        task_data["hostname"]
+    ).as_template_list()
     context["services"] = services
 
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
