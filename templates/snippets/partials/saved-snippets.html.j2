@@ -33,10 +33,12 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     {% if snippet.is_approved %}class="relativeTime" data-relative-date-value="{{ snippet.approved_at|utc_isoformat }}" data-relative-date-title-prefix="Approved "{% else %}title="Not approved"{% endif %}>
                     <td>
                         {% if snippet.is_approved %}
-                            <i class="material-symbols-outlined unselectable" style="color: #8ACE00">check_circle</i>
+                            <i class="material-symbols-outlined unselectable"
+                               style="color: var(--successMain)">check_circle</i>
                         {% else %}
                             {%- set download_before_approval = True -%}
-                            <i class="material-symbols-outlined unselectable" style="color: gray;">unpublished</i>
+                            <i class="material-symbols-outlined unselectable"
+                               style="color: var(--textDisabled)">unpublished</i>
                         {% endif %}
                     </td>
                     <td>{{ snippet.filename }}</td>
