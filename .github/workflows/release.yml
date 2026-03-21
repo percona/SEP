@@ -30,11 +30,22 @@ jobs:
       - name: Validate inputs
         env:
           RELEASE_TYPE: ${{ inputs.release_type }}
+          VERSION: ${{ inputs.version }}
           RC_NUMBER: ${{ inputs.rc_number }}
         run: |
-          if [ "$RELEASE_TYPE" = "rc" ] && [ -z "$RC_NUMBER" ]; then
-            echo "::error::rc_number is required when release_type is 'rc'"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must match X.Y.Z (e.g. 0.11.0)"
             exit 1
+          fi
+          if [ "$RELEASE_TYPE" = "rc" ]; then
+            if [ -z "$RC_NUMBER" ]; then
+              echo "::error::rc_number is required when release_type is 'rc'"
+              exit 1
+            fi
+            if ! [[ "$RC_NUMBER" =~ ^[0-9]+$ ]]; then
+              echo "::error::rc_number must be a positive integer"
+              exit 1
+            fi
           fi
 
       - name: Checkout repository
