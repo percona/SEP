@@ -45,6 +45,46 @@ $(document).ready(function() {
         return `/files/${encodeURIComponent(taskId)}`;
     }
 
+    function buildExecutorGoneMessage(detail) {
+        const $block = $('<div class="sep-stream-error sep-stream-error--gone" role="alert"></div>');
+        const summary =
+            (detail && detail.message) ||
+            'This run is no longer available in the task executor.';
+        $block.append($('<p class="sep-stream-error__summary"></p>').text(summary));
+        const rows = [];
+        if (detail.resource_type) {
+            rows.push(['Resource type', detail.resource_type]);
+        }
+        if (detail.resource_id) {
+            rows.push(['Resource', detail.resource_id]);
+        }
+        if (detail.job_id) {
+            rows.push(['Job ID', detail.job_id]);
+        }
+        if (detail.evaluation_id) {
+            rows.push(['Evaluation ID', detail.evaluation_id]);
+        }
+        if (detail.executor_name) {
+            rows.push(['Executor', detail.executor_name]);
+        }
+        if (rows.length) {
+            const $ul = $('<ul class="sep-stream-error__meta"></ul>');
+            for (const [k, v] of rows) {
+                const $li = $('<li></li>');
+                $li.append($('<strong></strong>').text(`${k}: `));
+                $li.append(document.createTextNode(String(v)));
+                $ul.append($li);
+            }
+            $block.append($ul);
+        }
+        if (detail.detail && String(detail.detail) !== summary) {
+            $block.append(
+                $('<p class="sep-stream-error__nomad"></p>').text(String(detail.detail))
+            );
+        }
+        return $block;
+    }
+
     function fileDownloadUrl(taskId, relPath) {
         return `/files/${encodeURIComponent(taskId)}/download?path=${encodeURIComponent(relPath)}`;
     }
@@ -404,11 +444,36 @@ $(document).ready(function() {
             }
             console.error(`SSE server error for task ${taskId}:`, payload);
 
+            const code = payload.code;
+            const detail = payload.detail;
+
+            const $logContent = $logConsole.find('.log-content');
+            if (code === 410 && detail && typeof detail === 'object') {
+                $logContent.prepend(buildExecutorGoneMessage(detail));
+            } else {
+                const text =
+                    typeof detail === 'string' ?
+                    detail :
+                    detail != null ?
+                    JSON.stringify(detail, null, 2) :
+                    'Unknown stream error';
+                $logContent.prepend(
+                    $('<div class="sep-stream-error" role="alert"></div>').append(
+                        $('<pre class="sep-stream-error__raw"></pre>').text(text)
+                    )
+                );
+            }
+            $logContent.scrollTop(0);
+
+            const isGone = code === 410;
+            const label = isGone ? 'Not in executor' : 'Stream error';
+            const icon = isGone ? 'cloud_off' : 'chat_error';
+
             const statusEl = $(`
                     <div class="status">
                         <div class="failed">
-                            <span class="badge material-symbols-outlined">chat_error</span>
-                            <span class="label">Stream error</span>
+                            <span class="badge material-symbols-outlined">${icon}</span>
+                            <span class="label">${label}</span>
                         </div>
                     </div>
                 `);
