@@ -73,6 +73,10 @@ class AltersCreate(BaseModel):
     :type extra_args: str
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
     :type alert_on_fail: bool
+    :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
+        (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
+        default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
+    :type pre_checks_mysql_config_file: str
     """
 
     task_name: NonEmptyStr
@@ -102,3 +106,4 @@ class AltersCreate(BaseModel):
     max_flow_ctl: str = ""
     extra_args: str = ""
     alert_on_fail: bool = False
+    pre_checks_mysql_config_file: str = "~/.my.cnf"
