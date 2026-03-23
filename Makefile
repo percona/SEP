@@ -125,7 +125,8 @@ endif
 ifndef RC
 	$(error RC is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
 endif
-	@CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	@set -euo pipefail; \
+	CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
 	if [ "$(RC)" = "1" ] && [ "$$CURRENT_BRANCH" != "main" ]; then \
 		echo "Error: RC=1 requires being on the main branch (currently on $$CURRENT_BRANCH)"; \
 		exit 1; \
@@ -140,6 +141,10 @@ endif
 		echo "==> Pulling latest main..."; \
 		git pull origin main; \
 		echo "==> Creating release branch $$BRANCH..."; \
+		if git show-ref --verify --quiet "refs/heads/$$BRANCH"; then \
+			echo "Error: Branch $$BRANCH already exists locally. Delete it first or use RC>1."; \
+			exit 1; \
+		fi; \
 		git checkout -b "$$BRANCH"; \
 	else \
 		echo "==> Checking out existing release branch $$BRANCH..."; \
@@ -174,7 +179,8 @@ release-stable:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-stable VERSION=X.Y.Z)
 endif
-	@CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	@set -euo pipefail; \
+	CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
 	EXPECTED_BRANCH="release/v$(VERSION)"; \
 	if [ "$$CURRENT_BRANCH" != "$$EXPECTED_BRANCH" ]; then \
 		echo "Error: Must be on $$EXPECTED_BRANCH (currently on $$CURRENT_BRANCH)"; \
@@ -191,19 +197,19 @@ endif
 	git commit -am "Bump version to v$(VERSION)"; \
 	echo "==> Tagging v$(VERSION)..."; \
 	git tag "v$(VERSION)"; \
-	echo "==> Pushing branch and tag..."; \
-	git push origin "$$EXPECTED_BRANCH" "v$(VERSION)"; \
 	echo "==> Building wheel..."; \
 	$(MAKE) build; \
 	WHEEL="dist/sep-$(VERSION)-py3-none-any.whl"; \
+	if [ ! -f "$$WHEEL" ]; then \
+		echo "Error: Wheel not found at $$WHEEL after build. Aborting before push."; \
+		exit 1; \
+	fi; \
+	echo "==> Pushing branch and tag..."; \
+	git push origin "$$EXPECTED_BRANCH" "v$(VERSION)"; \
 	if command -v gh > /dev/null 2>&1; then \
 		echo "==> Creating GitHub release..."; \
 		gh release create "v$(VERSION)" --generate-notes; \
-		if [ -f "$$WHEEL" ]; then \
-			gh release upload "v$(VERSION)" "$$WHEEL"; \
-		else \
-			echo "Warning: Wheel not found at $$WHEEL, skipping upload."; \
-		fi; \
+		gh release upload "v$(VERSION)" "$$WHEEL"; \
 	else \
 		echo "Note: gh CLI not found, skipping GitHub release creation."; \
 	fi; \
