@@ -634,8 +634,12 @@ class TestGetLastAllocation:
         mock_backend.allocations.get_allocations.return_value = []
 
         executor = _build_executor()
-        with pytest.raises(AllocationNotFoundError):
+        with pytest.raises(AllocationNotFoundError) as ctx:
             executor.get_last_allocation(job_id="missing-job")
+        err = ctx.value
+        assert err.job_id == "missing-job"
+        assert err.evaluation_id is None
+        assert err.resource_type == "allocation"
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_last_allocation_null_task_states(self, mock_nomad_cls):
