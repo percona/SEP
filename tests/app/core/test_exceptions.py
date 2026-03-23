@@ -20,6 +20,7 @@ from fastapi import status
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
+    HTTPGoneException,
     HTTPNotFoundException,
 )
 
@@ -46,3 +47,19 @@ def test_http_bad_request_exception():
     assert type(exception).__name__ == "HTTPBadRequestException"
     assert exception.status_code == status.HTTP_400_BAD_REQUEST
     assert exception.detail == "Invalid input provided"
+
+
+def test_http_gone_exception_string_detail():
+    """Test HTTPGoneException with a string detail."""
+    exc = HTTPGoneException("Stale resource")
+    assert exc.status_code == status.HTTP_410_GONE
+    assert exc.detail == "Stale resource"
+
+
+def test_http_gone_exception_structured_detail():
+    """Test HTTPGoneException with structured detail (e.g. Tasks API executor payload)."""
+    payload = {"message": "gone", "resource_type": "allocation"}
+    exc = HTTPGoneException(payload, headers={"X-Error-Code": "E1"})
+    assert exc.status_code == status.HTTP_410_GONE
+    assert exc.detail == payload
+    assert exc.headers == {"X-Error-Code": "E1"}
