@@ -21,6 +21,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
+from aiohttp import ClientTimeout
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import StreamingResponse
 
@@ -76,8 +77,12 @@ async def task_history_logs_event_stream(
     """
     try:
         with tasks_client.auth(access_token) as tasks_api:
+            # No read timeout: log stream can stall under backpressure (e.g. ~26MB)
+            # and must not be killed by the default sock_read=120.
             async for log_entry in tasks_api.stream(
-                f"/history/{task_history_id}/logs/", params=request.query_params
+                f"/history/{task_history_id}/logs/",
+                params=request.query_params,
+                timeout=ClientTimeout(sock_read=None),
             ):
                 if log_entry:
                     yield f"data: {log_entry.decode()}\n\n"
@@ -89,10 +94,26 @@ async def task_history_logs_event_stream(
                 await asyncio.sleep(wait_interval)
                 task_history = await tasks_api.get(f"/history/{task_history_id}")
         yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
+    except TimeoutError as exc:
+        logger.warning(
+            "Timeout while streaming task logs task_history_id=%s: %s",
+            task_history_id,
+            exc,
+        )
+        yield f"event: sep-error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
+    except asyncio.CancelledError:
+        logger.info(
+            "Task log stream cancelled task_history_id=%s (e.g. user closed panel or switched tab)",
+            task_history_id,
+        )
+        raise
     except HTTPException as exc:
         logger.exception("HTTP error streaming task logs [%s]", exc.status_code)
         payload = {"code": exc.status_code, "detail": exc.detail}
         yield f"event: sep-error\ndata: {json.dumps(payload)}\n\n"
     except Exception as exc:
-        logger.exception("Error streaming task logs")
+        logger.exception(
+            "Error streaming task logs task_history_id=%s (non-timeout, non-cancellation)",
+            task_history_id,
+        )
         yield f"event: sep-error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
