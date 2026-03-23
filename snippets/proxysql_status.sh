@@ -98,7 +98,7 @@ function mysql_exec() {
     local query=$2
     local retvalue
     local retoutput
-
+    # shellcheck disable=SC2086
     retoutput=$(printf "[client]\nuser=%s\npassword=\"%s\"\nhost=%s\nport=%s" "${USER}" "${PASSWORD}" "${HOST}" "${PORT}" |
         mysql --defaults-file=/dev/stdin --protocol=tcp \
             ${args} -e "${query}" 2>&1 | grep -v "mylogin.cnf")
