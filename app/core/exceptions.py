@@ -15,6 +15,8 @@
 
 """Define reusable exceptions."""
 
+from typing import Any
+
 from fastapi import HTTPException, status
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -69,16 +71,52 @@ class HTTPUnprocessableEntityException(HTTPException):
         )
 
 
-class HTTPGoneException(HTTPException):
-    """Define exception raised for resource gone (HTTP 410).
+class HTTPBadGatewayException(HTTPException):
+    """Define exception raised for bad gateway (HTTP 502).
 
     :param detail: A message providing additional details about the exception.
-        Defaults to "Gone".
+        Defaults to "Bad Gateway".
     :type detail: str
     """
 
-    def __init__(self, detail: str = "Gone") -> None:
-        super().__init__(status_code=status.HTTP_410_GONE, detail=detail)
+    def __init__(self, detail: str = "Bad Gateway") -> None:
+        super().__init__(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+
+class HTTPServiceUnavailableException(HTTPException):
+    """Define exception raised for service unavailable (HTTP 503).
+
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Service Unavailable".
+    :type detail: str
+    """
+
+    def __init__(self, detail: str = "Service Unavailable") -> None:
+        super().__init__(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+
+
+class HTTPGoneException(HTTPException):
+    """Define exception raised for resource gone (HTTP 410).
+
+    Used when a remote API signals that data is no longer available (e.g. Tasks API
+    task executor state). ``detail`` may be a string or structured JSON (dict), matching
+    :class:`fastapi.HTTPException`.
+
+    :param detail: Human-readable or structured error payload. Defaults to ``"Gone"``.
+    :type detail: Any
+    :param headers: Optional response headers (e.g. ``X-Error-Code``).
+    :type headers: dict[str, str] | None
+    """
+
+    def __init__(
+        self,
+        detail: Any = "Gone",
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            status_code=status.HTTP_410_GONE, detail=detail, headers=headers
+        )
 
 
 class HTTPRedirectException(StarletteHTTPException):

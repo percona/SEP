@@ -50,7 +50,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
 
         .ellipse-btn {
-            color: black;
+            color: var(--textPrimary);
             background: none;
             text-decoration: underline;
             font-weight: 200;
@@ -69,7 +69,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             white-space: break-spaces;
         }
 
-        {{ syntax_highlight_css(style="sas") }}
+        {{ syntax_highlight_css() }}
     </style>
 {% endblock style %}
 {% block inventory_entity_details %}
