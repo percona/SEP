@@ -20,16 +20,22 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.sep.plugins.alters.deps import (
+    _build_dsn_with_service,
+    alters_executor_matches_service_host,
     build_alters_task_payload,
+    build_pre_checks_task,
     extract_service_info,
+    get_alters_index_context,
     get_alters_task,
     get_alters_task_info,
     parse_alters_task_args,
+    parse_single_arg,
 )
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import Task, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import (
     AltersCreateFactory,
+    GeneratedTaskFactory,
     TaskFactory,
 )
 
@@ -168,3 +174,212 @@ def test_parse_alters_task_args():
         "max_flow_ctl": "",
         "extra_args": "",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("nomad_hosts", "expect_skip_in_config"),
+    [
+        ({"db1": "10.0.0.5"}, False),
+        ({"db1": "10.0.0.99"}, True),
+    ],
+)
+async def test_build_pre_checks_task_filesystem_skip_flag(
+    mock_remote_api, nomad_hosts, expect_skip_in_config
+):
+    """Pre-checks YAML skip_filesystem_checks follows executor vs DB host (Nomad /hosts/)."""
+    task = GeneratedTaskFactory.build(
+        name="prechk-alter",
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--alter=x --execute",
+                "target": "db1",
+                "_schema_name": "db",
+                "_table_name": "t",
+                "_service_host": "10.0.0.5",
+                "_service_port": 3306,
+            },
+        },
+        backend=TaskBackendEnum.PROXY,
+    )
+    mock_remote_api.get = AsyncMock(return_value=nomad_hosts)
+    pre = await build_pre_checks_task(task, mock_remote_api)
+    mock_remote_api.get.assert_awaited_once_with("/hosts/")
+    assert pre.name == "prechk-alter-pre-checks"
+    assert pre.data["parent"] == "prechk-alter"
+    assert pre.data["task"] == "run-python"
+    assert "command" not in pre.data["meta"]
+    assert task.data["meta"]["command"] == "pt-online-schema-change"
+    cfg = pre.data["meta"]["config"]
+    if expect_skip_in_config:
+        assert "skip_filesystem_checks: true" in cfg
+    else:
+        assert "skip_filesystem_checks" not in cfg
+    assert "schema: db" in cfg
+    assert "table: t" in cfg
+    assert "host: 10.0.0.5" in cfg
+    assert "port: 3306" in cfg
+
+
+@pytest.mark.asyncio
+async def test_build_pre_checks_task_mysql_config_file_in_yaml(mock_remote_api):
+    """Generated config quotes mysql_config_file for YAML safety."""
+    task = GeneratedTaskFactory.build(
+        name="cnf-alter",
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--execute",
+                "target": "db1",
+                "_schema_name": "s",
+                "_table_name": "tbl",
+                "_service_host": "10.0.0.5",
+                "_service_port": 3306,
+                "_pre_checks_mysql_config_file": "/path/with space/my.cnf",
+            },
+        },
+        backend=TaskBackendEnum.PROXY,
+    )
+    mock_remote_api.get = AsyncMock(return_value={"db1": "10.0.0.5"})
+    pre = await build_pre_checks_task(task, mock_remote_api)
+    assert 'mysql_config_file: "/path/with space/my.cnf"' in pre.data["meta"]["config"]
+
+
+def test_alters_executor_matches_service_host():
+    """Nomad node → address vs inventory host; used for pre-checks filesystem skip."""
+    meta = {
+        "target": "db-node",
+        "_service_host": "10.30.50.130",
+        "_service_port": 3306,
+    }
+    assert (
+        alters_executor_matches_service_host(meta, {"db-node": "10.30.50.130"}) is True
+    )
+    assert (
+        alters_executor_matches_service_host(meta, {"db-node": "10.30.50.131"}) is False
+    )
+    assert (
+        alters_executor_matches_service_host(meta, {"db-node": "10.30.50.130:4648"})
+        is False
+    )
+    meta_ip = {
+        "target": "10.30.50.130",
+        "_service_host": "10.30.50.130",
+        "_service_port": 3306,
+    }
+    assert alters_executor_matches_service_host(meta_ip, {}) is True
+    assert alters_executor_matches_service_host(meta_ip, None) is True
+
+
+def test_build_dsn_with_service_branches():
+    """DSN prefix passthrough, remote h+P, localhost P-only, and unchanged DSN."""
+    assert _build_dsn_with_service("h=x,D=y", "10.0.0.1", 3306) == "h=x,D=y"
+    assert _build_dsn_with_service("P=3307,D=y", "10.0.0.1", 3306) == "P=3307,D=y"
+    assert (
+        _build_dsn_with_service("D=a,t=b", "10.0.0.5", 3306)
+        == "h=10.0.0.5,P=3306,D=a,t=b"
+    )
+    assert _build_dsn_with_service("D=a,t=b", "localhost", 3306) == "P=3306,D=a,t=b"
+    assert _build_dsn_with_service("D=a,t=b", "localhost", None) == "D=a,t=b"
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_payload_schema_name_table_name(
+    created_alters, created_service, mock_remote_api
+):
+    """Build payload using schema_name/table_name when schema/table IDs are omitted."""
+    created_alters.schema_id = None
+    created_alters.table_id = None
+    created_alters.schema_name = "manual_schema"
+    created_alters.table_name = "manual_table"
+    mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
+    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    assert task.data["meta"]["_schema_name"] == "manual_schema"
+    assert task.data["meta"]["_table_name"] == "manual_table"
+    assert "D=manual_schema,t=manual_table" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_payload_requires_schema_and_table(
+    created_alters, created_service, mock_remote_api
+):
+    """Raise when neither IDs nor schema/table names are set."""
+    created_alters.schema_id = None
+    created_alters.table_id = None
+    created_alters.schema_name = ""
+    created_alters.table_name = ""
+    mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
+    with pytest.raises(ValueError, match="schema/table"):
+        await build_alters_task_payload(created_alters, mock_remote_api)
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_payload_print_arg_adds_progress(
+    created_alters, created_service, created_schema, created_table, mock_remote_api
+):
+    """--progress is appended when print_arg is enabled."""
+    created_alters.print_arg = True
+    created_alters.progress = "time,5"
+    mock_remote_api.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    assert "--progress=time,5" in task.data["meta"]["args"]
+
+
+def test_parse_alters_task_args_missing_or_empty_args():
+    """Default form values when args are missing or empty."""
+    defaults = parse_alters_task_args({})
+    assert defaults["recursion_method"] == "processlist"
+    assert parse_alters_task_args({"args": ""}) == defaults
+
+
+def test_parse_alters_task_args_recursion_dsn_strips_h_p():
+    """dsn= recursion strips h=/P= from embedded DSN for the dsn_table field."""
+    meta = {
+        "args": (
+            "--recursion-method=dsn=h=127.0.0.1,P=3306,D=dbx,t=tbl "
+            "--alter=ADD COLUMN x INT --execute"
+        ),
+    }
+    out = parse_alters_task_args(meta)
+    assert out["recursion_method"] == "dsn"
+    assert out["dsn_table"] == "D=dbx,t=tbl"
+
+
+def test_parse_single_arg_recursion_dsn_only_host_port():
+    """dsn= value with only h=/P= keeps full string as dsn_table."""
+    fv = parse_alters_task_args({"args": "--execute"})
+    parse_single_arg("--recursion-method=dsn=h=1,P=2", fv)
+    assert fv["recursion_method"] == "dsn"
+    assert fv["dsn_table"] == "h=1,P=2"
+
+
+@pytest.mark.asyncio
+async def test_get_alters_index_context(mocker):
+    """Index view context is built via get_tasks_context."""
+    merged = {"ok": True}
+    mock_ctx = mocker.patch(
+        "app.sep.plugins.alters.deps.get_tasks_context",
+        new_callable=AsyncMock,
+        return_value=merged,
+    )
+    inv, tasks, ctx, hosts = AsyncMock(), AsyncMock(), {"user": "u"}, {}
+    result = await get_alters_index_context(inv, tasks, ctx, hosts)
+    assert result is merged
+    mock_ctx.assert_awaited_once_with(
+        inv,
+        tasks,
+        get_alters_task_info,
+        hosts,
+        ctx,
+        TaskOwner.ALTERS,
+        alert_on_fail_default=True,
+    )
