@@ -174,7 +174,9 @@ async def test_stream_yields_content_chunks_and_logs_debug_lifecycle(remote_api)
     mock_debug.assert_any_call(
         "Stream started path=%s method=%s", "/stream/path/", "GET"
     )
-    mock_debug.assert_any_call("Stream ended normally path=%s", "/stream/path/")
+    mock_debug.assert_any_call(
+        "Stream ended normally path=%s method=%s", "/stream/path/", "GET"
+    )
 
 
 @pytest.mark.asyncio
