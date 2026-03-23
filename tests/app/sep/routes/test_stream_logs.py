@@ -123,4 +123,5 @@ def test_archives_logs_event_stream(
     mock_tasks_client.stream.assert_called_once_with(
         f"/history/{task_history_response.id}/logs/",
         params=mocker.ANY,
+        timeout=mocker.ANY,
     )
