@@ -341,7 +341,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         try:
             return self.backend.job.get_job(job_id)
         except URLNotFoundNomadException as exc:
-            raise JobNotFoundError(exc.nomad_resp) from None
+            raise JobNotFoundError(
+                str(exc.nomad_resp),
+                executor_name="nomad",
+                resource_type="job",
+                resource_id=job_id,
+            ) from None
 
     def get_job_for_task_history(self, queue_item: TaskHistory) -> dict[str, Any]:
         """Retrieve the job associated with a task history record.
@@ -360,7 +365,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if job_id := queue_item.execution_request.tracking.get("job_id"):
             return self.get_job(job_id)
         raise JobNotFoundError(
-            f"Missing job_id in task history tracking ({queue_item.id})"
+            f"Missing job_id in task history tracking ({queue_item.id})",
+            executor_name="nomad",
+            resource_type="job",
         )
 
     def get_hosts(self) -> dict[str, str]:
@@ -439,7 +446,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         )
         if not allocations:
             raise AllocationNotFoundError(
-                f"No allocations found with filter {allocation_filter!r}"
+                f"No allocations found with filter {allocation_filter!r}",
+                executor_name="nomad",
+                resource_type="allocation",
+                resource_id=allocation_filter,
+                job_id=job_id,
+                evaluation_id=eval_id,
             )
         logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
         alloc = allocations[0]
@@ -1080,6 +1092,18 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         except ClientError:
             return (_NOMAD_LOG_STREAM_CLIENT_ERROR, alloc, stream_start)
 
+    def preflight_stream_logs(self, queue_item: TaskHistory) -> None:
+        """Resolve allocation for live log streaming before HTTP response headers are sent."""
+        job_id, eval_id = self.job_eval_ids_for_stream_logs(queue_item)
+        self.get_last_allocation(job_id, eval_id)
+
+    def job_eval_ids_for_stream_logs(self, queue_item: TaskHistory) -> tuple[str, str]:
+        """Return job_id and evaluation_id from task history tracking for log streaming."""
+        return (
+            queue_item.execution_request.tracking["job_id"],
+            queue_item.execution_request.tracking["evaluation_id"],
+        )
+
     async def stream_logs(
         self,
         queue_item: TaskHistory,
@@ -1098,8 +1122,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :yield: `TaskLog` instances containing log messages.
         :rtype: TaskLog | None
         """
-        job_id = queue_item.execution_request.tracking["job_id"]
-        eval_id = queue_item.execution_request.tracking["evaluation_id"]
+        job_id, eval_id = self.job_eval_ids_for_stream_logs(queue_item)
         alloc = self.get_last_allocation(job_id, eval_id)
         active_streams = set()
         queue = asyncio.Queue()
