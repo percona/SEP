@@ -11,6 +11,7 @@ jobs:
     steps:
       - uses: actions/github-script@v8
         with:
+          github-token: ${{ secrets.GAS_TEAM_AUTO_UPDATE_PR_TOKEN }}
           script: |
             let retriesNeeded = true;
             let attemptCount = 0;

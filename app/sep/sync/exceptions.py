@@ -69,6 +69,33 @@ class SyncItemAlreadyInProgressError(SyncError):
         super().__init__(message)
 
 
+class ExecutorHostNotFoundError(SyncError):
+    """Raise when no executor host matches the node in strict matching mode.
+
+    :param node_name: The name of the node that failed to match.
+    :type node_name: str | None
+    :param node_address: The address of the node that failed to match.
+    :type node_address: str
+    :param available_hosts: The available executor hosts that were checked.
+    :type available_hosts: dict[str, str]
+    """
+
+    def __init__(
+        self,
+        node_name: str | None,
+        node_address: str,
+        available_hosts: dict[str, str],
+    ) -> None:
+        self.node_name = node_name
+        self.node_address = node_address
+        self.available_hosts = available_hosts
+        message = (
+            f"No executor host matches node {node_name!r} (address={node_address!r}). "
+            f"Available hosts: {available_hosts}"
+        )
+        super().__init__(message)
+
+
 class SyncInstanceAlreadyInProgressError(SyncError):
     """Raise when a synchronization instance is already in progress.
 
