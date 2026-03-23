@@ -23,6 +23,7 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiohttp import ClientError, ClientTimeout
 import zstandard
 from fastapi import HTTPException
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
