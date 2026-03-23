@@ -24,7 +24,7 @@ from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, NoReturn, Self
 from urllib.parse import urljoin
 
 from aiohttp import (
@@ -325,6 +325,20 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         async with self._session.request(method, prepared_path, **kwargs) as response:
             yield response
 
+    @staticmethod
+    def _raise_stream_http_error(
+        status_code: int,
+        *,
+        detail: Any,
+        headers: dict[str, str] | None = None,
+    ) -> NoReturn:
+        """Raise :class:`HTTPGoneException` or :class:`HTTPException` for a failed stream response."""
+        if status_code == status.HTTP_410_GONE:
+            raise HTTPGoneException(detail, headers=headers) from None
+        raise HTTPException(
+            status_code=status_code, detail=detail, headers=headers
+        ) from None
+
     async def stream(
         self, path: str, method: str = "GET", **kwargs: Any
     ) -> AsyncGenerator[bytes, None]:
@@ -348,35 +362,45 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             poll ``GET /history/{id}``), and later aiohttp requests could surface unrelated
             ``Connection timeout to host`` errors.
         """
-        async with self._request(method, path, **kwargs) as response:
-            if response.status >= status.HTTP_400_BAD_REQUEST:
-                detail_key = getattr(self, "error_detail_key", "detail")
-                code_key = getattr(self, "error_code_key", None)
-                try:
-                    response_data = await response.json()
-                except (ContentTypeError, ValueError):
-                    text = await response.text()
-                    fallback = text or "An unexpected error occurred on the server."
-                    if response.status == status.HTTP_410_GONE:
-                        raise HTTPGoneException(fallback) from None
-                    raise HTTPException(
-                        status_code=response.status, detail=fallback
-                    ) from None
-                error_detail = response_data.get(
-                    detail_key, "An unexpected error occurred on the server."
-                )
-                error_headers = None
-                if code_key and (error_code := response_data.get(code_key)):
-                    error_headers = {"X-Error-Code": error_code}
-                if response.status == status.HTTP_410_GONE:
-                    raise HTTPGoneException(error_detail, headers=error_headers)
-                raise HTTPException(
-                    status_code=response.status,
-                    detail=error_detail,
-                    headers=error_headers,
-                )
-            async for line in response.content:
-                yield line
+        self.logger.debug("Stream started path=%s method=%s", path, method)
+        try:
+            async with self._request(method, path, **kwargs) as response:
+                if response.status >= status.HTTP_400_BAD_REQUEST:
+                    detail_key = getattr(self, "error_detail_key", "detail")
+                    code_key = getattr(self, "error_code_key", None)
+                    try:
+                        response_data = await response.json()
+                    except (ContentTypeError, ValueError):
+                        text = await response.text()
+                        fallback = text or "An unexpected error occurred on the server."
+                        self._raise_stream_http_error(
+                            response.status, detail=fallback, headers=None
+                        )
+                    error_detail = response_data.get(
+                        detail_key, "An unexpected error occurred on the server."
+                    )
+                    error_headers = None
+                    if code_key and (error_code := response_data.get(code_key)):
+                        error_headers = {"X-Error-Code": error_code}
+                    self._raise_stream_http_error(
+                        response.status,
+                        detail=error_detail,
+                        headers=error_headers,
+                    )
+                async for line in response.content:
+                    yield line
+            self.logger.debug("Stream ended normally path=%s method=%s", path, method)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            self.logger.warning(
+                "Stream error path=%s method=%s: %s",
+                path,
+                method,
+                exc,
+                exc_info=True,
+            )
+            raise
 
     @staticmethod
     @lru_cache(maxsize=8)

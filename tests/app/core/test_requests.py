@@ -15,7 +15,7 @@
 
 """Define tests for the app.core.requests module."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from aiohttp import ClientResponseError, ClientSession, ContentTypeError
@@ -358,3 +358,98 @@ async def test_request_client_response_error_without_error_code_header(remote_ap
             await no_code_api.request("GET", "/gone")
         assert exc_info.value.status_code == status.HTTP_410_GONE
         assert exc_info.value.headers is None
+
+
+@pytest.mark.asyncio
+async def test_stream_yields_content_chunks_and_logs_debug_lifecycle(remote_api):
+    """Stream yields aiohttp body chunks and logs start/end at DEBUG."""
+
+    async def body():
+        yield b"chunk-a"
+        yield b"chunk-b"
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content = body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(remote_api.logger, "debug") as mock_debug:
+        async with remote_api:
+            with patch.object(remote_api, "_request", return_value=mock_ctx):
+                chunks = [
+                    c async for c in remote_api.stream("/stream/path/", method="GET")
+                ]
+
+    assert chunks == [b"chunk-a", b"chunk-b"]
+    mock_debug.assert_any_call(
+        "Stream started path=%s method=%s", "/stream/path/", "GET"
+    )
+    mock_debug.assert_any_call(
+        "Stream ended normally path=%s method=%s", "/stream/path/", "GET"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_warning_with_exc_info_and_reraises_on_content_error(
+    remote_api,
+):
+    """On iteration failure, stream logs WARNING with exc_info and re-raises."""
+
+    class FailingContent:
+        """Async iterator that raises on first chunk."""
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            msg = "connection reset"
+            raise ConnectionResetError(msg)
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content = FailingContent()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(remote_api.logger, "warning") as mock_warning:
+        async with remote_api:
+            with patch.object(remote_api, "_request", return_value=mock_ctx):
+                with pytest.raises(ConnectionResetError, match="connection reset"):
+                    [
+                        _
+                        async for _ in remote_api.stream(
+                            "/history/1/logs/", method="GET"
+                        )
+                    ]
+
+    mock_warning.assert_called_once()
+    args, kwargs = mock_warning.call_args
+    assert args[0] == "Stream error path=%s method=%s: %s"
+    assert args[1] == "/history/1/logs/"
+    assert args[2] == "GET"
+    assert isinstance(args[3], ConnectionResetError)
+    assert kwargs.get("exc_info") is True
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_warning_when_request_context_raises(remote_api):
+    """Errors from opening the HTTP context are logged and re-raised."""
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("session failed"))
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(remote_api.logger, "warning") as mock_warning:
+        async with remote_api:
+            with patch.object(remote_api, "_request", return_value=mock_ctx):
+                with pytest.raises(RuntimeError, match="session failed"):
+                    [_ async for _ in remote_api.stream("/x/", method="POST")]
+
+    mock_warning.assert_called_once()
+    wargs, wkwargs = mock_warning.call_args
+    assert wargs[1] == "/x/"
+    assert wargs[2] == "POST"
+    assert isinstance(wargs[3], RuntimeError)
+    assert wkwargs.get("exc_info") is True
