@@ -9,7 +9,7 @@
 #    type: str
 #    label: Config file
 #    description: Path to ProxySQL admin config file
-#    default: "/etc/proxysql-admin.cnf"
+#    placeholder: /etc/proxysql-admin.cnf
 #  - name: files
 #    type: bool
 #    label: Show files
@@ -101,7 +101,7 @@ function mysql_exec() {
 
     retoutput=$(printf "[client]\nuser=%s\npassword=\"%s\"\nhost=%s\nport=%s" "${USER}" "${PASSWORD}" "${HOST}" "${PORT}" |
         mysql --defaults-file=/dev/stdin --protocol=tcp \
-            "${args}" -e "${query}" 2>&1 | grep -v "mylogin.cnf")
+            ${args} -e "${query}" 2>&1 | grep -v "mylogin.cnf")
     retvalue=$?
 
     if [[ -n $retoutput ]]; then
