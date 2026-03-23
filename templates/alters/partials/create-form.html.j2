@@ -73,8 +73,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
 
     #createTableOutput {
-        background-color: #272822;
-        color: #f8f8f2;
+        background-color: var(--surfaceElevation1);
+        color: var(--textPrimary);
         padding: 15px;
         border-radius: 5px;
         overflow-x: auto;
@@ -120,7 +120,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
 
 
-    {{ syntax_highlight_css(style="monokai") }}
+    {{ syntax_highlight_css() }}
 </style>
 <form id="create-task-form"
       class="create-task-form window"
@@ -176,6 +176,18 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                required
                                title="{{ task_name_title }}"
                                placeholder="Enter a unique task name">
+                    </div>
+                    <br>
+                    <div class="field">
+                        {% set pre_cnf_title = "Path on executor with [client] user/password. Pre-checks use this path. Execute/dry-run use the same path only if not ~/.my.cnf (then --defaults-file is passed to pt-online-schema-change)." %}
+                        <label for="pre_checks_mysql_config_file" title="{{ pre_cnf_title }}">MySQL defaults file</label>
+                        <input type="text"
+                               id="pre_checks_mysql_config_file"
+                               name="pre_checks_mysql_config_file"
+                               class="validate"
+                               value="~/.my.cnf"
+                               title="{{ pre_cnf_title }}"
+                               placeholder="~/.my.cnf" />
                     </div>
                     <br>
                     <div class="select">
