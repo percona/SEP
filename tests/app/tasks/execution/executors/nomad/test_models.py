@@ -24,10 +24,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import zstandard
-from aiohttp import (
-    ClientError,
-    ClientTimeout,
-)
 from fastapi import HTTPException
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 
