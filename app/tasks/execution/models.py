@@ -180,6 +180,19 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :rtype: TaskLog
         """
 
+    def preflight_stream_logs(self, queue_item: TaskHistory) -> None:
+        """Validate executor state before :meth:`stream_logs` sends response headers.
+
+        Streaming responses commit status and headers before the body iterator runs.
+        Executors that resolve Nomad allocations (or similar) only inside
+        :meth:`stream_logs` must override this to run that resolution here, so
+        :class:`~app.tasks.execution.exceptions.TaskDataNotFoundInExecutorError`
+        can be handled as HTTP error responses.
+
+        :param queue_item: The task history record that will be streamed.
+        :type queue_item: TaskHistory
+        """
+
     @abstractmethod
     async def stream_file(
         self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
