@@ -357,9 +357,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     minified_size,
                 )
                 lines = payload.split("\n")
-                compacted = "\n".join(
-                    line.rstrip() for line in lines if line.strip()
-                )
+                compacted = "\n".join(line.rstrip() for line in lines if line.strip())
                 compacted_size = len(compacted)
                 if compacted_size < minified_size:
                     payload = compacted
