@@ -118,9 +118,10 @@ def readlink_argv_for_backup_source(
             host,
             "readlink",
             "-n",
+            "--",
             path,
         ]
-    return ["readlink", "-n", backup_source]
+    return ["readlink", "-n", "--", backup_source]
 
 
 def rsync_remote_restore_argv(
@@ -134,7 +135,8 @@ def rsync_remote_restore_argv(
     ssh_identity_path: Optional[str] = None,
 ) -> List[str]:
     identity = ssh_identity_path or f"/home/{ssh_user}/.ssh/id_rsa"
-    rsh = f"ssh -t -p {ssh_port} -i {identity}"
+    identity_quoted = shlex.quote(identity)
+    rsh = f"ssh -t -p {ssh_port} -i {identity_quoted}"
     remote_spec = f"{ssh_user}@{remote_source}"
     return [
         "rsync",
