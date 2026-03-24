@@ -90,6 +90,27 @@ class FileMetadata(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class ExecutionEvent(BaseModel):
+    """A single lifecycle event from a task executor (executor-agnostic shape).
+
+    :param timestamp: When the event occurred (UTC).
+    :type timestamp: UTCDatetime
+    :param event_type: Executor-specific event category (e.g. Nomad task event type).
+    :type event_type: str
+    :param description: Human-readable message for the event.
+    :type description: str
+    """
+
+    timestamp: UTCDatetime
+    event_type: str = Field(
+        serialization_alias="type",
+        validation_alias="type",
+    )
+    description: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class TaskBackendEnum(StrEnum):
     """Control the choice of backends.
 
