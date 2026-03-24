@@ -158,11 +158,19 @@ endif
 	git commit -am "Bump version to v$$RC_VERSION"; \
 	echo "==> Tagging v$$RC_VERSION..."; \
 	git tag "v$$RC_VERSION"; \
+	echo "==> Building wheel..."; \
+	$(MAKE) build; \
+	WHEEL="dist/sep-$$RC_VERSION-py3-none-any.whl"; \
+	if [ ! -f "$$WHEEL" ]; then \
+		echo "Error: Wheel not found at $$WHEEL after build. Aborting before push."; \
+		exit 1; \
+	fi; \
 	echo "==> Pushing branch and tag..."; \
 	git push origin "$$BRANCH" "v$$RC_VERSION"; \
 	if command -v gh > /dev/null 2>&1; then \
 		echo "==> Creating GitHub pre-release..."; \
 		gh release create "v$$RC_VERSION" --prerelease --generate-notes --target "$$BRANCH"; \
+		gh release upload "v$$RC_VERSION" "$$WHEEL"; \
 	else \
 		echo "Note: gh CLI not found, skipping GitHub release creation."; \
 	fi; \
