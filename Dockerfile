@@ -2,7 +2,7 @@
 # BUILDER #
 ###########
 
-FROM sep:builder as builder
+FROM localhost/sep:builder as builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
