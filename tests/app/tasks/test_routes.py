@@ -21,9 +21,11 @@ import pytest
 import pytest_asyncio
 from fastapi import status
 
+from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.models import (
+    ExecutionEvent,
     Task,
     TaskHistoryStatusEnum,
     TaskWrite,
@@ -204,6 +206,39 @@ async def test_retrieve_task_history_by_id_not_found(test_client):
     """Assert retrieving a non-existing task history returns 404."""
     response = test_client.get("/history/99999")
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_events(
+    test_client, created_task_with_history, mock_executor
+):
+    """Assert the events endpoint returns executor-provided events (oldest-first order)."""
+    dt = utc_now()
+    mock_executor.get_events.return_value = [
+        ExecutionEvent(
+            timestamp=dt,
+            event_type="Terminated",
+            description="Exit 1",
+        )
+    ]
+    response = test_client.get(f"/history/{created_task_with_history.id}/events")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["type"] == "Terminated"
+    assert data[0]["description"] == "Exit 1"
+    assert "timestamp" in data[0]
+    mock_executor.get_events.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_events_empty_by_default(
+    test_client, created_task_with_history, mock_executor
+):
+    """Assert the mock executor returns no events unless configured."""
+    response = test_client.get(f"/history/{created_task_with_history.id}/events")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == []
 
 
 @pytest.mark.asyncio

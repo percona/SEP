@@ -17,7 +17,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import TypeAdapter
 
 from app.sep.deps import (
@@ -38,6 +38,7 @@ router = APIRouter()
 )
 @csrf_exempt
 async def list_task_execution_events(
+    request: Request,  # noqa: ARG001
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_api: TaskAPI,
 ) -> list[ExecutionEvent]:

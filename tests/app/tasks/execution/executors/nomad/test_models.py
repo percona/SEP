@@ -38,11 +38,13 @@ from app.tasks.execution.executors.nomad.models import (
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
     _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
     NOMAD_DEAD_JOB_STATUS,
+    nomad_task_states_to_execution_events,
     NomadAllocStatusEnum,
     NomadExecutor,
 )
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.models import (
+    ExecutionEvent,
     FileMetadata,
     Task,
     TaskExecutionRequest,
@@ -1988,3 +1990,119 @@ class TestIsDirectory:
     def test_is_directory(self, stat, expected):
         """Assert _is_directory correctly detects directory stats."""
         assert NomadExecutor._is_directory(stat) is expected
+
+
+_NS_EARLY = 1_700_000_000_000_000_000
+_NS_LATER = 1_700_000_060_000_000_000
+
+
+class TestNomadTaskStatesToExecutionEvents:
+    """Tests for :func:`nomad_task_states_to_execution_events`."""
+
+    def test_non_dict_returns_empty(self):
+        """Absent or wrong-type task_states yields no events."""
+        assert nomad_task_states_to_execution_events(None) == []
+        assert nomad_task_states_to_execution_events([]) == []
+        assert nomad_task_states_to_execution_events("bad") == []
+
+    def test_missing_or_empty_events(self):
+        """Empty structures yield an empty list."""
+        assert nomad_task_states_to_execution_events({}) == []
+        assert nomad_task_states_to_execution_events({"step1": {}}) == []
+        assert nomad_task_states_to_execution_events({"step1": {"Events": []}}) == []
+
+    def test_malformed_events_skipped(self):
+        """Events without valid Time or non-mapping entries are ignored."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Started",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "Task received",
+                    },
+                    {"Type": "Broken", "DisplayMessage": "missing Time"},
+                    "not-a-dict",
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Started"
+        assert "Task received" in events[0].description
+
+    def test_sorted_oldest_first_across_tasks(self):
+        """Events from multiple tasks are merged and sorted by Nomad time."""
+        task_states = {
+            "b": {
+                "Events": [
+                    {
+                        "Type": "Late",
+                        "Time": _NS_LATER,
+                        "DisplayMessage": "second",
+                    },
+                ],
+            },
+            "a": {
+                "Events": [
+                    {
+                        "Type": "Early",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "first",
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == len(task_states)
+        assert "first" in events[0].description
+        assert "[a]" in events[0].description
+        assert "second" in events[1].description
+        assert "[b]" in events[1].description
+
+    def test_exit_code_from_details(self):
+        """Exit code may appear only under Details (defensive parse)."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Terminated",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "Exited",
+                        "Details": {"exit_code": 123},
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Terminated"
+        assert "123" in events[0].description
+
+    def test_nomad_executor_get_events_reads_tracking(self):
+        """NomadExecutor.get_events delegates to stored task_states."""
+        tracking = {
+            "allocation_id": None,
+            "evaluation_id": "eval-1",
+            "job_id": "job-1",
+            "task_states": {
+                "step1": {
+                    "Events": [
+                        {
+                            "Type": "Setup",
+                            "Time": _NS_EARLY,
+                            "DisplayMessage": "Downloading Artifacts",
+                        },
+                    ],
+                },
+            },
+        }
+        history = _build_queue_item(
+            tracking=tracking, status=TaskHistoryStatusEnum.SUCCESS
+        )
+        executor = _build_executor()
+        out = executor.get_events(history)
+        assert len(out) == 1
+        assert isinstance(out[0], ExecutionEvent)
+        assert out[0].event_type == "Setup"
+        assert "Downloading Artifacts" in out[0].description
