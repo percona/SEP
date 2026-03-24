@@ -356,16 +356,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     original_size,
                     minified_size,
                 )
-                try:
-                    lines = payload.split("\n")
-                    compacted = "\n".join(
-                        line.rstrip() for line in lines if line.strip()
-                    )
-                    compacted_size = len(compacted)
-                    if compacted_size < minified_size:
-                        payload = compacted
-                except ValueError as e:
-                    logger.debug("Could not apply whitespace compaction: %s", e)
+                lines = payload.split("\n")
+                compacted = "\n".join(
+                    line.rstrip() for line in lines if line.strip()
+                )
+                compacted_size = len(compacted)
+                if compacted_size < minified_size:
+                    payload = compacted
             payload = self._encode_payload(payload, compress=self.minify_payload)
 
         filtered_meta = (
