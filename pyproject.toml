@@ -1,6 +1,6 @@
 [project]
 name = "sep"
-version = "0.11.0rc1"
+version = "0.11.0rc2"
 description = "Percona Services Enablement Platform"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
