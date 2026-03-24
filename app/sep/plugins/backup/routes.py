@@ -28,6 +28,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHostsCtx,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -103,6 +104,7 @@ async def backups_detail(
     context: DefaultContext,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve backups task."""
     data = task.data
@@ -121,17 +123,6 @@ async def backups_detail(
         else host
     )
 
-    try:
-        executor_hosts = await tasks_api.get("/hosts/")
-        executor_host_ip = (
-            executor_hosts.get(meta["target"])
-            if isinstance(executor_hosts, dict)
-            else None
-        )
-    except HTTPException:
-        executor_hosts = {}
-        executor_host_ip = None
-
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -142,7 +133,7 @@ async def backups_detail(
         "meta": meta,
         "host": host,
         "db_host_for_display": db_host_for_display,
-        "executor_host_ip": executor_host_ip,
+        "executor_host_ip": executor_hosts_ctx.hosts.get(meta["target"]),
         "port": server_config.get("PORT") or 3306,
         "backup_type": backup_type,
         "entities": {entity.name: entity.value for entity in decoded_entities},
@@ -161,14 +152,10 @@ async def backups_detail(
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    context["executor_hosts"] = (
-        set(executor_hosts) | {task_data["hostname"]}
-        if isinstance(executor_hosts, dict)
-        else {task_data["hostname"]}
-    )
-    context["executor_hosts_dict"] = (
-        executor_hosts if isinstance(executor_hosts, dict) else {}
-    )
+    context["executor_hosts"] = executor_hosts_ctx.with_host(
+        task_data["hostname"]
+    ).as_template_list()
+    context["executor_hosts_dict"] = executor_hosts_ctx.hosts
 
     try:
         services = await inventory_api.get(

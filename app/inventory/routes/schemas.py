@@ -18,6 +18,7 @@
 import logging
 
 from fastapi import APIRouter, status
+from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
 from app.inventory.crud import SchemaManager, TableManager
@@ -81,10 +82,14 @@ async def delete_schema(session: SessionDep, schema: SchemaDep) -> None:
 async def list_tables_by_schema(
     session: SessionDep,
     schema: SchemaDep,
+    search: str | None = None,
 ) -> list[TableResponse]:
     """List Tables by Schema."""
     logger.debug("Listing tables for schema '%s'", schema.id)
-    return await TableManager.list(session, schema_id=schema.id)
+    whereclause = []
+    if search:
+        whereclause.append(col(Table.name).ilike(f"%{search}%"))
+    return await TableManager.list(session, *whereclause, schema_id=schema.id)
 
 
 @router.post(

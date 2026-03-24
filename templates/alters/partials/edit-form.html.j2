@@ -72,8 +72,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
 
     #createTableOutput {
-        background-color: #272822;
-        color: #f8f8f2;
+        background-color: var(--surfaceElevation1);
+        color: var(--textPrimary);
         padding: 15px;
         border-radius: 5px;
         overflow-x: auto;
@@ -117,7 +117,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         white-space: break-spaces;
     }
 
-    {{ syntax_highlight_css(style="monokai") }}
+    {{ syntax_highlight_css() }}
 </style>
 <form id="edit-task-form"
       class="edit-task-form window"
@@ -145,19 +145,18 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <label for="hostname" title="{{ hostname_title }}">
                             <span class="material-symbols-outlined">arrow_drop_down</span>
                             <span class="label">Select host</span>
-                            {% set executor_hosts = executor_hosts | list %}
                             {% if executor_hosts|length == 1 %}
-                                {% set single_service = executor_hosts[0] %}
+                                {% set single_host = executor_hosts[0] %}
                                 <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                                    <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
                                 </select>
-                                <input type="hidden" name="hostname" value="{{ single_service }}">
+                                <input type="hidden" name="hostname" value="{{ single_host.value }}">
                             {% else %}
                                 <select id="hostname" name="hostname" title="{{ hostname_title }}">
-                                    {% for executor_host in executor_hosts %}
-                                        <option value="{{ executor_host }}"
-                                                {% if executor_host == task['hostname'] %}selected{% endif %}>
-                                            {{ executor_host }}
+                                    {% for host in executor_hosts %}
+                                        <option value="{{ host.value }}"
+                                                {% if host.value == task['hostname'] %}selected{% endif %}>
+                                            {{ host.label }}
                                         </option>
                                     {% endfor %}
                                 </select>
@@ -180,6 +179,18 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                title="{{ task_name_title }}"
                                value="{{ task.name }}"
                                placeholder="Enter a unique task name">
+                    </div>
+                    <br>
+                    <div class="field">
+                        {% set pre_cnf_title = "Path on executor with [client] user/password. Pre-checks use this path. Execute/dry-run use the same path only if not ~/.my.cnf (then --defaults-file is passed to pt-online-schema-change)." %}
+                        <label for="pre_checks_mysql_config_file" title="{{ pre_cnf_title }}">MySQL defaults file</label>
+                        <input type="text"
+                               id="pre_checks_mysql_config_file"
+                               name="pre_checks_mysql_config_file"
+                               class="validate"
+                               value="{{ task.pre_checks_mysql_config_file | e }}"
+                               title="{{ pre_cnf_title }}"
+                               placeholder="~/.my.cnf" />
                     </div>
                     <br>
                     <div class="select">
@@ -590,28 +601,13 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </dialog>
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
-{% set serviceSchemas = {} %}
-{% for service in services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% set tables = {} %}
-        {% for table in schema.tables %}
-            {% do tables.update({
-            table.id: {
-            "name": table.name,
-            "id": table.id
-            }
-            }) %}
-        {% endfor %}
-        {% do schemas.update({schema.id: {"name": schema.name, "tables": tables}}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
 {% set source_data = { "schema": task['schema_name'], "table": task['table_name']} %}
+<script src="{{ url_for('static', path='/js/schema-selector.js') }}"
+        nonce="{{ request.state.csp_nonce }}"></script>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const serviceSchemas = {{ serviceSchemas|tojson }};
+    var serviceSchemas = {};
     const source_data = {{ source_data | tojson }};
-    const tableDetailsCache = {};
+    var tableDetailsCache = {};
     const matched = {
         serviceId: null,
         schemaId: null,
@@ -636,82 +632,106 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     let selectedTable = null;
     let useManualInput = false;
 
-    async function populateSchemas(selectedService) {
+    async function populateSchemas(serviceId) {
         schemaSelect.disabled = true;
-        schemaSelect.innerHTML = '<option value="">Select a schema</option>';
+        populateSelect(schemaSelect, [], {placeholder: "Select a schema"});
         tableSelect.disabled = true;
-        tableSelect.innerHTML = '<option value="">Select a table</option>';
+        populateSelect(tableSelect, [], {placeholder: "Select a table"});
         selectedSchema = null;
         selectedTable = null;
         createTableOutput.classList.add('hidden');
         resultPanel.classList.add('fade');
         statusMessage.textContent = '';
 
-        if (selectedService && serviceSchemas[selectedService]) {
-            const schemas = Object.entries(serviceSchemas[selectedService]);
-            if (schemas.length > 0) {
-                setManualInput(false, true);
-                for (const [schemaId, schema] of schemas) {
-                    const option = document.createElement('option');
-                    option.value = schemaId;
-                    option.textContent = schema.name;
-                    schemaSelect.appendChild(option);
-                    schemaSelect.disabled = false;
-                }
-                if (selectedService === matched.serviceId && matched.schemaId) {
-                    schemaSelect.value = matched.schemaId;
-                    selectedSchema = matched.schemaId;
-                    populateTables(selectedService, matched.schemaId);
-                    return;
-                }
-                if (schemas.length === 1) {
-                    const [singleSchemaId, _] = schemas[0]
-                    schemaSelect.value = singleSchemaId;
-                    schemaSelect.disabled = true;
-                    schemaSelect.insertAdjacentHTML("afterend", `<input id="schema_id_hidden" type="hidden" name="schema_id" value="${schemaSelect.value}">`)
-                    selectedSchema = singleSchemaId;
-                    await populateTables(selectedService, singleSchemaId);
-                }
-            } else {
+        if (!serviceId) {
+            setManualInput(true, true);
+            return;
+        }
+
+        var schemas = serviceSchemas[serviceId];
+        if (!schemas) {
+            var items = await fetchSchemas(serviceId);
+            if (items.length === 0) {
                 setManualInput(true, true);
+                return;
+            }
+            schemas = {};
+            for (var i = 0; i < items.length; i++) {
+                schemas[items[i].id] = {name: items[i].name, tables: {}};
+            }
+            serviceSchemas[serviceId] = schemas;
+        }
+
+        var entries = Object.entries(schemas);
+        if (entries.length > 0) {
+            setManualInput(false, true);
+            var schemaItems = [];
+            for (var j = 0; j < entries.length; j++) {
+                schemaItems.push({id: entries[j][0], name: entries[j][1].name});
+            }
+            populateSelect(schemaSelect, schemaItems, {placeholder: "Select a schema"});
+            if (serviceId === matched.serviceId && matched.schemaId) {
+                schemaSelect.value = matched.schemaId;
+                selectedSchema = matched.schemaId;
+                await populateTables(serviceId, matched.schemaId);
+                return;
+            }
+            if (entries.length === 1) {
+                schemaSelect.value = entries[0][0];
+                schemaSelect.disabled = true;
+                schemaSelect.insertAdjacentHTML("afterend", '<input id="schema_id_hidden" type="hidden" name="schema_id" value="' + schemaSelect.value + '">');
+                selectedSchema = entries[0][0];
+                await populateTables(serviceId, entries[0][0]);
             }
         } else {
             setManualInput(true, true);
         }
     }
 
-    async function populateTables(selectedService, selectedSchema) {
+    async function populateTables(serviceId, schemaId) {
         tableSelect.disabled = true;
-        tableSelect.innerHTML = '<option value="">Select a table</option>';
+        populateSelect(tableSelect, [], {placeholder: "Select a table"});
         selectedTable = null;
         createTableOutput.classList.add('hidden');
         resultPanel.classList.add('fade');
         statusMessage.textContent = '';
 
-        if (selectedSchema && serviceSchemas[selectedService][selectedSchema]) {
-            const tables = Object.entries(serviceSchemas[selectedService][selectedSchema]["tables"]);
-            if (tables.length > 0) {
-                for (const [tableId, table] of tables) {
-                    const option = document.createElement('option');
-                    option.value = tableId;
-                    option.textContent = table.name;
-                    tableSelect.appendChild(option);
-                    tableSelect.disabled = false;
-                }
-                if (selectedSchema == matched.schemaId && matched.tableId) {
-                    tableSelect.value = matched.tableId;
-                    selectedTable = matched.tableId;
-                    await fetchCreateTableStatement(matched.tableId);
-                    return;
-                }
-                if (tables.length === 1) {
-                    const [singleTableId, _] = tables[0]
-                    tableSelect.value = singleTableId;
-                    tableSelect.disabled = true;
-                    tableSelect.insertAdjacentHTML("afterend", `<input id="table_id_hidden" type="hidden" name="table_id" value="${tableSelect.value}">`)
-                    selectedTable = singleTableId;
-                    await fetchCreateTableStatement(singleTableId);
-                }
+        if (!schemaId) return;
+
+        var cached = serviceSchemas[serviceId] && serviceSchemas[serviceId][schemaId];
+        var tables = cached ? cached.tables : null;
+        if (!tables || Object.keys(tables).length === 0) {
+            if (schemaId === "-1") return;
+            var items = await fetchTables(schemaId);
+            if (items.length === 0) return;
+            tables = {};
+            for (var i = 0; i < items.length; i++) {
+                tables[items[i].id] = {name: items[i].name, id: items[i].id};
+            }
+            if (serviceSchemas[serviceId] && serviceSchemas[serviceId][schemaId]) {
+                serviceSchemas[serviceId][schemaId].tables = tables;
+            }
+        }
+
+        var entries = Object.entries(tables);
+        if (entries.length > 0) {
+            var tableItems = [];
+            for (var j = 0; j < entries.length; j++) {
+                tableItems.push({id: entries[j][0], name: entries[j][1].name});
+            }
+            populateSelect(tableSelect, tableItems, {placeholder: "Select a table"});
+            if (schemaId == matched.schemaId && matched.tableId) {
+                tableSelect.value = matched.tableId;
+                selectedTable = matched.tableId;
+                await fetchCreateTableStatement(matched.tableId);
+                return;
+            }
+            if (entries.length === 1) {
+                tableSelect.value = entries[0][0];
+                tableSelect.disabled = true;
+                tableSelect.insertAdjacentHTML("afterend", '<input id="table_id_hidden" type="hidden" name="table_id" value="' + tableSelect.value + '">');
+                selectedTable = entries[0][0];
+                await fetchCreateTableStatement(entries[0][0]);
             }
         }
     }
@@ -738,9 +758,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         editButton.disabled = !form.checkValidity() || (!useManualInput && hasInvalidValue);
     }
 
-    function checkTypedSchemaTable() {
-        const typedSchema = (schemaNameInput.value || '').trim();
-        const typedTable = (tableNameInput.value || '').trim();
+    async function checkTypedSchemaTable() {
+        var typedSchema = (schemaNameInput.value || '').trim();
+        var typedTable = (tableNameInput.value || '').trim();
 
         createTableOutput.classList.add('hidden');
         statusMessage.classList.remove('success', 'error');
@@ -751,7 +771,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             return;
         }
 
-        if (!selectedService || !serviceSchemas[selectedService]) {
+        if (!selectedService) {
             resultPanel.classList.remove('fade');
             statusMessage.classList.remove('success', 'error');
             statusMessage.classList.add('error');
@@ -759,19 +779,45 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             return;
         }
 
-        const schemas = serviceSchemas[selectedService];
-        let schemaFound = false;
-        let tableFound = false;
-        let foundTableId = null;
+        var schemas = serviceSchemas[selectedService];
+        if (!schemas) {
+            var schemaItems = await fetchSchemas(selectedService);
+            if (schemaItems.length === 0) {
+                resultPanel.classList.remove('fade');
+                statusMessage.classList.add('error');
+                statusMessage.textContent = 'Using typed schema/table. Table structure and PK details are not available.';
+                return;
+            }
+            schemas = {};
+            for (var i = 0; i < schemaItems.length; i++) {
+                schemas[schemaItems[i].id] = {name: schemaItems[i].name, tables: {}};
+            }
+            serviceSchemas[selectedService] = schemas;
+        }
 
-        for (const [schemaId, schema] of Object.entries(schemas)) {
-            if (schema.name === typedSchema) {
+        var schemaFound = false;
+        var tableFound = false;
+        var foundTableId = null;
+        var foundSchemaId = null;
+
+        var schemaEntries = Object.entries(schemas);
+        for (var s = 0; s < schemaEntries.length; s++) {
+            if (schemaEntries[s][1].name === typedSchema) {
                 schemaFound = true;
-                const tables = schema.tables || {};
-                for (const [tableId, table] of Object.entries(tables)) {
-                    if (table.name === typedTable) {
+                foundSchemaId = schemaEntries[s][0];
+                var tables = schemaEntries[s][1].tables || {};
+                if (Object.keys(tables).length === 0 && foundSchemaId !== "-1") {
+                    var tableItems = await fetchTables(foundSchemaId);
+                    for (var t = 0; t < tableItems.length; t++) {
+                        tables[tableItems[t].id] = {name: tableItems[t].name, id: tableItems[t].id};
+                    }
+                    schemaEntries[s][1].tables = tables;
+                }
+                var tableEntries = Object.entries(tables);
+                for (var u = 0; u < tableEntries.length; u++) {
+                    if (tableEntries[u][1].name === typedTable) {
                         tableFound = true;
-                        foundTableId = tableId;
+                        foundTableId = tableEntries[u][0];
                         break;
                     }
                 }
@@ -784,17 +830,17 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         if (!schemaFound) {
             statusMessage.classList.remove('success', 'error');
             statusMessage.classList.add('error');
-            statusMessage.textContent = `Schema "${typedSchema}" not found in database. Table structure and PK details are not available.`;
+            statusMessage.textContent = 'Schema "' + typedSchema + '" not found in database. Table structure and PK details are not available.';
         } else if (!tableFound) {
             statusMessage.classList.remove('success', 'error');
             statusMessage.classList.add('error');
-            statusMessage.textContent = `Table "${typedTable}" not found in database for schema "${typedSchema}". Table structure and PK details are not available.`;
+            statusMessage.textContent = 'Table "' + typedTable + '" not found in database for schema "' + typedSchema + '". Table structure and PK details are not available.';
         } else if (foundTableId && foundTableId !== "-1") {
             fetchCreateTableStatement(foundTableId);
         } else {
             statusMessage.classList.remove('success', 'error');
             statusMessage.classList.add('error');
-            statusMessage.textContent = `Table "${typedTable}" not found in database for schema "${typedSchema}". Table structure and PK details are not available.`;
+            statusMessage.textContent = 'Table "' + typedTable + '" not found in database for schema "' + typedSchema + '". Table structure and PK details are not available.';
         }
     }
 
@@ -883,96 +929,109 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     }
 
-    // Initializing the source schema and table
-    // ==============================
-    // If there is unknown service
-    function initSource() {
-        const selectedServiceId = connectToSelect.value;
+    async function initSource() {
+        var selectedServiceId = connectToSelect.value;
         if (selectedServiceId === "-1") {
-          // No matched service selected — completely unknown
-          const unknownTables = {
-            "-1": {
-              name: "Unknown table: " + source_data.table,
-              id: "-1"
-            }
-          };
-
-          serviceSchemas["-1"] = {
-            "-1": {
-              name: "Unknown schema: " + source_data.schema,
-              tables: unknownTables
-            }
-          };
-
-          matched.serviceId = "-1";
-          matched.schemaId = "-1";
-          matched.tableId = "-1";
-        } else {
-          matched.serviceId = selectedServiceId;
-
-          const schemas = serviceSchemas[selectedServiceId] || {};
-          let matchedSchema = null;
-          let matchedSchemaKey = null;
-
-          for (const schemaId in schemas) {
-            const schema = schemas[schemaId];
-            if (schema.name === source_data.schema) {
-              matchedSchema = schema;
-              matchedSchemaKey = schemaId;
-              break;
-            }
-          }
-
-          if (matchedSchema) {
-            matched.schemaId = matchedSchemaKey;
-
-            const tableNames = Object.values(matchedSchema.tables).map(table => table.name);
-            const tableIds = Object.keys(matchedSchema.tables);
-
-            // Match source_data.table
-            if (tableNames.includes(source_data.table)) {
-              matched.tableId = tableIds.find(
-                id => matchedSchema.tables[id].name === source_data.table
-              );
-            } else {
-              matchedSchema.tables["-1"] = {
-                name: "Unknown table: " + source_data.table,
-                id: "-1"
-              };
-              matched.tableId = "-1";
-            }
-          } else {
-            // No schema matched → insert unknown schema inside selected service
-            const unknownTables = {
-              "-1": {
-                name: "Unknown table: " + source_data.table,
-                id: "-1"
-              }
+            serviceSchemas["-1"] = {
+                "-1": {
+                    name: "Unknown schema: " + source_data.schema,
+                    tables: {
+                        "-1": {
+                            name: "Unknown table: " + source_data.table,
+                            id: "-1"
+                        }
+                    }
+                }
             };
-
-            schemas["-1"] = {
-              name: "Unknown schema: " + source_data.schema,
-              tables: unknownTables
-            };
-
+            matched.serviceId = "-1";
             matched.schemaId = "-1";
             matched.tableId = "-1";
-
-            serviceSchemas[selectedServiceId] = schemas;
-          }
+            return;
         }
-      }
+
+        matched.serviceId = selectedServiceId;
+
+        var schemas = serviceSchemas[selectedServiceId];
+        if (!schemas) {
+            var schemaItems = await fetchSchemas(selectedServiceId);
+            schemas = {};
+            for (var i = 0; i < schemaItems.length; i++) {
+                schemas[schemaItems[i].id] = {name: schemaItems[i].name, tables: {}};
+            }
+            serviceSchemas[selectedServiceId] = schemas;
+        }
+
+        var matchedSchema = null;
+        var matchedSchemaKey = null;
+
+        var schemaKeys = Object.keys(schemas);
+        for (var s = 0; s < schemaKeys.length; s++) {
+            if (schemas[schemaKeys[s]].name === source_data.schema) {
+                matchedSchema = schemas[schemaKeys[s]];
+                matchedSchemaKey = schemaKeys[s];
+                break;
+            }
+        }
+
+        if (matchedSchema) {
+            matched.schemaId = matchedSchemaKey;
+
+            var tables = matchedSchema.tables;
+            if (Object.keys(tables).length === 0 && matchedSchemaKey !== "-1") {
+                var tableItems = await fetchTables(matchedSchemaKey);
+                for (var t = 0; t < tableItems.length; t++) {
+                    tables[tableItems[t].id] = {name: tableItems[t].name, id: tableItems[t].id};
+                }
+                matchedSchema.tables = tables;
+            }
+
+            var tableNames = Object.values(tables).map(function(tb) { return tb.name; });
+            var tableIds = Object.keys(tables);
+
+            if (tableNames.indexOf(source_data.table) !== -1) {
+                for (var k = 0; k < tableIds.length; k++) {
+                    if (tables[tableIds[k]].name === source_data.table) {
+                        matched.tableId = tableIds[k];
+                        break;
+                    }
+                }
+            } else {
+                matchedSchema.tables["-1"] = {
+                    name: "Unknown table: " + source_data.table,
+                    id: "-1"
+                };
+                matched.tableId = "-1";
+            }
+        } else {
+            schemas["-1"] = {
+                name: "Unknown schema: " + source_data.schema,
+                tables: {
+                    "-1": {
+                        name: "Unknown table: " + source_data.table,
+                        id: "-1"
+                    }
+                }
+            };
+            matched.schemaId = "-1";
+            matched.tableId = "-1";
+            serviceSchemas[selectedServiceId] = schemas;
+        }
+    }
 
     connectToSelect.addEventListener('change', async function() {
-        const hiddenSchemaInput = document.getElementById("schema_id_hidden");
-        hiddenSchemaInput?.parentNode?.removeChild(hiddenSchemaInput);
+        var hiddenSchemaInput = document.getElementById("schema_id_hidden");
+        if (hiddenSchemaInput && hiddenSchemaInput.parentNode) {
+            hiddenSchemaInput.parentNode.removeChild(hiddenSchemaInput);
+        }
         selectedService = this.value;
         await populateSchemas(selectedService);
     });
 
     schemaSelect.addEventListener('change', async function() {
-        const hiddenTableInput = document.getElementById("table_id_hidden");
-        hiddenTableInput?.parentNode?.removeChild(hiddenTableInput);
+        var hiddenTableInput = document.getElementById("table_id_hidden");
+        if (hiddenTableInput && hiddenTableInput.parentNode) {
+            hiddenTableInput.parentNode.removeChild(hiddenTableInput);
+        }
         selectedSchema = this.value;
         await populateTables(connectToSelect.value, selectedSchema);
     });
@@ -1000,8 +1059,10 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             tableSelect.value = "";
             schemaSelect.disabled = true;
             tableSelect.disabled = true;
-            document.getElementById("schema_id_hidden")?.remove();
-            document.getElementById("table_id_hidden")?.remove();
+            var schemaHidden = document.getElementById("schema_id_hidden");
+            if (schemaHidden) schemaHidden.remove();
+            var tableHidden = document.getElementById("table_id_hidden");
+            if (tableHidden) tableHidden.remove();
             checkTypedSchemaTable();
         } else {
             schemaSelect.disabled = false;
@@ -1017,28 +1078,27 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         setManualInput(this.checked, false);
     });
 
-    schemaNameInput.addEventListener('input', function() {
+    schemaNameInput.addEventListener('input', async function() {
         if (useManualInput) {
-            checkTypedSchemaTable();
+            await checkTypedSchemaTable();
         }
     });
 
-    tableNameInput.addEventListener('input', function() {
+    tableNameInput.addEventListener('input', async function() {
         if (useManualInput) {
-            checkTypedSchemaTable();
+            await checkTypedSchemaTable();
         }
     });
 
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
     window.addEventListener('DOMContentLoaded', async function() {
-        initSource();
+        await initSource();
         if (connectToSelect.options.length != 0) {
-            const singleHost = connectToSelect.value;
+            var singleHost = connectToSelect.value;
             selectedService = singleHost;
             await populateSchemas(singleHost);
         }
-        // Prefer manual when unknowns were present
         if (matched.schemaId === "-1" || matched.tableId === "-1") {
             setManualInput(true, true);
         }
