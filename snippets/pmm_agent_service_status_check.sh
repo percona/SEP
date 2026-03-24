@@ -19,7 +19,7 @@ fi
 
 echo ""
 echo "********* System-level pmm-agent service *********"
-if systemctl cat pmm-agent.service &>/dev/null; then
+if systemctl cat pmm-agent.service &> /dev/null; then
     echo "pmm-agent is configured as a system-level systemd service."
     echo ""
     systemctl status pmm-agent.service --no-pager 2>&1 || true
@@ -36,23 +36,23 @@ found_user_service=false
 
 for user_dir in /home/*/; do
     username="$(basename "$user_dir")"
-    uid="$(id -u "$username" 2>/dev/null)" || continue
+    uid="$(id -u "$username" 2> /dev/null)" || continue
     runtime_dir="/run/user/${uid}"
 
-    [[ -d "$runtime_dir" ]] || continue
+    [[ -d $runtime_dir ]] || continue
 
-    if sudo -u "$username" XDG_RUNTIME_DIR="$runtime_dir" systemctl --user cat pmm-agent.service &>/dev/null; then
+    if sudo -u "$username" XDG_RUNTIME_DIR="$runtime_dir" systemctl --user cat pmm-agent.service &> /dev/null; then
         found_user_service=true
         echo "********* Found user-level pmm-agent service for user: ${username} (UID: ${uid}) *********"
         echo ""
         sudo -u "$username" XDG_RUNTIME_DIR="$runtime_dir" systemctl --user status pmm-agent.service --no-pager 2>&1 || true
         echo ""
         echo "********* Recent journal logs (user-level, user: ${username}) *********"
-        sudo -u "$username" XDG_RUNTIME_DIR="$runtime_dir" journalctl --user -u pmm-agent.service --no-pager -n 50 2>&1 || \
+        sudo -u "$username" XDG_RUNTIME_DIR="$runtime_dir" journalctl --user -u pmm-agent.service --no-pager -n 50 2>&1 ||
             journalctl _UID="$uid" -u pmm-agent --no-pager -n 50 2>&1 || true
     fi
 done
 
-if [[ "$found_user_service" == "false" ]]; then
+if [[ $found_user_service == "false" ]]; then
     echo "No user-level pmm-agent systemd service found for any user in /home."
 fi
