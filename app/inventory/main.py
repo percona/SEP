@@ -46,7 +46,7 @@ async def get_summary_inventory(session: SessionDep) -> dict[str, int]:
     }
 
 
-lifespan = default_lifespan if __name__ == "__main__" else None
+lifespan = default_lifespan
 inventory_app = create_app(
     summary_router,
     nodes.router,

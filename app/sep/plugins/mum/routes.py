@@ -227,7 +227,7 @@ async def mum_index(
     """Homepage of MUM Plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="mum/index.html",
+        name="mum/index.html.j2",
         context=context,
     )
 

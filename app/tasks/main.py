@@ -54,7 +54,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
 
-lifespan = tasks_lifespan if __name__ == "__main__" else None
+lifespan = tasks_lifespan
 tasks_app = create_app(
     tasks_router,
     periodic_router,

@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, UTC
 from typing import Any, Self
 from zoneinfo import ZoneInfo
 
-from croniter import croniter
+from celery.schedules import crontab as celery_crontab
 from pydantic import (
     BaseModel,
     computed_field,
@@ -183,12 +183,14 @@ class PeriodicTaskResponse(BasePeriodicTask):
         if self.crontab is not None:
             tz = ZoneInfo(self.crontab.timezone)
             now = datetime.now(tz)
-            cron_expr = (
-                f"{self.crontab.minute} {self.crontab.hour} "
-                f"{self.crontab.day_of_month} {self.crontab.month_of_year} "
-                f"{self.crontab.day_of_week}"
+            schedule = celery_crontab(
+                minute=self.crontab.minute,
+                hour=self.crontab.hour,
+                day_of_month=self.crontab.day_of_month,
+                month_of_year=self.crontab.month_of_year,
+                day_of_week=self.crontab.day_of_week,
             )
-            return croniter(cron_expr, now).get_next(datetime).astimezone(UTC)
+            return (now + schedule.remaining_estimate(now)).astimezone(UTC)
         if self.interval is not None:
             delta = timedelta(**{self.interval.period.value: self.interval.every})
             base = self.last_run_at or self.start_time or datetime.now(UTC)
