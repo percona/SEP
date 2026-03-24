@@ -14,11 +14,11 @@
 /* along with this program. If not, see <https://www.gnu.org/licenses/>.        */
 
 .datatable-wrapper.no-header .datatable-container {
-    border-top: 1px solid #d9d9d9;
+    border-top: 1px solid var(--lineDivider);
 }
 
 .datatable-wrapper.no-footer .datatable-container {
-    border-bottom: 1px solid #d9d9d9;
+    border-bottom: 1px solid var(--lineDivider);
 }
 
 .datatable-top,
@@ -75,13 +75,13 @@
     padding: 6px 12px;
     position: relative;
     text-decoration: none;
-    color: #333;
+    color: var(--textPrimary);
     cursor: pointer;
 }
 
 .datatable-pagination a:hover,
 .datatable-pagination button:hover {
-    background-color: #d9d9d9;
+    background-color: var(--actionHover);
 }
 
 .datatable-pagination .datatable-active a,
@@ -90,7 +90,7 @@
 .datatable-pagination .datatable-active button,
 .datatable-pagination .datatable-active button:focus,
 .datatable-pagination .datatable-active button:hover {
-    background-color: #d9d9d9;
+    background-color: var(--actionHover);
     cursor: default;
 }
 
@@ -142,13 +142,13 @@
 .datatable-table>thead>tr>th {
     vertical-align: bottom;
     text-align: left;
-    border-bottom: 1px solid #d9d9d9;
+    border-bottom: 1px solid var(--lineDivider);
 }
 
 .datatable-table>tfoot>tr>th {
     vertical-align: bottom;
     text-align: left;
-    border-top: 1px solid #d9d9d9;
+    border-top: 1px solid var(--lineDivider);
 }
 
 .datatable-table th {
@@ -195,12 +195,12 @@
 
 
 .datatable-sorter::before {
-    border-top: 4px solid #000;
+    border-top: 4px solid var(--textPrimary);
     bottom: 0px;
 }
 
 .datatable-sorter::after {
-    border-bottom: 4px solid #000;
+    border-bottom: 4px solid var(--textPrimary);
     border-top: 4px solid transparent;
     top: 0px;
 }
@@ -222,7 +222,7 @@
     border-left: 7px solid transparent;
     border-right: 7px solid transparent;
     border-radius: 50%;
-    border-top: 10px solid #000;
+    border-top: 10px solid var(--textPrimary);
     top: 25%;
 }
 
@@ -242,11 +242,11 @@
 }
 
 table.datatable-table:focus tr.datatable-cursor>td:first-child {
-    border-left: 3px blue solid;
+    border-left: 3px var(--lineFocus) solid;
 }
 
 table.datatable-table:focus {
-    outline: solid 1px black;
+    outline: solid 1px var(--lineDividerStronger);
     outline-offset: -1px;
 }
 
@@ -276,7 +276,7 @@ table.datatable-table:focus {
 .datatable-editor-inner {
     width: 30%;
     margin: 10% auto;
-    background-color: #fff;
+    background-color: var(--surfaceElevation1);
     border-radius: 5px;
     -webkit-animation: 250ms ease 0ms slideIn;
     animation: 250ms ease 0ms slideIn;
@@ -284,7 +284,7 @@ table.datatable-table:focus {
 
 .datatable-editor-header {
     position: relative;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid var(--lineDivider);
 }
 
 .datatable-editor-header h4 {
@@ -342,7 +342,7 @@ table.datatable-table:focus {
 
 .datatable-editor-input {
     padding: 4px 6px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--lineDivider);
     width: 100%;
     box-sizing: border-box;
     margin: -5px 0;
@@ -368,14 +368,14 @@ table.datatable-table:focus {
 }
 
 .datatable-editor-save {
-    background-color: #27ae60;
-    border: 1px solid #27ae60;
-    color: #fff;
+    background-color: var(--successMain);
+    border: 1px solid var(--successMain);
+    color: var(--white);
 }
 
 .datatable-editor-save:hover {
-    background-color: #2cc36b;
-    border-color: #2cc36b;
+    background-color: var(--successLight);
+    border-color: var(--successLight);
 }
 
 /* ContextMenu */
@@ -384,12 +384,12 @@ table.datatable-table:focus {
 }
 
 .datatable-editor-menu {
-    background: #fff none repeat scroll 0 0;
+    background: var(--surfaceElevation1) none repeat scroll 0 0;
     border-radius: 3px;
     margin: 0;
     min-width: 220px;
     padding: 5px 0;
-    box-shadow: 0px 0px 10px 2px #aaa;
+    box-shadow: var(--elevation8);
 }
 
 .datatable-editor-menu li {
@@ -406,11 +406,11 @@ table.datatable-table:focus {
 }
 
 .datatable-editor-menu a:hover {
-    background-color: #ddd;
+    background-color: var(--actionHover);
 }
 
 .datatable-editor-separator {
-    border-bottom: 1px solid #aaa;
+    border-bottom: 1px solid var(--lineDivider);
     margin: 5px 0;
 }
 
@@ -464,7 +464,7 @@ table.datatable-table:focus {
 
 .datatable-editor-action .mdi {
     margin-right: 5px;
-    color: #666;
+    color: var(--textSecondary);
 }
 
 /* Column Filter */
@@ -484,12 +484,12 @@ button.datatable-column-filter-button {
 }
 
 .datatable-column-filter-menu {
-    background: #fff none repeat scroll 0 0;
+    background: var(--surfaceElevation1) none repeat scroll 0 0;
     border-radius: 3px;
     margin: 0;
     min-width: 220px;
     padding: 5px 0;
-    box-shadow: 0px 0px 10px 2px #aaa;
+    box-shadow: var(--elevation8);
 }
 
 .datatable-column-filter-menu>li {
