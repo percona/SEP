@@ -12,6 +12,7 @@
    * [Syncers](#syncers)
       * [PMMSyncer](#pmmsyncer)
          * [Getting your PMM API Key](#getting-your-pmm-api-key)
+      * [MySQLSyncer](#mysqlsyncer)
 * [Usage](#usage)
   * [Starting Celery with SEP for development](#starting-celery-with-sep-for-development)
 * [Alternative: Use Docker Compose](#alternative-use-docker-compose)
@@ -439,6 +440,29 @@ SEP__SYNCER_EXTRA_KWARGS__PMM__API_KEY=<Your PMM API key)
 
 Sync Nodes and Services with PMM. Requires the `PMM` setting with `ENDPOINT`, `API_KEY`,
 and optionally `VERIFY_SSL`, `SSL_CAFILE`, `SSL_KEYFILE`, and `SSL_CERTFILE`.
+
+#### MySQLSyncer
+
+Sync MySQL/MariaDB inventory (schemas and tables). Optional configuration under each `MySQLSyncer` entry in `SEP.SYNCERS`:
+
+- **`IGNORE_SCHEMAS`**: List of schema names to skip during sync (defaults typically include `sys`, `performance_schema`, `mysql`, `information_schema`).
+- **`DEFAULT_EXECUTOR_HOST`**: Nomad node name to use when the MySQL service host does not match any Nomad node. Set this when syncing **RDS**, **DBaaS**, or other remote MySQL instances: the sync payload runs on a Nomad client, so you must choose which client can reach the database. The value must match a **node name** (key) returned by **`/api/tasks/hosts/`**—not the node IP or address—otherwise task execution will fail. If unset, the first available Nomad host is used when there is no match.
+
+Credentials are read on the Nomad client from **`~/.my.cnf`** and **`~/.mylogin.cnf`**. For each host the payload connects to, it looks up a login path **by matching the RDS host**: it tries a login path named like the host (e.g. **`host:port`** or **`host_port`** with colon replaced by underscore), then falls back to **`client`**. So for multiple RDS instances with different credentials, create a login path per host in **`~/.mylogin.cnf`** (e.g. **`mysql_config_editor set --login-path=rds-a.region.rds.amazonaws.com:3306 --user=... --password --host=rds-a.region.rds.amazonaws.com --port=3306`**); the payload will use the matching path automatically.
+
+Example for RDS/DBaaS:
+
+```yaml
+SEP:
+  SYNCERS:
+    - SYNCER: MySQLSyncer
+      IGNORE_SCHEMAS:
+        - sys
+        - performance_schema
+        - mysql
+        - information_schema
+      DEFAULT_EXECUTOR_HOST: "ip-10-0-1-5.region.compute.internal"  # Nomad node name from /api/tasks/hosts/ that can reach RDS
+```
 
 ### SSL Configuration
 

@@ -109,15 +109,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <span class="material-symbols-outlined">arrow_drop_down</span>
                             <span class="label">Select Executor Host:</span>
                             {% if executor_hosts|length == 1 %}
-                                {% set single_service = executor_hosts[0] %}
+                                {% set single_host = executor_hosts[0] %}
                                 <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
-                                    <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                                    <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
                                 </select>
-                                <input type="hidden" name="hostname" value="{{ single_service }}">
+                                <input type="hidden" name="hostname" value="{{ single_host.value }}">
                             {% else %}
                                 <select id="hostname" name="hostname" title="{{ hostname_title }}" required>
                                     <option value="" selected>Select a host</option>
-                                    {% for executor_host in executor_hosts %}<option value="{{ executor_host }}">{{ executor_host }}</option>{% endfor %}
+                                    {% for host in executor_hosts %}<option value="{{ host.value }}">{{ host.label }}</option>{% endfor %}
                                 </select>
                             {% endif %}
                         </label>
@@ -537,6 +537,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         Use SQL File:
                         <input type="text" id="use_sql_file" name="use_sql_file" placeholder="" />
                     </label>
+                    {% set binlog_restore_extra_args_title = "Specify additional mysqlbinlog command-line arguments (e.g.,--stop-datetime=\"YYYY-MM-DD HH:MM:SS\")." %}
+                    <label for="binlog_restore_extra_args"
+                           title="{{ binlog_restore_extra_args_title }}">
+                        Extra Arguments (optional):
+                        <input type="text"
+                               id="binlog_restore_extra_args"
+                               name="binlog_restore_extra_args"
+                               placeholder="--stop-datetime='YYYY-MM-DD HH:MM:SS'" />
+                    </label>
                 </fieldset>
             </fieldset>
         </section>
@@ -548,16 +557,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </footer>
     </dialog>
 </form>
-{% set serviceSchemas = {} %}
-{% for service in services %}
-    {% set schemas = {} %}
-    {% for schema in service.schemas %}
-        {% do schemas.update({schema.id: {"name": schema.name}}) %}
-    {% endfor %}
-    {% do serviceSchemas.update({service.id: schemas}) %}
-{% endfor %}
+<script src="{{ url_for('static', path='/js/schema-selector.js') }}"
+        nonce="{{ request.state.csp_nonce }}"></script>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    const serviceSchemas = {{ serviceSchemas|tojson }};
     const backupTypeSelect = document.getElementById('backup_type');
     const myloaderContainer = document.getElementById('myloader_container');
     const xtrabackupContainer = document.getElementById('xtrabackup_container');
@@ -568,30 +570,14 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const form = document.getElementById('create-restore-form');
     const createButton = form.querySelector('button[type="submit"]');
 
-
-    let selectedService = null;
-    let selectedSchema = null;
-
-    function populateSchemas(selectedService) {
-        const isDisabled = !(selectedService && serviceSchemas[selectedService]);
-        schemaSelect.disabled = isDisabled;
-        schemaSelect.innerHTML = `<option value="-1" selected>${isDisabled ? "No schema" : "Not selected"}</option>`;
-
-        selectedSchema = null;
-
-        if (!isDisabled) {
-            const schemas = Object.entries(serviceSchemas[selectedService]);
-            for (const [schemaId, schema] of schemas) {
-                const option = document.createElement('option');
-                option.value = schemaId;
-                option.textContent = schema.name;
-                schemaSelect.appendChild(option);
-            }
+    serviceSelect.addEventListener('change', async function() {
+        var serviceId = this.value;
+        if (serviceId && serviceId !== '-1') {
+            var schemas = await fetchSchemas(serviceId);
+            populateSelect(schemaSelect, schemas, {placeholder: 'Not selected', emptyPlaceholder: 'No schema'});
+        } else {
+            populateSelect(schemaSelect, [], {emptyPlaceholder: 'No schema'});
         }
-    }
-
-    serviceSelect.addEventListener('change', function() {
-        populateSchemas(this.value);
     });
 
     function disableAllMyloaderFields(disabled) {
@@ -673,12 +659,12 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     // Initialize
     ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
-    window.addEventListener('DOMContentLoaded', function () {
+    window.addEventListener('DOMContentLoaded', async function () {
     updateBackupTypeUI();
     if (serviceSelect.options.length === 1) {
-        const singleHost = serviceSelect.options[0].value;
-        selectedService = singleHost;
-        populateSchemas(singleHost);
+        var singleHost = serviceSelect.options[0].value;
+        var schemas = await fetchSchemas(singleHost);
+        populateSelect(schemaSelect, schemas, {placeholder: 'Not selected', emptyPlaceholder: 'No schema'});
         updateCreateButtonState();
     }
     });

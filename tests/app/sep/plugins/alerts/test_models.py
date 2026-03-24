@@ -16,9 +16,16 @@
 """Define tests for the app.sep.plugins.alerts.models module."""
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
-from app.sep.plugins.alerts.models import AlertSeverity, AlertTemplate, ServiceType
+from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.models import (
+    AlertSeverity,
+    AlertTemplate,
+    ServiceType,
+    to_pmm_template_yaml,
+)
 
 _THRESHOLD = 80.0
 
@@ -46,6 +53,21 @@ class TestServiceType:
         assert ServiceType.MYSQL == "mysql"
         assert ServiceType.MONGODB == "mongodb"
         assert ServiceType.POSTGRESQL == "postgresql"
+
+    @pytest.mark.parametrize(
+        ("member", "expected"),
+        [
+            (ServiceType.GENERIC, "Generic"),
+            (ServiceType.MYSQL, "MySQL"),
+            (ServiceType.MONGODB, "MongoDB"),
+            (ServiceType.POSTGRESQL, "PostgreSQL"),
+        ],
+    )
+    def test_label_returns_correct_product_name(
+        self, member: ServiceType, expected: str
+    ) -> None:
+        """Assert `label` returns the correctly capitalized product name."""
+        assert member.label == expected
 
 
 class TestAlertSeverity:
@@ -131,3 +153,54 @@ class TestAlertTemplate:
         )
         assert isinstance(template.default_threshold, float)
         assert template.default_threshold == _THRESHOLD
+
+
+class TestAlertBackup:
+    """Test AlertBackup SQLModel fields and serialization."""
+
+    def test_alert_backup_fields(self) -> None:
+        """Assert AlertBackup stores data and metadata as JSON-compatible dicts."""
+        backup = AlertBackup(
+            data={"templates": [{"name": "t1"}], "rules": []},
+            metadata_={"template_count": 1, "rule_count": 0},
+        )
+        assert backup.data["templates"] == [{"name": "t1"}]
+        assert backup.metadata_["template_count"] == 1
+        assert backup.metadata_["rule_count"] == 0
+
+    def test_alert_backup_tablename(self) -> None:
+        """Assert AlertBackup uses the ``alert_backup`` table name."""
+        assert AlertBackup.__tablename__ == "alert_backup"
+
+
+class TestToPmmTemplateYaml:
+    """Test the to_pmm_template_yaml conversion function."""
+
+    def test_output_structure_matches_pmm_format(self) -> None:
+        """Assert the YAML output contains the expected PMM template structure."""
+        template = AlertTemplate.model_validate(_valid_template_data())
+        result = to_pmm_template_yaml(template)
+        parsed = yaml.safe_load(result)
+
+        assert "templates" in parsed
+        assert len(parsed["templates"]) == 1
+
+        pmm_tmpl = parsed["templates"][0]
+        assert pmm_tmpl["name"] == "High CPU"
+        assert pmm_tmpl["version"] == 1
+        assert pmm_tmpl["summary"] == template.summary
+        assert pmm_tmpl["expr"] == template.expression
+        assert pmm_tmpl["for"] == "300s"
+        assert pmm_tmpl["severity"] == "warning"
+        assert pmm_tmpl["labels"] == {}
+        assert pmm_tmpl["annotations"]["summary"] == template.summary
+        assert pmm_tmpl["annotations"]["description"] == template.description
+
+    def test_severity_uses_string_value(self) -> None:
+        """Assert the severity field is serialized as a plain string value."""
+        template = AlertTemplate.model_validate(
+            _valid_template_data(severity="critical")
+        )
+        result = to_pmm_template_yaml(template)
+        parsed = yaml.safe_load(result)
+        assert parsed["templates"][0]["severity"] == "critical"

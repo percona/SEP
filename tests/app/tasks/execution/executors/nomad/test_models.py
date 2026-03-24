@@ -15,6 +15,7 @@
 
 """Define tests for the app.tasks.execution.executors.nomad.models module."""
 
+import asyncio
 import json
 from base64 import b64encode
 from binascii import b2a_base64
@@ -22,6 +23,7 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiohttp import ClientError, ClientTimeout
 from fastapi import HTTPException
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 
@@ -33,6 +35,8 @@ from app.tasks.execution.executors.nomad.exceptions import (
     JobNotFoundError,
 )
 from app.tasks.execution.executors.nomad.models import (
+    _NOMAD_LOG_STREAM_CLIENT_ERROR,
+    _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
     NOMAD_DEAD_JOB_STATUS,
     NomadAllocStatusEnum,
     NomadExecutor,
@@ -44,11 +48,15 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLogType,
 )
 
 EXPECTED_ALLOC_STATUS_COUNT = 6
 NOMAD_DEFAULT_TIMEOUT = 10
 INITIAL_LOG_OFFSET = 50
+# One started step times (stdout + stderr) when another step has StartedAt None.
+EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
+MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 
 
 def _build_task(
@@ -626,8 +634,12 @@ class TestGetLastAllocation:
         mock_backend.allocations.get_allocations.return_value = []
 
         executor = _build_executor()
-        with pytest.raises(AllocationNotFoundError):
+        with pytest.raises(AllocationNotFoundError) as ctx:
             executor.get_last_allocation(job_id="missing-job")
+        err = ctx.value
+        assert err.job_id == "missing-job"
+        assert err.evaluation_id is None
+        assert err.resource_type == "allocation"
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_last_allocation_null_task_states(self, mock_nomad_cls):
@@ -1221,7 +1233,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"step1": {}},
+            "TaskStates": {"step1": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
 
         executor = _build_executor()
@@ -1250,7 +1262,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"step1": {}},
+            "TaskStates": {"step1": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
 
         executor = _build_executor()
@@ -1276,7 +1288,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"run-script": {}},
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
 
         executor = _build_executor()
@@ -1296,7 +1308,7 @@ class TestGetLogsForAllocation:
 
         alloc = {
             "ID": "alloc-1",
-            "TaskStates": {"step1": {}},
+            "TaskStates": {"step1": {"StartedAt": "2024-01-01T00:00:00Z"}},
         }
         initial_logs = {
             "step1": {
@@ -1310,6 +1322,238 @@ class TestGetLogsForAllocation:
 
         assert result["step1"]["stdout"] == "previous output"
         assert result["step1"]["stdout_last_offset"] == INITIAL_LOG_OFFSET
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_skips_step_when_not_started(self, mock_nomad_cls):
+        """Assert steps with StartedAt None do not call stream_logs."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {
+                "pending-step": {"StartedAt": None},
+                "ready-step": {"StartedAt": "2024-01-01T00:00:00Z"},
+            },
+        }
+
+        executor = _build_executor()
+        executor.get_logs_for_allocation(alloc)
+
+        stream = mock_backend.client.stream_logs.stream
+        assert stream.call_count == EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP
+        tasks = {c.kwargs["task"] for c in stream.call_args_list}
+        types = {c.kwargs["type_"] for c in stream.call_args_list}
+        assert tasks == {"ready-step"}
+        assert types == {TaskLogType.STDOUT, TaskLogType.STDERR}
+
+
+class TestNomadLogStreaming:
+    """Regression tests for Nomad HTTP log streaming helpers."""
+
+    @staticmethod
+    def _alloc_for_logs():
+        return {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "step1": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
+            },
+        }
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    async def test_consume_nomad_log_stream_404_before_task_starts_waits(
+        self, mock_sleep
+    ):
+        """404 while StartedAt is None should sleep and return running with no stream start."""
+        mock_response = MagicMock()
+        mock_response.status = 404
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "step1": {"StartedAt": None, "State": "pending"},
+            },
+        }
+        params = {
+            "task": "step1",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step1",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        assert state == "running"
+        assert out_alloc is alloc
+        assert stream_start is None
+        mock_sleep.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch.object(NomadExecutor, "_consume_nomad_log_stream", new_callable=AsyncMock)
+    async def test_push_logs_queue_sock_timeout_logs_and_stops(self, mock_consume):
+        """Sock read timeout sentinel ends the push loop and calls _log_stream_timeout."""
+        alloc = self._alloc_for_logs()
+        mock_consume.return_value = (
+            _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
+            alloc,
+            MOCK_LOG_STREAM_BODY_START_MONOTONIC,
+        )
+
+        executor = _build_executor()
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_log_stream_timeout") as mock_log_timeout:
+            await executor._push_logs_to_queue(
+                alloc, "step1", TaskLogType.STDOUT, queue, start_offset=0
+            )
+
+        mock_log_timeout.assert_called_once()
+        args, kwargs = mock_log_timeout.call_args
+        assert args[0] == "alloc-stream"
+        assert args[1] == "step1"
+        assert args[2] == TaskLogType.STDOUT
+        assert args[3] == MOCK_LOG_STREAM_BODY_START_MONOTONIC
+        sentinel = await queue.get()
+        assert sentinel.msg is None
+
+    @pytest.mark.asyncio
+    @patch.object(NomadExecutor, "_consume_nomad_log_stream", new_callable=AsyncMock)
+    async def test_push_logs_queue_client_error_logs_and_stops(self, mock_consume):
+        """Client error sentinel ends the push loop and calls _log_stream_client_error."""
+        alloc = self._alloc_for_logs()
+        mock_consume.return_value = (_NOMAD_LOG_STREAM_CLIENT_ERROR, alloc, None)
+
+        executor = _build_executor()
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_log_stream_client_error") as mock_log_client:
+            await executor._push_logs_to_queue(
+                alloc, "step1", TaskLogType.STDERR, queue, start_offset=3
+            )
+
+        mock_log_client.assert_called_once()
+        sentinel = await queue.get()
+        assert sentinel.msg is None
+
+    @pytest.mark.asyncio
+    @patch.object(NomadExecutor, "_consume_nomad_log_stream", new_callable=AsyncMock)
+    async def test_push_logs_queue_cancelled_logs_and_reraises(self, mock_consume):
+        """CancelledError must propagate after _log_stream_cancelled."""
+        alloc = self._alloc_for_logs()
+        mock_consume.side_effect = asyncio.CancelledError()
+
+        executor = _build_executor()
+        queue = asyncio.Queue()
+
+        with (
+            patch.object(executor, "_log_stream_cancelled") as mock_log_cancel,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await executor._push_logs_to_queue(
+                alloc, "step1", TaskLogType.STDOUT, queue
+            )
+
+        mock_log_cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_client_error_from_raise_for_status(self):
+        """ClientError from raise_for_status returns client-error sentinel."""
+        mock_response = MagicMock()
+        mock_response.status = 500
+        mock_response.raise_for_status.side_effect = ClientError("boom")
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs()
+        params = {
+            "task": "step1",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step1",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        assert state == _NOMAD_LOG_STREAM_CLIENT_ERROR
+        assert out_alloc is alloc
+        assert stream_start is None
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_timeout_during_iter_chunks(self):
+        """TimeoutError while reading the body returns sock-timeout with stream_start set."""
+
+        async def iter_chunks():
+            raise TimeoutError
+            yield (b"", None)  # pragma: no cover
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = iter_chunks
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs()
+        params = {
+            "task": "step1",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step1",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        assert state == _NOMAD_LOG_STREAM_SOCK_TIMEOUT
+        assert out_alloc is alloc
+        assert stream_start is not None
 
 
 class TestListFiles:

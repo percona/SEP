@@ -24,6 +24,7 @@ from fastapi import status
 from app.tasks.deps import get_executor
 from app.tasks.main import tasks_app
 from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -307,6 +308,28 @@ async def test_stream_logs_running_uses_executor(
     mock_executor.stream_logs = MagicMock(return_value=mock_stream())
     response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
     assert response.status_code == status.HTTP_200_OK
+    mock_executor.preflight_stream_logs.assert_called_once_with(
+        created_task_with_history
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_running_preflight_allocation_gone_returns_410(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert TaskDataNotFound during preflight returns 410 before streaming starts."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    mock_executor.preflight_stream_logs.side_effect = AllocationNotFoundError(
+        "No allocations",
+        executor_name="nomad",
+        resource_type="allocation",
+        resource_id='JobID == "j" and EvalID == "e"',
+    )
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_410_GONE
+    detail = response.json()["detail"]
+    assert detail["resource_type"] == "allocation"
 
 
 @pytest.mark.asyncio

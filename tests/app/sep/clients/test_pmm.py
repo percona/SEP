@@ -103,6 +103,22 @@ class TestCreateTemplate:
         )
         pmm_remote_api.is_older_than_v3.cache_clear()
 
+    @pytest.mark.asyncio
+    async def test_create_template_returns_none_on_empty_response(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test create_template returns ``None`` when PMM v3 returns an empty dict."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.create_template("name: cpu-high\n")
+
+        assert result is None
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
 
 class TestListTemplates:
     """Test the list_templates method."""
@@ -122,7 +138,7 @@ class TestListTemplates:
                 "GET",
                 "/v1/alerting/templates",
                 {
-                    "params": {"page_size": 0, "page_index": 0},
+                    "params": {},
                     "headers": ALERTING_HEADERS,
                 },
             ),
@@ -268,7 +284,7 @@ class TestCreateRule:
             name="High CPU",
             template_name="cpu-high",
             folder_uid="folder-1",
-            for_duration="5m",
+            for_duration="300s",
             group="infra-alerts",
             labels={"severity": "critical"},
         )
@@ -283,7 +299,7 @@ class TestCreateRule:
                 "name": "High CPU",
                 "template_name": "cpu-high",
                 "folder_uid": "folder-1",
-                "for": "5m",
+                "for": "300s",
                 "group": "infra-alerts",
                 "labels": {"severity": "critical"},
             },
@@ -549,6 +565,36 @@ class TestListFolders:
         )
 
 
+class TestCreateFolder:
+    """Test the create_folder method."""
+
+    @pytest.mark.asyncio
+    async def test_create_folder_posts_and_returns_folder(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test create_folder sends POST and returns a Folder object."""
+        mock_request.return_value = {
+            "uid": "new-folder-uid",
+            "title": "SEP Alerts",
+            "id": 42,
+        }
+
+        expected_id = 42
+
+        result = await pmm_remote_api.create_folder("SEP Alerts")
+
+        assert isinstance(result, Folder)
+        assert result.uid == "new-folder-uid"
+        assert result.title == "SEP Alerts"
+        assert result.id == expected_id
+        mock_request.assert_awaited_once_with(
+            "POST",
+            "/graph/api/folders/",
+            json={"title": "SEP Alerts"},
+            headers=ALERTING_HEADERS,
+        )
+
+
 class TestListContactPoints:
     """Test the list_contact_points method."""
 
@@ -655,6 +701,55 @@ class TestUpdateContactPoint:
         mock_response.raise_for_status.assert_called_once()
 
 
+class TestDeleteContactPoint:
+    """Test the delete_contact_point method."""
+
+    @pytest.mark.asyncio
+    async def test_delete_contact_point_sends_delete_request(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test delete_contact_point sends a DELETE with uid and alerting headers."""
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.raise_for_status = MagicMock()
+        captured = []
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            captured.append({"method": method, "path": path, "kwargs": kwargs})
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        await pmm_remote_api.delete_contact_point("cp-uid-456")
+
+        assert len(captured) == 1
+        assert captured[0]["method"] == "DELETE"
+        assert (
+            captured[0]["path"]
+            == "/graph/api/v1/provisioning/contact-points/cp-uid-456"
+        )
+        assert captured[0]["kwargs"].get("headers") == ALERTING_HEADERS
+        mock_response.raise_for_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_contact_point_returns_none(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test delete_contact_point returns None on success."""
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.raise_for_status = MagicMock()
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        result = await pmm_remote_api.delete_contact_point("cp-uid-456")
+
+        assert result is None
+
+
 class TestGetNotificationPolicy:
     """Test the get_notification_policy method."""
 
@@ -693,16 +788,8 @@ class TestUpdateNotificationPolicy:
             group_by=["alertname", "cluster"],
             routes=[{"receiver": "pagerduty", "match": {"severity": "critical"}}],
         )
-        mock_request.return_value = {
-            "receiver": "slack",
-            "group_by": ["alertname", "cluster"],
-            "routes": [{"receiver": "pagerduty", "match": {"severity": "critical"}}],
-        }
+        await pmm_remote_api.update_notification_policy(policy)
 
-        result = await pmm_remote_api.update_notification_policy(policy)
-
-        assert isinstance(result, NotificationPolicy)
-        assert result.receiver == "slack"
         mock_request.assert_awaited_once_with(
             "PUT",
             "/graph/api/v1/provisioning/policies",
