@@ -40,21 +40,21 @@
 }
 
 .message[data-level="info"] {
-    background-color: #d9edf7;
-    color: #31708f;
+    background-color: var(--infoSurface);
+    color: var(--infoContrast);
 }
 
 .message[data-level="success"] {
-    background-color: #dff0d8;
-    color: #3c763d;
+    background-color: var(--successSurface);
+    color: var(--successContrast);
 }
 
 .message[data-level="warning"] {
-    background-color: #fcf8e3;
-    color: #8a6d3b;
+    background-color: var(--warningSurface);
+    color: var(--warningContrast);
 }
 
 .message[data-level="error"] {
-    background-color: #f2dede;
-    color: #a94442;
+    background-color: var(--errorSurface);
+    color: var(--errorContrast);
 }
