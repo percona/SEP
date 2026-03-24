@@ -13,7 +13,7 @@ set -euo pipefail
 
 PSQL="psql"
 
-$PSQL <<SQL
+$PSQL << SQL
 SELECT datname, xact_commit, xact_rollback,
        ROUND((xact_rollback::numeric * 100) / NULLIF(xact_commit + xact_rollback, 0), 4) AS rollback_percent,
        ROUND((xact_commit::numeric * 100) / NULLIF(xact_commit + xact_rollback, 0), 4) AS commit_percent
@@ -25,14 +25,14 @@ SQL
 echo ""
 echo "********* Rollback statements in pg_stat_activity *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT * FROM pg_stat_activity WHERE query ilike '%rollback%';
 SQL
 
 echo ""
 echo "********* Long running transactions *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT now()-query_start age, *
 FROM pg_stat_activity
 WHERE now()-query_start > interval '7 minutes'

@@ -13,7 +13,7 @@ set -euo pipefail
 
 PSQL="psql"
 
-$PSQL <<SQL
+$PSQL << SQL
 WITH RECURSIVE l AS (
     SELECT pid, locktype, mode, granted,
            ROW(locktype,database,relation,page,tuple,virtualxid,transactionid,classid,objid,objsubid) obj

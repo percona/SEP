@@ -17,7 +17,7 @@ PSQL="psql"
 # is likely to run when connections are exhausted.
 echo "********* Connection usage summary *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SHOW max_connections;
 SELECT count(*) AS total_connections FROM pg_stat_activity;
 SQL
@@ -25,7 +25,7 @@ SQL
 echo ""
 echo "********* Connections by application/user *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT usename, application_name, client_addr, count(*)
 FROM pg_stat_activity
 GROUP BY usename, application_name, client_addr
@@ -35,7 +35,7 @@ SQL
 echo ""
 echo "********* Idle/idle-in-transaction connections *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT pid, usename, state, query
 FROM pg_stat_activity
 WHERE state IN ('idle', 'idle in transaction')
