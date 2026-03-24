@@ -1,9 +1,9 @@
 name: Auto update PR base
 
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    # Run daily at 0100 UTC
+    - cron: '0 1 * * *'
 
 jobs:
   auto-update-pr-base:
