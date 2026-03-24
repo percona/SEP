@@ -246,14 +246,71 @@ $(document).ready(function() {
 
     const lastOffsets = {};
     const loadedCompletedTasks = new Set();
+    const executionEventsFetched = new Set();
+
+    function shouldFetchExecutionEvents($logConsole) {
+        const status = String($logConsole.data('task-status') || '').toLowerCase();
+        const logsPresent = String($logConsole.data('logs-present')).toLowerCase() !== 'false';
+        return status === 'failed' || status === 'lost' || status === 'stopped' || !logsPresent;
+    }
+
+    function fetchExecutionEventsIfNeeded($logConsole, taskId) {
+        if (!shouldFetchExecutionEvents($logConsole)) return;
+        if (executionEventsFetched.has(taskId)) return;
+        fetch(`/execution-events/${encodeURIComponent(taskId)}`, {
+                credentials: 'include',
+            })
+            .then(function(res) {
+                return res.ok ? res.json() : [];
+            })
+            .then(function(events) {
+                executionEventsFetched.add(taskId);
+                if (!Array.isArray(events) || events.length === 0) return;
+                if ($logConsole.find('.execution-events').length > 0) return;
+                const $panel = $('<section class="execution-events" role="region"></section>')
+                    .attr('aria-label', 'Execution events');
+                $panel.append(
+                    $('<h4 class="execution-events__heading"></h4>').text('Execution events')
+                );
+                const $ol = $('<ol class="execution-events__list"></ol>');
+                events.forEach(function(ev) {
+                    const ts = ev.timestamp != null ? String(ev.timestamp) : '';
+                    const $li = $('<li class="execution-events__item"></li>');
+                    $li.append(
+                        $('<time class="execution-events__time relativeTime code"></time>')
+                        .attr('datetime', ts)
+                        .text(ts)
+                    );
+                    $li.append(
+                        $('<span class="execution-events__type code"></span>').text(
+                            ev.type != null ? String(ev.type) : ''
+                        )
+                    );
+                    $li.append(
+                        $('<span class="execution-events__desc"></span>').text(
+                            ev.description != null ? String(ev.description) : ''
+                        )
+                    );
+                    $ol.append($li);
+                });
+                $panel.append($ol);
+                $logConsole.find('.log-content').first().before($panel);
+            })
+            .catch(function() {
+                executionEventsFetched.add(taskId);
+            });
+    }
 
     window.clearLoadedTasks = function() {
         loadedCompletedTasks.clear();
+        executionEventsFetched.clear();
     };
 
     $('.view-logs-button').click(function() {
         const taskId = $(this).data('task-id');
         const $logConsole = $(`.log-console.streaming-console[data-task-id=${taskId}]`);
+
+        fetchExecutionEventsIfNeeded($logConsole, taskId);
 
         if (loadedCompletedTasks.has(taskId)) {
             if ($logConsole.find('.log-content').children().length === 0) {

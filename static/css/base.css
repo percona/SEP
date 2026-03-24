@@ -1706,6 +1706,44 @@ td.errors ul {
     width: 100%;
 }
 
+.execution-events {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-bottom: 0.0625rem solid var(--lineDivider);
+    background: var(--surfaceElevation1, #f8f8f8);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+.execution-events__heading {
+    margin: 0 0 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.execution-events__list {
+    margin: 0;
+    padding: 0 0 0 1.125rem;
+    list-style: disc;
+}
+
+.execution-events__item {
+    margin: 0.35rem 0;
+}
+
+.execution-events__time {
+    display: block;
+    margin-bottom: 0.125rem;
+    opacity: 0.9;
+}
+
+.execution-events__type {
+    display: inline-block;
+    margin-right: 0.35rem;
+    font-weight: 600;
+}
+
 .sep-stream-error {
     box-sizing: border-box;
     padding: 1rem 1.25rem;

@@ -81,7 +81,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                             data-modal="target"
                                             class="fullwidth modal-log tabs-wrapper">
                                         <div class="window log-console streaming-console"
-                                             data-task-id="{{ task_history.id }}">
+                                             data-task-id="{{ task_history.id }}"
+                                             data-task-status="{{ task_history.status }}"
+                                             data-logs-present="{{ 'true' if task_logs else 'false' }}">
                                             <header>
                                                 <h3 id="modal-title-{{ task_history.task.name }}-{{ loop.index }}"
                                                     class="h5 title">Logs for {{ task_history.task.name }}</h3>
