@@ -194,6 +194,11 @@ async def test_default_lifespan():
     mock_close_registry.assert_called_once()
 
 
+def test_uvicorn_reload_defaults_to_false():
+    """Assert ``UVICORN_RELOAD`` defaults to ``False`` on ``BaseYamlAppSettings``."""
+    assert BaseYamlAppSettings.model_fields["UVICORN_RELOAD"].default is False
+
+
 def test_settings_secret_key_is_secretstr():
     """Test that SECRET_KEY is a SecretStr instance and masked in repr."""
     from pydantic import SecretStr
