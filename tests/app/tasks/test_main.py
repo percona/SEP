@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define test cases for the Tasks API app and exception handlers."""
+"""Define tests for the app.tasks.main module."""
 
 import pytest
 from fastapi import HTTPException, status
@@ -23,7 +23,22 @@ from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
 )
-from app.tasks.main import task_data_not_found_detail, task_data_not_found_handler
+from app.tasks.main import lifespan as tasks_module_lifespan
+from app.tasks.main import (
+    task_data_not_found_detail,
+    task_data_not_found_handler,
+    tasks_lifespan,
+)
+
+
+def test_tasks_app_lifespan_is_always_set():
+    """Assert ``tasks_lifespan`` is always assigned at module level.
+
+    The lifespan must not be gated behind a ``__name__`` check, because uvicorn
+    re-imports the module with ``__name__ == "app.tasks.main"`` rather than
+    ``"__main__"``, which would leave the lifespan as ``None``.
+    """
+    assert tasks_module_lifespan is tasks_lifespan
 
 
 def test_task_data_not_found_detail_base_exception_without_structured_fields():
