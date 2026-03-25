@@ -139,6 +139,7 @@ default:
 
 development:
   SEP:
+    UVICORN_RELOAD: true
     SNIPPETS:
       SYNC_INTERVAL: 60 seconds
       ENABLE_MANUAL_SYNC: true

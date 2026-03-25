@@ -102,7 +102,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
 
-lifespan = sep_lifespan if __name__ == "__main__" else None
+lifespan = sep_lifespan
 sep_app = create_app(
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
@@ -344,7 +344,7 @@ if __name__ == "__main__":
         ssl_keyfile=sep_settings.SSL_KEYFILE,
         ssl_certfile=sep_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
-        reload=True,
+        reload=sep_settings.UVICORN_RELOAD,
         reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
         reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
         reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
