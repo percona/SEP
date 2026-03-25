@@ -26,8 +26,19 @@ from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.config import sep_settings
 from app.sep.deps import get_access_token_from_cookie
-from app.sep.main import get_tasks_index_context, sep_app, templates
+from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
+from app.sep.main import lifespan as sep_module_lifespan
 from tests.app.factories import OAuthTokenFactory
+
+
+def test_sep_app_lifespan_is_always_set():
+    """Assert ``sep_lifespan`` is always assigned at module level.
+
+    The lifespan must not be gated behind a ``__name__`` check, because uvicorn
+    re-imports the module with ``__name__ == "app.sep.main"`` rather than
+    ``"__main__"``, which would leave the lifespan as ``None``.
+    """
+    assert sep_module_lifespan is sep_lifespan
 
 
 @pytest.fixture
