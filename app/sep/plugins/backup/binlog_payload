@@ -1159,6 +1159,12 @@ def run_binlog_process(server_data, lock_file, command_queue):
                                                 upload_provider=S3UploadProvider,
                                                 settings=server_data,
                                                 logger=LOGGER).run()
+                            elif upload_type == "gs":
+                                LOGGER.info("Binlog upload gs ...")
+                                BinaryLogUpload(upload_type=upload_type,
+                                                upload_provider=GSUploadProvider,
+                                                settings=server_data,
+                                                logger=LOGGER).run()
                             else:
                                 LOGGER.warning("Unsupported upload type: %r", upload_type)
                     last_upload_time = time.time()
@@ -1938,6 +1944,38 @@ class RsyncUploadProvider:
 
         return dest_path
 
+class GSUploadProvider:
+    """Google Cloud Storage upload."""
+    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+        self.logger = logger
+        host = settings.get("HOST", "localhost")
+        self.alias = settings.get("ALIAS", host)
+        self.gs_bucket = settings.get("GS_BUCKET")
+        self.gsutil_bin = settings.get("GSUTIL_BIN", "gsutil")
+        self.backup_type = settings.get("BACKUP_TYPE")
+        if self.gs_bucket is None:
+            msg = "GS_BUCKET is not set."
+            raise BackupError(msg)
+        logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+        log_file = (
+            Path(logging_dir)
+            / f"gsutil-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
+        )
+        self.log_stream = log_file.open("a")
+
+    def upload(self, source_dir: str, dest_dir: str) -> str:
+        
+        source_path = str(Path(source_dir))
+        dest_path = str(Path(self.gs_bucket) / dest_dir)
+        gs_cmd = [self.gsutil_bin, "rsync", "-r", source_path, dest_path]
+        self.logger.info("Uploading backup to GS bucket...")
+        self.logger.info("Running: %s", " ".join(gs_cmd))
+        gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+        _, err = gs_proc.communicate()
+        if gs_proc.returncode != 0:
+            msg = f"GS upload failed. Error: {err}"
+            raise BackupError(msg)
+        return dest_path
 
 if __name__ == "__main__":
     try:
