@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import {
   Box,
+  Chip,
   Paper,
   Table,
   TableBody,
@@ -12,16 +13,50 @@ import {
   Typography,
 } from "@mui/material";
 
+const EXCLUDED_COLUMNS = new Set(["_id", "userId", "UserId"]);
+
 const getColumns = (rows) => {
   const cols = new Set();
   rows.forEach((row) => {
-    Object.keys(row || {}).forEach((key) => cols.add(key));
+    Object.keys(row || {}).forEach((key) => {
+      if (!EXCLUDED_COLUMNS.has(key)) cols.add(key);
+    });
   });
   return Array.from(cols);
 };
 
-const formatValue = (value) => {
+const RoleChips = ({ roles }) => {
+  if (!Array.isArray(roles) || roles.length === 0) return <span>—</span>;
+  return (
+    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+      {roles.map((r, i) => (
+        <Chip
+          key={i}
+          label={r.db && r.db !== r.role ? `${r.role} @ ${r.db}` : r.role}
+          size="small"
+          variant="outlined"
+        />
+      ))}
+    </Box>
+  );
+};
+
+const MechanismChips = ({ mechanisms }) => {
+  if (!Array.isArray(mechanisms) || mechanisms.length === 0)
+    return <span>—</span>;
+  return (
+    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+      {mechanisms.map((m, i) => (
+        <Chip key={i} label={m} size="small" />
+      ))}
+    </Box>
+  );
+};
+
+const formatCell = (col, value) => {
   if (value === null || value === undefined) return "";
+  if (col === "roles") return <RoleChips roles={value} />;
+  if (col === "mechanisms") return <MechanismChips mechanisms={value} />;
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 };
@@ -80,7 +115,7 @@ const MumUserList = ({
               usersData.map((row, idx) => (
                 <TableRow key={idx} hover>
                   {columns.map((col) => (
-                    <TableCell key={col}>{formatValue(row?.[col])}</TableCell>
+                    <TableCell key={col}>{formatCell(col, row?.[col])}</TableCell>
                   ))}
                   {showActions && (
                     <TableCell>
