@@ -42,7 +42,13 @@ $MYSQL -e "SELECT user, host, db, command, COUNT(*) AS cnt FROM information_sche
 
 echo ""
 echo "********* InnoDB status (transactions section) *********"
-$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | head -100 || echo "Cannot retrieve InnoDB status."
+set +o pipefail
+$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | head -100
+innodb_status_exit_code=${PIPESTATUS[0]}
+set -o pipefail
+if [[ "${innodb_status_exit_code}" -ne 0 && "${innodb_status_exit_code}" -ne 141 ]]; then
+    echo "Cannot retrieve InnoDB status."
+fi
 
 echo ""
 echo "********* Threads waiting for locks *********"
