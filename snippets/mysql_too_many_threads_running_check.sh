@@ -36,7 +36,12 @@ $MYSQL -e "SELECT * FROM information_schema.processlist WHERE command != 'Sleep'
 
 echo ""
 echo "********* InnoDB status *********"
-$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | head -150 || echo "Cannot retrieve InnoDB status."
+if ! $MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | head -150; then
+    status=${PIPESTATUS[0]}
+    if [[ "$status" -ne 0 && "$status" -ne 141 ]]; then
+        echo "Cannot retrieve InnoDB status."
+    fi
+fi
 
 echo ""
 echo "********* System load *********"
