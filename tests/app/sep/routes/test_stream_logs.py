@@ -125,3 +125,52 @@ def test_archives_logs_event_stream(
         params=mocker.ANY,
         timeout=mocker.ANY,
     )
+
+
+def test_stream_execution_events_event_stream(
+    mocker, test_client, mock_tasks_client, task_history_response
+):
+    """Test /stream-logs/{task_history_id}/execution-events SSE endpoint."""
+    mocker.patch("app.sep.routes.stream_logs.asyncio.sleep", new_callable=AsyncMock)
+
+    events_payload = [
+        {
+            "timestamp": "2026-03-26T05:43:09.907295Z",
+            "type": "Received",
+            "description": "Task received by client (exit code 0)",
+            "step": "prepare-env",
+        },
+        {
+            "timestamp": "2026-03-26T05:43:22.730705Z",
+            "type": "Started",
+            "description": "Task started by client (exit code 0)",
+            "step": "run-script",
+        },
+    ]
+
+    status_calls = {"history": 0}
+
+    async def mock_get(path, **_kwargs):
+        if path == f"/history/{task_history_response.id}/events":
+            return events_payload
+        if path == f"/history/{task_history_response.id}":
+            status_calls["history"] += 1
+            if status_calls["history"] == 1:
+                return {"status": TaskHistoryStatusEnum.RUNNING}
+            return {"status": TaskHistoryStatusEnum.FAILED}
+        raise ValueError(f"Unexpected path: {path}")
+
+    mock_tasks_client.get.side_effect = mock_get
+
+    response = test_client.get(
+        f"/stream-logs/{task_history_response.id}/execution-events"
+    )
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+    streamed_content = response.content.decode("utf-8")
+    assert "Received" in streamed_content
+    assert "Started" in streamed_content
+    assert "event: finish" in streamed_content
+    assert '"status": "failed"' in streamed_content

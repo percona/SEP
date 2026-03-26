@@ -247,11 +247,38 @@ $(document).ready(function() {
     const lastOffsets = {};
     const loadedCompletedTasks = new Set();
     const executionEventsFetched = new Set();
+    const executionEventsStreams = {};
+    const executionEventsCache = {};
+
+    function executionEventKey(ev) {
+        return JSON.stringify({
+            timestamp: ev && ev.timestamp,
+            type: ev && ev.type,
+            description: ev && ev.description,
+            step: ev && ev.step,
+        });
+    }
+
+    function appendExecutionEvent(taskId, eventObj) {
+        executionEventsCache[taskId] = executionEventsCache[taskId] || [];
+        const exists = executionEventsCache[taskId].some(function(item) {
+            return executionEventKey(item) === executionEventKey(eventObj);
+        });
+        if (!exists) {
+            executionEventsCache[taskId].push(eventObj);
+        }
+    }
 
     function shouldFetchExecutionEvents($logConsole) {
         const status = String($logConsole.data('task-status') || '').toLowerCase();
         const logsPresent = String($logConsole.data('logs-present')).toLowerCase() !== 'false';
-        return status === 'failed' || status === 'lost' || status === 'stopped' || !logsPresent;
+        return (
+            status === 'running' ||
+            status === 'failed' ||
+            status === 'lost' ||
+            status === 'stopped' ||
+            !logsPresent
+        );
     }
 
     function getSelectedLogStepName($logConsole) {
@@ -296,22 +323,42 @@ $(document).ready(function() {
     }
 
     function buildExecutionEventsUi($logConsole, taskId, events) {
-        if ($logConsole.find('.log-events-view').length > 0) return;
-
         const $stderrTab = $logConsole.find('[role="log-tab"][aria-controls*="stderr"]');
         if ($stderrTab.length === 0) return;
 
-        const $eventsTab = $(
-            '<button type="button" class="large" role="log-tab" aria-selected="false">' +
-            '<span class="label">Execution events</span></button>'
-        );
-        $eventsTab.attr('id', 'tab-events-' + taskId);
-        $eventsTab.attr('aria-controls', 'log-events-' + taskId);
-        $stderrTab.after($eventsTab);
+        let $eventsTab = $logConsole.find('#tab-events-' + taskId);
+        if ($eventsTab.length === 0) {
+            $eventsTab = $(
+                '<button type="button" class="large" role="log-tab" aria-selected="false">' +
+                '<span class="label">Execution events</span></button>'
+            );
+            $eventsTab.attr('id', 'tab-events-' + taskId);
+            $eventsTab.attr('aria-controls', 'log-events-' + taskId);
+            $stderrTab.after($eventsTab);
+        }
+
+        let $panel = $logConsole.find('#log-events-' + taskId);
+        if ($panel.length === 0) {
+            $panel = $('<div class="log-events-view"></div>');
+            $panel.attr('id', 'log-events-' + taskId);
+            $panel.attr('aria-label', 'Execution events');
+            $panel.attr('role', 'region');
+            $panel.append('<div class="log-events-step-panels"></div>');
+            $panel.append(
+                $('<div class="log-events-step-missing"></div>').text(
+                    'No execution events for this step.'
+                )
+            );
+            $logConsole.find('.log-content').append($panel);
+            $panel.hide();
+        }
+
+        const $wrap = $panel.find('.log-events-step-panels');
+        $wrap.empty();
 
         const stepOrder = [];
         const byStep = {};
-        events.forEach(function(ev) {
+        (Array.isArray(events) ? events : []).forEach(function(ev) {
             const s = ev.step != null && String(ev.step) !== '' ? String(ev.step) : '';
             const key = s || '_';
             if (!byStep[key]) {
@@ -321,12 +368,6 @@ $(document).ready(function() {
             byStep[key].push(ev);
         });
 
-        const $panel = $('<div class="log-events-view"></div>');
-        $panel.attr('id', 'log-events-' + taskId);
-        $panel.attr('aria-label', 'Execution events');
-        $panel.attr('role', 'region');
-
-        const $wrap = $('<div class="log-events-step-panels"></div>');
         stepOrder.forEach(function(key) {
             const list = byStep[key];
             const dataStep = key === '_' ? '' : key;
@@ -351,20 +392,59 @@ $(document).ready(function() {
             $section.append($ol);
             $wrap.append($section);
         });
-        $panel.append($wrap);
-        $panel.append(
-            $('<div class="log-events-step-missing"></div>').text(
-                'No execution events for this step.'
-            )
-        );
 
-        $logConsole.find('.log-content').append($panel);
-        $panel.hide();
+        if (stepOrder.length === 0) {
+            $panel.find('.log-events-step-missing').text('No execution events yet.');
+        } else {
+            $panel.find('.log-events-step-missing').text('No execution events for this step.');
+        }
+
         syncExecutionEventsStepVisibility($logConsole);
     }
 
     function fetchExecutionEventsIfNeeded($logConsole, taskId) {
         if (!shouldFetchExecutionEvents($logConsole)) return;
+        const status = String($logConsole.data('task-status') || '').toLowerCase();
+        const isRunning = status === 'running';
+        if (isRunning) {
+            if (executionEventsStreams[taskId]) return;
+            executionEventsCache[taskId] = executionEventsCache[taskId] || [];
+            buildExecutionEventsUi($logConsole, taskId, executionEventsCache[taskId]);
+            const src = new EventSource(
+                `/stream-logs/${encodeURIComponent(taskId)}/execution-events`
+            );
+            executionEventsStreams[taskId] = src;
+            src.onmessage = function(event) {
+                let payload;
+                try {
+                    payload = JSON.parse(event.data);
+                } catch (e) {
+                    console.warn('Invalid execution event payload:', event.data);
+                    return;
+                }
+                appendExecutionEvent(taskId, payload);
+                buildExecutionEventsUi($logConsole, taskId, executionEventsCache[taskId]);
+                if (!$logConsole.parent().prop('open')) {
+                    src.close();
+                    delete executionEventsStreams[taskId];
+                }
+            };
+            src.addEventListener('finish', function() {
+                src.close();
+                delete executionEventsStreams[taskId];
+            });
+            src.addEventListener('sep-error', function() {
+                src.close();
+                delete executionEventsStreams[taskId];
+            });
+            src.onerror = function() {
+                if (!$logConsole.parent().prop('open')) {
+                    src.close();
+                    delete executionEventsStreams[taskId];
+                }
+            };
+            return;
+        }
         if (executionEventsFetched.has(taskId)) return;
         fetch(`/execution-events/${encodeURIComponent(taskId)}`, {
                 credentials: 'include',
@@ -373,9 +453,9 @@ $(document).ready(function() {
                 return res.ok ? res.json() : [];
             })
             .then(function(events) {
+                executionEventsCache[taskId] = Array.isArray(events) ? events : [];
+                buildExecutionEventsUi($logConsole, taskId, executionEventsCache[taskId]);
                 executionEventsFetched.add(taskId);
-                if (!Array.isArray(events) || events.length === 0) return;
-                buildExecutionEventsUi($logConsole, taskId, events);
             })
             .catch(function() {
                 executionEventsFetched.add(taskId);
@@ -385,6 +465,12 @@ $(document).ready(function() {
     window.clearLoadedTasks = function() {
         loadedCompletedTasks.clear();
         executionEventsFetched.clear();
+        Object.values(executionEventsStreams).forEach(function(src) {
+            src.close();
+        });
+        Object.keys(executionEventsStreams).forEach(function(key) {
+            delete executionEventsStreams[key];
+        });
     };
 
     $('.view-logs-button').click(function() {
