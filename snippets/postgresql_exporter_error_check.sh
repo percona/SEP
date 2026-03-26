@@ -20,8 +20,8 @@ systemctl status pmm-agent --no-pager 2> /dev/null \
 echo ""
 echo "********* PMM agent log errors *********"
 echo ""
-journalctl -u pmm-agent --no-pager -n 100 2> /dev/null | grep -i "error\|postgres" | tail -30 \
-    || journalctl -u pmm-agent --user --no-pager -n 100 2> /dev/null | grep -i "error\|postgres" | tail -30 \
+journalctl -u pmm-agent --no-pager -n 100 2> /dev/null | { grep -i "error\|postgres" || true; } | tail -30 \
+    || journalctl -u pmm-agent --user --no-pager -n 100 2> /dev/null | { grep -i "error\|postgres" || true; } | tail -30 \
     || echo "No pmm-agent journal logs found."
 
 echo ""
