@@ -11,9 +11,6 @@
 
 set -euo pipefail
 
-MONGOSH="mongosh --quiet"
-command -v mongosh &> /dev/null || MONGOSH="mongo --quiet"
-
 echo "********* MongoDB service status *********"
 echo ""
 systemctl status mongod --no-pager 2> /dev/null \
