@@ -77,22 +77,54 @@ async def task_history_logs_event_stream(
     """
     try:
         with tasks_client.auth(access_token) as tasks_api:
+            poll_interval = 2
+            # Wait for task to leave PENDING before attempting to stream logs.
+            # Calling /logs/ on a PENDING task returns 409, which would short-circuit
+            # the generator via the HTTPException handler before event: finish is sent,
+            # causing EventSource to fire onerror ("Stream failed.").
+            task_history = await tasks_api.get(f"/history/{task_history_id}")
+            while task_history["status"] == TaskHistoryStatusEnum.PENDING:
+                await asyncio.sleep(poll_interval)
+                task_history = await tasks_api.get(f"/history/{task_history_id}")
+
             # No read timeout: log stream can stall under backpressure (e.g. ~26MB)
             # and must not be killed by the default sock_read=120.
-            async for log_entry in tasks_api.stream(
-                f"/history/{task_history_id}/logs/",
-                params=request.query_params,
-                timeout=ClientTimeout(sock_read=None),
-            ):
-                if log_entry:
-                    yield f"data: {log_entry.decode()}\n\n"
-            # TODO(yan): Don't wait for task to finish
-            # SEP-379
-            wait_interval = 5
-            task_history = await tasks_api.get(f"/history/{task_history_id}")
-            while task_history["status"] == TaskHistoryStatusEnum.RUNNING:
-                await asyncio.sleep(wait_interval)
+            #
+            # Retry the live stream until data arrives or the task reaches a terminal
+            # state. On an immediate connect the Nomad allocation exists but TaskStates
+            # is still empty, so the first /logs/ call returns with no data. Retrying
+            # after a short delay avoids a 30-second DB-polling wait for
+            # sync_running_tasks to mark the task terminal.
+            received_data = False
+            while not received_data:
+                async for log_entry in tasks_api.stream(
+                    f"/history/{task_history_id}/logs/",
+                    params=request.query_params,
+                    timeout=ClientTimeout(sock_read=None),
+                ):
+                    if log_entry:
+                        received_data = True
+                        yield f"data: {log_entry.decode()}\n\n"
+                if received_data:
+                    break
                 task_history = await tasks_api.get(f"/history/{task_history_id}")
+                if task_history["status"] != TaskHistoryStatusEnum.RUNNING:
+                    # Task finished before TaskStates was ever populated;
+                    # fall through to the stored-logs re-fetch below.
+                    break
+                await asyncio.sleep(poll_interval)
+
+            # If the live stream never produced data (task finished too fast for the
+            # Nomad allocation to expose TaskStates), re-fetch from stored history.
+            if not received_data:
+                task_history = await tasks_api.get(f"/history/{task_history_id}")
+                async for log_entry in tasks_api.stream(
+                    f"/history/{task_history_id}/logs/",
+                    params=request.query_params,
+                    timeout=ClientTimeout(sock_read=None),
+                ):
+                    if log_entry:
+                        yield f"data: {log_entry.decode()}\n\n"
         yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
     except TimeoutError as exc:
         logger.warning(
