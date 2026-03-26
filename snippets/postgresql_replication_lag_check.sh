@@ -15,14 +15,14 @@ PSQL="psql"
 
 echo "********* Replication status (pg_stat_replication) *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT * FROM pg_stat_replication;
 SQL
 
 echo ""
 echo "********* Replication lag with slots *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT a.client_addr,
        b.slot_name,
        a.state,
@@ -38,7 +38,7 @@ SQL
 echo ""
 echo "********* Replication lag without slots *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT application_name,
        state,
        pg_current_wal_lsn() AS current_wal,
@@ -51,7 +51,7 @@ SQL
 echo ""
 echo "********* Blocking queries *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT activity.pid,
        activity.usename,
        activity.query,
@@ -64,7 +64,7 @@ SQL
 echo ""
 echo "********* Long-running transactions *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT now()-query_start AS age, *
 FROM pg_stat_activity
 WHERE now()-query_start > interval '1 minute'

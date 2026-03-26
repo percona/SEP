@@ -14,7 +14,7 @@ set -euo pipefail
 PSQL="psql"
 
 echo "********* Database ages (oldest first) *********"
-$PSQL <<SQL
+$PSQL << SQL
 SELECT datname, age(datfrozenxid)
 FROM pg_database
 ORDER BY 2 DESC, 1 ASC;
@@ -22,16 +22,16 @@ SQL
 
 echo ""
 echo "********* autovacuum_freeze_max_age setting *********"
-$PSQL <<SQL
+$PSQL << SQL
 SHOW autovacuum_freeze_max_age;
 SQL
 
 echo ""
 echo "********* Replication slot size *********"
-$PSQL <<SQL
+$PSQL << SQL
 SELECT a.client_addr, b.slot_name, a.state, pg_current_wal_lsn() as current_wal,a.replay_lsn,
        a.replay_lag as lag_in_time,
-       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(),a.replay_lsn)) as lag_in_size,
+       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(),a.replay_lsn)) as lag_in_size
 FROM pg_stat_replication a, pg_replication_slots b
 WHERE a.pid = b.active_pid
 ORDER BY pg_wal_lsn_diff(pg_current_wal_lsn(),a.replay_lsn) DESC;
@@ -39,7 +39,7 @@ SQL
 
 echo ""
 echo "********* Ongoing vacuum progress *********"
-$PSQL <<SQL
+$PSQL << SQL
 SELECT p.pid, now() - a.xact_start AS duration,
        coalesce(wait_event_type ||'.'|| wait_event, 'f') AS waiting,
        CASE
@@ -64,7 +64,7 @@ SQL
 
 echo ""
 echo "********* Top 10 oldest tables (candidates for vacuum freeze) *********"
-$PSQL <<SQL
+$PSQL << SQL
 WITH cur_vaccs AS (
     SELECT split_part(split_part(substring(query from 'public\..*'), '.', 2), ' ', 1) AS tab
     FROM pg_stat_activity
