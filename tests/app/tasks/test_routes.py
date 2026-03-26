@@ -219,6 +219,7 @@ async def test_list_task_history_events(
             timestamp=dt,
             event_type="Terminated",
             description="Exit 1",
+            step="run-script",
         )
     ]
     response = test_client.get(f"/history/{created_task_with_history.id}/events")
@@ -227,6 +228,7 @@ async def test_list_task_history_events(
     assert len(data) == 1
     assert data[0]["type"] == "Terminated"
     assert data[0]["description"] == "Exit 1"
+    assert data[0]["step"] == "run-script"
     assert "timestamp" in data[0]
     mock_executor.get_events.assert_called_once()
 

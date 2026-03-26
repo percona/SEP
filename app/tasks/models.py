@@ -97,8 +97,10 @@ class ExecutionEvent(BaseModel):
     :type timestamp: UTCDatetime
     :param event_type: Executor-specific event category (e.g. Nomad task event type).
     :type event_type: str
-    :param description: Human-readable message for the event.
+    :param description: Human-readable message for the event (no step prefix).
     :type description: str
+    :param step: Optional executor task/step name (e.g. Nomad task within the group).
+    :type step: str | None
     """
 
     timestamp: UTCDatetime
@@ -107,6 +109,7 @@ class ExecutionEvent(BaseModel):
         validation_alias="type",
     )
     description: str
+    step: str | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 

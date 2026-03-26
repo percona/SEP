@@ -2029,6 +2029,7 @@ class TestNomadTaskStatesToExecutionEvents:
         events = nomad_task_states_to_execution_events(task_states)
         assert len(events) == 1
         assert events[0].event_type == "Started"
+        assert events[0].step == "step1"
         assert "Task received" in events[0].description
 
     def test_sorted_oldest_first_across_tasks(self):
@@ -2056,9 +2057,9 @@ class TestNomadTaskStatesToExecutionEvents:
         events = nomad_task_states_to_execution_events(task_states)
         assert len(events) == len(task_states)
         assert "first" in events[0].description
-        assert "[a]" in events[0].description
+        assert events[0].step == "a"
         assert "second" in events[1].description
-        assert "[b]" in events[1].description
+        assert events[1].step == "b"
 
     def test_exit_code_from_details(self):
         """Exit code may appear only under Details (defensive parse)."""
@@ -2106,3 +2107,4 @@ class TestNomadTaskStatesToExecutionEvents:
         assert isinstance(out[0], ExecutionEvent)
         assert out[0].event_type == "Setup"
         assert "Downloading Artifacts" in out[0].description
+        assert out[0].step == "step1"

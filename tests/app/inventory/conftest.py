@@ -95,8 +95,11 @@ async def table(session: AsyncSession, schema: Schema) -> Table:
 
 
 @pytest_asyncio.fixture
-async def second_table(session: AsyncSession, schema: Schema) -> Table:
-    """Create a second table in the database."""
+async def second_table(session: AsyncSession, schema: Schema, table: Table) -> Table:
+    """Create a second table in the database (name must differ per ``ix_table_name_schema_id``)."""
+    data = TableWriteFactory.build()
     return await TableManager.create(
-        session, TableWriteFactory.build(), schema_id=schema.id
+        session,
+        data.model_copy(update={"name": f"second_table_{table.id}"}),
+        schema_id=schema.id,
     )

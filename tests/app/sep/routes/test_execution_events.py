@@ -84,6 +84,7 @@ class TestListTaskExecutionEvents:
                 "timestamp": "2026-01-01T00:00:00+00:00",
                 "type": "Started",
                 "description": "Task received",
+                "step": "prepare-env",
             },
         ]
 
@@ -94,6 +95,7 @@ class TestListTaskExecutionEvents:
         assert len(body) == 1
         assert body[0]["type"] == "Started"
         assert body[0]["description"] == "Task received"
+        assert body[0]["step"] == "prepare-env"
         assert "timestamp" in body[0]
         mock_tasks_api_dep.get.assert_awaited_once_with(
             f"/history/{task_history_response.id}/events"

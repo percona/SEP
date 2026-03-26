@@ -113,8 +113,6 @@ def _sortable_nomad_tracking_event(
     task_name: str,
     list_index: int,
     ev: dict,
-    *,
-    multi_task: bool,
 ) -> tuple[datetime, str, int, ExecutionEvent] | None:
     if not isinstance(ev, dict):
         return None
@@ -130,8 +128,6 @@ def _sortable_nomad_tracking_event(
 
     description = _nomad_event_body_text(ev)
     parts: list[str] = []
-    if multi_task:
-        parts.append(f"[{task_name}]")
     parts.append(description if description else event_type)
 
     exit_code = _nomad_event_exit_code(ev)
@@ -147,6 +143,7 @@ def _sortable_nomad_tracking_event(
             timestamp=make_datetime_utc(dt),
             event_type=event_type,
             description=" ".join(parts).strip(),
+            step=task_name,
         ),
     )
 
@@ -166,7 +163,6 @@ def nomad_task_states_to_execution_events(
     if not isinstance(task_states, dict):
         return []
 
-    multi_task = len(task_states) > 1
     collected: list[tuple[datetime, str, int, ExecutionEvent]] = []
 
     for task_name, state in task_states.items():
@@ -176,9 +172,7 @@ def nomad_task_states_to_execution_events(
         if not isinstance(raw_events, list):
             continue
         for idx, ev in enumerate(raw_events):
-            row = _sortable_nomad_tracking_event(
-                task_name, idx, ev, multi_task=multi_task
-            )
+            row = _sortable_nomad_tracking_event(task_name, idx, ev)
             if row is not None:
                 collected.append(row)
 
