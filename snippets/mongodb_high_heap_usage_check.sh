@@ -62,5 +62,9 @@ free -h
 echo ""
 echo "********* MongoDB process memory *********"
 echo ""
-ps -o pid,rss,vsz,comm -p "$(pgrep -x mongod 2> /dev/null | head -1)" 2> /dev/null \
-    || echo "mongod process not found."
+MONGOD_PID="$(pgrep -x mongod 2> /dev/null | head -1 || true)"
+if [[ -n "${MONGOD_PID}" ]]; then
+    ps -o pid,rss,vsz,comm -p "${MONGOD_PID}" 2> /dev/null || echo "mongod process not found."
+else
+    echo "mongod process not found."
+fi
