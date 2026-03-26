@@ -36,6 +36,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container,
     #xtrabackup_container,
     #s3_container,
+    #gcp_container,
     #rsync_container {
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 0;
@@ -45,6 +46,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container.visible,
     #xtrabackup_container.visible,
     #s3_container.visible,
+    #gcp_container.visible,
     #rsync_container.visible {
         opacity: 1;
         max-height: 1000px;
@@ -52,6 +54,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
     #upload_container.visible,
     #s3_container.visible,
+    #gcp_container.visible,
     #rsync_container.visible{
         display: block;
     }
@@ -833,6 +836,60 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <span class="label">Skip S3 Safety Check</span>{{ info_icon(skip_s3_safety_check_title) }}
                     </label>
                 </div>
+                <button class="text large" type="button" id="toggle_gcp_btn">+ Add GCP upload</button>
+                <br>
+                <div id="gcp_container" class="hidden">
+                    {% set gcp_bucket_title = "Type the name of the GCP bucket where backups will be stored." %}
+                    <div>
+                        <label for="gcp_bucket">
+                            GCP Bucket:
+                            <input type="text"
+                                   id="gcp_bucket"
+                                   name="gcp_bucket"
+                                   placeholder="e.g. my-gcp-backup-bucket" />
+                            {{ info_icon(gcp_bucket_title) }}
+                        </label>
+                    </div>
+                    <br>
+                    {% set gcp_storage_class_title = "Type the GCP storage class for backups." %}
+                    <div>
+                        <label for="gcp_storage_class">
+                            GCP Storage Class (optional):
+                            <input type="text"
+                                   id="gcp_storage_class"
+                                   name="gcp_storage_class"
+                                   placeholder="STANDARD, NEARLINE, etc." />
+                            {{ info_icon(gcp_storage_class_title) }}
+                        </label>
+                    </div>
+                    <br>
+                    {% set gcp_upload_extra_args_title = "Additional ExtraArgs to pass to GCP upload (e.g. predefinedAcl=publicRead)" %}
+                    <div>
+                        <label for="gcp_upload_extra_args">
+                            GCP Upload Extra Args (optional):
+                            <input type="text"
+                                   id="gcp_upload_extra_args"
+                                   name="gcp_upload_extra_args"
+                                   placeholder="e.g. predefinedAcl=publicRead" />
+                            {{ info_icon(gcp_upload_extra_args_title) }}
+                        </label>
+                    </div>
+                    <br>
+                    {% set skip_gcp_safety_check_title = "Disable safety checks before uploading backups to GCP. Use with caution to avoid accidental data loss." %}
+                    <div>
+                        <label class="checkbox" for="skip_gcp_safety_check">
+                            <input type="checkbox"
+                                   id="skip_gcp_safety_check"
+                                   name="skip_gcp_safety_check"
+                                   value="1" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Skip GCP Safety Check</span>{{ info_icon(skip_gcp_safety_check_title) }}
+                        </label>
+                    </div>
+                </div>
                 <button class="text large" type="button" id="toggle_rsync_btn">+ Add Rsync upload</button>
                 <div id="rsync_container">
                     {% set rsync_path_title = "Type the remote destination path for Rsync transfers. Format: user@host:/path." %}
@@ -867,6 +924,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const uploadContainer = document.getElementById('upload_container');
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
+    const gcpContainer = document.getElementById('gcp_container');
+    const toggleGcpBtn = document.getElementById('toggle_gcp_btn');
+    const gcpBucketInput = document.getElementById('gcp_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
     const s3BucketInput = document.getElementById('s3_bucket');
@@ -875,6 +935,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const createButton = form.querySelector('button[type="submit"]');
 
     let s3Visible = false;
+    let gcpVisible = false;
     let rsyncVisible = false;
 
 
@@ -1029,6 +1090,23 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             toggleRsyncBtn.textContent = "+ Add Rsync upload";
         }
     }
+
+    function toggleGCP() {
+        gcpVisible = !gcpVisible;
+        if (gcpVisible) {
+            showContainer(gcpContainer, true);
+            gcpBucketInput.required = true;
+            toggleGcpBtn.textContent = "- Remove GCP upload";
+        } else {
+            showContainer(gcpContainer, false);
+            gcpBucketInput.required = false;
+            gcpBucketInput.value = '';
+            document.getElementById('gcp_storage_class').value = '';
+            document.getElementById('skip_gcp_safety_check').checked = false;
+            toggleGcpBtn.textContent = "+ Add GCP upload";
+        }
+    }
+
     function updateCreateButtonState() {
         createButton.disabled = !form.checkValidity();
     }
@@ -1060,6 +1138,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
+    toggleGcpBtn.addEventListener('click', toggleGCP);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
     ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
@@ -1068,6 +1147,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         if (form && window.initInfoTooltips) window.initInfoTooltips(form);
         updateBackupTypeUI();
         showContainer(s3Container, false);
+        showContainer(gcpContainer, false);
         showContainer(rsyncContainer, false);
         updateCreateButtonState();
 
