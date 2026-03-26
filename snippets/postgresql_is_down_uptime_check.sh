@@ -30,14 +30,14 @@ sudo ss -lntp | grep postgres 2> /dev/null || echo "Could not check PostgreSQL l
 
 echo ""
 echo "********* PostgreSQL uptime *********"
-$PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_time() AS uptime;" 2> /dev/null \
-  || echo "Could not connect to PostgreSQL via psql."
+$PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_time() AS uptime;" 2> /dev/null ||
+    echo "Could not connect to PostgreSQL via psql."
 
 echo ""
 echo "********* Recent PostgreSQL log entries *********"
-tail -50 /var/log/postgresql/postgresql-*.log 2> /dev/null \
-    || tail -50 /var/log/postgresql/postgresql*.log 2> /dev/null \
-    || echo "No PostgreSQL logs found in /var/log/postgresql/."
+tail -50 /var/log/postgresql/postgresql-*.log 2> /dev/null ||
+    tail -50 /var/log/postgresql/postgresql*.log 2> /dev/null ||
+    echo "No PostgreSQL logs found in /var/log/postgresql/."
 tail -50 $(
     $PSQL -tA -c "
         SELECT CASE
@@ -47,8 +47,8 @@ tail -50 $(
                  || current_setting('log_directory') || '/*.log'
         END;
     "
-) 2> /dev/null \
-    || echo "No PostgreSQL logs found in log_directory or problem occurred when querying for log_directory parameter."
+) 2> /dev/null ||
+    echo "No PostgreSQL logs found in log_directory or problem occurred when querying for log_directory parameter."
 
 echo ""
 echo "********* Last logins to the server *********"

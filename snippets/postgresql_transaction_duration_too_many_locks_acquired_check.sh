@@ -15,7 +15,7 @@ PSQL="psql"
 
 echo "********* Long-running active transactions *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT now()-query_start AS age, *
 FROM pg_stat_activity
 WHERE now()-query_start > interval '7 minutes'
@@ -26,7 +26,7 @@ SQL
 echo ""
 echo "********* Idle in transaction sessions *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT now()-query_start AS age, *
 FROM pg_stat_activity
 WHERE now()-query_start > interval '7 minutes'
@@ -37,7 +37,7 @@ SQL
 echo ""
 echo "********* Queries that are in the locked state *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT a.datname,
        l.relation::regclass,
        l.transactionid,
@@ -56,7 +56,7 @@ SQL
 echo ""
 echo "********* Blocking queries *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SELECT activity.pid,
        activity.usename,
        activity.query,
@@ -69,13 +69,13 @@ SQL
 echo ""
 echo "********* Current statement_timeout setting *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SHOW statement_timeout;
 SQL
 
 echo ""
 echo "********* Current idle_in_transaction_session_timeout setting *********"
 echo ""
-$PSQL <<SQL
+$PSQL << SQL
 SHOW idle_in_transaction_session_timeout;
 SQL
