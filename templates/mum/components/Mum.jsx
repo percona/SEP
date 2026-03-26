@@ -139,16 +139,13 @@ const Mum = () => {
   const [defaultTask, setDefaultTask] = useState(null);
   const [error, setError] = useState(null);
   const [executorHosts, setExecutorHosts] = useState([]);
-  const [services, setServices] = useState([]);
   const [selectedTarget, setSelectedTarget] = useState("");
-  const [selectedService, setSelectedService] = useState("");
   const [execution, setExecution] = useState(null);
   const [listBusyCount, setListBusyCount] = useState(0);
 
   // Output streaming state
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
-  const [jobDispatched, setJobDispatched] = useState(false);
   const [usersData, setUsersData] = useState([]);
   const [lastListTarget, setLastListTarget] = useState("");
   const builtinRoles = useMemo(
@@ -219,7 +216,6 @@ const Mum = () => {
       try {
         const resp = await apiClient.get("/mum/ui/options");
         setExecutorHosts(normalizeExecutorHosts(resp.data?.executor_hosts));
-        setServices(resp.data?.services || []);
         // The backend always ensures the default task exists, so we can safely use it
         if (resp.data?.default_task) {
           setDefaultTask(resp.data.default_task);
@@ -343,13 +339,7 @@ const Mum = () => {
         });
         setLastListTarget(target);
         setExecution(response.data?.history);
-        setJobDispatched(true);
-
-        // Wait 5 seconds before streaming to allow task to start
-        setTimeout(() => {
-          streamListUsers(response.data?.history?.id);
-          setJobDispatched(false);
-        }, 5000);
+        streamListUsers(response.data?.history?.id);
       } catch (err) {
         const detail =
           err?.response?.data?.detail || err?.message || "Failed to list users";
@@ -428,20 +418,6 @@ const Mum = () => {
                 ))}
               </select>
             </label>
-            <label>
-              Service:&nbsp;
-              <select
-                value={selectedService}
-                onChange={(e) => setSelectedService(e.target.value)}
-              >
-                <option value="">Select a service</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name || s.id}
-                  </option>
-                ))}
-              </select>
-            </label>
           </Box>
 
           <Box
@@ -474,45 +450,6 @@ const Mum = () => {
             </Typography>
           )}
 
-          {jobDispatched && (
-            <Typography color="warning" sx={{ mt: 1 }}>
-              Job dispatched to backend, please wait 5 seconds.
-            </Typography>
-          )}
-
-          {defaultTask && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2">
-                <strong>Task Name:</strong> <code>{defaultTask.name}</code>
-              </Typography>
-              {defaultTask.id && (
-                <Typography variant="body2">
-                  <strong>Task ID:</strong> <code>{defaultTask.id}</code>
-                </Typography>
-              )}
-            </Box>
-          )}
-
-          {(execution || lastListTarget) && (
-            <Box sx={{ mt: 1 }}>
-              {execution && (
-                <>
-                  <Typography variant="body2">
-                    <strong>History ID:</strong> <code>{execution.id}</code>
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Status:</strong> <code>{execution.status}</code>
-                  </Typography>
-                </>
-              )}
-              {lastListTarget && (
-                <Typography variant="body2">
-                  <strong>Last refreshed host:</strong>{" "}
-                  <code>{lastListTarget}</code>
-                </Typography>
-              )}
-            </Box>
-          )}
         </Paper>
 
         {featureToggles.listUsers && (
