@@ -371,7 +371,15 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
         return await TaskHistoryManager.save(
-            session, queue_item, flag_modified_fields=["execution_request"]
+            session,
+            queue_item,
+            flag_modified_fields=[
+                "execution_request",
+                "status",
+                "started_at",
+                "finished_at",
+                "sync_in_progress_started_at",
+            ],
         )
 
 
