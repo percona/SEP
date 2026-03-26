@@ -68,5 +68,5 @@ $PSQL <<SQL
 SELECT now()-query_start AS age, *
 FROM pg_stat_activity
 WHERE now()-query_start > interval '1 minute'
-  AND state IN ('idle in transaction', 'active')
+  AND state IN ('idle in transaction', 'active');
 SQL
