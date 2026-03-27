@@ -33,6 +33,7 @@ def _override_context(grouped_alerts):
         return {
             "grouped_alerts": grouped_alerts,
             "alert_service_types": list(AlertServiceType),
+            "base_uri": "/alert-troubleshooting",
         }
 
     return _mock_context

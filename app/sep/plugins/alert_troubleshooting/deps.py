@@ -125,6 +125,8 @@ def collect_grouped_alerts(
     grouped = {}
     for snippet in snippets:
         alerts_raw = snippet.meta.get("alerts", [])
+        if isinstance(alerts_raw, str | dict):
+            alerts_raw = [alerts_raw]
         if not alerts_raw:
             continue
         raw_service_type = snippet.meta.get("service_type")

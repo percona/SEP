@@ -54,6 +54,11 @@
     display: none;
 }
 
+.at-section-header::marker {
+    content: '';
+    display: none;
+}
+
 .at-section-title {
     display: flex;
     align-items: center;
