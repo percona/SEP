@@ -73,7 +73,7 @@ const DeleteUserButton = ({
       >
         DELETE
       </Button>
-      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xs">
+      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xs" disableScrollLock>
         <DialogTitle>Delete MongoDB user</DialogTitle>
         <DialogContent sx={{ display: "grid", gap: 2, pt: 2 }}>
           <Typography variant="body2">

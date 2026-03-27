@@ -17,9 +17,11 @@ const DEFAULT_DB = "admin";
 const AddDatabaseUserButton = ({
   selectedTarget,
   builtinRoles,
+  rolesData = [],
   onSuccess,
   buttonProps = {},
 }) => {
+  const customRoles = rolesData.filter((r) => !r.isBuiltin && r.role);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -83,9 +85,9 @@ const AddDatabaseUserButton = ({
         <Button variant="contained" color="success" onClick={handleOpen} {...buttonProps}>
           + add database user
         </Button>
-        <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+        <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md" scroll="paper" disableScrollLock>
           <DialogTitle>Create MongoDB user</DialogTitle>
-          <DialogContent sx={{ display: "grid", gap: 2, pt: 2 }}>
+          <DialogContent dividers sx={{ display: "grid", gap: 2 }}>
             <TextField
               label="Username"
               value={username}
@@ -105,6 +107,7 @@ const AddDatabaseUserButton = ({
             />
             <BuiltinRolesSelector
               builtinRoles={builtinRoles}
+              customRoles={customRoles}
               value={roles}
               onChange={setRoles}
               disabled={loading}

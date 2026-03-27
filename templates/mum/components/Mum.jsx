@@ -446,6 +446,8 @@ const Mum = () => {
       setStreamError(null);
       setExecution(null);
       setUsersData([]);
+      // Fetch roles in parallel: pre-populates Roles tab and role selectors.
+      listRoles(target);
       try {
         const response = await apiClient.post(`/mum/ui/list-users`, {
           target,
@@ -461,7 +463,7 @@ const Mum = () => {
         setListBusyCount((count) => Math.max(count - 1, 0));
       }
     },
-    [selectedTarget, streamListUsers]
+    [selectedTarget, streamListUsers, listRoles]
   );
 
   const handleUserMutation = useCallback(
@@ -488,6 +490,7 @@ const Mum = () => {
               row={row}
               selectedTarget={selectedTarget}
               builtinRoles={builtinRoles}
+              rolesData={rolesData}
               onSuccess={handleUserMutation}
             />
           )}
@@ -506,6 +509,7 @@ const Mum = () => {
     <AddDatabaseUserButton
       selectedTarget={selectedTarget}
       builtinRoles={builtinRoles}
+      rolesData={rolesData}
       onSuccess={handleUserMutation}
     />
   ) : null;

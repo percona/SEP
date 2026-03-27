@@ -15,8 +15,8 @@ import {
   FormGroup,
   FormLabel,
   IconButton,
-  MenuItem,
-  Select,
+  Radio,
+  RadioGroup,
   TextField,
   Tooltip,
   Typography,
@@ -25,28 +25,33 @@ import {
 const DEFAULT_DB = "admin";
 
 // ─── MongoDB action catalogue ────────────────────────────────────────────────
-const ACTION_GROUPS = {
+// Collection/database-level actions — apply to {db, collection} resources.
+const COLLECTION_ACTION_GROUPS = {
   "Query & Write": [
     "find", "insert", "update", "remove", "aggregate",
     "bypassDocumentValidation",
   ],
-  "Collection": [
+  "Collection management": [
     "createCollection", "dropCollection", "createIndex", "dropIndex",
     "listIndexes", "collStats", "compact", "convertToCapped",
     "emptycapped", "reIndex", "validate",
   ],
-  "Database": [
+  "Database management": [
     "dropDatabase", "listCollections", "dbStats", "dbHash",
     "planCacheRead", "planCacheWrite", "planCacheIndexFilter",
   ],
-  "Users & Roles": [
+  "Users & Roles (DB level)": [
     "createUser", "dropUser", "grantRolesToUser", "revokeRolesFromUser",
     "viewUser", "changeOwnPassword", "changeAnyPassword",
     "changeOwnCustomData", "changeAnyCustomData",
     "createRole", "dropRole", "grantRolesToRole", "revokeRolesFromRole",
     "viewRole",
   ],
-  "Cluster": [
+};
+
+// Cluster-level actions — only valid on {cluster: true} resources.
+const CLUSTER_ACTION_GROUPS = {
+  "Cluster management": [
     "hostInfo", "listDatabases", "serverStatus", "top", "killOp",
     "killCursors", "connPoolStats", "getCmdLineOpts", "getLog",
     "getParameter", "setParameter", "shutdown", "fsync",
@@ -58,6 +63,14 @@ const ACTION_GROUPS = {
   ],
 };
 
+const ACTION_GROUPS_BY_TYPE = {
+  collection: COLLECTION_ACTION_GROUPS,
+  cluster: CLUSTER_ACTION_GROUPS,
+};
+
+const allActionsForType = (resourceType) =>
+  Object.values(ACTION_GROUPS_BY_TYPE[resourceType] || COLLECTION_ACTION_GROUPS).flat();
+
 // ─── Privilege entry ──────────────────────────────────────────────────────────
 const EMPTY_PRIVILEGE = () => ({
   resourceType: "collection",
@@ -68,7 +81,6 @@ const EMPTY_PRIVILEGE = () => ({
 
 const buildResource = (priv) => {
   if (priv.resourceType === "cluster") return { cluster: true };
-  if (priv.resourceType === "anyResource") return { anyResource: true };
   return { db: priv.resourceDb, collection: priv.resourceCollection };
 };
 
@@ -80,21 +92,31 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
     onChange(index, { ...priv, actions: next });
   };
 
-  const set = (field) => (e) =>
-    onChange(index, { ...priv, [field]: e.target.value });
+  const set = (field) => (e) => {
+    if (field === "resourceType") {
+      // Clear actions that don't belong to the new resource type.
+      const newType = e.target.value;
+      const validActions = allActionsForType(newType);
+      const filteredActions = priv.actions.filter((a) => validActions.includes(a));
+      onChange(index, { ...priv, resourceType: newType, actions: filteredActions });
+    } else {
+      onChange(index, { ...priv, [field]: e.target.value });
+    }
+  };
+
+  const actionGroups = ACTION_GROUPS_BY_TYPE[priv.resourceType] || COLLECTION_ACTION_GROUPS;
 
   return (
     <Box
       sx={{
         border: (t) => `1px solid ${t.palette.divider}`,
         borderRadius: 1,
-        p: 1.5,
-        display: "grid",
-        gap: 1,
+        p: 2,
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+      {/* Header row */}
+      <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ flex: 1, fontWeight: 600 }}>
           Privilege #{index + 1}
         </Typography>
         <Tooltip title="Remove privilege">
@@ -106,101 +128,123 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
         </Tooltip>
       </Box>
 
-      {/* Resource type */}
-      <FormControl size="small" fullWidth disabled={disabled}>
-        <FormLabel sx={{ mb: 0.5, fontSize: "0.75rem" }}>Resource type</FormLabel>
-        <Select value={priv.resourceType} onChange={set("resourceType")} size="small">
-          <MenuItem value="collection">Collection (db + collection)</MenuItem>
-          <MenuItem value="cluster">Cluster</MenuItem>
-          <MenuItem value="anyResource">Any resource</MenuItem>
-        </Select>
-      </FormControl>
+      {/* Two-column layout: resource config left, actions right */}
+      <Box sx={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 2 }}>
 
-      {priv.resourceType === "collection" && (
-        <Box sx={{ display: "flex", gap: 1 }}>
-          <TextField
-            label="Database"
-            placeholder="empty = any"
-            size="small"
-            value={priv.resourceDb}
-            onChange={set("resourceDb")}
-            disabled={disabled}
-            fullWidth
-          />
-          <TextField
-            label="Collection"
-            placeholder="empty = any"
-            size="small"
-            value={priv.resourceCollection}
-            onChange={set("resourceCollection")}
-            disabled={disabled}
-            fullWidth
-          />
-        </Box>
-      )}
+        {/* Left: resource */}
+        <Box sx={{ display: "grid", gap: 1.5, alignContent: "start" }}>
+          <FormControl component="fieldset" disabled={disabled}>
+            <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Resource type</FormLabel>
+            <RadioGroup row value={priv.resourceType} onChange={set("resourceType")}>
+              <FormControlLabel value="collection" control={<Radio size="small" />} label="Collection / Database" disabled={disabled} />
+              <FormControlLabel value="cluster" control={<Radio size="small" />} label="Cluster" disabled={disabled} />
+            </RadioGroup>
+          </FormControl>
 
-      {/* Actions */}
-      <FormControl component="fieldset" fullWidth disabled={disabled}>
-        <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Actions</FormLabel>
-        <Box
-          sx={{
-            border: (t) => `1px solid ${t.palette.divider}`,
-            borderRadius: 1,
-            maxHeight: 220,
-            overflowY: "auto",
-            p: 1,
-          }}
-        >
-          {Object.entries(ACTION_GROUPS).map(([group, actions]) => (
-            <Box key={group} sx={{ mb: 1 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                {group}
+          {priv.resourceType === "collection" && (
+            <>
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <TextField
+                  label="Database"
+                  placeholder="empty = all databases"
+                  size="small"
+                  value={priv.resourceDb}
+                  onChange={set("resourceDb")}
+                  disabled={disabled}
+                  fullWidth
+                />
+                <TextField
+                  label="Collection"
+                  placeholder="empty = all collections"
+                  size="small"
+                  value={priv.resourceCollection}
+                  onChange={set("resourceCollection")}
+                  disabled={disabled}
+                  fullWidth
+                />
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                Leave both empty to apply actions across all non-system collections in all databases.
               </Typography>
-              <FormGroup
-                sx={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  columnGap: 1,
-                }}
-              >
-                {actions.map((action) => (
-                  <FormControlLabel
-                    key={action}
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={priv.actions.includes(action)}
-                        onChange={() => toggleAction(action)}
-                        disabled={disabled}
-                      />
-                    }
-                    label={<Typography variant="caption">{action}</Typography>}
+            </>
+          )}
+
+          {priv.resourceType === "cluster" && (
+            <Typography variant="caption" color="text.secondary">
+              Cluster-level actions affect the entire system (replication, sharding, server config).
+            </Typography>
+          )}
+
+          {/* Selected actions summary */}
+          {priv.actions.length > 0 && (
+            <Box>
+              <Typography variant="caption" color="text.secondary">
+                {priv.actions.length} action{priv.actions.length !== 1 ? "s" : ""} selected
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
+                {priv.actions.map((a) => (
+                  <Chip
+                    key={a}
+                    label={a}
+                    size="small"
+                    onDelete={disabled ? undefined : () => toggleAction(a)}
                   />
                 ))}
-              </FormGroup>
-              <Divider sx={{ mt: 0.5 }} />
+              </Box>
             </Box>
-          ))}
+          )}
         </Box>
-        {priv.actions.length > 0 && (
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
-            {priv.actions.map((a) => (
-              <Chip
-                key={a}
-                label={a}
-                size="small"
-                onDelete={disabled ? undefined : () => toggleAction(a)}
-              />
+
+        {/* Right: action checkboxes */}
+        <FormControl component="fieldset" fullWidth disabled={disabled}>
+          <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Actions</FormLabel>
+          <Box
+            sx={{
+              border: (t) => `1px solid ${t.palette.divider}`,
+              borderRadius: 1,
+              maxHeight: 320,
+              overflowY: "auto",
+              p: 1,
+            }}
+          >
+            {Object.entries(actionGroups).map(([group, actions]) => (
+              <Box key={group} sx={{ mb: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  {group}
+                </Typography>
+                <FormGroup
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    columnGap: 0.5,
+                  }}
+                >
+                  {actions.map((action) => (
+                    <FormControlLabel
+                      key={action}
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={priv.actions.includes(action)}
+                          onChange={() => toggleAction(action)}
+                          disabled={disabled}
+                        />
+                      }
+                      label={<Typography variant="caption">{action}</Typography>}
+                    />
+                  ))}
+                </FormGroup>
+                <Divider sx={{ mt: 0.5 }} />
+              </Box>
             ))}
           </Box>
-        )}
-      </FormControl>
+        </FormControl>
+      </Box>
     </Box>
   );
 };
 
 // ─── Inherited roles selector ─────────────────────────────────────────────────
-// Shows custom roles from rolesData as checkboxes; role identity = role@db
 const InheritedRolesSelector = ({ rolesData, value, onChange, disabled }) => {
   const customRoles = rolesData.filter((r) => !r.isBuiltin && r.role);
   const selectedKeys = value.map((r) => `${r.role}@${r.db}`);
@@ -234,7 +278,7 @@ const InheritedRolesSelector = ({ rolesData, value, onChange, disabled }) => {
           <FormGroup
             sx={{
               display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
               columnGap: 1,
             }}
           >
@@ -254,7 +298,11 @@ const InheritedRolesSelector = ({ rolesData, value, onChange, disabled }) => {
                   label={
                     <Typography variant="caption">
                       {r.role}
-                      {r.db ? <> <span style={{ opacity: 0.6 }}>@ {r.db}</span></> : null}
+                      {r.db ? (
+                        <Typography component="span" variant="caption" color="text.secondary">
+                          {" "}@ {r.db}
+                        </Typography>
+                      ) : null}
                     </Typography>
                   }
                 />
@@ -351,17 +399,9 @@ const AddCustomRoleButton = ({
         + add custom role
       </Button>
 
-      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
+      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xl" scroll="paper" disableScrollLock PaperProps={{ sx: { width: "95vw", maxWidth: "95vw" } }}>
         <DialogTitle>Create custom MongoDB role</DialogTitle>
-        <DialogContent
-          sx={{
-            display: "grid",
-            gap: 2,
-            pt: "16px !important",
-            maxHeight: "70vh",
-            overflowY: "auto",
-          }}
-        >
+        <DialogContent dividers sx={{ display: "grid", gap: 2.5 }}>
           {/* Basic info */}
           <Box sx={{ display: "flex", gap: 2 }}>
             <TextField
@@ -408,7 +448,7 @@ const AddCustomRoleButton = ({
                 No privileges defined. A role with no privileges can still inherit from other roles.
               </Typography>
             ) : (
-              <Box sx={{ display: "grid", gap: 1.5 }}>
+              <Box sx={{ display: "grid", gap: 2 }}>
                 {privileges.map((priv, i) => (
                   <PrivilegeEntry
                     key={i}
