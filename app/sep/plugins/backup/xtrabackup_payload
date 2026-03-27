@@ -1876,7 +1876,7 @@ class GSUploadProvider:
             try:
                 os.makedirs(latest_file_local_dir)
             except Exception:
-                self.logger.warn('Could not create %s' % latest_file_local_dir)
+                self.logger.warning('Could not create %s' % latest_file_local_dir)
                 return dest_path
 
             latest_file_local_path = os.path.join(latest_file_local_dir, 'latest')
@@ -1887,7 +1887,7 @@ class GSUploadProvider:
             gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
             _, err = gs_proc.communicate()
             if gs_proc.returncode != 0:
-                self.logger.warn('GS latest file upload failed. Error: %s' % (err,))
+                self.logger.warning('GS latest file upload failed. Error: %s' % (err,))
 
         return dest_path
 
