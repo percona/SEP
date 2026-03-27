@@ -323,6 +323,62 @@ async def mum_list_users(
         )
 
 @router.post(
+    "/ui/list-roles",
+    dependencies=[IsAuthenticated],
+    response_class=JSONResponse,
+)
+@csrf_exempt
+async def mum_list_roles(
+    request: Request,  # noqa: ARG001
+    body: dict[str, Any],
+    tasks_api: TaskAPI,
+) -> JSONResponse:
+    """List MongoDB roles (built-in and custom) by executing the MUM list-roles task.
+    Expects JSON body with:
+    - target: executor host name (required)
+    """
+    logger.debug("Received list-roles request with body: %s", body)
+    target = body.get("target")
+    if not target:
+        return JSONResponse(
+            content={"detail": "'target' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        config_obj: dict[str, Any] = {"action": "list_roles"}
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
+            tasks_api,
+            task_name=task_name,
+            target=target,
+            config=config_obj,
+        )
+        logger.info(
+            "Successfully executed list_roles for target '%s' (history ID: %s)",
+            target,
+            history.get("id"),
+        )
+        return JSONResponse(
+            content={"task": default_task, "history": history},
+            status_code=status.HTTP_201_CREATED,
+        )
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error(
+            "Failed to list roles for target '%s': %s (status: %s)",
+            target,
+            exc.detail,
+            exc.status_code,
+        )
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    except Exception as exc:
+        logger.exception("Unexpected error while listing roles for target '%s'", target)
+        return JSONResponse(
+            content={"detail": f"Internal error: {str(exc)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post(
     "/ui/create-user",
     dependencies=[IsAuthenticated],
     response_class=JSONResponse,

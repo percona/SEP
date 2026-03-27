@@ -100,6 +100,34 @@ def load_config(config_path: Optional[str]) -> Dict[str, Any]:
             )
 
 
+def list_roles(db) -> None:  # type: ignore[no-untyped-def]
+    """Return all custom roles from every database plus built-in roles (deduplicated)."""
+    all_roles: List[Dict[str, Any]] = []
+    seen_builtins: set = set()
+
+    try:
+        db_names = [info["name"] for info in db.client.list_databases()]
+    except Exception:
+        db_names = ["admin"]
+
+    for db_name in db_names:
+        target = db.client.get_database(db_name)
+        try:
+            result: Dict[str, Any] = target.command(
+                {"rolesInfo": 1, "showBuiltinRoles": True}
+            )
+        except Exception:
+            continue
+        for r in result.get("roles", []) + result.get("builtinRoles", []):
+            key = (r.get("role"), r.get("db"))
+            if key not in seen_builtins:
+                seen_builtins.add(key)
+                # Trust MongoDB's own isBuiltin field; default False for custom roles
+                all_roles.append(dict(r, isBuiltin=bool(r.get("isBuiltin", False))))
+
+    print(json_util.dumps(all_roles, indent=2))
+
+
 def list_users(db) -> None:  # type: ignore[no-untyped-def]
     # Mimic `db.getUsers()` using the usersInfo command within the selected DB
     cmd: Dict[str, Any] = {"usersInfo": {"forAllDBs": True}, "showPrivileges": False}
@@ -204,7 +232,9 @@ def mum() -> None:
         # Default DB for commands; may switch based on action
         db = client.get_database("admin")
 
-        if action == "create_user":
+        if action == "list_roles":
+            list_roles(db)
+        elif action == "create_user":
             create_user(db, config)
         elif action == "update_user":
             update_user(db, config)
