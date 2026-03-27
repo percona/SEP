@@ -2,8 +2,8 @@
 
 # ---
 # title: "pt-mysql-summary"
-# description: "Executes pt-mysql-summary command"
-# allow_extra_args: false
+# description: "Executes pt-mysql-summary command. Extra args are passed to pt-mysql-summary after known options (e.g. MySQL client flags after --)."
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -79,6 +79,7 @@ while [[ -n $* ]]; do
             usage
             ;;
         --)
+            shift
             break
             ;;
         # Need this to catch options mess up that getopt does not recognize
@@ -96,7 +97,7 @@ if [ -d "${PTDEST}" ]; then
     exit 11
 fi
 
-if [ $# -gt 1 ]; then
+if [ $# -gt 0 ]; then
     echo "Starting pt-mysql-summary with extra options: $*"
 fi
 

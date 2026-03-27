@@ -2,8 +2,8 @@
 
 # ---
 # title: "pt-summary"
-# description: "Executes pt-summary command"
-# allow_extra_args: false
+# description: "Executes pt-summary command. Extra args are passed to pt-summary after known options."
+# allow_extra_args: true
 # sudo: always
 # parameters:
 #  - name: defaults-file
@@ -80,6 +80,7 @@ while [[ -n $* ]]; do
             usage
             ;;
         --)
+            shift
             break
             ;;
         # Need this to catch options mess up that getopt does not recognize
@@ -97,7 +98,7 @@ if [ $SAVE_SAMPLES -eq 1 ] && [ -d "${PTDEST}" ]; then
     exit 11
 fi
 
-if [ $# -gt 1 ]; then
+if [ $# -gt 0 ]; then
     echo "Starting pt-summary with extra options: $*"
 fi
 
