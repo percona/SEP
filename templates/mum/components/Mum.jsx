@@ -22,6 +22,7 @@ import EditUserButton from "./EditUserButton";
 import DeleteUserButton from "./DeleteUserButton";
 import MumUserList from "./MumUserList";
 import MumRoleList from "./MumRoleList";
+import AddCustomRoleButton from "./AddCustomRoleButton";
 
 // Build a MUI theme that mirrors CSS variables from base.css
 function buildMuiThemeFromCssVars() {
@@ -465,10 +466,16 @@ const Mum = () => {
 
   const handleUserMutation = useCallback(
     (meta) => {
-      // Refresh list in the background after add/edit/delete succeeds.
       listUsers(meta?.target);
     },
     [listUsers]
+  );
+
+  const handleRoleMutation = useCallback(
+    (meta) => {
+      listRoles(meta?.target);
+    },
+    [listRoles]
   );
 
   const rowActionsEnabled =
@@ -613,7 +620,16 @@ const Mum = () => {
         )}
 
         {activeTab === 1 && (
-          <MumRoleList rolesData={rolesData} />
+          <MumRoleList
+            rolesData={rolesData}
+            toolbarActions={
+              <AddCustomRoleButton
+                selectedTarget={selectedTarget}
+                rolesData={rolesData}
+                onSuccess={handleRoleMutation}
+              />
+            }
+          />
         )}
       </Box>
     </ThemeProvider>

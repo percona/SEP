@@ -25,6 +25,7 @@ MUM_TASK_NAME_BY_ACTION = {
     "update_user": "mum-user-update",
     "delete_user": "mum-user-delete",
     "list_roles": "mum-role-list",
+    "create_role": "mum-role-create",
 }
 MUM_TASK_NAMES = tuple(MUM_TASK_NAME_BY_ACTION.values())
 PAYLOAD_PATH = Path(__file__).parent / "mum_payload"

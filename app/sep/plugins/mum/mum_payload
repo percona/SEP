@@ -218,6 +218,33 @@ def delete_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
     print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
 
 
+def create_role(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
+    """Create a custom MongoDB role.
+
+    Expected config keys:
+    - role (required): role name
+    - db (optional; defaults to 'admin'): database that owns the role
+    - privileges (optional): list of {resource, actions} dicts
+    - inheritedRoles (optional): list of role name strings or {role, db} dicts
+    """
+    role_name = config.get("role")
+    if not role_name:
+        print(json_util.dumps({"ok": False, "error": "role name is required"}))
+        sys.exit(1)
+
+    db_name = config.get("db", "admin")
+    privileges = config.get("privileges", [])
+    inherited = normalize_roles(config.get("inheritedRoles", []), db_name)
+
+    target_db = db.client.get_database(db_name)
+    result = target_db.command({
+        "createRole": role_name,
+        "privileges": privileges,
+        "roles": inherited,
+    })
+    print(json_util.dumps({"ok": True, "result": result, "role": role_name, "db": db_name}))
+
+
 def mum() -> None:
     """Connect to MongoDB and perform an action based on config."""
     uri = mum_creds()
@@ -234,6 +261,8 @@ def mum() -> None:
 
         if action == "list_roles":
             list_roles(db)
+        elif action == "create_role":
+            create_role(db, config)
         elif action == "create_user":
             create_user(db, config)
         elif action == "update_user":

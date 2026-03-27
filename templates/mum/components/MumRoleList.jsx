@@ -48,6 +48,7 @@ const formatCell = (col, value) => {
 
 const MumRoleList = ({
   rolesData = [],
+  toolbarActions = null,
   emptyState = "No roles to display.",
 }) => {
   const columns = useMemo(() => getColumns(rolesData), [rolesData]);
@@ -61,6 +62,7 @@ const MumRoleList = ({
         <Typography variant="body2" color="text.secondary">
           {rolesData.length ? `${rolesData.length} roles` : "No data yet"}
         </Typography>
+        {toolbarActions && <Box sx={{ ml: 2 }}>{toolbarActions}</Box>}
       </Toolbar>
       <TableContainer>
         <Table size="small">
