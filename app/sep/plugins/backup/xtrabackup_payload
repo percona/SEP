@@ -1846,7 +1846,7 @@ class GSUploadProvider:
 
     def upload(self, source_dir, dest_dir):
         """Upload given directory to provided GS destination.
- 
+
         :param source_dir: Local source directory.
         :param dest_dir: Destination path (relative) on GS.
         :return: GS URI of the uploaded backup.
@@ -1856,29 +1856,29 @@ class GSUploadProvider:
         bucket_url = self.gs_bucket
         if not bucket_url.startswith('gs://'):
             bucket_url = f'gs://{bucket_url}'
-        dest_path = os.path.join(bucket_url, dest_dir, '')        
+        dest_path = os.path.join(bucket_url, dest_dir, '')
         gs_cmd = [GSUTIL_BIN, 'rsync', '-r', source_path, dest_path]
         self.logger.info('Uploading backup...')
         self.logger.info('Running: %s', ' '.join(gs_cmd))
- 
+
         gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
         _, err = gs_proc.communicate()
         if gs_proc.returncode != 0:
             msg = 'GS upload failed. Error: %s' % (err,)
             raise BackupError(msg)
- 
+
         if self.backup_type != 'B' and not (self.backup_type == 'X' and '_incrementals' in dest_dir):
             latest_file_local_dir = os.path.join('/tmp/percona_backup_latest',
                                                  "/".join(dest_path.split('/')[-4:-2]))
             if os.path.isdir(latest_file_local_dir):
                 shutil.rmtree(latest_file_local_dir)
- 
+
             try:
                 os.makedirs(latest_file_local_dir)
             except Exception:
                 self.logger.warn('Could not create %s' % latest_file_local_dir)
                 return dest_path
- 
+
             latest_file_local_path = os.path.join(latest_file_local_dir, 'latest')
             latest_file_remote_dir = os.path.join('gs://', *(dest_path.split('/')[2:-2] + ['']))
             with open(latest_file_local_path, 'w') as fn:
@@ -1888,7 +1888,7 @@ class GSUploadProvider:
             _, err = gs_proc.communicate()
             if gs_proc.returncode != 0:
                 self.logger.warn('GS latest file upload failed. Error: %s' % (err,))
- 
+
         return dest_path
 
 class XtraBackupRunner(multiprocessing.Process):
