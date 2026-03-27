@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086
 
 # ---
 # title: "Tables without Primary Key"
-# description: "Prints all tables in all databases that do not have a primary key."
-# allow_extra_args: false
+# description: "Prints all tables in all databases that do not have a primary key. Extra args are passed to mysql (e.g. -u, -p, SSL options)."
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -29,7 +30,7 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 # Replace the above with a heredoc for better multiline handling
-$MYSQL << EOF
+$MYSQL "$@" << EOF
 SELECT
   TABLES.table_name, TABLES.TABLE_SCHEMA
 FROM INFORMATION_SCHEMA.TABLES

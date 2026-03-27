@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086
 
 # ---
-# title: "Show Replica Status"
-# description: "Prints the output of SHOW REPLICA STATUS."
-# allow_extra_args: false
+# title: "Group Replication queries"
+# description: "Prints Group Replication diagnostics from performance_schema. Extra args are passed to mysql (e.g. -u, -p, SSL options)."
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -14,8 +15,8 @@
 #  - GROUP_REPLICATION
 # ---
 
-# Usage: ./mysql_replica_status.sh [--defaults-file=path] [mysql_args...]
-# Example: ./mysql_replica_status.sh --defaults-file=/etc/mysql/my.cnf -uroot -p
+# Usage: ./mysql_gr_queries.sh [--defaults-file=path] [mysql_args...]
+# Example: ./mysql_gr_queries.sh --defaults-file=/etc/mysql/my.cnf -uroot -p
 
 # Check for --defaults-file argument
 DEFAULTS_FILE=""
@@ -27,24 +28,24 @@ elif [[ $1 == --defaults-file ]]; then
     shift 2
 fi
 
-MYSQL="mysql $DEFAULTS_FILE -B "
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "Query: replication_group_member_stats"
-$MYSQL -e "select * from performance_schema.replication_group_member_stats;"
+$MYSQL "$@" -e "select * from performance_schema.replication_group_member_stats;"
 echo
 
 echo "Query: replication_group_members"
-$MYSQL -e "select * from performance_schema.replication_group_members;"
+$MYSQL "$@" -e "select * from performance_schema.replication_group_members;"
 echo
 
 echo "Query: replication_group_communication_information"
-$MYSQL -e "select * from performance_schema.replication_group_communication_information;"
+$MYSQL "$@" -e "select * from performance_schema.replication_group_communication_information;"
 echo
 
 echo "Query: replication_connection_status"
-$MYSQL -e "select * from performance_schema.replication_connection_status;"
+$MYSQL "$@" -e "select * from performance_schema.replication_connection_status;"
 echo
 
 echo "Query: replication_applier_status"
-$MYSQL -e "select * from performance_schema.replication_applier_status;"
+$MYSQL "$@" -e "select * from performance_schema.replication_applier_status;"
 echo

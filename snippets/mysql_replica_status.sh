@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086
 
 # ---
 # title: "Show Replica Status"
-# description: "Prints the output of SHOW REPLICA STATUS."
-# allow_extra_args: false
+# description: "Prints the output of SHOW REPLICA STATUS. Extra args are passed to mysql (e.g. -u, -p, SSL options)."
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str
@@ -30,8 +31,8 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 # Try SHOW REPLICA STATUS and check for error anywhere in output
-if ! $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
-    $MYSQL -e 'SHOW REPLICA STATUS\G'
+if ! $MYSQL "$@" -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
+    $MYSQL "$@" -e 'SHOW REPLICA STATUS\G'
 else
-    $MYSQL -e 'SHOW SLAVE STATUS\G'
+    $MYSQL "$@" -e 'SHOW SLAVE STATUS\G'
 fi
