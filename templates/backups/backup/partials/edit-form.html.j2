@@ -950,29 +950,29 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     <button class="text large" type="button" id="toggle_gcp_btn">+ Add GCP upload</button>
                     <br>
                     <div id="gcp_container">
-                        {% set gcp_bucket_title = "Type the name of the GCP bucket where backups will be stored." %}
+                        {% set gs_bucket_title = "Type the name of the GCP bucket where backups will be stored." %}
                         <div>
-                            <label for="gcp_bucket">
+                            <label for="gs_bucket">
                                 GCP Bucket:
                                 <input type="text"
-                                       id="gcp_bucket"
-                                       name="gcp_bucket"
-                                       value="{{ task.gcp_bucket or '' }}"
+                                       id="gs_bucket"
+                                       name="gs_bucket"
+                                       value="{{ task.gs_bucket or '' }}"
                                        placeholder="e.g. my-gcp-backup-bucket" />
-                                {{ info_icon(gcp_bucket_title) }}
+                                {{ info_icon(gs_bucket_title) }}
                             </label>
                         </div>
                         <br>
-                        {% set gcp_storage_class_title = "Type the GCP storage class for backups." %}
+                        {% set gs_storage_class_title = "Type the GCP storage class for backups." %}
                         <div>
-                            <label for="gcp_storage_class">
+                            <label for="gs_storage_class">
                                 GCP Storage Class (optional):
                                 <input type="text"
-                                       id="gcp_storage_class"
-                                       name="gcp_storage_class"
-                                       value="{{ task.gcp_storage_class or '' }}"
+                                       id="gs_storage_class"
+                                       name="gs_storage_class"
+                                       value="{{ task.gs_storage_class or '' }}"
                                        placeholder="STANDARD, NEARLINE, etc." />
-                                {{ info_icon(gcp_storage_class_title) }}
+                                {{ info_icon(gs_storage_class_title) }}
                             </label>
                         </div>
                         <br>
@@ -1020,7 +1020,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
     const gcpContainer = document.getElementById('gcp_container');
     const toggleGcpBtn = document.getElementById('toggle_gcp_btn');
-    const gcpBucketInput = document.getElementById('gcp_bucket');
+    const gcpBucketInput = document.getElementById('gs_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
     const s3BucketInput = document.getElementById('s3_bucket');
@@ -1208,7 +1208,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             showContainer(gcpContainer, false);
             gcpBucketInput.required = false;
             gcpBucketInput.value = '';
-            document.getElementById('gcp_storage_class').value = '';
+            document.getElementById('gs_storage_class').value = '';
             toggleGcpBtn.textContent = "+ Add GCP upload";
         }
     }

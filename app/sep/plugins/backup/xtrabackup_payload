@@ -1377,7 +1377,7 @@ class Upload(Backup):
     ) -> None:
         """Initialize the Upload object.
 
-        :param upload_type: Type of upload (e.g., "S3", "Rsync").
+        :param upload_type: Type of upload (e.g., "S3", "Rsync","GSUTIL" ).
         :param upload_provider: Class handling the specific upload method.
         :param settings: Server/backup settings.
         :param logger: Logger instance.
@@ -1854,10 +1854,13 @@ class GSUploadProvider:
         """
         # Ensure paths end with /
         source_path = os.path.join(source_dir, '')
-        dest_path = os.path.join(self.gs_bucket, dest_dir, '')
-        gs_cmd = [GSUTIL_BIN, 'rsync', '-r', source_path, dest_path]
+        bucket_url = self.gs_bucket
+        if not bucket_url.startswith('gs://'):
+            bucket_url = f'gs://{bucket_url}'
+        dest_path = os.path.join(bucket_url, dest_dir, '')
         self.logger.info('Uploading backup...')
-        self.logger.info('Running: %s', ' '.join(gs_cmd))
+        self.logger.info('Running: %s', ' '.join([GSUTIL_BIN, 'rsync', '-r', source_path, dest_path]))
+        gs_cmd = [GSUTIL_BIN, 'rsync', '-r', source_path, dest_path]
 
         gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
         _, err = gs_proc.communicate()
@@ -1865,9 +1868,7 @@ class GSUploadProvider:
             msg = 'GS upload failed. Error: %s' % (err,)
             raise BackupError(msg)
 
-        # upload a latest file with the latest dir
-        # skiping for binlog uploads
-        if self.backup_type != 'B' and not (self.backup_type == 'X' and '_incrementals' in dest_dir):
+        if self.backup_type == 'X' and '_incrementals' not in dest_dir:
             latest_file_local_dir = os.path.join('/tmp/percona_backup_latest',
                                                  "/".join(dest_path.split('/')[-4:-2]))
             if os.path.isdir(latest_file_local_dir):
@@ -1875,12 +1876,12 @@ class GSUploadProvider:
 
             try:
                 os.makedirs(latest_file_local_dir)
-            except:
+            except Exception:
                 self.logger.warn('Could not create %s' % latest_file_local_dir)
                 return dest_path
 
             latest_file_local_path = os.path.join(latest_file_local_dir, 'latest')
-            latest_file_remote_dir = os.path.join('gs://', *(dest_path.split('/')[2:-2] + ['']))
+            latest_file_remote_dir = os.path.join(bucket_url, *(dest_path.split('/')[3:-2] + ['']))
             with open(latest_file_local_path, 'w') as fn:
                 fn.write("%s" % dest_path)
             gs_cmd = [GSUTIL_BIN,
@@ -2170,13 +2171,15 @@ class Xtrabackup(Backup):
                     settings=self.server_setting,
                     logger=self.logger,
                 ).run()
-            elif upload_type == "gs":
+            elif upload_type == "gsutil":
                 XtraBackupUpload(
                     upload_type=upload_type,
                     upload_provider=GSUploadProvider,
                     settings=self.server_setting,
                     logger=self.logger,
                 ).run()
+            elif upload_type == "gs":
+                self.logger.warning("'gs' is deprecated, use 'gsutil' as upload type.")
             else:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
 

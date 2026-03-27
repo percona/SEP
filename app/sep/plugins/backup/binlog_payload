@@ -1159,7 +1159,7 @@ def run_binlog_process(server_data, lock_file, command_queue):
                                                 upload_provider=S3UploadProvider,
                                                 settings=server_data,
                                                 logger=LOGGER).run()
-                            elif upload_type == "gs":
+                            elif upload_type == "gsutil":
                                 LOGGER.info("Binlog upload gs ...")
                                 BinaryLogUpload(upload_type=upload_type,
                                                 upload_provider=GSUploadProvider,

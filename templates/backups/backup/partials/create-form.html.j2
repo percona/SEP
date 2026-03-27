@@ -844,22 +844,22 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <label for="gcp_bucket">
                             GCP Bucket:
                             <input type="text"
-                                   id="gcp_bucket"
-                                   name="gcp_bucket"
-                                   placeholder="e.g. my-gcp-backup-bucket" />
+                                id="gs_bucket"
+                                name="gs_bucket"
+                                placeholder="e.g. my-gcp-backup-bucket" />
                             {{ info_icon(gcp_bucket_title) }}
                         </label>
                     </div>
                     <br>
-                    {% set gcp_storage_class_title = "Type the GCP storage class for backups." %}
+                    {% set gs_storage_class_title = "Type the GCP storage class for backups." %}
                     <div>
-                        <label for="gcp_storage_class">
+                        <label for="gs_storage_class">
                             GCP Storage Class (optional):
                             <input type="text"
-                                   id="gcp_storage_class"
-                                   name="gcp_storage_class"
+                                   id="gs_storage_class"
+                                   name="gs_storage_class"
                                    placeholder="STANDARD, NEARLINE, etc." />
-                            {{ info_icon(gcp_storage_class_title) }}
+                            {{ info_icon(gs_storage_class_title) }}
                         </label>
                     </div>
                     <br>
@@ -900,7 +900,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
     const gcpContainer = document.getElementById('gcp_container');
     const toggleGcpBtn = document.getElementById('toggle_gcp_btn');
-    const gcpBucketInput = document.getElementById('gcp_bucket');
+    const gcpBucketInput = document.getElementById('gs_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
     const s3BucketInput = document.getElementById('s3_bucket');
@@ -1075,7 +1075,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             showContainer(gcpContainer, false);
             gcpBucketInput.required = false;
             gcpBucketInput.value = '';
-            document.getElementById('gcp_storage_class').value = '';
+            document.getElementById('gs_storage_class').value = '';
             toggleGcpBtn.textContent = "+ Add GCP upload";
         }
     }
