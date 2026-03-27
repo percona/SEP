@@ -14,7 +14,7 @@ env:
   POETRY: poetry
 
 jobs:
-  audit:
+  bandit:
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -27,11 +27,27 @@ jobs:
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
-      - name: Perform audit
-        run: RUFF_OUTPUT_FORMAT=github make audit
+      - name: Run bandit
+        run: make bandit
+
+  pip-audit:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11.9"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run pip-audit
+        run: make pip-audit
 
   check_migrations:
-    needs: [audit]
+    needs: [bandit]
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -48,7 +64,7 @@ jobs:
         run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
 
   test:
-    needs: [audit, check_migrations]
+    needs: [bandit, check_migrations]
     name: test (${{ matrix.python }})
     strategy:
       matrix:
@@ -69,7 +85,7 @@ jobs:
         run: make test
 
   build:
-    needs: [audit, test, check_migrations]
+    needs: [bandit, test, check_migrations]
     strategy:
       matrix:
         os: [ubuntu-latest]
