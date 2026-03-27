@@ -53,7 +53,6 @@ class TestTroubleshootingIndex:
         )
         response = test_client.get("/alert-troubleshooting/")
         assert response.status_code == status.HTTP_200_OK
-        sep_app.dependency_overrides.pop(get_troubleshooting_index_context, None)
 
     def test_index_renders_alert_names(self, test_client: TestClient):
         """Assert the response includes alert display names."""
@@ -70,7 +69,6 @@ class TestTroubleshootingIndex:
         )
         response = test_client.get("/alert-troubleshooting/")
         assert "PostgreSQL Lock Conflicts" in response.text
-        sep_app.dependency_overrides.pop(get_troubleshooting_index_context, None)
 
     def test_index_renders_service_type_header(self, test_client: TestClient):
         """Assert the response includes service type section headers."""
@@ -84,7 +82,6 @@ class TestTroubleshootingIndex:
         )
         response = test_client.get("/alert-troubleshooting/")
         assert "MySQL" in response.text
-        sep_app.dependency_overrides.pop(get_troubleshooting_index_context, None)
 
     def test_index_empty_state(self, test_client: TestClient):
         """Assert the empty state message renders when no alerts exist."""
@@ -94,7 +91,6 @@ class TestTroubleshootingIndex:
         response = test_client.get("/alert-troubleshooting/")
         assert response.status_code == status.HTTP_200_OK
         assert "No alert troubleshooting guides" in response.text
-        sep_app.dependency_overrides.pop(get_troubleshooting_index_context, None)
 
     def test_index_alert_links_to_detail(self, test_client: TestClient):
         """Assert alert links point to the detail page URL."""
@@ -108,4 +104,3 @@ class TestTroubleshootingIndex:
         )
         response = test_client.get("/alert-troubleshooting/")
         assert "/alert-troubleshooting/HighCPUUsage" in response.text
-        sep_app.dependency_overrides.pop(get_troubleshooting_index_context, None)

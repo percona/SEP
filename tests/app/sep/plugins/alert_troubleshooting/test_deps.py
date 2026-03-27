@@ -15,6 +15,8 @@
 
 """Test the alert troubleshooting plugin dependencies."""
 
+from types import SimpleNamespace
+
 from app.sep.models import AlertServiceType
 from app.sep.plugins.alert_troubleshooting.deps import (
     AlertInfo,
@@ -108,12 +110,7 @@ class TestCollectGroupedAlerts:
     @staticmethod
     def _make_snippet(meta):
         """Create a mock snippet object with the given meta dict."""
-
-        class FakeSnippet:
-            def __init__(self, m):
-                self.meta = m
-
-        return FakeSnippet(meta)
+        return SimpleNamespace(meta=meta)
 
     def test_basic_grouping(self):
         """Assert alerts are grouped by service type."""
