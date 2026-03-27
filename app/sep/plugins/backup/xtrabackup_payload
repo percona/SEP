@@ -127,6 +127,7 @@ INNOCHECKSUM_BIN = "innochecksum"
 LZ4_BIN = os.getenv("PERCONA_BACKUP_LZ4_BIN", "/usr/bin/lz4")
 QPRESS_BIN = os.getenv("PERCONA_BACKUP_QPRESS_BIN", "/usr/bin/qpress")
 RSYNC_BIN = "/usr/bin/rsync"
+GSUTIL_BIN = os.getenv('PERCONA_BACKUP_GSUTIL_BIN', '/usr/local/bin/gsutil')
 XBCRYPT_BIN = os.getenv("PERCONA_BACKUP_XBCRYPT_BIN", "/usr/bin/xbcrypt")
 XTRABACKUP_BIN = os.getenv("PERCONA_BACKUP_XTRABACKUP_BIN", "/usr/bin/innobackupex")
 XTRABACKUP_BIN_REAL = os.getenv(
@@ -1816,34 +1817,82 @@ class S3UploadProvider:
 
 class GSUploadProvider:
     """Google Cloud Storage upload."""
+
     def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+        """Initialize GSUploadProvider.
+
+        :param settings: Backup/server settings.
+        :param logger: Logger instance.
+        :raises BackupError: If S3_BUCKET not set.
+        """
         self.logger = logger
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
-        self.gsutil_bin = settings.get("GSUTIL_BIN", "gsutil")
-        self.backup_type = settings.get("BACKUP_TYPE")
+        self.gsutil_bin = settings.get("GSUTIL_BIN", GSUTIL_BIN)
+        self.backup_type = settings.get('BACKUP_TYPE')
         if self.gs_bucket is None:
-            msg = "GS_BUCKET is not set."
+            msg = 'GS_BUCKET is not set.'
             raise BackupError(msg)
-        logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
-        log_file = (
-            Path(logging_dir)
-            / f"gsutil-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
-        )
-        self.log_stream = log_file.open("a")
 
-    def upload(self, source_dir: str, dest_dir: str) -> str:
-        source_path = str(Path(source_dir))
-        dest_path = str(Path(self.gs_bucket) / dest_dir)
-        gs_cmd = [self.gsutil_bin, "rsync", "-r", source_path, dest_path]
-        self.logger.info("Uploading backup to GS bucket...")
-        self.logger.info("Running: %s", " ".join(gs_cmd))
+        logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
+        log_file = os.path.join(logging_dir, 'gsutil-%s-%s-%s.log' %
+                                (self.alias,
+                                 self.backup_type,
+                                 time.strftime('%Y%m%d')
+                                )
+                               )
+        self.log_stream = open(log_file, 'a')
+
+    def upload(self, source_dir, dest_dir):
+        """Upload given directory to provided GS destination.
+
+        :param source_dir: Local source directory.
+        :param dest_dir: Destination path (relative) on GS.
+        :return: GS URI of the uploaded backup.
+        :raises BackupError: If GS upload fails.
+        """
+        # Ensure paths end with /
+        source_path = os.path.join(source_dir, '')
+        dest_path = os.path.join(self.gs_bucket, dest_dir, '')
+        gs_cmd = [GSUTIL_BIN, 'rsync', '-r', source_path, dest_path]
+        self.logger.info('Uploading backup...')
+        self.logger.info('Running: %s', ' '.join(gs_cmd))
+
         gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
         _, err = gs_proc.communicate()
         if gs_proc.returncode != 0:
-            msg = f"GS upload failed. Error: {err}"
+            msg = 'GS upload failed. Error: %s' % (err,)
             raise BackupError(msg)
+
+        # upload a latest file with the latest dir
+        # skiping for binlog uploads
+        if self.backup_type != 'B' and not (self.backup_type == 'X' and '_incrementals' in dest_dir):
+            latest_file_local_dir = os.path.join('/tmp/percona_backup_latest',
+                                                 "/".join(dest_path.split('/')[-4:-2]))
+            if os.path.isdir(latest_file_local_dir):
+                shutil.rmtree(latest_file_local_dir)
+
+            try:
+                os.makedirs(latest_file_local_dir)
+            except:
+                self.logger.warn('Could not create %s' % latest_file_local_dir)
+                return dest_path
+
+            latest_file_local_path = os.path.join(latest_file_local_dir, 'latest')
+            latest_file_remote_dir = os.path.join('gs://', *(dest_path.split('/')[2:-2] + ['']))
+            with open(latest_file_local_path, 'w') as fn:
+                fn.write("%s" % dest_path)
+            gs_cmd = [GSUTIL_BIN,
+                      'cp',
+                      latest_file_local_path,
+                      latest_file_remote_dir
+                      ]
+            gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+            _, err = gs_proc.communicate()
+            if gs_proc.returncode != 0:
+                logging.warn('GS latest file upload failed. Error: %s', (err,))
+
         return dest_path
 
 class XtraBackupRunner(multiprocessing.Process):

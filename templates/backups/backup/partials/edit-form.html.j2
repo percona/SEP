@@ -976,34 +976,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </label>
                         </div>
                         <br>
-                        {% set gcp_upload_extra_args_title = "Additional ExtraArgs to pass to GCP upload (e.g. predefinedAcl=publicRead)" %}
-                        <div>
-                            <label for="gcp_upload_extra_args">
-                                GCP Upload Extra Args (optional):
-                                <input type="text"
-                                       id="gcp_upload_extra_args"
-                                       name="gcp_upload_extra_args"
-                                       value="{{ task.gcp_upload_extra_args or '' }}"
-                                       placeholder="e.g. predefinedAcl=publicRead" />
-                                {{ info_icon(gcp_upload_extra_args_title) }}
-                            </label>
-                        </div>
-                        <br>
-                        {% set skip_gcp_safety_check_title = "Disable safety checks before uploading backups to GCP. Use with caution to avoid accidental data loss." %}
-                        <div>
-                            <label class="checkbox" for="skip_gcp_safety_check">
-                                <input type="checkbox"
-                                       id="skip_gcp_safety_check"
-                                       name="skip_gcp_safety_check"
-                                       value="1"
-                                       {% if task.skip_gcp_safety_check %}checked{% endif %} />
-                                <div class="checkmark">
-                                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                                    <span class="material-symbols-outlined checked">check_box</span>
-                                </div>
-                                <span class="label">Skip GCP Safety Check</span>{{ info_icon(skip_gcp_safety_check_title) }}
-                            </label>
-                        </div>
                     </div>
                     <button class="text large" type="button" id="toggle_rsync_btn">+ Add Rsync upload</button>
                     <div id="rsync_container">
@@ -1237,7 +1209,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             gcpBucketInput.required = false;
             gcpBucketInput.value = '';
             document.getElementById('gcp_storage_class').value = '';
-            document.getElementById('skip_gcp_safety_check').checked = false;
             toggleGcpBtn.textContent = "+ Add GCP upload";
         }
     }
