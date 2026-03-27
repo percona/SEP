@@ -67,7 +67,8 @@ run-pre-commit: venv
 	@"${VENV_BIN}"/pre-commit run --all-files
 
 pip-audit: venv
-	@"${POETRY}" run pip-audit --verbose --progress-spinner=off
+	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
+		$$($(PYTHON) -c "import tomllib,pathlib;c=tomllib.loads(pathlib.Path('pyproject.toml').read_text());print(' '.join(f'--ignore-vuln {v}' for v in c.get('tool',{}).get('pip-audit',{}).get('ignore-vulnerabilities',[])))" 2>/dev/null)
 
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
