@@ -68,3 +68,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </p>
     {% endif %}
 {% endblock main %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/alert-troubleshooting.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock behaviours_optimized_extra %}
