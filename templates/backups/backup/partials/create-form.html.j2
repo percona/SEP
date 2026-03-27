@@ -36,7 +36,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container,
     #xtrabackup_container,
     #s3_container,
-    #gcp_container,
+    #gs_container,
     #rsync_container {
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 0;
@@ -46,7 +46,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container.visible,
     #xtrabackup_container.visible,
     #s3_container.visible,
-    #gcp_container.visible,
+    #gs_container.visible,
     #rsync_container.visible {
         opacity: 1;
         max-height: 1000px;
@@ -54,7 +54,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
     #upload_container.visible,
     #s3_container.visible,
-    #gcp_container.visible,
+    #gs_container.visible,
     #rsync_container.visible{
         display: block;
     }
@@ -838,7 +838,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 </div>
                 <button class="text large" type="button" id="toggle_gcp_btn">+ Add GCP upload</button>
                 <br>
-                <div id="gcp_container" class="hidden">
+                <div id="gs_container" class="hidden">
                     {% set gcp_bucket_title = "Type the name of the GCP bucket where backups will be stored." %}
                     <div>
                         <label for="gcp_bucket">
@@ -898,7 +898,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const uploadContainer = document.getElementById('upload_container');
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
-    const gcpContainer = document.getElementById('gcp_container');
+    const gcpContainer = document.getElementById('gs_container');
     const toggleGcpBtn = document.getElementById('toggle_gcp_btn');
     const gcpBucketInput = document.getElementById('gs_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
