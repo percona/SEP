@@ -179,6 +179,8 @@ QUERY="${QUERY%%[;[:space:]]}"
 QUERY="${QUERY%%;}"
 QUERY="${QUERY%%[[:space:]]}"
 
+MYSQL="mysql $DEFAULTS_FILE -B"
+
 [ "$SEPDEBUG" ] && echo "Using query: '${QUERY}'"
 
 # 1. Check if the query starts with "SELECT"
@@ -258,7 +260,7 @@ fi
 # 9. If --execute is set, execute the diagnostic queries and write results to results.txt
 if [ $EXECUTE -eq 1 ]; then
     [ "$SEPDEBUG" ] && echo "Writing results to: ${DEST}/results.txt"
-    if ! mysql $DEFAULTS_FILE -B "$@" < "${QUERY_FILE}" > "${DEST}/results.txt" 2>&1; then
+    if ! $MYSQL "$@" < "${QUERY_FILE}" > "${DEST}/results.txt" 2>&1; then
         echo "Error executing diagnostic queries, check results.txt for details."
         exit 1
     fi
