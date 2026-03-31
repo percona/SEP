@@ -116,11 +116,11 @@ def humanize_bytes(num_bytes: int) -> str:
     :return: Humanized file size.
     :rtype: str
     """
-    bytes_treshold = 1024
+    bytes_threshold = 1024
     for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
-        if abs(num_bytes) < bytes_treshold:
+        if abs(num_bytes) < bytes_threshold:
             return f"{num_bytes:3.1f}{unit}B"
-        num_bytes /= bytes_treshold
+        num_bytes /= bytes_threshold
     return f"{num_bytes:.1f}YiB"
 
 
