@@ -15,6 +15,9 @@
 
 """Define Jinja2 filters and utilities."""
 
+import math
+import time
+
 from datetime import datetime
 from typing import Any
 
@@ -122,8 +125,66 @@ def humanize_bytes(num_bytes: int) -> str:
     return f"{num_bytes:.1f}YiB"
 
 
+def timestamp_format(epoch_seconds: int | float) -> str:
+    """Format a Unix timestamp (seconds) as a human-readable UTC date string.
+
+    :param epoch_seconds: Seconds since epoch.
+    :type epoch_seconds: int | float
+    :return: Formatted date string.
+    :rtype: str
+    """
+    try:
+        return time.strftime("%d %B %Y at %H:%M:%S", time.gmtime(epoch_seconds))
+    except (OverflowError, OSError, ValueError):
+        return str(epoch_seconds)
+
+
+def backup_date(value: int | str) -> str:
+    """Format a backup period start value as a readable date.
+
+    If the value is an integer (epoch ms), it is converted to a formatted
+    date string.  If it is already a string it is returned as-is.
+
+    :param value: Epoch milliseconds or pre-formatted date string.
+    :type value: int | str
+    :return: Formatted date string.
+    :rtype: str
+    """
+    if isinstance(value, int):
+        try:
+            return time.strftime(
+                "%d %B %Y at %H:%M:%S UTC", time.gmtime(value / 1000)
+            )
+        except (OverflowError, OSError, ValueError):
+            return str(value)
+    return str(value)
+
+
+def convert_bytes(value: str | int | float, unit: str = "G") -> str:
+    """Convert a byte count (given as a string) to a human-readable size.
+
+    :param value: Byte count as a string, int, or float.
+    :type value: str | int | float
+    :param unit: Target unit (K, M, G, T, P).
+    :type unit: str
+    :return: Human-readable size string.
+    :rtype: str
+    """
+    try:
+        total_bytes = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    units = {"K": 1, "M": 2, "G": 3, "T": 4, "P": 5}
+    exp = units.get(unit, 3)
+    result = total_bytes / math.pow(1024, exp)
+    return f"{round(result)}{unit}B"
+
+
 DEFAULT_FILTERS = {
     "syntax_highlight": syntax_highlight,
     "utc_isoformat": utc_isoformat,
     "humanize_bytes": humanize_bytes,
+    "timestamp_format": timestamp_format,
+    "backup_date": backup_date,
+    "convert_bytes": convert_bytes,
 }
