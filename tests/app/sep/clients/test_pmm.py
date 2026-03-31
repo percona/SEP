@@ -796,3 +796,500 @@ class TestUpdateNotificationPolicy:
             json=policy.model_dump(exclude_none=True),
             headers=ALERTING_HEADERS,
         )
+
+
+class TestGetAdvisorChecks:
+    """Test the get_advisor_checks method."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_method", "expected_path", "expected_kwargs"),
+        [
+            (
+                "2.44.1",
+                "POST",
+                "/v1/management/SecurityChecks/List",
+                {"json": {}},
+            ),
+            (
+                "3.6.0",
+                "GET",
+                "/v1/advisors/checks",
+                {},
+            ),
+        ],
+    )
+    async def test_get_advisor_checks_calls_correct_endpoint(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+        pmm_version: str,
+        expected_method: str,
+        expected_path: str,
+        expected_kwargs: dict,
+    ) -> None:
+        """Test get_advisor_checks uses the correct v2/v3 endpoint."""
+        mock_get_version.return_value = pmm_version
+        mock_request.return_value = {
+            "checks": [
+                {"name": "mysql_version", "summary": "MySQL version", "disabled": False},
+            ]
+        }
+
+        result = await pmm_remote_api.get_advisor_checks()
+
+        assert len(result) == 1
+        assert result[0]["name"] == "mysql_version"
+        mock_request.assert_awaited_once_with(
+            expected_method, expected_path, **expected_kwargs
+        )
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_advisor_checks_returns_empty_list_when_no_checks(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_advisor_checks returns empty list when response has no checks key."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.get_advisor_checks()
+
+        assert result == []
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+
+class TestGetFailedAdvisorChecks:
+    """Test the get_failed_advisor_checks method."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_method", "expected_path", "expected_kwargs"),
+        [
+            (
+                "2.44.1",
+                "POST",
+                "/v1/management/SecurityChecks/FailedChecks",
+                {"json": {}},
+            ),
+            (
+                "3.6.0",
+                "GET",
+                "/v1/advisors/checks/failed",
+                {},
+            ),
+        ],
+    )
+    async def test_get_failed_advisor_checks_calls_correct_endpoint(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+        pmm_version: str,
+        expected_method: str,
+        expected_path: str,
+        expected_kwargs: dict,
+    ) -> None:
+        """Test get_failed_advisor_checks uses the correct v2/v3 endpoint."""
+        mock_get_version.return_value = pmm_version
+        mock_request.return_value = {
+            "results": [
+                {
+                    "check_name": "mysql_version",
+                    "summary": "Outdated",
+                    "severity": "SEVERITY_WARNING",
+                    "labels": {"node_id": "n1", "service_id": "s1"},
+                },
+            ]
+        }
+
+        result = await pmm_remote_api.get_failed_advisor_checks()
+
+        assert len(result) == 1
+        assert result[0]["check_name"] == "mysql_version"
+        mock_request.assert_awaited_once_with(
+            expected_method, expected_path, **expected_kwargs
+        )
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_failed_advisor_checks_returns_empty_list_when_no_results(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_failed_advisor_checks returns empty list when no results key."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.get_failed_advisor_checks()
+
+        assert result == []
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+
+class TestStartAdvisorChecks:
+    """Test the start_advisor_checks method."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_path"),
+        [
+            ("2.44.1", "/v1/management/SecurityChecks/Start"),
+            ("3.6.0", "/v1/advisors/checks:start"),
+        ],
+    )
+    async def test_start_advisor_checks_calls_correct_endpoint(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+        pmm_version: str,
+        expected_path: str,
+    ) -> None:
+        """Test start_advisor_checks uses the correct v2/v3 endpoint."""
+        mock_get_version.return_value = pmm_version
+        mock_request.return_value = {}
+
+        await pmm_remote_api.start_advisor_checks()
+
+        mock_request.assert_awaited_once_with(
+            "POST", expected_path, json={}
+        )
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_start_advisor_checks_passes_names_when_provided(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test start_advisor_checks includes names in the payload."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {}
+
+        await pmm_remote_api.start_advisor_checks(names=["mysql_version"])
+
+        mock_request.assert_awaited_once_with(
+            "POST",
+            "/v1/advisors/checks:start",
+            json={"names": ["mysql_version"]},
+        )
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_start_advisor_checks_sends_empty_payload_when_names_is_none(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test start_advisor_checks sends empty payload when names is None."""
+        mock_get_version.return_value = "3.6.0"
+        mock_request.return_value = {}
+
+        await pmm_remote_api.start_advisor_checks(names=None)
+
+        call_json = mock_request.call_args.kwargs["json"]
+        assert call_json == {}
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+
+class TestGetGrafanaAnnotations:
+    """Test the get_grafana_annotations method."""
+
+    @pytest.mark.asyncio
+    async def test_get_grafana_annotations_returns_all_annotations(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_grafana_annotations returns annotations from a single page."""
+        annotations = [
+            {"id": 1, "text": "alert1", "newState": "Alerting"},
+            {"id": 2, "text": "alert2", "newState": "Alerting"},
+        ]
+        mock_request.return_value = annotations
+
+        result = await pmm_remote_api.get_grafana_annotations(
+            from_ts=1000, to_ts=2000
+        )
+
+        assert result == annotations
+        mock_request.assert_awaited_once_with(
+            "GET",
+            "/graph/api/annotations",
+            params={"type": "alert", "limit": 100, "from": 1000, "to": 2000},
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_grafana_annotations_returns_empty_list_on_no_data(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_grafana_annotations returns empty list when API returns nothing."""
+        mock_request.return_value = []
+
+        result = await pmm_remote_api.get_grafana_annotations()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_grafana_annotations_paginates_until_no_new_items(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_grafana_annotations increases the limit when more data exists."""
+        page1 = [{"id": i} for i in range(100)]
+        page2 = [{"id": i} for i in range(150)]
+
+        mock_request.side_effect = [page1, page2]
+
+        result = await pmm_remote_api.get_grafana_annotations(limit=100)
+
+        expected_page_count = 2
+        expected_first_limit = 100
+        expected_second_limit = 200
+
+        assert result == page2
+        assert mock_request.await_count == expected_page_count
+        first_call_params = mock_request.call_args_list[0].kwargs["params"]
+        second_call_params = mock_request.call_args_list[1].kwargs["params"]
+        assert first_call_params["limit"] == expected_first_limit
+        assert second_call_params["limit"] == expected_second_limit
+
+    @pytest.mark.asyncio
+    async def test_get_grafana_annotations_stops_when_last_item_unchanged(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test pagination stops when the last item is the same as the previous page."""
+        same_page = [{"id": i} for i in range(100)]
+        mock_request.side_effect = [same_page, same_page]
+
+        result = await pmm_remote_api.get_grafana_annotations(limit=100)
+
+        expected_call_count = 2
+
+        assert result == same_page
+        assert mock_request.await_count == expected_call_count
+
+    @pytest.mark.asyncio
+    async def test_get_grafana_annotations_omits_none_timestamps(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test that None from_ts/to_ts are not included in the query params."""
+        mock_request.return_value = []
+
+        await pmm_remote_api.get_grafana_annotations(from_ts=None, to_ts=None)
+
+        params = mock_request.call_args.kwargs["params"]
+        assert "from" not in params
+        assert "to" not in params
+
+
+class TestQueryGrafanaDatasource:
+    """Test the query_grafana_datasource method."""
+
+    @pytest.mark.asyncio
+    async def test_query_grafana_datasource_builds_correct_payload(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test query_grafana_datasource constructs the expected POST payload."""
+        mock_request.return_value = {
+            "results": {"A": {"frames": []}, "B": {"frames": []}}
+        }
+
+        ds_id = 42
+        max_dp = 500
+        expected_query_count = 2
+
+        result = await pmm_remote_api.query_grafana_datasource(
+            expressions=["expr_a", "expr_b"],
+            datasource_uid="ds-uid",
+            datasource_id=ds_id,
+            from_ts=1000,
+            to_ts=2000,
+            max_data_points=max_dp,
+            instant=True,
+            range_=False,
+        )
+
+        assert result == {"A": {"frames": []}, "B": {"frames": []}}
+        mock_request.assert_awaited_once()
+        call_kwargs = mock_request.call_args
+        payload = call_kwargs.kwargs["json"]
+        assert payload["from"] == "1000"
+        assert payload["to"] == "2000"
+        assert len(payload["queries"]) == expected_query_count
+        assert payload["queries"][0]["refId"] == "A"
+        assert payload["queries"][0]["expr"] == "expr_a"
+        assert payload["queries"][0]["datasource"] == {"uid": "ds-uid"}
+        assert payload["queries"][0]["datasourceId"] == ds_id
+        assert payload["queries"][0]["maxDataPoints"] == max_dp
+        assert payload["queries"][0]["instant"] is True
+        assert payload["queries"][0]["range"] is False
+        assert payload["queries"][1]["refId"] == "B"
+        assert payload["queries"][1]["expr"] == "expr_b"
+
+    @pytest.mark.asyncio
+    async def test_query_grafana_datasource_returns_empty_dict_when_no_results(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test query_grafana_datasource returns empty dict when results key is absent."""
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.query_grafana_datasource(
+            expressions=["expr"],
+            datasource_uid="uid",
+            datasource_id=1,
+            from_ts="now-7d",
+            to_ts="now",
+        )
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_query_grafana_datasource_single_expression(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test query_grafana_datasource with a single expression uses refId A."""
+        mock_request.return_value = {"results": {"A": {"frames": [{"data": {}}]}}}
+
+        result = await pmm_remote_api.query_grafana_datasource(
+            expressions=["up"],
+            datasource_uid="uid",
+            datasource_id=1,
+            from_ts=0,
+            to_ts=1000,
+        )
+
+        payload = mock_request.call_args.kwargs["json"]
+        assert len(payload["queries"]) == 1
+        assert payload["queries"][0]["refId"] == "A"
+        assert "A" in result
+
+
+class TestGetGrafanaDatasources:
+    """Test the get_grafana_datasources method."""
+
+    @pytest.mark.asyncio
+    async def test_get_grafana_datasources_returns_datasource_list(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_grafana_datasources fetches and returns all datasources."""
+        datasources = [
+            {"id": 1, "uid": "ds-1", "name": "Metrics", "type": "prometheus"},
+            {"id": 2, "uid": "ds-2", "name": "Logs", "type": "loki"},
+        ]
+        mock_request.return_value = datasources
+
+        result = await pmm_remote_api.get_grafana_datasources()
+
+        assert result == datasources
+        mock_request.assert_awaited_once_with(
+            "GET", "/graph/api/datasources"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_grafana_datasources_returns_empty_list(
+        self,
+        mock_request: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_grafana_datasources returns empty list when no datasources exist."""
+        mock_request.return_value = []
+
+        result = await pmm_remote_api.get_grafana_datasources()
+
+        assert result == []
+
+
+class TestGetInventoryServicesWithAgents:
+    """Test the get_inventory_services_with_agents method."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("pmm_version", "expected_method", "expected_path", "expected_kwargs"),
+        [
+            (
+                "2.44.1",
+                "POST",
+                "/v1/management/Service/List",
+                {"json": {}},
+            ),
+            (
+                "3.6.0",
+                "GET",
+                "/v1/management/services",
+                {},
+            ),
+        ],
+    )
+    async def test_get_inventory_services_with_agents_calls_correct_endpoint(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+        pmm_version: str,
+        expected_method: str,
+        expected_path: str,
+        expected_kwargs: dict,
+    ) -> None:
+        """Test get_inventory_services_with_agents uses the correct v2/v3 endpoint."""
+        mock_get_version.return_value = pmm_version
+        mock_request.return_value = {
+            "services": [
+                {
+                    "service_name": "mysql-1",
+                    "service_type": "mysql",
+                    "node_name": "node-1",
+                    "agents": [{"agent_type": "mysqld_exporter", "status": "RUNNING"}],
+                },
+            ]
+        }
+
+        result = await pmm_remote_api.get_inventory_services_with_agents()
+
+        assert len(result) == 1
+        assert result[0]["service_name"] == "mysql-1"
+        assert result[0]["agents"][0]["status"] == "RUNNING"
+        mock_request.assert_awaited_once_with(
+            expected_method, expected_path, **expected_kwargs
+        )
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_get_inventory_services_with_agents_returns_empty_list(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test get_inventory_services_with_agents returns empty list when no services."""
+        mock_get_version.return_value = "3.6.0"
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.get_inventory_services_with_agents()
+
+        assert result == []
+        pmm_remote_api.is_older_than_v3.cache_clear()
