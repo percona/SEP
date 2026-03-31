@@ -12,7 +12,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU Affero General Public License for more details.
 
 You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
+along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
 {% extends "base.html.j2" %}
 {% block title -%}
@@ -55,32 +55,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     </div>
                     <div class="form-row">
                         <label for="until">To</label>
-                        <input type="text"
-                               name="until"
-                               id="until"
-                               value="now"
-                               readonly>
+                        <input type="text" name="until" id="until" value="now" readonly>
                     </div>
                 </fieldset>
                 <fieldset>
                     <legend>Options</legend>
                     <div class="form-row">
                         <label for="full">
-                            <input type="checkbox"
-                                   name="full"
-                                   id="full"
-                                   value="true">
-                            Full report &ndash; show all check results and full
+                            <input type="checkbox" name="full" id="full" value="true">
+                            Full report - show all check results and full
                             backup history instead of only failures/summaries
                         </label>
                     </div>
                     <div class="form-row">
                         <label for="refresh">
-                            <input type="checkbox"
-                                   name="refresh"
-                                   id="refresh"
-                                   value="true">
-                            Refresh &ndash; force a refresh of advisor checks
+                            <input type="checkbox" name="refresh" id="refresh" value="true">
+                            Refresh - force a refresh of advisor checks
                             before fetching results
                         </label>
                     </div>

@@ -12,7 +12,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU Affero General Public License for more details.
 
 You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
+along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
 {% extends "base.html.j2" %}
 {% block title -%}
@@ -29,7 +29,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
             <p class="subtitle">{{ report.metadata.report_week }}</p>
             <p class="subtitle">{{ report.metadata.report_interval }}</p>
         </header>
-
         <section class="report-intro">
             <p>
                 This report presents a comprehensive overview of the current
@@ -53,49 +52,62 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                 related to your database performance and functionality.
             </p>
         </section>
-
         {# Monitored summary #}
         <section class="report-section">
             <h2>Monitored Infrastructure</h2>
             <dl class="report-grid">
                 <dt>Total nodes</dt>
-                <dd>{{ report.monitored.total_nodes }}</dd>
+                <dd>
+                    {{ report.monitored.total_nodes }}
+                </dd>
                 <dt>Total services</dt>
-                <dd>{{ report.monitored.total_services }}</dd>
+                <dd>
+                    {{ report.monitored.total_services }}
+                </dd>
                 {% for svc_type, count in report.monitored.services_by_type.items() %}
                     <dt>{{ service_names.get(svc_type, svc_type) }}</dt>
-                    <dd>{{ count }}</dd>
+                    <dd>
+                        {{ count }}
+                    </dd>
                 {% endfor %}
             </dl>
         </section>
-
         {# Table of Contents #}
         <nav class="report-toc">
             <h2>Table of Contents</h2>
             <ul>
                 {% for section_name, label in sections %}
-                    <li><a href="#section-{{ section_name }}">{{ label }}</a></li>
+                    <li>
+                        <a href="#section-{{ section_name }}">{{ label }}</a>
+                    </li>
                 {% endfor %}
             </ul>
         </nav>
-
         {# ================================================================ #}
         {# Advisors                                                         #}
         {# ================================================================ #}
         <section class="report-section" id="section-advisors">
             <h2>Advisors</h2>
             {% if not report.full %}
-                <p><strong>Please note that this report was configured to only report failed advisors.</strong></p>
+                <p>
+                    <strong>Please note that this report was configured to only report failed advisors.</strong>
+                </p>
             {% endif %}
             <dl class="report-grid">
                 <dt>Total checks</dt>
-                <dd>{{ report.advisors.total_checks }}</dd>
+                <dd>
+                    {{ report.advisors.total_checks }}
+                </dd>
                 {% if report.refresh %}
                     <dt>Total refresh timeouts</dt>
-                    <dd>{{ report.advisors.refresh_issues | length }}</dd>
+                    <dd>
+                        {{ report.advisors.refresh_issues | length }}
+                    </dd>
                 {% endif %}
                 <dt>Total failed checks</dt>
-                <dd>{{ report.advisors.total_failed }}</dd>
+                <dd>
+                    {{ report.advisors.total_failed }}
+                </dd>
             </dl>
             {% for family in report.advisors.families %}
                 <section>
@@ -105,7 +117,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         {% set check_failed = family.failed.get(check.name, []) %}
                         {% if report.full or check_failed %}
                             <table>
-                                <caption><h4>{{ check.summary }} ({{ check.name }})</h4></caption>
+                                <caption>
+                                    <h4>{{ check.summary }} ({{ check.name }})</h4>
+                                </caption>
                                 <thead>
                                     <tr>
                                         <th>Host</th>
@@ -116,7 +130,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 </thead>
                                 <tfoot>
                                     <tr>
-                                        <td colspan="4"><p>{{ check.description }}</p></td>
+                                        <td colspan="4">
+                                            <p>{{ check.description }}</p>
+                                        </td>
                                     </tr>
                                 </tfoot>
                                 {% if check_failed %}
@@ -128,9 +144,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                                 <td>{{ fc.service_name or "Unknown" }}</td>
                                                 <td class="status">
                                                     {% if fc.severity.value == "SEVERITY_NOTICE" %}
-                                                        &#10071;
+                                                        ❗
                                                     {% else %}
-                                                        &#10060;
+                                                        ❌
                                                     {% endif %}
                                                 </td>
                                                 <td>
@@ -148,34 +164,35 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 {% else %}
                                     <tbody>
                                         <tr>
-                                            <td colspan="4"><p>&#10003; All services passed</p></td>
+                                            <td colspan="4">
+                                                <p>✔ All services passed</p>
+                                            </td>
                                         </tr>
                                     </tbody>
                                 {% endif %}
                             </table>
                         {% endif %}
                     {% endfor %}
-                    {% if not ns.has_failures and not report.full %}
-                        <p>&#10003; No failed advisors.</p>
-                    {% endif %}
+                    {% if not ns.has_failures and not report.full %}<p>✔ No failed advisors.</p>{% endif %}
                 </section>
             {% endfor %}
-            {% if not report.advisors.families %}
-                <p>No advisor data available.</p>
-            {% endif %}
+            {% if not report.advisors.families %}<p>No advisor data available.</p>{% endif %}
         </section>
-
         {# ================================================================ #}
         {# Alerts                                                           #}
         {# ================================================================ #}
         <section class="report-section" id="section-alerts">
             <h2>Alerts</h2>
             {% if not report.full %}
-                <p><strong>Please note that this report was configured to only report alert overview.</strong></p>
+                <p>
+                    <strong>Please note that this report was configured to only report alert overview.</strong>
+                </p>
             {% endif %}
             <dl class="report-grid">
                 <dt>Total alerts</dt>
-                <dd>{{ report.alerts.total_alerts }}</dd>
+                <dd>
+                    {{ report.alerts.total_alerts }}
+                </dd>
             </dl>
             {% if report.alerts.total_alerts > 0 %}
                 {# Alerts per service #}
@@ -183,9 +200,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     <table>
                         <caption>Total alerts per service</caption>
                         <thead>
-                            <tr><th>Service Type</th><th>Count</th></tr>
+                            <tr>
+                                <th>Service Type</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="2">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for svc, count in report.alerts.alerts_per_service.items() | sort %}
                                 <tr>
@@ -196,15 +220,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Alerts per rule #}
                 {% if report.alerts.alerts_per_rule %}
                     <table>
                         <caption>Total alerts per rule</caption>
                         <thead>
-                            <tr><th>Rule</th><th>Count</th></tr>
+                            <tr>
+                                <th>Rule</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="2">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for rule, count in report.alerts.alerts_per_rule.items() | sort %}
                                 <tr>
@@ -215,15 +245,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Alerts per host #}
                 {% if report.alerts.alerts_per_host %}
                     <table>
                         <caption>Total alerts per host</caption>
                         <thead>
-                            <tr><th>Host</th><th>Count</th></tr>
+                            <tr>
+                                <th>Host</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="2">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for host, count in report.alerts.alerts_per_host.items() | sort %}
                                 <tr>
@@ -234,15 +270,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Daily alerts #}
                 {% if report.alerts.alerts_daily %}
                     <table>
                         <caption>Total daily alerts</caption>
                         <thead>
-                            <tr><th>Date</th><th>Count</th></tr>
+                            <tr>
+                                <th>Date</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="2">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for day, count in report.alerts.alerts_daily.items() %}
                                 <tr>
@@ -253,15 +295,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Daily alerts per host #}
                 {% if report.alerts.alerts_daily_per_host %}
                     <table>
                         <caption>Total daily alerts per host</caption>
                         <thead>
-                            <tr><th>Date</th><th>Host</th><th>Count</th></tr>
+                            <tr>
+                                <th>Date</th>
+                                <th>Host</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="3">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for host, days in report.alerts.alerts_daily_per_host.items() | sort %}
                                 {% for day, count in days.items() %}
@@ -275,7 +324,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Alert history (full mode only) #}
                 {% if report.full and report.alerts.alert_history %}
                     <table>
@@ -288,13 +336,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 <th>Service</th>
                             </tr>
                         </thead>
-                        <tfoot><tr><td colspan="4">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="4"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for alert in report.alerts.alert_history %}
                                 {% set alert_ts = alert.time // 1000 %}
                                 <tr>
                                     <th scope="row">{{ alert_ts | timestamp_format }}</th>
-                                    <td>{{ alert.alertname.rsplit("_", 1)[-1] }}</td>
+                                    <td>{{ alert.alertname.rsplit('_', 1)[-1] }}</td>
                                     <td>{{ alert.node_name or "Unknown" }}</td>
                                     <td>{{ service_names.get(alert.service_type) or service_names.get(alert.service) or "Unknown" }}</td>
                                 </tr>
@@ -306,18 +358,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                 <p>No alerts for this period.</p>
             {% endif %}
         </section>
-
         {# ================================================================ #}
         {# Backups                                                          #}
         {# ================================================================ #}
         <section class="report-section" id="section-backups">
             <h2>Backups</h2>
             {% if not report.full %}
-                <p><strong>Please note that this report was configured to only report backup overview.</strong></p>
+                <p>
+                    <strong>Please note that this report was configured to only report backup overview.</strong>
+                </p>
             {% endif %}
             <dl class="report-grid">
                 <dt>Total backups</dt>
-                <dd>{{ report.backups.total_backups }}</dd>
+                <dd>
+                    {{ report.backups.total_backups }}
+                </dd>
             </dl>
             {% if report.backups.total_backups > 0 %}
                 {# Backups by host #}
@@ -325,9 +380,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     <table>
                         <caption>Total backups by host</caption>
                         <thead>
-                            <tr><th>Host</th><th>Count</th></tr>
+                            <tr>
+                                <th>Host</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="2">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for host, count in report.backups.backups_by_host.items() | sort %}
                                 <tr>
@@ -338,15 +400,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Backups by status #}
                 {% if report.backups.backups_by_status %}
                     <table>
                         <caption>Total backups by status</caption>
                         <thead>
-                            <tr><th>Status</th><th>Count</th></tr>
+                            <tr>
+                                <th>Status</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="2">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for bk_status, count in report.backups.backups_by_status.items() | sort %}
                                 <tr>
@@ -357,15 +425,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Backups by type #}
                 {% if report.backups.backups_by_type %}
                     <table>
                         <caption>Total backups by type</caption>
                         <thead>
-                            <tr><th>Type</th><th>Count</th></tr>
+                            <tr>
+                                <th>Type</th>
+                                <th>Count</th>
+                            </tr>
                         </thead>
-                        <tfoot><tr><td colspan="2">&#32;</td></tr></tfoot>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2"> </td>
+                            </tr>
+                        </tfoot>
                         <tbody>
                             {% for bk_type, count in report.backups.backups_by_type.items() | sort %}
                                 <tr>
@@ -376,7 +450,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Failed backups #}
                 {% if report.backups.backups_by_status.get("fail", 0) > 0 and report.backups.failed_backups %}
                     <table>
@@ -392,9 +465,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="5">
-                                    A non-zero exit code was produced by the backup. Sorted date in reverse order.
-                                </td>
+                                <td colspan="5">A non-zero exit code was produced by the backup. Sorted date in reverse order.</td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -415,17 +486,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </tbody>
                     </table>
                 {% endif %}
-
                 {# Backup history / Last 10 #}
                 {% set non_binlog_backups = report.backups.all_backups | rejectattr("type", "equalto", "Binlogs") | list %}
                 {% if non_binlog_backups %}
-                    {% if report.full %}
-                        <table>
+                    <table>
+                        {% if report.full %}
                             <caption>Full backup history</caption>
-                    {% else %}
-                        <table>
+                        {% else %}
                             <caption>Last 10 Backups</caption>
-                    {% endif %}
+                        {% endif %}
                             <thead>
                                 <tr>
                                     <th>ID</th>
@@ -440,7 +509,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 </tr>
                             </thead>
                             <tfoot>
-                                <tr><td colspan="9">Sorted date in reverse order.</td></tr>
+                                <tr>
+                                    <td colspan="9">Sorted date in reverse order.</td>
+                                </tr>
                             </tfoot>
                             <tbody>
                                 {% set sorted_backups = non_binlog_backups | sort(attribute="period.start", reverse=true) %}
@@ -465,130 +536,131 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 {% endfor %}
                             </tbody>
                         </table>
+                    {% endif %}
+                {% else %}
+                    <p>No backup data for this period.</p>
                 {% endif %}
-            {% else %}
-                <p>No backup data for this period.</p>
-            {% endif %}
-        </section>
-
-        {# ================================================================ #}
-        {# Storage                                                          #}
-        {# ================================================================ #}
-        <section class="report-section" id="section-storage">
-            <h2>Disk Usage</h2>
-            {% if report.storage.entries %}
-                <table>
-                    <caption>Breakdown by host and mountpoint</caption>
-                    <thead>
-                        <tr>
-                            <th>Host</th>
-                            <th>Mountpoint</th>
-                            <th>Capacity</th>
-                            <th>Used space %</th>
-                            <th>Growth</th>
-                            <th>Peak usage</th>
-                        </tr>
-                    </thead>
-                    <tfoot>
-                        <tr><td colspan="6">Sorted usage in reverse order.</td></tr>
-                    </tfoot>
-                    <tbody>
-                        {% for e in report.storage.entries %}
+            </section>
+            {# ================================================================ #}
+            {# Storage                                                          #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-storage">
+                <h2>Disk Usage</h2>
+                {% if report.storage.entries %}
+                    <table>
+                        <caption>Breakdown by host and mountpoint</caption>
+                        <thead>
                             <tr>
-                                <th scope="row">{{ e.node_name }}</th>
-                                <td>{{ e.mountpoint }}</td>
-                                <td>{{ "%.0f"|format(e.capacity_bytes / 1073741824) }}GB</td>
-                                <td>{{ e.usage_percentage }}%</td>
-                                <td>{{ "%.0f"|format((e.used_end_bytes - e.used_start_bytes) / 1048576) }}MB</td>
-                                <td>{{ "%.0f"|format(e.used_peak_bytes / 1073741824) }}GB</td>
+                                <th>Host</th>
+                                <th>Mountpoint</th>
+                                <th>Capacity</th>
+                                <th>Used space %</th>
+                                <th>Growth</th>
+                                <th>Peak usage</th>
                             </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <p>No storage data available.</p>
-            {% endif %}
-        </section>
-
-        {# ================================================================ #}
-        {# Uptime                                                           #}
-        {# ================================================================ #}
-        <section class="report-section" id="section-uptime">
-            <h2>Service Uptime</h2>
-            {% if report.uptime.entries %}
-                <table>
-                    <caption>All services</caption>
-                    <thead>
-                        <tr>
-                            <th>Service Name</th>
-                            <th>Uptime</th>
-                            <th>Since</th>
-                        </tr>
-                    </thead>
-                    <tfoot>
-                        <tr><td colspan="3">Sorted uptime in reverse order.</td></tr>
-                    </tfoot>
-                    <tbody>
-                        {% for e in report.uptime.entries %}
+                        </thead>
+                        <tfoot>
                             <tr>
-                                <th scope="row">{{ e.service_name }}</th>
-                                <td>{{ e.uptime }}</td>
-                                <td>{{ e.since }}</td>
+                                <td colspan="6">Sorted usage in reverse order.</td>
                             </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <p>No uptime data available.</p>
-            {% endif %}
-        </section>
-
-        {# ================================================================ #}
-        {# Inventory                                                        #}
-        {# ================================================================ #}
-        <section class="report-section" id="section-inventory">
-            <h2>Included Services</h2>
-            {% if report.inventory.entries %}
-                <table>
-                    <caption>All services</caption>
-                    <thead>
-                        <tr>
-                            <th>Service Name</th>
-                            <th>Service Type</th>
-                            <th>Node Name</th>
-                            <th>Agents Status</th>
-                        </tr>
-                    </thead>
-                    <tfoot>
-                        <tr><td colspan="4">Sorted by Service Type and Service Name.</td></tr>
-                    </tfoot>
-                    <tbody>
-                        {% for e in report.inventory.entries %}
+                        </tfoot>
+                        <tbody>
+                            {% for e in report.storage.entries %}
+                                <tr>
+                                    <th scope="row">{{ e.node_name }}</th>
+                                    <td>{{ e.mountpoint }}</td>
+                                    <td>{{ "%.0f"|format(e.capacity_bytes / 1073741824) }}GB</td>
+                                    <td>{{ e.usage_percentage }}%</td>
+                                    <td>{{ "%.0f"|format((e.used_end_bytes - e.used_start_bytes) / 1048576) }}MB</td>
+                                    <td>{{ "%.0f"|format(e.used_peak_bytes / 1073741824) }}GB</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No storage data available.</p>
+                {% endif %}
+            </section>
+            {# ================================================================ #}
+            {# Uptime                                                           #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-uptime">
+                <h2>Service Uptime</h2>
+                {% if report.uptime.entries %}
+                    <table>
+                        <caption>All services</caption>
+                        <thead>
                             <tr>
-                                <th scope="row">{{ e.service_name }}</th>
-                                <td>{{ e.service_type }}</td>
-                                <td>{{ e.node_name }}</td>
-                                <td>
-                                    {% if e.status.value == "OK" %}
-                                        &#10004;
-                                    {% else %}
-                                        &#10008;
-                                    {% endif %}
-                                    {{ e.status.value }}
-                                </td>
+                                <th>Service Name</th>
+                                <th>Uptime</th>
+                                <th>Since</th>
                             </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <p>No inventory data available.</p>
-            {% endif %}
-        </section>
-
-        <footer class="report-footer">
-            <p>Generated {{ report.metadata.generated_at }}.</p>
-            <a href="{{ request.url_for('report_index') }}" class="btn">Back to Report</a>
-        </footer>
-    </div>
-{% endblock main %}
-
+                        </thead>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3">Sorted uptime in reverse order.</td>
+                            </tr>
+                        </tfoot>
+                        <tbody>
+                            {% for e in report.uptime.entries %}
+                                <tr>
+                                    <th scope="row">{{ e.service_name }}</th>
+                                    <td>{{ e.uptime }}</td>
+                                    <td>{{ e.since }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No uptime data available.</p>
+                {% endif %}
+            </section>
+            {# ================================================================ #}
+            {# Inventory                                                        #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-inventory">
+                <h2>Included Services</h2>
+                {% if report.inventory.entries %}
+                    <table>
+                        <caption>All services</caption>
+                        <thead>
+                            <tr>
+                                <th>Service Name</th>
+                                <th>Service Type</th>
+                                <th>Node Name</th>
+                                <th>Agents Status</th>
+                            </tr>
+                        </thead>
+                        <tfoot>
+                            <tr>
+                                <td colspan="4">Sorted by Service Type and Service Name.</td>
+                            </tr>
+                        </tfoot>
+                        <tbody>
+                            {% for e in report.inventory.entries %}
+                                <tr>
+                                    <th scope="row">{{ e.service_name }}</th>
+                                    <td>{{ e.service_type }}</td>
+                                    <td>{{ e.node_name }}</td>
+                                    <td>
+                                        {% if e.status.value == "OK" %}
+                                            ✔
+                                        {% else %}
+                                            ✖
+                                        {% endif %}
+                                        {{ e.status.value }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No inventory data available.</p>
+                {% endif %}
+            </section>
+            <footer class="report-footer">
+                <p>Generated {{ report.metadata.generated_at }}.</p>
+                <a href="{{ request.url_for('report_index') }}" class="btn">Back to Report</a>
+            </footer>
+        </div>
+    {% endblock main %}
