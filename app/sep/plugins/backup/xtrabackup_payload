@@ -1823,7 +1823,7 @@ class GSUploadProvider:
 
         :param settings: Backup/server settings.
         :param logger: Logger instance.
-        :raises BackupError: If S3_BUCKET not set.
+        :raises BackupError: If GS_BUCKET not set.
         """
         self.logger = logger
         host = settings.get("HOST", "localhost")
