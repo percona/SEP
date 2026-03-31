@@ -151,9 +151,7 @@ def backup_date(value: int | str) -> str:
     """
     if isinstance(value, int):
         try:
-            return time.strftime(
-                "%d %B %Y at %H:%M:%S UTC", time.gmtime(value / 1000)
-            )
+            return time.strftime("%d %B %Y at %H:%M:%S UTC", time.gmtime(value / 1000))
         except (OverflowError, OSError, ValueError):
             return str(value)
     return str(value)
