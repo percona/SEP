@@ -207,7 +207,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="2"> </td>
+                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -232,7 +232,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="2"> </td>
+                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -257,7 +257,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="2"> </td>
+                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -282,7 +282,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="2"> </td>
+                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -308,7 +308,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="3"> </td>
+                                <td colspan="3"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -338,7 +338,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="4"> </td>
+                                <td colspan="4"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -387,7 +387,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="2"> </td>
+                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -412,7 +412,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="2"> </td>
+                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -437,7 +437,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="2"> </td>
+                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                         <tbody>
@@ -495,172 +495,172 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         {% else %}
                             <caption>Last 10 Backups</caption>
                         {% endif %}
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Host</th>
-                                    <th>Target</th>
-                                    <th>Date</th>
-                                    <th>Type</th>
-                                    <th>Status</th>
-                                    <th>Size</th>
-                                    <th>Duration</th>
-                                    <th>Notes</th>
-                                </tr>
-                            </thead>
-                            <tfoot>
-                                <tr>
-                                    <td colspan="9">Sorted date in reverse order.</td>
-                                </tr>
-                            </tfoot>
-                            <tbody>
-                                {% set sorted_backups = non_binlog_backups | sort(attribute="period.start", reverse=true) %}
-                                {% if not report.full %}
-                                    {% set sorted_backups = sorted_backups[:10] %}
-                                {% endif %}
-                                {% for bk in sorted_backups %}
-                                    <tr>
-                                        <th scope="row">{{ bk.id }}</th>
-                                        <td>{{ bk.name }}</td>
-                                        <td>{{ bk.alias }}</td>
-                                        <td>{{ bk.period.start | backup_date }}</td>
-                                        <td>{{ bk.type }}</td>
-                                        <td>{{ bk.status.value }}</td>
-                                        <td>{{ bk.size | convert_bytes }}</td>
-                                        <td>{{ bk.period.duration }}</td>
-                                        <td>
-                                            {% if bk.estimated_data %}<p>Some data is estimated.</p>{% endif %}
-                                            {% if bk.enabled is false %}<p>Currently disabled.</p>{% endif %}
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    {% endif %}
-                {% else %}
-                    <p>No backup data for this period.</p>
-                {% endif %}
-            </section>
-            {# ================================================================ #}
-            {# Storage                                                          #}
-            {# ================================================================ #}
-            <section class="report-section" id="section-storage">
-                <h2>Disk Usage</h2>
-                {% if report.storage.entries %}
-                    <table>
-                        <caption>Breakdown by host and mountpoint</caption>
                         <thead>
                             <tr>
+                                <th>ID</th>
                                 <th>Host</th>
-                                <th>Mountpoint</th>
-                                <th>Capacity</th>
-                                <th>Used space %</th>
-                                <th>Growth</th>
-                                <th>Peak usage</th>
+                                <th>Target</th>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Size</th>
+                                <th>Duration</th>
+                                <th>Notes</th>
                             </tr>
                         </thead>
                         <tfoot>
                             <tr>
-                                <td colspan="6">Sorted usage in reverse order.</td>
+                                <td colspan="9">Sorted date in reverse order.</td>
                             </tr>
                         </tfoot>
                         <tbody>
-                            {% for e in report.storage.entries %}
+                            {% set sorted_backups = non_binlog_backups | sort(attribute="period.start", reverse=true) %}
+                            {% if not report.full %}
+                                {% set sorted_backups = sorted_backups[:10] %}
+                            {% endif %}
+                            {% for bk in sorted_backups %}
                                 <tr>
-                                    <th scope="row">{{ e.node_name }}</th>
-                                    <td>{{ e.mountpoint }}</td>
-                                    <td>{{ "%.0f"|format(e.capacity_bytes / 1073741824) }}GB</td>
-                                    <td>{{ e.usage_percentage }}%</td>
-                                    <td>{{ "%.0f"|format((e.used_end_bytes - e.used_start_bytes) / 1048576) }}MB</td>
-                                    <td>{{ "%.0f"|format(e.used_peak_bytes / 1073741824) }}GB</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>No storage data available.</p>
-                {% endif %}
-            </section>
-            {# ================================================================ #}
-            {# Uptime                                                           #}
-            {# ================================================================ #}
-            <section class="report-section" id="section-uptime">
-                <h2>Service Uptime</h2>
-                {% if report.uptime.entries %}
-                    <table>
-                        <caption>All services</caption>
-                        <thead>
-                            <tr>
-                                <th>Service Name</th>
-                                <th>Uptime</th>
-                                <th>Since</th>
-                            </tr>
-                        </thead>
-                        <tfoot>
-                            <tr>
-                                <td colspan="3">Sorted uptime in reverse order.</td>
-                            </tr>
-                        </tfoot>
-                        <tbody>
-                            {% for e in report.uptime.entries %}
-                                <tr>
-                                    <th scope="row">{{ e.service_name }}</th>
-                                    <td>{{ e.uptime }}</td>
-                                    <td>{{ e.since }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>No uptime data available.</p>
-                {% endif %}
-            </section>
-            {# ================================================================ #}
-            {# Inventory                                                        #}
-            {# ================================================================ #}
-            <section class="report-section" id="section-inventory">
-                <h2>Included Services</h2>
-                {% if report.inventory.entries %}
-                    <table>
-                        <caption>All services</caption>
-                        <thead>
-                            <tr>
-                                <th>Service Name</th>
-                                <th>Service Type</th>
-                                <th>Node Name</th>
-                                <th>Agents Status</th>
-                            </tr>
-                        </thead>
-                        <tfoot>
-                            <tr>
-                                <td colspan="4">Sorted by Service Type and Service Name.</td>
-                            </tr>
-                        </tfoot>
-                        <tbody>
-                            {% for e in report.inventory.entries %}
-                                <tr>
-                                    <th scope="row">{{ e.service_name }}</th>
-                                    <td>{{ e.service_type }}</td>
-                                    <td>{{ e.node_name }}</td>
+                                    <th scope="row">{{ bk.id }}</th>
+                                    <td>{{ bk.name }}</td>
+                                    <td>{{ bk.alias }}</td>
+                                    <td>{{ bk.period.start | backup_date }}</td>
+                                    <td>{{ bk.type }}</td>
+                                    <td>{{ bk.status.value }}</td>
+                                    <td>{{ bk.size | convert_bytes }}</td>
+                                    <td>{{ bk.period.duration }}</td>
                                     <td>
-                                        {% if e.status.value == "OK" %}
-                                            ✔
-                                        {% else %}
-                                            ✖
-                                        {% endif %}
-                                        {{ e.status.value }}
+                                        {% if bk.estimated_data %}<p>Some data is estimated.</p>{% endif %}
+                                        {% if bk.enabled is false %}<p>Currently disabled.</p>{% endif %}
                                     </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                     </table>
-                {% else %}
-                    <p>No inventory data available.</p>
                 {% endif %}
-            </section>
-            <footer class="report-footer">
-                <p>Generated {{ report.metadata.generated_at }}.</p>
-                <a href="{{ request.url_for('report_index') }}" class="btn">Back to Report</a>
-            </footer>
-        </div>
-    {% endblock main %}
+            {% else %}
+                <p>No backup data for this period.</p>
+            {% endif %}
+        </section>
+        {# ================================================================ #}
+        {# Storage                                                          #}
+        {# ================================================================ #}
+        <section class="report-section" id="section-storage">
+            <h2>Disk Usage</h2>
+            {% if report.storage.entries %}
+                <table>
+                    <caption>Breakdown by host and mountpoint</caption>
+                    <thead>
+                        <tr>
+                            <th>Host</th>
+                            <th>Mountpoint</th>
+                            <th>Capacity</th>
+                            <th>Used space %</th>
+                            <th>Growth</th>
+                            <th>Peak usage</th>
+                        </tr>
+                    </thead>
+                    <tfoot>
+                        <tr>
+                            <td colspan="6">Sorted usage in reverse order.</td>
+                        </tr>
+                    </tfoot>
+                    <tbody>
+                        {% for e in report.storage.entries %}
+                            <tr>
+                                <th scope="row">{{ e.node_name }}</th>
+                                <td>{{ e.mountpoint }}</td>
+                                <td>{{ "%.0f"|format(e.capacity_bytes / 1073741824) }}GB</td>
+                                <td>{{ e.usage_percentage }}%</td>
+                                <td>{{ "%.0f"|format((e.used_end_bytes - e.used_start_bytes) / 1048576) }}MB</td>
+                                <td>{{ "%.0f"|format(e.used_peak_bytes / 1073741824) }}GB</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No storage data available.</p>
+            {% endif %}
+        </section>
+        {# ================================================================ #}
+        {# Uptime                                                           #}
+        {# ================================================================ #}
+        <section class="report-section" id="section-uptime">
+            <h2>Service Uptime</h2>
+            {% if report.uptime.entries %}
+                <table>
+                    <caption>All services</caption>
+                    <thead>
+                        <tr>
+                            <th>Service Name</th>
+                            <th>Uptime</th>
+                            <th>Since</th>
+                        </tr>
+                    </thead>
+                    <tfoot>
+                        <tr>
+                            <td colspan="3">Sorted uptime in reverse order.</td>
+                        </tr>
+                    </tfoot>
+                    <tbody>
+                        {% for e in report.uptime.entries %}
+                            <tr>
+                                <th scope="row">{{ e.service_name }}</th>
+                                <td>{{ e.uptime }}</td>
+                                <td>{{ e.since }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No uptime data available.</p>
+            {% endif %}
+        </section>
+        {# ================================================================ #}
+        {# Inventory                                                        #}
+        {# ================================================================ #}
+        <section class="report-section" id="section-inventory">
+            <h2>Included Services</h2>
+            {% if report.inventory.entries %}
+                <table>
+                    <caption>All services</caption>
+                    <thead>
+                        <tr>
+                            <th>Service Name</th>
+                            <th>Service Type</th>
+                            <th>Node Name</th>
+                            <th>Agents Status</th>
+                        </tr>
+                    </thead>
+                    <tfoot>
+                        <tr>
+                            <td colspan="4">Sorted by Service Type and Service Name.</td>
+                        </tr>
+                    </tfoot>
+                    <tbody>
+                        {% for e in report.inventory.entries %}
+                            <tr>
+                                <th scope="row">{{ e.service_name }}</th>
+                                <td>{{ e.service_type }}</td>
+                                <td>{{ e.node_name }}</td>
+                                <td>
+                                    {% if e.status.value == "OK" %}
+                                        ✔
+                                    {% else %}
+                                        ✖
+                                    {% endif %}
+                                    {{ e.status.value }}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No inventory data available.</p>
+            {% endif %}
+        </section>
+        <footer class="report-footer">
+            <p>Generated {{ report.metadata.generated_at }}.</p>
+            <a href="{{ request.url_for('report_index') }}" class="btn">Back to Report</a>
+        </footer>
+    </div>
+{% endblock main %}
