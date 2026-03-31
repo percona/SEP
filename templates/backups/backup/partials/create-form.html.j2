@@ -836,7 +836,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <span class="label">Skip S3 Safety Check</span>{{ info_icon(skip_s3_safety_check_title) }}
                     </label>
                 </div>
-                <button class="text large" type="button" id="toggle_gcp_btn">+ Add GCP upload</button>
+                <button class="text large" type="button" id="toggle_gcp_btn">+ Add GS upload</button>
                 <br>
                 <div id="gs_container" class="hidden">
                     {% set gcp_bucket_title = "Type the name of the GCP bucket where backups will be stored." %}
@@ -1070,13 +1070,13 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         if (gcpVisible) {
             showContainer(gcpContainer, true);
             gcpBucketInput.required = true;
-            toggleGcpBtn.textContent = "- Remove GCP upload";
+            toggleGcpBtn.textContent = "- Remove GS upload";
         } else {
             showContainer(gcpContainer, false);
             gcpBucketInput.required = false;
             gcpBucketInput.value = '';
             document.getElementById('gs_storage_class').value = '';
-            toggleGcpBtn.textContent = "+ Add GCP upload";
+            toggleGcpBtn.textContent = "+ Add GS upload";
         }
     }
 
