@@ -28,6 +28,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHostsCtx,
     get_chainable_tasks,
     InventoryAPI,
     IsAuthenticated,
@@ -213,6 +214,7 @@ async def restores_detail(
     context: DefaultContext,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve restores task."""
     data = task.data
@@ -281,20 +283,14 @@ async def restores_detail(
 
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    try:
-        executor_hosts = await tasks_api.get("/hosts/")
-        context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
-    except HTTPException:
-        context["executor_hosts"] = {task_data["hostname"]}
+    context["executor_hosts"] = executor_hosts_ctx.with_host(
+        task_data["hostname"]
+    ).as_template_list()
 
     try:
         services = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MONGODB}
         )
-        for service in services:
-            service["schemas"] = await inventory_api.get(
-                f"/services/{service['id']}/schemas/",
-            )
         context["services"] = services
     except HTTPException:
         context["services"] = []

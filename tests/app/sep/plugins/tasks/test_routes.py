@@ -22,7 +22,13 @@ from fastapi import status
 
 from app.sep.deps import get_task_by_name
 from app.sep.main import sep_app
-from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+)
 from tests.app.factories import TaskFactory
 
 
@@ -106,26 +112,27 @@ def test_task_detail(
     test_client,
     created_task,
     mock_task_api_dep,
+    mock_inventory_api_dep,
 ):
     """Test retrieving a task's detail page."""
     mock_task_api_dep.get.return_value = []
     mock_task_api_dep.get.side_effect = [
+        {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
         [],  # for /{task_name}/periodic/
         [],  # for /{task_name}/history/
         [],  # for /{task_name}/history/?status=RUNNING
-        {"address1": "host1", "address2": "host2"},  # for /hosts/
     ]
 
     response = test_client.get(f"/tasks/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
+    mock_task_api_dep.get.assert_any_await("/hosts/")
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/periodic/")
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
-    mock_task_api_dep.get.assert_awaited_with("/hosts/")
 
 
 @pytest.mark.usefixtures("_mock_task_dep")
@@ -137,13 +144,7 @@ def test_task_execute(
     """Test executing a task."""
     mock_task_api_dep.post.return_value = AsyncMock()
 
-    execute_data = {
-        "meta": {},
-        "payload": None,
-        "eta": None,
-        "anonymize_mask": None,
-        "chain_task_names": None,
-    }
+    execute_data = TaskExecuteRequest().model_dump()
 
     response = test_client.post(f"/tasks/{created_task.name}", follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER

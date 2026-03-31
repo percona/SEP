@@ -135,7 +135,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 </form>
 <form class="send-form"
       id="{{ task.name }}-pre-checks-send"
-      data-confirm-message='Are you sure you want to run pre-checks for "{{ task.name }}"?'
+      data-confirm-message='{%- if has_matching_executor is defined and not has_matching_executor -%}Pre-checks will run on the selected executor host, not on the database node. Filesystem checks (disk space) will be skipped. Continue?{%- else -%}Are you sure you want to run pre-checks for "{{ task.name }}"?{%- endif -%}'
       method="post"
       action="{{ task.pre_checks_url }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />

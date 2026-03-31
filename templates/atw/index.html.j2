@@ -21,7 +21,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 {% block style %}
     <link rel="stylesheet"
           href="{{ url_for('static', path='/css/snippets-details.css') }}">
-    <style>{{ syntax_highlight_css(style="monokai") }}</style>
+    <style>{{ syntax_highlight_css() }}</style>
     {% if history_tasks or running_tasks %}
         <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
     {% endif %}

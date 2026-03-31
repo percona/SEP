@@ -15,16 +15,17 @@
 
 """Define routes for the Tasks API."""
 
+import json
 import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from celery.utils.log import get_task_logger
 from fastapi import FastAPI, HTTPException, Request, status
 from nomad.api.exceptions import BaseNomadException
 
 from app.core.config import create_app, default_lifespan, settings
-from app.core.exceptions import HTTPGoneException
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import init_tasks_db
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
@@ -53,7 +54,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
 
-lifespan = tasks_lifespan if __name__ == "__main__" else None
+lifespan = tasks_lifespan
 tasks_app = create_app(
     tasks_router,
     periodic_router,
@@ -74,18 +75,47 @@ async def internal_error_handler(
     raise exc
 
 
+def task_data_not_found_detail(exc: TaskDataNotFoundInExecutorError) -> dict[str, Any]:
+    """Build structured detail for HTTP 410 from TaskDataNotFoundInExecutorError.
+
+    :param exc: The exception indicating task data was not found in the executor.
+    :type exc: TaskDataNotFoundInExecutorError
+    :return: A dictionary with message and optional resource_type, resource_id,
+        executor_name, job_id, evaluation_id, and detail keys for use in an HTTP 410
+        response body.
+    :rtype: dict[str, Any]
+    """
+    detail = {
+        "message": "The requested task data is no longer available in the executor.",
+    }
+    if exc.resource_type is not None:
+        detail["resource_type"] = exc.resource_type
+    if exc.resource_id is not None:
+        detail["resource_id"] = exc.resource_id
+    if exc.executor_name is not None:
+        detail["executor_name"] = exc.executor_name
+    if exc.job_id is not None:
+        detail["job_id"] = exc.job_id
+    if exc.evaluation_id is not None:
+        detail["evaluation_id"] = exc.evaluation_id
+    if str(exc):
+        detail["detail"] = str(exc)
+    return detail
+
+
 @tasks_app.exception_handler(TaskDataNotFoundInExecutorError)
 async def task_data_not_found_handler(
     _: Request,
     exc: TaskDataNotFoundInExecutorError,
 ) -> None:
     """Handle exceptions raised when task data is not found in the executor."""
-    logger.debug("Task data not found in executor: %s", exc_info=exc)
-    # TODO: Add more details to the exception response  # noqa: TD002
-    # SEP-733
-    raise HTTPGoneException(
-        "The requested task data is no longer available in the executor."
+    payload = task_data_not_found_detail(exc)
+    logger.debug(
+        "Task data not found in executor; HTTP %s body: %s",
+        status.HTTP_410_GONE,
+        json.dumps(payload, default=str),
     )
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail=payload)
 
 
 @tasks_app.exception_handler(BaseNomadException)
@@ -110,7 +140,7 @@ if __name__ == "__main__":
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
-        reload=True,
+        reload=tasks_settings.UVICORN_RELOAD,
         reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
         reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
         reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],

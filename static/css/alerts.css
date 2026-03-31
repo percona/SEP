@@ -114,3 +114,242 @@ code.expression {
     word-break: break-all;
     white-space: pre-wrap;
 }
+
+/* PagerDuty widget */
+
+.pd-status {
+    margin: 1rem 0;
+}
+
+.pd-form {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.pd-form label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--textSecondary);
+}
+
+.pd-form input[type="password"],
+.pd-form input[type="text"] {
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--divider);
+    border-radius: var(--cornerExtraSmall);
+    font-size: 0.8125rem;
+    background: var(--surfaceElevation1);
+    color: var(--textPrimary);
+}
+
+.pd-form-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.pd-feedback {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    min-height: 1.25rem;
+}
+
+.pd-feedback.success {
+    color: var(--successContrast);
+}
+
+.pd-feedback.error {
+    color: var(--errorContrast);
+}
+
+.text-muted {
+    color: var(--textSecondary);
+    font-size: 0.875rem;
+}
+
+/* Sticky bar layout */
+
+.sticky-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+/* Push to PMM button */
+
+.push-btn {
+    white-space: nowrap;
+}
+
+.push-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Push results */
+
+.push-results {
+    margin-top: 1rem;
+}
+
+.push-result {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.25rem;
+    border-radius: var(--cornerExtraSmall);
+    font-size: 0.875rem;
+}
+
+.push-result-success {
+    background: var(--successSurface);
+    color: var(--successContrast);
+}
+
+.push-result-error {
+    background: var(--errorSurface);
+    color: var(--errorContrast);
+}
+
+.push-result-skipped {
+    background: var(--surfaceElevation2);
+    color: var(--textSecondary);
+}
+
+/* Two-column layout: main content + sidebar */
+
+.alerts-layout {
+    display: grid;
+    grid-template-columns: 1fr 18rem;
+    gap: 2rem;
+    align-items: start;
+}
+
+@media (max-width: 1024px) {
+    .alerts-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.alerts-main {
+    min-width: 0;
+}
+
+/* Sidebar widget */
+
+.alerts-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    position: sticky;
+    top: 1rem;
+}
+
+.sidebar-widget {
+    background: var(--surfaceElevation1);
+    border-radius: var(--cornerSmall);
+    padding: 1rem;
+}
+
+.sidebar-widget h4 {
+    margin: 0 0 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    color: var(--textSecondary);
+}
+
+/* Backup list */
+
+.backup-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 25rem;
+    overflow-y: auto;
+}
+
+.backup-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.375rem 0;
+    border-bottom: 0.0625rem solid var(--lineDivider);
+}
+
+.backup-item:last-child {
+    border-bottom: none;
+}
+
+.backup-info {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+.backup-info time {
+    font-weight: 500;
+}
+
+.backup-info small {
+    color: var(--textSecondary);
+}
+
+.backup-item-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+/* Backup detail modal */
+
+.backup-detail-section {
+    margin-bottom: 0.75rem;
+}
+
+.backup-detail-section h4 {
+    margin: 0 0 0.25rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--textSecondary);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.backup-detail-section ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.backup-detail-section li {
+    font-size: 0.8125rem;
+    padding: 0.125rem 0;
+}
+
+.backup-detail-section .detail-type {
+    color: var(--textSecondary);
+    margin-left: 0.25rem;
+}
+
+/* Restore feedback */
+
+.restore-feedback {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    min-height: 1.25rem;
+}
+
+.feedback-success {
+    color: var(--successContrast);
+}
+
+.feedback-error {
+    color: var(--errorContrast);
+}

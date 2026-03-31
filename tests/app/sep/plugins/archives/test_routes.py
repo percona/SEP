@@ -157,10 +157,10 @@ def test_archives_detail(
     created_task.data = mock_data
     mock_inventory_api_dep.get.return_value = AsyncMock()
     mock_task_api_dep.get.side_effect = [
+        {"127.0.0.1": "localhost"},  # for /hosts/ (dependency)
         [],  # for /{task.name}/history/
         [],  # for running tasks at /{task.name}/history/
         [],  # for /stats/{task.name}
-        {"127.0.0.1": "localhost"},  # for /hosts/
         [],  # chainable_tasks
     ]
     response = test_client.get(f"/archives/{created_task.name}")

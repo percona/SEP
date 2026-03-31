@@ -16,7 +16,6 @@
 """Define routes for the alters plugin."""
 
 import logging
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -28,6 +27,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
+    ExecutorHostsCtx,
     get_chainable_tasks,
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -36,7 +36,9 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.alters.deps import (
+    alters_executor_matches_service_host,
     AltersGeneratedTask,
+    AltersPreChecksTask,
     AltersTask,
     extract_service_info,
     get_alters_index_context,
@@ -100,6 +102,7 @@ async def alters_create(
     request: Request,
     task: AltersGeneratedTask,
     task_api: TaskAPI,
+    pre_checks_task: AltersPreChecksTask,
 ) -> RedirectResponse:
     """Create alter tasks - one for execution and one for dry run."""
     logger.debug("Create alters tasks: %s", task)
@@ -111,7 +114,7 @@ async def alters_create(
     )
 
     # Create the dry-run task
-    dry_run_task = task.model_copy()
+    dry_run_task = task.model_copy(deep=True)
     dry_run_task.name = f"{task.name}-dry-run"
     # Replace --execute with --dry-run in the task arguments and add parent reference
     if "meta" in dry_run_task.data:
@@ -124,22 +127,6 @@ async def alters_create(
         "/",
         json=dry_run_task.model_dump(),
     )
-
-    # Create the pre-checks task
-    pre_checks_task = task.model_copy()
-    pre_checks_task.name = f"{task.name}-pre-checks"
-    pre_checks_task.data["task"] = "run-python"
-    del pre_checks_task.data["meta"]["command"]
-    del pre_checks_task.data["meta"]["args"]
-    pre_checks_task.data["meta"]["config"] = (
-        f"schema: {task.data['meta']['_schema_name']}\ntable: {task.data['meta']['_table_name']}"
-    )
-    pre_checks_task.data["meta"]["requirements"] = (
-        "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
-    )
-    payload_path = Path(__file__).parent / "pre_checks.py"
-    pre_checks_task.data["payload"] = f"file://{payload_path}"
-    pre_checks_task.data["parent"] = task.name
 
     await task_api.post(
         "/",
@@ -161,6 +148,7 @@ async def alters_detail(
     context: DefaultContext,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve alters task."""
     data = task.data
@@ -193,6 +181,9 @@ async def alters_detail(
         "alert_on_fail": task.alert_on_fail,
     }
     task_data.update(extract_service_info(meta))
+    task_data["pre_checks_mysql_config_file"] = meta.get(
+        "_pre_checks_mysql_config_file", "~/.my.cnf"
+    )
 
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
@@ -217,23 +208,19 @@ async def alters_detail(
     task_data.update(parse_alters_task_args(meta))
 
     try:
-        executor_hosts = await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        executor_hosts = {}
-        logger.warning("Failed to get executor hosts: %s", exc)
-    try:
         services = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
-        for service in services:
-            service["schemas"] = await inventory_api.get(
-                f"/services/{service['id']}/schemas/",
-            )
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)
 
-    context["executor_hosts"] = set(executor_hosts) | {task_data["hostname"]}
+    context["executor_hosts"] = executor_hosts_ctx.with_host(
+        task_data["hostname"]
+    ).as_template_list()
+    context["has_matching_executor"] = alters_executor_matches_service_host(
+        meta, executor_hosts_ctx.hosts
+    )
     context["services"] = services
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
@@ -279,6 +266,7 @@ async def alters_update(
     task_name: str,
     updated_task: AltersGeneratedTask,
     tasks_api: TaskAPI,
+    pre_checks_task: AltersPreChecksTask,
 ) -> RedirectResponse:
     """Update alters task."""
     logger.debug("Updating alters task: %s", updated_task)
@@ -286,7 +274,7 @@ async def alters_update(
         f"/{task_name}",
         json=updated_task.model_dump(),
     )
-    dry_run_task = updated_task.model_copy()
+    dry_run_task = updated_task.model_copy(deep=True)
     dry_run_task.name = f"{updated_task.name}-dry-run"
     if "meta" in dry_run_task.data:
         dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
@@ -297,22 +285,6 @@ async def alters_update(
         f"/{task_name}-dry-run",
         json=dry_run_task.model_dump(),
     )
-
-    # Create the pre-checks task
-    pre_checks_task = updated_task.model_copy()
-    pre_checks_task.name = f"{updated_task.name}-pre-checks"
-    pre_checks_task.data["task"] = "run-python"
-    del pre_checks_task.data["meta"]["command"]
-    del pre_checks_task.data["meta"]["args"]
-    pre_checks_task.data["meta"]["config"] = (
-        f"schema: {updated_task.data['meta']['_schema_name']}\ntable: {updated_task.data['meta']['_table_name']}"
-    )
-    pre_checks_task.data["meta"]["requirements"] = (
-        "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
-    )
-    payload_path = Path(__file__).parent / "pre_checks.py"
-    pre_checks_task.data["payload"] = f"file://{payload_path}"
-    pre_checks_task.data["parent"] = updated_task.name
 
     await tasks_api.put(
         f"/{task_name}-pre-checks",
