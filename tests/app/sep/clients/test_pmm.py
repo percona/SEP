@@ -833,7 +833,11 @@ class TestGetAdvisorChecks:
         mock_get_version.return_value = pmm_version
         mock_request.return_value = {
             "checks": [
-                {"name": "mysql_version", "summary": "MySQL version", "disabled": False},
+                {
+                    "name": "mysql_version",
+                    "summary": "MySQL version",
+                    "disabled": False,
+                },
             ]
         }
 
@@ -958,9 +962,7 @@ class TestStartAdvisorChecks:
 
         await pmm_remote_api.start_advisor_checks()
 
-        mock_request.assert_awaited_once_with(
-            "POST", expected_path, json={}
-        )
+        mock_request.assert_awaited_once_with("POST", expected_path, json={})
         pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
@@ -1017,9 +1019,7 @@ class TestGetGrafanaAnnotations:
         ]
         mock_request.return_value = annotations
 
-        result = await pmm_remote_api.get_grafana_annotations(
-            from_ts=1000, to_ts=2000
-        )
+        result = await pmm_remote_api.get_grafana_annotations(from_ts=1000, to_ts=2000)
 
         assert result == annotations
         mock_request.assert_awaited_once_with(
@@ -1206,9 +1206,7 @@ class TestGetGrafanaDatasources:
         result = await pmm_remote_api.get_grafana_datasources()
 
         assert result == datasources
-        mock_request.assert_awaited_once_with(
-            "GET", "/graph/api/datasources"
-        )
+        mock_request.assert_awaited_once_with("GET", "/graph/api/datasources")
 
     @pytest.mark.asyncio
     async def test_get_grafana_datasources_returns_empty_list(
