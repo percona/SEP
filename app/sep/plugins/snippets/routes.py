@@ -27,7 +27,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     AdminUser,
     DefaultContext,
-    ExecutorHosts,
+    ExecutorHostsCtx,
     IsAuthenticated,
     SessionDep,
     TaskAPI,
@@ -74,7 +74,7 @@ async def snippets_detail(
     snippet: ValidatedSnippet,
     request: Request,
     context: DefaultContext,
-    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve and display information about a snippet."""
@@ -96,7 +96,7 @@ async def snippets_detail(
             history["available_files"] = []
     context |= {
         "snippet": snippet,
-        "executor_hosts": list(executor_hosts),
+        "executor_hosts": executor_hosts_ctx.as_form_hosts(),
         "history_tasks": history_tasks,
         "running_tasks": await tasks_api.get(
             f"/{snippet.execution_task_name}/history/",

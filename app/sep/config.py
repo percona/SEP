@@ -41,9 +41,9 @@ from pydantic import (
 from pydantic_core.core_schema import ValidationInfo
 
 from app import __summary__, __version__
+from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
-    settings,
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
@@ -61,6 +61,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.core.utils.lazy import LazyProxy
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -162,33 +163,6 @@ class SessionOptions(BaseModel):
     SECURE: bool = True
 
 
-class CsrfSettings(BaseModel):
-    """Configuration for CSRF protection settings.
-
-    :param SECRET_KEY: Secret key used for CSRF token generation.
-    :type SECRET_KEY: str
-    :param COOKIE_SECURE: Whether the CSRF cookie should be accessible
-        only via HTTPS (except on localhost).
-    :type COOKIE_SECURE: bool
-    :param COOKIE_SAMESITE: SameSite policy for the CSRF cookie.
-    :type COOKIE_SAMESITE: str
-    :param TOKEN_KEY: Key name for the CSRF token.
-    :type TOKEN_KEY: str
-    :param TOKEN_LOCATION: Location where the CSRF token is expected.
-    :type TOKEN_LOCATION: str
-    :param TOKEN_TIME_LIMIT: Maximum age of the CSRF token; should match
-        session MAX_AGE so the token expires with the session.
-    :type TOKEN_TIME_LIMIT: TimedeltaSeconds
-    """
-
-    SECRET_KEY: str = settings.SECRET_KEY.get_secret_value()
-    COOKIE_SECURE: bool = True
-    COOKIE_SAMESITE: str = "none"
-    TOKEN_KEY: str = "csrf-token"  # noqa: S105
-    TOKEN_LOCATION: str = "body"  # noqa: S105
-    TOKEN_TIME_LIMIT: TimedeltaSeconds = timedelta(days=7)
-
-
 class PMMSettings(BaseLowercaseModel):
     """Define centralized PMM configuration.
 
@@ -202,6 +176,13 @@ class PMMSettings(BaseLowercaseModel):
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
     :type execution_target: str | None
+    :param backup_interval: Interval between alert configuration backups.
+    :type backup_interval: IntervalSchedule
+    :param backup_retention: Maximum number of alert backups to retain.
+    :type backup_retention: PositiveInt
+    :param alert_folder_name: Display name of the PMM folder used for SEP-managed
+        alert rules. Defaults to ``"SEP Alerts"``.
+    :type alert_folder_name: str
     """
 
     model_config = ConfigDict(extra="allow")
@@ -210,6 +191,9 @@ class PMMSettings(BaseLowercaseModel):
     api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
+    backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
+    backup_retention: PositiveInt = 10
+    alert_folder_name: str = "SEP Alerts"
 
     @cached_property
     def hostname(self) -> str | None:
@@ -278,6 +262,10 @@ class SEPSettings(BaseYamlAppSettings):
     :param STATIC_DIR: The directory containing static files. Defaults to
         `Path("static")`.
     :type STATIC_DIR: RelativeDirectoryPathField
+    :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
+        definition files. When `None`, the bundled `alert_definitions/` directory
+        inside the alerts plugin is used.
+    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
     :type INVENTORY_ENDPOINT: HttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
@@ -306,6 +294,9 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
+        `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
+    :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
@@ -316,6 +307,7 @@ class SEPSettings(BaseYamlAppSettings):
     SESSION: SessionOptions = SessionOptions()
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
+    ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: HttpUrl
     TASKS_ENDPOINT: HttpUrl
     PLUGINS: UniqueList[Plugin] = UniqueList()
@@ -488,4 +480,4 @@ class SEPSettings(BaseYamlAppSettings):
         return self
 
 
-sep_settings = SEPSettings()
+sep_settings: SEPSettings = LazyProxy(SEPSettings)

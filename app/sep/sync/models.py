@@ -521,6 +521,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             CreatedSchema.model_validate(schema_data)
             for schema_data in await self.inventory_api.get(
                 f"/services/{service_id}/schemas/",
+                params={"include_tables": "true"},
             )
         ]
 
@@ -1182,12 +1183,23 @@ class BaseTaskSyncer(BaseSyncer):
     :type tasks_execution_wait_interval: int
     :param force_executor_host: The host to force for task execution, if any.
     :type force_executor_host: str | None
+    :param strict_executor_matching: Raise ``ExecutorHostNotFoundError`` instead of
+        falling back to an arbitrary host when no executor matches the node.
+        Defaults to ``False``.
+    :type strict_executor_matching: bool
+    :param default_executor_host: The Nomad client host to use when no matching host
+        is found for a service (e.g. RDS instances). If set, takes precedence over
+        the first available host in the fallback path.
+    :type default_executor_host: str | None
     """
 
     tasks_api: RemoteAPI
     task_execution_timeout: int = 300
     tasks_execution_wait_interval: int = 5
     force_executor_host: str | None = None
+    strict_executor_matching: bool = False
+
+    default_executor_host: str | None = None
 
     @asynccontextmanager
     async def api_auth(

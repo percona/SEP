@@ -25,25 +25,28 @@
 #    description: Database to use for the query tuning
 #    default: ""
 #  - name: profile
-#    type: int
+#    type: bool
 #    label: Profile the query
-#    description: If set to 1, the query will be run and additional profiling information will be collected. Not allowed for DML queries. CTE profiled only if option --force is set.
-#    default: 0
+#    description: If enabled, the query will be run and additional profiling information will be collected. Not allowed for DML queries. CTE profiled only if option --force is set.
+#    default: false
 #  - name: force
-#    type: int
+#    type: bool
 #    label: Force profiling
-#    description: If set to 1, the query will be profiled even if it is a CTE expression. It is your responsibility to ensure that the query only selects data and does not modify it.
-#    default: 0
+#    description: If enabled, the query will be profiled even if it is a CTE expression. It is your responsibility to ensure that the query only selects data and does not modify it.
+#    default: false
 #  - name: execute
-#    type: int
+#    type: bool
 #    label: Execute diagnostic queries
-#    description: If set to 1, the diagnostic queries will be executed
-#    default: 0
+#    description: If enabled, the diagnostic queries will be executed
+#    default: false
 #  - name: help
-#    type: int
+#    type: bool
 #    label: Show help message
 #    description: Show help message
-#    default: 0
+#    default: false
+# service_type: mysql
+# alerts:
+#   - MySQLSlowQueries
 # ---
 
 # Usage: ./mysql_query_tuning.sh [--defaults-file=path] --query=query_string|--file=path [--database=name] [--dest=path] [--execute] [--help]

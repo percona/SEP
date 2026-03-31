@@ -18,6 +18,7 @@
 from unittest.mock import MagicMock
 
 from app.sep.sync.exceptions import (
+    ExecutorHostNotFoundError,
     SyncError,
     SyncFailError,
     SyncInstanceAlreadyInProgressError,
@@ -96,3 +97,30 @@ class TestSyncInstanceAlreadyInProgressError:
     def test_inherits_from_sync_error(self):
         """Assert SyncInstanceAlreadyInProgressError is a subclass of SyncError."""
         assert issubclass(SyncInstanceAlreadyInProgressError, SyncError)
+
+
+class TestExecutorHostNotFoundError:
+    """Test the ``ExecutorHostNotFoundError`` exception."""
+
+    def test_attributes_and_message(self):
+        """Assert ``node_name``, ``node_address``, and ``available_hosts`` are stored and message is formatted."""
+        exc = ExecutorHostNotFoundError(
+            node_name="my-node",
+            node_address="10.0.0.5",
+            available_hosts={"executor-1": "10.0.0.1", "executor-2": "10.0.0.2"},
+        )
+
+        assert exc.node_name == "my-node"
+        assert exc.node_address == "10.0.0.5"
+        assert exc.available_hosts == {
+            "executor-1": "10.0.0.1",
+            "executor-2": "10.0.0.2",
+        }
+        assert str(exc) == (
+            "No executor host matches node 'my-node' (address='10.0.0.5'). "
+            "Available hosts: {'executor-1': '10.0.0.1', 'executor-2': '10.0.0.2'}"
+        )
+
+    def test_inherits_from_sync_error(self):
+        """Assert ``ExecutorHostNotFoundError`` is a subclass of ``SyncError``."""
+        assert issubclass(ExecutorHostNotFoundError, SyncError)

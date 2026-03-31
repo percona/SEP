@@ -63,6 +63,7 @@ from app.core.utils.fields import (
     StrImportableAttribute,
     URL,
 )
+from app.core.utils.lazy import LazyProxy
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -360,8 +361,14 @@ class Settings(BaseYamlSettings):
         await self._CLIENT_REGISTRY.close_all()
 
 
-settings = Settings()
-logging.config.dictConfig(settings.LOGGING_CONFIG)
+def _create_settings() -> Settings:
+    """Create a :class:`Settings` instance and apply its logging configuration."""
+    s = Settings()
+    logging.config.dictConfig(s.LOGGING_CONFIG)
+    return s
+
+
+settings: Settings = LazyProxy(_create_settings)
 logger = logging.getLogger(__name__)
 
 
@@ -370,10 +377,13 @@ class BaseYamlAppSettings(BaseYamlSettings):
 
     :cvar SETTINGS_PREFIXES: Tuple of settings prefixes.
     :vartype SETTINGS_PREFIXES: list[str]
-    :param UVICORN_HOST: The host for Uvicorn. Defaults to "127.0.0.1"
+    :param UVICORN_HOST: The host for Uvicorn. Defaults to "127.0.0.1".
     :type UVICORN_HOST: str
     :param UVICORN_PORT: The port for Uvicorn. Defaults to 0.
     :type UVICORN_PORT: int
+    :param UVICORN_RELOAD: Enable auto-reload on file changes. Defaults to ``False``.
+        Set to ``True`` in development for hot-reloading.
+    :type UVICORN_RELOAD: bool
     :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
     :type SSL_KEYFILE: RelativeFilePathField | None
     :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
@@ -392,10 +402,15 @@ class BaseYamlAppSettings(BaseYamlSettings):
 
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
+    UVICORN_RELOAD: bool = False
     SSL_KEYFILE: RelativeFilePathField | None = None
     SSL_CERTFILE: RelativeFilePathField | None = None
-    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = settings.BACKEND_CORS_ORIGINS
-    ALLOWED_HOSTS: list[str] = Field(settings.ALLOWED_HOSTS, min_length=1)
+    BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = Field(
+        default_factory=lambda: settings.BACKEND_CORS_ORIGINS
+    )
+    ALLOWED_HOSTS: list[str] = Field(
+        default_factory=lambda: settings.ALLOWED_HOSTS, min_length=1
+    )
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
 
     @field_validator("ALLOWED_HOSTS")

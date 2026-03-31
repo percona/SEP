@@ -170,20 +170,19 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <label for="hostname">
                                 <span class="label">Select Executor Host:</span>
                                 <span class="select-input-wrapper">
-                                    {% set executor_hosts = executor_hosts | list %}
                                     {% if executor_hosts|length == 1 %}
-                                        {% set single_service = executor_hosts[0] %}
+                                        {% set single_host = executor_hosts[0] %}
                                         <select id="hostname" name="hostname" disabled>
-                                            <option value="{{ single_service }}" selected>{{ single_service }}</option>
+                                            <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
                                         </select>
-                                        <input type="hidden" name="hostname" value="{{ single_service }}">
+                                        <input type="hidden" name="hostname" value="{{ single_host.value }}">
                                     {% else %}
                                         <select id="hostname" name="hostname" required>
                                             <option value="" selected>Select a host</option>
-                                            {% for executor_host in executor_hosts %}
-                                                <option value="{{ executor_host }}"
-                                                        {% if executor_host == task['hostname'] %}selected{% endif %}>
-                                                    {{ executor_host }}
+                                            {% for host in executor_hosts %}
+                                                <option value="{{ host.value }}"
+                                                        {% if host.value == task['hostname'] %}selected{% endif %}>
+                                                    {{ host.label }}
                                                 </option>
                                             {% endfor %}
                                         </select>
@@ -1231,8 +1230,22 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         initSource();
         updateBackupTypeUI();
         updateCompressionOptions();
-        showContainer(s3Container, false);
-        showContainer(rsyncContainer, false);
+        if (s3BucketInput && s3BucketInput.value.trim() !== '') {
+            showContainer(s3Container, true);
+            s3Visible = true;
+            s3BucketInput.required = true;
+            toggleS3Btn.textContent = "- Remove S3 upload";
+        } else {
+            showContainer(s3Container, false);
+        }
+        if (rsyncPathInput && rsyncPathInput.value.trim() !== '') {
+            showContainer(rsyncContainer, true);
+            rsyncVisible = true;
+            rsyncPathInput.required = true;
+            toggleRsyncBtn.textContent = "- Remove Rsync upload";
+        } else {
+            showContainer(rsyncContainer, false);
+        }
         updateEditButtonState();
     }
     if (document.readyState === 'loading') {

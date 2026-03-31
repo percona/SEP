@@ -22,6 +22,7 @@ import pytest_asyncio
 from fastapi import status
 
 from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -242,6 +243,28 @@ async def test_stream_logs_running_uses_executor(
     mock_executor.stream_logs = MagicMock(return_value=mock_stream())
     response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
     assert response.status_code == status.HTTP_200_OK
+    mock_executor.preflight_stream_logs.assert_called_once_with(
+        created_task_with_history
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_running_preflight_allocation_gone_returns_410(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert TaskDataNotFound during preflight returns 410 before streaming starts."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    mock_executor.preflight_stream_logs.side_effect = AllocationNotFoundError(
+        "No allocations",
+        executor_name="nomad",
+        resource_type="allocation",
+        resource_id='JobID == "j" and EvalID == "e"',
+    )
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_410_GONE
+    detail = response.json()["detail"]
+    assert detail["resource_type"] == "allocation"
 
 
 @pytest.mark.asyncio
@@ -448,3 +471,28 @@ async def test_transform_payload_nomad_backend(test_client, mock_executor):
             params={"backend": "nomad"},
         )
     assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.asyncio
+async def test_task_data_with_execution_request_keys_returned_as_dict(
+    test_client, session
+):
+    """Test that Task.data with TaskExecutionRequest-like keys is returned as a dict."""
+    conflicting_data = {
+        "task": "run-python",
+        "target": "mariadb",
+        "payload": "SELECT 1",
+        "meta": {"env": "staging"},
+    }
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="conflicting-task", data=conflicting_data),
+        ),
+    )
+
+    response = test_client.get("/conflicting-task")
+    assert response.status_code == status.HTTP_200_OK
+    task_json = response.json()
+    assert task_json["data"] == conflicting_data
+    assert isinstance(task_json["data"], dict)

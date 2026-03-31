@@ -32,6 +32,7 @@ from app.sep.inventory import (
     Service,
     Table,
 )
+from app.sep.sync.exceptions import ExecutorHostNotFoundError
 from app.sep.sync.models import TaskRunResult
 from app.sep.sync.syncers.mysql.syncer import (
     _MySQLSyncResultEntityTypeEnum,
@@ -115,6 +116,60 @@ class TestConfigAndTargets:
         target = await mock_mysql_syncer.get_task_target("127.0.0.1")
         assert target == "some_executor_host"
 
+    @pytest.mark.asyncio
+    async def test_get_task_target_default_executor_fallback(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test fallback to default_executor_host when no name/address match (e.g. RDS)."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {
+            "on-prem-host": "192.168.1.10:3306",
+            "monitor-host": "10.0.0.5:3306",
+        }
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = "monitor-host"
+        target = await mock_mysql_syncer.get_task_target(
+            "rds-cluster.region.rds.amazonaws.com"
+        )
+        assert target == "monitor-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_first_available_when_no_default(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test first available host when no match and default_executor_host not set."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"first-host": "1.2.3.4:3306", "second-host": "5.6.7.8:3306"}
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = None
+        target = await mock_mysql_syncer.get_task_target("unknown-rds.endpoint.com")
+        assert target == "first-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_force_takes_precedence_over_default(
+        self, mock_mysql_syncer
+    ):
+        """Test force_executor_host overrides default_executor_host."""
+        mock_mysql_syncer.force_executor_host = "forced-host"
+        mock_mysql_syncer.default_executor_host = "default-host"
+        target = await mock_mysql_syncer.get_task_target("any-host")
+        assert target == "forced-host"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_fallback_when_default_not_in_available_hosts(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test fallback to first available when default_executor_host is stale."""
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"live-host": "10.0.0.1:3306", "other-host": "10.0.0.2:3306"}
+        mock_mysql_syncer.force_executor_host = None
+        mock_mysql_syncer.default_executor_host = "stale-host"
+        target = await mock_mysql_syncer.get_task_target("rds.example.com")
+        assert target == "live-host"
+
     def test_payload_path_points_to_payload_py(self, mock_mysql_syncer):
         """Test payload_path returns payload.py path."""
         p = mock_mysql_syncer.payload_path
@@ -125,6 +180,88 @@ class TestConfigAndTargets:
         """Test returning service address when only service is provided."""
         addr = MySQLSyncer._build_entity_address("host:3306")
         assert addr == "host:3306"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_strict_raises_on_no_match(
+        self, mock_remote_api, mocker
+    ):
+        """Assert ``ExecutorHostNotFoundError`` is raised when strict and no match."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "10.0.0.1", "executor-2": "10.0.0.2"}
+        with pytest.raises(ExecutorHostNotFoundError) as exc_info:
+            await syncer.get_task_target("192.168.1.99", name="unknown-node")
+        assert exc_info.value.node_name == "unknown-node"
+        assert exc_info.value.node_address == "192.168.1.99"
+        assert exc_info.value.available_hosts == {
+            "executor-1": "10.0.0.1",
+            "executor-2": "10.0.0.2",
+        }
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_strict_name_matches(self, mock_remote_api, mocker):
+        """Assert matched name is returned when strict and name is in hosts."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"my-node": "10.0.0.1", "executor-2": "10.0.0.2"}
+        target = await syncer.get_task_target("192.168.1.99", name="my-node")
+        assert target == "my-node"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_strict_address_matches(
+        self, mock_remote_api, mocker
+    ):
+        """Assert matched target is returned when strict and address matches."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "192.168.1.99", "executor-2": "10.0.0.2"}
+        target = await syncer.get_task_target("192.168.1.99", name="unknown")
+        assert target == "executor-1"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_non_strict_fallback(self, mock_remote_api, mocker):
+        """Assert first host is returned as fallback when non-strict and no match."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "10.0.0.1", "executor-2": "10.0.0.2"}
+        target = await syncer.get_task_target("192.168.1.99", name="unknown")
+        assert target == "executor-1"
+
+    @pytest.mark.asyncio
+    async def test_get_task_target_force_overrides_strict(
+        self, mock_remote_api, mocker
+    ):
+        """Assert ``force_executor_host`` takes priority over strict matching."""
+        syncer = MySQLSyncer(
+            tasks_api=mock_remote_api,
+            inventory_api=mock_remote_api,
+            strict_executor_matching=True,
+            force_executor_host="forced-host",
+        )
+        mocker.patch.object(
+            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {"executor-1": "10.0.0.1"}
+        target = await syncer.get_task_target("192.168.1.99", name="unknown")
+        assert target == "forced-host"
 
 
 class TestFetchMethods:
