@@ -775,7 +775,7 @@ class TestDispatchChainedTask:
         mock_dispatch.assert_awaited_once()
         dispatched_history = mock_dispatch.call_args[0][0]
         assert dispatched_history.execution_request.target == "host1"
-        assert dispatched_history.execution_request.meta.get("chain_depth") == 1
+        assert dispatched_history.execution_request.meta.get("_chain_depth") == 1
 
     @pytest.mark.asyncio
     async def test_unknown_task_logs_warning(self) -> None:
@@ -882,7 +882,7 @@ class TestDispatchChainedTask:
         main_task = _make_chain_task("main-task")
         meta = {
             "_chain_task_names": ["chain-task"],
-            "chain_depth": _MAX_CHAIN_DEPTH,
+            "_chain_depth": _MAX_CHAIN_DEPTH,
         }
         parent_history = _make_chain_history(
             main_task, TaskHistoryStatusEnum.SUCCESS, meta

@@ -42,9 +42,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                 {% with chain_names=chain %}
                                     {% include "tasks/partials/chain-display.html" %}
                                 {% endwith %}
-                            {% elif task_history.execution_request and task_history.execution_request.meta and task_history.execution_request.meta.get('chain_depth', 0) > 0 %}
+                            {% elif task_history.execution_request and task_history.execution_request.meta and task_history.execution_request.meta.get('_chain_depth', 0) > 0 %}
                                 <span class="chain-depth-indicator"
-                                      title="Chained task (depth: {{ task_history.execution_request.meta.chain_depth }})">
+                                      title="Chained task (depth: {{ task_history.execution_request.meta._chain_depth }})">
                                     <span class="material-symbols-outlined">link</span>
                                 </span>
                             {% else %}

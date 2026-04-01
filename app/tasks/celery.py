@@ -423,7 +423,7 @@ async def _dispatch_chained_task(
     :param remaining_chain: Task names to chain after this one, if any.
     :type remaining_chain: list[str] | None
     """
-    if parent.execution_request.meta.get("chain_depth", 0) >= _MAX_CHAIN_DEPTH:
+    if parent.execution_request.meta.get("_chain_depth", 0) >= _MAX_CHAIN_DEPTH:
         logger.warning(
             "Chain depth limit (%d) reached for task %r; skipping chain to %r",
             _MAX_CHAIN_DEPTH,
@@ -456,8 +456,8 @@ async def _dispatch_chained_task(
         chain_meta["_chain_on_failure"] = parent.execution_request.meta.get(
             "_chain_on_failure", False
         )
-        chain_meta["chain_depth"] = (
-            parent.execution_request.meta.get("chain_depth", 0) + 1
+        chain_meta["_chain_depth"] = (
+            parent.execution_request.meta.get("_chain_depth", 0) + 1
         )
         chain_history = TaskHistory(
             task_id=chain_task.id,
