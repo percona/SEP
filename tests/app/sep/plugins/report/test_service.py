@@ -717,3 +717,42 @@ class TestCollectSection:
         assert report.inventory.entries == []
 
 
+# generate_report
+class TestGenerateReport:
+    """Test the top-level ``generate_report`` orchestrator."""
+
+    @pytest.mark.asyncio
+    async def test_returns_report_data(self, pmm_api):
+        """Assert a ReportData object is returned."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [
+            {"generic": [{"node_id": "n1", "node_name": "host-a"}]},
+            {"mysql": [{"service_id": "s1", "service_name": "m", "node_id": "n1"}]},
+        ]
+        pmm_api.get_grafana_datasources.return_value = [
+            {"name": "Metrics", "id": 1, "uid": "u1"},
+        ]
+        with patch(
+            "app.sep.plugins.report.service._collect_section",
+            new_callable=AsyncMock,
+        ):
+            report = await generate_report(pmm_api)
+        assert isinstance(report, ReportData)
+        assert report.metadata.title == "Health and Security Report"
+
+    @pytest.mark.asyncio
+    async def test_sets_full_and_refresh_flags(self, pmm_api):
+        """Assert full and refresh flags are propagated to the report."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [{"g": []}, {"m": []}]
+        pmm_api.get_grafana_datasources.return_value = [
+            {"name": "Metrics", "id": 1, "uid": "u1"},
+        ]
+        with patch(
+            "app.sep.plugins.report.service._collect_section",
+            new_callable=AsyncMock,
+        ):
+            report = await generate_report(pmm_api, full=True, refresh=True)
+        assert report.full is True
+        assert report.refresh is True
+

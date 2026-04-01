@@ -393,5 +393,34 @@ async def generate_report(
         ),
     )
 
+    monitored = MonitoredSummary(
+        total_nodes=len(nodes_raw),
+        total_services=len(services_raw),
+        services_by_type={
+            svc_type: sum(1 for s in services_raw.values() if s["type"] == svc_type)
+            for svc_type in sorted(active_types)
+        },
+    )
+
+    report = ReportData(
+        full=full, refresh=refresh, metadata=metadata, monitored=monitored
+    )
+
+    collector_kwargs = {
+        "pmm_api": pmm_api,
+        "start_ts": start_ts,
+        "stop_ts": stop_ts,
+        "since": since,
+        "until": until,
+        "ds_id": ds_id,
+        "ds_uid": ds_uid,
+        "nodes_raw": nodes_raw,
+        "services_raw": services_raw,
+        "active_types": active_types,
+        "refresh": refresh,
+    }
+
+    for section in sections:
+        await _collect_section(section, report, **collector_kwargs)
 
     return report
