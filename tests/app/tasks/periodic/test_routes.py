@@ -190,13 +190,14 @@ class TestCreatePeriodicTaskChainValidation:
     @pytest.mark.asyncio
     async def test_valid_chain_task_succeeds(self, periodic_test_client, tasks_session):
         """Assert creating a periodic task with a valid chain task succeeds."""
+        shared = {"owner": "BACKUPS", "data": {"Constraints": [{"RTarget": "n"}]}}
         await TaskManager.create(
             tasks_session,
-            TaskWrite.model_validate(TaskFactory.build(name="task-a")),
+            TaskWrite.model_validate(TaskFactory.build(name="task-a", **shared)),
         )
         await TaskManager.create(
             tasks_session,
-            TaskWrite.model_validate(TaskFactory.build(name="task-b")),
+            TaskWrite.model_validate(TaskFactory.build(name="task-b", **shared)),
         )
         payload = {
             "interval": {"every": 10, "period": "minutes"},

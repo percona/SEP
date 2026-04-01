@@ -95,7 +95,9 @@ async def update_periodic_task(
         await get_executable_task_by_name(tasks_session, task_name)
     if updated_task.execute_request and updated_task.execute_request.chain_task_names:
         await validate_chain_task_names(
-            tasks_session, updated_task.execute_request.chain_task_names, task_name
+            tasks_session,
+            updated_task.execute_request.chain_task_names,
+            await get_executable_task_by_name(tasks_session, task_name),
         )
     logger.debug("Updating periodic task %s", existing_task.id)
     return await PeriodicTaskManager.update(session, existing_task, updated_task)

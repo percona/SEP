@@ -174,7 +174,7 @@ async def create_periodic_task_for_task_name(
     logger.debug("Creating periodic task %s", periodic_task)
     if periodic_task.execute_request and periodic_task.execute_request.chain_task_names:
         await validate_chain_task_names(
-            session, periodic_task.execute_request.chain_task_names, task.name
+            session, periodic_task.execute_request.chain_task_names, task
         )
     kwargs = json.loads(periodic_task.kwargs)
     kwargs["task_name"] = task.name

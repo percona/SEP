@@ -322,7 +322,9 @@ class TestPrepareTaskHistory:
             backend=TaskBackendEnum.PROXY,
             data={"meta": {"target": "host1"}, "payload": None},
         )
-        chain_task = TaskFactory.build(name="other-task")
+        chain_task = TaskFactory.build(
+            name="other-task", owner=task.owner, data=task.data
+        )
         execution_data = TaskExecuteRequest(chain_task_names=["other-task"])
         with patch(
             "app.tasks.deps.TaskManager.first",
@@ -342,7 +344,9 @@ class TestPrepareTaskHistory:
             backend=TaskBackendEnum.PROXY,
             data={"meta": {"target": "host1"}, "payload": None},
         )
-        chain_task = TaskFactory.build(name="other-task")
+        chain_task = TaskFactory.build(
+            name="other-task", owner=task.owner, data=task.data
+        )
         execution_data = TaskExecuteRequest(
             chain_task_names=["other-task"], chain_on_failure=True
         )
@@ -364,7 +368,9 @@ class TestPrepareTaskHistory:
             backend=TaskBackendEnum.PROXY,
             data={"meta": {"target": "host1"}, "payload": None},
         )
-        chain_task = TaskFactory.build(name="other-task")
+        chain_task = TaskFactory.build(
+            name="other-task", owner=task.owner, data=task.data
+        )
         execution_data = TaskExecuteRequest(chain_task_names=["other-task"])
         with patch(
             "app.tasks.deps.TaskManager.first",
@@ -408,6 +414,81 @@ class TestPrepareTaskHistory:
             await prepare_task_history(task, "test-user", AsyncMock(), execution_data)
 
     @pytest.mark.asyncio
+    async def test_chain_task_owner_mismatch_raises_400(self) -> None:
+        """Assert prepare_task_history rejects chain task with different owner."""
+        task = TaskFactory.build(
+            name="test-task",
+            owner="BACKUPS",
+            backend=TaskBackendEnum.PROXY,
+            data={"meta": {"target": "host1"}, "payload": None},
+        )
+        chain_task = TaskFactory.build(
+            name="other-task", owner="CHECKSUMS", data=task.data
+        )
+        execution_data = TaskExecuteRequest(chain_task_names=["other-task"])
+        with (
+            patch(
+                "app.tasks.deps.TaskManager.first",
+                new_callable=AsyncMock,
+                return_value=chain_task,
+            ),
+            pytest.raises(HTTPBadRequestException, match="owner"),
+        ):
+            await prepare_task_history(task, "test-user", AsyncMock(), execution_data)
+
+    @pytest.mark.asyncio
+    async def test_chain_task_target_mismatch_raises_400(self) -> None:
+        """Assert prepare_task_history rejects chain task with different target."""
+        task = TaskFactory.build(
+            name="test-task",
+            owner="BACKUPS",
+            backend=TaskBackendEnum.PROXY,
+            data={
+                "meta": {"target": "host1"},
+                "payload": None,
+                "Constraints": [{"RTarget": "mariadb"}],
+            },
+        )
+        chain_task = TaskFactory.build(
+            name="other-task",
+            owner="BACKUPS",
+            data={"Constraints": [{"RTarget": "postgres"}]},
+        )
+        execution_data = TaskExecuteRequest(chain_task_names=["other-task"])
+        with (
+            patch(
+                "app.tasks.deps.TaskManager.first",
+                new_callable=AsyncMock,
+                return_value=chain_task,
+            ),
+            pytest.raises(HTTPBadRequestException, match="target"),
+        ):
+            await prepare_task_history(task, "test-user", AsyncMock(), execution_data)
+
+    @pytest.mark.asyncio
+    async def test_chain_task_both_no_target_succeeds(self) -> None:
+        """Assert prepare_task_history accepts chain when neither task has a target."""
+        task = TaskFactory.build(
+            name="test-task",
+            owner="BACKUPS",
+            backend=TaskBackendEnum.PROXY,
+            data={"meta": {"target": "host1"}, "payload": None},
+        )
+        chain_task = TaskFactory.build(
+            name="other-task", owner="BACKUPS", data=task.data
+        )
+        execution_data = TaskExecuteRequest(chain_task_names=["other-task"])
+        with patch(
+            "app.tasks.deps.TaskManager.first",
+            new_callable=AsyncMock,
+            return_value=chain_task,
+        ):
+            history = await prepare_task_history(
+                task, "test-user", AsyncMock(), execution_data
+            )
+        assert history.execution_request.meta.get("_chain_task_names") == ["other-task"]
+
+    @pytest.mark.asyncio
     async def test_chain_task_names_not_injected_when_absent(self) -> None:
         """Assert prepare_task_history does not add chain_task_names when not set."""
         task = TaskFactory.build(
@@ -432,7 +513,9 @@ class TestPrepareTaskHistory:
                 "payload": None,
             },
         )
-        chain_task = TaskFactory.build(name="override-task")
+        chain_task = TaskFactory.build(
+            name="override-task", owner=task.owner, data=task.data
+        )
         execution_data = TaskExecuteRequest(chain_task_names=["override-task"])
         with patch(
             "app.tasks.deps.TaskManager.first",

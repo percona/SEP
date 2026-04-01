@@ -117,20 +117,21 @@ ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
 async def validate_chain_task_names(
     session: AsyncSession,
     chain_task_names: list[str],
-    task_name: str,
+    parent_task: Task,
 ) -> None:
-    """Validate that all chain task names exist and no cycles are present.
+    """Validate that all chain task names exist, no cycles are present, and targets match.
 
     :param session: The async database session.
     :type session: AsyncSession
     :param chain_task_names: Ordered list of task names to chain.
     :type chain_task_names: list[str]
-    :param task_name: Name of the parent task (to prevent cycles).
-    :type task_name: str
-    :raises HTTPBadRequestException: If a cycle is detected in the chain.
+    :param parent_task: The parent task (to prevent cycles and enforce target matching).
+    :type parent_task: Task
+    :raises HTTPBadRequestException: If a cycle is detected or a target mismatch is found.
     :raises HTTPNotFoundException: If any chain task does not exist.
     """
-    seen = {task_name}
+    parent_target = parent_task.data.get("Constraints", [{}])[0].get("RTarget")
+    seen = {parent_task.name}
     for name in chain_task_names:
         if name in seen:
             raise HTTPBadRequestException(
@@ -144,6 +145,17 @@ async def validate_chain_task_names(
         )
         if chain_task is None:
             raise HTTPNotFoundException(f"Chained task {name!r} not found.")
+        if chain_task.owner != parent_task.owner:
+            raise HTTPBadRequestException(
+                f"Chained task {name!r} has owner {chain_task.owner!r},"
+                f" expected {parent_task.owner!r}."
+            )
+        chain_target = chain_task.data.get("Constraints", [{}])[0].get("RTarget")
+        if chain_target != parent_target:
+            raise HTTPBadRequestException(
+                f"Chained task {name!r} has target {chain_target!r},"
+                f" expected {parent_target!r}."
+            )
 
 
 async def prepare_task_history(
@@ -172,9 +184,7 @@ async def prepare_task_history(
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
     if execution_data.chain_task_names:
-        await validate_chain_task_names(
-            session, execution_data.chain_task_names, task.name
-        )
+        await validate_chain_task_names(session, execution_data.chain_task_names, task)
         execution_data.meta["_chain_task_names"] = execution_data.chain_task_names
         execution_data.meta["_chain_on_failure"] = execution_data.chain_on_failure
     target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
