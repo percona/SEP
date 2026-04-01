@@ -5,6 +5,9 @@
 # description: "This script checks for PSQL queries that are in the conflicted state."
 # allow_extra_args: false
 # sudo: optional
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLLockConflicts
 # ---
 
 # Usage: ./postgresql_lock_conflicts.sh
