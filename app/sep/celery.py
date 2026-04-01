@@ -130,16 +130,35 @@ def should_skip_snippet(snippet_path: Path) -> bool:
 
 
 @celery.task
+def generate_health_report() -> None:
+    """Define Celery task to generate a periodic PMM health report."""
+    celery.loop.run_until_complete(_generate_health_report())
+
+
 async def _generate_health_report() -> None:
     """Generate a health report from PMM and log it.
     The report data is logged at INFO level.  Extend this function to persist
     report results (e.g. to the database or file system) as needed.
     """
     from app.sep.plugins.report.deps import get_pmm_api
+    from app.sep.plugins.report.service import generate_report
+
     pmm_api = await get_pmm_api()
     if pmm_api is None:
         logger.warning("PMM not configured, skipping health report generation")
         return
+
+    try:
+        report = await generate_report(pmm_api)
+        logger.info(
+            "Health report generated: %s (%d nodes, %d services)",
+            report.metadata.title,
+            report.monitored.total_nodes,
+            report.monitored.total_services,
+        )
+    except Exception:
+        logger.exception("Failed to generate health report")
+
 
 @celery.task
 def backup_alert_config() -> None:

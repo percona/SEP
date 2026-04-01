@@ -194,6 +194,7 @@ class PMMSettings(BaseLowercaseModel):
     backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
     backup_retention: PositiveInt = 10
     alert_folder_name: str = "SEP Alerts"
+    report_interval: IntervalSchedule = IntervalSchedule(every=7, period=Period.DAYS)
 
     @cached_property
     def hostname(self) -> str | None:

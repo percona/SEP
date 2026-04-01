@@ -56,6 +56,19 @@ if _alerts_plugin_enabled:
         ),
     )
 
+if _report_plugin_enabled:
+    SYSTEM_PERIODIC_TASKS.append(
+        SystemPeriodicTaskSchedule(
+            schedule=sep_settings.PMM.report_interval,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="sep__generate_health_report",
+                    task_name="app.sep.celery.generate_health_report",
+                ),
+            ],
+        ),
+    )
+
 
 async def create_plugin_tables() -> None:
     """Create database tables for plugin-scoped models when the corresponding plugin is enabled.
