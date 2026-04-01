@@ -48,6 +48,14 @@
     max-height: none;
 }
 
+.highlighttable td {
+    vertical-align: top;
+}
+
+.linenodiv {
+    line-height: 125%;
+}
+
 .frontmatter-toggle {
     border: none;
     margin: 0;
