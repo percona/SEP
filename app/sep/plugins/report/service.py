@@ -20,3 +20,32 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 :mod:`~app.sep.plugins.report.models` objects.
 """
 
+
+
+def _find_labels(schema_fields: list[dict[str, Any]]) -> dict[str, Any]:
+    """Extract PMM labels from Grafana frame schema fields."""
+    for field in schema_fields:
+        labels = {
+            k: v
+            for k, v in field.get("labels", {}).items()
+            if field.get("name") != "Time"
+        }
+        if labels:
+            return labels
+    return {}
+
+
+def _interval_ms(start: str, end: str) -> tuple[int, int]:
+    """Convert relative time strings (``now-7d``, ``now``) to epoch milliseconds."""
+    now_ms = int(time.time() * 1000)
+
+    def _parse(value: str) -> int:
+        if value == "now":
+            return now_ms
+        if value.startswith("now-"):
+            offset_str = value[4:]
+            multiplier = {"s": 1, "m": 60, "h": 3600, "d": 86400}.get(offset_str[-1], 1)
+            return now_ms - int(offset_str[:-1]) * multiplier * 1000
+        raise ValueError(f"Unsupported time format: {value}")
+
+    return _parse(start), _parse(end)
