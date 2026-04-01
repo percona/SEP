@@ -5,6 +5,9 @@
 # description: "This script checks for databases with a low transaction commit ratio, indicating frequent rollbacks or aborted operations."
 # allow_extra_args: false
 # sudo: always
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLLowCommitRatio
 # ---
 
 # Usage: ./postgresql_commit_ratio.sh

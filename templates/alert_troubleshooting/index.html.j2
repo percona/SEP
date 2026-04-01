@@ -1,0 +1,74 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    Alert Troubleshooting
+{%- endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/alert-troubleshooting.css') }}">
+{% endblock style %}
+{% block main %}
+    <p>
+        Select an alert to view troubleshooting steps and diagnostic snippets
+        grouped by database service type.
+    </p>
+    {% set has_alerts = grouped_alerts | length > 0 %}
+    {% if has_alerts %}
+        <div class="at-accordion">
+            {% for svc in alert_service_types %}
+                {% if svc in grouped_alerts %}
+                    {% set alerts = grouped_alerts[svc] %}
+                    <details class="at-section" open>
+                        <summary class="at-section-header">
+                            <span class="at-section-title">
+                                <span class="material-symbols-outlined at-section-icon">database</span>
+                                {{ svc.label }}
+                            </span>
+                            <span class="at-badge">{{ alerts | length }}</span>
+                            <span class="material-symbols-outlined at-chevron">expand_more</span>
+                        </summary>
+                        <div class="at-section-body">
+                            <ul class="at-alert-list">
+                                {% for alert in alerts %}
+                                    <li>
+                                        {# djlint:off J018 #}
+                                        <a href="{{ base_uri }}/{{ alert.name }}" class="at-alert-link">
+                                            {# djlint:on #}
+                                            <span class="material-symbols-outlined at-alert-icon">troubleshoot</span>
+                                            {{ alert.label }}
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </details>
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="at-empty-state">
+            No alert troubleshooting guides available. Add
+            <code>alerts</code> and <code>service_type</code> frontmatter
+            fields to snippets to surface them here.
+        </p>
+    {% endif %}
+{% endblock main %}
+{% block behaviours_optimized_extra %}
+    <script src="{{ url_for('static', path='/js/alert-troubleshooting.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
+{% endblock behaviours_optimized_extra %}
