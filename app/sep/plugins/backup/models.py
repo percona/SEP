@@ -138,7 +138,6 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     skip_s3_safety_check: bool = False
     awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone = None
     gs_bucket: NonEmptyStr | EmptyStrToNone = None
-    gs_storage_class: NonEmptyStr | EmptyStrToNone = None
     rsync_path: NonEmptyStr | EmptyStrToNone = None
 
 

@@ -851,18 +851,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </label>
                     </div>
                     <br>
-                    {% set gs_storage_class_title = "Type the GS Storage Class for backups." %}
-                    <div>
-                        <label for="gs_storage_class">
-                            GS Storage Class (optional):
-                            <input type="text"
-                                   id="gs_storage_class"
-                                   name="gs_storage_class"
-                                   placeholder="STANDARD, NEARLINE, etc." />
-                            {{ info_icon(gs_storage_class_title) }}
-                        </label>
-                    </div>
-                    <br>
                 </div>
                 <button class="text large" type="button" id="toggle_rsync_btn">+ Add Rsync upload</button>
                 <div id="rsync_container">
@@ -1075,7 +1063,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             showContainer(gcpContainer, false);
             gcpBucketInput.required = false;
             gcpBucketInput.value = '';
-            document.getElementById('gs_storage_class').value = '';
             toggleGcpBtn.textContent = "+ Add GS upload";
         }
     }
