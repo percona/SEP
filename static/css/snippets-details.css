@@ -24,11 +24,19 @@
 }
 
 .highlight-wrapper {
-    color: #F8F8F2;
-    background: #272822;
     width: 90%;
     max-height: 400px;
     overflow: auto;
+}
+
+[data-theme="light"] .highlight-wrapper {
+    background: #ffffff;
+    color: #000000;
+}
+
+[data-theme="dark"] .highlight-wrapper {
+    background: #272822;
+    color: #F8F8F2;
 }
 
 .highlight-wrapper .highlight {
@@ -47,13 +55,20 @@
 }
 
 .frontmatter-toggle summary {
-    color: #90918B;
     cursor: pointer;
     padding: 2px 10px;
     font-family: monospace;
     font-size: 0.85em;
     list-style: none;
     user-select: none;
+}
+
+[data-theme="light"] .frontmatter-toggle summary {
+    color: #6e7781;
+}
+
+[data-theme="dark"] .frontmatter-toggle summary {
+    color: #90918B;
 }
 
 .frontmatter-toggle summary::-webkit-details-marker {
