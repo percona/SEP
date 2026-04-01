@@ -15,16 +15,12 @@
 
 """Pydantic models for PMM health report data."""
 
-from __future__ import annotations
-
 from collections import OrderedDict
+from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-
-if TYPE_CHECKING:
-    from datetime import datetime, timedelta
 
 
 class CheckSeverity(StrEnum):
