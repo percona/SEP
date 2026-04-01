@@ -13,3 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+"""Orchestrate report data collection from PMM.
+
+This module replaces the legacy GAS ``report.py`` CLI by delegating all HTTP
+calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
+:mod:`~app.sep.plugins.report.models` objects.
+"""
+
