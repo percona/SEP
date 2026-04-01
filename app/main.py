@@ -114,9 +114,19 @@ if __name__ == "__main__":
                 port=sep_settings.UVICORN_PORT,
                 log_config=settings.LOGGING_CONFIG,
                 reload=sep_settings.UVICORN_RELOAD,
-                reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
-                reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
-                reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
+                reload_dirs=[
+                    str(settings.BASE_DIR),
+                    str(settings.BASE_DIR / "app"),
+                    *sep_settings.UVICORN_EXTRA_RELOAD_DIRS,
+                ],
+                reload_includes=[
+                    f"{settings.BASE_DIR.name}/settings.yaml",
+                    *sep_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+                ],
+                reload_excludes=[
+                    f"{settings.BASE_DIR.name}/*.py",
+                    *sep_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+                ],
             )
         except KeyboardInterrupt:
             logging.info("Shutting down Celery worker...")
@@ -135,7 +145,17 @@ if __name__ == "__main__":
             port=sep_settings.UVICORN_PORT,
             log_config=settings.LOGGING_CONFIG,
             reload=sep_settings.UVICORN_RELOAD,
-            reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
-            reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
-            reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
+            reload_dirs=[
+                str(settings.BASE_DIR),
+                str(settings.BASE_DIR / "app"),
+                *sep_settings.UVICORN_EXTRA_RELOAD_DIRS,
+            ],
+            reload_includes=[
+                f"{settings.BASE_DIR.name}/settings.yaml",
+                *sep_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+            ],
+            reload_excludes=[
+                f"{settings.BASE_DIR.name}/*.py",
+                *sep_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+            ],
         )

@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 
+### Configuration Changes
+
+- SEP-929: Added `UVICORN_EXTRA_RELOAD_DIRS`, `UVICORN_EXTRA_RELOAD_INCLUDES`, and `UVICORN_EXTRA_RELOAD_EXCLUDES` settings to extend uvicorn reload paths via `settings.yaml`
+
 ## [v0.10.3] - 2026-02-25
 
 ### Added

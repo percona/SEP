@@ -144,6 +144,12 @@ default:
 development:
   SEP:
     UVICORN_RELOAD: true
+    # UVICORN_EXTRA_RELOAD_DIRS:
+    #   - /path/to/extra/dir
+    # UVICORN_EXTRA_RELOAD_INCLUDES:
+    #   - "*.yaml"
+    # UVICORN_EXTRA_RELOAD_EXCLUDES:
+    #   - "*.log"
     SNIPPETS:
       SYNC_INTERVAL: 60 seconds
       ENABLE_MANUAL_SYNC: true
