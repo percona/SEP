@@ -81,6 +81,10 @@ default:
         MODULE_NAME: alerts
         URI_PATH: /alerts
         CSS_CLASS: alerts
+      - NAME: Alert Troubleshooting
+        MODULE_NAME: alert_troubleshooting
+        URI_PATH: /alert-troubleshooting
+        CSS_CLASS: alert-troubleshooting
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
