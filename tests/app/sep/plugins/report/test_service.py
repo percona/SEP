@@ -36,6 +36,7 @@ from app.sep.plugins.report.service import (
     _refresh_checks,
     collect_advisors,
     collect_inventory,
+    collect_uptime,
 )
 
 
@@ -404,6 +405,110 @@ class TestCollectAdvisors:
         )
         assert result.total_checks == 0
         assert result.families == []
+
+
+# collect_uptime
+class TestCollectUptime:
+    """Test the ``collect_uptime`` collector."""
+
+    _DS_ID = 42
+    _DS_UID = "metrics-uid"
+
+    def _make_uptime_frame(self, *, svc_name="mysql-prod", seconds=86400):
+        return {
+            "schema": {
+                "fields": [
+                    {"name": "Time"},
+                    {"name": "Value", "labels": {"service_name": svc_name}},
+                ],
+            },
+            "data": {"values": [[100], [seconds]]},
+        }
+
+    @pytest.mark.asyncio
+    async def test_parses_uptime_entries(self, pmm_api):
+        """Assert uptime entries are parsed from datasource frames."""
+        one_day_seconds = 86400
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {"frames": [self._make_uptime_frame(seconds=one_day_seconds)]},
+            "B": {"frames": []},
+            "C": {"frames": []},
+        }
+        result = await collect_uptime(
+            pmm_api, "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert len(result.entries) == 1
+        assert result.entries[0].service_name == "mysql-prod"
+        assert result.entries[0].uptime == timedelta(days=1)
+
+    @pytest.mark.asyncio
+    async def test_excludes_pmm_server_postgresql(self, pmm_api):
+        """Assert pmm-server-postgresql is filtered out."""
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {
+                "frames": [self._make_uptime_frame(svc_name="pmm-server-postgresql")]
+            },
+            "B": {"frames": []},
+            "C": {"frames": []},
+        }
+        result = await collect_uptime(
+            pmm_api, "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert result.entries == []
+
+    @pytest.mark.asyncio
+    async def test_entries_sorted_by_uptime_descending(self, pmm_api):
+        """Assert entries are sorted by uptime highest first."""
+        short_uptime = 100
+        long_uptime = 90000
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {
+                "frames": [
+                    self._make_uptime_frame(svc_name="svc-short", seconds=short_uptime),
+                    self._make_uptime_frame(svc_name="svc-long", seconds=long_uptime),
+                ],
+            },
+            "B": {"frames": []},
+            "C": {"frames": []},
+        }
+        result = await collect_uptime(
+            pmm_api, "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert result.entries[0].service_name == "svc-long"
+
+    @pytest.mark.asyncio
+    async def test_collects_across_all_ref_ids(self, pmm_api):
+        """Assert frames from A, B, and C ref IDs are all collected."""
+        seconds = 3600
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {
+                "frames": [self._make_uptime_frame(svc_name="mongo-1", seconds=seconds)]
+            },
+            "B": {
+                "frames": [self._make_uptime_frame(svc_name="pg-1", seconds=seconds)]
+            },
+            "C": {
+                "frames": [self._make_uptime_frame(svc_name="mysql-1", seconds=seconds)]
+            },
+        }
+        result = await collect_uptime(
+            pmm_api, "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        expected_count = 3
+        assert len(result.entries) == expected_count
+
+    @pytest.mark.asyncio
+    async def test_empty_frames(self, pmm_api):
+        """Assert empty frames yield empty section."""
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {"frames": []},
+            "B": {"frames": []},
+            "C": {"frames": []},
+        }
+        result = await collect_uptime(
+            pmm_api, "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert result.entries == []
 
 
 # collect_inventory

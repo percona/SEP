@@ -38,6 +38,8 @@ from .models import (
     ReportData,
     ReportMetadata,
     ServiceStatus,
+    UptimeEntry,
+    UptimeSection,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,8 @@ SERVICE_NAMES: dict[str, str] = {
 }
 
 _PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
+_MIN_FRAME_FIELDS = 2
+
 
 def _find_labels(schema_fields: list[dict[str, Any]]) -> dict[str, Any]:
     """Extract PMM labels from Grafana frame schema fields."""
@@ -222,6 +226,65 @@ async def collect_advisors(
     )
 
 
+async def collect_uptime(
+    pmm_api: PMMRemoteAPI,
+    since: str,
+    until: str,
+    ds_id: int,
+    ds_uid: str,
+) -> UptimeSection:
+    """Fetch service uptime metrics from Prometheus via Grafana.
+
+    :param pmm_api: PMM API client.
+    :param since: Relative start time.
+    :param until: Relative end time.
+    :param ds_id: Metrics datasource numeric ID.
+    :param ds_uid: Metrics datasource UID.
+    :return: Populated uptime section.
+    """
+    expressions = [
+        "avg by (service_name) (mongodb_instance_uptime_seconds)",
+        "avg by (service_name) (pg_postmaster_uptime_seconds)",
+        "avg by (service_name) (mysql_global_status_uptime)",
+    ]
+    results = await pmm_api.query_grafana_datasource(
+        expressions=expressions,
+        datasource_uid=ds_uid,
+        datasource_id=ds_id,
+        from_ts=since,
+        to_ts=until,
+        instant=True,
+        range_=False,
+    )
+
+    entries: list[UptimeEntry] = []
+    for ref_id in ("A", "B", "C"):
+        for frame in results.get(ref_id, {}).get("frames", []):
+            fields = frame.get("schema", {}).get("fields", [])
+            if len(fields) < _MIN_FRAME_FIELDS:
+                continue
+            labels = fields[1].get("labels", {})
+            svc_name = labels.get("service_name", "")
+            if svc_name == "pmm-server-postgresql":
+                continue
+            values = frame.get("data", {}).get("values", [])
+            if len(values) < _MIN_FRAME_FIELDS or not values[1]:
+                continue
+            seconds = int(values[1][0])
+            uptime_td = timedelta(seconds=seconds)
+            since_dt = datetime.now(UTC) - uptime_td
+            entries.append(
+                UptimeEntry(
+                    service_name=svc_name,
+                    uptime=uptime_td,
+                    since=since_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                )
+            )
+
+    entries.sort(key=lambda e: e.uptime, reverse=True)
+    return UptimeSection(entries=entries)
+
+
 async def collect_inventory(
     pmm_api: PMMRemoteAPI,
 ) -> InventorySection:
@@ -328,6 +391,13 @@ async def _collect_section(
             kwargs["nodes_raw"],
             kwargs["services_raw"],
             refresh=kwargs.get("refresh", False),
+        ),
+        "uptime": lambda: collect_uptime(
+            kwargs["pmm_api"],
+            kwargs["since"],
+            kwargs["until"],
+            kwargs["ds_id"],
+            kwargs["ds_uid"],
         ),
         "inventory": lambda: collect_inventory(kwargs["pmm_api"]),
     }
