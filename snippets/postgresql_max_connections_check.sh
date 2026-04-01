@@ -5,6 +5,9 @@
 # description: "This script checks the number of PostgreSQL connections against the max_connections limit to help troubleshoot connection exhaustion."
 # allow_extra_args: false
 # sudo: optional
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLMaxConnections
 # ---
 
 # Usage: ./postgresql_max_connections_check.sh
