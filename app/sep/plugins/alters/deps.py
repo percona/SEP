@@ -15,8 +15,10 @@
 
 """Define dependencies for the Alters plugin."""
 
+import json
 import logging
 import shlex
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, Form
@@ -24,7 +26,7 @@ from fastapi import Depends, Form
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
-    ExecutorHosts,
+    ExecutorHostsCtx,
     get_created_entity,
     get_task_by_name,
     get_tasks_context,
@@ -127,11 +129,20 @@ async def build_alters_task_payload(
         )
         form.recursion_method = f"dsn={dsn_table}"
 
-    args = [
-        f"--alter={form.alter}",
-        dsn,
-        f"--recursion-method={form.recursion_method}",
-    ]
+    mysql_defaults_path = (
+        form.pre_checks_mysql_config_file or ""
+    ).strip() or "~/.my.cnf"
+    args = []
+    if mysql_defaults_path != "~/.my.cnf":
+        args.append(f"--defaults-file={mysql_defaults_path}")
+
+    args.extend(
+        [
+            f"--alter={form.alter}",
+            dsn,
+            f"--recursion-method={form.recursion_method}",
+        ]
+    )
 
     # Mapping form fields to their respective arguments
     optional_args = {
@@ -183,6 +194,9 @@ async def build_alters_task_payload(
                 "_table_name": table_name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
+                "_pre_checks_mysql_config_file": (
+                    (form.pre_checks_mysql_config_file or "").strip() or "~/.my.cnf"
+                ),
             },
         },
         name=form.task_name,
@@ -273,6 +287,94 @@ def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
         "schema_name": schema_name,
         "table_name": table_name,
     }
+
+
+def alters_executor_matches_service_host(
+    meta: dict[str, Any],
+    executor_hosts: Any,
+) -> bool:
+    """Return whether the task executor is the same host as the MySQL service.
+
+    Same rule as the alters detail page (pre-checks confirm dialog): resolve
+    `target` via Nomad `/hosts/` (node name → address) and compare to
+    `extract_service_info` host (inventory and/or DSN in `args`).
+
+    :param meta: Task ``meta`` (``target``, ``_service_host``, ``args``, etc.).
+    :type meta: dict[str, Any]
+    :param executor_hosts: Host map from ``GET /hosts/`` (node name → address),
+        or a non-dict fallback where ``target`` is used as the address.
+    :type executor_hosts: Any
+    :return: ``True`` if the resolved executor address equals the service host.
+    :rtype: bool
+    """
+    service_host = extract_service_info(meta)["service_host"]
+    executor_target = meta.get("target") or ""
+    if isinstance(executor_hosts, dict):
+        executor_address = executor_hosts.get(executor_target, executor_target)
+    else:
+        executor_address = executor_target
+    return executor_address == service_host
+
+
+_PRE_CHECKS_SCRIPT_PATH = Path(__file__).resolve().parent / "pre_checks.py"
+
+
+async def build_pre_checks_task(
+    base_task: AltersGeneratedTask,
+    task_api: TaskAPI,
+) -> TaskWrite:
+    """Build the Alters pre-checks ``TaskWrite`` from the execute task payload.
+
+    Used as a FastAPI dependency (``AltersPreChecksTask``) and wired with the
+    same ``Depends`` as route parameters named ``task`` or ``updated_task`` /
+    ``tasks_api``, so the generated task and API client are cached once per
+    request.
+
+    Fetches executor hosts, composes inline YAML ``config``, and sets
+    ``run-python`` payload/requirements/parent.
+
+    :param base_task: The execute (pt-osc) task from the form; copied on the
+        return value only (``base_task`` is not mutated).
+    :type base_task: AltersGeneratedTask
+    :param task_api: Tasks API client (for ``GET /hosts/``).
+    :type task_api: TaskAPI
+    :return: Pre-checks task ready to POST or PUT.
+    :rtype: TaskWrite
+    """
+    execute_task_name = base_task.name
+    pre_checks_task = base_task.model_copy(deep=True)
+    pre_checks_task.name = f"{execute_task_name}-pre-checks"
+    pre_checks_task.data["task"] = "run-python"
+    del pre_checks_task.data["meta"]["command"]
+    del pre_checks_task.data["meta"]["args"]
+    meta = pre_checks_task.data["meta"]
+    db_host = meta.get("_service_host", "")
+    db_port = meta.get("_service_port")
+    executor_hosts = await task_api.get("/hosts/")
+    skip_fs_checks = not alters_executor_matches_service_host(
+        base_task.data["meta"], executor_hosts
+    )
+    pre_checks_config_lines = [
+        f"schema: {meta['_schema_name']}",
+        f"table: {meta['_table_name']}",
+        f"host: {db_host or '127.0.0.1'}",
+    ]
+    if db_port is not None:
+        pre_checks_config_lines.append(f"port: {db_port}")
+    if skip_fs_checks:
+        pre_checks_config_lines.append("skip_filesystem_checks: true")
+    mysql_cnf = meta.get("_pre_checks_mysql_config_file") or "~/.my.cnf"
+    pre_checks_config_lines.append(f"mysql_config_file: {json.dumps(mysql_cnf)}")
+    pre_checks_task.data["meta"]["config"] = "\n".join(pre_checks_config_lines)
+    pre_checks_task.data["meta"]["requirements"] = (
+        "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
+    )
+    pre_checks_task.data["payload"] = f"file://{_PRE_CHECKS_SCRIPT_PATH}"
+    pre_checks_task.data["parent"] = execute_task_name
+    return pre_checks_task
+
+
+AltersPreChecksTask = Annotated[TaskWrite, Depends(build_pre_checks_task)]
 
 
 def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
@@ -421,7 +523,7 @@ async def get_alters_index_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     context: DefaultContext,
-    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> dict[str, Any]:
     """Assemble the context for the Alters plugin index view.
 
@@ -435,8 +537,8 @@ async def get_alters_index_context(
     :type tasks_api: TaskAPI
     :param context: The default context to be updated with Alters-specific information.
     :type context: DefaultContext
-    :param executor_hosts: The executor hosts for the Alters tasks.
-    :type executor_hosts: ExecutorHosts
+    :param executor_hosts_ctx: The executor hosts context for the Alters tasks.
+    :type executor_hosts_ctx: ExecutorHostsCtx
     :return: An updated context dictionary containing Alters-related data.
     :rtype: dict[str, Any]
     """
@@ -444,7 +546,7 @@ async def get_alters_index_context(
         inventory_api,
         tasks_api,
         get_alters_task_info,
-        executor_hosts,
+        executor_hosts_ctx,
         context,
         TaskOwner.ALTERS,
         alert_on_fail_default=True,

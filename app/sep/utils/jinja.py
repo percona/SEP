@@ -15,9 +15,12 @@
 
 """Define Jinja2 filters and utilities."""
 
+import math
+import time
 from datetime import datetime
 from typing import Any
 
+from markupsafe import Markup
 from pygments import highlight
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name, guess_lexer, TextLexer
@@ -26,25 +29,42 @@ from pygments.util import ClassNotFound
 from app.core.utils import make_datetime_utc
 
 
-def syntax_highlight_css(cssclass: str = "highlight", **fmt_options: Any) -> str:
-    """Generate CSS style definitions for syntax highlighting using Pygments.
+def syntax_highlight_css(
+    cssclass: str = "highlight",
+    *,
+    light_style: str = "sas",
+    dark_style: str = "monokai",
+    **fmt_options: Any,
+) -> Markup:
+    """Generate dual-theme CSS for syntax highlighting using Pygments.
 
-    This function creates an instance of the Pygments HTML formatter with the
-    specified CSS class and formatting options, then returns the CSS style
-    definitions required for highlighting.
+    Produce CSS rules scoped to ``[data-theme="light"]`` and
+    ``[data-theme="dark"]`` selectors so that code blocks render correctly
+    in both light and dark UI themes.
 
-    :param cssclass: The CSS class name to be applied to highlighted code blocks.
-        Defaults to "highlight".
+    :param cssclass: The CSS class name applied to highlighted code blocks.
     :type cssclass: str
-    :param fmt_options: Additional keyword arguments passed to the
+    :param light_style: Pygments style name for the light theme.
+    :type light_style: str
+    :param dark_style: Pygments style name for the dark theme.
+    :type dark_style: str
+    :param fmt_options: Additional keyword arguments forwarded to
         :class:`pygments.formatters.HtmlFormatter`.
     :type fmt_options: Any
-    :return: A string containing the CSS style definitions for syntax highlighting.
-    :rtype: str
+    :return: CSS style definitions containing both light-theme and dark-theme rules,
+        marked safe for Jinja2 autoescape.
+    :rtype: Markup
     """
-    fmt_options["cssclass"] = cssclass
-    formatter = HtmlFormatter(**fmt_options)
-    return formatter.get_style_defs()
+    light_formatter = HtmlFormatter(style=light_style, cssclass=cssclass, **fmt_options)
+    dark_formatter = HtmlFormatter(style=dark_style, cssclass=cssclass, **fmt_options)
+
+    light_prefix = f'[data-theme="light"] .{cssclass}'
+    dark_prefix = f'[data-theme="dark"] .{cssclass}'
+
+    light_css = light_formatter.get_style_defs(light_prefix)
+    dark_css = dark_formatter.get_style_defs(dark_prefix)
+
+    return Markup(f"{light_css}\n{dark_css}")  # nosec B704
 
 
 def syntax_highlight(code: str, language: str | None = None, **fmt_options: Any) -> str:
@@ -96,16 +116,72 @@ def humanize_bytes(num_bytes: int) -> str:
     :return: Humanized file size.
     :rtype: str
     """
-    bytes_treshold = 1024
+    bytes_threshold = 1024
     for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
-        if abs(num_bytes) < bytes_treshold:
+        if abs(num_bytes) < bytes_threshold:
             return f"{num_bytes:3.1f}{unit}B"
-        num_bytes /= bytes_treshold
+        num_bytes /= bytes_threshold
     return f"{num_bytes:.1f}YiB"
+
+
+def timestamp_format(epoch_seconds: int | float) -> str:
+    """Format a Unix timestamp (seconds) as a human-readable UTC date string.
+
+    :param epoch_seconds: Seconds since epoch.
+    :type epoch_seconds: int | float
+    :return: Formatted date string.
+    :rtype: str
+    """
+    try:
+        return time.strftime("%d %B %Y at %H:%M:%S", time.gmtime(epoch_seconds))
+    except (OverflowError, OSError, ValueError):
+        return str(epoch_seconds)
+
+
+def backup_date(value: int | str) -> str:
+    """Format a backup period start value as a readable date.
+
+    If the value is an integer (epoch ms), it is converted to a formatted
+    date string.  If it is already a string it is returned as-is.
+
+    :param value: Epoch milliseconds or pre-formatted date string.
+    :type value: int | str
+    :return: Formatted date string.
+    :rtype: str
+    """
+    if isinstance(value, int):
+        try:
+            return time.strftime("%d %B %Y at %H:%M:%S UTC", time.gmtime(value / 1000))
+        except (OverflowError, OSError, ValueError):
+            return str(value)
+    return str(value)
+
+
+def convert_bytes(value: str | int | float, unit: str = "G") -> str:
+    """Convert a byte count (given as a string) to a human-readable size.
+
+    :param value: Byte count as a string, int, or float.
+    :type value: str | int | float
+    :param unit: Target unit (K, M, G, T, P).
+    :type unit: str
+    :return: Human-readable size string.
+    :rtype: str
+    """
+    try:
+        total_bytes = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    units = {"K": 1, "M": 2, "G": 3, "T": 4, "P": 5}
+    exp = units.get(unit, 3)
+    result = total_bytes / math.pow(1024, exp)
+    return f"{round(result)}{unit}B"
 
 
 DEFAULT_FILTERS = {
     "syntax_highlight": syntax_highlight,
     "utc_isoformat": utc_isoformat,
     "humanize_bytes": humanize_bytes,
+    "timestamp_format": timestamp_format,
+    "backup_date": backup_date,
+    "convert_bytes": convert_bytes,
 }

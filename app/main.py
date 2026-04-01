@@ -27,6 +27,7 @@ from app.api.main import api_router
 from app.celery import celery as celery_app
 from app.core.config import create_app, settings
 from app.core.middleware.log_context import LogContextMiddleware
+from app.core.utils import validate_importable_settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app, sep_startup
@@ -46,6 +47,10 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
+    validate_importable_settings(
+        settings.AUTH_USER_MODEL,
+        *(s.syncer for s in sep_settings.SYNCERS),
+    )
     await sep_startup()
     async with tasks_lifespan(app):
         yield
@@ -110,7 +115,7 @@ if __name__ == "__main__":
                 host=sep_settings.UVICORN_HOST,
                 port=sep_settings.UVICORN_PORT,
                 log_config=settings.LOGGING_CONFIG,
-                reload=True,
+                reload=sep_settings.UVICORN_RELOAD,
                 reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
                 reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
                 reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
@@ -131,7 +136,7 @@ if __name__ == "__main__":
             host=sep_settings.UVICORN_HOST,
             port=sep_settings.UVICORN_PORT,
             log_config=settings.LOGGING_CONFIG,
-            reload=True,
+            reload=sep_settings.UVICORN_RELOAD,
             reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
             reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
             reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],

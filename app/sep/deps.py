@@ -15,13 +15,13 @@
 
 """Define SEP dependencies."""
 
+import hmac
 import logging
 from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
 from fastapi import Depends, HTTPException, Request, status
-from fastapi_csrf_protect import CsrfProtect
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -31,6 +31,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
+    HTTPBadRequestException,
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPRedirectException,
@@ -53,6 +54,7 @@ from app.sep.inventory import (
     ENTITY_MAPPING,
 )
 from app.sep.middleware import messages
+from app.sep.middleware.csrf import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
@@ -179,22 +181,45 @@ async def redirect_if_user_is_authenticated(request: Request) -> None:
 
 IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 
-CsrfProtectDep = Annotated[CsrfProtect, Depends()]
 
+async def validate_csrf(request: Request) -> None:
+    """Validate the CSRF token submitted in the request form data.
 
-async def validate_csrf(
-    request: Request,
-    csrf_protect: CsrfProtectDep,
-) -> None:
-    """Validate the CSRF token from the request.
+    For authenticated requests (session cookie present), verify the HMAC
+    signature using the session cookie as salt.  For unauthenticated requests
+    (login page), verify using a double-submit cookie comparison plus
+    signature verification.
 
     :param request: The HTTP request object.
     :type request: Request
-    :param csrf_protect: The CSRF protection mechanism dependency.
-    :type csrf_protect: CsrfProtect
+    :raises HTTPBadRequestException: If the CSRF token is missing from the
+        form data.
+    :raises HTTPForbiddenException: If the CSRF token fails validation.
     """
-    time_limit = int(sep_settings.SESSION.MAX_AGE.total_seconds())
-    await csrf_protect.validate_csrf(request, time_limit=time_limit)
+    form_data = await request.form()
+    form_token = str(form_data.get(CSRF_FORM_FIELD, ""))
+    if not form_token:
+        raise HTTPBadRequestException(detail="Missing CSRF token.")
+
+    session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
+
+    max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
+
+    if session_cookie:
+        try:
+            crypto_timestamp_serializer.loads(
+                form_token, salt=session_cookie, max_age=max_age
+            )
+        except BadSignature:
+            raise HTTPForbiddenException(detail="CSRF validation failed.") from None
+    else:
+        csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+        if not csrf_cookie or not hmac.compare_digest(form_token, csrf_cookie):
+            raise HTTPForbiddenException(detail="CSRF validation failed.")
+        try:
+            crypto_timestamp_serializer.loads(form_token, max_age=max_age)
+        except BadSignature:
+            raise HTTPForbiddenException(detail="CSRF validation failed.") from None
 
 
 IsCsrfValidated = Depends(validate_csrf)
@@ -488,6 +513,111 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
 CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
+class ExecutorHostsContext:
+    """Wrap executor hosts with inventory-based display name mapping.
+
+    :param hosts: Raw executor hosts dictionary mapping nomad names to addresses.
+    :type hosts: dict[str, str]
+    :param display_names: Mapping from addresses to inventory node names.
+    :type display_names: dict[str, str]
+    """
+
+    def __init__(self, hosts: dict[str, str], display_names: dict[str, str]) -> None:
+        self._hosts = hosts
+        self._display_names = display_names
+
+    @property
+    def hosts(self) -> dict[str, str]:
+        """Return the raw hosts dictionary.
+
+        :return: Dictionary mapping nomad names to addresses.
+        :rtype: dict[str, str]
+        """
+        return self._hosts
+
+    def display_name(self, nomad_name: str) -> str:
+        """Return the inventory display name for a nomad host, with fallback.
+
+        :param nomad_name: The nomad node name to look up.
+        :type nomad_name: str
+        :return: The inventory node name if found, otherwise the nomad name.
+        :rtype: str
+        """
+        address = self._hosts.get(nomad_name)
+        if address and address in self._display_names:
+            return self._display_names[address]
+        return nomad_name
+
+    def as_template_list(self) -> list[dict[str, str]]:
+        """Return a sorted list of value/label dicts for template rendering.
+
+        :return: List of dicts with `value` and `label` keys, sorted by value.
+        :rtype: list[dict[str, str]]
+        """
+        return sorted(
+            ({"value": name, "label": self.display_name(name)} for name in self._hosts),
+            key=lambda item: item["value"],
+        )
+
+    def as_form_hosts(self) -> frozenset[tuple[str, str]]:
+        """Return a frozenset of (value, label) tuples for cached snippet forms.
+
+        :return: Frozenset of tuples suitable for snippet form caching.
+        :rtype: frozenset[tuple[str, str]]
+        """
+        return frozenset((name, self.display_name(name)) for name in self._hosts)
+
+    def as_host_metrics(self) -> list[tuple[str, str]]:
+        """Return a sorted list of (display_name, address) tuples for host metrics.
+
+        :return: List of tuples with display name and address, sorted by display name.
+        :rtype: list[tuple[str, str]]
+        """
+        return sorted(
+            (self.display_name(name), address) for name, address in self._hosts.items()
+        )
+
+    def with_host(self, hostname: str) -> "ExecutorHostsContext":
+        """Return a new context with the additional host included.
+
+        :param hostname: The hostname to add to the context.
+        :type hostname: str
+        :return: A new context with the host added, or self if already present.
+        :rtype: ExecutorHostsContext
+        """
+        if hostname in self._hosts:
+            return self
+        new_hosts = {**self._hosts, hostname: ""}
+        return ExecutorHostsContext(hosts=new_hosts, display_names=self._display_names)
+
+
+async def get_executor_hosts_context(
+    executor_hosts: "ExecutorHosts",
+    inventory_api: InventoryAPI,
+) -> ExecutorHostsContext:
+    """Build an enriched executor hosts context with inventory display names.
+
+    :param executor_hosts: The raw executor hosts dictionary.
+    :type executor_hosts: dict[str, str]
+    :param inventory_api: The Inventory API client.
+    :type inventory_api: RemoteAPI
+    :return: An executor hosts context with display name mapping.
+    :rtype: ExecutorHostsContext
+    """
+    try:
+        nodes = await inventory_api.get("/")
+        display_names = {node["address"]: node["name"] for node in nodes}
+    except (HTTPException, TypeError, KeyError, OSError):
+        logger.warning(
+            "Failed to fetch inventory nodes for display names", exc_info=True
+        )
+        display_names = {}
+    return ExecutorHostsContext(hosts=executor_hosts, display_names=display_names)
+
+
+ExecutorHostsCtx = Annotated[ExecutorHostsContext, Depends(get_executor_hosts_context)]
+
+
 async def get_executor_hosts(request: Request, tasks_api: TaskAPI) -> dict[str, str]:
     """Retrieve executor hosts from the Tasks API.
 
@@ -512,7 +642,7 @@ async def get_tasks_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
-    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
     default_context: DefaultContext | None = None,
     owner: TaskOwner | None = None,
     *,
@@ -531,8 +661,8 @@ async def get_tasks_context(
     :param get_task_info_func: A callable that receives a task and returns
         the processed task information.
     :type get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]]
-    :param executor_hosts: The executor hosts retrieved from the Tasks API.
-    :type executor_hosts: ExecutorHosts
+    :param executor_hosts_ctx: The enriched executor hosts context with display names.
+    :type executor_hosts_ctx: ExecutorHostsCtx
     :param default_context: The base context dictionary to update. If None (default),
         initializes an empty dictionary.
     :type default_context: dict[str, Any] | None
@@ -554,10 +684,6 @@ async def get_tasks_context(
         "/services/", params={"service_type": service_type}
     )
 
-    for service in services:
-        service["schemas"] = await inventory_api.get(
-            f"/services/{service['id']}/schemas/",
-        )
     tasks = []
     history_tasks = []
     scheduled_tasks = []
@@ -586,7 +712,7 @@ async def get_tasks_context(
     context = default_context or {}
     context.update(
         {
-            "executor_hosts": list(executor_hosts),
+            "executor_hosts": executor_hosts_ctx.as_template_list(),
             "services": services,
             "tasks": tasks,
             "pending_tasks": scheduled_tasks,
@@ -605,12 +731,12 @@ async def get_tasks_index_context(
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
     default_context: DefaultContext,
-    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
 ) -> dict[str, Any]:
     """Assemble the context for the Homepage.
 
-    Retrieves MySQL services and associated tasks, organizing them based on their
-    execution status. Integrates this information into the default context for
+    Retrieve services and associated tasks, organizing them based on their
+    execution status. Integrate this information into the default context for
     rendering in templates.
 
     :param inventory_api: The Inventory API client for fetching service and schema data.
@@ -619,8 +745,8 @@ async def get_tasks_index_context(
     :type tasks_api: TaskAPI
     :param default_context: The default context to be updated with Alters-specific information.
     :type default_context: DefaultContext
-    :param executor_hosts: The executor hosts retrieved from the Tasks API.
-    :type executor_hosts: ExecutorHosts
+    :param executor_hosts_ctx: The enriched executor hosts context with display names.
+    :type executor_hosts_ctx: ExecutorHostsCtx
     :return: An updated context dictionary containing tasks' data.
     :rtype: dict[str, Any]
     """
@@ -648,7 +774,7 @@ async def get_tasks_index_context(
             "running_tasks": running_tasks,
             "pending_tasks": scheduled_tasks,
             "periodic_tasks": periodic_tasks,
-            "executor_hosts": executor_hosts.items(),
+            "executor_hosts": executor_hosts_ctx.as_host_metrics(),
             "is_task_manager_enabled": is_task_manager_enabled,
         },
     )

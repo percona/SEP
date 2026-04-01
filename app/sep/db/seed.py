@@ -20,7 +20,12 @@ from app.core.celery.utils import (
     SystemPeriodicTaskData,
     SystemPeriodicTaskSchedule,
 )
+from app.sep.config import sep_settings
 from app.sep.snippets.config import snippets_settings
+
+_alerts_plugin_enabled = any(
+    p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS
+)
 
 SYSTEM_PERIODIC_TASKS = [
     SystemPeriodicTaskSchedule(
@@ -31,8 +36,42 @@ SYSTEM_PERIODIC_TASKS = [
                 task_name="app.sep.celery.sync_snippets",
             ),
         ],
-    )
+    ),
 ]
+
+if _alerts_plugin_enabled:
+    SYSTEM_PERIODIC_TASKS.append(
+        SystemPeriodicTaskSchedule(
+            schedule=sep_settings.PMM.backup_interval,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="sep__backup_alert_config",
+                    task_name="app.sep.celery.backup_alert_config",
+                ),
+            ],
+        ),
+    )
+
+
+async def create_plugin_tables() -> None:
+    """Create database tables for plugin-scoped models when the corresponding plugin is enabled.
+
+    Safe to call repeatedly as ``checkfirst=True`` is the default for
+    ``create_all``.
+    """
+    if not _alerts_plugin_enabled:
+        return
+
+    from sqlmodel import SQLModel
+
+    from app.sep.db.engine import engine
+    from app.sep.plugins.alerts.backup import AlertBackup
+
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            SQLModel.metadata.create_all,
+            tables=[AlertBackup.__table__],
+        )
 
 
 async def init_sep_db() -> None:
