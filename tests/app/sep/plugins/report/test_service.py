@@ -22,10 +22,13 @@ import pytest
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.plugins.report.models import (
     InventorySection,
+    ReportData,
+    ReportMetadata,
     ServiceStatus,
 )
 from app.sep.plugins.report.service import (
     _build_allowed_check_prefixes,
+    _collect_section,
     _fetch_base_inventory,
     _get_metrics_datasource,
     _interval_ms,
@@ -628,3 +631,89 @@ class TestFetchBaseInventory:
         ]
         _, _, types = await _fetch_base_inventory(pmm_api)
         assert types == {"mysql", "postgresql"}
+
+
+# _collect_section
+class TestCollectSection:
+    """Test the ``_collect_section`` dispatcher."""
+
+    @pytest.mark.asyncio
+    async def test_populates_section_on_report(self, pmm_api):
+        """Assert a successful collector result is set on the report object."""
+        report = ReportData(
+            metadata=ReportMetadata(title="t", generated_at="2026-01-01T00:00:00Z"),
+        )
+        section = InventorySection(entries=[])
+        with patch(
+            "app.sep.plugins.report.service.collect_inventory",
+            new_callable=AsyncMock,
+            return_value=section,
+        ):
+            await _collect_section(
+                "inventory",
+                report,
+                pmm_api=pmm_api,
+                start_ts=0,
+                stop_ts=0,
+                since="now-7d",
+                until="now",
+                ds_id=1,
+                ds_uid="u",
+                nodes_raw={},
+                services_raw={},
+                active_types=set(),
+                refresh=False,
+            )
+        assert report.inventory is section
+
+    @pytest.mark.asyncio
+    async def test_ignores_unknown_section(self, pmm_api):
+        """Assert unknown section names are silently skipped."""
+        report = ReportData(
+            metadata=ReportMetadata(title="t", generated_at="2026-01-01T00:00:00Z"),
+        )
+        await _collect_section(
+            "nonexistent",
+            report,
+            pmm_api=pmm_api,
+            start_ts=0,
+            stop_ts=0,
+            since="now-7d",
+            until="now",
+            ds_id=1,
+            ds_uid="u",
+            nodes_raw={},
+            services_raw={},
+            active_types=set(),
+            refresh=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_logs_and_continues_on_error(self, pmm_api):
+        """Assert collector errors are caught and logged."""
+        report = ReportData(
+            metadata=ReportMetadata(title="t", generated_at="2026-01-01T00:00:00Z"),
+        )
+        with patch(
+            "app.sep.plugins.report.service.collect_inventory",
+            new_callable=AsyncMock,
+            side_effect=OSError("connection failed"),
+        ):
+            await _collect_section(
+                "inventory",
+                report,
+                pmm_api=pmm_api,
+                start_ts=0,
+                stop_ts=0,
+                since="now-7d",
+                until="now",
+                ds_id=1,
+                ds_uid="u",
+                nodes_raw={},
+                services_raw={},
+                active_types=set(),
+                refresh=False,
+            )
+        assert report.inventory.entries == []
+
+

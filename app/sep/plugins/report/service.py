@@ -21,6 +21,8 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 """
 
 import logging
+import time
+from datetime import datetime, timedelta, UTC
 from typing import Any
 
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -32,6 +34,9 @@ from .models import (
     FailedCheck,
     InventorySection,
     InventoryServiceEntry,
+    REPORT_SECTIONS,
+    ReportData,
+    ReportMetadata,
     ServiceStatus,
 )
 
@@ -265,6 +270,7 @@ async def collect_inventory(
     return InventorySection(entries=entries)
 
 
+# Top-level report generator
 async def _fetch_base_inventory(
     pmm_api: PMMRemoteAPI,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], set[str]]:
@@ -307,3 +313,85 @@ async def _fetch_base_inventory(
             active_types.add(svc_type)
 
     return nodes_raw, services_raw, active_types
+
+
+async def _collect_section(
+    section: str,
+    report: ReportData,
+    **kwargs: Any,
+) -> None:
+    """Collect a single report section, logging failures."""
+    collectors: dict[str, Any] = {
+        "advisors": lambda: collect_advisors(
+            kwargs["pmm_api"],
+            kwargs["active_types"],
+            kwargs["nodes_raw"],
+            kwargs["services_raw"],
+            refresh=kwargs.get("refresh", False),
+        ),
+        "inventory": lambda: collect_inventory(kwargs["pmm_api"]),
+    }
+    if section not in collectors:
+        return
+    try:
+        result = await collectors[section]()
+        setattr(report, section, result)
+    except (KeyError, IndexError, OSError, LookupError):
+        logger.exception("Failed to collect %s data", section)
+
+
+async def generate_report(
+    pmm_api: PMMRemoteAPI,
+    *,
+    since: str = "now-7d",
+    until: str = "now",
+    full: bool = False,
+    refresh: bool = False,
+    sections: list[str] | None = None,
+) -> ReportData:
+    """Generate a full health report by collecting all enabled sections.
+
+    :param pmm_api: PMM API client.
+    :param since: Relative start time for the report period.
+    :param until: Relative end time for the report period.
+    :param full: When ``True``, include all check results and full backup
+        history rather than just failures/summaries.
+    :param refresh: When ``True``, force a refresh of advisor checks before
+        fetching results.
+    :param sections: List of section names to include. Defaults to all sections.
+    :return: Complete report data.
+    """
+    if sections is None:
+        sections = list(REPORT_SECTIONS)
+
+    start_ts, stop_ts = _interval_ms(since, until)
+    now = datetime.now(tz=UTC)
+    year, week_number, _ = now.isocalendar()
+
+    try:
+        nodes_raw, services_raw, active_types = await _fetch_base_inventory(pmm_api)
+    except (KeyError, IndexError, OSError):
+        logger.exception("Failed to fetch base PMM inventory")
+        nodes_raw, services_raw, active_types = {}, {}, set()
+
+    ds_id, ds_uid = 0, ""
+    try:
+        ds_id, ds_uid = await _get_metrics_datasource(pmm_api)
+    except LookupError:
+        logger.warning(
+            "Metrics datasource not found; storage/backup/uptime sections will be empty"
+        )
+
+    metadata = ReportMetadata(
+        title="Health and Security Report",
+        generated_at=now,
+        report_week=f"Report Week {year} Week {week_number}",
+        report_interval=(
+            f"Report Period "
+            f"{datetime.fromtimestamp(start_ts / 1000, UTC).strftime('%Y-%m-%d')} to "
+            f"{datetime.fromtimestamp(stop_ts / 1000, UTC).strftime('%Y-%m-%d')}"
+        ),
+    )
+
+
+    return report
