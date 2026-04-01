@@ -62,6 +62,14 @@ async def _get_metrics_datasource(
         if ds.get("name") == "Metrics":
             return ds["id"], ds["uid"]
     raise LookupError("Metrics datasource not found in Grafana")
+def _build_allowed_check_prefixes(active_service_types: set[str]) -> set[str]:
+    """Build the set of allowed check name prefixes from active service types."""
+    extra: set[str] = set()
+    if "mysql" in active_service_types:
+        extra |= {"innodb", "replica"}
+    if "mongodb" in active_service_types:
+        extra.add("mongo")
+    return active_service_types | extra
 async def _refresh_checks(
     pmm_api: PMMRemoteAPI,
     raw_checks: list[dict[str, Any]],

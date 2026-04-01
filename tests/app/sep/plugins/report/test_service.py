@@ -21,6 +21,7 @@ import pytest
 
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.plugins.report.service import (
+    _build_allowed_check_prefixes,
     _fetch_base_inventory,
     _get_metrics_datasource,
     _refresh_checks,
@@ -108,6 +109,47 @@ class TestIntervalMs:
         """Assert ValueError for an unsupported time string."""
         with pytest.raises(ValueError, match="Unsupported time format"):
             _interval_ms("yesterday", "now")
+# _build_allowed_check_prefixes
+class TestBuildAllowedCheckPrefixes:
+    """Test the ``_build_allowed_check_prefixes`` helper."""
+
+    def test_includes_base_types(self):
+        """Assert active types are included as-is."""
+        result = _build_allowed_check_prefixes({"postgresql"})
+        assert "postgresql" in result
+
+    def test_mysql_adds_innodb_and_replica(self):
+        """Assert mysql adds extra prefixes innodb and replica."""
+        result = _build_allowed_check_prefixes({"mysql"})
+        assert "innodb" in result
+        assert "replica" in result
+        assert "mysql" in result
+
+    def test_mongodb_adds_mongo(self):
+        """Assert mongodb adds the extra mongo prefix."""
+        result = _build_allowed_check_prefixes({"mongodb"})
+        assert "mongo" in result
+        assert "mongodb" in result
+
+    def test_combined_types(self):
+        """Assert all extras are combined for multiple service types."""
+        result = _build_allowed_check_prefixes({"mysql", "mongodb", "postgresql"})
+        expected_count = 6
+        assert len(result) == expected_count
+        assert {
+            "mysql",
+            "mongodb",
+            "postgresql",
+            "innodb",
+            "replica",
+            "mongo",
+        } == result
+
+    def test_empty_set(self):
+        """Assert empty input returns empty set."""
+        assert _build_allowed_check_prefixes(set()) == set()
+
+
 # _get_metrics_datasource
 class TestGetMetricsDatasource:
     """Test the ``_get_metrics_datasource`` helper."""
