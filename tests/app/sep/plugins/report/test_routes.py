@@ -58,7 +58,6 @@ def _make_report(**overrides) -> ReportData:
             generated_at=datetime(2026, 3, 31, 12, 0, 0, tzinfo=UTC),
             report_week="2026 - Week 14",
             report_interval="now-7d to now",
-            organization="Contrativa",
         ),
     }
     defaults.update(overrides)
@@ -351,7 +350,6 @@ class TestReportGenerateJSON:
 
         meta = response.json()["metadata"]
         assert meta["title"] == "Weekly Health Report"
-        assert meta["organization"] == "Contrativa"
         assert meta["report_week"] == "2026 - Week 14"
 
     def test_full_flag_reflected_in_json(self, test_client, mock_pmm_api):
