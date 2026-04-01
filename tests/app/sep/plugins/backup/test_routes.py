@@ -173,7 +173,11 @@ def test_backups_execute(test_client, mock_task_api_dep, created_task):
     mock_task_api_dep.post.assert_called_once()
     called_args, called_kwargs = mock_task_api_dep.post.call_args
     assert called_args[0] == f"/execute/{created_task.name}"
-    assert called_kwargs["json"] == {"eta": None, "chain_task_names": None}
+    assert called_kwargs["json"] == {
+        "eta": None,
+        "chain_task_names": None,
+        "chain_on_failure": None,
+    }
 
 
 @pytest.mark.usefixtures(

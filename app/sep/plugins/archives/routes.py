@@ -171,11 +171,16 @@ async def archives_execute(
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
     chain_task_names: Annotated[list[str] | None, Form()] = None,
+    chain_on_failure: Annotated[bool | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute archives task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta, "chain_task_names": chain_task_names},
+        json={
+            "eta": eta,
+            "chain_task_names": chain_task_names,
+            "chain_on_failure": chain_on_failure,
+        },
     )
     task_path = request.url_for("archives_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
