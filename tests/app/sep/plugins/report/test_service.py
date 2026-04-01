@@ -1166,6 +1166,25 @@ class TestGenerateReport:
         assert "uptime" in collected
         assert "backups" not in collected
 
+    @pytest.mark.asyncio
+    async def test_skips_datasource_sections_when_no_datasource(self, pmm_api):
+        """Assert backups/storage/uptime are skipped when datasource not found."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [{"g": []}, {"m": []}]
+        pmm_api.get_grafana_datasources.return_value = []
+        with patch(
+            "app.sep.plugins.report.service._collect_section",
+            new_callable=AsyncMock,
+        ) as mock_collect:
+            await generate_report(pmm_api)
+        collected = {c.args[0] for c in mock_collect.await_args_list}
+        assert "backups" not in collected
+        assert "storage" not in collected
+        assert "uptime" not in collected
+        assert "advisors" in collected
+        assert "inventory" in collected
+
+    @pytest.mark.asyncio
     async def test_monitored_summary_counts(self, pmm_api):
         """Assert monitored summary reflects node and service counts."""
         pmm_api.is_older_than_v3.return_value = False
