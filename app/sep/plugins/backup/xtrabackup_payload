@@ -2174,8 +2174,6 @@ class Xtrabackup(Backup):
                     settings=self.server_setting,
                     logger=self.logger,
                 ).run()
-            elif upload_type == "gs":
-                self.logger.warning("'gs' is deprecated, use 'gsutil' as upload type.")
             else:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
 
