@@ -20,6 +20,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.plugins.report.service import (
+    _get_metrics_datasource,
+    _refresh_checks,
+)
 
 
 @pytest.fixture
@@ -103,3 +107,72 @@ class TestIntervalMs:
         """Assert ValueError for an unsupported time string."""
         with pytest.raises(ValueError, match="Unsupported time format"):
             _interval_ms("yesterday", "now")
+# _get_metrics_datasource
+class TestGetMetricsDatasource:
+    """Test the ``_get_metrics_datasource`` helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_id_and_uid(self, pmm_api):
+        """Assert the correct (id, uid) tuple is returned."""
+        ds_id = 42
+        pmm_api.get_grafana_datasources.return_value = [
+            {"name": "Logs", "id": 1, "uid": "logs-uid"},
+            {"name": "Metrics", "id": ds_id, "uid": "metrics-uid"},
+        ]
+        result = await _get_metrics_datasource(pmm_api)
+        assert result == (ds_id, "metrics-uid")
+
+    @pytest.mark.asyncio
+    async def test_raises_when_not_found(self, pmm_api):
+        """Assert LookupError when Metrics datasource is absent."""
+        pmm_api.get_grafana_datasources.return_value = [
+            {"name": "Logs", "id": 1, "uid": "logs-uid"},
+        ]
+        with pytest.raises(LookupError, match="Metrics datasource not found"):
+            await _get_metrics_datasource(pmm_api)
+
+    @pytest.mark.asyncio
+    async def test_raises_for_empty_list(self, pmm_api):
+        """Assert LookupError when datasource list is empty."""
+        pmm_api.get_grafana_datasources.return_value = []
+        with pytest.raises(LookupError):
+            await _get_metrics_datasource(pmm_api)
+
+
+# _refresh_checks
+class TestRefreshChecks:
+    """Test the ``_refresh_checks`` helper."""
+
+    @pytest.mark.asyncio
+    async def test_calls_start_for_each_enabled_check(self, pmm_api):
+        """Assert start_advisor_checks is called for each enabled check."""
+        raw = [
+            {"name": "check_a"},
+            {"name": "check_b", "disabled": True},
+            {"name": "check_c"},
+        ]
+        issues = await _refresh_checks(pmm_api, raw)
+        expected_call_count = 2
+        assert pmm_api.start_advisor_checks.await_count == expected_call_count
+        assert issues == []
+
+    @pytest.mark.asyncio
+    async def test_records_timed_out_checks(self, pmm_api):
+        """Assert names of checks that raise OSError are returned."""
+        pmm_api.start_advisor_checks.side_effect = OSError("timeout")
+        raw = [{"name": "check_a"}, {"name": "check_b"}]
+        issues = await _refresh_checks(pmm_api, raw)
+        assert issues == ["check_a", "check_b"]
+
+    @pytest.mark.asyncio
+    async def test_skips_disabled_checks(self, pmm_api):
+        """Assert disabled checks are not refreshed."""
+        raw = [{"name": "check_a", "disabled": True}]
+        issues = await _refresh_checks(pmm_api, raw)
+        pmm_api.start_advisor_checks.assert_not_awaited()
+        assert issues == []
+
+    @pytest.mark.asyncio
+    async def test_empty_list(self, pmm_api):
+        """Assert empty input returns empty issues."""
+        assert await _refresh_checks(pmm_api, []) == []

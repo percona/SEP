@@ -49,3 +49,29 @@ def _interval_ms(start: str, end: str) -> tuple[int, int]:
         raise ValueError(f"Unsupported time format: {value}")
 
     return _parse(start), _parse(end)
+
+
+async def _get_metrics_datasource(
+    pmm_api: PMMRemoteAPI,
+) -> tuple[int, str]:
+    """Return (datasource_id, datasource_uid) for the ``Metrics`` datasource."""
+    datasources = await pmm_api.get_grafana_datasources()
+    for ds in datasources:
+        if ds.get("name") == "Metrics":
+            return ds["id"], ds["uid"]
+    raise LookupError("Metrics datasource not found in Grafana")
+async def _refresh_checks(
+    pmm_api: PMMRemoteAPI,
+    raw_checks: list[dict[str, Any]],
+) -> list[str]:
+    """Trigger a refresh for each enabled check and return names that timed out."""
+    issues: list[str] = []
+    for raw in raw_checks:
+        if raw.get("disabled"):
+            continue
+        try:
+            await pmm_api.start_advisor_checks(names=[raw["name"]])
+        except (KeyError, IndexError, OSError):
+            logger.warning("Refresh timeout for check %s", raw["name"])
+            issues.append(raw["name"])
+    return issues
