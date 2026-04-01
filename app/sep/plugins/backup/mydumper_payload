@@ -1302,7 +1302,7 @@ class Upload(Backup):
     ) -> None:
         """Initialize the Upload object.
 
-        :param upload_type: Type of upload (e.g., "S3", "Rsync").
+        :param upload_type: Type of upload (e.g., "S3", "Rsync","GS").
         :param upload_provider: Class handling the specific upload method.
         :param settings: Server/backup settings.
         :param logger: Logger instance.
