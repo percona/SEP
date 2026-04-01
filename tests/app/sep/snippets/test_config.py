@@ -24,7 +24,7 @@ import pytest
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
 
-EXECUTOR_HOSTS = frozenset({"host1"})
+EXECUTOR_HOSTS = frozenset({("host1", "host1")})
 
 
 def _make_params_json(*params: dict[str, Any]) -> str:
