@@ -40,6 +40,7 @@ from app.sep.plugins.report.service import (
     collect_inventory,
     collect_storage,
     collect_uptime,
+    generate_report,
 )
 
 
@@ -969,4 +970,18 @@ class TestGenerateReport:
             report = await generate_report(pmm_api, full=True, refresh=True)
         assert report.full is True
         assert report.refresh is True
+
+    @pytest.mark.asyncio
+    async def test_handles_inventory_fetch_failure(self, pmm_api):
+        """Assert report is still generated when base inventory fetch fails."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = OSError("connection refused")
+        pmm_api.get_grafana_datasources.return_value = []
+        with patch(
+            "app.sep.plugins.report.service._collect_section",
+            new_callable=AsyncMock,
+        ):
+            report = await generate_report(pmm_api)
+        assert report.monitored.total_nodes == 0
+        assert report.monitored.total_services == 0
 
