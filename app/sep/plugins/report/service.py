@@ -20,7 +20,12 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 :mod:`~app.sep.plugins.report.models` objects.
 """
 
+import logging
+from typing import Any
+
 from app.sep.clients.pmm import PMMRemoteAPI
+
+logger = logging.getLogger(__name__)
 
 _PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
 
@@ -70,6 +75,8 @@ def _build_allowed_check_prefixes(active_service_types: set[str]) -> set[str]:
     if "mongodb" in active_service_types:
         extra.add("mongo")
     return active_service_types | extra
+
+
 async def _refresh_checks(
     pmm_api: PMMRemoteAPI,
     raw_checks: list[dict[str, Any]],
