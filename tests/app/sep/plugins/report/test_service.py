@@ -20,6 +20,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.plugins.report.models import (
+    InventorySection,
+    ServiceStatus,
+)
 from app.sep.plugins.report.service import (
     _build_allowed_check_prefixes,
     _fetch_base_inventory,
@@ -28,6 +32,7 @@ from app.sep.plugins.report.service import (
     _parse_failed_checks,
     _refresh_checks,
     collect_advisors,
+    collect_inventory,
 )
 
 
@@ -396,6 +401,131 @@ class TestCollectAdvisors:
         )
         assert result.total_checks == 0
         assert result.families == []
+
+
+# collect_inventory
+class TestCollectInventory:
+    """Test the ``collect_inventory`` collector."""
+
+    def _make_service(
+        self,
+        *,
+        name="mysql-prod",
+        svc_type="mysql",
+        node_name="host-1",
+        node_id="n1",
+        agents=None,
+    ):
+        return {
+            "service_name": name,
+            "service_type": svc_type,
+            "node_name": node_name,
+            "node_id": node_id,
+            "agents": agents or [],
+        }
+
+    @pytest.mark.asyncio
+    async def test_returns_inventory_entries(self, pmm_api):
+        """Assert services are returned as InventoryServiceEntry."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(),
+        ]
+        result = await collect_inventory(pmm_api)
+        assert len(result.entries) == 1
+        assert result.entries[0].service_name == "mysql-prod"
+        assert result.entries[0].status == ServiceStatus.OK
+
+    @pytest.mark.asyncio
+    async def test_filters_pmm_server_services(self, pmm_api):
+        """Assert pmm-server and pmm-server-postgresql are filtered out."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(name="pmm-server"),
+            self._make_service(name="pmm-server-postgresql"),
+            self._make_service(name="mysql-prod"),
+        ]
+        result = await collect_inventory(pmm_api)
+        assert len(result.entries) == 1
+        assert result.entries[0].service_name == "mysql-prod"
+
+    @pytest.mark.asyncio
+    async def test_filters_pmm_server_node_id(self, pmm_api):
+        """Assert services with node_id='pmm-server' are filtered out."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(name="internal-svc", node_id="pmm-server"),
+        ]
+        result = await collect_inventory(pmm_api)
+        assert result.entries == []
+
+    @pytest.mark.asyncio
+    async def test_not_ok_when_pmm_agent_disconnected(self, pmm_api):
+        """Assert NOT_OK when pmm-agent is not connected."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(
+                agents=[
+                    {"agent_type": "pmm-agent", "is_connected": False},
+                ]
+            ),
+        ]
+        result = await collect_inventory(pmm_api)
+        assert result.entries[0].status == ServiceStatus.NOT_OK
+
+    @pytest.mark.asyncio
+    async def test_not_ok_when_non_pmm_agent_bad_status(self, pmm_api):
+        """Assert NOT_OK when a non-pmm-agent has a non-running status."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(
+                agents=[
+                    {"agent_type": "mysqld_exporter", "status": "WAITING"},
+                ]
+            ),
+        ]
+        result = await collect_inventory(pmm_api)
+        assert result.entries[0].status == ServiceStatus.NOT_OK
+
+    @pytest.mark.asyncio
+    async def test_ok_when_agent_running(self, pmm_api):
+        """Assert OK when agent status is RUNNING."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(
+                agents=[
+                    {"agent_type": "mysqld_exporter", "status": "RUNNING"},
+                ]
+            ),
+        ]
+        result = await collect_inventory(pmm_api)
+        assert result.entries[0].status == ServiceStatus.OK
+
+    @pytest.mark.asyncio
+    async def test_ok_when_agent_status_done(self, pmm_api):
+        """Assert OK when agent status is AGENT_STATUS_DONE (v3 format)."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(
+                agents=[
+                    {"agent_type": "mysqld_exporter", "status": "AGENT_STATUS_DONE"},
+                ]
+            ),
+        ]
+        result = await collect_inventory(pmm_api)
+        assert result.entries[0].status == ServiceStatus.OK
+
+    @pytest.mark.asyncio
+    async def test_sorted_by_type_and_name(self, pmm_api):
+        """Assert entries are sorted by service_type then service_name."""
+        pmm_api.get_inventory_services_with_agents.return_value = [
+            self._make_service(name="z-mysql", svc_type="mysql"),
+            self._make_service(name="a-pg", svc_type="postgresql"),
+            self._make_service(name="a-mysql", svc_type="mysql"),
+        ]
+        result = await collect_inventory(pmm_api)
+        names = [e.service_name for e in result.entries]
+        assert names == ["a-mysql", "z-mysql", "a-pg"]
+
+    @pytest.mark.asyncio
+    async def test_empty_services(self, pmm_api):
+        """Assert empty input yields empty section."""
+        pmm_api.get_inventory_services_with_agents.return_value = []
+        result = await collect_inventory(pmm_api)
+        assert result.entries == []
 
 
 # _fetch_base_inventory

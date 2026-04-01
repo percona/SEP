@@ -30,6 +30,9 @@ from .models import (
     AdvisorFamily,
     AdvisorSection,
     FailedCheck,
+    InventorySection,
+    InventoryServiceEntry,
+    ServiceStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -212,6 +215,54 @@ async def collect_advisors(
         refresh_issues=refresh_issues,
         families=list(families.values()),
     )
+
+
+async def collect_inventory(
+    pmm_api: PMMRemoteAPI,
+) -> InventorySection:
+    """Fetch the inventory service list with agent status from PMM.
+
+    :param pmm_api: PMM API client.
+    :return: Populated inventory section.
+    """
+    raw_services = await pmm_api.get_inventory_services_with_agents()
+
+    entries: list[InventoryServiceEntry] = []
+    sorted_services = sorted(
+        raw_services,
+        key=lambda s: (s.get("service_type", ""), s.get("service_name", "")),
+    )
+
+    for svc in sorted_services:
+        if svc.get("service_name") in _PMM_SERVER_FILTER:
+            continue
+        if svc.get("node_id") == "pmm-server":
+            continue
+
+        status = ServiceStatus.OK
+        for agent in svc.get("agents", []):
+            if agent.get("agent_type") == "pmm-agent" and not agent.get("is_connected"):
+                status = ServiceStatus.NOT_OK
+                break
+            if agent.get("agent_type") != "pmm-agent" and agent.get("status") not in (
+                "RUNNING",
+                "DONE",
+                "AGENT_STATUS_RUNNING",
+                "AGENT_STATUS_DONE",
+            ):
+                status = ServiceStatus.NOT_OK
+                break
+
+        entries.append(
+            InventoryServiceEntry(
+                service_name=svc.get("service_name", ""),
+                service_type=svc.get("service_type", ""),
+                node_name=svc.get("node_name", ""),
+                status=status,
+            )
+        )
+
+    return InventorySection(entries=entries)
 
 
 async def _fetch_base_inventory(
