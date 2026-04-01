@@ -87,7 +87,7 @@ DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 BACKUP_TYPE = "Binlogs"
 UPLOADME_FILE = ".uploadme"
 RSYNC_BIN = "/usr/bin/rsync"
-GSUTIL_BIN = os.getenv('PERCONA_BACKUP_GSUTIL_BIN', '/usr/local/bin/gsutil')
+GSUTIL_BIN = "/usr/local/bin/gsutil"
 
 DEFAULT_CFG_DIR = Path(
     os.getenv(
@@ -1959,7 +1959,6 @@ class GSUploadProvider:
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
-        self.gsutil_bin = settings.get("GSUTIL_BIN", GSUTIL_BIN)
         self.backup_type = settings.get('BACKUP_TYPE')
         if self.gs_bucket is None:
             msg = 'GS_BUCKET is not set.'

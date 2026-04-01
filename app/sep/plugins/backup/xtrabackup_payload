@@ -1829,7 +1829,6 @@ class GSUploadProvider:
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
-        self.gsutil_bin = settings.get("GSUTIL_BIN", GSUTIL_BIN)
         self.backup_type = settings.get('BACKUP_TYPE')
         if self.gs_bucket is None:
             msg = 'GS_BUCKET is not set.'

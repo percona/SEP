@@ -1005,9 +1005,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const uploadContainer = document.getElementById('upload_container');
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
-    const gcpContainer = document.getElementById('gs_container');
-    const toggleGcpBtn = document.getElementById('toggle_gcp_btn');
-    const gcpBucketInput = document.getElementById('gs_bucket');
+    const gsContainer = document.getElementById('gs_container');
+    const toggleGsBtn = document.getElementById('toggle_gcp_btn');
+    const gsBucketInput = document.getElementById('gs_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
     const s3BucketInput = document.getElementById('s3_bucket');
@@ -1017,7 +1017,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const serviceSelect = document.getElementById('service_id');
 
     let s3Visible = false;
-    let gcpVisible = false;
+    let gsVisible = false;
     let rsyncVisible = false;
 
     const source_data = { "host": "{{ task.host }}", "port": "{{ task.port }}" };
@@ -1185,17 +1185,17 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     }
 
-    function toggleGCP() {
-        gcpVisible = !gcpVisible;
-        if (gcpVisible) {
-            showContainer(gcpContainer, true);
-            gcpBucketInput.required = true;
-            toggleGcpBtn.textContent = "- Remove GS upload";
+    function toggleGS() {
+        gsVisible = !gsVisible;
+        if (gsVisible) {
+            showContainer(gsContainer, true);
+            gsBucketInput.required = true;
+            toggleGsBtn.textContent = "- Remove GS upload";
         } else {
-            showContainer(gcpContainer, false);
-            gcpBucketInput.required = false;
-            gcpBucketInput.value = '';
-            toggleGcpBtn.textContent = "+ Add GS upload";
+            showContainer(gsContainer, false);
+            gsBucketInput.required = false;
+            gsBucketInput.value = '';
+            toggleGsBtn.textContent = "+ Add GS upload";
         }
     }
 
@@ -1260,7 +1260,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
-    toggleGcpBtn.addEventListener('click', toggleGCP);
+    toggleGsBtn.addEventListener('click', toggleGS);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
@@ -1269,7 +1269,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         initSource();
         updateBackupTypeUI();
         updateCompressionOptions();
-        showContainer(gcpContainer, false);
+        showContainer(gsContainer, false);
         if (s3BucketInput && s3BucketInput.value.trim() !== '') {
             showContainer(s3Container, true);
             s3Visible = true;
@@ -1278,11 +1278,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         } else {
             showContainer(s3Container, false);
         }
-        if (gcpBucketInput && gcpBucketInput.value.trim() !== '') {
-            showContainer(gcpContainer, true);
-            gcpVisible = true;
-            gcpBucketInput.required = true;
-            toggleGcpBtn.textContent = "- Remove GS upload";
+        if (gsBucketInput && gsBucketInput.value.trim() !== '') {
+            showContainer(gsContainer, true);
+            gsVisible = true;
+            gsBucketInput.required = true;
+            toggleGsBtn.textContent = "- Remove GS upload";
         }
         if (rsyncPathInput && rsyncPathInput.value.trim() !== '') {
             showContainer(rsyncContainer, true);
