@@ -113,11 +113,11 @@ class TestReportIndex:
         assert response.headers["content-type"] == "text/html; charset=utf-8"
 
     @pytest.mark.usefixtures("_mock_report_index_context")
-    def test_contains_section_names(self, test_client):
-        """Assert the page includes the report section labels."""
+    def test_contains_report_form(self, test_client):
+        """Assert the page includes the report generation form."""
         response = test_client.get("/report/")
-        for _key, label in _REPORT_INDEX_CONTEXT["sections"]:
-            assert label in response.text
+        assert "Generate Report" in response.text
+        assert 'name="since"' in response.text
 
     @pytest.mark.usefixtures("_mock_report_index_context_no_pmm")
     def test_renders_when_pmm_not_configured(self, test_client):
