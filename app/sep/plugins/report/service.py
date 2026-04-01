@@ -31,6 +31,9 @@ from .models import (
     AdvisorCheck,
     AdvisorFamily,
     AdvisorSection,
+    BackupEntry,
+    BackupSection,
+    BackupStatus,
     DiskUsageEntry,
     FailedCheck,
     InventorySection,
@@ -227,6 +230,127 @@ async def collect_advisors(
         total_failed=len(failed_by_name),
         refresh_issues=refresh_issues,
         families=list(families.values()),
+    )
+
+
+async def collect_backups(
+    pmm_api: PMMRemoteAPI,
+    start_ts: int,
+    stop_ts: int,
+    ds_id: int,
+    ds_uid: str,
+) -> BackupSection:
+    """Fetch backup metrics from Prometheus via Grafana.
+
+    :param pmm_api: PMM API client.
+    :param start_ts: Start of the report period (epoch ms).
+    :param stop_ts: End of the report period (epoch ms).
+    :param ds_id: Metrics datasource numeric ID.
+    :param ds_uid: Metrics datasource UID.
+    :return: Populated backup section.
+    """
+    results = await pmm_api.query_grafana_datasource(
+        expressions=[
+            '{__name__="msp_backup_status"}',
+            '{__name__="msp_backup_enabled"}',
+        ],
+        datasource_uid=ds_uid,
+        datasource_id=ds_id,
+        from_ts=start_ts,
+        to_ts=stop_ts,
+        max_data_points=10000,
+        instant=True,
+        range_=True,
+    )
+
+    status_frames = results.get("A", {}).get("frames", [])
+    by_host: dict[str, int] = {}
+    by_status: dict[str, int] = {"pass": 0, "fail": 0, "inactive": 0}
+    by_type: dict[str, int] = {}
+    failed: list[BackupEntry] = []
+    all_backups: list[BackupEntry] = []
+
+    status_map = {"-1": "inactive", "0": "pass", "1": "fail"}
+
+    for frame in status_frames:
+        labels = _find_labels(frame.get("schema", {}).get("fields", []))
+        if not labels:
+            continue
+        values = frame.get("data", {}).get("values", [])
+        if len(values) < _MIN_FRAME_FIELDS:
+            continue
+
+        bk_status_str = status_map.get(
+            str(int(values[1][0])) if values[1] else "",
+            "unknown",
+        )
+        bk_status = BackupStatus(bk_status_str)
+        node_name = labels.get("node_name", "unknown")
+        bk_type = labels.get("type", "unknown")
+        bk_id = labels.get(
+            "backup_id",
+            f"gen-{labels.get('alias', '')}-{node_name}-{bk_type}-{values[0][0] if values[0] else 0}",
+        )
+
+        raw_start = values[0][0] if values[0] else 0
+        raw_end = values[0][-1] if values[0] else 0
+        estimated = True
+        period: dict[str, Any] = {
+            "start": raw_start,
+            "end": raw_end,
+            "duration": raw_end - raw_start if isinstance(raw_end, int) else 0,
+        }
+
+        if {"start_time", "end_time"} <= labels.keys():
+            try:
+                st = datetime.strptime(
+                    labels["start_time"], "%Y-%m-%d %H:%M:%S"
+                ).replace(tzinfo=UTC)
+                et = datetime.strptime(labels["end_time"], "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=UTC
+                )
+                period.update(
+                    start=st.strftime("%d %B %Y at %H:%M:%S UTC"),
+                    end=et.strftime("%d %B %Y at %H:%M:%S UTC"),
+                    duration=et - st,
+                )
+                estimated = False
+            except ValueError:
+                pass
+        elif isinstance(raw_start, int) and raw_start > start_ts and raw_end < stop_ts:
+            estimated = False
+
+        bk_size = labels.get("backup_size", "0")
+        if bk_size is None:
+            estimated = True
+        elif bk_size:
+            estimated = False
+
+        entry = BackupEntry(
+            id=bk_id,
+            alias=labels.get("alias", ""),
+            name=node_name,
+            type=bk_type,
+            status=bk_status,
+            size=bk_size or "0",
+            estimated_data=estimated,
+            period=period,
+        )
+        all_backups.append(entry)
+
+        by_host[node_name] = by_host.get(node_name, 0) + 1
+        by_status[bk_status_str] = by_status.get(bk_status_str, 0) + 1
+        by_type[bk_type] = by_type.get(bk_type, 0) + 1
+        if bk_status == BackupStatus.FAIL and bk_type != "Binlogs":
+            failed.append(entry)
+
+    return BackupSection(
+        total_backups=len(all_backups),
+        backups_by_host=by_host,
+        backups_by_status=by_status,
+        backups_by_type=by_type,
+        failed_backups=failed,
+        all_backups=all_backups,
     )
 
 
@@ -500,6 +624,13 @@ async def _collect_section(
             kwargs["services_raw"],
             refresh=kwargs.get("refresh", False),
         ),
+        "backups": lambda: collect_backups(
+            kwargs["pmm_api"],
+            kwargs["start_ts"],
+            kwargs["stop_ts"],
+            kwargs["ds_id"],
+            kwargs["ds_uid"],
+        ),
         "storage": lambda: collect_storage(
             kwargs["pmm_api"],
             sorted(kwargs["nodes_raw"].keys()),
@@ -592,6 +723,7 @@ async def generate_report(
         full=full, refresh=refresh, metadata=metadata, monitored=monitored
     )
 
+    requires_datasource = {"backups", "storage", "uptime"}
     collector_kwargs = {
         "pmm_api": pmm_api,
         "start_ts": start_ts,
@@ -607,6 +739,8 @@ async def generate_report(
     }
 
     for section in sections:
+        if section in requires_datasource and not ds_id:
+            continue
         await _collect_section(section, report, **collector_kwargs)
 
     return report

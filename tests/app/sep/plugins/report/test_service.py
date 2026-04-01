@@ -22,6 +22,7 @@ import pytest
 
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.plugins.report.models import (
+    BackupStatus,
     InventorySection,
     ReportData,
     ReportMetadata,
@@ -37,6 +38,7 @@ from app.sep.plugins.report.service import (
     _parse_failed_checks,
     _refresh_checks,
     collect_advisors,
+    collect_backups,
     collect_inventory,
     collect_storage,
     collect_uptime,
@@ -409,6 +411,181 @@ class TestCollectAdvisors:
         )
         assert result.total_checks == 0
         assert result.families == []
+
+
+# collect_backups
+class TestCollectBackups:
+    """Test the ``collect_backups`` collector."""
+
+    _START_TS = 1_711_800_000_000
+    _STOP_TS = 1_712_404_800_000
+    _DS_ID = 42
+    _DS_UID = "metrics-uid"
+
+    def _make_frame(
+        self,
+        *,
+        status_val=0,
+        node="host-1",
+        bk_type="Full",
+        alias="bk-alias",
+        backup_id="bk-1",
+    ):
+        return {
+            "schema": {
+                "fields": [
+                    {"name": "Time"},
+                    {
+                        "name": "Value",
+                        "labels": {
+                            "node_name": node,
+                            "type": bk_type,
+                            "alias": alias,
+                            "backup_id": backup_id,
+                            "backup_size": "1073741824",
+                        },
+                    },
+                ],
+            },
+            "data": {
+                "values": [
+                    [self._START_TS, self._STOP_TS],
+                    [status_val],
+                ],
+            },
+        }
+
+    def _mock_query(self, pmm_api, frames):
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {"frames": frames},
+        }
+
+    @pytest.mark.asyncio
+    async def test_counts_all_backups(self, pmm_api):
+        """Assert total_backups reflects all parsed frames."""
+        self._mock_query(
+            pmm_api, [self._make_frame(), self._make_frame(backup_id="bk-2")]
+        )
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        expected_total = 2
+        assert result.total_backups == expected_total
+
+    @pytest.mark.asyncio
+    async def test_status_pass(self, pmm_api):
+        """Assert status_val=0 maps to BackupStatus.PASS."""
+        self._mock_query(pmm_api, [self._make_frame(status_val=0)])
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        assert result.all_backups[0].status == BackupStatus.PASS
+
+    @pytest.mark.asyncio
+    async def test_status_fail(self, pmm_api):
+        """Assert status_val=1 maps to BackupStatus.FAIL."""
+        self._mock_query(pmm_api, [self._make_frame(status_val=1)])
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        assert result.all_backups[0].status == BackupStatus.FAIL
+
+    @pytest.mark.asyncio
+    async def test_status_inactive(self, pmm_api):
+        """Assert status_val=-1 maps to BackupStatus.INACTIVE."""
+        self._mock_query(pmm_api, [self._make_frame(status_val=-1)])
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        assert result.all_backups[0].status == BackupStatus.INACTIVE
+
+    @pytest.mark.asyncio
+    async def test_failed_backups_excludes_binlogs(self, pmm_api):
+        """Assert Binlogs type is excluded from failed_backups."""
+        self._mock_query(
+            pmm_api,
+            [
+                self._make_frame(status_val=1, bk_type="Binlogs", backup_id="bl-1"),
+                self._make_frame(status_val=1, bk_type="Full", backup_id="f-1"),
+            ],
+        )
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        assert len(result.failed_backups) == 1
+        assert result.failed_backups[0].type == "Full"
+
+    @pytest.mark.asyncio
+    async def test_aggregates_by_host(self, pmm_api):
+        """Assert backups_by_host counts per node."""
+        self._mock_query(
+            pmm_api,
+            [
+                self._make_frame(node="host-1", backup_id="b1"),
+                self._make_frame(node="host-1", backup_id="b2"),
+                self._make_frame(node="host-2", backup_id="b3"),
+            ],
+        )
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        expected_host1 = 2
+        assert result.backups_by_host["host-1"] == expected_host1
+        assert result.backups_by_host["host-2"] == 1
+
+    @pytest.mark.asyncio
+    async def test_aggregates_by_type(self, pmm_api):
+        """Assert backups_by_type counts per backup type."""
+        self._mock_query(
+            pmm_api,
+            [
+                self._make_frame(bk_type="Full", backup_id="b1"),
+                self._make_frame(bk_type="Incremental", backup_id="b2"),
+            ],
+        )
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        assert result.backups_by_type["Full"] == 1
+        assert result.backups_by_type["Incremental"] == 1
+
+    @pytest.mark.asyncio
+    async def test_parses_start_end_time_labels(self, pmm_api):
+        """Assert period is parsed from start_time/end_time labels."""
+        frame = self._make_frame()
+        frame["schema"]["fields"][1]["labels"]["start_time"] = "2026-03-01 10:00:00"
+        frame["schema"]["fields"][1]["labels"]["end_time"] = "2026-03-01 11:00:00"
+        self._mock_query(pmm_api, [frame])
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        entry = result.all_backups[0]
+        assert "01 March 2026" in entry.period["start"]
+        assert entry.period["duration"] == timedelta(hours=1)
+        assert entry.estimated_data is False
+
+    @pytest.mark.asyncio
+    async def test_skips_frames_without_labels(self, pmm_api):
+        """Assert frames with no labels are skipped."""
+        frame = {
+            "schema": {"fields": [{"name": "Time"}, {"name": "Value"}]},
+            "data": {"values": [[100], [0]]},
+        }
+        self._mock_query(pmm_api, [frame])
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        assert result.total_backups == 0
+
+    @pytest.mark.asyncio
+    async def test_empty_frames(self, pmm_api):
+        """Assert empty frames yield zero-count section."""
+        self._mock_query(pmm_api, [])
+        result = await collect_backups(
+            pmm_api, self._START_TS, self._STOP_TS, self._DS_ID, self._DS_UID
+        )
+        assert result.total_backups == 0
+        assert result.all_backups == []
 
 
 # collect_storage
