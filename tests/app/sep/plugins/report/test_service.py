@@ -416,6 +416,129 @@ class TestCollectAdvisors:
         assert result.families == []
 
 
+# collect_alerts
+class TestCollectAlerts:
+    """Test the ``collect_alerts`` collector."""
+
+    _START_TS = 1_711_800_000_000
+    _STOP_TS = 1_712_404_800_000
+    _ALERT_TIME = 1_712_000_000_000
+
+    def _make_annotation(
+        self, *, alertname="HighCPU_Warning", node="host-1", svc_type="mysql"
+    ):
+        return {
+            "id": 1,
+            "time": self._ALERT_TIME,
+            "newState": "Alerting",
+            "text": (
+                f"{{alertname={alertname}, node_name={node},"
+                f" service_type={svc_type}, service=svc-1}}"
+            ),
+        }
+
+    @pytest.mark.asyncio
+    async def test_counts_alerting_annotations(self, pmm_api):
+        """Assert only Alerting annotations are counted."""
+        pmm_api.get_grafana_annotations.return_value = [
+            self._make_annotation(),
+            {"id": 2, "time": 100, "newState": "OK", "text": "resolved"},
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert result.total_alerts == 1
+
+    @pytest.mark.asyncio
+    async def test_aggregates_per_host(self, pmm_api):
+        """Assert alerts are aggregated per host."""
+        pmm_api.get_grafana_annotations.return_value = [
+            self._make_annotation(node="host-1"),
+            self._make_annotation(node="host-1"),
+            self._make_annotation(node="host-2"),
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        expected_host1_count = 2
+        assert result.alerts_per_host["host-1"] == expected_host1_count
+        assert result.alerts_per_host["host-2"] == 1
+
+    @pytest.mark.asyncio
+    async def test_aggregates_per_rule(self, pmm_api):
+        """Assert rule name is extracted from alertname after last underscore."""
+        pmm_api.get_grafana_annotations.return_value = [
+            self._make_annotation(alertname="HighCPU_Warning"),
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert "Warning" in result.alerts_per_rule
+
+    @pytest.mark.asyncio
+    async def test_aggregates_per_service(self, pmm_api):
+        """Assert alerts are aggregated by service_type."""
+        pmm_api.get_grafana_annotations.return_value = [
+            self._make_annotation(svc_type="mysql"),
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert result.alerts_per_service["mysql"] == 1
+
+    @pytest.mark.asyncio
+    async def test_daily_aggregation(self, pmm_api):
+        """Assert alerts are bucketed into daily counts."""
+        pmm_api.get_grafana_annotations.return_value = [
+            self._make_annotation(),
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert len(result.alerts_daily) == 1
+        day_key = next(iter(result.alerts_daily))
+        assert result.alerts_daily[day_key] == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_annotations_without_alerting_state(self, pmm_api):
+        """Assert non-Alerting annotations are skipped."""
+        pmm_api.get_grafana_annotations.return_value = [
+            {"id": 1, "time": 100, "newState": "OK", "text": ""},
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert result.total_alerts == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_annotations_without_label_braces(self, pmm_api):
+        """Assert annotations with no {labels} in text are skipped."""
+        pmm_api.get_grafana_annotations.return_value = [
+            {"id": 1, "time": 100, "newState": "Alerting", "text": "no labels here"},
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert result.total_alerts == 0
+
+    @pytest.mark.asyncio
+    async def test_alerts_sorted_by_time_descending(self, pmm_api):
+        """Assert alert history is sorted newest-first."""
+        earlier = 1_000_000
+        later = 2_000_000
+        pmm_api.get_grafana_annotations.return_value = [
+            {
+                "id": 1,
+                "time": earlier,
+                "newState": "Alerting",
+                "text": "{alertname=A, node_name=h1}",
+            },
+            {
+                "id": 2,
+                "time": later,
+                "newState": "Alerting",
+                "text": "{alertname=B, node_name=h1}",
+            },
+        ]
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert result.alert_history[0].time == later
+        assert result.alert_history[1].time == earlier
+
+    @pytest.mark.asyncio
+    async def test_empty_annotations(self, pmm_api):
+        """Assert empty input yields zero-count section."""
+        pmm_api.get_grafana_annotations.return_value = []
+        result = await collect_alerts(pmm_api, self._START_TS, self._STOP_TS)
+        assert result.total_alerts == 0
+        assert result.alert_history == []
+
+
 # collect_backups
 class TestCollectBackups:
     """Test the ``collect_backups`` collector."""
