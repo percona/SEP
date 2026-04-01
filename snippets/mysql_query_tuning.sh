@@ -44,6 +44,9 @@
 #    label: Show help message
 #    description: Show help message
 #    default: false
+# service_type: mysql
+# alerts:
+#   - MySQLSlowQueries
 # ---
 
 # Usage: ./mysql_query_tuning.sh [--defaults-file=path] --query=query_string|--file=path [--database=name] [--dest=path] [--execute] [--help]
