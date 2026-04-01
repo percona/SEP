@@ -1,0 +1,88 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% extends "base.html.j2" %}
+{% block title -%}
+    Health Report
+{%- endblock title %}
+{% block style %}
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/report.css') }}">
+{% endblock style %}
+{% block main %}
+    <div class="report-layout">
+        <h2>Health &amp; Security Report</h2>
+        <p>
+            Generate a comprehensive report of the database health, alerts,
+            backups, disk usage, service uptime, and inventory from PMM.
+        </p>
+        {% if not pmm_configured %}
+            <div class="message" data-level="warning">
+                <span class="message-text">
+                    PMM is not configured. Please set the PMM endpoint and API key
+                    in the application settings.
+                </span>
+            </div>
+        {% else %}
+            <form method="post"
+                  action="{{ request.url_for('report_generate') }}"
+                  class="report-form">
+                <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                <fieldset>
+                    <legend>Report Period</legend>
+                    <div class="form-row">
+                        <label for="since">From</label>
+                        <select name="since" id="since">
+                            <option value="now-1d">Last 24 hours</option>
+                            <option value="now-3d">Last 3 days</option>
+                            <option value="now-7d" selected>Last 7 days</option>
+                            <option value="now-14d">Last 14 days</option>
+                            <option value="now-30d">Last 30 days</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="until">To</label>
+                        <input type="text" name="until" id="until" value="now" readonly>
+                    </div>
+                </fieldset>
+                <fieldset>
+                    <legend>Options</legend>
+                    <div class="form-row">
+                        <label for="full">
+                            <input type="checkbox" name="full" id="full" value="true">
+                            Full report - show all check results and full
+                            backup history instead of only failures/summaries
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label for="refresh">
+                            <input type="checkbox" name="refresh" id="refresh" value="true">
+                            Refresh - force a refresh of advisor checks
+                            before fetching results
+                        </label>
+                    </div>
+                </fieldset>
+                <div class="form-actions">
+                    <button type="submit" class="btn primary">Generate Report</button>
+                    <a href="{{ request.url_for('report_generate_json') }}"
+                       class="btn"
+                       target="_blank"
+                       rel="noopener noreferrer">Download as JSON</a>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+{% endblock main %}
