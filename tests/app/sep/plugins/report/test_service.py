@@ -21,6 +21,7 @@ import pytest
 
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.plugins.report.service import (
+    _fetch_base_inventory,
     _get_metrics_datasource,
     _refresh_checks,
 )
@@ -176,3 +177,103 @@ class TestRefreshChecks:
     async def test_empty_list(self, pmm_api):
         """Assert empty input returns empty issues."""
         assert await _refresh_checks(pmm_api, []) == []
+# _fetch_base_inventory
+class TestFetchBaseInventory:
+    """Test the ``_fetch_base_inventory`` helper."""
+
+    @pytest.mark.asyncio
+    async def test_v3_endpoints(self, pmm_api):
+        """Assert v3 GET endpoints are used when PMM >= v3."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [
+            {"generic": [{"node_id": "n1", "node_name": "host-a"}]},
+            {
+                "mysql": [
+                    {"service_id": "s1", "service_name": "mysql-a", "node_id": "n1"}
+                ]
+            },
+        ]
+        nodes, services, active_types = await _fetch_base_inventory(pmm_api)
+        assert "n1" in nodes
+        assert "s1" in services
+        assert "mysql" in active_types
+        pmm_api.get.assert_any_await("/v1/inventory/nodes")
+        pmm_api.get.assert_any_await("/v1/inventory/services")
+
+    @pytest.mark.asyncio
+    async def test_v2_endpoints(self, pmm_api):
+        """Assert v2 POST endpoints are used when PMM < v3."""
+        pmm_api.is_older_than_v3.return_value = True
+        pmm_api.post.side_effect = [
+            {"generic": [{"node_id": "n1", "node_name": "host-a"}]},
+            {
+                "mysql": [
+                    {"service_id": "s1", "service_name": "mysql-a", "node_id": "n1"}
+                ]
+            },
+        ]
+        nodes, services, _types = await _fetch_base_inventory(pmm_api)
+        assert "n1" in nodes
+        assert "s1" in services
+        pmm_api.post.assert_any_await("/v1/inventory/Nodes/List", json={})
+        pmm_api.post.assert_any_await("/v1/inventory/Services/List", json={})
+
+    @pytest.mark.asyncio
+    async def test_filters_pmm_server_nodes(self, pmm_api):
+        """Assert nodes with pmm-server IDs or names are excluded."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [
+            {
+                "generic": [
+                    {"node_id": "pmm-server", "node_name": "pmm-server"},
+                    {"node_id": "n1", "node_name": "host-a"},
+                ],
+            },
+            {"mysql": []},
+        ]
+        nodes, _, _ = await _fetch_base_inventory(pmm_api)
+        assert "pmm-server" not in nodes
+        assert "n1" in nodes
+
+    @pytest.mark.asyncio
+    async def test_filters_pmm_server_services(self, pmm_api):
+        """Assert services named pmm-server* or on pmm-server node are excluded."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [
+            {"generic": []},
+            {
+                "mysql": [
+                    {
+                        "service_id": "s1",
+                        "service_name": "pmm-server-postgresql",
+                        "node_id": "n1",
+                    },
+                    {
+                        "service_id": "s2",
+                        "service_name": "my-svc",
+                        "node_id": "pmm-server",
+                    },
+                    {"service_id": "s3", "service_name": "prod-mysql", "node_id": "n2"},
+                ],
+            },
+        ]
+        _, services, _ = await _fetch_base_inventory(pmm_api)
+        assert "s1" not in services
+        assert "s2" not in services
+        assert "s3" in services
+
+    @pytest.mark.asyncio
+    async def test_collects_active_service_types(self, pmm_api):
+        """Assert active types are collected from non-filtered services."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [
+            {"generic": []},
+            {
+                "mysql": [{"service_id": "s1", "service_name": "a", "node_id": "n1"}],
+                "postgresql": [
+                    {"service_id": "s2", "service_name": "b", "node_id": "n2"}
+                ],
+            },
+        ]
+        _, _, types = await _fetch_base_inventory(pmm_api)
+        assert types == {"mysql", "postgresql"}
