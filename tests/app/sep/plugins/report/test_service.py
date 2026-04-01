@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.report.service module."""
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -30,6 +31,7 @@ from app.sep.plugins.report.service import (
     _build_allowed_check_prefixes,
     _collect_section,
     _fetch_base_inventory,
+    _find_labels,
     _get_metrics_datasource,
     _interval_ms,
     _parse_failed_checks,
