@@ -137,6 +137,7 @@ def generate_health_report() -> None:
 
 async def _generate_health_report() -> None:
     """Generate a health report from PMM and log it.
+
     The report data is logged at INFO level.  Extend this function to persist
     report results (e.g. to the database or file system) as needed.
     """
